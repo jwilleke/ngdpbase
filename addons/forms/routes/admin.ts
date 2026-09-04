@@ -13,12 +13,12 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
   }
 
   // ── GET /addons/forms ─────────────────────────────────────────────────────
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
         const definitions = m?.getAllDefinitions() ?? [];
@@ -43,12 +43,12 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
   });
 
   // ── GET /addons/forms/:formId/submissions ─────────────────────────────────
-  router.get('/:formId/submissions', (req: Request, res: Response) => {
+  router.get('/:formId/submissions', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
         const form = m?.getDefinition(String(req.params['formId']));
@@ -72,12 +72,12 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
   });
 
   // ── GET /addons/forms/:formId/submissions/:submissionId ───────────────────
-  router.get('/:formId/submissions/:submissionId', (req: Request, res: Response) => {
+  router.get('/:formId/submissions/:submissionId', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
         const form = m?.getDefinition(String(req.params['formId']));
@@ -100,12 +100,12 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
   });
 
   // ── POST /addons/forms/:formId/submissions/:submissionId/status ───────────
-  router.post('/:formId/submissions/:submissionId/status', (req: Request, res: Response) => {
+  router.post('/:formId/submissions/:submissionId/status', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const body = req.body as Record<string, unknown>;
         const status = typeof body['status'] === 'string' ? body['status'] as SubmissionStatus : undefined;

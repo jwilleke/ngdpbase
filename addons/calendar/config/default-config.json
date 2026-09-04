@@ -1,5 +1,37 @@
 {
   "_comment": "Default configuration for the calendar addon. Override any key in app-custom-config.json.",
   "ngdpbase.addons.calendar.dataPath": "",
-  "ngdpbase.addons.calendar.clubhouse-manager-email": ""
+  "ngdpbase.addons.calendar.clubhouse-manager-email": "",
+  "_comment_calendar_manage": "#1220 \u2014 the calendar addon declares the permission its management routes ask for, and grants it to admin. A deployment grants calendar-manage to its own role (a clubhouse manager, say) in app-custom-config.json: add the role to the subjects of calendar-manage-access, or add a policy of your own. The addon never names a role.",
+  "ngdpbase.permissions.definitions": {
+    "calendar-manage": {
+      "description": "Create, edit and delete calendar events; see private reservation details; cancel any reservation",
+      "icon": "calendar-check",
+      "color": "#0d6efd"
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "calendar-manage-access",
+      "name": "Calendar management",
+      "description": "Manage calendar events and reservations",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "calendar-manage"
+      ]
+    }
+  ]
 }

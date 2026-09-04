@@ -34,7 +34,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 // ── ApiError ────────────────────────────────────────────────────────────────
 
 /**
- * Thrown by ApiContext guard methods (requireAuthenticated, requireRole).
+ * Thrown by ApiContext guard methods (requireAuthenticated, requirePermission).
  * Route handlers should catch this and forward `status` to `res.status()`.
  */
 export class ApiError extends Error {
@@ -139,29 +139,9 @@ export class ApiContext {
     }
   }
 
-  /**
-   * Returns true if the caller has at least one of the specified roles.
-   *
-   * @example
-   * if (ctx.hasRole('admin', 'clubhouse-manager')) { ... }
-   */
-  hasRole(...roles: string[]): boolean {
-    // eslint-disable-next-line no-restricted-syntax -- canonical role-check implementation
-    return roles.some(r => this.roles.includes(r));
-  }
-
-  /**
-   * Throws `ApiError(403)` if the caller does not have at least one of the
-   * specified roles.
-   *
-   * @example
-   * ctx.requireRole('admin', 'clubhouse-manager'); // → 403 if neither role
-   */
-  requireRole(...roles: string[]): void {
-    if (!this.hasRole(...roles)) {
-      throw new ApiError(403, 'Forbidden');
-    }
-  }
+  // #1198: `hasRole` / `requireRole` are gone. A role name is not authority
+  // (security-posture.md P2): it skips the policy evaluator, deny policies and
+  // the agent-token scope ceiling. Ask `hasPermission` / `requirePermission`.
 
   /**
    * Returns true if the caller has the given permission.

@@ -1337,8 +1337,10 @@ class AddonsManager extends BaseManager {
         }
       }
 
-      // Inject per-addon file defaults (lowest priority — beaten by both app configs)
-      this.applyAddonDefaults(addonName);
+      // #1220: an addon's config/default-config.json is a layer of the
+      // configuration merge, folded in by ConfigurationManager at load, so it
+      // is already visible here — and to the managers that copied the
+      // catalogs at boot, which the old runtime injection never reached.
 
       // Inject domainDefaults before register() so the addon can read
       // any applied values from ConfigurationManager during startup
@@ -1370,40 +1372,6 @@ class AddonsManager extends BaseManager {
 
       logger.error(`Failed to load add-on ${addonName}: ${errorMessage}`);
       // Don't throw - allow other add-ons to load
-    }
-  }
-
-  /**
-   * Inject per-addon file defaults from addons/<name>/config/default-config.json.
-   * Keys are only applied when absent from the merged config (i.e. not set in
-   * app-default-config.json or app-custom-config.json). This gives operators full
-   * override priority while shipping sensible defaults alongside each addon.
-   */
-  private applyAddonDefaults(addonName: string): void {
-    const addon = this.addons.get(addonName);
-    if (!addon) return;
-
-    const defaultConfigPath = path.join(addon.path, 'config', 'default-config.json');
-    if (!fs.existsSync(defaultConfigPath)) return;
-
-    let defaults: Record<string, unknown>;
-    try {
-      defaults = JSON.parse(fs.readFileSync(defaultConfigPath, 'utf-8')) as Record<string, unknown>;
-    } catch {
-      logger.warn(`[AddonsManager] Failed to parse ${defaultConfigPath}`);
-      return;
-    }
-
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    if (!configManager) return;
-
-    const existing = configManager.getAllProperties();
-    for (const [key, value] of Object.entries(defaults)) {
-      if (key.startsWith('_comment')) continue;
-      if (!(key in existing)) {
-        configManager.setRuntimeProperty(key, value);
-        logger.debug(`[AddonsManager] ${addonName}: applied addon default '${key}'`);
-      }
     }
   }
 

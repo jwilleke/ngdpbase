@@ -260,7 +260,18 @@ class UserManager extends BaseManager {
   private provider: UserProvider | null = null;
   private providerClass?: string;
   private roles: Map<string, Role> = new Map();
-  private permissions: Map<string, string> = new Map();
+  /**
+   * The permission catalog, read live from `ngdpbase.permissions.definitions`
+   * (#1220). Not cached: a cached copy of an authorization attribute is not
+   * authoritative (guiding-framework.md), and a hardcoded copy is how
+   * `admin-read` came to be declared in configuration and "never registered"
+   * (#1190). Format: {target}-{action} — target-first, hyphen-separated.
+   */
+  get permissions(): Map<string, string> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const defs = (configManager?.getProperty('ngdpbase.permissions.definitions', {}) ?? {}) as Record<string, { description?: string }>;
+    return new Map(Object.entries(defs).map(([name, def]) => [name, def?.description ?? name]));
+  }
   private passwordSalt?: string;
 
   /**
@@ -393,28 +404,9 @@ class UserManager extends BaseManager {
    * @private
    */
   private initializePermissions(): void {
-    // Define all available permissions in the system
-    // Format: {target}-{action} — target-first, hyphen-separated (URL-safe)
-    this.permissions.set('page-read',    'View pages');
-    this.permissions.set('page-edit',    'Edit pages');
-    this.permissions.set('page-create',  'Create new pages');
-    this.permissions.set('page-delete',  'Delete pages');
-    this.permissions.set('page-rename',  'Rename pages');
-    this.permissions.set('page-export',  'Export pages');
-    this.permissions.set('asset-read',   'View assets (attachments)');
-    this.permissions.set('asset-upload', 'Upload assets');
-    this.permissions.set('asset-delete', 'Delete assets');
-    this.permissions.set('asset-edit',   'Edit asset metadata (EXIF/IPTC/XMP)');
-    this.permissions.set('search-page',  'Search pages');
-    this.permissions.set('search-user',  'Search users');
-    this.permissions.set('user-read',    'View user list and profiles');
-    this.permissions.set('user-edit',    'Edit user accounts');
-    this.permissions.set('user-create',  'Create user accounts');
-    this.permissions.set('user-delete',  'Delete user accounts');
-    this.permissions.set('admin-system', 'System administration');
-    this.permissions.set('admin-roles',  'Role management');
-
-    logger.info(`👤 Initialized ${this.permissions.size} permissions`);
+    // #1220: nothing to copy — `permissions` reads configuration live. Say how
+    // many the configuration declares at this point, for the boot log.
+    logger.info(`👤 ${this.permissions.size} permissions declared in configuration`);
   }
 
   /**

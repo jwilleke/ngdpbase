@@ -64,6 +64,17 @@ export interface QueryOptions {
 }
 
 /** Minimal caller identity used by stripPrivate / cancelReservation. */
+/**
+ * Who is looking, as this manager needs to know it (#1198/#1220). `canManage`
+ * is policy's answer to `calendar-manage`, asked at the route. The manager
+ * never reads a role name: a role is not authority (security-posture.md P2).
+ */
+export interface CalendarViewer {
+  username?: string;
+  isAuthenticated?: boolean;
+  canManage: boolean;
+}
+
 export interface UserContext {
   isAuthenticated?: boolean;
   username?: string | null;
@@ -219,33 +230,31 @@ class CalendarDataManager extends BaseManager {
   /**
    * Strip `_private` from an event unless the caller is authorised.
    *
-   * Authorised: admin, clubhouse-manager, or the original requester
-   * (stored in `event._private.requester`).
+   * Authorised: a viewer policy grants `calendar-manage`, or the original
+   * requester (stored in `event._private.requester`).
    */
-  stripPrivate(event: CalendarEvent, userCtx: UserContext): CalendarEvent {
+  stripPrivate(event: CalendarEvent, viewer: CalendarViewer): CalendarEvent {
     if (!event._private) return event;
 
-    const isPrivileged = userCtx.roles?.some(
-      r => r === 'admin' || r === 'clubhouse-manager'
-    ) ?? false;
+    const isPrivileged = viewer.canManage === true;
 
-    const isRequester = userCtx.isAuthenticated === true &&
-      userCtx.username != null &&
-      userCtx.username === (event._private['requester'] as string | undefined);
+    const isRequester = viewer.isAuthenticated === true &&
+      viewer.username != null &&
+      viewer.username === (event._private['requester'] as string | undefined);
 
     if (isPrivileged || isRequester) return event;
 
     // Return a copy with _private removed
     const { _private: _stripped, ...sanitized } = event;
-    return sanitized as CalendarEvent;
+    return sanitized;
   }
 
   /**
    * Translate a CalendarEvent to a FullCalendar EventInput object.
    * Optionally strips private data for the given caller.
    */
-  toFullCalendar(event: CalendarEvent, userCtx?: UserContext): FullCalendarEvent {
-    const safe = userCtx ? this.stripPrivate(event, userCtx) : event;
+  toFullCalendar(event: CalendarEvent, viewer?: CalendarViewer): FullCalendarEvent {
+    const safe = viewer ? this.stripPrivate(event, viewer) : event;
 
     const fc: FullCalendarEvent = {
       id: safe.id,
@@ -331,20 +340,18 @@ class CalendarDataManager extends BaseManager {
   }
 
   /**
-   * Cancel a reservation. Only the original requester, a clubhouse-manager,
-   * or an admin may cancel.
+   * Cancel a reservation. Only the original requester, or a viewer policy
+   * grants `calendar-manage`, may cancel.
    */
-  async cancelReservation(id: string, userCtx: UserContext): Promise<void> {
+  async cancelReservation(id: string, viewer: CalendarViewer): Promise<void> {
     const event = this.events.get(String(id));
     if (!event) throw new Error(`Event not found: ${id}`);
 
-    const isPrivileged = userCtx.roles?.some(
-      r => r === 'admin' || r === 'clubhouse-manager'
-    ) ?? false;
+    const isPrivileged = viewer.canManage === true;
 
-    const isRequester = userCtx.isAuthenticated === true &&
-      userCtx.username != null &&
-      userCtx.username === (event._private?.['requester'] as string | undefined);
+    const isRequester = viewer.isAuthenticated === true &&
+      viewer.username != null &&
+      viewer.username === (event._private?.['requester'] as string | undefined);
 
     if (!isPrivileged && !isRequester) {
       throw new Error('Forbidden: not authorised to cancel this reservation');

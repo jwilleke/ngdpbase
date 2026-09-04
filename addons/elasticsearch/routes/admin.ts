@@ -28,12 +28,12 @@ export default function adminRoutes(
   const router = Router();
 
   // ── GET /addons/elasticsearch ─────────────────────────────────────────────
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const p = getProvider();
         // #1186: the detailed check names WHICH state sist2 is in — not

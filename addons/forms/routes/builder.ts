@@ -48,11 +48,11 @@ export default function builderRoutes(engine: WikiEngine): Router {
   });
 
   // ── GET /new → blank builder ─────────────────────────────────────────────────
-  router.get('/new', (req: Request, res: Response) => {
+  router.get('/new', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin');
+      await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       res.render('forms-builder', { currentUser: req.userContext, form: null, isNew: true, errors: [] });
     } catch (err) {
       if (handleAuthError(err, res)) return;
@@ -61,11 +61,11 @@ export default function builderRoutes(engine: WikiEngine): Router {
   });
 
   // ── GET /:formId → edit existing ─────────────────────────────────────────────
-  router.get('/:formId', (req: Request, res: Response) => {
+  router.get('/:formId', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin');
+      await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       const form = fdm()?.getDefinition(String(req.params['formId']));
       if (!form) { res.status(404).send('Form not found'); return; }
       res.render('forms-builder', { currentUser: req.userContext, form, isNew: false, errors: [] });
@@ -76,12 +76,12 @@ export default function builderRoutes(engine: WikiEngine): Router {
   });
 
   // ── POST / → create new definition ──────────────────────────────────────────
-  router.post('/', (req: Request, res: Response) => {
+  router.post('/', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const body = req.body as Record<string, unknown>;
         const rawId = typeof body['id'] === 'string' ? body['id'].trim() : '';
@@ -132,12 +132,12 @@ export default function builderRoutes(engine: WikiEngine): Router {
   });
 
   // ── POST /:formId → update existing ─────────────────────────────────────────
-  router.post('/:formId', (req: Request, res: Response) => {
+  router.post('/:formId', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const formId = String(req.params['formId']);
         const m = fdm();
@@ -179,12 +179,12 @@ export default function builderRoutes(engine: WikiEngine): Router {
   });
 
   // ── POST /:formId/delete → delete definition ─────────────────────────────────
-  router.post('/:formId/delete', (req: Request, res: Response) => {
+  router.post('/:formId/delete', async (req: Request, res: Response) => {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
         ctx.requireAuthenticated();
-        ctx.requireRole('admin');
+        await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const formId = String(req.params['formId']);
         const m = fdm();

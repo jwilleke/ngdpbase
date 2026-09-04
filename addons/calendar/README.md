@@ -40,6 +40,22 @@ Event calendar with a [FullCalendar](https://fullcalendar.io/) UI (v6, MIT licen
 | `ngdpbase.addons.calendar.enabled` | `false` | Enable this add-on |
 | `ngdpbase.addons.calendar.dataPath` | `./data/calendar` | Where events.json is stored |
 
+### Who may manage the calendar
+
+Management (create, edit, delete events; see private reservation details; cancel any reservation) asks policy for the `calendar-manage` permission, which this add-on declares in `config/default-config.json` and grants to `admin`. To let another role manage it, grant the permission in your instance's `app-custom-config.json`, for example by adding a policy of your own:
+
+```json
+{
+  "ngdpbase.access.policies": [
+    { "id": "clubhouse-manager-calendar", "name": "Clubhouse manager runs the calendar", "priority": 90, "effect": "allow",
+      "subjects": [{ "type": "role", "value": "clubhouse-manager" }], "resources": [{ "type": "page", "pattern": "*" }],
+      "actions": ["calendar-manage"] }
+  ]
+}
+```
+
+The add-on never names a role (#1198, #1220).
+
 ## Markup Directive
 
 ```

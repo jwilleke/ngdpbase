@@ -97,6 +97,8 @@ ngdpbase.<capability>.provider.<name>.*     settings for one provider
 
 Config selects and parameterises. It never expresses logic. A conditional that lives in a config value is a conditional nobody can test.
 
+The merge has three layers, lowest first: the shipped `config/app-default-config.json`; each enabled addon's `config/default-config.json`, bundled or external ([#1220](https://github.com/jwilleke/ngdpbase/issues/1220)); the operator's `app-custom-config.json`. Maps merge per entry and `id` arrays by id, so an addon adds a permission definition or a policy without touching a shipped entry, and the operator can still override any of it. The practice is in the [security developer guide](security-developer-guide.md#addons).
+
 ### An inert default
 
 A capability should have a `Null` or `console` provider, and it should be the default, so the system is never broken for want of configuration — it degrades to inert. An unconfigured mail transport logs the message instead of failing, which is why a demo instance cannot email strangers by accident.

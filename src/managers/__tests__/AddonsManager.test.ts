@@ -835,6 +835,11 @@ describe('AddonsManager', () => {
   });
 
   describe('addonDefaults (config/default-config.json)', () => {
+    // #1220: an addon's default-config.json is a layer of the configuration
+    // merge, folded in by ConfigurationManager at load (see
+    // src/utils/__tests__/addonConfigLayer.test.ts). AddonsManager no longer
+    // injects it at runtime; what this block still holds is that a file's
+    // absence or presence never breaks addon loading.
     const makeAddonWithDefaultConfig = async (addonName, defaults) => {
       const addonDir = path.join(tmpDir, addonName);
       const configDir = path.join(addonDir, 'config');
@@ -847,59 +852,23 @@ describe('AddonsManager', () => {
       await fs.writeJson(path.join(configDir, 'default-config.json'), defaults);
     };
 
-    test('injects key when absent from mergedConfig', async () => {
+    test('a default-config.json is not injected at runtime (#1220: it is a merge layer)', async () => {
       await makeAddonWithDefaultConfig('cfg-addon-1', {
         'ngdpbase.addons.cfg-addon-1.dataPath': './data/cfg1'
       });
 
       const configManager = makeConfigManager({
         enabledAddons: ['cfg-addon-1'],
-        allProperties: {} // key not present
-      });
-      const engine = makeEngine(configManager);
-      const manager = new AddonsManager(engine);
-      await manager.initialize();
-
-      expect(configManager.setRuntimeProperty).toHaveBeenCalledWith(
-        'ngdpbase.addons.cfg-addon-1.dataPath',
-        './data/cfg1'
-      );
-    });
-
-    test('does not inject key already present in mergedConfig', async () => {
-      await makeAddonWithDefaultConfig('cfg-addon-2', {
-        'ngdpbase.addons.cfg-addon-2.dataPath': './data/default'
-      });
-
-      const configManager = makeConfigManager({
-        enabledAddons: ['cfg-addon-2'],
-        allProperties: { 'ngdpbase.addons.cfg-addon-2.dataPath': './data/custom' }
-      });
-      const engine = makeEngine(configManager);
-      const manager = new AddonsManager(engine);
-      await manager.initialize();
-
-      expect(configManager.setRuntimeProperty).not.toHaveBeenCalledWith(
-        'ngdpbase.addons.cfg-addon-2.dataPath',
-        expect.anything()
-      );
-    });
-
-    test('skips _comment keys', async () => {
-      await makeAddonWithDefaultConfig('cfg-addon-3', {
-        '_comment': 'Documentation string',
-        'ngdpbase.addons.cfg-addon-3.enabled': false
-      });
-
-      const configManager = makeConfigManager({
-        enabledAddons: ['cfg-addon-3'],
         allProperties: {}
       });
       const engine = makeEngine(configManager);
       const manager = new AddonsManager(engine);
       await manager.initialize();
 
-      expect(configManager.setRuntimeProperty).not.toHaveBeenCalledWith('_comment', expect.anything());
+      expect(configManager.setRuntimeProperty).not.toHaveBeenCalledWith(
+        'ngdpbase.addons.cfg-addon-1.dataPath',
+        expect.anything()
+      );
     });
 
     test('missing default-config.json is a no-op — no error thrown', async () => {

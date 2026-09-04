@@ -22,7 +22,7 @@ import fs from 'fs-extra';
 import { constants as fsConstants } from 'fs';
 import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.js';
 import { resolveListenPort } from './utils/resolveListenPort.js';
-import { loadMergedConfigSync } from './utils/configFiles.js';
+import { loadMergedConfigSync } from './utils/addonConfigLayer.js';
 
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';

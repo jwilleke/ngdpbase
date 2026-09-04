@@ -1,6 +1,6 @@
 # Security posture
 
-The decision record for how an ngdpbase instance declares and inspects its security-related settings.
+The decision record for how an ngdpbase instance declares and inspects its security-related settings. How to write a route, manager method or addon that satisfies P1 and P2 is the [security developer guide](security-developer-guide.md).
 
 Where a decision has an operational half — how to configure it, how to verify it, how it fails — that lives beside it and is linked from the decision: transport and TLS are in [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md).
 

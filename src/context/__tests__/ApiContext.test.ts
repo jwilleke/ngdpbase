@@ -113,30 +113,7 @@ describe('ApiContext.from()', () => {
 
 // ── hasRole() ─────────────────────────────────────────────────────────────────
 
-describe('ApiContext#hasRole()', () => {
-  function ctxWithRoles(...roles) {
-    return ApiContext.from(
-      makeReq({ userContext: { roles, isAuthenticated: true } }),
-      mockEngine
-    );
-  }
-
-  test('returns true when caller has the role', () => {
-    expect(ctxWithRoles('admin').hasRole('admin')).toBe(true);
-  });
-
-  test('returns true when caller has any of the listed roles', () => {
-    expect(ctxWithRoles('editor').hasRole('admin', 'editor')).toBe(true);
-  });
-
-  test('returns false when caller has none of the listed roles', () => {
-    expect(ctxWithRoles('reader').hasRole('admin', 'editor')).toBe(false);
-  });
-
-  test('returns false for empty roles array', () => {
-    expect(ctxWithRoles().hasRole('admin')).toBe(false);
-  });
-});
+// #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).
 
 // ── requireAuthenticated() ────────────────────────────────────────────────────
 
@@ -273,38 +250,4 @@ describe('ApiContext#requirePermission()', () => {
 
 // ── requireRole() ─────────────────────────────────────────────────────────────
 
-describe('ApiContext#requireRole()', () => {
-  test('does not throw when caller has the role', () => {
-    const ctx = ApiContext.from(
-      makeReq({ userContext: { roles: ['admin'], isAuthenticated: true } }),
-      mockEngine
-    );
-    expect(() => ctx.requireRole('admin')).not.toThrow();
-  });
-
-  test('does not throw when caller has any of the listed roles', () => {
-    const ctx = ApiContext.from(
-      makeReq({ userContext: { roles: ['clubhouse-manager'], isAuthenticated: true } }),
-      mockEngine
-    );
-    expect(() => ctx.requireRole('admin', 'clubhouse-manager')).not.toThrow();
-  });
-
-  test('throws ApiError(403) when caller has none of the listed roles', () => {
-    const ctx = ApiContext.from(
-      makeReq({ userContext: { roles: ['reader'], isAuthenticated: true } }),
-      mockEngine
-    );
-    expect(() => ctx.requireRole('admin', 'editor')).toThrow(ApiError);
-    try {
-      ctx.requireRole('admin', 'editor');
-    } catch (err) {
-      expect(err.status).toBe(403);
-    }
-  });
-
-  test('throws ApiError(403) for anonymous caller with no roles', () => {
-    const ctx = ApiContext.from(makeReq(), mockEngine);
-    expect(() => ctx.requireRole('admin')).toThrow(ApiError);
-  });
-});
+// #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).

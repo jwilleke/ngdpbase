@@ -128,26 +128,3 @@ export function deepMergeObjects(
 export function deepMergeConfigs<T extends Record<string, unknown>>(defaultConfig: T, customConfig: Partial<T>): T {
   return deepMergeObjects(defaultConfig, customConfig) as T;
 }
-
-export interface MergedConfigFiles {
-  merged: Record<string, unknown>;
-  customKeys: Set<string>;
-}
-
-/**
- * The merged configuration for a caller that runs before the engine exists.
- *
- * Returns null on any failure: a missing or malformed file must not stop the
- * server binding a socket; the port simply falls back. No `${VAR}` resolution
- * and no env-key overrides — those are `getProperty`'s job, and the pre-engine
- * callers skip any value they cannot use.
- */
-export function loadMergedConfigSync(env: Env = process.env, cwd: string = process.cwd()): MergedConfigFiles | null {
-  try {
-    const files = readConfigFilesSync(configFilePaths(env, cwd));
-    const merged = deepMergeConfigs(files.defaultConfig ?? {}, files.customConfig);
-    return { merged, customKeys: files.customKeys };
-  } catch {
-    return null;
-  }
-}

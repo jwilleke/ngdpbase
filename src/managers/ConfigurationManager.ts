@@ -10,7 +10,8 @@ import {
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
-import { configFilePaths, deepMergeConfigs, readConfigFilesSync } from '../utils/configFiles.js';
+import { configFilePaths, readConfigFilesSync } from '../utils/configFiles.js';
+import { mergeConfigWithAddons } from '../utils/addonConfigLayer.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
@@ -432,8 +433,17 @@ class ConfigurationManager extends BaseManager {
     // ngdpbase.filters.* namespace, same shape and for the same reason.
     this.migrateLegacyFilterNamespace();
 
-    // Merge configurations with deep-merge for object-type properties
-    this.mergedConfig = deepMergeConfigs(this.defaultConfig, this.customConfig);
+    // #1220: shipped ⊕ enabled addons' default-config.json ⊕ custom. The addon
+    // layer sits beneath the operator's file, so an addon can add a permission
+    // definition or a policy to the catalogs additively and the operator can
+    // still override any of it. Discovery follows addons-path and the
+    // ngdpbase.addons.<slug>.enabled gate, bundled and external alike.
+    const { merged, addons } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
+    this.mergedConfig = merged;
+    for (const a of addons) {
+      if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
+      else logger.info(`[config] addon '${a.slug}' contributed ${Object.keys(a.defaults).length} default key(s)`);
+    }
 
     // Development mode defaults to debug logging unless explicitly overridden
     if (this.environment === 'development' && !this.customConfig?.['ngdpbase.logging.level']) {

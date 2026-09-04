@@ -30,11 +30,11 @@ export default function adminRoutes(
   }
 
   // ── GET /addons/calendar ─────────────────────────────────────────────────
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin', 'clubhouse-manager');
+      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
 
       const m = mgr();
       const cfgs = calendarsConfig();

@@ -11,7 +11,7 @@
     "dev": "NODE_ENV=development node dist/src/app.js",
     "mcp": "node dist/mcp-server.js",
     "build": "tsc && npm run build:addons",
-    "build:addons": "cd addons/forms && npm install --silent && cd ../calendar && npm install --silent && npx tsc -p tsconfig.json && cd ../elasticsearch && npm install --silent && npx tsc -p tsconfig.json && cd ../journal && npm install --silent && npx tsc -p tsconfig.json && cd ../feeds && npm install --silent && npx tsc -p tsconfig.json && cd ../demo && npx tsc -p tsconfig.json",
+    "build:addons": "cd addons/forms && npm install --silent && npx tsc -p tsconfig.json && cd ../calendar && npm install --silent && npx tsc -p tsconfig.json && cd ../elasticsearch && npm install --silent && npx tsc -p tsconfig.json && cd ../journal && npm install --silent && npx tsc -p tsconfig.json && cd ../feeds && npm install --silent && npx tsc -p tsconfig.json && cd ../demo && npx tsc -p tsconfig.json",
     "create:addon": "tsx scripts/create-addon.ts",
     "audit:verify": "tsx scripts/verify-audit-chain.ts",
     "audit:restart-chain": "tsx scripts/restart-audit-chain.ts",

@@ -51,6 +51,7 @@ export default function reservationRoutes(
 
       // 1. Authentication required
       const ctx = ApiContext.from(req, engine);
+      const viewer = { username: ctx.username ?? undefined, isAuthenticated: ctx.isAuthenticated, canManage: await ctx.hasPermission('calendar-manage') };
       ctx.requireAuthenticated();
 
       // 2. Validate body
@@ -129,7 +130,7 @@ export default function reservationRoutes(
       }
 
       // 7. Return 201 with the stripped event (requester sees their own _private)
-      res.status(201).json(m.toFullCalendar(event, ctx));
+      res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
       if (err instanceof ApiError) {
         res.status(err.status).json({ error: err.message });
@@ -149,10 +150,12 @@ export default function reservationRoutes(
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();
 
+      // #1198/#1220: the manager asks "may this viewer manage?" — answered by
+      // policy here, never by a role name inside the manager.
       await m.cancelReservation(String(req.params['id']), {
         isAuthenticated: ctx.isAuthenticated,
-        username: ctx.username,
-        roles: ctx.roles
+        username: ctx.username ?? undefined,
+        canManage: await ctx.hasPermission('calendar-manage')
       });
 
       res.status(204).end();

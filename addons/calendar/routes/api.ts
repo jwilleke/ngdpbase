@@ -3,6 +3,21 @@ import { Router, type Request, type Response } from 'express';
 import { generateIcsCalendar } from 'ts-ics';
 import type { IcsEvent } from 'ts-ics';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import type { CalendarViewer } from '../managers/CalendarDataManager.js';
+
+/**
+ * Who is looking, as the manager needs to know it (#1198/#1220): identity for
+ * "is this the requester", and whether policy grants calendar-manage. The
+ * policy question is asked here, at the door, once per request; the manager
+ * never reads a role name.
+ */
+async function viewerOf(ctx: ApiContext): Promise<CalendarViewer> {
+  return {
+    username: ctx.username ?? undefined,
+    isAuthenticated: ctx.isAuthenticated,
+    canManage: await ctx.hasPermission('calendar-manage')
+  };
+}
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarEvent } from '../managers/CalendarDataManager.js';
@@ -46,29 +61,31 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   }
 
   // ── GET /api/calendar/events ─────────────────────────────────────────────
-  router.get('/events', (req: Request, res: Response) => {
+  router.get('/events', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
+      const viewer = await viewerOf(ctx);
       const events = m.query({
         start:      qs(req.query['start']),
         end:        qs(req.query['end']),
         calendarId: qs(req.query['calendarId'])
       });
-      res.json(events.map(e => m.toFullCalendar(e, ctx)));
+      res.json(events.map(e => m.toFullCalendar(e, viewer)));
     } catch (err) {
       handleError(err, res);
     }
   });
 
   // ── GET /api/calendar/events/search?q= ───────────────────────────────────
-  router.get('/events/search', (req: Request, res: Response) => {
+  router.get('/events/search', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       const ctx = ApiContext.from(req, engine);
+      const viewer = await viewerOf(ctx);
       const q = qs(req.query['q']) ?? '';
-      const results = m ? m.search(q).map(e => m.toFullCalendar(e, ctx)) : [];
+      const results = m ? m.search(q).map(e => m.toFullCalendar(e, viewer)) : [];
       res.json({ results });
     } catch (err) {
       handleError(err, res);
@@ -81,24 +98,26 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
+      const viewer = await viewerOf(ctx);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin', 'clubhouse-manager');
+      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
-      res.status(201).json(m.toFullCalendar(event, ctx));
+      res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
     }
   });
 
   // ── GET /api/calendar/events/:id ─────────────────────────────────────────
-  router.get('/events/:id', (req: Request, res: Response) => {
+  router.get('/events/:id', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
+      const viewer = await viewerOf(ctx);
       const event = m.getById(String(req.params['id']));
       if (!event) { res.status(404).json({ error: 'Event not found' }); return; }
-      res.json(m.toFullCalendar(event, ctx));
+      res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
     }
@@ -110,10 +129,11 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
+      const viewer = await viewerOf(ctx);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin', 'clubhouse-manager');
+      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.update(String(req.params['id']), req.body as Parameters<typeof m.update>[1]);
-      res.json(m.toFullCalendar(event, ctx));
+      res.json(m.toFullCalendar(event, viewer));
     } catch (err) {
       handleError(err, res);
     }
@@ -126,7 +146,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();
-      ctx.requireRole('admin', 'clubhouse-manager');
+      await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       await m.delete(String(req.params['id']));
       res.status(204).end();
     } catch (err) {
@@ -138,7 +158,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   //
   // RFC 5545 iCalendar feed. Subscribable from Apple Calendar, Google Calendar, etc.
   // PUBLIC events only — CONFIDENTIAL events are never exported.
-  router.get('/:calendarId/feed.ics', (req: Request, res: Response) => {
+  router.get('/:calendarId/feed.ics', async (req: Request, res: Response) => {
     try {
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }

@@ -12,12 +12,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ConfigurationManager from '../../managers/ConfigurationManager';
-import {
-  configFilePaths,
-  deepMergeConfigs,
-  loadMergedConfigSync,
-  readConfigFilesSync
-} from '../configFiles';
+import { configFilePaths, deepMergeConfigs, readConfigFilesSync } from '../configFiles';
+import { loadMergedConfigSync } from '../addonConfigLayer';
 
 let dataDir: string;
 

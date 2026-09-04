@@ -75,6 +75,15 @@ Add-ons are configured in `config/app-custom-config.json`:
 
 By default, all add-ons are __disabled__. You must explicitly enable each add-on.
 
+### Default configuration
+
+An add-on may ship `config/default-config.json`. When the add-on is enabled, that file is a layer of the configuration merge, between the shipped `config/app-default-config.json` and the instance's `app-custom-config.json`, so:
+
+- the add-on's own settings (`ngdpbase.addons.your-addon.*`) get sensible defaults the operator can override;
+- the add-on can __declare a permission__ in `ngdpbase.permissions.definitions` and __grant it__ with its own policy in `ngdpbase.access.policies` (give the policy its own `id`; arrays of `id` objects merge by id, plain arrays replace wholesale). Routes then ask `await ctx.requirePermission('your-addon-manage')`. Never name a role in add-on code — a deployment grants your permission to its own roles in its own custom file.
+
+The calendar add-on is the worked example: `addons/calendar/config/default-config.json` declares `calendar-manage`. Details: [docs/security-developer-guide.md](../docs/security-developer-guide.md#addons).
+
 ## Accessing Configuration
 
 In your `register()` function, the `config` parameter contains all settings under `ngdpbase.addons.your-addon.*`:

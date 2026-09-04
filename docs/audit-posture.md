@@ -8,7 +8,7 @@ relatedModules: [AuditManager, FileAuditProvider, BaseAuditProvider, NullAuditPr
 
 # Audit posture
 
-What auditing on this instance can actually do, as implemented in code.
+What auditing on this instance can actually do, as implemented in code. How to add or change an event is the [audit developer guide](audit-developer-guide.md).
 
 This is an inventory, not a plan and not a recommendation — except [Audit planning](#audit-planning), which records decisions taken and not yet built. The living contract is `ngdpbase.audit.events` in `config/app-default-config.json` (every event, what happens when its record cannot be written, and whether it fires); `src/utils/auditRegistry.ts` reads it. The manager API is [AuditManager](managers/AuditManager.md). Decisions about security-related *settings* live in [security-posture.md](security-posture.md). The design that produced this work is [planning/Security-auditing.md](planning/Security-auditing.md).
 

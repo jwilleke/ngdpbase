@@ -77,6 +77,11 @@ describe('UserManager', () => {
           'ngdpbase.roles.definitions': {
             admin: { name: 'admin', displayName: 'Administrator', permissions: ['*'] },
             reader: { name: 'reader', displayName: 'Reader', permissions: ['page:read'] }
+          },
+          // #1220: the permission catalog is configuration, read live.
+          'ngdpbase.permissions.definitions': {
+            'page-read': { description: 'View pages' },
+            'admin-system': { description: 'System administration' }
           }
         };
         return config[key] !== undefined ? config[key] : defaultValue;
