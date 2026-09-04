@@ -211,6 +211,7 @@ Present in this repo:
 - A static invariant test asserting that every view calling a shared template helper is rendered by a route that supplies it
 - A registry-drift test ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058), closed) — every permission in config is checked somewhere, and every permission checked in code exists in config. One documented exception: `page-export` is declared and not the gate (export is gated on read until a bulk surface exists). Zero unknown orphans, zero unregistered checks
 - `npm run lint:audit` — `ngdpbase.audit.events` and the emitters must agree in every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, or an emitter the script cannot resolve is red ([#1206](https://github.com/jwilleke/ngdpbase/issues/1206))
+- `npm run docs:audit:check` — the audit event table and the coverage results in the docs are generated from `ngdpbase.audit.events`; a tier or description changed in configuration without regenerating is red ([#1207](https://github.com/jwilleke/ngdpbase/issues/1207))
 - `npm run lint:addons` — addon load and boundary checks. Not the same as holding addons to every `src/` invariant; that gap is [#1177](https://github.com/jwilleke/ngdpbase/issues/1177)
 
 Worth adding wherever this core is used:

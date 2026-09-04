@@ -14,6 +14,11 @@ npm run lint:docs --silent
 # the regenerator. Cheap (~200ms).
 npm run docs:index:check --silent
 
+# Audit docs drift (#1207) — the event table and the coverage results are
+# generated from ngdpbase.audit.events by `npm run docs:audit`. A tier or
+# description edited in configuration without regenerating fails here.
+npm run docs:audit:check --silent
+
 # CSRF client-fetch guard (#727) — fails the commit if any client-surface
 # file issues a state-changing fetch() without the CSRF token (#663
 # middleware rejects those with an opaque text/plain 403). Genuine

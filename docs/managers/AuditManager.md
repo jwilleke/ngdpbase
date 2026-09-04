@@ -476,8 +476,8 @@ a permission authorizes, the two share the slug — `page-read` authorizes,
 `page-read` records — and the containing map says which is meant (#1201).
 
 __This table is generated from `ngdpbase.audit.events` in
-`config/app-default-config.json` and checked against it by
-`auditVocabulary.test.ts`.__ Editing one without the other fails CI. The code
+`config/app-default-config.json` by `npm run docs:audit` (#1207) and checked by
+`npm run docs:audit:check` and `auditVocabulary.test.ts`.__ Editing it by hand fails CI. The code
 lists the same names once in `src/utils/auditEventNames.ts`, typed, and
 `auditEventNames.test.ts` holds the two equal. The tier is the durability the
 record is held to (`critical` — the action does not complete unless the record
@@ -486,6 +486,7 @@ and `Recorded` is the `enabled` switch. An operator's `app-custom-config.json`
 may change either; configuration is authoritative, and the change is itself
 audited.
 
+<!-- AUTO:audit-events BEGIN -->
 | Event Type | Description | Tier | Recorded |
 | ----- | ----- | ----- | ----- |
 | `page-create` | Page created | standard | yes |
@@ -530,6 +531,7 @@ audited.
 | `search-page` | Page search; not recorded, read volume | volume | no |
 | `user-read` | User profile read; not recorded, read volume | volume | no |
 | `admin-read` | Admin dashboard read; not recorded, read volume | volume | no |
+<!-- AUTO:audit-events END -->
 
 #### Retired names
 
