@@ -208,7 +208,7 @@ npm run lint:audit         # the same check, exits 1 on an unambiguous gap
 
 `scripts/audit-coverage.ts` compares the three lists that had no way of being compared by hand: the __vocabulary__ (names that may be used), the __registry__ (what must be recorded, and at what tier), and the __emitters__ (what the source actually sends). It walks `src/` and `addons/`, and resolves interpolated names — emitters build them as `` `page.${op}` ``, so a plain text search reports `page-create` as unemitted while it fires on every page save.
 
-It fails the build only on the unambiguous directions: a required event nobody emits, a name outside the vocabulary, or an emitter it cannot account for. It does __not__ fail on an emitted event that carries no registry requirement, because closing those needs a tier decision per event ([#1184](https://github.com/jwilleke/ngdpbase/issues/1184)) and a check that fails before the decision exists is one people switch off.
+It fails the build on every direction (#1206): an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, and an emitter it cannot account for. Events switched off are reported, not failed: they are decisions on the record.
 
 #### Results on 2026-09-03
 
@@ -290,15 +290,9 @@ Every event is `{target}-{action}`, sharing the permission's slug where the acti
 
 The switch, its comment, and its posture pointer are gone. `page-read` ships `enabled: false`, `recordAuditEvent` honours the switch for every event, and `ngdpbase.audit.events` is a posture ingredient (group Audit, no restart), so a tier or switch change is reported by `posture-recorded` at the next boot. A custom configuration still setting the old key gets one boot warning naming the new location.
 
-### What the coverage check proves after this
+### What the coverage check proves — landed in [#1206](https://github.com/jwilleke/ngdpbase/issues/1206)
 
-`scripts/audit-coverage.ts` reads `ngdpbase.audit.events` instead of parsing two source files, and `npm run lint:audit` fails on:
-
-- an emitter whose name is not in configuration — the [#1184](https://github.com/jwilleke/ngdpbase/issues/1184) direction, now closable because every event has a decision
-- an event that is `enabled` and has no emitter — a stated requirement the code does not meet
-- a name that is not `{target}-{action}`
-
-It reports, without failing, events declared with `enabled: false`: the decisions not to record, listed by the same mechanism that lists everything else. [Results](#results-on-2026-09-03) and [Permissions with no audit event](#permissions-with-no-audit-event) are regenerated from that report rather than restated by hand.
+`scripts/audit-coverage.ts` reads `ngdpbase.audit.events` and resolves emitters through `src/utils/auditEventNames.ts`. `npm run lint:audit` fails on every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, and an emitter it cannot resolve. It reports, without failing, the events switched off. [Results](#results-on-2026-09-03) and [Permissions with no audit event](#permissions-with-no-audit-event) are regenerated from that report under [#1207](https://github.com/jwilleke/ngdpbase/issues/1207).
 
 ## See also
 

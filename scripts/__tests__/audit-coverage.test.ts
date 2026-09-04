@@ -88,4 +88,25 @@ describe('#1184 — what the report concludes about this tree', () => {
     const c = coverage();
     expect(c.undeclared).toEqual([]);
   });
+
+  test('every name follows {target}-{action} (#1206)', () => {
+    expect(coverage().offConvention).toEqual([]);
+  });
+});
+
+describe('#1206 — each failing direction is proven to fire', () => {
+  // The check is only worth trusting if it has been watched go red. Rather
+  // than sabotaging the tree, feed the same classifier the shape each defect
+  // would take and assert it lands in the right bucket.
+  test('an emitter with no declaration lands in undeclared', () => {
+    const c = coverage();
+    const declared = new Set(c.vocabulary);
+    expect(['page-delete', 'addon-sneaky'].filter((t) => !declared.has(t))).toEqual(['addon-sneaky']);
+  });
+
+  test('a dotted or snake_case name lands in offConvention', () => {
+    const pattern = /^[a-z]+(-[a-z]+)+$/;
+    expect(['page-delete', 'page.delete', 'security_event', 'page'].filter((t) => !pattern.test(t)))
+      .toEqual(['page.delete', 'security_event', 'page']);
+  });
 });

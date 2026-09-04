@@ -210,7 +210,7 @@ Present in this repo:
 - Structured-data invariant test, docs-coverage and docs-index checks, a CSRF client-fetch guard, an outbound HTTP-boundary lint, and a permission-subject lint (forward the context; do not rebuild one), all wired into the pre-commit hook
 - A static invariant test asserting that every view calling a shared template helper is rendered by a route that supplies it
 - A registry-drift test ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058), closed) — every permission in config is checked somewhere, and every permission checked in code exists in config. One documented exception: `page-export` is declared and not the gate (export is gated on read until a bulk surface exists). Zero unknown orphans, zero unregistered checks
-- `npm run lint:audit` — `ngdpbase.audit.events` and the emitters must agree: a declared, enabled event nobody emits, or an emitted name nothing declares, is red. Failing on the second direction is [#1206](https://github.com/jwilleke/ngdpbase/issues/1206); today it is reported
+- `npm run lint:audit` — `ngdpbase.audit.events` and the emitters must agree in every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, or an emitter the script cannot resolve is red ([#1206](https://github.com/jwilleke/ngdpbase/issues/1206))
 - `npm run lint:addons` — addon load and boundary checks. Not the same as holding addons to every `src/` invariant; that gap is [#1177](https://github.com/jwilleke/ngdpbase/issues/1177)
 
 Worth adding wherever this core is used:

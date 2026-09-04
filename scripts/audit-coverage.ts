@@ -21,7 +21,7 @@
  * raw literal or an interpolated template in `eventType:` position is reported
  * rather than dropped.
  *
- * Run: `npm run audit:coverage` (report) — `--check` exits 1 on a gap.
+ * Run: `npm run audit:coverage` (report) — `--check` (npm run lint:audit) exits 1 on any gap (#1206).
  */
 
 import { readFileSync, readdirSync, statSync } from 'fs';
@@ -122,7 +122,12 @@ export interface Coverage {
   unemitted: string[];
   /** Emitted but not a permitted name. The parity tests already cover this; belt and braces. */
   offVocabulary: string[];
+  /** Declared or emitted under a name that is not `{target}-{action}` (#1201, #1206). */
+  offConvention: string[];
 }
+
+/** The naming rule, as `src/utils/auditEventNames.ts` states it: target first, hyphens only. */
+const NAME_PATTERN = /^[a-z]+(-[a-z]+)+$/;
 
 export function coverage(): Coverage {
   const vocabulary = vocabularyTypes();
@@ -137,7 +142,8 @@ export function coverage(): Coverage {
     unresolvedEmitters: unresolved,
     undeclared: emitted.filter((t) => !vocabSet.has(t)),
     unemitted: [...registry.keys()].filter((t) => !emitted.includes(t)).sort(),
-    offVocabulary: emitted.filter((t) => !vocabSet.has(t))
+    offVocabulary: emitted.filter((t) => !vocabSet.has(t)),
+    offConvention: [...new Set([...vocabulary, ...emitted])].filter((t) => !NAME_PATTERN.test(t)).sort()
   };
 }
 
@@ -156,6 +162,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log('  These have no tier, so isCriticalEventType() answers false by absence.');
   for (const t of c.undeclared) console.log(`   ${t}`);
 
+  if (c.offConvention.length) {
+    console.log(`\nNOT {target}-{action} (${c.offConvention.length})`);
+    for (const t of c.offConvention) console.log(`   ${t}`);
+  }
+
+  const off = c.vocabulary.filter((t) => !c.registry.has(t));
+  if (off.length) {
+    console.log(`\nDECLARED AND SWITCHED OFF (${off.length}) — decisions on the record, not gaps`);
+    for (const t of off) console.log(`   ${t}`);
+  }
+
   if (c.unemitted.length) {
     console.log(`\nREQUIRED BUT NOT EMITTED (${c.unemitted.length})`);
     console.log('  A stated requirement with no emitter is the worse direction.');
@@ -173,19 +190,21 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     for (const t of c.unresolvedEmitters) console.log(`   ${t}`);
   }
 
-  const failed = c.unemitted.length + c.offVocabulary.length + c.unresolvedEmitters.length;
+  // #1206: every direction fails. Until #1200 gave every event a decision,
+  // `undeclared` was reported and not failed on, because a check that fails
+  // before the decision exists is one people disable. The decision exists now.
+  const failed =
+    c.undeclared.length + c.unemitted.length + c.offVocabulary.length +
+    c.unresolvedEmitters.length + c.offConvention.length;
   console.log('');
   if (!check) {
     console.log('Report only. Run with --check to fail the build on a gap.');
     process.exit(0);
   }
-  // `undeclared` is NOT failed on yet: closing those needs a tier decision per
-  // event (#1184), and a check that fails before the decision exists is one
-  // people disable. It fails on the directions that are unambiguous.
   if (failed > 0) {
-    console.error(`${failed} unambiguous gap(s).`);
+    console.error(`${failed} gap(s): an emitted name with no declaration, a declared and enabled name nobody emits, a name outside the convention, or an emitter this could not resolve.`);
     process.exit(1);
   }
-  console.log(`No unambiguous gaps. ${c.undeclared.length} type(s) await a registry decision (#1184).`);
+  console.log('No gaps: configuration and emitters agree.');
   process.exit(0);
 }
