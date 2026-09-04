@@ -22,6 +22,7 @@ import fs from 'fs-extra';
 import { constants as fsConstants } from 'fs';
 import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.js';
 import { resolveListenPort } from './utils/resolveListenPort.js';
+import { loadMergedConfigSync } from './utils/configFiles.js';
 
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
@@ -138,69 +139,34 @@ function checkAndCreatePidLock(): void {
 checkAndCreatePidLock();
 
 /**
- * Read the merged configuration directly from disk, before the engine exists.
+ * The merged configuration, before the engine exists.
  *
- * `app.listen` runs at boot step 3 and `engine.initialize()` at step 4, so there
- * is no ConfigurationManager to ask when the socket is bound (#1090). This reads
- * the same two files the manager would, in the same order, purely so the listen
- * port can honour `ngdpbase.server.port`.
+ * `app.listen` runs at boot step 3 and `engine.initialize()` at step 4, so
+ * there is no ConfigurationManager to ask when the socket is bound (#1090).
+ * #1214: this is the manager's own read and merge (src/utils/configFiles.ts),
+ * not a second one — the earlier shallow spread here would have replaced a
+ * whole map on override. It still does not resolve `${VAR}` refs, apply
+ * env-key overrides, or run the legacy-key migrations; the pre-engine callers
+ * skip any value they cannot use, and a base URL set under a legacy key is
+ * not seen as explicit here.
  *
- * Deliberately narrow: it does NOT resolve `${VAR}` refs or apply environment
- * overrides — that is the manager's job, and duplicating it here would be a
- * second config implementation. `resolveListenPort` skips any value it cannot
- * read as a port, which covers an unexpanded template.
- *
- * Returns null on any failure. A missing or malformed config file must not stop
- * the server binding; the port simply falls back.
+ * Returns null on any failure. A missing or malformed config file must not
+ * stop the server binding; the port simply falls back.
  */
 function readConfigForPort(): Record<string, unknown> | null {
-  try {
-    const instanceDataFolder =
-      process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
-    const customConfigFile = process.env.INSTANCE_CONFIG_FILE || 'app-custom-config.json';
-
-    let merged: Record<string, unknown> = {};
-
-    const defaultPath = path.join(projectRoot, 'config', 'app-default-config.json');
-    if (fs.existsSync(defaultPath)) {
-      merged = { ...(fs.readJsonSync(defaultPath) as Record<string, unknown>) };
-    }
-
-    const customPath = path.join(instanceDataFolder, 'config', customConfigFile);
-    if (fs.existsSync(customPath)) {
-      merged = { ...merged, ...(fs.readJsonSync(customPath) as Record<string, unknown>) };
-    }
-
-    return merged;
-  } catch {
-    return null;
-  }
+  return loadMergedConfigSync()?.merged ?? null;
 }
 
 /**
  * Which keys the operator set themselves, as opposed to inheriting (#1163).
  *
- * `readConfigForPort()` returns the two files merged, which cannot answer
- * "did they configure this or is it the shipped default?" — and for the base
- * URL that difference decides whether a redirect is safe to issue. The shipped
- * value is `http://localhost:3000`; sending every visitor there would be worse
- * than the handshake error the redirect replaces.
- *
- * `ConfigurationManager.isBaseUrlExplicit()` (#642) makes the same distinction
- * for consumers that emit absolute URLs. This is the pre-engine equivalent,
- * needed because the socket is bound before the manager exists.
+ * The merged view cannot answer "did they configure this or is it the
+ * shipped default?" — and for the base URL that difference decides whether a
+ * redirect is safe to issue. `ConfigurationManager.isBaseUrlExplicit()` (#642)
+ * makes the same distinction after the engine exists.
  */
 function readCustomConfigKeys(): Set<string> | null {
-  try {
-    const instanceDataFolder =
-      process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
-    const customConfigFile = process.env.INSTANCE_CONFIG_FILE || 'app-custom-config.json';
-    const customPath = path.join(instanceDataFolder, 'config', customConfigFile);
-    if (!fs.existsSync(customPath)) return new Set();
-    return new Set(Object.keys(fs.readJsonSync(customPath) as Record<string, unknown>));
-  } catch {
-    return null;
-  }
+  return loadMergedConfigSync()?.customKeys ?? null;
 }
 
 // --- Main Application Bootstrap ---
