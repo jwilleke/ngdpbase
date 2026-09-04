@@ -1,3 +1,11 @@
+---
+name: Guiding framework
+description: Domain-neutral rules for how this codebase is put together — one manager per resource, context, configuration, authorization
+dateModified: 2026-09-04
+category: architecture
+relatedModules: [BaseManager, UserManager, AuthManager, AuditManager, PolicyEvaluator]
+---
+
 # Guiding framework
 
 How this codebase is put together, stated as rules rather than as an argument for them. Written for maintainers working here and for anyone building on the same core.
@@ -5,6 +13,15 @@ How this codebase is put together, stated as rules rather than as an argument fo
 Every rule below is implemented in `src/` today. Where a rule is only partly implemented, that is said in [Known gaps](#known-gaps) rather than left for the reader to discover.
 
 The rules are domain-neutral. Nothing in the model below mentions pages, media or records — that is deliberate, and it is what makes the same core serve a different application.
+
+## Related guidelines
+
+This file is the model. Two other documents record instance-level *facts* that this model does not:
+
+- [Security posture](./security-posture.md) — decisions about security-related *settings*, and the principles that context (P1) and allow/deny (P2) must satisfy. Open work against those principles is listed there.
+- [Audit posture](./audit-posture.md) — what auditing actually implements (chain, registry, durability, witness) and the [declared gaps](./audit-posture.md#declared-gaps) in emitters and exemptions.
+
+A gap that is a broken rule in this model is in [Known gaps](#known-gaps). A gap that is an unimplemented audit event or a posture setting is in those files, not duplicated here.
 
 ## The invariant
 
@@ -22,11 +39,12 @@ A manager is justified by being the only door to a resource — not by having al
 ## The model
 
 1. A resource has exactly one manager, and no other path reaches it.
-2. Context is request-scoped and says who is asking. It is passed into managers; managers are not reached through it.
+2. Context says who is asking. It is passed into managers; managers are not reached through it. A request builds it per request. A job, timer or boot path that acts still needs one — omitting it is not a system principal.
 3. Managers decide and act. Providers implement and return. A provider reports a result; only the manager turns that result into an effect.
 4. Configuration binds capabilities to providers; providers supply behaviour. Config selects and parameterises. It never expresses logic.
 5. A capability that is not configured is never loaded.
 6. Every action on a resource is a named permission, declared as data in one registry, formatted `{target}-{action}`.
+   Every recorded action is a named audit event, declared as data in a second registry, same format. Permissions are authority; events are actions taken. Both registries are configuration, and configuration is authoritative: code emits what the event registry names and enforces the tier it declares. An operator narrowing what is recorded is a decision on the record, not a quiet edit — the change is itself audited.
 7. Roles collect permissions. A flat list, unordered, additive only.
 8. Capability and scope are separate. A role says what may be done; the assignment says over which subjects. Neither is encoded in the other's name.
 9. Evaluation is tiered, and the resource's own attributes beat global policy.
@@ -42,7 +60,7 @@ Three layers, one job each.
 
 | Layer | Scope | Job | May not |
 |---|---|---|---|
-| Context | One request | Carry who is asking — subject, roles, request/response | Be a service locator that bypasses a manager |
+| Context | One request or act | Carry who is asking — subject, provenance, request/response when there is one | Be a service locator that bypasses a manager |
 | Manager | One resource | Decide, enforce policy, audit, turn a result into an effect | Reach another resource's store |
 | Provider | One capability | Do the work and return a result | Act on that result |
 
@@ -58,6 +76,8 @@ Two kinds of field live in it, with opposite safety needs:
 - __Request incidentals__ — locale, timezone, theme, user agent, client IP. Mutable and harmless.
 
 Holding the engine on the context is fine. The hazard was never `ctx.engine`; it is `ctx.engine.getManager('x').store` — reaching past a manager. That is what the boundary rule forbids.
+
+A request is the common case, not the only one. A job, a timer, and a boot path also act on resources. Each still needs a context that says who is asking — see [security-posture.md](security-posture.md) P1. An omitted actor is not "the system"; it is nobody, and the record is wrong. `JobContext` is the shape for enqueued work. Timers and boot paths are the unfinished half of the same rule ([Known gaps](#known-gaps)).
 
 ### Managers are gates, not piles
 
@@ -187,15 +207,17 @@ A rule that lives only in a document decays at the first deadline, and its decay
 
 Present in this repo:
 
-- Structured-data invariant test, docs-coverage and docs-index checks, and a client-fetch guard, all wired into the pre-commit hook
+- Structured-data invariant test, docs-coverage and docs-index checks, a CSRF client-fetch guard, an outbound HTTP-boundary lint, and a permission-subject lint (forward the context; do not rebuild one), all wired into the pre-commit hook
 - A static invariant test asserting that every view calling a shared template helper is rendered by a route that supplies it
+- A registry-drift test ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058), closed) — every permission in config is checked somewhere, and every permission checked in code exists in config. One documented exception: `page-export` is declared and not the gate (export is gated on read until a bulk surface exists). Zero unknown orphans, zero unregistered checks
+- `npm run lint:audit` — vocabulary, registry and emitters must agree on the unambiguous directions (a required event nobody emits, a name outside the vocabulary). It does *not* fail on an emitted event with no registry requirement; that decision is [#1184](https://github.com/jwilleke/ngdpbase/issues/1184)
+- `npm run lint:addons` — addon load and boundary checks. Not the same as holding addons to every `src/` invariant; that gap is [#1177](https://github.com/jwilleke/ngdpbase/issues/1177)
 
 Worth adding wherever this core is used:
 
-- __A store-boundary lint rule__ — only `managers/` may import from `providers/`; everything else goes through a manager ([#1057](https://github.com/jwilleke/ngdpbase/issues/1057)). Cheapest to add while the count of exceptions is small: here it is two, both benign — the logger, which bootstraps before any manager exists, and one type-only import that erases at compile time.
-- __A registry-drift test__ — assert that every permission in config is checked somewhere in code, and that every permission checked in code exists in config ([#1058](https://github.com/jwilleke/ngdpbase/issues/1058)). It catches drift in both directions: an orphan permission that protects nothing, and a check spelled `x-view` where the registry says `x-read`. One fails open and looks fine; the other fails closed and also looks fine.
+- __A store-boundary lint rule__ — only `managers/` may import from `providers/`; everything else goes through a manager. [#1057](https://github.com/jwilleke/ngdpbase/issues/1057) closed without the lint; the live issue is [#1134](https://github.com/jwilleke/ngdpbase/issues/1134). Cheapest to add while the count of exceptions is small: here it is still two, both benign — the logger (`src/utils/logger.ts`), which bootstraps before any manager exists, and one type-only import in `DawarichCompatRoutes.ts` that erases at compile time.
 
-Both are currently clean here — zero orphan permissions, zero unregistered checks, two justified boundary exceptions. That is the argument for writing the checks now: a passing guard written today pins a property, while the same guard written after the first drift is a bug report.
+The registry-drift test is the argument for writing the store-boundary lint now: a passing guard written today pins a property, while the same guard written after the first drift is a bug report.
 
 Whatever the check, prove it fails before trusting it. A static scan that matches nothing passes vacuously, and a guard nobody has watched go red is a guard nobody knows works.
 
@@ -211,25 +233,49 @@ A useful measure for anyone adopting this: count the edits to core files needed 
 
 ## Verified inventory
 
-Measured against this repository at v4.10.0. Included so the model above can be checked rather than taken on trust.
+Measured against this repository at v4.13.0. Included so the model above can be checked rather than taken on trust.
 
 | Fact | Value |
 |---|---|
-| TypeScript in `src/`, excluding tests | ~104,500 lines |
-| Managers | 38, plus `BaseManager` |
-| Providers | 36 |
+| TypeScript in `src/`, excluding tests | ~115,000 lines |
+| Managers | 38 extending `BaseManager` in `src/managers/`, plus `BaseManager`. `WikiEngine` registers 39 names (includes `MarkupParser`; Email and Media are conditional). `ThemeManager` lives under `managers/` but is not engine-registered |
+| Providers | 42 files matching `*Provider.ts` in `src/`, excluding tests |
 | Permissions in the registry | 19, across 5 targets |
-| Auth providers, all registered through the public method | 6 |
+| Auth providers, all registered through the public method | 6 (all six are also top-level imported — see Known gaps) |
 | Capabilities safe to leave unconfigured | audit and cache (`Null` providers), mail (`console`), search (in-process index) |
 
 ## Known gaps
 
-Stated as facts, each re-verified against `src/` at v4.10.0 rather than inferred from a file listing. None is resolved by the model above.
+Stated as facts, each re-verified against `src/` at v4.13.0 rather than inferred from a file listing. None is resolved by the model above.
+
+Gaps that are *settings* or *audit completeness* belong in [security-posture.md](security-posture.md) and [audit-posture.md](audit-posture.md), not here. This list is where a rule in this document is only partly true in `src/`.
+
+### The chokepoint (rule 1)
+
+- __`savePage()` is the ACL-free write primitive.__ Routes call `savePageWithContext()`. `savePage()` still writes without a permission check. It now emits an audit record attributed to `system` (or the metadata editor), which closed the silent-write hole and did not close the door. Tracked by [#1135](https://github.com/jwilleke/ngdpbase/issues/1135).
+- __Rendering a page can create content.__ `AttachmentHandler` writes from inside the parser pipeline, so a read path performs a write. Tracked by [#1136](https://github.com/jwilleke/ngdpbase/issues/1136).
+- __Addon code is not held to the same invariants as `src/`.__ The scanners and the audit registry cover `src/` by default; addons write user data (form submissions, journal entries, calendar events, feed records) and emit no audit events. That is the extension-path rule failing: the path adopters use is the path nobody exercises under the same checks. Tracked by [#1177](https://github.com/jwilleke/ngdpbase/issues/1177). The audit inventory of that gap is in [audit-posture.md](audit-posture.md#declared-gaps).
+
+### Context (rule 2)
+
+- __Authorization fields on the context are optional.__ `PermissionSubject` declares `username`, `roles` and `isAuthenticated` as optional. Because `undefined` is falsy, a missing value fails closed by luck rather than by design — except when a caller rebuilds `{ username, roles, isAuthenticated }` and silently drops `viaToken`, which fails *open* against the token ceiling. The type cannot force `viaToken` to be carried (an ordinary session has none). What stops the rebuild is `scripts/check-permission-subject.ts`, a convention, not the compiler. Tracked as [security-posture.md](security-posture.md) P1 and [#1179](https://github.com/jwilleke/ngdpbase/issues/1179).
+- __Non-request actors often carry no principal.__ Timers (retention purges) and many boot paths act on resources as nobody. `JobContext` exists for enqueued work; the timer and boot classifications are [#1196](https://github.com/jwilleke/ngdpbase/issues/1196) and [#1197](https://github.com/jwilleke/ngdpbase/issues/1197).
+
+### Configuration and loading (rules 4–5)
 
 - __Provider resolution is a convention, not a mechanism.__ Ten managers each repeat the same sequence — read the key, apply the default, normalise the name, dynamic-import — and no shared factory exists. It is consistent because everyone remembers, not because anything enforces it. One factory mapping `(capability, config) → instance` would remove the repetition and make a fake injectable in tests without touching config files.
-- __Boot ordering is an explicit hand-written list, with no validation.__ Thirty-eight managers are registered in source order, and nothing declares or checks a dependency. A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
-- __Per-manager `backup()` yields a torn snapshot across managers.__ Nine managers implement `backup()` and nothing quiesces or orders them, so the parts are captured at different instants. Each manager can answer for itself; the coordination is engine-level work that is not designed.
-- __`UserManager` is 1,682 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
-- __Authorization fields on the context are optional.__ Because `undefined` is falsy, a missing value fails closed by luck rather than by design.
-- __`required-factors` is declared but never enforced.__ The key is read into `AuthManager` at boot and exposed by `getRequiredFactors()`, which nothing outside its own tests calls. Its documented meaning is "must be satisfied, in order" — an all-of list — while six providers are registered simultaneously as alternatives. Whoever implements multi-factor must satisfy every entry; wiring it as "try each until one succeeds" turns the same config into a bypass, because an attacker presents the single factor they hold.
-- __No restart-required marker on configuration keys.__ The config carries a `secret-keys` marker but no restart marker, while the admin UI can write any key at runtime via `setProperty`. Changing a provider binding that way leaves stated and actual configuration disagreeing silently.
+- __Auth providers are top-level imports.__ All six shipped auth providers are imported at the top of `AuthManager.ts`. Registration still goes through `registerProvider()` and is config-gated, but disabling a provider does not keep its module from loading. That is "not configured means not loaded" applied only to the managers that already used `import()`.
+- __Boot ordering is an explicit hand-written list, with no validation.__ Thirty-nine `registerManager` calls in `WikiEngine.ts`, source order, and nothing declares or checks a dependency. A manager initialising before the configuration it reads does not crash — it silently takes defaults, which is worse.
+- __`required-factors` is declared but never enforced.__ The key is read into `AuthManager` at boot and exposed by `getRequiredFactors()`, which nothing outside its own tests calls. Its documented meaning is "must be satisfied, in order" — an all-of list — while six providers are registered simultaneously as alternatives. Whoever implements multi-factor must satisfy every entry; wiring it as "try each until one succeeds" turns the same config into a bypass, because an attacker presents the single factor they hold. Visible in the posture as `["password"]` ([security-posture.md](security-posture.md) D15); MFA itself is [#421](https://github.com/jwilleke/ngdpbase/issues/421) / [#448](https://github.com/jwilleke/ngdpbase/issues/448).
+- __Restart requirements are marked on posture ingredients, not on the catalog.__ [security-posture.md](security-posture.md) D6 landed a `restart` flag on each posture entry, and the admin section marks those items. The rest of the configuration catalog still has only the `secret-keys` marker. `setProperty` can still write a boot-time key that is not in the posture view, and stated vs actual configuration then disagree silently.
+
+### Authorization (rules 6–10)
+
+- __`UserManager` is 1,907 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
+- __The audit registry still lives in code.__ `src/utils/auditRegistry.ts` and `src/utils/auditVocabulary.ts` declare the events and tiers; the decision that `ngdpbase.audit.events` in configuration is authoritative is recorded in [audit-posture.md](audit-posture.md#audit-planning) and built under [#1184](https://github.com/jwilleke/ngdpbase/issues/1184).
+- __Allow and deny still come from `isAuthenticated` and role names in places.__ The only honest allow is `hasPermission` / `canAccess`. `isAuthenticated` classifies the failure; `hasRole` is a membership lookup. Remaining gates are [security-posture.md](security-posture.md) P2 / [#1198](https://github.com/jwilleke/ngdpbase/issues/1198).
+- __Listing is not the same evaluator.__ `PolicyEvaluator` has no `filter()`. `PageManager.getAllPages()` returns every title; callers note that the list is unfiltered and that titles of unreadable pages leak. Rule 10 is unimplemented.
+
+### Backup (contracts)
+
+- __Per-manager `backup()` yields a torn snapshot across managers.__ Twelve managers override `backup()`. `BackupManager.createBackup()` iterates every registered manager and calls it, with no quiesce, no order, and continue-on-error. Each manager can answer for itself; the coordination is engine-level work that is not designed.

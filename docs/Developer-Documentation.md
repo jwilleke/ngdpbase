@@ -207,6 +207,7 @@ System design and architectural patterns:
 
 | Document | Description |
 | ---------- | ------------- |
+| [Guiding framework](guiding-framework.md) | Domain-neutral rules for how this codebase is put together — one manager per resource, context, configuration, authorization — and the known gaps against those rules |
 | [Current-Rendering-Pipeline](architecture/Current-Rendering-Pipeline.md) | Production rendering pipeline (request → HTML) |
 | [Current-Save-Page-Pipeline](architecture/Current-Save-Page-Pipeline.md) | Production save pipeline (request → disk) |
 | [MANAGERS-OVERVIEW](architecture/MANAGERS-OVERVIEW.md) | Manager-based architecture |
