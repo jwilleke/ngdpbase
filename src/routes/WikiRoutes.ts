@@ -3881,7 +3881,9 @@ ${panes}
           : [];
 
       // Resolve author-lock: admins and the page author may set or clear it
-      const isAdmin = wikiContext.hasRole('admin');
+      // #1198: authority from policy, not a role name — admin-system is what the
+      // admin role holds, and a delegated token without it does not.
+      const isAdmin = await wikiContext.hasPermission('admin-system');
       const existingCreator = existingPage?.metadata?.author;
       const isPageAuthor = currentUser?.username === existingCreator;
       let authorLock: boolean;
@@ -7806,7 +7808,7 @@ ${panes}
       let myShares: { active: number; total: number } | null = null;
       try {
         const shareManager = this.engine.getManager('ShareManager');
-        if (shareManager?.isEnabled() && this.canManageShares(wikiContext)) {
+        if (shareManager?.isEnabled() && (await this.canManageShares(wikiContext))) {
           const own = shareManager.list(currentUser.username ?? '');
           const now = Date.now();
           myShares = {
@@ -8687,8 +8689,8 @@ ${panes}
       const allParam = (req.query as Record<string, unknown>).all;
       const wantsAll = typeof allParam === 'string' && allParam === 'true';
       if (wantsAll) {
-        if (!wikiContext.hasRole('admin')) {
-          return res.status(403).json({ success: false, error: 'Admin role required to list all tokens' });
+        if (!(await wikiContext.hasPermission('admin-system'))) {
+          return res.status(403).json({ success: false, error: 'admin-system permission required to list all tokens' });
         }
         return res.json({ success: true, tokens: manager.listAll() });
       }
@@ -8778,7 +8780,7 @@ ${panes}
       }
 
       const isOwner = record.owner === user.username;
-      if (!isOwner && !wikiContext.hasRole('admin')) {
+      if (!isOwner && !(await wikiContext.hasPermission('admin-system'))) {
         // Same response as a missing token — do not confirm the existence of
         // another user's token to a caller who may not see it.
         return res.status(404).json({ success: false, error: 'Token not found' });
@@ -9030,7 +9032,7 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comment not found' });
       }
 
-      const isAdmin = wikiContext.hasRole('admin');
+      const isAdmin = await wikiContext.hasPermission('admin-system');
       if (!isAdmin && comment.author !== currentUser.username) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
@@ -9224,7 +9226,7 @@ ${panes}
       const target = footnotes.find((f: { id: string }) => f.id === footnoteId);
       if (!target) return res.status(404).json({ success: false, error: 'Footnote not found' });
 
-      const isAdmin = wikiContext.hasRole('admin');
+      const isAdmin = await wikiContext.hasPermission('admin-system');
       if (!isAdmin && target.createdBy !== currentUser.username) {
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
@@ -12196,7 +12198,9 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
 
-      if (!wikiContext.hasRole('admin', 'editor')) {
+      // #1198: asset-delete is held by exactly the roles this gate named; the
+      // attachment admin surface is where attachments are managed and removed.
+      if (!(await wikiContext.hasPermission('asset-delete'))) {
         return await this.renderError(
           req,
           res,
@@ -12234,7 +12238,7 @@ ${panes}
   async adminAttachmentsHealth(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.hasRole('admin', 'editor')) {
+      if (!(await wikiContext.hasPermission('asset-delete'))) {
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
       const attachmentManager = this.engine.getManager('AttachmentManager') as {
@@ -12261,7 +12265,7 @@ ${panes}
   async adminAttachmentsQuarantine(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!wikiContext.hasRole('admin')) {
+      if (!(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
       const attachmentManager = this.engine.getManager('AttachmentManager') as {
@@ -12287,7 +12291,7 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
 
-      if (!wikiContext.hasRole('admin', 'editor')) {
+      if (!(await wikiContext.hasPermission('asset-delete'))) {
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
 
@@ -12308,7 +12312,9 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
 
-      if (!wikiContext.hasRole('admin', 'editor', 'contributor')) {
+      // #1198: asset-upload is what the contributing roles hold; browsing the
+      // asset library is the surface for those who add to it.
+      if (!(await wikiContext.hasPermission('asset-upload'))) {
         return await this.renderError(
           req,
           res,
@@ -12491,7 +12497,7 @@ ${panes}
         // Attachments + media — editor asset surface only (same role gate the
         // single-type asset branch enforces). Skipped silently for readers.
         const assetService = this.engine.getManager('AssetService');
-        if (assetService && wikiContext.hasRole('admin', 'editor', 'contributor')) {
+        if (assetService && (await wikiContext.hasPermission('asset-upload'))) {
           const userRoles = wikiContext.userContext?.roles ?? [];
           const acctName = wikiContext.userContext?.username ?? '';
           const assetPage = await assetService.search({
@@ -12555,7 +12561,7 @@ ${panes}
       //   anything else (attachments, media) → editor surface, keep the
       //                 editor/contributor/admin gate.
       const needsEditorRole = typesParam !== 'page' && typesParam !== 'user';
-      if (needsEditorRole && !wikiContext.hasRole('admin', 'editor', 'contributor')) {
+      if (needsEditorRole && !(await wikiContext.hasPermission('asset-upload'))) {
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
 
@@ -12870,7 +12876,7 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
 
-      if (!wikiContext.hasRole('admin', 'editor', 'contributor')) {
+      if (!(await wikiContext.hasPermission('asset-upload'))) {
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
 
@@ -12892,8 +12898,10 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!wikiContext.hasRole('admin')) {
-        return res.status(403).json({ success: false, error: 'Admin role required to delete attachments' });
+      // #1198: asset-delete is the permission this action is; AttachmentManager
+      // checks it again at the door, so this is the same authority twice, not two.
+      if (!(await wikiContext.hasPermission('asset-delete'))) {
+        return res.status(403).json({ success: false, error: 'asset-delete permission required to delete attachments' });
       }
 
       const { attachmentId } = req.params;
@@ -16951,7 +16959,7 @@ ${description}
       const commonData = await this.getCommonTemplateData(req);
       // #854: Share entry point — visible only to users who may create shares.
       const shareManagerForAlbum = this.engine.getManager('ShareManager');
-      const canShare = !!shareManagerForAlbum?.isEnabled() && this.canManageShares(wikiContext);
+      const canShare = !!shareManagerForAlbum?.isEnabled() && (await this.canManageShares(wikiContext));
       return res.render('media-keyword', {
         ...commonData,
         wikiContext,
@@ -17678,9 +17686,18 @@ ${description}
   // Share management routes (#854) — privileged users (epic #842 slice 3)
   // ---------------------------------------------------------------------------
 
-  /** Decision 2: admin and editor roles may create/manage shares. */
-  private canManageShares(wikiContext: WikiContext): boolean {
-    return !!wikiContext.userContext?.isAuthenticated && wikiContext.hasRole('admin', 'editor');
+  /**
+   * Who may create and manage shares (#1198).
+   *
+   * Was `isAuthenticated && hasRole('admin', 'editor')`. Neither is an allow
+   * (security-posture.md P2): a role name skips the policy evaluator and the
+   * token ceiling, and a share is an anonymous-access credential. Until a
+   * `share-manage` permission exists in the catalog this asks for
+   * `admin-system`, which narrows editors out; the catalog change is the
+   * operator's call and is filed separately.
+   */
+  private async canManageShares(wikiContext: WikiContext): Promise<boolean> {
+    return wikiContext.hasPermission('admin-system');
   }
 
   /**
@@ -17702,7 +17719,7 @@ ${description}
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!this.canManageShares(wikiContext)) {
+      if (!(await this.canManageShares(wikiContext))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -17710,7 +17727,7 @@ ${description}
         return await this.renderError(req, res, 404, 'Not Found', 'Share links are disabled on this instance.');
       }
 
-      const isAdmin = wikiContext.hasRole('admin');
+      const isAdmin = await wikiContext.hasPermission('admin-system');
       const username = wikiContext.userContext?.username ?? '';
       const now = Date.now();
       const shares = shareManager.list(isAdmin ? undefined : username).map(r => ({
@@ -17765,7 +17782,7 @@ ${description}
   async sharesCreate(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!this.canManageShares(wikiContext)) {
+      if (!(await this.canManageShares(wikiContext))) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -17803,7 +17820,7 @@ ${description}
   async sharesRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!this.canManageShares(wikiContext)) {
+      if (!(await this.canManageShares(wikiContext))) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -17816,7 +17833,7 @@ ${description}
         return res.status(404).send('Not Found');
       }
       const username = wikiContext.userContext?.username ?? '';
-      if (!wikiContext.hasRole('admin') && record.createdBy !== username) {
+      if (!(await wikiContext.hasPermission('admin-system')) && record.createdBy !== username) {
         return res.status(403).send('Access denied');
       }
 
