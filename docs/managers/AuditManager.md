@@ -526,6 +526,10 @@ audited.
 | `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | volume | no |
 | `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | standard | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | standard | yes |
+| `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | critical | yes |
+| `backup-create` | A full backup written; where it went and who asked | standard | yes |
+| `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | standard | yes |
+| `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | standard | yes |
 | `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | critical | yes |
 | `asset-read` | Attachment read; not recorded, read volume | volume | no |
 | `search-page` | Page search; not recorded, read volume | volume | no |

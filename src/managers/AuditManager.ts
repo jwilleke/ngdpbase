@@ -748,7 +748,18 @@ class AuditManager extends BaseManager {
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
-    return await this.provider.exportAuditLogs(filters, format);
+    const exported = await this.provider.exportAuditLogs(filters, format);
+    // #1215: a copy of the trail left the system. Who, what format, what
+    // filter — never the content, which is the trail itself.
+    await this.record({
+      eventType: AUDIT_EVENT.AUDIT_EXPORT,
+      user: caller?.username ?? 'unknown',
+      action: 'audit-export',
+      result: 'success',
+      severity: 'medium',
+      metadata: { format, filters: { ...filters }, ...(caller ? {} : { actorMissing: true }) }
+    });
+    return exported;
   }
 
   /**

@@ -241,7 +241,7 @@ interface IConfigManager {
   describeProperty?(key: string): { envControlled: boolean; envVar: string | null; effective: unknown; source: string };
   getResolvedDataPath(key: string, defaultValue?: string): string;
   getInstanceDataFolder?(): string;
-  resetToDefaults(): Promise<void> | void;
+  resetToDefaults(actor?: { username?: string; ipAddress?: string }): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
   getBaseURL?(): string;
 }
@@ -10348,7 +10348,7 @@ ${panes}
       logger.debug(`📦 Admin backup requested by: ${currentUser.username}`);
 
       // Create backup
-      const backupPath = await backupManager.createBackup();
+      const backupPath = await backupManager.createBackup({}, { username: currentUser.username, ipAddress: req.ip });
       logger.debug(`✅ Backup created: ${backupPath}`);
 
       // Get backup filename
@@ -10611,6 +10611,20 @@ ${panes}
       const value: unknown = configManager?.getProperty(key, '');
 
       logger.info(`🔓 [adminRevealSecret] ${currentUser.username} revealed config key: ${key}`);
+      // #1215: a masked value was shown to a person. The key is recorded, the
+      // value never is. Recorded here because there is no manager door for a
+      // read of one configuration value.
+      await recordAuditEvent(this.auditSink(), {
+        eventType: AUDIT_EVENT.SECRET_REVEAL,
+        user: currentUser.username ?? 'unknown',
+        ipAddress: req.ip,
+        action: 'secret-reveal',
+        result: 'success',
+        severity: 'high',
+        resource: key,
+        resourceType: 'config-key',
+        metadata: { key }
+      }, (err) => logger.warn(`Audit log failed for secret-reveal of '${key}':`, err));
 
       // A secret is a scalar in every real case; JSON for anything else beats
       // "[object Object]", which would look like a value and is not one.
@@ -10723,7 +10737,7 @@ ${panes}
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      await configManager.resetToDefaults();
+      await configManager.resetToDefaults({ username: wikiContext.userContext?.username, ipAddress: req.ip });
       return res.redirect(
         '/admin/configuration?success=Configuration reset to defaults'
       );

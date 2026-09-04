@@ -14,6 +14,7 @@ import { configFilePaths, deepMergeConfigs, readConfigFilesSync } from '../utils
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 /** The config key naming which other keys hold secrets (#1030). */
 const SECRET_KEYS_KEY = 'ngdpbase.config.secret-keys';
@@ -1291,7 +1292,22 @@ class ConfigurationManager extends BaseManager {
    * await configManager.resetToDefaults();
    * console.log('Configuration reset to defaults');
    */
-  async resetToDefaults(): Promise<void> {
+  async resetToDefaults(actor?: { username?: string; ipAddress?: string }): Promise<void> {
+    // #1215: config-reset is CRITICAL — every operator decision discarded at
+    // once — so it is recorded and flushed BEFORE the custom file is emptied,
+    // and a record that cannot be written refuses the reset. Key NAMES only:
+    // a value may be a secret.
+    const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(sink, {
+      eventType: AUDIT_EVENT.CONFIG_RESET,
+      user: actor?.username ?? 'unknown',
+      ipAddress: actor?.ipAddress,
+      action: 'config-reset',
+      result: 'success',
+      severity: 'high',
+      metadata: { discardedKeys: Object.keys(this.customConfig ?? {}).sort(), ...(actor ? {} : { actorMissing: true }) }
+    }, (err) => logger.warn('[ConfigurationManager] Audit record failed for config-reset:', err));
+
     this.customConfig = {};
     this.mergedConfig = { ...this.defaultConfig } as WikiConfig;
     await this.saveCustomConfiguration();

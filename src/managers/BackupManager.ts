@@ -5,6 +5,8 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
+import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -277,7 +279,7 @@ class BackupManager extends BaseManager {
    * @param {boolean} options.compress - Whether to compress (default: true)
    * @returns {Promise<string>} Path to created backup file
    */
-  async createBackup(options: BackupOptions = {}): Promise<string> {
+  async createBackup(options: BackupOptions = {}, actor?: { username?: string; ipAddress?: string }): Promise<string> {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
 
@@ -350,6 +352,21 @@ class BackupManager extends BaseManager {
       const duration = Date.now() - startTime;
       logger.info(`✅ Backup completed successfully in ${duration}ms`);
       logger.info(`📁 Backup saved to: ${backupPath}`);
+
+      // #1215: a full copy of the instance now exists somewhere; say who asked
+      // and where it went. Standard tier: the backup is already written and a
+      // slow sink must not fail it.
+      await recordAuditEvent(this.engine.getManager('AuditManager'), {
+        eventType: AUDIT_EVENT.BACKUP_CREATE,
+        user: actor?.username ?? 'unknown',
+        ipAddress: actor?.ipAddress,
+        action: 'backup-create',
+        result: 'success',
+        severity: 'medium',
+        resource: backupPath,
+        resourceType: 'backup',
+        metadata: { filename, bytes: finalData.length, managers: managerNames.length, ...(actor ? {} : { actorMissing: true }) }
+      }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
       // Clean up old backups
       await this.cleanupOldBackups();
