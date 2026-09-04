@@ -737,6 +737,8 @@ describe('WikiRoutes — coverage batch 2', () => {
     });
 
     test('returns 403 when non-owner non-admin tries to delete', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { username: 'other', displayName: 'Other', email: 'o@x.com', isAuthenticated: true, roles: ['authenticated'] };
       mockCommentManager.getComment.mockResolvedValue({ id: 'c-1', content: 'Hi', author: 'testuser' });
 

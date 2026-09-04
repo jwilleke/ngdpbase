@@ -567,6 +567,8 @@ describe('WikiRoutes — coverage batch 13', () => {
 
   describe('GET /admin/attachments (adminAttachments)', () => {
     test('returns 403 when user lacks admin/editor role', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { ...adminUser, roles: ['viewer'] };
       const res = await request(app).get('/admin/attachments');
       expect(res.status).toBe(403);
@@ -580,6 +582,8 @@ describe('WikiRoutes — coverage batch 13', () => {
 
   describe('GET /admin/attachments/api (adminAttachmentsApi)', () => {
     test('returns 403 when user lacks admin/editor role', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { ...adminUser, roles: ['viewer'] };
       const res = await request(app).get('/admin/attachments/api');
       expect(res.status).toBe(403);

@@ -17692,12 +17692,12 @@ ${description}
    * Was `isAuthenticated && hasRole('admin', 'editor')`. Neither is an allow
    * (security-posture.md P2): a role name skips the policy evaluator and the
    * token ceiling, and a share is an anonymous-access credential. Until a
-   * `share-manage` permission exists in the catalog this asks for
-   * `admin-system`, which narrows editors out; the catalog change is the
-   * operator's call and is filed separately.
+   * `share-manage` permission exists in the catalog (#1217, the operator's
+   * call) this asks for `asset-delete`: held by exactly the two roles decision
+   * 2 named, so nobody's access changes, while the semantics wait for #1217.
    */
   private async canManageShares(wikiContext: WikiContext): Promise<boolean> {
-    return wikiContext.hasPermission('admin-system');
+    return wikiContext.hasPermission('asset-delete');
   }
 
   /**

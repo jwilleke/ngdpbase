@@ -120,7 +120,15 @@ const mockConfigManager = {
 
 const mockUserManager = {
   getCurrentUser: vi.fn().mockResolvedValue(null),
-  hasPermission: vi.fn().mockResolvedValue(false),
+  // #1198: the share routes ask policy — asset-delete to manage shares (held by
+  // admin and editor, decision 2's roles, until #1217's share-manage), and
+  // admin-system for the override views. Shaped like the shipped catalog.
+  hasPermission: vi.fn(async (username: string, action: string) => {
+    const roles = username === 'root' ? ['admin'] : username === 'ed' ? ['editor'] : username === 'reader' ? ['reader'] : [];
+    if (action === 'admin-system') return roles.includes('admin');
+    if (action === 'asset-delete') return roles.includes('admin') || roles.includes('editor');
+    return false;
+  }),
   getUser: vi.fn(),
   getUsers: vi.fn().mockResolvedValue([]),
   getRoles: vi.fn().mockReturnValue(new Map()),

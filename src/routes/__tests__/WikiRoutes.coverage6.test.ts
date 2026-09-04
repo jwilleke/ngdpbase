@@ -464,6 +464,8 @@ describe('WikiRoutes — coverage batch 6', () => {
 
   describe('GET /admin/attachments', () => {
     test('returns 403 when user has no admin or editor role', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { ...regularUser };
       const res = await request(app).get('/admin/attachments');
       expect(res.status).toBe(403);
@@ -601,6 +603,8 @@ describe('WikiRoutes — coverage batch 6', () => {
 
   describe('GET /admin/attachments/api', () => {
     test('returns 403 when user has no admin or editor role', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { ...regularUser };
       const res = await request(app).get('/admin/attachments/api');
       expect(res.status).toBe(403);
@@ -644,6 +648,8 @@ describe('WikiRoutes — coverage batch 6', () => {
 
   describe('DELETE /admin/attachments/:id', () => {
     test('returns 403 when user has no admin role', async () => {
+      // #1198: the gate asks policy for a permission this subject does not hold.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       mockUserContext = { ...regularUser };
       const res = await request(app)
         .delete('/admin/attachments/att-123')

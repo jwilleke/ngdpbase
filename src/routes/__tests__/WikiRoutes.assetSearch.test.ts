@@ -52,14 +52,29 @@ function makeRes() {
 }
 
 // WikiRoutes.createWikiContext is called in assetSearch — stub it
-// #625: stub forwards userContext from the request so role checks see it
+// #1198: the asset surface asks policy for `asset-upload`, not for a role
+// name. This stand-in policy grants it to the roles the shipped catalog does
+// (admin, editor, contributor) so the tests assert what policy says.
+const ASSET_ROLES = new Set(['admin', 'editor', 'contributor']);
+function policyFor(userContext: { roles?: string[] } | null | undefined) {
+  return {
+    // Only the asset surface is under test here; every other permission stays
+    // as permissive as the fixture's old default so the page and user branches
+    // behave as before.
+    hasPermission: (_u: string, action: string) =>
+      action !== 'asset-upload' || (userContext?.roles ?? []).some((r) => ASSET_ROLES.has(r))
+  };
+}
+
+// #625: stub forwards userContext from the request so the gate sees it
 function makeRoutes(assetService) {
   const engine = makeEngine(assetService);
   const routes = new WikiRoutes(engine);
   // #638 — shared mock fixture
-  routes.createWikiContext = vi.fn((req: Request) =>
-    createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
-  );
+  routes.createWikiContext = vi.fn((req: Request) => {
+    const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+    return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+  });
   return routes;
 }
 
@@ -110,9 +125,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const engine = { getManager: vi.fn().mockReturnValue(null) };
       const routes = new WikiRoutes(engine);
       // #638 — shared mock fixture
-      routes.createWikiContext = vi.fn((req: Request) =>
-        createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
-      );
+      routes.createWikiContext = vi.fn((req: Request) => {
+        const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+      });
       // #742: 503-on-missing-AssetService is an asset-surface invariant; the
       // no-types path no longer needs AssetService (pages/users still work).
       const req = makeReq({ query: { types: 'attachment' } });
@@ -275,12 +291,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
         })
       };
       const routes = new WikiRoutes(engine);
-      routes.createWikiContext = vi.fn((req: Request) =>
-        createMockWikiContext(
-          { userContext: (req as { userContext?: unknown }).userContext as never },
-          { engine }
-        )
-      );
+      routes.createWikiContext = vi.fn((req: Request) => {
+        const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+      });
       return routes;
     }
 
@@ -1010,9 +1024,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
         })
       };
       const routes = new WikiRoutes(engine);
-      routes.createWikiContext = vi.fn((req: Request) =>
-        createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
-      );
+      routes.createWikiContext = vi.fn((req: Request) => {
+        const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+      });
       return routes;
     }
     const reader = { authenticated: true, username: 'molly', roles: ['reader'] };
@@ -1248,9 +1263,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
         })
       };
       const routes = new WikiRoutes(engine);
-      routes.createWikiContext = vi.fn((req: Request) =>
-        createMockWikiContext({ userContext: (req as { userContext?: unknown }).userContext as never }, { engine })
-      );
+      routes.createWikiContext = vi.fn((req: Request) => {
+        const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+      });
       return routes;
     }
     const editor = { authenticated: true, username: 'ed', roles: ['editor'] };
