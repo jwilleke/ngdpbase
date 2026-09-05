@@ -5,7 +5,23 @@
 
 import 'express';
 import 'express-session';
-import type { ShareGrant } from './Share.js';
+
+/**
+ * The share a request presented (#1222), structurally identical to
+ * `ShareGrant` in `src/types/Share.ts`. Declared inline ON PURPOSE: the
+ * bundled addons compile with `rootDir`/`outDir` at the repo root and include
+ * every `.d.ts` under `src/types/` for this augmentation, so an `import` here pulls the
+ * imported module into every addon program and tsc emits `src/types/Share.js`
+ * in place beside its source (seen on every satellite after v4.15.0). A
+ * `.d.ts` must not import a `.ts` module.
+ */
+interface RequestShareGrant {
+  id: string;
+  issuer: string;
+  actions: string[];
+  resources: Array<{ type: string; pattern: string }>;
+  expiresAt: string | null;
+}
 
 declare module 'express-session' {
   interface SessionData {
@@ -55,7 +71,7 @@ declare global {
         /** The agent token this request arrived with, when it did. */
         viaToken?: { id: string; name: string; scopes: string[] };
         /** The share this request presented, when it did (#1222). Forwarded like `viaToken`. */
-        viaShare?: ShareGrant;
+        viaShare?: RequestShareGrant;
         [key: string]: unknown;
       };
       sessionID?: string;
