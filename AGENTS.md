@@ -74,7 +74,8 @@ linted instead.
 
 This section is the Context Map for AI agents working on ngdpbase. It directs you to the Single Source of Truth (SSoT) for specific domains and defines your operational parameters.
 
-Before you start, check `private/project_log.md` and recent GitHub commits — that is where session continuity lives. Repeating work that's already done is the most common avoidable mistake on this project.
+Before you start, check `private/project_log.md` and recent GitHub commits — that is where session continuity lives.
+__Repeating work that's already done is the most common avoidable mistake on this project.__
 
 The four principles below are behavioral guidelines that reduce common LLM coding mistakes. They bias toward caution over speed; for trivial tasks, use judgment.
 
