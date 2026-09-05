@@ -12,16 +12,18 @@
  *    declares `hasPermission(subject: PermissionSubject, …)`, so a string in
  *    route code is a build error. Nothing here needs to check for it.
  *
- * 2. __Rebuilding a subject from parts.__ NOT closed by the compiler.
- *    `viaToken` is optional — a session request genuinely has none — so
- *    `{ username, roles, isAuthenticated }` type-checks perfectly and silently
- *    carries no token. `AttachmentManager` did exactly this on the branch that
- *    looked safe, and passing an object is what made it look safe.
- *    `viaShare` (#1222) is optional for the same reason and is lost the same
- *    way: a rebuilt subject drops the share ceiling along with the token one.
+ * 2. __Rebuilding a subject from parts.__ Half closed by the compiler since
+ *    #1212: `username`, `roles` and `isAuthenticated` are required, so
+ *    `{ username }` or `{ username, roles }` no longer type-check. What still
+ *    does is a FULL rebuild — all three fields, no `viaToken` / `viaShare` —
+ *    because both delegations must stay optional (a session request has
+ *    neither, and a dummy grant would be a new lie). `AttachmentManager` did
+ *    exactly that on the branch that looked safe, and passing a complete
+ *    object is what made it look safe: the rebuilt subject silently carries no
+ *    token and no share, and both ceilings fail open.
  *
- * This check covers case 2. It is the cheap half of the pair; the compiler
- * does the heavy lifting.
+ * This check covers what is left of case 2. It is the cheap half of the pair;
+ * the compiler does the heavy lifting.
  *
  * Run via `npm run lint:permission-subject`. Wired into `npm run lint` /
  * `lint:ci` / `.husky/pre-commit`. Exits 1 on any violation.

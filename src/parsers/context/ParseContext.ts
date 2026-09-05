@@ -8,16 +8,22 @@
  */
 
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../../managers/UserManager.js';
+import type { AgentTokenGrant } from '../../managers/UserManager.js';
+import type { ShareGrant } from '../../types/Share.js';
 
 /**
  * User context interface
  */
 export interface UserContext {
-  username?: string;
+  /** #1212: the three authorisation fields are required — a parse runs as the request's own subject. */
+  username: string;
   userName?: string;
-  isAuthenticated?: boolean;
-  roles?: string[];
+  isAuthenticated: boolean;
+  roles: string[];
   permissions?: string[];
+  /** The delegations a request carries; declared so the index signature does not erase their type. */
+  viaToken?: AgentTokenGrant;
+  viaShare?: ShareGrant;
   [key: string]: unknown;
 }
 
@@ -176,7 +182,11 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
   // username.
   let userContext = pc.userContext ?? null;
   if (pc.userName && (!userContext || (!userContext.username && !userContext.userName))) {
-    userContext = { ...(userContext ?? {}), username: pc.userName };
+    // permission-subject-ignore: #1212 — the fold produces a complete subject.
+    // A legacy fixture that named a user and nothing else gets the CLOSED
+    // defaults — no roles, not authenticated — never a widened one. Nothing
+    // here asserts authority; it is the shape a nobody has.
+    userContext = { roles: [], isAuthenticated: false, ...(userContext ?? {}), username: pc.userName };
   }
   return {
     engine,

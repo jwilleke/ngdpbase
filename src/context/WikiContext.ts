@@ -7,6 +7,8 @@
  */
 
 import path from 'path';
+import type { AgentTokenGrant } from '../managers/UserManager.js';
+import type { ShareGrant } from '../types/Share.js';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
@@ -64,14 +66,19 @@ export interface UserPreferences {
  * User context - session or authentication context
  */
 export interface UserContext {
-  /** Username */
-  username?: string;
+  /** Username. Required (#1212): a context is a subject the evaluator can be handed as-is. */
+  username: string;
   /** User display name */
   displayName?: string;
-  /** User roles */
-  roles?: string[];
-  /** Whether user is authenticated */
+  /** User roles. Required (#1212). */
+  roles: string[];
+  /** Whether user is authenticated. Required (#1212). */
+  isAuthenticated: boolean;
+  /** Alias for isAuthenticated (legacy templates) */
   authenticated?: boolean;
+  /** The delegations a request carries (#946, #1222); declared so the index signature does not erase their type. */
+  viaToken?: AgentTokenGrant;
+  viaShare?: ShareGrant;
   /** User preferences for formatting, locale, etc. */
   preferences?: UserPreferences;
   /** Shorthand for preferences.locale */

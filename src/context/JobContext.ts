@@ -29,7 +29,7 @@
  * becoming asynchronous.
  */
 
-import type { PermissionSubject, AgentTokenGrant } from '../managers/UserManager.js';
+import type { JobSubject, AgentTokenGrant } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
 
 /**
@@ -146,10 +146,13 @@ export function jobContextFromSchedule(systemPrincipal: string, reason: string, 
  * `viaToken` IS carried, so a job triggered through a delegated token is still
  * held to that token's scopes.
  */
-export function toPermissionSubject(ctx: JobContext): PermissionSubject {
+export function toPermissionSubject(ctx: JobContext): JobSubject {
   return {
     username: ctx.username,
     isAuthenticated: true,
+    // #1212: said on purpose. "Roles absent" used to be the signal, and the
+    // type could not tell that from a caller that forgot them.
+    resolveRolesNow: true,
     ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}),
     ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {})
   };

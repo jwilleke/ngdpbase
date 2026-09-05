@@ -424,7 +424,7 @@ describe('UserManager', () => {
       );
     });
 
-    // ─── #631: a subject WITHOUT roles is resolved NOW, not defaulted ────────
+    // ─── #631: a JobSubject (resolveRolesNow, #1212) is resolved NOW, not defaulted ──
     //
     // `toPermissionSubject` drops roles on purpose so a job enqueued at 09:00
     // and running at 09:12 authorises against 09:12's roles. Its docblock said
@@ -435,7 +435,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
       userManager.resolveUserRoles = vi.fn().mockResolvedValue(['editor']);
 
-      await userManager.hasPermission({ username: 'jim', isAuthenticated: true }, 'page-edit');
+      await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
       expect(userManager.resolveUserRoles).toHaveBeenCalledWith('jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
@@ -450,7 +450,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
       userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
-      await userManager.hasPermission({ username: 'jim', isAuthenticated: true }, 'admin-system');
+      await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'admin-system');
 
       const seen = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(seen).not.toContain('admin');
@@ -462,7 +462,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
       userManager.resolveUserRoles = vi.fn();
 
-      await userManager.hasPermission({ username: 'ghost', isAuthenticated: true }, 'page-edit');
+      await userManager.hasPermission({ username: 'ghost', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
       expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
@@ -490,7 +490,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn();
       userManager.resolveUserRoles = vi.fn();
 
-      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true }, 'page-create');
+      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-create');
 
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
       expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
@@ -506,14 +506,14 @@ describe('UserManager', () => {
     test('the name matches case-insensitively, like the user store (#631)', async () => {
       const policyEvaluator = installSystemPrincipal(true);
       userManager.provider.getUser = vi.fn();
-      await userManager.hasPermission({ username: 'SVC-NGDPBASE', isAuthenticated: true }, 'page-read');
+      await userManager.hasPermission({ username: 'SVC-NGDPBASE', isAuthenticated: true, resolveRolesNow: true }, 'page-read');
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toContain('admin');
     });
 
     test('ngdpbase.system.roles is read, not assumed — a narrower list is honoured (#631)', async () => {
       const policyEvaluator = installSystemPrincipal(true, 'svc-ngdpbase', ['editor']);
-      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true }, 'page-edit');
+      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
       const roles = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(roles).toEqual(['editor', 'Authenticated', 'All']);
       expect(roles).not.toContain('admin');
@@ -561,7 +561,7 @@ describe('UserManager', () => {
       new Promise<{ status?: number; next: boolean }>((resolve) => {
         const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
         res.json.mockImplementation(() => resolve({ status: res.status.mock.calls[0]?.[0], next: false }));
-        userManager.requirePermissions(['page-edit'])({ user }, res, () => resolve({ next: true }));
+        userManager.requirePermissions(['page-edit'])({ userContext: user }, res, () => resolve({ next: true }));
       });
 
     test('an anonymous request is asked of POLICY, and a denial answers 401', async () => {

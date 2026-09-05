@@ -142,12 +142,32 @@ export const SYSTEM_ROLES_KEY = 'ngdpbase.system.roles';
  * `scripts/check-permission-subject.ts`, not the compiler.
  */
 export interface PermissionSubject {
-  username?: string;
-  roles?: string[];
-  isAuthenticated?: boolean;
+  username: string;
+  roles: string[];
+  isAuthenticated: boolean;
   /** Present only when the request authenticated with an agent token. */
   viaToken?: AgentTokenGrant;
   /** Present only when the request presented a share token (#1222). Forwarded like `viaToken`. */
+  viaShare?: ShareGrant;
+}
+
+/**
+ * The subject of work with no request behind it (#631, #1212).
+ *
+ * A job enqueued at 09:00 and run at 09:12 must authorise against 09:12's
+ * roles, so it carries who asked and __no roles__ — they resolve at decision
+ * time. Until #1212 that shape was "a `PermissionSubject` whose `roles` happen
+ * to be absent", which the type could not tell apart from a caller that
+ * forgot them. `resolveRolesNow` says it on purpose: the compiler now refuses
+ * a subject missing `roles`, and this is the one sanctioned way to ask for
+ * live resolution. `viaToken` / `viaShare` ride along exactly as on a request.
+ */
+export interface JobSubject {
+  username: string;
+  isAuthenticated: boolean;
+  /** Roles are resolved live at decision time, not carried. */
+  resolveRolesNow: true;
+  viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
 }
 
@@ -750,7 +770,7 @@ class UserManager extends BaseManager {
    * @returns True if the subject may perform the action under current policy
    */
   async hasPermission(
-    subject: PermissionSubject,
+    subject: PermissionSubject | JobSubject,
     action: string
   ): Promise<boolean> {
     const policyEvaluator = this.engine?.getManager<PolicyEvaluator>('PolicyEvaluator');
@@ -812,25 +832,23 @@ class UserManager extends BaseManager {
 
     // #1173: one path. There is no username-string branch any more — see
     // `userHoldsPermission` for the question that legitimately takes a name.
-    if (subject.roles) {
-      // #1164: the subject's fields are optional now, because a real
-      // UserContext declares them optional. Defaulting here rather than
-      // widening UserContext keeps the resolved shape unchanged for everything
-      // downstream, and an absent username resolves anonymous.
-      userContext = {
-        username: subject.username ?? 'Anonymous',
-        roles: subject.roles,
-        isAuthenticated: subject.isAuthenticated ?? false
-      };
-    } else {
-      // #631: a subject WITHOUT roles is asking to be resolved NOW. That is
-      // the shape `toPermissionSubject` hands over for a request-origin job:
-      // it carries who asked and drops the roles they held at enqueue time,
-      // so a reindex enqueued at 09:00 and running at 09:12 authorises
-      // against 09:12's roles. Until this branch existed the docblock there
-      // promised fresh resolution and this method quietly substituted
-      // anonymous — hidden only because no job asked a permission question.
+    if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
+      // #631: a JobSubject asks to be resolved NOW. That is the shape
+      // `toPermissionSubject` hands over for a request-origin job: it carries
+      // who asked and drops the roles they held at enqueue time, so a reindex
+      // enqueued at 09:00 and running at 09:12 authorises against 09:12's
+      // roles. #1212 made the request explicit: until then it was "roles
+      // absent", and the type could not tell a job from a caller that forgot.
       userContext = await this.resolveSubjectNow(subject.username);
+    } else {
+      // #1212: the three fields are required on the type, so nothing is
+      // defaulted here. A missing username used to fail closed by luck
+      // (`?? 'Anonymous'`); now it does not compile.
+      userContext = {
+        username: subject.username,
+        roles: subject.roles,
+        isAuthenticated: subject.isAuthenticated
+      };
     }
 
     // Evaluate using policies - use generic page resource for permission checks
@@ -1532,7 +1550,7 @@ class UserManager extends BaseManager {
   async getCurrentUser(req: Request): Promise<UserContext> {
     const fromRequest = (req as RequestWithUser).userContext;
     if (fromRequest?.isAuthenticated) {
-      return fromRequest as UserContext;
+      return fromRequest;
     }
 
     if (!this.provider) {
@@ -1583,7 +1601,12 @@ class UserManager extends BaseManager {
       // the denial — 401 tells an anonymous caller to log in, 403 tells an
       // authenticated one it is not allowed — a status choice, not a second
       // decision.
-      const user: PermissionSubject = reqWithUser.user ?? ANONYMOUS_SUBJECT;
+      // #1212: the request's OWN context, which the session and bearer
+      // middleware write. This read `req.user`, which nothing in the codebase
+      // sets — so every caller was evaluated as anonymous, and a bearer
+      // request's token never reached the ceiling. Required fields on
+      // `PermissionSubject` are what made the mismatch a compile error.
+      const user: PermissionSubject = reqWithUser.userContext ?? ANONYMOUS_SUBJECT;
       // #1164: forward the request's context so an agent token is still capped.
       Promise.all(requiredPermissions.map((p) => this.hasPermission(user, p)))
         .then((results) => {

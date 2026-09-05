@@ -423,9 +423,11 @@ interface WikiEngine {
 }
 
 interface UserContext {
-  username?: string;
+  /** #1212: the three authorisation fields are required — this is the request's own subject, forwarded as-is. */
+  username: string;
   email?: string;
-  roles?: string[];
+  roles: string[];
+  isAuthenticated: boolean;
   isSystem?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- extensible interface; compatible with UserManager.UserContext and req.userContext
   [key: string]: any;
@@ -15018,7 +15020,7 @@ ${panes}
       // An unconfigured audit provider renders an empty page rather than a
       // 500: "auditing is off" and "auditing is broken" must not look alike.
       const emptyStats = { totalEvents: 0, eventsByType: {}, eventsByResult: {}, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 0 };
-      const caller = { username: currentUser.username as string };
+      const caller = { username: currentUser.username };
       const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters, caller) : emptyStats;
       const auditLogs = audit?.searchAuditLogs
         ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }, caller)
@@ -17841,11 +17843,13 @@ ${description}
       const ttl = ttlRaw === 'never' ? null : (ttlRaw as '24h' | '7d' | '30d');
 
       // #1221: the issuer is the context, forwarded — its roles, and its token
-      // ceiling if any, bound what the share may delegate.
+      // ceiling if any, bound what the share may delegate. #1212: no `?? {}` —
+      // an empty object is not a subject; a request with no context is refused.
+      if (!wikiContext.userContext) return res.status(403).send('Forbidden');
       const record = await shareManager.issue(
         { kind: 'keyword', keyword },
         ttl,
-        wikiContext.userContext ?? {}
+        wikiContext.userContext
       );
       return res.redirect(`/shares?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {

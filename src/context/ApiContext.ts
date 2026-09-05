@@ -113,7 +113,8 @@ export class ApiContext {
    * and an empty/anonymous roles array.
    */
   static from(req: Request, engine: WikiEngine): ApiContext {
-    const uc = req.userContext ?? {};
+    // #1212: a request with no middleware-written context is anonymous, field by field.
+    const uc: Partial<NonNullable<Request['userContext']>> = req.userContext ?? {};
     const isAuthenticated = Boolean(
       (uc as Record<string, unknown>)['isAuthenticated'] ??
       req.session?.isAuthenticated ??

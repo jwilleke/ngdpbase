@@ -689,13 +689,17 @@ void (async (): Promise<void> => {
           roles.add('Authenticated');
           roles.add('All');
 
-          req.userContext = {
+          // #1212: username stated, not inherited from a spread whose type
+          // leaves it optional — the request's subject is complete by construction.
+          const sessionContext = {
             ...user,
+            username: req.session.username,
             roles: Array.from(roles),
             isAuthenticated: true,
             authenticated: true
           };
-          logger.info(`[SESSION] Restored session for user: ${req.userContext.username}`);
+          req.userContext = sessionContext;
+          logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {
           req.userContext = userManager.getAnonymousUser();
           logger.info('[SESSION] User not found or inactive, treating as Anonymous');
@@ -785,6 +789,7 @@ void (async (): Promise<void> => {
           roles.add('All');
           req.userContext = {
             ...user,
+            username: result.username,
             roles: Array.from(roles),
             isAuthenticated: true,
             authenticated: true,

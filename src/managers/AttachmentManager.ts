@@ -78,11 +78,12 @@ export interface UploadOptions {
  * User context for permission checks
  */
 export interface UserContext {
-  username?: string;
+  /** #1212: the three authorisation fields are required — the caller's own context, forwarded. */
+  username: string;
   name?: string;
   email?: string;
-  isAuthenticated?: boolean;
-  roles?: string[];
+  isAuthenticated: boolean;
+  roles: string[];
   user?: User;
 }
 

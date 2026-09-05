@@ -43,11 +43,12 @@ declare global {
        * that is a larger change and is not made here.
        */
       userContext?: {
-        username?: string;
+        /** #1212: the three authorisation fields are required — the session and bearer middleware always write them. */
+        username: string;
         email?: string;
         displayName?: string;
-        roles?: string[];
-        isAuthenticated?: boolean;
+        roles: string[];
+        isAuthenticated: boolean;
         authenticated?: boolean;
         isSystem?: boolean;
         permissions?: string[];

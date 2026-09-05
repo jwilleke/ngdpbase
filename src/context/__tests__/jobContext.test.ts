@@ -111,7 +111,8 @@ describe('#631 — asking a permission question later', () => {
   test('the subject omits roles so they are resolved fresh', () => {
     const subject = toPermissionSubject(jobContextFromRequest({ username: 'jim' }, at));
     expect(subject.username).toBe('jim');
-    expect(subject.roles).toBeUndefined();
+    expect('roles' in subject).toBe(false);
+    expect(subject.resolveRolesNow).toBe(true);   // #1212: said on purpose, not implied by absence
     expect(subject.isAuthenticated).toBe(true);
   });
 
@@ -133,7 +134,8 @@ describe('#631 — asking a permission question later', () => {
     for (const ctx of [jobContextFromSystem(SYSTEM, 'boot', at), jobContextFromSchedule(SYSTEM, 'retention', at)]) {
       const subject = toPermissionSubject(ctx);
       expect(subject.username).toBe(SYSTEM);
-      expect(subject.roles).toBeUndefined();
+      expect('roles' in subject).toBe(false);
+      expect(subject.resolveRolesNow).toBe(true);   // #1212: said on purpose, not implied by absence
       expect(subject.isAuthenticated).toBe(true);
       expect('viaToken' in subject).toBe(false);
     }

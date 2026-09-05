@@ -6,6 +6,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
+import { ANONYMOUS_SUBJECT, type AgentTokenGrant } from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type NotificationManager from './NotificationManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -31,10 +32,14 @@ interface WikiContext {
  * Note: Index signature required for PolicyEvaluator compatibility
  */
 interface UserContext {
-  username?: string;
+  /** #1212: the three authorisation fields are required; `null` is the anonymous visitor. */
+  username: string;
   name?: string;
-  roles?: string[];
-  isAuthenticated?: boolean;
+  roles: string[];
+  isAuthenticated: boolean;
+  /** The delegations a request carries; declared so the index signature does not erase their type. */
+  viaToken?: AgentTokenGrant;
+  viaShare?: ShareGrant;
   [key: string]: unknown;
 }
 
@@ -1000,10 +1005,12 @@ class ACLManager extends BaseManager {
     };
 
     const permission = permissionMap[action.toLowerCase()] || `page:${action.toLowerCase()}`;
-    const username = user?.username ?? 'anonymous';
 
     // #1164: the context carries the agent token; `username` alone does not.
-    const result = await userManager.hasPermission(user ?? { username }, permission);
+    // #1212: and the named constant for nobody, not `{ username }` — a
+    // one-field literal was a rebuilt subject the lint could not see (it
+    // matched only `hasPermission({`). The compiler refuses it now.
+    const result = await userManager.hasPermission(user ?? ANONYMOUS_SUBJECT, permission);
 
     return result;
   }
