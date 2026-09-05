@@ -25,6 +25,7 @@ import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest } from '../context/JobContext.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
@@ -231,7 +232,7 @@ interface IConfigManager {
   getProperty(key: string, defaultValue: string): string;
   getProperty(key: string, defaultValue: null): unknown;
   getProperty(key: string, defaultValue?: unknown): unknown;
-  setProperty(key: string, value: unknown, actor?: string): Promise<void> | void;
+  setProperty(key: string, value: unknown, ctx: ActorContext): Promise<void> | void;
   getCustomProperty(key: string): unknown;
   getCustomProperties(): unknown;
   getDefaultProperties(): unknown;
@@ -242,7 +243,7 @@ interface IConfigManager {
   describeProperty?(key: string): { envControlled: boolean; envVar: string | null; effective: unknown; source: string };
   getResolvedDataPath(key: string, defaultValue?: string): string;
   getInstanceDataFolder?(): string;
-  resetToDefaults(actor?: { username?: string; ipAddress?: string }): Promise<void> | void;
+  resetToDefaults(ctx: ActorContext): Promise<void> | void;
   getFencedCodeTags?(): Set<string>;
   getBaseURL?(): string;
 }
@@ -9582,7 +9583,7 @@ ${panes}
         (key, fallback) => configManager?.getProperty?.(key, fallback)
       );
       const enabled = !current.enabled;
-      await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled, currentUser.username);
+      await configManager.setProperty(MAINTENANCE_ENABLED_KEY, enabled, currentUser);
 
       // Shape kept for the notification payload below, which takes the
       // maintenance settings as an object.
@@ -10352,7 +10353,7 @@ ${panes}
         days,
         maxBackups: isNaN(maxBackups) ? 10 : maxBackups,
         ...(directory ? { directory } : {})
-      });
+      }, currentUser);
 
       return res.redirect('/admin/backup?success=Auto-backup+configuration+saved');
     } catch (err: unknown) {
@@ -10544,11 +10545,12 @@ ${panes}
     const back = (params: string) => res.redirect(`/admin/configuration?${params}#security-posture`);
     try {
       const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
 
       // #1159: admin-system, matching the section itself (D18). Not the page's
       // gate, which admits admin-read.
       if (
-        !wikiContext.userContext?.isAuthenticated ||
+        !currentUser?.isAuthenticated ||
         !(await wikiContext.hasPermission('admin-system'))
       ) {
         return res.status(403).send('Access denied');
@@ -10570,7 +10572,7 @@ ${panes}
         // other way. Removing changes NO value — the key keeps what it is set
         // to and the code keeps reading it (D4).
         posture[key] = null;
-        await configManager.setProperty(POSTURE_KEY, posture, wikiContext.userContext?.username);
+        await configManager.setProperty(POSTURE_KEY, posture, currentUser);
         return back('success=' + encodeURIComponent(
           `"${key}" removed from the posture view. Its value is unchanged — nothing was turned off.`
         ));
@@ -10588,7 +10590,7 @@ ${panes}
         ? body.group.trim()
         : 'Other';
       posture[key] = { group, restart: false };
-      await configManager.setProperty(POSTURE_KEY, posture, wikiContext.userContext?.username);
+      await configManager.setProperty(POSTURE_KEY, posture, currentUser);
 
       // A WARNING, not a refusal. A typo should be visible at once, but an
       // addon may legitimately contribute a key this instance does not ship.
@@ -10747,7 +10749,7 @@ ${panes}
       if (typeof value === 'string') {
         try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
       }
-      await configManager.setProperty(property, parsedValue, this.createWikiContext(req).userContext?.username);
+      await configManager.setProperty(property, parsedValue, currentUser);
 
       // Return JSON for AJAX requests, redirect for regular form submissions
       const wantsJson = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest';
@@ -10786,7 +10788,7 @@ ${panes}
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      await configManager.resetToDefaults({ username: wikiContext.userContext?.username, ipAddress: req.ip });
+      await configManager.resetToDefaults(currentUser);
       return res.redirect(
         '/admin/configuration?success=Configuration reset to defaults'
       );
@@ -10886,7 +10888,7 @@ ${panes}
         openInNewWindow: openInNewWindow === 'on' || openInNewWindow === 'true' || openInNewWindow === '1'
       };
 
-      await configManager.setProperty('ngdpbase.interwiki.sites', sites);
+      await configManager.setProperty('ngdpbase.interwiki.sites', sites, currentUser);
       return res.redirect('/admin/interwiki?success=Site saved. Restart required for changes to take effect.');
     } catch (err: unknown) {
       logger.error('Error saving interwiki site:', err);
@@ -10918,7 +10920,7 @@ ${panes}
       }
 
       delete sites[siteName];
-      await configManager.setProperty('ngdpbase.interwiki.sites', sites);
+      await configManager.setProperty('ngdpbase.interwiki.sites', sites, currentUser);
       return res.redirect('/admin/interwiki?success=Site deleted. Restart required for changes to take effect.');
     } catch (err: unknown) {
       logger.error('Error deleting interwiki site:', err);
@@ -10947,7 +10949,7 @@ ${panes}
       await configManager.setProperty(
         'ngdpbase.interwiki.enabled',
         globalEnabled === 'on' || globalEnabled === 'true' || globalEnabled === '1'
-      );
+        , currentUser);
 
       const currentOptions = configManager.getProperty('ngdpbase.interwiki.options', {}) as Record<string, unknown>;
       await configManager.setProperty('ngdpbase.interwiki.options', {
@@ -10956,7 +10958,7 @@ ${panes}
         addIconIndicator: addIconIndicator === 'on' || addIconIndicator === 'true' || addIconIndicator === '1',
         caseSensitive: caseSensitive === 'on' || caseSensitive === 'true' || caseSensitive === '1',
         showTooltips: showTooltips === 'on' || showTooltips === 'true' || showTooltips === '1'
-      });
+      }, currentUser);
 
       return res.redirect('/admin/interwiki?success=Options saved. Restart required for changes to take effect.');
     } catch (err: unknown) {
@@ -11165,7 +11167,7 @@ ${panes}
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      await configManager.setProperty('ngdpbase.theme.active', theme);
+      await configManager.setProperty('ngdpbase.theme.active', theme, currentUser);
 
       logger.info(`Admin theme changed to "${theme}" by ${currentUser.username}`);
       return res.redirect('/admin/settings?success=Theme+updated+to+' + encodeURIComponent(theme));
@@ -11189,15 +11191,15 @@ ${panes}
 
       const maxFileSizeMB = parseInt(body.maxFileSizeMB || '10', 10);
       if (!isNaN(maxFileSizeMB) && maxFileSizeMB > 0) {
-        await configManager.setProperty('ngdpbase.attachment.maxsize', maxFileSizeMB * 1024 * 1024);
+        await configManager.setProperty('ngdpbase.attachment.maxsize', maxFileSizeMB * 1024 * 1024, currentUser);
       }
 
       const sessionTimeoutHours = parseInt(body.sessionTimeoutHours || '24', 10);
       if (!isNaN(sessionTimeoutHours) && sessionTimeoutHours > 0) {
-        await configManager.setProperty('ngdpbase.session.max-age', sessionTimeoutHours * 3600000);
+        await configManager.setProperty('ngdpbase.session.max-age', sessionTimeoutHours * 3600000, currentUser);
       }
 
-      await configManager.setProperty('ngdpbase.user.allowregistration', body.allowRegistration === 'on');
+      await configManager.setProperty('ngdpbase.user.allowregistration', body.allowRegistration === 'on', currentUser);
 
       logger.info(`Admin general settings updated by ${currentUser.username}`);
       return res.redirect('/admin/settings?success=Settings+saved&restart=1');
@@ -13650,7 +13652,7 @@ ${panes}
       }
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      await configManager.setProperty(`ngdpbase.addons.${addonName}.enabled`, willEnable);
+      await configManager.setProperty(`ngdpbase.addons.${addonName}.enabled`, willEnable, currentUser);
       const state = willEnable ? 'enabled' : 'disabled';
       return res.redirect(`/admin/addons?success=${encodeURIComponent(`Add-on "${addonName}" ${state}. Restart required for changes to take effect.`)}`);
     } catch (err: unknown) {

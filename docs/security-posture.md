@@ -38,6 +38,8 @@ __The one exception is a lookup, and it has its own name.__ Asking "does this na
 
 __What this rules out.__ Ambient propagation — a process-global request slot, or `AsyncLocalStorage`. The global form was removed as dead surface in [#1132](https://github.com/jwilleke/ngdpbase/issues/1132). `AsyncLocalStorage` is a sounder implementation of the same idea and is still refused here, because it shares the property that made the global wrong: the call site does not show what identity it runs under, so a missing context is invisible at review rather than a compile error. Threading costs more churn and is worth it.
 
+__Surfaces narrowed under this principle so far__ (the compiler does the search — narrow the type, fix what it finds): `hasPermission` ([#1164](https://github.com/jwilleke/ngdpbase/issues/1164)); `PermissionSubject`'s three fields required ([#1212](https://github.com/jwilleke/ngdpbase/issues/1212)); the boot and timer paths ([#1197](https://github.com/jwilleke/ngdpbase/issues/1197), [#1196](https://github.com/jwilleke/ngdpbase/issues/1196)); `ConfigurationManager.setProperty` / `resetToDefaults` and `BackupManager.updateAutoBackupConfig` take an `ActorContext` — `PermissionSubject | JobContext`, in `src/context/ActorContext.ts` — and the request subject now carries `ipAddress`, so a manager records the address from the context it is handed rather than from a second parameter (#1179, first slice; eighteen call sites, thirteen of which had been recording `system`).
+
 Tracked by [#1179](https://github.com/jwilleke/ngdpbase/issues/1179).
 
 ### P2 — Allow and deny are permissions, not authentication or roles

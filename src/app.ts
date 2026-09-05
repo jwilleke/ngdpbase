@@ -712,14 +712,15 @@ void (async (): Promise<void> => {
             isAuthenticated: true,
             authenticated: true
           };
-          req.userContext = sessionContext;
+          // #1179: the address travels on the subject, so a manager records it from the context it is handed.
+          req.userContext = { ...sessionContext, ipAddress: req.ip };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {
-          req.userContext = userManager.getAnonymousUser();
+          req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };
           logger.info('[SESSION] User not found or inactive, treating as Anonymous');
         }
       } else {
-        req.userContext = userManager.getAnonymousUser();
+        req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };
         logger.info('[SESSION] Restored session for user: Anonymous');
       }
       next();
@@ -804,6 +805,7 @@ void (async (): Promise<void> => {
           req.userContext = {
             ...user,
             username: result.username,
+            ipAddress: req.ip,
             roles: Array.from(roles),
             isAuthenticated: true,
             authenticated: true,

@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import path from 'path';
 import {
   coerceToTypeOf,
@@ -706,12 +707,15 @@ class ConfigurationManager extends BaseManager {
    * @async
    * @param {string} key - Configuration property key
    * @param {*} value - Configuration value to set
+   * @param ctx - Who is changing it (#1179): the request's subject, or a
+   *   JobContext for a change no request drove. Mandatory and positional — a
+   *   config change is a security event and its record is read from this.
    * @returns {Promise<void>}
    *
    * @example
-   * await configManager.setProperty('ngdpbase.application-name', 'My Custom Wiki');
+   * await configManager.setProperty('ngdpbase.application-name', 'My Custom Wiki', wikiContext.userContext);
    */
-  async setProperty(key: string, value: unknown, actor?: string): Promise<void> {
+  async setProperty(key: string, value: unknown, ctx: ActorContext): Promise<void> {
     if (!this.customConfig) {
       this.customConfig = {};
     }
@@ -728,7 +732,7 @@ class ConfigurationManager extends BaseManager {
     // Save to custom config file
     await this.saveCustomConfiguration();
 
-    await this.recordConfigChange(key, before, value, actor);
+    await this.recordConfigChange(key, before, value, ctx);
   }
 
   /**
@@ -750,7 +754,7 @@ class ConfigurationManager extends BaseManager {
     key: string,
     before: unknown,
     after: unknown,
-    actor?: string
+    ctx: ActorContext
   ): Promise<void> {
     // Lazily resolved: AuditManager reads configuration, so holding a
     // reference here would invert the boot order. Absent during early boot,
@@ -763,7 +767,7 @@ class ConfigurationManager extends BaseManager {
       key,
       before,
       after,
-      actor,
+      actor: actorOf(ctx),
       secret: isSecretKey(key, this.getProperty(SECRET_KEYS_KEY, []))
     }));
   }
@@ -1302,20 +1306,21 @@ class ConfigurationManager extends BaseManager {
    * await configManager.resetToDefaults();
    * console.log('Configuration reset to defaults');
    */
-  async resetToDefaults(actor?: { username?: string; ipAddress?: string }): Promise<void> {
+  async resetToDefaults(ctx: ActorContext): Promise<void> {
     // #1215: config-reset is CRITICAL — every operator decision discarded at
     // once — so it is recorded and flushed BEFORE the custom file is emptied,
     // and a record that cannot be written refuses the reset. Key NAMES only:
     // a value may be a secret.
     const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
+    const who = actorOf(ctx);
     await recordAuditEvent(sink, {
       eventType: AUDIT_EVENT.CONFIG_RESET,
-      user: actor?.username ?? 'unknown',
-      ipAddress: actor?.ipAddress,
+      user: who.user,
+      ipAddress: who.ipAddress,
       action: 'config-reset',
       result: 'success',
       severity: 'high',
-      metadata: { discardedKeys: Object.keys(this.customConfig ?? {}).sort(), ...(actor ? {} : { actorMissing: true }) }
+      metadata: { ...who.metadata, discardedKeys: Object.keys(this.customConfig ?? {}).sort() }
     }, (err) => logger.warn('[ConfigurationManager] Audit record failed for config-reset:', err));
 
     this.customConfig = {};

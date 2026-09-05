@@ -150,6 +150,8 @@ export interface PermissionSubject {
   viaToken?: AgentTokenGrant;
   /** Present only when the request presented a share token (#1222). Forwarded like `viaToken`. */
   viaShare?: ShareGrant;
+  /** The address the request came from (#1179) — provenance for the record, set where the request subject is built. */
+  ipAddress?: string;
 }
 
 /**

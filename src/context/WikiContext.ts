@@ -79,6 +79,8 @@ export interface UserContext {
   /** The delegations a request carries (#946, #1222); declared so the index signature does not erase their type. */
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
+  /** The address the request came from (#1179), so a manager records it from the forwarded context. */
+  ipAddress?: string;
   /** User preferences for formatting, locale, etc. */
   preferences?: UserPreferences;
   /** Shorthand for preferences.locale */

@@ -1,5 +1,6 @@
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
 import { scheduleContext } from '../context/bootActions.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
 import { promisify } from 'util';
 import logger from '../utils/logger.js';
@@ -609,28 +610,28 @@ class BackupManager extends BaseManager {
    * Update auto-backup configuration and persist to config store.
    * Restarts the scheduler with the new settings.
    */
-  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>): Promise<void> {
+  async updateAutoBackupConfig(config: Partial<AutoBackupConfig>, ctx: ActorContext): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) throw new Error('ConfigurationManager not available');
 
     if (config.enabled !== undefined) {
-      await configManager.setProperty('ngdpbase.backup.auto-backup', config.enabled);
+      await configManager.setProperty('ngdpbase.backup.auto-backup', config.enabled, ctx);
       this.autoBackupEnabled = config.enabled;
     }
     if (config.time !== undefined) {
-      await configManager.setProperty('ngdpbase.backup.auto-backup-time', config.time);
+      await configManager.setProperty('ngdpbase.backup.auto-backup-time', config.time, ctx);
       this.autoBackupTime = config.time;
     }
     if (config.days !== undefined) {
-      await configManager.setProperty('ngdpbase.backup.auto-backup-days', config.days);
+      await configManager.setProperty('ngdpbase.backup.auto-backup-days', config.days, ctx);
       this.autoBackupDays = config.days;
     }
     if (config.maxBackups !== undefined) {
-      await configManager.setProperty('ngdpbase.backup.max-backups', config.maxBackups);
+      await configManager.setProperty('ngdpbase.backup.max-backups', config.maxBackups, ctx);
       this.maxBackups = config.maxBackups;
     }
     if (config.directory !== undefined) {
-      await configManager.setProperty('ngdpbase.backup.directory', config.directory);
+      await configManager.setProperty('ngdpbase.backup.directory', config.directory, ctx);
       this.backupDirectory = config.directory;
       // #170: re-point the storage provider at the new directory.
       await this.provider?.setBackupDirectory(config.directory);

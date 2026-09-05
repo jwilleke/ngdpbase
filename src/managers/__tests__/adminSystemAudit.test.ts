@@ -14,6 +14,7 @@ import ConfigurationManager from '../ConfigurationManager';
 import BackupManager from '../BackupManager';
 import AuditManager from '../AuditManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { jobContextFromSystem } from '../../context/JobContext';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown>; resource?: string }
 
@@ -30,7 +31,8 @@ function sinkEngine(sink: Recorded[], opts: { auditFails?: boolean; extra?: Reco
   };
 }
 
-const ADMIN = { username: 'root', ipAddress: '203.0.113.7' };
+// #1179: the request's subject, forwarded as-is. The address rides on it.
+const ADMIN = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 
 describe('#1215 config-reset is critical', () => {
   let dataDir: string;
@@ -59,6 +61,55 @@ describe('#1215 config-reset is critical', () => {
     const cm = await manager(sinkEngine([], { auditFails: true }));
     await expect(cm.resetToDefaults(ADMIN)).rejects.toThrow(/audit disk full/);
     expect(cm.getCustomProperties()).toMatchObject({ 'ngdpbase.server.port': 4444 });
+  });
+});
+
+describe('#1179 config-change is attributed from the context the write was handed', () => {
+  let dataDir: string;
+  beforeEach(() => { dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-actor-')); fs.mkdirSync(path.join(dataDir, 'config')); });
+  afterEach(() => { fs.rmSync(dataDir, { recursive: true, force: true }); });
+
+  async function manager(engine: WikiEngine): Promise<ConfigurationManager> {
+    const saved = process.env.FAST_STORAGE; process.env.FAST_STORAGE = dataDir;
+    try {
+      fs.writeFileSync(path.join(dataDir, 'config', 'app-custom-config.json'), '{}');
+      const cm = new ConfigurationManager(engine); await cm.initialize(); return cm;
+    } finally { if (saved === undefined) delete process.env.FAST_STORAGE; else process.env.FAST_STORAGE = saved; }
+  }
+
+  test('a request subject: who, the address, origin request', async () => {
+    const sink: Recorded[] = [];
+    const cm = await manager(sinkEngine(sink));
+    await cm.setProperty('ngdpbase.theme.active', 'flatly', ADMIN);
+    const change = sink.find((e) => e.eventType === 'config-change');
+    expect(change).toMatchObject({ user: 'root', ipAddress: '203.0.113.7', metadata: { origin: 'request', key: 'ngdpbase.theme.active', after: 'flatly' } });
+    expect(change?.metadata.delegated).toBeUndefined();
+  });
+
+  test('a subject acting under a token says so — and its roles do not travel', async () => {
+    const sink: Recorded[] = [];
+    const cm = await manager(sinkEngine(sink));
+    await cm.setProperty('ngdpbase.theme.active', 'flatly', { ...ADMIN, viaToken: { id: 't1', name: 'ci', scopes: ['admin-system'] } });
+    const change = sink.find((e) => e.eventType === 'config-change');
+    expect(change?.metadata).toMatchObject({ origin: 'request', delegated: 'token' });
+    expect(JSON.stringify(change)).not.toContain('"roles"');
+    expect(JSON.stringify(change)).not.toContain('t1');
+  });
+
+  test('a job context: the system principal, origin boot, and the reason', async () => {
+    const sink: Recorded[] = [];
+    const cm = await manager(sinkEngine(sink));
+    await cm.setProperty('ngdpbase.theme.active', 'flatly', jobContextFromSystem('System', 'seed the shipped theme'));
+    const change = sink.find((e) => e.eventType === 'config-change');
+    expect(change).toMatchObject({ user: 'System', metadata: { origin: 'boot', reason: 'seed the shipped theme', key: 'ngdpbase.theme.active' } });
+    expect(change?.ipAddress).toBeUndefined();
+  });
+
+  test('config-reset carries the same attribution', async () => {
+    const sink: Recorded[] = [];
+    const cm = await manager(sinkEngine(sink));
+    await cm.resetToDefaults({ ...ADMIN, viaShare: { id: 's1', issuer: 'root', actions: [], resources: [], expiresAt: null } as never });
+    expect(sink[0]).toMatchObject({ eventType: 'config-reset', user: 'root', ipAddress: '203.0.113.7', metadata: { origin: 'request', delegated: 'share' } });
   });
 });
 

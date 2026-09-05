@@ -13,6 +13,7 @@
  */
 
 import type { AuditEvent } from './auditEvents.js';
+import type { ActorAttribution } from '../context/ActorContext.js';
 import { AUDIT_EVENT } from './auditEventNames.js';
 
 /**
@@ -77,8 +78,8 @@ export interface ConfigChangeInput {
   key: string;
   before: unknown;
   after: unknown;
-  /** Who made the change. Omitted for a change no request drove. */
-  actor?: string;
+  /** Who made the change — from the context the write was handed (#1179), never guessed. */
+  actor: ActorAttribution;
   /** Whether the key is named in `ngdpbase.config.secret-keys`. */
   secret: boolean;
 }
@@ -99,7 +100,8 @@ export interface ConfigChangeInput {
 export function buildConfigChangeAuditEvent(input: ConfigChangeInput): AuditEvent {
   const { key, before, after, actor, secret } = input;
 
-  const metadata: Record<string, unknown> = { key };
+  // The actor's provenance first (origin, reason, delegation), then the change.
+  const metadata: Record<string, unknown> = { ...actor.metadata, key };
 
   if (secret) {
     metadata.secret = true;
@@ -113,10 +115,10 @@ export function buildConfigChangeAuditEvent(input: ConfigChangeInput): AuditEven
 
   return {
     eventType: AUDIT_EVENT.CONFIG_CHANGE,
-    // Not guessed. A change no request drove is the system's, and saying so is
-    // more useful than attributing it to whoever happens to be an admin.
-    user: actor ?? 'system',
-    ipAddress: undefined,
+    // #1179: read from the context. A change no request drove arrives with a
+    // JobContext that names the system principal and its reason.
+    user: actor.user,
+    ipAddress: actor.ipAddress,
     action: 'config-change',
     result: 'success',
     severity: 'medium',

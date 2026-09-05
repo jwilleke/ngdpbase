@@ -15,6 +15,9 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import BackupManager from '../BackupManager';
+
+/** #1179: config writes take the actor's context; the scheduler settings are written on an admin's behalf. */
+const ADMIN_CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 import type { WikiEngine } from '../../types/WikiEngine';
 
 let tmpDir: string;
@@ -380,59 +383,59 @@ describe('BackupManager', () => {
       // by monkey-patching engine after construction using the underlying engine field
       (manager as unknown as { engine: typeof noConfigEngine }).engine = noConfigEngine;
 
-      await expect(manager.updateAutoBackupConfig({ enabled: true })).rejects.toThrow('ConfigurationManager not available');
+      await expect(manager.updateAutoBackupConfig({ enabled: true }, ADMIN_CTX)).rejects.toThrow('ConfigurationManager not available');
     });
 
     test('updates enabled flag and persists via setProperty', async () => {
-      await bm.updateAutoBackupConfig({ enabled: false });
+      await bm.updateAutoBackupConfig({ enabled: false }, ADMIN_CTX);
 
-      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup', false);
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup', false, ADMIN_CTX);
       expect((bm as unknown as { autoBackupEnabled: boolean }).autoBackupEnabled).toBe(false);
     });
 
     test('updates time and persists via setProperty', async () => {
-      await bm.updateAutoBackupConfig({ time: '03:30' });
+      await bm.updateAutoBackupConfig({ time: '03:30' }, ADMIN_CTX);
 
-      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup-time', '03:30');
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup-time', '03:30', ADMIN_CTX);
       expect((bm as unknown as { autoBackupTime: string }).autoBackupTime).toBe('03:30');
     });
 
     test('updates days and persists via setProperty', async () => {
-      await bm.updateAutoBackupConfig({ days: 'Mon,Wed,Fri' });
+      await bm.updateAutoBackupConfig({ days: 'Mon,Wed,Fri' }, ADMIN_CTX);
 
-      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup-days', 'Mon,Wed,Fri');
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.auto-backup-days', 'Mon,Wed,Fri', ADMIN_CTX);
       expect((bm as unknown as { autoBackupDays: string }).autoBackupDays).toBe('Mon,Wed,Fri');
     });
 
     test('updates maxBackups and persists via setProperty', async () => {
-      await bm.updateAutoBackupConfig({ maxBackups: 5 });
+      await bm.updateAutoBackupConfig({ maxBackups: 5 }, ADMIN_CTX);
 
-      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.max-backups', 5);
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.max-backups', 5, ADMIN_CTX);
       expect((bm as unknown as { maxBackups: number }).maxBackups).toBe(5);
     });
 
     test('updates directory, ensures dir exists, and persists via setProperty', async () => {
       const newDir = path.join(tmpDir, 'new-backups');
-      await bm.updateAutoBackupConfig({ directory: newDir });
+      await bm.updateAutoBackupConfig({ directory: newDir }, ADMIN_CTX);
 
-      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.directory', newDir);
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.backup.directory', newDir, ADMIN_CTX);
       expect((bm as unknown as { backupDirectory: string }).backupDirectory).toBe(newDir);
       expect(await fs.pathExists(newDir)).toBe(true);
     });
 
     test('enables auto-backup and starts scheduler', async () => {
-      await bm.updateAutoBackupConfig({ enabled: true });
+      await bm.updateAutoBackupConfig({ enabled: true }, ADMIN_CTX);
 
       const timer = (bm as unknown as { schedulerTimer: unknown }).schedulerTimer;
       expect(timer).not.toBeNull();
       // Clean up: disable to stop the interval
-      await bm.updateAutoBackupConfig({ enabled: false });
+      await bm.updateAutoBackupConfig({ enabled: false }, ADMIN_CTX);
     });
 
     test('disables auto-backup and stops scheduler', async () => {
       // First enable so there is a timer to stop
-      await bm.updateAutoBackupConfig({ enabled: true });
-      await bm.updateAutoBackupConfig({ enabled: false });
+      await bm.updateAutoBackupConfig({ enabled: true }, ADMIN_CTX);
+      await bm.updateAutoBackupConfig({ enabled: false }, ADMIN_CTX);
 
       const timer = (bm as unknown as { schedulerTimer: unknown }).schedulerTimer;
       expect(timer).toBeNull();

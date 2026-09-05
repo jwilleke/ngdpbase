@@ -847,10 +847,11 @@ describe('WikiRoutes — coverage batch 16', () => {
       expect(res.status).toBe(302);
       // #1150: the actor travels with the change, so the audit record can say
       // who closed the instance rather than attributing it to the system.
+      // #1179: as the request's subject, forwarded — not a name.
       expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
         'ngdpbase.features.maintenance.enabled',
         true,
-        'adminuser'
+        expect.objectContaining({ username: 'adminuser' })
       );
     });
 
@@ -865,7 +866,7 @@ describe('WikiRoutes — coverage batch 16', () => {
       expect(mockConfigManager.setProperty).toHaveBeenCalledWith(
         'ngdpbase.features.maintenance.enabled',
         false,
-        'adminuser'
+        expect.objectContaining({ username: 'adminuser' })
       );
     });
 
@@ -963,7 +964,8 @@ describe('WikiRoutes — coverage batch 16', () => {
         .post('/admin/configuration/posture')
         .set('x-csrf-token', 'test-csrf-token')
         .send({ action: 'add', key: 'ngdpbase.session.secure' });
-      expect(mockConfigManager.setProperty.mock.calls[0][2]).toBe('adminuser');
+      // #1179: the subject itself is forwarded, so the record can carry its provenance.
+      expect(mockConfigManager.setProperty.mock.calls[0][2]).toMatchObject({ username: 'adminuser' });
     });
   });
 
