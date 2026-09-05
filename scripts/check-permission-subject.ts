@@ -17,6 +17,8 @@
  *    `{ username, roles, isAuthenticated }` type-checks perfectly and silently
  *    carries no token. `AttachmentManager` did exactly this on the branch that
  *    looked safe, and passing an object is what made it look safe.
+ *    `viaShare` (#1222) is optional for the same reason and is lost the same
+ *    way: a rebuilt subject drops the share ceiling along with the token one.
  *
  * This check covers case 2. It is the cheap half of the pair; the compiler
  * does the heavy lifting.
@@ -142,8 +144,8 @@ export function checkSource(relPath: string, source: string): Violation[] {
         line: i + 1,
         detail:
           'builds a permission subject inline. Forward the context the request carries ' +
-          '(req.userContext / userContext) — a rebuilt object drops viaToken and with it ' +
-          'the agent-token scope ceiling (#1164).'
+          '(req.userContext / userContext) — a rebuilt object drops viaToken and viaShare, ' +
+          'and with them the agent-token scope ceiling (#1164) and the share ceiling (#1222).'
       });
     } else if (/\bcontext\s*:\s*\{/.test(line) || (FABRICATED.test(line) && /\{/.test(line))) {
       // Only inside an identity-shaped literal — a bare `roles: [...]` in a
@@ -156,7 +158,7 @@ export function checkSource(relPath: string, source: string): Violation[] {
           line: i + 1,
           detail:
             'builds an identity inline and asserts authentication or roles. Forward the ' +
-            'caller\'s context instead — an invented principal carries no viaToken, and ' +
+            'caller\'s context instead — an invented principal carries no viaToken or viaShare, and ' +
             'hasPermission trusts supplied roles verbatim rather than re-resolving them (#1179).'
         });
       }

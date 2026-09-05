@@ -9,6 +9,7 @@ import type UserManager from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type NotificationManager from './NotificationManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
+import { shareCoversResource, type ShareGrant } from '../types/Share.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { resolveMaintenanceState } from '../utils/maintenanceState.js';
 
@@ -386,6 +387,45 @@ class ACLManager extends BaseManager {
 
     const policyAction = actionMap[action.toLowerCase()] || action;
 
+    // #1222 Tier -1: share ceiling (epic #1225).
+    //
+    // A share visit is an anonymous subject carrying `viaShare`. The share is
+    // a delegation, so it bounds the request the way a token does — before
+    // every tier, for the same reason as above — and in four ways: the action
+    // must be one the share carries; the page must be covered by the share's
+    // resources (its user-keywords match, and it is not `owner-only`); the
+    // share must not have expired; and the issuer must STILL hold the action,
+    // resolved live, so revoking the issuer's role stops every share they
+    // issued on the next request. Metadata that cannot be read refuses —
+    // conservative on security, the #714 convention. What passes here is
+    // then subject to the page's own rules (tiers 0–1) exactly as any
+    // anonymous visitor is: a private page or a restricted audience refuses.
+    const viaShare = (userContext as { viaShare?: ShareGrant } | undefined)?.viaShare;
+    if (viaShare) {
+      const refuse = (reason: string, detail: string): { allowed: false; reason: string } => {
+        this.logAccessDecision({
+          user: userContext, pageName, action, allowed: false, reason,
+          context: { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
+        });
+        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${detail} — denied`);
+        return { allowed: false, reason };
+      };
+      if (!viaShare.actions.includes(policyAction)) {
+        return refuse('share_action_deny', `does not delegate '${policyAction}' (has: ${viaShare.actions.join(',') || 'none'})`);
+      }
+      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
+        return refuse('share_expired', `expired ${viaShare.expiresAt}`);
+      }
+      const keywords = wikiContext.pageMetadata?.['user-keywords'];
+      if (!wikiContext.pageMetadata || !shareCoversResource(viaShare.resources, 'page', keywords ?? [])) {
+        return refuse('share_resource_deny', `does not cover page '${pageName}'`);
+      }
+      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
+      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, policyAction))) {
+        return refuse('share_issuer_deny', `issuer no longer holds '${policyAction}'`);
+      }
+    }
+
     // Tier 0: private — hard constraint, not overridable by front matter.
     // #639 Slice E: top-level `private: true` is the canonical signal; the
     // user-keywords back-compat fallback was dropped after all datasets
@@ -481,6 +521,20 @@ class ACLManager extends BaseManager {
         });
         return { allowed: fm.allowed, reason: fm.reason };
       }
+    }
+
+    // #1222 Tier 2 for a share: the share IS the policy. The ceiling above
+    // already held the issuer's live authority over it, and the page's own
+    // rules have had their say. Global policy is about the bearer's roles,
+    // and this bearer has none — asking it would refuse every share on an
+    // instance that gives anonymous nothing, which is the instance a share
+    // exists for.
+    if (viaShare) {
+      this.logAccessDecision({
+        user: userContext, pageName, action, allowed: true, reason: 'share_grant',
+        context: { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
+      });
+      return { allowed: true, reason: 'share_grant' };
     }
 
     // Tier 2: Evaluate Global Policies (fallback when no frontmatter audience set)
@@ -1132,7 +1186,7 @@ class ACLManager extends BaseManager {
     // that auditRegistry exempts `page-read` for and that #334 was filed about.
     // A denial is rare and is the half worth keeping.
     if (!allowed) {
-      void this.auditDenial(username, pageName, action, reason);
+      void this.auditDenial(username, pageName, action, reason, (user as { viaShare?: ShareGrant } | undefined)?.viaShare);
     }
   }
 
@@ -1148,7 +1202,8 @@ class ACLManager extends BaseManager {
     username: string,
     pageName: string | undefined,
     action: string | undefined,
-    reason: string | undefined
+    reason: string | undefined,
+    viaShare?: ShareGrant
   ): Promise<void> {
     // #1205: through recordAuditEvent, so the enabled switch, the tier and the
     // outcome are the same door every emitter uses. Standard tier: a slow
@@ -1166,7 +1221,9 @@ class ACLManager extends BaseManager {
         result: 'deny',
         reason: reason || 'not permitted',
         severity: 'medium',
-        metadata: {}
+        // #1222: a share visit is attributed to the share and its issuer —
+        // "anonymous via share, issued by" — on every record it produces.
+        metadata: viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : {}
       },
       (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)
     );

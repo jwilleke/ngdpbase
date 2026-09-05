@@ -30,6 +30,7 @@
  */
 
 import type { PermissionSubject, AgentTokenGrant } from '../managers/UserManager.js';
+import type { ShareGrant } from '../types/Share.js';
 
 /**
  * Where the work came from.
@@ -53,6 +54,8 @@ export interface JobContext {
    * question answerable rather than invisible.
    */
   viaToken?: AgentTokenGrant;
+  /** The share the requesting call presented, when it did (#1222). Carried for the same reason. */
+  viaShare?: ShareGrant;
   /** ISO 8601. When the work was requested, not when it ran. */
   requestedAt: string;
   /** Why, for origins with no person to ask. Free text, for the audit record. */
@@ -63,6 +66,7 @@ export interface JobContext {
 export interface RequestIdentity {
   username?: string | null;
   viaToken?: AgentTokenGrant;
+  viaShare?: ShareGrant;
 }
 
 /**
@@ -92,6 +96,7 @@ export function jobContextFromRequest(
     username: identity?.username ?? ANONYMOUS_USERNAME,
     origin: 'request',
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
+    ...(identity?.viaShare ? { viaShare: identity.viaShare } : {}),
     requestedAt: now.toISOString()
   };
 }
@@ -145,7 +150,8 @@ export function toPermissionSubject(ctx: JobContext): PermissionSubject {
   return {
     username: ctx.username,
     isAuthenticated: true,
-    ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {})
+    ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}),
+    ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {})
   };
 }
 

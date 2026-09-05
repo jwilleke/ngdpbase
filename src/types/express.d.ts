@@ -5,6 +5,7 @@
 
 import 'express';
 import 'express-session';
+import type { ShareGrant } from './Share.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -52,6 +53,8 @@ declare global {
         permissions?: string[];
         /** The agent token this request arrived with, when it did. */
         viaToken?: { id: string; name: string; scopes: string[] };
+        /** The share this request presented, when it did (#1222). Forwarded like `viaToken`. */
+        viaShare?: ShareGrant;
         [key: string]: unknown;
       };
       sessionID?: string;

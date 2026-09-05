@@ -17,6 +17,7 @@ import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type { Person, PersonUpdate } from '../types/Person.js';
+import type { ShareGrant } from '../types/Share.js';
 import type { Organization } from '../types/Organization.js';
 import type { Role as OrganizationRoleRecord } from '../types/Role.js';
 import type { Request, Response, NextFunction } from 'express';
@@ -146,6 +147,8 @@ export interface PermissionSubject {
   isAuthenticated?: boolean;
   /** Present only when the request authenticated with an agent token. */
   viaToken?: AgentTokenGrant;
+  /** Present only when the request presented a share token (#1222). Forwarded like `viaToken`. */
+  viaShare?: ShareGrant;
 }
 
 type RequestWithUser = Request & {
@@ -774,6 +777,34 @@ class UserManager extends BaseManager {
           `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
         );
         return false;
+      }
+    }
+
+    // #1222: a share is a delegation, and for a capability check the share IS
+    // the policy. The subject is anonymous; what it may do is what the issuer
+    // delegated, bounded by what the issuer holds NOW. Three refusals, in
+    // order: the action is not in the share; the share has expired (re-read
+    // here rather than trusted from resolution, so a long request cannot
+    // outlive it); the issuer no longer holds the action — resolved live, so
+    // revoking the issuer's role stops every share they issued on the next
+    // request (epic #1225). Nothing about the anonymous roles is consulted:
+    // a share must work on an instance whose policy gives anonymous nothing.
+    {
+      const viaShare = subject.viaShare;
+      if (viaShare) {
+        if (!viaShare.actions.includes(action)) {
+          logger.info(`[UserManager] share ${viaShare.id} does not delegate '${action}' (has: ${viaShare.actions.join(',') || 'none'}) — denied`);
+          return false;
+        }
+        if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
+          logger.info(`[UserManager] share ${viaShare.id} expired ${viaShare.expiresAt} — denied`);
+          return false;
+        }
+        const issuerHolds = await this.userHoldsPermission(viaShare.issuer, action);
+        if (!issuerHolds) {
+          logger.info(`[UserManager] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
+        }
+        return issuerHolds;
       }
     }
 

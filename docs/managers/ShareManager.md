@@ -16,8 +16,9 @@ Design + signed-off decisions: `docs/planning/keyword-share-links.md`.
 
 Routes consume ONLY this narrow interface, never the storage:
 
-- `issue(scope, ttl, createdBy)` — mint a share; `ttl` is `'24h' | '7d' | '30d' | null` (null = until cancelled)
+- `issue(scope, ttl, issuer, { actions?, resources? })` — mint a share as a delegation by `issuer` ([#1221](https://github.com/jwilleke/ngdpbase/issues/1221)); every action is checked against the issuer's live authority and an unheld one refuses the share. `ttl` is `'24h' | '7d' | '30d' | null` (null = until cancelled)
 - `validate(token)` — returns the typed scope for a live share, else `null`; unknown, expired, and revoked tokens are indistinguishable so share existence never leaks (routes render an identical 404)
+- `subjectFor(token)` — resolves a live token into the `PermissionSubject` the ordinary evaluator understands: anonymous, carrying `viaShare` ([#1222](https://github.com/jwilleke/ngdpbase/issues/1222)). Same `null` cases as `validate`. How the evaluator applies it: [Share Links admin reference](../admin/Share-Links.md#how-a-share-visit-is-evaluated)
 - `revoke(id, revokedBy)` — immediate; record retained with `revokedAt` for audit
 - `list(owner?)` — all shares (admin view) or one owner's
 - `resolveScope(scope)` — live content set at request time, never snapshotted

@@ -42,12 +42,11 @@ import type SearchManager from './SearchManager.js';
 import type PageManager from './PageManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
-import { DEFAULT_SHARE_ACTIONS, resourcesForScope, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
-import type { PermissionSubject } from './UserManager.js';
+import { DEFAULT_SHARE_ACTIONS, OWNER_ONLY_KEYWORD, resourcesForScope, type ShareGrant, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
+import { ANONYMOUS_SUBJECT, type PermissionSubject } from './UserManager.js';
 import type UserManager from './UserManager.js';
 
-/** Reserved keyword excluding content from every share (decision 1). */
-export const OWNER_ONLY_KEYWORD = 'owner-only';
+export { OWNER_ONLY_KEYWORD };
 
 /** Fixed TTL choices in milliseconds (decision 4). */
 const TTL_MS: Record<Exclude<ShareTtl, null>, number> = {
@@ -182,12 +181,45 @@ export default class ShareManager extends BaseManager {
    * existence never leaks.
    */
   validate(token: string): ShareScope | null {
+    return this.liveRecord(token)?.scope ?? null;
+  }
+
+  /**
+   * Resolve a token into the subject the ordinary evaluator understands
+   * (#1222, epic #1225): nobody, carrying what the issuer delegated.
+   *
+   * The routes hand this subject to the same doors as any request; there is
+   * no second evaluator. `hasPermission` and `ACLManager` read `viaShare` as
+   * a ceiling and re-check the issuer live. Null for an unknown, revoked or
+   * expired token — the same three the routes must not tell apart.
+   *
+   * The grant is a copy of the record's arrays, so nothing downstream can
+   * widen the share by mutating what it was handed.
+   */
+  subjectFor(token: string): PermissionSubject | null {
+    const record = this.liveRecord(token);
+    if (!record) return null;
+    const viaShare: ShareGrant = {
+      id: record.id,
+      issuer: record.createdBy,
+      actions: [...record.actions],
+      resources: record.resources.map((r) => ({ ...r })),
+      expiresAt: record.expiresAt
+    };
+    // permission-subject-ignore: the anonymous subject plus the share it
+    // bears. Copied from the constant rather than built, so the only thing
+    // this site adds is `viaShare` — the ceiling, not a widening.
+    return { ...ANONYMOUS_SUBJECT, roles: [...(ANONYMOUS_SUBJECT.roles ?? [])], viaShare };
+  }
+
+  /** The record behind a token, or null when it must not open anything. */
+  private liveRecord(token: string): ShareRecord | null {
     if (!this.enabled || !token) return null;
     const record = this.byToken.get(token);
     if (!record) return null;
     if (record.revokedAt) return null;
     if (record.expiresAt && Date.now() > Date.parse(record.expiresAt)) return null;
-    return record.scope;
+    return record;
   }
 
   /**

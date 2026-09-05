@@ -29,6 +29,7 @@ import type { Request } from 'express';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
 import type { AgentTokenGrant } from '../managers/UserManager.js';
+import type { ShareGrant } from '../types/Share.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
@@ -80,6 +81,9 @@ export class ApiContext {
    */
   readonly viaToken?: AgentTokenGrant;
 
+  /** The share this request presented, when it did (#1222). Carried for the same reason as `viaToken`. */
+  readonly viaShare?: ShareGrant;
+
   private constructor(
     engine: WikiEngine,
     isAuthenticated: boolean,
@@ -87,7 +91,8 @@ export class ApiContext {
     displayName: string | null,
     email: string | null,
     roles: string[],
-    viaToken?: AgentTokenGrant
+    viaToken?: AgentTokenGrant,
+    viaShare?: ShareGrant
   ) {
     this.engine = engine;
     this.isAuthenticated = isAuthenticated;
@@ -96,6 +101,7 @@ export class ApiContext {
     this.email = email;
     this.roles = roles;
     this.viaToken = viaToken;
+    this.viaShare = viaShare;
   }
 
   /**
@@ -121,7 +127,8 @@ export class ApiContext {
       (uc.displayName) ?? null,
       (uc.email) ?? null,
       Array.isArray(uc.roles) ? (uc.roles) : [],
-      uc.viaToken
+      uc.viaToken,
+      uc.viaShare
     );
   }
 
@@ -169,14 +176,20 @@ export class ApiContext {
           isAuthenticated: this.isAuthenticated,
           // #1173: carried, not dropped. Without this the subject is rebuilt
           // from three fields and the ceiling has no token to find.
-          ...(this.viaToken ? { viaToken: this.viaToken } : {})
+          ...(this.viaToken ? { viaToken: this.viaToken } : {}),
+          // #1222: the share ceiling rides the same way.
+          ...(this.viaShare ? { viaShare: this.viaShare } : {})
         },
         permission
       );
     }
     // Anonymous: a named subject rather than an empty string, so there is one
-    // code path into hasPermission (#1173).
-    return userManager.hasPermission(ANONYMOUS_SUBJECT, permission);
+    // code path into hasPermission (#1173). A share visitor is anonymous too,
+    // and the share must ride along or the ceiling has nothing to read (#1222).
+    return userManager.hasPermission(
+      this.viaShare ? { ...ANONYMOUS_SUBJECT, viaShare: this.viaShare } : ANONYMOUS_SUBJECT,
+      permission
+    );
   }
 
   /**

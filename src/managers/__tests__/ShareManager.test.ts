@@ -242,6 +242,43 @@ describe('ShareManager', () => {
     });
   });
 
+  describe('subjectFor() (#1222)', () => {
+    test('a live token resolves to an anonymous subject carrying the delegation', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('jim'));
+      const subject = sm.subjectFor(rec.token);
+      expect(subject).not.toBeNull();
+      expect(subject?.username).toBe('Anonymous');
+      expect(subject?.isAuthenticated).toBe(false);
+      expect(subject?.roles).toContain('anonymous');
+      expect(subject?.viaShare).toEqual({
+        id: rec.id,
+        issuer: 'jim',
+        actions: ['page-read', 'asset-read'],
+        resources: [
+          { type: 'page', pattern: 'keyword:trip' },
+          { type: 'media', pattern: 'keyword:trip' }
+        ],
+        expiresAt: rec.expiresAt
+      });
+    });
+
+    test('the grant is a copy — a caller cannot widen the record through it', async () => {
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'trip' }, null, ISSUER('jim'));
+      const subject = sm.subjectFor(rec.token);
+      subject?.viaShare?.actions.push('page-delete');
+      expect(sm.get(rec.id)?.actions).toEqual(['page-read', 'asset-read']);
+      expect(sm.subjectFor(rec.token)?.viaShare?.actions).toEqual(['page-read', 'asset-read']);
+    });
+
+    test('null for unknown, revoked and expired tokens — the same answer validate() gives', async () => {
+      expect(sm.subjectFor('f'.repeat(64))).toBeNull();
+      expect(sm.subjectFor('')).toBeNull();
+      const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('u'));
+      await sm.revoke(rec.id, 'u');
+      expect(sm.subjectFor(rec.token)).toBeNull();
+    });
+  });
+
   describe('revoke()', () => {
     test('sets revokedAt, persists it, audits, and is idempotent', async () => {
       const rec = await sm.issue({ kind: 'keyword', keyword: 'k' }, null, ISSUER('alice'));

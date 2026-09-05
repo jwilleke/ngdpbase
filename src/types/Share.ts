@@ -41,6 +41,57 @@ export interface ShareResource {
 /** What a share delegates when the issuer asks for nothing more: read-only. */
 export const DEFAULT_SHARE_ACTIONS: readonly string[] = ['page-read', 'asset-read'];
 
+/** Reserved keyword excluding content from every share (decision 1). */
+export const OWNER_ONLY_KEYWORD = 'owner-only';
+
+/**
+ * What a request that presented a share token carries (#1222, epic #1225).
+ *
+ * The share-side twin of `AgentTokenGrant`: it rides on `PermissionSubject`
+ * as `viaShare`, and the evaluator applies it as a ceiling — the action must
+ * be one of `actions`, the resource must be covered by `resources`, the share
+ * must not have passed `expiresAt`, and `issuer` must STILL hold the action
+ * when the decision is made. A delegation, not a copy of authority: revoke
+ * the issuer's role and every share they issued stops on the next request.
+ */
+export interface ShareGrant {
+  /** The share's management id — what audit records name. */
+  id: string;
+  /** Username of the delegator; resolved live at every decision. */
+  issuer: string;
+  /** Actions delegated, a subset of what the issuer held at issue. */
+  actions: string[];
+  /** What the delegation covers. */
+  resources: ShareResource[];
+  /** ISO 8601 expiry, or null = until revoked. */
+  expiresAt: string | null;
+}
+
+/** The prefix of the one pattern grammar a share resource speaks. */
+const KEYWORD_PATTERN = 'keyword:';
+
+/**
+ * Does a share cover a resource of `type` carrying `keywords`?
+ *
+ * The single reader of the `keyword:<name>` grammar. The evaluator asks it
+ * about a page's user-keywords; the share routes ask it about a media item's
+ * EXIF/XMP keywords. A pattern this function does not understand covers
+ * nothing — an unknown grammar is a refusal, never a wildcard — and content
+ * carrying `owner-only` is never covered, whatever else it carries.
+ */
+export function shareCoversResource(
+  resources: readonly ShareResource[],
+  type: string,
+  keywords: readonly string[]
+): boolean {
+  if (keywords.includes(OWNER_ONLY_KEYWORD)) return false;
+  return resources.some((r) =>
+    r.type === type &&
+    r.pattern.startsWith(KEYWORD_PATTERN) &&
+    keywords.includes(r.pattern.slice(KEYWORD_PATTERN.length))
+  );
+}
+
 /** The resources a scope names, in the shape the evaluator matches. */
 export function resourcesForScope(scope: ShareScope): ShareResource[] {
   return [

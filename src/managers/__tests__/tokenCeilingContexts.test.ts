@@ -65,6 +65,26 @@ describe('#1173 — ApiContext carries the token through', () => {
   });
 });
 
+describe('#1222 — ApiContext carries a share through', () => {
+  const share = {
+    id: 'share-1', issuer: 'jim', actions: ['page-read'],
+    resources: [{ type: 'page', pattern: 'keyword:trip' }], expiresAt: null
+  };
+
+  test('the share is captured at construction and reaches hasPermission', async () => {
+    const um = makeUserManager();
+    const seen: unknown[] = [];
+    um.hasPermission = async (subject: unknown) => { seen.push(subject); return true; };
+    const req = {
+      userContext: { username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false, viaShare: share }
+    } as never;
+    const ctx = ApiContext.from(req, makeEngine(um));
+    expect(ctx.viaShare).toEqual(share);
+    await ctx.hasPermission('page-read');
+    expect(seen[0]).toMatchObject({ viaShare: share });
+  });
+});
+
 describe('#1173 — the lookup question keeps its own name', () => {
   test('userHoldsPermission looks the user up and answers from their live roles', async () => {
     // The username form of `hasPermission` is gone — it could not carry a

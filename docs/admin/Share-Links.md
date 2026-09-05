@@ -24,6 +24,19 @@ Share links shown on `/shares` are built from `ngdpbase.application.base-url` (f
 | Revoke | Creator (`share-manage`) or `admin-system` | `POST /shares/:id/revoke` (CSRF-protected) |
 | View shared content | Anyone holding the token | `GET /share/:token[...]` (anonymous) |
 
+## How a share visit is evaluated
+
+A share is a delegation by the user who issued it, not a copy of their authority ([#1222](https://github.com/jwilleke/ngdpbase/issues/1222), epic [#1225](https://github.com/jwilleke/ngdpbase/issues/1225)). A request presenting a token resolves through `ShareManager.subjectFor(token)` to an anonymous subject carrying `viaShare` — the share id, the issuer, the delegated `actions` and `resources`, and the expiry — the same way an agent-token request carries `viaToken`. There is no second evaluator: `UserManager.hasPermission` and `ACLManager` read `viaShare` as a ceiling applied before every other rule, and refuse when any of these fails, in this order:
+
+1. The action is not one the share delegates.
+2. The share has expired (re-read at every decision, not trusted from resolution).
+3. The page is not covered by the share's resources — its user-keywords do not match, it carries `owner-only`, or its metadata cannot be read.
+4. The issuer no longer holds the action, resolved live. Removing the issuer's role, deactivating or deleting them stops every share they issued on the next request.
+
+What passes the ceiling is then subject to the page's own rules exactly as any anonymous visitor is: `private: true`, a restricted `audience`, or a per-action `access` list refuses. Only after that does the share stand in for global policy, which is what lets a share work on an instance whose policy gives anonymous nothing.
+
+Every denial a share visit produces is an `authorization-deny` record with `viaShareId` and `viaShareIssuer` in its metadata, so the trail reads "anonymous via share, issued by".
+
 ## Hard exclusions (safe by construction)
 
 Never exposed through any share, regardless of keyword (decisions 1 and 3): content tagged with the reserved `owner-only` keyword (media EXIF/XMP and page user-keywords alike); pages with `private: true` plus media linked to them (media whose linked page cannot be resolved is excluded conservatively); pages carrying `audience` or per-action `access` frontmatter.
