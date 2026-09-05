@@ -16,6 +16,9 @@ on:
     paths:
       - 'docker/**'
       - '.github/workflows/docker-build.yml'
+  # #1228: honoured. Until then the push condition was "not a pull request",
+  # so a manual dispatch on master moved `latest` whatever this said, and the
+  # workflow could not be dry-run against master without publishing.
   workflow_dispatch:
     inputs:
       push_to_registry:
@@ -39,6 +42,14 @@ jobs:
       packages: write
       security-events: write
 
+    # #1228: NOTHING is pushed until every gate has passed on the exact images
+    # that will be pushed. Both images are built and loaded locally under
+    # candidate tags; every smoke, assertion and scan runs against those; the
+    # Publish step at the end tags and pushes the tested bytes — versioned tags
+    # first, the two `latest` tags last, so `latest` and `latest-devtools` can
+    # never point at different releases. Before this the runtime image was
+    # pushed as the FIRST step and -devtools built as the LAST, and a red gate
+    # between them published half a release three times (#1035, #1142, #1227).
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -61,36 +72,24 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            # latest must move on release tags too, not just default-branch dispatches:
-            # the Trivy step below scans :latest, and a tag run that leaves latest
-            # stale scans the PREVIOUS image (#878). Guarded so a manual dispatch on
-            # an old tag can't clobber latest.
+            # latest moves on release tags and on default-branch dispatches that
+            # ask to publish (#878, #1228). Guarded so a manual dispatch on an old
+            # tag can't clobber latest. Trivy scans the local candidate, so the
+            # scan is of THIS build whatever latest points at.
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master' }}
           labels: |
             org.opencontainers.image.title=ngdpbase
             org.opencontainers.image.description=JSPWiki-inspired file-based wiki platform
             org.opencontainers.image.vendor=ngdpbase Project
 
-      # PR runs have nothing in a registry to refer to, so the image is tagged
-      # and scanned locally instead of by its published `:latest` name.
+      # The candidate: a local tag with no registry name, for every event type.
+      # Everything below tests this reference; only Publish maps it onto the
+      # names from `meta` (#1228).
       - name: Resolve image reference
         id: img
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ref=${{ env.DOCKER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "ref=${{ env.DOCKER_IMAGE_NAME }}:candidate" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKER_REGISTRY }}
-          username: ${{ env.REGISTRY_USER }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
+      - name: Build Docker image (candidate — not pushed)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -100,9 +99,9 @@ jobs:
           # retains npm — an untargeted build would silently publish that as the
           # deployed image and undo #956 (#1001).
           target: runtime
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           load: true
-          tags: ${{ github.event_name == 'pull_request' && steps.img.outputs.ref || steps.meta.outputs.tags }}
+          tags: ${{ steps.img.outputs.ref }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NODE_VERSION=${{ env.DOCKER_NODE_VERSION }}
@@ -351,23 +350,18 @@ jobs:
 
       - name: Resolve devtools image reference
         id: img-devtools
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ref=${{ env.DOCKER_IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}-devtools" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ env.DOCKER_REGISTRY }}/${{ env.REGISTRY_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest-devtools" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "ref=${{ env.DOCKER_IMAGE_NAME }}:candidate-devtools" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push devtools image
+      - name: Build devtools image (candidate — not pushed)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./docker/Dockerfile
           platforms: linux/amd64
           target: devtools
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           load: true
-          tags: ${{ github.event_name == 'pull_request' && steps.img-devtools.outputs.ref || steps.meta-devtools.outputs.tags }}
+          tags: ${{ steps.img-devtools.outputs.ref }}
           labels: ${{ steps.meta-devtools.outputs.labels }}
           build-args: |
             NODE_VERSION=${{ env.DOCKER_NODE_VERSION }}
@@ -401,6 +395,57 @@ jobs:
           rm -rf "$CTX"
           echo "Derived-build path verified."
 
-      - name: Image digest
+      # =====================================================================
+      # Publish (#1228) — reached only when every step above succeeded
+      # =====================================================================
+      # `docker push` of the LOADED images publishes the bytes that were
+      # tested, not a cache-assisted rebuild. Versioned tags for both images go
+      # first; `latest` and `latest-devtools` last and together, so a failure
+      # mid-push can leave a versioned tag without its `latest`, but never
+      # `latest` and `latest-devtools` on different releases.
+      - name: Log in to Container Registry
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_registry) }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish — every gate passed; push the tested images, versioned tags first, latest last
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_registry) }}
+        env:
+          RUNTIME_TAGS: ${{ steps.meta.outputs.tags }}
+          DEVTOOLS_TAGS: ${{ steps.meta-devtools.outputs.tags }}
+          RUNTIME_REF: ${{ steps.img.outputs.ref }}
+          DEVTOOLS_REF: ${{ steps.img-devtools.outputs.ref }}
         run: |
-          echo "Image digest: ${{ steps.meta.outputs.digest }}"
+          set -euo pipefail
+          push_as() {   # push_as <local ref> <tag>…
+            local src="$1"; shift
+            for t in "$@"; do
+              echo "→ $t"
+              docker tag "$src" "$t"
+              docker push "$t"
+            done
+          }
+          is_latest() { case "$1" in *:latest|*:latest-devtools) return 0;; *) return 1;; esac; }
+          rv=(); rl=(); dv=(); dl=()
+          while IFS= read -r t; do [ -n "$t" ] || continue; if is_latest "$t"; then rl+=("$t"); else rv+=("$t"); fi; done <<< "$RUNTIME_TAGS"
+          while IFS= read -r t; do [ -n "$t" ] || continue; if is_latest "$t"; then dl+=("$t"); else dv+=("$t"); fi; done <<< "$DEVTOOLS_TAGS"
+          echo "runtime versioned:  ${rv[*]:-none}"
+          echo "devtools versioned: ${dv[*]:-none}"
+          echo "latest pair:        ${rl[*]:-none} ${dl[*]:-none}"
+          [ ${#rv[@]} -gt 0 ] && push_as "$RUNTIME_REF" "${rv[@]}"
+          [ ${#dv[@]} -gt 0 ] && push_as "$DEVTOOLS_REF" "${dv[@]}"
+          [ ${#rl[@]} -gt 0 ] && push_as "$RUNTIME_REF" "${rl[@]}"
+          [ ${#dl[@]} -gt 0 ] && push_as "$DEVTOOLS_REF" "${dl[@]}"
+          echo "Published."
+
+      - name: Image digests
+        run: |
+          if docker image inspect --format '{{join .RepoDigests "\n"}}' "${{ steps.img.outputs.ref }}" | grep -q .; then
+            echo "runtime:";  docker image inspect --format '{{join .RepoDigests "\n"}}' "${{ steps.img.outputs.ref }}"
+            echo "devtools:"; docker image inspect --format '{{join .RepoDigests "\n"}}' "${{ steps.img-devtools.outputs.ref }}"
+          else
+            echo "Not published (pull request, or a dispatch without push_to_registry): candidates were built, gated and discarded."
+          fi

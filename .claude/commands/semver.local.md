@@ -84,6 +84,18 @@ __If either half fails, stop.__ Nothing is tagged yet, which is the whole point 
 that fails is not a stale instruction to work around — that reading is what shipped `v4.12.0` with a
 missing `-devtools` tag.
 
+## Step 7a — a red run publishes nothing now (#1228)
+
+`semver.md` Step 7a says "the plain image is pushed by an earlier step than `-devtools`" and that a
+failure is detection, not prevention. Since [#1228](https://github.com/jwilleke/ngdpbase/issues/1228)
+the workflow builds both images locally, runs every gate, and pushes only at the end — versioned tags
+first, `latest` + `latest-devtools` last. A red run means __nothing__ reached GHCR: fix forward with a
+patch release and the tags appear together. The tag-existence check below is still worth running; it
+now proves the publish step ran, rather than hunting for the half it skipped.
+
+To dry-run the workflow against master without publishing:
+`gh workflow run docker-build.yml --ref master -f push_to_registry=false` — the input is honoured.
+
 ## Step 7a — check `latest-devtools` too
 
 The tag-existence check in `semver.md` lists `<version>`, `<version>-devtools` and
