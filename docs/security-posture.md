@@ -212,6 +212,7 @@ Bounds:
 - IPv6 unique-local is still denied unless you add that prefix too.
 - Do not set a dummy or overly broad list “to have a value.” That weakens the default-deny.
 - Do not set it hoping to allow `http://localhost:…` — that hostname and address are mechanism, not policy ([#1186](https://github.com/jwilleke/ngdpbase/issues/1186)).
+- The Elasticsearch client is under the same policy since [#1188](https://github.com/jwilleke/ngdpbase/issues/1188) — the search provider's `ngdpbase.search.provider.elasticsearch.url` and the addon's `es-url` alike. Before that the SDK opened its own sockets, unseen by the boundary check, and a loopback or RFC1918 node worked whatever the lists said.
 
 ### D9 — A fatal configuration entry boots into maintenance mode, not a dead process
 

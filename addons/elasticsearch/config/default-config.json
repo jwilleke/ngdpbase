@@ -1,5 +1,6 @@
 {
   "_comment": "Default configuration for the elasticsearch addon. Override any key in app-custom-config.json.",
+  "_comment_es_url": "Goes through the egress guard like sist2-url (#1188): localhost / 127.0.0.1 are never permitted, and a LAN address needs its prefix in ngdpbase.security.egress.allowed-ranges. The shipped localhost value therefore only works once you change it.",
   "ngdpbase.addons.elasticsearch.es-url": "http://localhost:9200",
   "ngdpbase.addons.elasticsearch.es-index": "sist2",
   "_comment_sist2_url": "No default (#1186). Set to the sist2 HTTP address, e.g. http://192.168.68.71:4090, and add that LAN prefix to ngdpbase.security.egress.allowed-ranges. localhost / 127.0.0.1 are never permitted by the egress guard. Empty = search only; thumbnails and file serving off.",

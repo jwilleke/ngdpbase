@@ -29,13 +29,13 @@
  */
 
 import path from 'path';
-import { Client } from '@elastic/elasticsearch';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.js';
 import type AssetManager from '../../dist/src/managers/AssetManager.js';
 import { Sist2AssetProvider } from './src/Sist2AssetProvider.js';
 import { validateUrl } from '../../dist/src/http/ssrf.js';
+import { createGuardedElasticsearchClient, refusedNodeMessage } from '../../dist/src/http/guardedElasticsearch.js';
 import { resolveEgressPolicy } from '../../dist/src/http/egressPolicy.js';
 import logger from '../../dist/src/utils/logger.js';
 import adminRoutes from './routes/admin.js';
@@ -91,7 +91,6 @@ const elasticsearchAddon = {
       ? rawHiddenPaths
       : null;
 
-    const client = new Client({ node: esUrl });
     // #1133 — the provider's only route to sist2, through the instance's
     // egress policy. Positional and required; there is no ungated path.
     const configManager = engine.getManager<{ getProperty?: (k: string, f?: unknown) => unknown }>(
@@ -99,6 +98,14 @@ const elasticsearchAddon = {
     );
     const readConfig = (key: string, fallback?: unknown): unknown =>
       configManager?.getProperty?.(key, fallback) ?? fallback;
+    // #1188 — and the same policy for Elasticsearch itself. The client used
+    // to be `new Client({ node: esUrl })`, ungated, while the boundary check
+    // did not know the SDK: a LAN or loopback es-url worked regardless of
+    // what allowed-ranges said. Built inside src/http now; loopback is
+    // refused like sist2's was (#1186).
+    const esVerdict = validateUrl(esUrl, resolveEgressPolicy(readConfig).policy);
+    if (!esVerdict.ok) logger.error(refusedNodeMessage('elasticsearch addon', esUrl, esVerdict.reason));
+    const client = createGuardedElasticsearchClient(esUrl, readConfig);
     provider = new Sist2AssetProvider(client, esIndex, sist2Url, indexIds, readConfig, pathAccess, hiddenPaths);
     storedConfig = { esUrl, esIndex, sist2Url, indexIds, hiddenPaths };
 

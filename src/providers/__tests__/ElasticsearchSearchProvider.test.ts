@@ -28,7 +28,9 @@ const mockClientInstance = {
 };
 
 vi.mock('@elastic/elasticsearch', () => ({
-  Client: vi.fn(function () { return mockClientInstance; })
+  Client: vi.fn(function () { return mockClientInstance; }),
+  // #1188: the guarded factory in src/http names the http connection class.
+  HttpConnection: class {}
 }));
 
 import ElasticsearchSearchProvider from '../ElasticsearchSearchProvider';

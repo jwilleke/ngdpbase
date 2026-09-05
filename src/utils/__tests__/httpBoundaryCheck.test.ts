@@ -46,6 +46,16 @@ describe('#1139 — outbound calls outside the boundary are caught', () => {
     }
   });
 
+  test('#1188 the Elasticsearch SDK is a client, and a type-only import of it is not', () => {
+    // Both `new Client({ node })` sites read green for months because the SDK
+    // was not named here. The guarded constructor lives in src/http.
+    const v = at("import { Client } from '@elastic/elasticsearch';");
+    expect(v).toHaveLength(1);
+    expect(v[0].rule).toBe('client-library');
+    expect(at("import { HttpConnection } from '@elastic/transport';")[0].rule).toBe('client-library');
+    expect(at("import type { Client, estypes } from '@elastic/elasticsearch';")).toEqual([]);
+  });
+
   test('a client symbol from http or https is a violation', () => {
     expect(at('import { request } from \'https\';')[0].rule).toBe('client-symbol');
     expect(at('import { get } from \'node:http\';')[0].rule).toBe('client-symbol');

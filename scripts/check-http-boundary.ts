@@ -70,8 +70,17 @@ const SCAN_ROOTS = ['src', 'addons'];
  */
 const CLIENT_SYMBOLS = ['request', 'get', 'createConnection', 'connect', 'Agent'];
 
-/** HTTP client libraries. None of these has an inbound use. */
-const CLIENT_MODULES = ['axios', 'got', 'node-fetch', 'undici', 'superagent', 'request'];
+/**
+ * HTTP client libraries and SDKs that open sockets of their own. None of
+ * these has an inbound use.
+ *
+ * `@elastic/elasticsearch` (and the transport under it) is here since #1188:
+ * the search provider and the elasticsearch addon each built a `Client` with
+ * no policy while this list did not name the SDK, so the check read green
+ * over two live outbound paths. The guarded constructor lives in
+ * `src/http/guardedElasticsearch.ts`.
+ */
+const CLIENT_MODULES = ['axios', 'got', 'node-fetch', 'undici', 'superagent', 'request', '@elastic/elasticsearch', '@elastic/transport'];
 
 export interface Violation {
   file: string;
@@ -177,6 +186,10 @@ export function checkFile(relPath: string, source: string): Violation[] {
 
     if (isImport && mod) {
       if (CLIENT_MODULES.includes(mod)) {
+        // A type-only import is erased at compile time and cannot open
+        // anything — `import type { Client }` is how a caller names what the
+        // boundary hands it.
+        if (/^\s*import\s+type\b/.test(line)) return;
         report('client-library', `imports "${mod}", an HTTP client. Outbound requests belong in ${BOUNDARY}/.`);
         return;
       }

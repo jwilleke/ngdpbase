@@ -23,7 +23,10 @@
  * Related: #189 (Lunr alternatives), #504 (ES search integration), #507 (auto-tagging)
  */
 
-import { Client, estypes } from '@elastic/elasticsearch';
+import type { Client, estypes } from '@elastic/elasticsearch';
+import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { validateUrl } from '../http/ssrf.js';
 
 // Type aliases for commonly used ES types (estypes namespace is the stable export path)
 type AggregationsStringTermsBucket = estypes.AggregationsStringTermsBucket;
@@ -150,10 +153,14 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
     this.maxResults = cfg.getProperty<number>('ngdpbase.search.provider.lunr.maxresults', 50);
     this.snippetLength = cfg.getProperty<number>('ngdpbase.search.provider.lunr.snippetlength', 200);
 
-    this.client = new Client({
-      node: url,
-      requestTimeout
-    });
+    // #1188: the client is built inside the boundary, so every socket it
+    // opens is judged by the egress policy at connect time. Say at boot when
+    // the configured node can never pass, rather than "connection refused"
+    // on every request.
+    const read = (key: string, fallback?: unknown): unknown => cfg.getProperty(key, fallback);
+    const verdict = validateUrl(url, resolveEgressPolicy(read).policy);
+    if (!verdict.ok) logger.error(refusedNodeMessage('ElasticsearchSearchProvider', url, verdict.reason));
+    this.client = createGuardedElasticsearchClient(url, read, { requestTimeout });
     void connectTimeout; // read from config for future use
 
     // Create index if it does not exist yet

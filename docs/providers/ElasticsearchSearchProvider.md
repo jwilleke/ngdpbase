@@ -42,7 +42,7 @@ Lunr remains the default. Switch by setting one config key — no code changes r
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `ngdpbase.search.provider.elasticsearch.url` | `http://localhost:9200` | Elasticsearch base URL |
+| `ngdpbase.search.provider.elasticsearch.url` | `http://localhost:9200` | Elasticsearch base URL. Subject to the egress policy (#1188): `localhost` is never permitted, a LAN node needs its prefix in `ngdpbase.security.egress.allowed-ranges` |
 | `ngdpbase.search.provider.elasticsearch.indexname` | `ngdpbase-pages` | ES index name |
 | `ngdpbase.search.provider.elasticsearch.connecttimeout` | `5000` | Connect timeout (ms) |
 | `ngdpbase.search.provider.elasticsearch.requesttimeout` | `30000` | Request timeout (ms) |
