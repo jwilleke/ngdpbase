@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "4.13.0",
+  "ngdpbase.version": "4.14.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -50,7 +50,9 @@
   },
   "_comment_system_principal": "#631 — the system principal: the server acting for itself at boot and from timers. IDENTITY is owned by the environment: the value below is the bare env-ref $NGDPBASE_SYSTEM_USER, which THROWS when the variable is unset, so an instance with no named principal refuses to boot rather than acting as a default nobody chose. .env is not reachable from the admin UI, so the name cannot be changed through a form. The name is reserved in the user store: no person can register it. AUTHORITY comes from ngdpbase.system.roles through policy — the same door as any request — and ships as [\"admin\"]. No roles are ever carried in a job context; the name resolves to these roles at the moment of each permission decision (UserManager.systemSubject).",
   "ngdpbase.system.principal": "$NGDPBASE_SYSTEM_USER",
-  "ngdpbase.system.roles": ["admin"],
+  "ngdpbase.system.roles": [
+    "admin"
+  ],
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
   "ngdpbase.session.secure": false,
@@ -340,52 +342,196 @@
   "ngdpbase.audit.retentiondays": 90,
   "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code lists the same names once in src/utils/auditEventNames.ts and a test holds the two equal. Events are actions taken; permissions are authority; neither carries the other's fields. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
   "ngdpbase.audit.events": {
-    "page-create": { "on-failure": "continue", "description": "Page created" },
-    "page-edit": { "on-failure": "continue", "description": "Page edited" },
-    "page-rename": { "on-failure": "continue", "description": "Page renamed" },
-    "page-delete": { "on-failure": "refuse", "description": "Page deleted; destruction, so the record must outlive the page" },
-    "page-read": { "on-failure": "continue", "enabled": false, "description": "Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129)" },
-    "page-link-rewrite": { "on-failure": "continue", "description": "Inbound links rewritten after a rename" },
-    "asset-upload": { "on-failure": "continue", "description": "File uploaded" },
-    "asset-delete": { "on-failure": "refuse", "description": "File deleted; destruction" },
-    "token-mint": { "on-failure": "refuse", "description": "Agent token minted; a credential nobody knows exists is the worst case" },
-    "token-revoke": { "on-failure": "refuse", "description": "Agent token revoked" },
-    "authentication-success": { "on-failure": "continue", "description": "Sign-in succeeded" },
-    "authentication-failed": { "on-failure": "continue", "description": "Sign-in failed" },
-    "authentication-logout": { "on-failure": "continue", "description": "User signed out" },
-    "authorization-deny": { "on-failure": "continue", "description": "Access denied" },
-    "authorization-allow": { "on-failure": "continue", "description": "Access granted; emitter exists, nothing in production calls it" },
-    "policy-evaluate": { "on-failure": "continue", "description": "Security policy evaluated; emitter exists, nothing in production calls it" },
-    "security-event": { "on-failure": "continue", "description": "Security violation detected; the kind is in metadata.securityEventType" },
-    "share-create": { "on-failure": "refuse", "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint" },
-    "share-access": { "on-failure": "continue", "description": "Share link used; batched counts" },
-    "share-revoke": { "on-failure": "refuse", "description": "Share link revoked; pairs with token-revoke" },
-    "system-start": { "on-failure": "refuse", "description": "Instance started; reports whether the previous run ended cleanly" },
-    "system-shutdown": { "on-failure": "refuse", "description": "Instance shut down cleanly; its absence before the next start is the signal" },
-    "config-change": { "on-failure": "continue", "description": "Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI" },
-    "manager-state-change": { "on-failure": "continue", "description": "A manager changed state: degraded, disabled, failed or recovered" },
-    "posture-recorded": { "on-failure": "refuse", "description": "Security posture at startup, compared against the previous start" },
-    "job-started": { "on-failure": "continue", "description": "A background job started, and who asked for it" },
-    "job-completed": { "on-failure": "continue", "description": "A background job finished successfully" },
-    "job-failed": { "on-failure": "continue", "description": "A background job failed" },
-    "page-raw-edit": { "on-failure": "continue", "description": "Page edited through the admin raw editor" },
-    "session-revoke": { "on-failure": "continue", "description": "Session revoked by an administrator" },
-    "session-clear-anonymous": { "on-failure": "continue", "description": "Anonymous sessions cleared" },
-    "user-create": { "on-failure": "continue", "description": "Account created; by an administrator, by self-registration, or provisioned by an identity provider" },
-    "user-edit": { "on-failure": "continue", "description": "Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded" },
-    "user-delete": { "on-failure": "refuse", "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete" },
-    "search-user": { "on-failure": "continue", "enabled": false, "description": "People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume" },
-    "page-export": { "on-failure": "continue", "description": "Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists" },
-    "asset-edit": { "on-failure": "continue", "description": "Attachment metadata edited; EXIF/IPTC and catalog fields change provenance" },
-    "config-reset": { "on-failure": "refuse", "description": "Every custom configuration value discarded; recorded before the reset, which cannot proceed without it" },
-    "backup-create": { "on-failure": "continue", "description": "A full backup written; where it went and who asked" },
-    "secret-reveal": { "on-failure": "continue", "description": "A masked configuration value shown to an administrator; the key is recorded, never the value" },
-    "audit-export": { "on-failure": "continue", "description": "The audit trail exported to a file; who took a copy, in what format, with what filter" },
-    "audit-chain-restart": { "on-failure": "refuse", "description": "Hash chain restarted, with the reason; the marker is the action and cannot half-complete" },
-    "asset-read": { "on-failure": "continue", "enabled": false, "description": "Attachment read; not recorded, read volume" },
-    "search-page": { "on-failure": "continue", "enabled": false, "description": "Page search; not recorded, read volume" },
-    "user-read": { "on-failure": "continue", "enabled": false, "description": "User profile read; not recorded, read volume" },
-    "admin-read": { "on-failure": "continue", "enabled": false, "description": "Admin dashboard read; not recorded, read volume" }
+    "page-create": {
+      "on-failure": "continue",
+      "description": "Page created"
+    },
+    "page-edit": {
+      "on-failure": "continue",
+      "description": "Page edited"
+    },
+    "page-rename": {
+      "on-failure": "continue",
+      "description": "Page renamed"
+    },
+    "page-delete": {
+      "on-failure": "refuse",
+      "description": "Page deleted; destruction, so the record must outlive the page"
+    },
+    "page-read": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129)"
+    },
+    "page-link-rewrite": {
+      "on-failure": "continue",
+      "description": "Inbound links rewritten after a rename"
+    },
+    "asset-upload": {
+      "on-failure": "continue",
+      "description": "File uploaded"
+    },
+    "asset-delete": {
+      "on-failure": "refuse",
+      "description": "File deleted; destruction"
+    },
+    "token-mint": {
+      "on-failure": "refuse",
+      "description": "Agent token minted; a credential nobody knows exists is the worst case"
+    },
+    "token-revoke": {
+      "on-failure": "refuse",
+      "description": "Agent token revoked"
+    },
+    "authentication-success": {
+      "on-failure": "continue",
+      "description": "Sign-in succeeded"
+    },
+    "authentication-failed": {
+      "on-failure": "continue",
+      "description": "Sign-in failed"
+    },
+    "authentication-logout": {
+      "on-failure": "continue",
+      "description": "User signed out"
+    },
+    "authorization-deny": {
+      "on-failure": "continue",
+      "description": "Access denied"
+    },
+    "authorization-allow": {
+      "on-failure": "continue",
+      "description": "Access granted; emitter exists, nothing in production calls it"
+    },
+    "policy-evaluate": {
+      "on-failure": "continue",
+      "description": "Security policy evaluated; emitter exists, nothing in production calls it"
+    },
+    "security-event": {
+      "on-failure": "continue",
+      "description": "Security violation detected; the kind is in metadata.securityEventType"
+    },
+    "share-create": {
+      "on-failure": "refuse",
+      "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint"
+    },
+    "share-access": {
+      "on-failure": "continue",
+      "description": "Share link used; batched counts"
+    },
+    "share-revoke": {
+      "on-failure": "refuse",
+      "description": "Share link revoked; pairs with token-revoke"
+    },
+    "system-start": {
+      "on-failure": "refuse",
+      "description": "Instance started; reports whether the previous run ended cleanly"
+    },
+    "system-shutdown": {
+      "on-failure": "refuse",
+      "description": "Instance shut down cleanly; its absence before the next start is the signal"
+    },
+    "config-change": {
+      "on-failure": "continue",
+      "description": "Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI"
+    },
+    "manager-state-change": {
+      "on-failure": "continue",
+      "description": "A manager changed state: degraded, disabled, failed or recovered"
+    },
+    "posture-recorded": {
+      "on-failure": "refuse",
+      "description": "Security posture at startup, compared against the previous start"
+    },
+    "job-started": {
+      "on-failure": "continue",
+      "description": "A background job started, and who asked for it"
+    },
+    "job-completed": {
+      "on-failure": "continue",
+      "description": "A background job finished successfully"
+    },
+    "job-failed": {
+      "on-failure": "continue",
+      "description": "A background job failed"
+    },
+    "page-raw-edit": {
+      "on-failure": "continue",
+      "description": "Page edited through the admin raw editor"
+    },
+    "session-revoke": {
+      "on-failure": "continue",
+      "description": "Session revoked by an administrator"
+    },
+    "session-clear-anonymous": {
+      "on-failure": "continue",
+      "description": "Anonymous sessions cleared"
+    },
+    "user-create": {
+      "on-failure": "continue",
+      "description": "Account created; by an administrator, by self-registration, or provisioned by an identity provider"
+    },
+    "user-edit": {
+      "on-failure": "continue",
+      "description": "Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded"
+    },
+    "user-delete": {
+      "on-failure": "refuse",
+      "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
+    },
+    "search-user": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume"
+    },
+    "page-export": {
+      "on-failure": "continue",
+      "description": "Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists"
+    },
+    "asset-edit": {
+      "on-failure": "continue",
+      "description": "Attachment metadata edited; EXIF/IPTC and catalog fields change provenance"
+    },
+    "config-reset": {
+      "on-failure": "refuse",
+      "description": "Every custom configuration value discarded; recorded before the reset, which cannot proceed without it"
+    },
+    "backup-create": {
+      "on-failure": "continue",
+      "description": "A full backup written; where it went and who asked"
+    },
+    "secret-reveal": {
+      "on-failure": "continue",
+      "description": "A masked configuration value shown to an administrator; the key is recorded, never the value"
+    },
+    "audit-export": {
+      "on-failure": "continue",
+      "description": "The audit trail exported to a file; who took a copy, in what format, with what filter"
+    },
+    "audit-chain-restart": {
+      "on-failure": "refuse",
+      "description": "Hash chain restarted, with the reason; the marker is the action and cannot half-complete"
+    },
+    "asset-read": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "Attachment read; not recorded, read volume"
+    },
+    "search-page": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "Page search; not recorded, read volume"
+    },
+    "user-read": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "User profile read; not recorded, read volume"
+    },
+    "admin-read": {
+      "on-failure": "continue",
+      "enabled": false,
+      "description": "Admin dashboard read; not recorded, read volume"
+    }
   },
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",
   "ngdpbase.security.egress.denied-ranges": [],
