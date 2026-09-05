@@ -49,7 +49,6 @@ describe('#1198 no route decides allow or deny by isAuthenticated', () => {
    * the flag off disk. Everything else asks `permitted()`.
    */
   const HONEST = new Set(['refuse', 'getCommonTemplateData', 'loginPage', 'adminLoginPage', 'sweepAnonymousSessions']);
-  // `assetSearch` reads the `authenticated` alias for the #694 people-search scope — pending the operator's permission choice; it is not gated here because the test matches `isAuthenticated` only.
 
   test('every isAuthenticated test in WikiRoutes.ts is in a listed method', () => {
     const lines = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8').split('\n');

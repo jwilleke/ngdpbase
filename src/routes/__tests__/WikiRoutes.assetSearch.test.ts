@@ -61,8 +61,16 @@ function policyFor(userContext: { roles?: string[] } | null | undefined) {
     // Only the asset surface is under test here; every other permission stays
     // as permissive as the fixture's old default so the page and user branches
     // behave as before.
-    hasPermission: (_u: string, action: string) =>
-      action !== 'asset-upload' || (userContext?.roles ?? []).some((r) => ASSET_ROLES.has(r))
+    hasPermission: (_u: string, action: string) => {
+      if (action === 'asset-upload') return (userContext?.roles ?? []).some((r) => ASSET_ROLES.has(r));
+      // #1198 / #694: search-user is granted on the Authenticated policy —
+      // any signed-in account holds it, anonymous does not.
+      if (action === 'search-user') {
+        const name = userContext?.username;
+        return Boolean(userContext?.authenticated && name && name !== 'anonymous' && name !== 'asserted');
+      }
+      return true;
+    }
   };
 }
 
@@ -756,8 +764,9 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
     }
 
     // Operator decision on #694: any authenticated user can search users via
-    // the picker surface (no `search-user` permission required). The fixture
-    // below is the default for tests that expect results back.
+    // the picker surface. Since #1198 that is a GRANT — `search-user` on the
+    // Authenticated policy — asked of policy, not read off the session flag.
+    // The fixture below is the default for tests that expect results back.
     const authedUser = { authenticated: true, username: 'molly', roles: ['reader'] };
     function makeAuthedReq(overrides = {}) {
       return makeReq({ userContext: authedUser, ...overrides });
@@ -801,10 +810,10 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       expect(userManager.searchUsers).not.toHaveBeenCalled();
     });
 
-    it('returns results for authenticated user WITHOUT search-user permission (the molly case)', async () => {
-      // Operator's smoke-test scenario: molly is authenticated as a regular
-      // reader-role user; she does NOT have the `search-user` permission in
-      // the default config. She should still get search results in the picker.
+    it('returns results for a signed-in reader (the molly case — search-user through the Authenticated policy)', async () => {
+      // Operator's smoke-test scenario: molly is a regular reader-role user.
+      // Since #1198 she holds `search-user` through the Authenticated policy
+      // rather than being let through on the session flag; same result.
       const userManager = makeUserManager([{ username: 'jim', displayName: 'Jim' }]);
       const routes = makeRoutesWithUsers(makeAssetService(), userManager);
       const req = makeAuthedReq({ query: { types: 'user', q: 'jim' } });

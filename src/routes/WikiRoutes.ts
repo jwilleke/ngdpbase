@@ -12500,19 +12500,11 @@ ${panes}
         // Users — authenticated viewers only (profile info is PII; mirrors
         // the types=user auth gate). Anonymous viewers simply get no users.
         {
-          // #694 (operator decision): any authenticated user may search people
-          // from the picker, deliberately WITHOUT `search-user`, which stays the
-          // admin people-search permission. #1198 leaves this as the one
-          // session-flag scope choice in the file until the operator picks its
-          // permission — a `people-search` grant on Authenticated, or widening
-          // `search-user`. Listed as an honest use in permissionGates.test.ts.
-          const uname = wikiContext.userContext?.username;
-          const canSearchUsers = Boolean(
-            wikiContext.userContext?.authenticated
-            && uname
-            && uname !== 'anonymous'
-            && uname !== 'asserted'
-          );
+          // #694 / #1198: any signed-in account may find people. That is a
+          // grant — `search-user` on the Authenticated policy — not a session
+          // flag, so the same door answers here and at /api/users/search, and
+          // anonymous or a token without the scope is refused by policy.
+          const canSearchUsers = await wikiContext.hasPermission('search-user');
           const userManager = this.engine.getManager('UserManager') as {
             searchUsers?: (q: string, opts?: { limit?: number; activeOnly?: boolean }) => Promise<Array<{
               username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string;

@@ -2050,7 +2050,7 @@
     {
       "id": "authenticated-self-service",
       "name": "Self-service for every signed-in account",
-      "description": "Anyone with an account may manage their own profile and comment. One policy on the Authenticated role, so a role added later has it without editing its policy; a role that must not gets a deny (#1198)",
+      "description": "Anyone with an account may manage their own profile, comment, and find other people. One policy on the Authenticated role, so a role added later has it without editing its policy; a role that must not gets a deny (#1198, #694)",
       "priority": 55,
       "effect": "allow",
       "subjects": [
@@ -2067,7 +2067,8 @@
       ],
       "actions": [
         "profile-manage",
-        "comment-create"
+        "comment-create",
+        "search-user"
       ]
     },
     {
