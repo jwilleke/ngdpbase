@@ -15,7 +15,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
-import { pendingBootActions, resetBootActions } from '../../context/bootActions';
+import { pendingBootActions, resetBootActions, scheduleContext, systemContext } from '../../context/bootActions';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -272,13 +272,49 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect(provider['pageIndex'].deletedPages[freshUuid]).toBeDefined();
 
     // #1197 / #1196: the purge is recorded — page-delete, action purge — under
-    // the system principal, with the origin the trigger gives it. No sink in
-    // this fixture, so it waits in the boot ledger.
+    // the system principal, with the origin the context gives it (the default
+    // is a scheduled tick). No sink in this fixture, so it waits in the ledger.
     await new Promise((r) => setTimeout(r, 0));
     const purges = pendingBootActions().filter((p) => p.event.eventType === 'page-delete');
     expect(purges).toHaveLength(1);
     expect(purges[0].event).toMatchObject({ action: 'purge', resource: 'Old', metadata: { origin: 'schedule', uuid: oldUuid } });
-    expect(purges[0].context.reason).toMatch(/delete-retention purge \(scheduled\)/);
+    expect(purges[0].context.reason).toMatch(/delete-retention purge/);
+  });
+
+  test('#1196 the purge records the context it was handed — boot at start-up, schedule on the tick', async () => {
+    // Sabotage guard: if the purge stopped forwarding the caller's context and
+    // built its own, the origin and reason recorded here would not be the ones
+    // the caller gave, and this goes red.
+    await provider.initialize();
+    for (const title of ['One', 'Two']) {
+      await provider.savePage(title, 'x', { author: 'jim' });
+      await provider.deletePage(title, 'jim');
+    }
+    for (const t of Object.values(provider['pageIndex'].deletedPages)) {
+      t.deletedAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    resetBootActions();
+    expect(await provider.purgeExpiredDeletedPages(systemContext(null, 'retention at boot (test)'))).toBe(2);
+    await new Promise((r) => setTimeout(r, 0));
+    const purges = pendingBootActions().filter((p) => p.event.eventType === 'page-delete');
+    expect(purges).toHaveLength(2);
+    for (const p of purges) {
+      expect(p.event.metadata).toMatchObject({ origin: 'boot', reason: 'retention at boot (test)' });
+      expect(p.event.user).toBe('system');
+    }
+
+    // And the scheduled shape, with a reason of the caller's choosing.
+    await provider.savePage('Three', 'x', { author: 'jim' });
+    await provider.deletePage('Three', 'jim');
+    for (const t of Object.values(provider['pageIndex'].deletedPages)) {
+      t.deletedAt = new Date(0).toISOString();
+    }
+    resetBootActions();
+    expect(await provider.purgeExpiredDeletedPages(scheduleContext(null, 'hourly tick (test)'))).toBe(1);
+    await new Promise((r) => setTimeout(r, 0));
+    const [tick] = pendingBootActions().filter((p) => p.event.eventType === 'page-delete');
+    expect(tick.event.metadata).toMatchObject({ origin: 'schedule', reason: 'hourly tick (test)' });
   });
 
   test('an hourly scheduler expires tombstones without needing a restart', async () => {
@@ -338,7 +374,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     provider['deleteRetentionDays'] = 0;
     provider['pageIndex'].deletedPages[uuid].deletedAt = new Date(0).toISOString();
 
-    expect(await provider.purgeExpiredDeletedPages('startup')).toBe(0);
+    expect(await provider.purgeExpiredDeletedPages(systemContext(null, 'retention at boot (test)'))).toBe(0);
     expect(provider['pageIndex'].deletedPages[uuid]).toBeDefined();
   });
 });

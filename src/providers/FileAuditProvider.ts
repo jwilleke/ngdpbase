@@ -11,6 +11,9 @@ import type { ProviderDurability } from './BaseProvider.js';
 import type { AuditReport } from './BaseAuditProvider.js';
 import { buildWitness, shouldPublish, type ChainWitness } from '../utils/auditHeadWitness.js';
 import { refusesOnFailure, refuseOnFailureEventTypes } from '../utils/auditRegistry.js';
+import { attributedTo, scheduleContext, systemContext } from '../context/bootActions.js';
+import type { JobContext } from '../context/JobContext.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 export const WITNESS_DESTINATION_KEY = 'ngdpbase.audit.chain-witness.destination';
 export const WITNESS_INTERVAL_KEY = 'ngdpbase.audit.chain-witness.interval-minutes';
@@ -171,13 +174,13 @@ class FileAuditProvider extends BaseAuditProvider {
     await this.loadExistingLogs();
 
     // Clean up old logs
-    await this.cleanup();
+    await this.cleanup(systemContext(this.engine, 'audit-archive retention at boot: archives past the retention window'));
 
     // #1122: and keep doing it. Running retention once at boot meant a
     // long-lived instance applied its own policy exactly once — the same
     // defect #1110 fixed for the token store's purgeExpired.
     this.retentionTimer = setInterval(() => {
-      void this.cleanup().catch((err: unknown) => {
+      void this.cleanup(scheduleContext(this.engine, 'audit-archive retention (hourly): archives past the retention window')).catch((err: unknown) => {
         logger.warn('[FileAuditProvider] Scheduled retention pass failed:', err);
       });
     }, RETENTION_INTERVAL_MS);
@@ -696,7 +699,9 @@ class FileAuditProvider extends BaseAuditProvider {
    * Clean up old audit logs based on retention policy
    * @returns {Promise<void>}
    */
-  async cleanup(): Promise<void> {
+  async cleanup(
+    ctx: JobContext = scheduleContext(this.engine, 'audit-archive retention: archives past the retention window')
+  ): Promise<void> {
     if (!this.config) return;
 
     try {
@@ -724,6 +729,27 @@ class FileAuditProvider extends BaseAuditProvider {
         await fs.remove(archivePath);
         removed++;
         logger.info(`[FileAuditProvider] Removed audit archive ${archive} — past the ${this.config.retentionDays}-day window`);
+        // #1196: destroying audit records is itself a security event, and it
+        // used to happen as nobody. Recorded into the live log under the
+        // principal the caller named, with origin (boot / schedule) and the
+        // reason — through this provider directly, because at boot the
+        // AuditManager above it is still initialising.
+        const who = attributedTo(ctx);
+        try {
+          await this.logAuditEvent({
+            eventType: AUDIT_EVENT.SECURITY_EVENT,
+            user: who.user,
+            ipAddress: undefined,
+            action: 'audit-archive-purge',
+            resource: archive,
+            resourceType: 'audit-archive',
+            result: 'success',
+            severity: 'high',
+            metadata: { ...who.metadata, retentionDays: this.config.retentionDays, newestRecordAt: stats.mtime.toISOString() }
+          } as unknown as AuditEvent);
+        } catch (recordErr) {
+          logger.warn(`[FileAuditProvider] Could not record the removal of ${archive}:`, recordErr);
+        }
       }
 
       if (removed > 0) {

@@ -1,4 +1,5 @@
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
+import { scheduleContext } from '../context/bootActions.js';
 import zlib from 'zlib';
 import { promisify } from 'util';
 import logger from '../utils/logger.js';
@@ -279,7 +280,7 @@ class BackupManager extends BaseManager {
    * @param {boolean} options.compress - Whether to compress (default: true)
    * @returns {Promise<string>} Path to created backup file
    */
-  async createBackup(options: BackupOptions = {}, actor?: { username?: string; ipAddress?: string }): Promise<string> {
+  async createBackup(options: BackupOptions = {}, actor?: { username?: string; ipAddress?: string; origin?: string; reason?: string }): Promise<string> {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
 
@@ -365,7 +366,11 @@ class BackupManager extends BaseManager {
         severity: 'medium',
         resource: backupPath,
         resourceType: 'backup',
-        metadata: { filename, bytes: finalData.length, managers: managerNames.length, ...(actor ? {} : { actorMissing: true }) }
+        metadata: {
+          filename, bytes: finalData.length, managers: managerNames.length,
+          ...(actor?.origin ? { origin: actor.origin, reason: actor.reason ?? null } : {}),
+          ...(actor ? {} : { actorMissing: true })
+        }
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
       // Clean up old backups
@@ -688,7 +693,10 @@ class BackupManager extends BaseManager {
       if (!shouldRun) return;
 
       logger.info(`⏰ Scheduled auto-backup triggered at ${hhmm} (${dayName})`);
-      await this.createBackup();
+      // #1196: a scheduled backup has an actor — the system principal on a
+      // schedule — so backup-create no longer records "unknown".
+      const ctx = scheduleContext(this.engine, `scheduled auto-backup at ${this.autoBackupTime} (${this.autoBackupDays})`);
+      await this.createBackup({}, { username: ctx.username, origin: ctx.origin, reason: ctx.reason });
     } catch (err) {
       logger.error('❌ Scheduled auto-backup failed:', err);
     }

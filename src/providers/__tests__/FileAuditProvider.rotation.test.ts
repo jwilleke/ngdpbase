@@ -18,6 +18,7 @@ import os from 'os';
 import path from 'path';
 import FileAuditProvider from '../FileAuditProvider';
 import { verifyChain } from '../../utils/auditChain';
+import { scheduleContext } from '../../context/bootActions';
 
 let dir: string;
 
@@ -57,6 +58,13 @@ const readRecords = async (file: string): Promise<Record<string, unknown>[]> => 
   return (await fs.readFile(full, 'utf8'))
     .split('\n').filter((l) => l.trim())
     .map((l) => JSON.parse(l) as Record<string, unknown>);
+};
+
+/** Every record in the directory — the live log and any archive. */
+const allRecords = async (): Promise<Record<string, unknown>[]> => {
+  const out: Record<string, unknown>[] = [];
+  for (const f of ['audit.log', ...(await archives())]) out.push(...(await readRecords(f)));
+  return out;
 };
 
 beforeEach(async () => {
@@ -162,6 +170,66 @@ describe('#1122 retention applies to archives', () => {
 
     await p.cleanup();
     expect(await archives()).toEqual([]);
+  });
+
+  test('#1196 removing an archive is recorded under the context the caller gave', async () => {
+    const p = makeProvider({ 'ngdpbase.audit.retentiondays': 1 });
+    await p.initialize();
+    for (let i = 0; i < 12; i++) {
+      await p.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
+      await p.flush();
+    }
+    const before = await archives();
+    expect(before.length).toBeGreaterThan(0);
+    const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    for (const a of before) await fs.utimes(path.join(dir, a), old, old);
+
+    await p.cleanup(scheduleContext(null, 'audit retention tick (test)'));
+    expect(await archives()).toEqual([]);
+    // The purge records are queued; flushing them may itself rotate a fresh
+    // archive under this fixture's tiny maxFileSize, so read every file.
+    await p.flush();
+
+    // Destroying audit records is a security event with an actor, an origin
+    // and a reason — not a logger line. The fixture engine has no UserManager,
+    // so the principal falls back to the literal `system`.
+    const purges = (await allRecords()).filter((r) => r.action === 'audit-archive-purge');
+    expect(purges).toHaveLength(before.length);
+    for (const r of purges) {
+      expect(r).toMatchObject({
+        eventType: 'security-event',
+        user: 'system',
+        resourceType: 'audit-archive',
+        severity: 'high',
+        metadata: { origin: 'schedule', reason: 'audit retention tick (test)', retentionDays: 1 }
+      });
+      expect(before).toContain(r.resource);
+    }
+  });
+
+  test('#1196 the start-up retention run is attributed to boot', async () => {
+    const first = makeProvider({ 'ngdpbase.audit.retentiondays': 1 });
+    await first.initialize();
+    for (let i = 0; i < 12; i++) {
+      await first.logAuditEvent({ eventType: 'page-edit', user: `u${i}` });
+      await first.flush();
+    }
+    await first.close();
+    const before = await archives();
+    expect(before.length).toBeGreaterThan(0);
+    const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    for (const a of before) await fs.utimes(path.join(dir, a), old, old);
+
+    // A second boot on the same directory: initialize() runs retention itself.
+    const second = makeProvider({ 'ngdpbase.audit.retentiondays': 1 });
+    await second.initialize();
+    expect(await archives()).toEqual([]);
+    await second.flush();
+    const purges = (await allRecords()).filter((r) => r.action === 'audit-archive-purge');
+    expect(purges).toHaveLength(before.length);
+    expect(purges[0].metadata).toMatchObject({ origin: 'boot' });
+    expect(String((purges[0].metadata as Record<string, unknown>).reason)).toMatch(/at boot/);
+    await second.close();
   });
 
   test('a recent archive is kept', async () => {

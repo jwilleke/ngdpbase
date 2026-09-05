@@ -1,4 +1,5 @@
 import FileSystemProvider from './FileSystemProvider.js';
+import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
 import fs from 'fs-extra';
@@ -309,7 +310,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // #947: expire tombstones past the retention window — once at boot, then
     // on an hourly tick so a long-running server does not sit on expired
     // tombstones until someone restarts it.
-    await this.runRetentionPurge('startup');
+    await this.runRetentionPurge(systemContext(this.engine, 'delete-retention purge at boot: pages soft-deleted past the retention window'));
     this.startDeletePurgeScheduler();
 
     logger.info('[VersioningFileProvider] Initialized with versioning enabled');
@@ -1917,12 +1918,12 @@ class VersioningFileProvider extends FileSystemProvider {
    *
    * @param trigger - Where the run came from, for the log line
    */
-  private async runRetentionPurge(trigger: 'startup' | 'scheduled'): Promise<void> {
+  private async runRetentionPurge(ctx: JobContext): Promise<void> {
     try {
-      await this.purgeExpiredDeletedPages(trigger);
+      await this.purgeExpiredDeletedPages(ctx);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Delete-retention purge failed (${trigger})`, { error: errorMessage });
+      logger.error(`[VersioningFileProvider] Delete-retention purge failed (${ctx.origin}: ${ctx.reason ?? ''})`, { error: errorMessage });
     }
   }
 
@@ -1947,7 +1948,7 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const timer = setInterval(() => {
-      void this.runRetentionPurge('scheduled');
+      void this.runRetentionPurge(scheduleContext(this.engine, 'delete-retention purge (hourly): pages soft-deleted past the retention window'));
     }, 60 * 60 * 1000);
 
     timer.unref(); // don't prevent process exit
@@ -2114,16 +2115,19 @@ class VersioningFileProvider extends FileSystemProvider {
    *
    * @returns Number of pages purged
    */
-  async purgeExpiredDeletedPages(trigger: 'startup' | 'scheduled' = 'scheduled'): Promise<number> {
+  async purgeExpiredDeletedPages(
+    ctx: JobContext = scheduleContext(this.engine, 'delete-retention purge: pages soft-deleted past the retention window')
+  ): Promise<number> {
     if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) return 0;
 
     const cutoff = Date.now() - this.deleteRetentionDays * 24 * 60 * 60 * 1000;
     let purged = 0;
-    // #1197 / #1196: the purge ACTS — pages are destroyed for good. Each one
-    // is recorded under the system principal, origin boot or schedule by
-    // trigger, so a retention purge is no longer "deleted by nobody".
-    const reason = `delete-retention purge (${trigger}): pages soft-deleted more than ${this.deleteRetentionDays} day(s) ago`;
-    const purger = trigger === 'startup' ? systemContext(this.engine, reason) : scheduleContext(this.engine, reason);
+    // #1196 / #1197: the purge ACTS — pages are destroyed for good. The caller
+    // says who is purging and why: `systemContext` at boot, `scheduleContext`
+    // on the hourly tick. Each purged page is recorded under that context, so
+    // a retention purge is no longer "deleted by nobody". The `trigger`
+    // string this used to take said WHEN; the context says WHO and WHY.
+    const purger = ctx;
 
     for (const entry of this.getDeletedPages()) {
       if (new Date(entry.deletedAt).getTime() < cutoff) {

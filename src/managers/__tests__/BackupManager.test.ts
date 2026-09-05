@@ -65,6 +65,31 @@ describe('BackupManager', () => {
     await fs.remove(tmpDir);
   });
 
+  describe('#1196 the scheduled backup names its actor', () => {
+    test('backup-create carries the system principal, origin schedule and the reason — never unknown', async () => {
+      const logAuditEvent = vi.fn(async () => 'id');
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'AuditManager') return { logAuditEvent };
+        return null;
+      });
+      vi.useFakeTimers();
+      try {
+        // 02:00 on a Tuesday — the fixture's auto-backup-time, daily.
+        vi.setSystemTime(new Date(2026, 8, 8, 2, 0, 0));
+        await bm['checkAndRunScheduledBackup']();
+      } finally {
+        vi.useRealTimers();
+      }
+      const events = logAuditEvent.mock.calls.map((c) => c[0]);
+      const created = events.find((e) => e.eventType === 'backup-create');
+      expect(created).toBeDefined();
+      expect(created).toMatchObject({ user: 'system', metadata: { origin: 'schedule' } });
+      expect(String((created!.metadata as Record<string, unknown>).reason)).toMatch(/scheduled auto-backup at 02:00 \(daily\)/);
+      expect((created!.metadata as Record<string, unknown>).actorMissing).toBeUndefined();
+    });
+  });
+
   describe('Initialization', () => {
     test('throws when ConfigurationManager is missing', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null), getRegisteredManagers: vi.fn(() => []) };
