@@ -30,7 +30,6 @@ class MockEngine {
             'ngdpbase.markup.handlers.wikitag.enabled': false,
             'ngdpbase.markup.handlers.form.enabled': false,
             'ngdpbase.markup.handlers.interwiki.enabled': false,
-            'ngdpbase.markup.handlers.attachment.enabled': false,
             'ngdpbase.markup.handlers.linkparser.enabled': false,
             'ngdpbase.filters.enabled': true,
             'ngdpbase.filters.security.enabled': false,

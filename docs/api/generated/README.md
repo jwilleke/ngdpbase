@@ -61,7 +61,6 @@ __ngdpbase API v1.5.0__
 - [src/parsers/filters/SecurityFilter](src/parsers/filters/SecurityFilter/README.md)
 - [src/parsers/filters/SpamFilter](src/parsers/filters/SpamFilter/README.md)
 - [src/parsers/filters/ValidationFilter](src/parsers/filters/ValidationFilter/README.md)
-- [src/parsers/handlers/AttachmentHandler](src/parsers/handlers/AttachmentHandler/README.md)
 - [src/parsers/handlers/BaseSyntaxHandler](src/parsers/handlers/BaseSyntaxHandler/README.md)
 - [src/parsers/handlers/EscapedSyntaxHandler](src/parsers/handlers/EscapedSyntaxHandler/README.md)
 - [src/parsers/handlers/HandlerRegistry](src/parsers/handlers/HandlerRegistry/README.md)

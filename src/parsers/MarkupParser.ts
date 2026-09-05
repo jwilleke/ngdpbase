@@ -14,7 +14,6 @@ import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
-import AttachmentHandler from './handlers/AttachmentHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
@@ -69,12 +68,6 @@ export interface HandlerConfig {
   enabled: boolean;
   /** Handler priority */
   priority: number;
-  /** Whether enhanced mode is enabled */
-  enhanced?: boolean;
-  /** Whether thumbnails are enabled */
-  thumbnails?: boolean;
-  /** Whether metadata collection is enabled */
-  metadata?: boolean;
 }
 
 /** Cache configuration */
@@ -534,18 +527,11 @@ class MarkupParser extends BaseManager {
     // InterWikiLinkHandler is now replaced by unified LinkParserHandler
     // Registration moved to after WikiStyleHandler for optimal priority
 
-    // Register AttachmentHandler if enabled (Phase 3)
-    if (this.config.handlers.attachment.enabled) {
-      const attachmentHandler = new AttachmentHandler(this.engine);
-      attachmentHandler.priority = this.config.handlers.attachment.priority;
-
-      try {
-        await this.registerHandler(attachmentHandler);
-        logger.debug(`📎 AttachmentHandler registered (priority: ${attachmentHandler.priority})`);
-      } catch (error) {
-        logger.warn('⚠️  Failed to register AttachmentHandler:', getErrorMessage(error));
-      }
-    }
+    // AttachmentHandler was retired (#1231). Every `[{ATTACH …}]` form is
+    // extracted into a placeholder by JSPWikiPreprocessor (95) before Phase
+    // 2.6 reaches a handler at 75, and AttachPlugin (#274) renders all of
+    // them — the handler's permission check and thumbnail write path were
+    // unreachable, which is how they hid a fabricated principal (#1181).
 
     // WikiStyleHandler and WikiTableHandler are DEPRECATED
     // Replaced by JSPWikiPreprocessor which runs in Phase 1 (before markdown)
@@ -603,7 +589,6 @@ class MarkupParser extends BaseManager {
         wikitag: { enabled: true, priority: 95 },
         form: { enabled: true, priority: 85 },
         interwiki: { enabled: true, priority: 80 },
-        attachment: { enabled: false, priority: 75, enhanced: true, thumbnails: true, metadata: true }, // Superseded by AttachPlugin (#274)
         style: { enabled: true, priority: 70 },
         wikilink: { enabled: true, priority: 50 }, // ESSENTIAL for basic functionality
         search: { enabled: true, priority: 65 },
@@ -655,13 +640,6 @@ class MarkupParser extends BaseManager {
           const handler = this.config.handlers[handlerName];
           handler.enabled = configManager.getProperty(`ngdpbase.markup.handlers.${handlerName}.enabled`, handler.enabled);
           handler.priority = configManager.getProperty(`ngdpbase.markup.handlers.${handlerName}.priority`, handler.priority);
-          
-          // Advanced attachment handler configuration
-          if (handlerName === 'attachment') {
-            handler.enhanced = configManager.getProperty('ngdpbase.markup.handlers.attachment.enhanced', handler.enhanced);
-            handler.thumbnails = configManager.getProperty('ngdpbase.markup.handlers.attachment.thumbnails', handler.thumbnails);
-            handler.metadata = configManager.getProperty('ngdpbase.markup.handlers.attachment.metadata', handler.metadata);
-          }
         }
         
         // Advanced cache configuration
@@ -1000,8 +978,7 @@ class MarkupParser extends BaseManager {
       'WikiTagHandler': 'wikitag',
       'WikiFormHandler': 'form',
 
-      // Phase 3 handlers (advanced)
-      'AttachmentHandler': 'attachment',
+      // Phase 3 handlers (advanced) — AttachmentHandler retired (#1231)
       'WikiStyleHandler': 'style',
       'LinkParserHandler': 'linkparser', // Unified handler replacing both WikiLinkHandler and InterWikiLinkHandler
       'SearchPluginHandler': 'search',

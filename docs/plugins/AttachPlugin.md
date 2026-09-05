@@ -227,9 +227,9 @@ function parsePositional(originalMatch: string): { filename: string; caption: st
 }
 ```
 
-### Why AttachmentHandler Was Disabled
+### Why AttachmentHandler Was Retired
 
-`PluginSyntaxHandler` (priority 90) intercepts all `[{...}]` syntax before `AttachmentHandler` (priority 75) can run. AttachPlugin supersedes AttachmentHandler for inline rendering. See issue #274.
+`JSPWikiPreprocessor` (priority 95) extracts every `[{...}]` into a placeholder before `AttachmentHandler` (priority 75) could run, so the handler never received the syntax in any form — positional, `src=`, or bare — and AttachPlugin rendered all of them. Disabled by default since #274; removed in #1231 after #1181's probe through the real pipeline confirmed the handler's permission check and thumbnail write path were unreachable.
 
 ### Context Usage
 

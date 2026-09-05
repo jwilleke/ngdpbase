@@ -48,7 +48,6 @@ class ComprehensiveMockEngine {
           'ngdpbase.markup.handlers.wikitag.enabled': true,
           'ngdpbase.markup.handlers.form.enabled': true,
           'ngdpbase.markup.handlers.interwiki.enabled': true,
-          'ngdpbase.markup.handlers.attachment.enabled': true,
           'ngdpbase.markup.handlers.style.enabled': true,
           
           // Filter configuration. SecurityFilter and SpamFilter default to
@@ -634,13 +633,14 @@ Valid **markdown** content.
         'PluginSyntaxHandler',    // JSPWiki Plugins
         'WikiTagHandler',         // JSPWiki Tags
         'WikiFormHandler',        // WikiForms
-        'LinkParserHandler',      // Unified link processing (replaces InterWikiLinkHandler)
-        'AttachmentHandler'       // Enhanced Attachments
+        'LinkParserHandler'       // Unified link processing (replaces InterWikiLinkHandler)
       ];
 
       requiredHandlers.forEach(handlerId => {
         expect(handlerIds).toContain(handlerId);
       });
+      // #1231: AttachmentHandler is retired — nothing registers it, whatever the config says.
+      expect(handlerIds).not.toContain('AttachmentHandler');
 
       // Should have a wired filter system. Default config registers only
       // ValidationFilter (#596 scope); SecurityFilter and SpamFilter are
@@ -835,7 +835,6 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
       securityEngine.managers.get('ConfigurationManager').getProperty = (key, defaultValue) => {
         const securityConfig = {
           'ngdpbase.markup.handlers.form.enabled': false,           // No forms
-          'ngdpbase.markup.handlers.attachment.enabled': false,     // No attachments
           'ngdpbase.style.security.allow-inline-css': false,         // No inline CSS
           'ngdpbase.filters.security.prevent-xss': true,     // Max security
           'ngdpbase.filters.spam.auto-block': true,          // Auto-block spam
@@ -862,7 +861,6 @@ Links: [Wikipedia:Section${i}] and [JSPWiki:Test${i}].
       expect(handlerIds).toContain('WikiTagHandler');
       expect(handlerIds).toContain('LinkParserHandler');
       expect(handlerIds).not.toContain('WikiFormHandler');      // Disabled
-      expect(handlerIds).not.toContain('AttachmentHandler');    // Disabled
 
       // Security filters should be active
       const filters = securityParser.filterChain.getFilters();

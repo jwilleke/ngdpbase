@@ -308,7 +308,8 @@ describe('MarkupParser Configuration Integration', () => {
       // InterWikiLinkHandler was replaced by LinkParserHandler
       expect(markupParser.getHandlerTypeFromId('InterWikiLinkHandler')).toBeNull();
       expect(markupParser.getHandlerTypeFromId('LinkParserHandler')).toBe('linkparser');
-      expect(markupParser.getHandlerTypeFromId('AttachmentHandler')).toBe('attachment');
+      // AttachmentHandler was retired (#1231); AttachPlugin renders [{ATTACH …}]
+      expect(markupParser.getHandlerTypeFromId('AttachmentHandler')).toBeNull();
       expect(markupParser.getHandlerTypeFromId('WikiStyleHandler')).toBe('style');
       expect(markupParser.getHandlerTypeFromId('UnknownHandler')).toBeNull();
     });

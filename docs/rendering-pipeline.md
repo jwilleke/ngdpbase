@@ -64,8 +64,7 @@ __Handler Components__ (priority order, highest to lowest):
    - Processes form elements and input handling
 5. __InterWikiLinkHandler__ (Priority: 80) - `src/parsers/handlers/InterWikiLinkHandler.js`
    - Resolves links to external wikis
-6. __AttachmentHandler__ (Priority: 75) - `src/parsers/handlers/AttachmentHandler.js`
-   - Processes file attachments and media
+6. __AttachmentHandler__ — __retired ([#1231](https://github.com/jwilleke/ngdpbase/issues/1231)).__ Every `[{ATTACH …}]` form is extracted by `JSPWikiPreprocessor` before Phase 2.6, and [AttachPlugin](plugins/AttachPlugin.md) renders them all; the handler never received the syntax.
 7. __WikiStyleHandler__ (Priority: 70) - `src/parsers/handlers/WikiStyleHandler.js`
    - __DEPRECATED / unregistered (#907).__ Historical string-based `%%…/%` style processor. All style markup — block classes, inline `%%(css)`, `%%sup/sub/strike` — now extracts to DOM nodes in `MarkupParser` Phase 1; see [WikiDocument guide → Style syntax is DOM-native too](WikiDocument-Complete-Guide.md#style-syntax--is-dom-native-too-907). Retained for reference only; add no new style behaviour here.
 8. __WikiLinkHandler__ (Priority: 50) - `src/parsers/handlers/WikiLinkHandler.js`
@@ -333,7 +332,6 @@ MarkupParser (Main Controller)
 │   ├── PluginSyntaxHandler → PluginManager.execute()
 │   ├── WikiFormHandler
 │   ├── InterWikiLinkHandler
-│   ├── AttachmentHandler
 │   ├── WikiStyleHandler
 │   └── WikiLinkHandler
 ├── Phase 3: phaseContextResolution()

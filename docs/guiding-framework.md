@@ -258,7 +258,7 @@ Gaps that are *settings* or *audit completeness* belong in [security-posture.md]
 ### The chokepoint (rule 1)
 
 - __`savePage()` is the ACL-free write primitive.__ Routes call `savePageWithContext()`. `savePage()` still writes without a permission check. It now emits an audit record attributed to `system` (or the metadata editor), which closed the silent-write hole and did not close the door. Tracked by [#1135](https://github.com/jwilleke/ngdpbase/issues/1135).
-- __Rendering a page can create content.__ `AttachmentHandler` writes from inside the parser pipeline, so a read path performs a write. Tracked by [#1136](https://github.com/jwilleke/ngdpbase/issues/1136).
+- __Rendering a page can create content.__ `AttachmentHandler` wrote thumbnails from inside the parser pipeline, so a read path performed a write. Tracked by [#1136](https://github.com/jwilleke/ngdpbase/issues/1136); the handler itself was retired in [#1231](https://github.com/jwilleke/ngdpbase/issues/1231) once #1181's probe showed the pipeline never handed it the syntax, so no render path writes today — #1136 remains as the rule.
 - __Addon code is not held to the same invariants as `src/`.__ The scanners and the audit registry cover `src/` by default; addons write user data (form submissions, journal entries, calendar events, feed records) and emit no audit events. That is the extension-path rule failing: the path adopters use is the path nobody exercises under the same checks. Tracked by [#1177](https://github.com/jwilleke/ngdpbase/issues/1177). The audit inventory of that gap is in [audit-posture.md](audit-posture.md#declared-gaps).
 
 ### Context (rule 2)

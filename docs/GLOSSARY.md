@@ -322,7 +322,6 @@ Key handlers (from `src/parsers/handlers/`):
 | Handler | Priority | Handles |
 |---|---|---|
 | `PluginSyntaxHandler` | 90 | `[{PluginName param=value}]` |
-| `AttachmentHandler` | 75 | `[{ATTACH ...}]` (legacy handler) |
 | `WikiLinkHandler` | — | `[PageName]` and `[text\|PageName]` |
 | `WikiTableHandler` | — | `\|\|col\|\|col\|\|` table syntax |
 | `WikiStyleHandler` | — | `__bold__`, `''italic''` |

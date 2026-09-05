@@ -12,7 +12,6 @@ BaseSyntaxHandler - Abstract base class for all markup syntax handlers
 
 ## Extended by
 
-- [`default`](../../AttachmentHandler/classes/default.md)
 - [`default`](../../EscapedSyntaxHandler/classes/default.md)
 - [`default`](../../InterWikiLinkHandler/classes/default.md)
 - [`default`](../../JSPWikiPreprocessor/classes/default.md)

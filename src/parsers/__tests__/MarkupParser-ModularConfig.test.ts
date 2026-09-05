@@ -25,20 +25,8 @@ class ModularConfigurationManager {
       'ngdpbase.markup.handlers.form.priority': 85,
       'ngdpbase.markup.handlers.interwiki.enabled': true,
       'ngdpbase.markup.handlers.interwiki.priority': 80,
-      'ngdpbase.markup.handlers.attachment.enabled': true,
-      'ngdpbase.markup.handlers.attachment.priority': 75,
-      'ngdpbase.markup.handlers.attachment.enhanced': true,
-      'ngdpbase.markup.handlers.attachment.thumbnails': true,
-      'ngdpbase.markup.handlers.attachment.metadata': true,
       'ngdpbase.markup.handlers.style.enabled': true,
       'ngdpbase.markup.handlers.style.priority': 70,
-      
-      // Attachment configuration (modular)
-      'ngdpbase.attachment.enhanced.thumbnail-sizes': '150x150,300x300',
-      'ngdpbase.attachment.enhanced.showMetadata': true,
-      'ngdpbase.attachment.enhanced.show-file-size': true,
-      'ngdpbase.attachment.enhanced.icon-path': '/icons/filetypes',
-      'ngdpbase.attachment.enhanced.generate-thumbnails': true,
       
       // Style configuration (modular)
       'ngdpbase.style.custom-classes.enabled': true,
@@ -166,7 +154,7 @@ describe('MarkupParser Modular Configuration System', () => {
       expect(parser.config.cacheTTL).toBe(300);
       expect(parser.config.handlers.plugin.enabled).toBe(true);
       expect(parser.config.handlers.plugin.priority).toBe(90);
-      expect(parser.config.handlers.attachment.enhanced).toBe(true);
+      expect(parser.config.handlers.wikitag.enabled).toBe(true);
       
       await parser.shutdown();
     });
@@ -176,7 +164,7 @@ describe('MarkupParser Modular Configuration System', () => {
       const customOverrides = {
         'ngdpbase.markup.cache-ttl': 600,                    // Override default 300
         'ngdpbase.markup.handlers.plugin.priority': 95,     // Override default 90
-        'ngdpbase.markup.handlers.attachment.thumbnails': false, // Override default true
+        'ngdpbase.markup.handlers.form.enabled': false,           // Override default true
         'ngdpbase.style.security.allow-inline-css': true      // Override default false
       };
       
@@ -187,7 +175,7 @@ describe('MarkupParser Modular Configuration System', () => {
       // Should use custom overrides
       expect(parser.config.cacheTTL).toBe(600);           // Custom value
       expect(parser.config.handlers.plugin.priority).toBe(95);  // Custom value
-      expect(parser.config.handlers.attachment.thumbnails).toBe(false); // Custom value
+      expect(parser.config.handlers.form.enabled).toBe(false);  // Custom value
       
       // Non-overridden values should use defaults
       expect(parser.config.enabled).toBe(true);           // Default value
@@ -196,58 +184,11 @@ describe('MarkupParser Modular Configuration System', () => {
       await parser.shutdown();
     });
 
-    test('should support partial configuration overrides', async () => {
-      // Override only specific attachment settings
-      const partialOverrides = {
-        'ngdpbase.attachment.enhanced.show-file-size': false,
-        'ngdpbase.attachment.enhanced.icon-path': '/custom/icons'
-      };
-      
-      const engine = new ModularMockEngine(partialOverrides);
-      const parser = new MarkupParser(engine);
-      await parser.initialize();
-      
-      // Custom values should be applied
-      const attachmentHandler = parser.getHandler('AttachmentHandler');
-      expect(attachmentHandler).toBeTruthy();
-      
-      // Other attachment settings should use defaults
-      expect(parser.config.handlers.attachment.enhanced).toBe(true); // Default
-      expect(parser.config.handlers.attachment.thumbnails).toBe(true); // Default
-      
-      await parser.shutdown();
-    });
   });
 
   describe('Handler-Specific Modular Configuration', () => {
-    test('should configure AttachmentHandler features individually', async () => {
-      const customConfig = {
-        'ngdpbase.markup.handlers.attachment.enhanced': true,
-        'ngdpbase.markup.handlers.attachment.thumbnails': false,  // Disable thumbnails
-        'ngdpbase.markup.handlers.attachment.metadata': true,
-        'ngdpbase.attachment.enhanced.show-file-size': false,       // Disable file size
-        'ngdpbase.attachment.enhanced.icon-path': '/custom/icons'  // Custom icon path
-      };
-      
-      const engine = new ModularMockEngine(customConfig);
-      const parser = new MarkupParser(engine);
-      await parser.initialize();
-      
-      const attachmentHandler = parser.getHandler('AttachmentHandler');
-      expect(attachmentHandler).toBeTruthy();
-      
-      const config = attachmentHandler.getConfigurationSummary();
-      expect(config.features.enhanced).toBe(true);
-      expect(config.features.thumbnails).toBe(false);  // Custom override
-      expect(config.features.metadata).toBe(true);
-      expect(config.settings.iconPath).toBe('/custom/icons'); // Custom override
-      
-      await parser.shutdown();
-    });
-
     test('should allow complete handler disable via configuration', async () => {
       const disabledConfig = {
-        'ngdpbase.markup.handlers.attachment.enabled': false,
         'ngdpbase.markup.handlers.style.enabled': false,
         'ngdpbase.markup.handlers.form.enabled': false
       };
@@ -279,8 +220,8 @@ describe('MarkupParser Modular Configuration System', () => {
       const priorityConfig = {
         'ngdpbase.markup.handlers.plugin.priority': 100,      // Increase from default 90
         'ngdpbase.markup.handlers.wikitag.priority': 85,      // Decrease from default 95
-        'ngdpbase.markup.handlers.attachment.priority': 95    // Increase from default 75
-        // WikiStyleHandler is deprecated and not registered
+        'ngdpbase.markup.handlers.form.priority': 95          // Increase from default 85
+        // WikiStyleHandler is deprecated and not registered; AttachmentHandler retired (#1231)
       };
 
       const engine = new ModularMockEngine(priorityConfig);
@@ -292,16 +233,16 @@ describe('MarkupParser Modular Configuration System', () => {
       // Find specific handlers and check their priorities
       const pluginHandler = handlers.find(h => h.handlerId === 'PluginSyntaxHandler');
       const wikiTagHandler = handlers.find(h => h.handlerId === 'WikiTagHandler');
-      const attachmentHandler = handlers.find(h => h.handlerId === 'AttachmentHandler');
+      const formHandler = handlers.find(h => h.handlerId === 'WikiFormHandler');
 
       expect(pluginHandler.priority).toBe(100);   // Custom value applied
       expect(wikiTagHandler.priority).toBe(85);   // Custom value applied
-      expect(attachmentHandler.priority).toBe(95); // Custom value applied
+      expect(formHandler.priority).toBe(95);      // Custom value applied
 
       // Verify execution order (higher priority first)
       const priorities = handlers.map(h => h.priority);
       expect(priorities[0]).toBe(100); // PluginSyntaxHandler first
-      expect(priorities[1]).toBe(95);  // AttachmentHandler second
+      expect(priorities[1]).toBe(95);  // JSPWikiPreprocessor / WikiFormHandler next
 
       await parser.shutdown();
     });
@@ -328,27 +269,18 @@ describe('MarkupParser Modular Configuration System', () => {
   });
 
   describe('Feature Flag Configuration Modularity', () => {
-    test('should configure attachment features individually', async () => {
-      const featureConfig = {
-        'ngdpbase.markup.handlers.attachment.enabled': true,
-        'ngdpbase.markup.handlers.attachment.enhanced': true,
-        'ngdpbase.markup.handlers.attachment.thumbnails': false,    // Disable thumbnails only
-        'ngdpbase.markup.handlers.attachment.metadata': true,
-        'ngdpbase.attachment.enhanced.show-file-size': false,        // Disable file size only
-        'ngdpbase.attachment.enhanced.show-modified': true
-      };
-      
-      const engine = new ModularMockEngine(featureConfig);
+    test('#1231 the retired AttachmentHandler cannot be configured back in', async () => {
+      // The handler was removed because JSPWikiPreprocessor extracts every
+      // [{ATTACH …}] before it could run and AttachPlugin renders them all. A
+      // leftover key in an instance's custom config must not resurrect it.
+      const engine = new ModularMockEngine({ 'ngdpbase.markup.handlers.attachment.enabled': true });
       const parser = new MarkupParser(engine);
       await parser.initialize();
-      
-      const attachmentHandler = parser.getHandler('AttachmentHandler');
-      const config = attachmentHandler.getConfigurationSummary();
-      
-      expect(config.features.enhanced).toBe(true);
-      expect(config.features.thumbnails).toBe(false);   // Custom disable
-      expect(config.features.metadata).toBe(true);
-      
+
+      expect(parser.config.handlers.attachment).toBeUndefined();
+      expect(parser.getHandler('AttachmentHandler')).toBeNull();
+      expect(parser.getHandlers().map(h => h.handlerId)).not.toContain('AttachmentHandler');
+
       await parser.shutdown();
     });
 
@@ -439,8 +371,7 @@ describe('MarkupParser Modular Configuration System', () => {
       const devConfig = {
         'ngdpbase.markup.cache.parse-results.ttl': 60,        // Short cache for development
         'ngdpbase.markup.performance.monitoring': true,      // Enable monitoring
-        'ngdpbase.style.security.allow-inline-css': true,      // Allow for testing
-        'ngdpbase.attachment.enhanced.generate-thumbnails': false // Disable for dev speed
+        'ngdpbase.style.security.allow-inline-css': true       // Allow for testing
       };
 
       const engine = new ModularMockEngine(devConfig);
@@ -450,9 +381,8 @@ describe('MarkupParser Modular Configuration System', () => {
       expect(parser.config.cache.parseResults.ttl).toBe(60);  // Dev setting
       expect(parser.performanceMonitor).toBeTruthy();          // Dev monitoring
 
-      // WikiStyleHandler is deprecated; verify attachment handler only
-      const attachmentHandler = parser.getHandler('AttachmentHandler');
-      expect(attachmentHandler).toBeTruthy();
+      // WikiStyleHandler is deprecated and AttachmentHandler retired; verify the plugin handler
+      expect(parser.getHandler('PluginSyntaxHandler')).toBeTruthy();
 
       await parser.shutdown();
     });
@@ -462,7 +392,6 @@ describe('MarkupParser Modular Configuration System', () => {
         'ngdpbase.markup.cache.parse-results.ttl': 1800,      // Long cache for production
         'ngdpbase.markup.performance.monitoring': true,      // Enable monitoring
         'ngdpbase.style.security.allow-inline-css': false,     // Security lockdown
-        'ngdpbase.attachment.enhanced.generate-thumbnails': true, // Enable for UX
         'ngdpbase.markup.handlers.form.enabled': true,       // Enable forms
         'ngdpbase.style.custom-classes.enabled': false        // Only predefined classes
       };
@@ -474,10 +403,8 @@ describe('MarkupParser Modular Configuration System', () => {
       expect(parser.config.cache.parseResults.ttl).toBe(1800); // Prod caching
       expect(parser.performanceMonitor).toBeTruthy();           // Prod monitoring
 
-      // WikiStyleHandler is deprecated; verify attachment and form handlers
-      const attachmentHandler = parser.getHandler('AttachmentHandler');
+      // WikiStyleHandler is deprecated and AttachmentHandler retired; verify the form handler
       const formHandler = parser.getHandler('WikiFormHandler');
-      expect(attachmentHandler).toBeTruthy();
       expect(formHandler).toBeTruthy(); // Enabled in prod config
 
       await parser.shutdown();
@@ -486,7 +413,6 @@ describe('MarkupParser Modular Configuration System', () => {
     test('should support high-security environment configuration', async () => {
       const securityConfig = {
         'ngdpbase.markup.handlers.form.enabled': false,      // Disable forms
-        'ngdpbase.markup.handlers.attachment.enabled': false, // Disable attachments
         'ngdpbase.style.security.allow-inline-css': false,     // No inline CSS
         'ngdpbase.style.custom-classes.enabled': false,       // No custom classes
         'ngdpbase.style.predefined.text': 'text-muted',      // Minimal styling
@@ -508,7 +434,6 @@ describe('MarkupParser Modular Configuration System', () => {
       
       // Should not have potentially risky handlers
       expect(handlerIds).not.toContain('WikiFormHandler');    // Disabled
-      expect(handlerIds).not.toContain('AttachmentHandler');  // Disabled
       
       // Style handler should be present but locked down
       const styleHandler = parser.getHandler('WikiStyleHandler');
@@ -565,26 +490,26 @@ describe('MarkupParser Modular Configuration System', () => {
       const parser = new MarkupParser(engine);
       await parser.initialize();
 
-      // Verify AttachmentHandler is initially enabled
-      expect(parser.getHandler('AttachmentHandler')).toBeTruthy();
+      // Verify WikiFormHandler is initially enabled
+      expect(parser.getHandler('WikiFormHandler')).toBeTruthy();
 
       // Disable handler at runtime
-      const success = parser.disableHandler('AttachmentHandler');
+      const success = parser.disableHandler('WikiFormHandler');
       expect(success).toBe(true);
 
       // Handler should be absent from the enabled-only list
       const activeHandlers = parser.getHandlers(true); // enabledOnly = true
       const activeIds = activeHandlers.map(h => h.handlerId);
-      expect(activeIds).not.toContain('AttachmentHandler');
+      expect(activeIds).not.toContain('WikiFormHandler');
 
       // Re-enable handler
-      const reenableSuccess = parser.enableHandler('AttachmentHandler');
+      const reenableSuccess = parser.enableHandler('WikiFormHandler');
       expect(reenableSuccess).toBe(true);
 
       // Handler should be active again
       const reenabledHandlers = parser.getHandlers(true);
       const reenabledIds = reenabledHandlers.map(h => h.handlerId);
-      expect(reenabledIds).toContain('AttachmentHandler');
+      expect(reenabledIds).toContain('WikiFormHandler');
 
       await parser.shutdown();
     });

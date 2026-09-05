@@ -27,7 +27,6 @@ class MockEngine {
             'ngdpbase.markup.handlers.wikitag.enabled': false,
             'ngdpbase.markup.handlers.form.enabled': false,
             'ngdpbase.markup.handlers.interwiki.enabled': false,
-            'ngdpbase.markup.handlers.attachment.enabled': false,
             'ngdpbase.markup.handlers.linkparser.enabled': false,
             // FilterChain on, ValidationFilter on, others off — matches
             // production default config.
