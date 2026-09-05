@@ -48,7 +48,7 @@ Never exposed through any share, regardless of keyword (decisions 1 and 3): cont
 - Unknown, expired, and revoked tokens return byte-identical 404s — share existence never leaks. A page or item the evaluator refuses the share subject is also a 404.
 - All `/share/*` responses carry `X-Robots-Tag: noindex`; share templates also set the `robots` meta tag.
 - Rate limit: 600 requests per token+IP per 10 minutes, applied before token validation so probing burns the same budget. Currently a hardcoded constant in `WikiRoutes` (`shareRateLimiter`); one album view costs one request per thumbnail, so large albums consume budget quickly. Behind a reverse proxy or tunnel, all visitors currently share one bucket per token until the trust-proxy work lands (#861).
-- Audit events via AuditManager: `share_create`, `share_revoke`, and aggregated `share_access` rows (one per share per 5-minute window — never per-view rows, decision 5).
+- Audit events via AuditManager: `share-create`, `share-revoke`, and aggregated `share-access` rows (one per share per 5-minute window — never per-view rows, decision 5).
 
 ## Operational notes
 

@@ -55,7 +55,7 @@ Requests are rate-limited per `token:ip` (600 / 10 min, `shareRateLimiter` in Wi
 
 ## Audit (decision 5)
 
-`share_create` and `share_revoke` events go to [AuditManager](AuditManager.md); audit failure never blocks share operations. Anonymous access hits are recorded via `recordAccess(token)` and flushed as aggregated `share_access` counts (one row per share per 5-minute window, plus a best-effort flush on shutdown) — never per-view rows.
+`share-create` and `share-revoke` events go to [AuditManager](AuditManager.md); audit failure never blocks share operations. Anonymous access hits are recorded via `recordAccess(token)` and flushed as aggregated `share-access` counts (one row per share per 5-minute window, plus a best-effort flush on shutdown) — never per-view rows.
 
 ## See Also
 
