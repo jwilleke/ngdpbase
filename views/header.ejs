@@ -81,7 +81,7 @@
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="/profile"><i class="fas fa-user-cog me-2"></i><%= currentUser.displayName || currentUser.username %></a></li>
                         <%# #1029: permission, not role name — a read-only admin role must see this too %>
-                        <% if (typeof canViewAdmin !== 'undefined' ? canViewAdmin : (currentUser.roles && currentUser.roles.includes('admin'))) { %>
+                        <% if (typeof canViewAdmin !== 'undefined' && canViewAdmin) { %>
                         <li><a class="dropdown-item" href="/admin"><i class="fas fa-cogs me-2"></i>Admin</a></li>
                         <% } %>
                         <li><hr class="dropdown-divider"></li>
@@ -126,11 +126,11 @@
                         </button>
                         <div class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                             <a class="dropdown-item" href="/profile"><i class="fas fa-user-cog"></i> Profile</a>
-                            <% if ((typeof canViewAdmin !== 'undefined' && canViewAdmin) || (currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor')))) { %>
+                            <% if ((typeof canViewAdmin !== 'undefined' && canViewAdmin) || (typeof can === 'function' && can('share-manage'))) { %>
                                 <div class="dropdown-divider"></div>
                                 <h6 class="dropdown-header">Management</h6>
                                 <a class="dropdown-item" href="/admin/attachments"><i class="fas fa-paperclip"></i> Attachments</a>
-                                <% if (typeof canViewAdmin !== 'undefined' ? canViewAdmin : currentUser.roles.includes('admin')) { %>
+                                <% if (typeof canViewAdmin !== 'undefined' && canViewAdmin) { %>
                                     <a class="dropdown-item" href="/admin"><i class="fas fa-cogs"></i> Admin Dashboard</a>
                                 <% } %>
                             <% } %>
@@ -296,7 +296,7 @@
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
-                                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
+                                <% if ((typeof can === 'function' && can('page-create'))) { %>
                                     <li><a class="dropdown-item" href="/create">
                                         <i class="fas fa-plus"></i> Create New Page
                                     </a></li>
@@ -314,7 +314,7 @@
                                     // gated on the same roles that may create shares (decision 2).
                                     const _shareKws = (typeof shareEnabled !== 'undefined' && shareEnabled
                                         && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated
-                                        && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor'))
+                                        && (typeof can === 'function' && can('share-manage'))
                                         && typeof metadata !== 'undefined' && metadata && Array.isArray(metadata['user-keywords']))
                                         ? metadata['user-keywords'].filter(function(k) { return k && k !== 'owner-only'; }).slice(0, 6)
                                         : [];
@@ -331,12 +331,12 @@
                                     <li><a class="dropdown-item" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
                                         <i class="fas fa-book-reader"></i> Show Reader View
                                     </a></li>
-                                    <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
+                                    <% if ((typeof can === 'function' && can('page-edit'))) { %>
                                     <li><a class="dropdown-item" href="#" onclick="ngdpNcmConvertOpen(); return false;" title="Preview this page normalized to ngdp Compatible Markdown, then apply. (#1127)">
                                         <i class="fas fa-wand-magic-sparkles"></i> Convert to NCM&hellip;
                                     </a></li>
                                     <% } %>
-                                    <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.roles && currentUser.roles.includes('admin')) { %>
+                                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                                     <li><a class="dropdown-item text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>" title="Edit raw page file (frontmatter + body). Admin override — bypasses validation. (#689)">
                                         <i class="fas fa-file-code"></i> Edit raw (admin)
                                     </a></li>
@@ -404,7 +404,7 @@
             <%
               const _hasPage = typeof pageName !== 'undefined' && pageName;
               const _authed = typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated;
-              const _canCreate = _authed && currentUser.roles && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'));
+              const _canCreate = (typeof can === 'function' && can('page-create'));   // #1198: policy, not a role name
               const _journalEntry = typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && _authed;
               // #785: pin any URL, not just wiki pages — derive a canonical URL for the current
               // route so /my/journal, /profile, /search?q=foo, etc. are bookmarkable.
@@ -436,7 +436,7 @@
                     <i class="fas fa-edit me-2"></i> Edit Page
                 </a>
                 <% } %>
-                <% if (_hasPage && _authed && currentUser.roles && currentUser.roles.includes('admin')) { %>
+                <% if (_hasPage && (typeof can === 'function' && can('admin-system'))) { %>
                 <a class="nav-link py-2 text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>">
                     <i class="fas fa-file-code me-2"></i> Edit raw (admin)
                 </a>

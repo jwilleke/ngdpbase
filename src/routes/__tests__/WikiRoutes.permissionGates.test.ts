@@ -41,30 +41,9 @@ function makeRoutes(granted: string[], managers: Record<string, unknown> = {}) {
 
 const editor = { username: 'ed', isAuthenticated: true, roles: ['editor'] };
 
-describe('#1198 no route decides allow or deny by isAuthenticated', () => {
-  /**
-   * The honest uses of the flag (security-posture P2): classifying a refusal
-   * after policy said no, login-vs-profile chrome, sending a signed-in
-   * visitor away from the login page, and a session-file sweep that reads
-   * the flag off disk. Everything else asks `permitted()`.
-   */
-  const HONEST = new Set(['refuse', 'getCommonTemplateData', 'loginPage', 'adminLoginPage', 'sweepAnonymousSessions']);
-
-  test('every isAuthenticated test in WikiRoutes.ts is in a listed method', () => {
-    const lines = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8').split('\n');
-    const offenders: string[] = [];
-    lines.forEach((l, i) => {
-      if (!/isAuthenticated/.test(l) || /^\s*(\/\/|\*)/.test(l) || !/if \(|\? |const anonymous =/.test(l)) return;
-      let method = '?';
-      for (let j = i; j >= 0; j--) {
-        const m = lines[j].match(/^(?:export )?(?:async )?function (\w+)|^ {2}(?:private )?(?:async )?(\w+)\(/);
-        if (m) { method = m[1] ?? m[2]; break; }
-      }
-      if (!HONEST.has(method)) offenders.push(`${method}:${i + 1}: ${l.trim()}`);
-    });
-    expect(offenders).toEqual([]);
-  });
-});
+// #1198: the isAuthenticated rule lives in scripts/check-permission-gates.ts
+// (one allowlist, one reason per read); src/__tests__/roleNameGates.test.ts
+// runs it under vitest.
 
 describe('#1198 no route decides allow or deny by role name', () => {
   test('WikiRoutes.ts contains no hasRole gate', () => {

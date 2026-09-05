@@ -113,7 +113,7 @@
                     <% } %>
                 </div>
                 <div class="card-body">
-                    <% if (currentUser.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <span class="d-inline-flex align-items-center gap-1">
                             <button class="btn btn-outline-primary btn-sm" onclick="reindexPages()">
@@ -194,7 +194,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <% if (currentUser.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="d-inline-flex align-items-center gap-1">
                             <button id="dashboard-rescan-btn" class="btn btn-outline-secondary btn-sm" onclick="dashboardMediaRescan()">
@@ -274,7 +274,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <% if (currentUser.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="d-flex flex-wrap gap-2">
                         <span class="d-inline-flex align-items-center gap-1">
                             <button class="btn btn-outline-danger btn-sm" onclick="confirmRestart()">

@@ -29,7 +29,7 @@
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle"></i>
                     No media items indexed yet.
-                    <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.roles && currentUser.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                         <a href="/admin/media">Trigger a scan</a> to start indexing.
                     <% } %>
                 </div>

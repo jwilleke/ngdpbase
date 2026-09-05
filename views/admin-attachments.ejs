@@ -9,7 +9,7 @@
                     <%# Slice 5b of #760 (#763) — admin trigger for the attachments.rebuild
                         background job. Backfills embedded doc metadata on pre-Slice-5
                         attachment records. Admin-only — server checks admin-system again. %>
-                    <% if (currentUser.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <button class="btn btn-warning" id="rebuild-attachments-btn" onclick="rebuildAttachments()" title="Re-extract embedded Title / Author / Subject / Keywords / dates / Language for every PDF / docx / xlsx / pptx attachment.">
                         <i class="fas fa-sync"></i> Rebuild Metadata
                     </button>
@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentPage = 1;
     let sortField = 'uploadedAt';
     let sortDir = 'desc';
-    const isAdmin = <%= JSON.stringify(currentUser.roles.includes('admin')) %>;
+    const isAdmin = <%= JSON.stringify((typeof can === 'function' && can('admin-system'))) %>;   // #1198: policy, not a role name
 
     // Embed attachment data from server
     const allAttachments = <%- JSON.stringify(attachments) %>;

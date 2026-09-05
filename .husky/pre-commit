@@ -40,3 +40,5 @@ npm run lint:http --silent
 # admin writes. The string form is already a compile error in route code; this
 # covers the rebuild the compiler cannot see. Cheap.
 npm run lint:permission-subject --silent
+
+npm run lint:gates --silent

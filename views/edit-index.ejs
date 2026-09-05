@@ -50,7 +50,7 @@
             <a href="/" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Home
             </a>
-            <% if (currentUser && (currentUser.roles.includes('admin') || currentUser.roles.includes('editor') || currentUser.roles.includes('contributor'))) { %>
+            <% if ((typeof can === 'function' && can('page-create'))) { %>
                 <a href="/create" class="btn btn-success ms-2">
                     <i class="fas fa-plus"></i> Create New Page
                 </a>

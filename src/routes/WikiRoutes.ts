@@ -938,7 +938,13 @@ class WikiRoutes {
     //
     // Resolved once per render rather than per control; the set is small and
     // hasPermission() is a policy evaluation, not a field read.
-    const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create'] as const;
+    // #1198: the permissions chrome may ask about. Templates used to test
+    // `currentUser.roles.includes('admin')` for the create button, the raw
+    // editor link, the system-category select and the dashboard's action
+    // rows — a role name, which skips policy and the token ceiling and shows
+    // an affordance the owner's role has but this request's credential may
+    // not. `can(permission)` is the same question the route asks.
+    const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage'] as const;
     const grantedPermissions: Record<string, boolean> = {};
     if (userContext?.isAuthenticated) {
       for (const permission of adminPermissions) {

@@ -14,7 +14,7 @@
                 </div>
                 
                 <!-- Single Category (Required) -->
-                <% if (user && user.roles && user.roles.includes('admin')) { %>
+                <% if ((typeof can === 'function' && can('admin-system'))) { %>
                 <div class="form-group mb-3">
                     <label for="system-category" style="font-weight:bold;">System Category (Admin Only):</label>
                     <select class="form-control" id="system-category" name="system-category" required>

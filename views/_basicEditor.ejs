@@ -61,12 +61,12 @@
                     // Author Lock visibility: admin OR the page author may set/clear it.
                     // The /save handler at WikiRoutes.ts:2627 already enforces this; this
                     // is the UI half so authors can actually see the toggle.
-                    const _canEditAuthorLock = (user && user.roles && user.roles.includes('admin'))
+                    const _canEditAuthorLock = (typeof can === 'function' && can('admin-system'))
                         || (user && metadata.author && user.username === metadata.author);
                 %>
                 <!-- System Category (Admin only) + Author Lock (Admin or Author) + Private + User Keywords -->
                 <div class="row mb-3">
-                    <% if (user && user.roles && user.roles.includes('admin')) { %>
+                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
                     <div class="col-md-4">
                         <label style="font-weight:bold;">System Category (Admin Only): <%- include('_help-icon', { slug: 'system-category', label: 'System Category' }) %></label>
                         <select class="form-control" id="systemCategory" name="system-category" required>
