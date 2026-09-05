@@ -1,5 +1,6 @@
 import BaseManager, { BackupData } from './BaseManager.js';
 import { recordSystemAction, systemContext } from '../context/bootActions.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
@@ -27,18 +28,12 @@ import { UserCreateError } from '../utils/userCreateError.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
-/**
- * Who is acting on an account (#1204). Optional for now: making it positional
- * and mandatory is #1179's structural change. When it is absent the record
- * says so (`user: 'unknown'`, `actorMissing: true`) rather than inventing an
- * identity (#1181).
- */
-export interface AuditActor {
-  username?: string;
-  ipAddress?: string;
-  /** The identity provider that provisioned the account, when one did. */
-  provider?: string;
-}
+// #1179: the account writes below take an `ActorContext` — the request's
+// subject or a JobContext — mandatory and positional. `AuditActor`, the
+// optional `{ username?, ipAddress?, provider? }` bag that preceded it,
+// recorded `unknown` when omitted and let a caller pass a literal `'system'`;
+// both were the shape this principle exists to end. An identity provider that
+// provisions an account now says so in the JobContext's reason.
 
 /** Account fields whose change alters what the account may do or who holds it. Preferences are not among them. */
 const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'email', 'profileLocked', 'username'] as const;
@@ -1114,15 +1109,10 @@ class UserManager extends BaseManager {
   }
 
   /** Build the actor half of an account event (#1204). */
-  private static actorFields(actor: AuditActor | undefined): { user: string; ipAddress: string | undefined; actorMeta: Record<string, unknown> } {
-    return {
-      user: actor?.username ?? 'unknown',
-      ipAddress: actor?.ipAddress,
-      actorMeta: {
-        ...(actor ? {} : { actorMissing: true }),
-        ...(actor?.provider ? { provider: actor.provider } : {})
-      }
-    };
+  /** The record's actor fields, read from the context the write was handed (#1179). */
+  private static actorFields(ctx: ActorContext): { user: string; ipAddress: string | undefined; actorMeta: Record<string, unknown> } {
+    const who = actorOf(ctx);
+    return { user: who.user, ipAddress: who.ipAddress, actorMeta: who.metadata };
   }
 
   /**
@@ -1130,7 +1120,7 @@ class UserManager extends BaseManager {
    * @param {UserCreateInput} userData - User data
    * @returns {Promise<Omit<User, 'password'>>} Created user (without password)
    */
-  async createUser(userData: UserCreateInput, actor?: AuditActor): Promise<Omit<User, 'password'>> {
+  async createUser(userData: UserCreateInput, ctx: ActorContext): Promise<Omit<User, 'password'>> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1205,7 +1195,7 @@ class UserManager extends BaseManager {
     // #1204: recorded at the door, so an admin form, self-registration and an
     // identity provider's auto-provisioning all leave the same record.
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_CREATE,
         user: who,
@@ -1215,7 +1205,7 @@ class UserManager extends BaseManager {
         severity: 'medium',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles: [...roles], isExternal, selfRegistration: actor?.username === username, ...actorMeta }
+        metadata: { username, roles: [...roles], isExternal, selfRegistration: ctx.username === username, ...actorMeta }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
     }
 
@@ -1236,7 +1226,7 @@ class UserManager extends BaseManager {
   /**
    * Update user
    */
-  async updateUser(username: string, updates: UserUpdateInput, actor?: AuditActor): Promise<User> {
+  async updateUser(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<User> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1278,7 +1268,7 @@ class UserManager extends BaseManager {
     // never a password or an email value.
     const changed = SENSITIVE_USER_FIELDS.filter((f) => f in updates && (updates as Record<string, unknown>)[f] !== undefined);
     if (changed.length > 0) {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_EDIT,
         user: who,
@@ -1292,7 +1282,7 @@ class UserManager extends BaseManager {
           username,
           fields: changed,
           ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
-          selfEdit: actor?.username === username,
+          selfEdit: ctx.username === username,
           ...actorMeta
         }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
@@ -1303,7 +1293,7 @@ class UserManager extends BaseManager {
   /**
    * Delete user
    */
-  async deleteUser(username: string, actor?: AuditActor): Promise<boolean> {
+  async deleteUser(username: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1320,7 +1310,7 @@ class UserManager extends BaseManager {
     // attribution — so the record is written and flushed BEFORE the delete,
     // and a failure refuses it (the token-mint / share-create ordering).
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
       const roles = await this.resolveUserRoles(username);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_DELETE,
@@ -1418,8 +1408,8 @@ class UserManager extends BaseManager {
    */
   async searchUsers(
     query: string,
-    options: { role?: string; limit?: number; activeOnly?: boolean } = {},
-    actor?: AuditActor
+    options: { role?: string; limit?: number; activeOnly?: boolean },
+    ctx: ActorContext
   ): Promise<Omit<User, 'password'>[]> {
     const all = await this.getUsers();
     const q = query.trim().toLowerCase();
@@ -1447,7 +1437,7 @@ class UserManager extends BaseManager {
     // honours the switch. Enumerating people is disclosive, so a deployment
     // that wants it on can have it without a code change.
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SEARCH_USER,
         user: who,
@@ -1669,7 +1659,7 @@ class UserManager extends BaseManager {
     return roles.includes(roleName);
   }
 
-  async assignRole(username: string, roleName: string, actor?: AuditActor): Promise<boolean> {
+  async assignRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1684,13 +1674,13 @@ class UserManager extends BaseManager {
     // so we can call unconditionally.
     await this.syncRoleAdd(username, roleName);
     logger.info(`👤 Assigned role '${roleName}' to user '${username}'`);
-    await this.recordRoleChange(username, 'assign', roleName, actor);
+    await this.recordRoleChange(username, 'assign', roleName, ctx);
     return true;
   }
 
   /** #1204: a role assigned or removed is a user-edit; what the account may do changed. */
-  private async recordRoleChange(username: string, op: 'assign' | 'remove', roleName: string, actor: AuditActor | undefined): Promise<void> {
-    const { user: who, ipAddress, actorMeta } = UserManager.actorFields(actor);
+  private async recordRoleChange(username: string, op: 'assign' | 'remove', roleName: string, ctx: ActorContext): Promise<void> {
+    const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
     await recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.USER_EDIT,
       user: who,
@@ -1704,7 +1694,7 @@ class UserManager extends BaseManager {
     }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit (${op} ${roleName}) of ${username}:`, err));
   }
 
-  async removeRole(username: string, roleName: string, actor?: AuditActor): Promise<boolean> {
+  async removeRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
     }
@@ -1714,7 +1704,7 @@ class UserManager extends BaseManager {
     }
     await this.syncRoleRemove(username, roleName);
     logger.info(`👤 Removed role '${roleName}' from user '${username}'`);
-    await this.recordRoleChange(username, 'remove', roleName, actor);
+    await this.recordRoleChange(username, 'remove', roleName, ctx);
     return true;
   }
 

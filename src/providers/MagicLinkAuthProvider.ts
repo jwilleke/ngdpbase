@@ -21,6 +21,8 @@
  */
 
 import * as crypto from 'crypto';
+import { jobContextFromRequestWithReason } from '../context/JobContext.js';
+import { systemPrincipalOf } from '../context/bootActions.js';
 import type {
   AuthProvider,
   AuthInitiateContext,
@@ -276,7 +278,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
         roles: [role],
         isExternal: true,
         isActive: true
-      }, { username: 'system', provider: 'magic-link' }); // #1204: provisioned, not registered
+      }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by magic-link')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
     } catch (err) {
       logger.error(`[MagicLinkAuthProvider] Failed to provision ${entry.email}:`, err);
       return false;

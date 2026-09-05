@@ -28,6 +28,8 @@
  */
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyResult, type JWTVerifyGetKey } from 'jose';
+import { jobContextFromRequestWithReason } from '../context/JobContext.js';
+import { systemPrincipalOf } from '../context/bootActions.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
@@ -157,7 +159,7 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
         roles,
         isExternal: true,
         isActive: true
-      }, { username: 'system', provider: 'authentik-bearer' }); // #1204: provisioned, not registered
+      }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by authentik-bearer')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
       logger.info(`[AuthentikBearerAuthProvider] JIT-provisioned user: ${username} (${email}) with roles=[${roles.join(', ')}]`);
       return { username };
     } catch (err) {

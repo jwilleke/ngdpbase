@@ -24,7 +24,7 @@ import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
-import { jobContextFromRequest } from '../context/JobContext.js';
+import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
@@ -197,9 +197,9 @@ interface IUserManager {
   getUsers(): Promise<UserContext[]>;
   // #1204: the actor is recorded at the manager door. Optional until #1179
   // makes the context positional and mandatory.
-  createUser(data: unknown, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
-  updateUser(username: string, data: unknown, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
-  deleteUser(username: string, actor?: { username?: string; ipAddress?: string }): Promise<unknown>;
+  createUser(data: unknown, ctx: ActorContext): Promise<unknown>;
+  updateUser(username: string, data: unknown, ctx: ActorContext): Promise<unknown>;
+  deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
   /**
    * #1164: takes the CONTEXT, never a username string.
    *
@@ -224,7 +224,7 @@ interface IUserManager {
   updateRolePermissions(role: string, permissions: unknown): Promise<unknown>;
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
-  searchUsers(query: string, options?: { role?: string; limit?: number; activeOnly?: boolean }): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
+  searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
 }
 
@@ -7213,7 +7213,8 @@ ${panes}
       const limit      = isNaN(limitRaw) ? 50 : limitRaw;
       const activeOnly = req.query['activeOnly'] !== 'false';
 
-      const results = await userManager.searchUsers(q, { role, limit, activeOnly });
+      // #1179: the ApiContext is the identity this request holds; forwarded, not rebuilt.
+      const results = await userManager.searchUsers(q, { role, limit, activeOnly }, jobContextFromRequest(ctx));
 
       const canReadFull = await ctx.hasPermission('user-read');
       const payload = canReadFull
@@ -7776,7 +7777,7 @@ ${panes}
         roles: ['reader'], // Default role
         isExternal: false, // Local user
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
-      }, { username, ipAddress: req.ip }); // #1204: self-registration; the new account is the actor
+      }, jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'self-registration')); // #1204: the new account is the actor; #1179: as a context that says so
 
       logger.debug(`👤 User registered: ${username}`);
       res.redirect('/login?success=Registration successful');
@@ -8316,7 +8317,7 @@ ${panes}
         );
       }
 
-      await userManager.updateUser(currentUser.username ?? '', updates, { username: currentUser.username, ipAddress: req.ip });
+      await userManager.updateUser(currentUser.username, updates, currentUser);
 
       // Rename profile page if requested
       const oldPageName = (originalProfilePage as string || '').trim();
@@ -8501,7 +8502,7 @@ ${panes}
       );
 
       // Update user with new preferences
-      await userManager.updateUser(currentUser.username ?? '', { preferences });
+      await userManager.updateUser(currentUser.username, { preferences }, currentUser);
 
       // #534: fan out the same body to every addon that registered a
       // saveProfileSection() handler. Wrapped in its OWN try/catch so a
@@ -8551,7 +8552,7 @@ ${panes}
       }
       const userManager = this.engine.getManager('UserManager');
       const prefs = { ...(currentUser.preferences as Record<string, unknown> || {}), 'display.theme': theme };
-      await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
+      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
       return res.json({ ok: true });
     } catch (err: unknown) {
       logger.error('Error updating display theme:', err);
@@ -8599,7 +8600,7 @@ ${panes}
         pinned.push(entry);
       }
       prefs['nav.pinnedPages'] = pinned;
-      await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
+      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
       return res.json({ ok: true, pinnedPages: pinned });
     } catch (err) {
       logger.error('Error adding pinned page:', err);
@@ -8634,7 +8635,7 @@ ${panes}
         p.url !== ident && p.url !== identAsPageNameUrl && p.pageName !== ident
       );
       prefs['nav.pinnedPages'] = pinned;
-      await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
+      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
       return res.json({ ok: true, pinnedPages: pinned });
     } catch (err) {
       logger.error('Error removing pinned page:', err);
@@ -8666,7 +8667,7 @@ ${panes}
         .map(ident => pinned.find(p => p.url === ident || p.pageName === ident))
         .filter((p): p is PinnedItem => p !== undefined);
       prefs['nav.pinnedPages'] = reordered;
-      await userManager.updateUser(currentUser.username ?? '', { preferences: prefs });
+      await userManager.updateUser(currentUser.username, { preferences: prefs }, currentUser);
       return res.json({ ok: true });
     } catch (err) {
       logger.error('Error reordering pinned pages:', err);
@@ -10005,7 +10006,7 @@ ${panes}
         password,
         roles: Array.isArray(roles) ? roles : [roles],
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
-      }, { username: currentUser?.username, ipAddress: req.ip });
+      }, currentUser);
 
       if (success) {
         return res.redirect('/admin/users?success=User created successfully');
@@ -10052,7 +10053,7 @@ ${panes}
         return res.status(400).json({ success: false, message: 'Admin users cannot be marked as external OAuth accounts.' });
       }
 
-      const success = await userManager.updateUser(username, updates, { username: currentUser?.username, ipAddress: req.ip });
+      const success = await userManager.updateUser(username, updates, currentUser);
 
       if (success) {
         return res.json({ success: true, message: 'User updated successfully' });
@@ -10084,7 +10085,7 @@ ${panes}
       }
 
       const username = req.params.username;
-      const success = await userManager.deleteUser(username, { username: currentUser?.username, ipAddress: req.ip });
+      const success = await userManager.deleteUser(username, currentUser);
 
       if (success) {
         return res.json({ success: true, message: 'User deleted successfully' });
@@ -12514,12 +12515,12 @@ ${panes}
           // anonymous or a token without the scope is refused by policy.
           const canSearchUsers = await wikiContext.hasPermission('search-user');
           const userManager = this.engine.getManager('UserManager') as {
-            searchUsers?: (q: string, opts?: { limit?: number; activeOnly?: boolean }) => Promise<Array<{
+            searchUsers?: (q: string, opts: { limit?: number; activeOnly?: boolean }, ctx: ActorContext) => Promise<Array<{
               username: string; displayName?: string; profilePage?: string; avatar?: string; createdAt?: string;
             }>>;
           };
-          if (!mimeCategory && !year && canSearchUsers && userManager?.searchUsers) {
-            const users = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
+          if (!mimeCategory && !year && canSearchUsers && wikiContext.userContext && userManager?.searchUsers) {
+            const users = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true }, wikiContext.userContext);
             if (users.length >= fetchLimit) anyCapped = true;
             for (const u of users) {
               const profile = u.profilePage || u.displayName || u.username;
@@ -12789,7 +12790,7 @@ ${panes}
       // changes beyond a new providerId branch in _apCard().
       if (typesParam === 'user') {
         const userManager = this.engine.getManager('UserManager') as {
-          searchUsers?: (q: string, opts?: { limit?: number; activeOnly?: boolean }) => Promise<Array<{
+          searchUsers?: (q: string, opts: { limit?: number; activeOnly?: boolean }, ctx: ActorContext) => Promise<Array<{
             username: string;
             displayName?: string;
             email?: string;
@@ -12806,20 +12807,21 @@ ${panes}
         // surface is intentionally more permissive than /api/users/search,
         // which keeps its `search-user` permission gate for the dedicated
         // user-management surface).
-        const username = wikiContext.userContext?.username;
+        const searcher = wikiContext.userContext;
+        const username = searcher?.username;
         const canSearchUsers = Boolean(
-          wikiContext.userContext?.authenticated
+          searcher?.authenticated
           && username
           && username !== 'anonymous'
           && username !== 'asserted'
         );
-        if (!canSearchUsers) {
+        if (!canSearchUsers || !searcher) {
           return res.json({ success: true, results: [], total: 0, hasMore: false, capped: false });
         }
         // UserManager.searchUsers caps at its own `limit` option; oversample
         // so the slice math below has enough rows to paginate through.
         const fetchLimit = Math.max(200, offset + pageSize);
-        const fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true });
+        const fetched = await userManager.searchUsers(query, { limit: fetchLimit, activeOnly: true }, searcher);
         // #699: surface a `capped` flag when the cap may be hiding more matches.
         // We can't tell from a saturated result alone whether the true match
         // count is exactly fetchLimit or larger; conservatively treat saturation

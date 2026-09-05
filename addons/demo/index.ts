@@ -52,6 +52,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type UserManager from '../../dist/src/managers/UserManager.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import logger from '../../dist/src/utils/logger.js';
+import { systemContext } from '../../dist/src/context/bootActions.js';
 import DemoLoginPlugin from './plugins/DemoLoginPlugin.js';
 
 /**
@@ -129,7 +130,7 @@ async function seedAdminAccount(
     // Only the flag is touched. Password, email, display name and roles are
     // whatever the operator last set them to.
     if (!existing.profileLocked) {
-      await userManager.updateUser(username, { profileLocked: true });
+      await userManager.updateUser(username, { profileLocked: true }, systemContext(engine, 'demo addon: lock the shared demo account profile'));
       logger.warn(
         `[demo addon] Shared admin account "${username}" predated profileLocked and was ` +
         'unprotected — a visitor could have taken it over by changing its email. Locked it now.'
@@ -163,7 +164,7 @@ async function seedAdminAccount(
     displayName: readString(account, 'display-name', ADMIN_DEFAULTS.displayName),
     roles: ['demo-admin'],
     profileLocked: true
-  });
+  }, systemContext(engine, 'demo addon: seed the shared demo admin account'));
 
   logger.info(
     `[demo addon] Seeded shared admin account "${username}" (demo-admin, profile locked). ` +

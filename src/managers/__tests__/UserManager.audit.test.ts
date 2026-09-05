@@ -11,6 +11,7 @@
  */
 import UserManager from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
 
@@ -54,33 +55,39 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   return { um, sink, users, provider };
 }
 
-const ADMIN = { username: 'root', ipAddress: '203.0.113.7' };
+// #1179: the request's subject, forwarded as-is; the address rides on it.
+const ADMIN = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
+const ALICE = { username: 'alice', roles: ['reader'], isAuthenticated: true };
 
 describe('#1204 user-create', () => {
   test('an admin creating an account is recorded with the admin as actor', async () => {
     const { um, sink } = makeManager();
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
     expect(sink.map((e) => e.eventType)).toEqual(['user-create']);
-    expect(sink[0]).toMatchObject({ user: 'root', ipAddress: '203.0.113.7', metadata: { username: 'alice', roles: ['reader'], selfRegistration: false } });
+    expect(sink[0]).toMatchObject({ user: 'root', ipAddress: '203.0.113.7', metadata: { origin: 'request', username: 'alice', roles: ['reader'], selfRegistration: false } });
     expect(sink[0].metadata.actorMissing).toBeUndefined();
   });
 
   test('self-registration names the new account as the actor', async () => {
     const { um, sink } = makeManager();
-    await um.createUser({ username: 'bob', email: 'b@x', displayName: 'Bob', password: 'pw-1234567' }, { username: 'bob', ipAddress: '10.0.0.9' });
-    expect(sink[0]).toMatchObject({ user: 'bob', metadata: { selfRegistration: true } });
+    // #1179: the new account is not a subject yet — a request-origin context that says so.
+    await um.createUser({ username: 'bob', email: 'b@x', displayName: 'Bob', password: 'pw-1234567' }, jobContextFromRequestWithReason({ username: 'bob', ipAddress: '10.0.0.9' }, 'self-registration'));
+    expect(sink[0]).toMatchObject({ user: 'bob', ipAddress: '10.0.0.9', metadata: { origin: 'request', reason: 'self-registration', selfRegistration: true } });
   });
 
-  test('a provisioned account names the provider, not a person', async () => {
+  test('a provisioned account names the system principal and the provider, not a person', async () => {
     const { um, sink } = makeManager();
-    await um.createUser({ username: 'carol', email: 'c@x', displayName: 'Carol', isExternal: true }, { username: 'system', provider: 'google-oidc' });
-    expect(sink[0]).toMatchObject({ user: 'system', metadata: { provider: 'google-oidc', isExternal: true } });
+    // #1179: what the auth providers pass — the principal acts, the reason names the provider.
+    await um.createUser({ username: 'carol', email: 'c@x', displayName: 'Carol', isExternal: true }, jobContextFromRequestWithReason({ username: um.systemPrincipalName() }, 'provisioned by google-oidc'));
+    expect(sink[0]).toMatchObject({ user: um.systemPrincipalName(), metadata: { origin: 'request', reason: 'provisioned by google-oidc', isExternal: true, selfRegistration: false } });
   });
 
-  test('no actor is said, not invented (#1181)', async () => {
+  test('#1179 a boot-time account write says the system principal and why — nothing is invented (#1181)', async () => {
     const { um, sink } = makeManager();
-    await um.createUser({ username: 'dave', email: 'd@x', displayName: 'Dave', password: 'pw-1234567' });
-    expect(sink[0]).toMatchObject({ user: 'unknown', metadata: { actorMissing: true } });
+    await um.createUser({ username: 'dave', email: 'd@x', displayName: 'Dave', password: 'pw-1234567' }, jobContextFromSystem('System', 'seed the demo account'));
+    expect(sink[0]).toMatchObject({ user: 'System', metadata: { origin: 'boot', reason: 'seed the demo account' } });
+    expect(sink[0].metadata.actorMissing).toBeUndefined();
+    expect(sink[0].ipAddress).toBeUndefined();
   });
 });
 
@@ -89,7 +96,7 @@ describe('#1204 user-edit', () => {
     const { um, sink } = makeManager();
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
     sink.length = 0;
-    await um.updateUser('alice', { preferences: { theme: 'dark' } }, { username: 'alice' });
+    await um.updateUser('alice', { preferences: { theme: 'dark' } }, ALICE);
     expect(sink).toEqual([]);
   });
 

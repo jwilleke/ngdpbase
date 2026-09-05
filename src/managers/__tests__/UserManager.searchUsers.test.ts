@@ -1,8 +1,11 @@
 'use strict';
 
 /**
- * Tests for UserManager.searchUsers() — issue #466
+ * Tests for UserManager.searchUsers(, ACTOR) — issue #466
  */
+
+/** #1179: search-user is a disclosive lookup; it records who asked. */
+const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true };
 
 const makeUser = (overrides = {}) => ({
   username: 'testuser',
@@ -80,64 +83,64 @@ describe('UserManager#searchUsers()', () => {
   });
 
   test('returns all active users when query is empty', async () => {
-    const results = await manager.searchUsers('');
+    const results = await manager.searchUsers('', {}, ACTOR);
     expect(results.length).toBe(4); // dave is inactive
     expect(results.find(u => u.username === 'dave')).toBeUndefined();
   });
 
   test('matches username (case-insensitive)', async () => {
-    const results = await manager.searchUsers('ALICE');
+    const results = await manager.searchUsers('ALICE', {}, ACTOR);
     const usernames = results.map(u => u.username);
     expect(usernames).toContain('alice');
     expect(usernames).toContain('erin'); // displayName: 'Erin Alice'
   });
 
   test('matches displayName (case-insensitive)', async () => {
-    const results = await manager.searchUsers('jones');
+    const results = await manager.searchUsers('jones', {}, ACTOR);
     expect(results.map(u => u.username)).toContain('bob');
   });
 
   test('matches email (case-insensitive)', async () => {
-    const results = await manager.searchUsers('corp.com');
+    const results = await manager.searchUsers('corp.com', {}, ACTOR);
     const usernames = results.map(u => u.username);
     expect(usernames).toContain('carol');
     expect(usernames).not.toContain('alice');
   });
 
   test('filters by role', async () => {
-    const results = await manager.searchUsers('', { role: 'editor' });
+    const results = await manager.searchUsers('', { role: 'editor' }, ACTOR);
     expect(results.length).toBe(1);
     expect(results[0].username).toBe('bob');
   });
 
   test('respects limit', async () => {
-    const results = await manager.searchUsers('', { limit: 2 });
+    const results = await manager.searchUsers('', { limit: 2 }, ACTOR);
     expect(results.length).toBe(2);
   });
 
   test('includes inactive users when activeOnly is false', async () => {
-    const results = await manager.searchUsers('', { activeOnly: false });
+    const results = await manager.searchUsers('', { activeOnly: false }, ACTOR);
     const usernames = results.map(u => u.username);
     expect(usernames).toContain('dave');
   });
 
   test('never returns password field', async () => {
-    const results = await manager.searchUsers('');
+    const results = await manager.searchUsers('', {}, ACTOR);
     results.forEach(u => expect(u).not.toHaveProperty('password'));
   });
 
   test('returns empty array when no users match', async () => {
-    const results = await manager.searchUsers('zzznomatch');
+    const results = await manager.searchUsers('zzznomatch', {}, ACTOR);
     expect(results).toEqual([]);
   });
 
   test('returns empty array when role filter matches nothing', async () => {
-    const results = await manager.searchUsers('', { role: 'nonexistent-role' });
+    const results = await manager.searchUsers('', { role: 'nonexistent-role' }, ACTOR);
     expect(results).toEqual([]);
   });
 
   test('combined query + role filter', async () => {
-    const results = await manager.searchUsers('example.com', { role: 'admin' });
+    const results = await manager.searchUsers('example.com', { role: 'admin' }, ACTOR);
     expect(results.map(u => u.username)).toContain('alice');
     expect(results.map(u => u.username)).not.toContain('bob');
   });

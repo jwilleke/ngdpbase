@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { scheduleContext } from '../context/bootActions.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
 
@@ -495,7 +496,9 @@ class NotificationManager extends BaseManager {
     const userManager = this.engine?.getManager<UserManager>('UserManager');
     if (!userManager) return;
 
-    const recipients = await userManager.searchUsers('', { role: recipientRole });
+    // #1179: an escalation fan-out is the system's act, not a person's — and
+    // search-user is a disclosive lookup, so the record says why it ran.
+    const recipients = await userManager.searchUsers('', { role: recipientRole }, scheduleContext(this.engine, `notification escalation: recipients holding ${recipientRole}`));
     const withEmail = recipients.filter(u => u.email && u.email.includes('@'));
 
     if (withEmail.length === 0) {

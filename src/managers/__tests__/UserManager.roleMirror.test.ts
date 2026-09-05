@@ -11,6 +11,9 @@
 import UserManager from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { Role as OrganizationRoleRecord } from '../../types/Role';
+/** #1179: the account writes take the actor's context — a request subject here. */
+const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
+
 
 const PERSON_ID = 'urn:uuid:11111111-1111-1111-1111-111111111111';
 const ORG_ID = 'https://example.com/';
@@ -167,7 +170,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
         email: 'alice@example.com',
         password: 'pw',
         roles: ['admin']
-      });
+      }, ACTOR);
 
       expect(mocks.roleManager.create).toHaveBeenCalledTimes(1);
       const created = mocks.roleManager.create.mock.calls[0][0];
@@ -203,7 +206,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
         email: 'a@x',
         password: 'pw',
         roles: ['admin']
-      });
+      }, ACTOR);
 
       expect(mocks.roleManager.create).not.toHaveBeenCalled();
       expect(mocks.roleManager.update).not.toHaveBeenCalled();
@@ -224,7 +227,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
         email: 'a@x',
         password: 'pw',
         roles: ['admin']
-      });
+      }, ACTOR);
 
       expect(mocks.roleManager.create).not.toHaveBeenCalled();
       expect(mocks.roleManager.update).not.toHaveBeenCalled();
@@ -248,7 +251,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
           email: 'a@x',
           password: 'pw',
           roles: ['admin']
-        })
+        }, ACTOR)
       ).resolves.toMatchObject({ username: 'alice' });
     });
   });
@@ -271,7 +274,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.assignRole('alice', 'editor');
+      await userManager.assignRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).toHaveBeenCalledTimes(1);
       const [, patch] = roleManager.update.mock.calls[0];
@@ -295,7 +298,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.assignRole('alice', 'editor');
+      await userManager.assignRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).not.toHaveBeenCalled();
     });
@@ -319,7 +322,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.removeRole('alice', 'editor');
+      await userManager.removeRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).toHaveBeenCalledTimes(1);
       const [, patch] = roleManager.update.mock.calls[0];
@@ -343,7 +346,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.removeRole('alice', 'editor');
+      await userManager.removeRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).not.toHaveBeenCalled();
     });
@@ -367,7 +370,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.updateUser('alice', { roles: ['editor'] });
+      await userManager.updateUser('alice', { roles: ['editor'] }, ACTOR);
 
       // editor should be created (not in seed) and Person appended
       expect(roleManager.create).toHaveBeenCalledTimes(1);
@@ -390,7 +393,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.updateUser('alice', { displayName: 'Alice Smith' });
+      await userManager.updateUser('alice', { displayName: 'Alice Smith' }, ACTOR);
 
       expect(roleManager.create).not.toHaveBeenCalled();
       expect(roleManager.update).not.toHaveBeenCalled();
@@ -421,7 +424,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.deleteUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.deleteUser('alice');
+      await userManager.deleteUser('alice', ACTOR);
 
       expect(roleManager._store.get('admin')?.member).toEqual([]);
       expect(roleManager._store.get('editor')?.member).toEqual([{ '@id': 'urn:uuid:other-person' }]);
@@ -446,7 +449,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
         email: 'a@x',
         password: 'pw',
         roles: ['custom-role-not-in-catalog']
-      });
+      }, ACTOR);
 
       expect(mocks.roleManager.create).toHaveBeenCalledTimes(1);
       const created: OrganizationRoleRecord = mocks.roleManager.create.mock.calls[0][0];

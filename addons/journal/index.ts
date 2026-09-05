@@ -43,6 +43,7 @@ import ejs from 'ejs';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails, AddonProfileSection, AddonProfileUser } from '../../dist/src/managers/AddonsManager.js';
 import type UserManager from '../../dist/src/managers/UserManager.js';
+import { jobContextFromRequestWithReason } from '../../dist/src/context/JobContext.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
@@ -275,7 +276,9 @@ const journalAddon = {
     const rt = body['journal.reminderTime'];
     updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
 
-    await userManager.updateUser(username, { preferences: updated });
+    // #1179: the addon profile hook hands this a name, not the caller's context
+    // (AddonsManager.saveProfileSections is a later slice); say what this is.
+    await userManager.updateUser(username, { preferences: updated }, jobContextFromRequestWithReason({ username }, 'journal preferences saved through the profile section'));
   },
 
 

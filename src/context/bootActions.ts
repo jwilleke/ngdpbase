@@ -56,9 +56,10 @@ export function scheduleContext(engine: EngineLike, reason: string): JobContext 
 }
 
 /** The audit fields a system context contributes: who, from where, why. */
-export function attributedTo(ctx: JobContext): { user: string; metadata: Record<string, unknown> } {
+export function attributedTo(ctx: JobContext): { user: string; ipAddress?: string; metadata: Record<string, unknown> } {
   return {
     user: ctx.username,
+    ...(ctx.ipAddress ? { ipAddress: ctx.ipAddress } : {}),
     metadata: {
       origin: ctx.origin,
       reason: ctx.reason ?? null,

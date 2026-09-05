@@ -16,6 +16,8 @@
  */
 
 import * as crypto from 'crypto';
+import { jobContextFromRequestWithReason } from '../context/JobContext.js';
+import { systemPrincipalOf } from '../context/bootActions.js';
 import { OAuth2Client } from 'google-auth-library';
 import type {
   AuthProvider,
@@ -184,7 +186,7 @@ export class GoogleOIDCProvider implements AuthProvider {
         await userManager.updateUser(existing.username, {
           lastLogin: new Date().toISOString(),
           loginCount: (existing.loginCount ?? 0) + 1
-        });
+        }, jobContextFromRequestWithReason({ username: existing.username }, 'google-oidc sign-in: login statistics'));
       } catch {
         // best-effort — do not fail login if update fails
       }
@@ -224,7 +226,7 @@ export class GoogleOIDCProvider implements AuthProvider {
         roles: this.config.defaultRoles,
         isExternal: true,
         isActive: true
-      }, { username: 'system', provider: 'google-oidc' }); // #1204: provisioned, not registered
+      }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, 'provisioned by google-oidc')); // #1204: provisioned, not registered; #1179: the system principal acts, the reason names the provider
       logger.info(`[GoogleOIDCProvider] Auto-provisioned new user: ${username} (${email})`);
       return { username };
     } catch (err) {

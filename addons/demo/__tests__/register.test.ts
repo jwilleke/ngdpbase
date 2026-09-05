@@ -152,7 +152,7 @@ describe('demo addon shared admin account (#1029)', () => {
     });
     await demoAddon.register(engine, SUPPLIED);
 
-    expect(userManager.updateUser).toHaveBeenCalledWith('admindemo', { profileLocked: true });
+    expect(userManager.updateUser).toHaveBeenCalledWith('admindemo', { profileLocked: true }, expect.objectContaining({ origin: 'boot' }));
     expect(userManager.createUser).not.toHaveBeenCalled();
   });
 

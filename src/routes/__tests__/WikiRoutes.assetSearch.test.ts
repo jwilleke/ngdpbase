@@ -821,7 +821,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       await routes.assetSearch(req, res);
 
-      expect(userManager.searchUsers).toHaveBeenCalledWith('jim', expect.objectContaining({ activeOnly: true }));
+      expect(userManager.searchUsers).toHaveBeenCalledWith('jim', expect.objectContaining({ activeOnly: true }), expect.objectContaining({ username: expect.any(String) }));
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(payload.success).toBe(true);
       expect(payload.total).toBe(1);
@@ -879,7 +879,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
 
       await routes.assetSearch(req, res);
 
-      expect(userManager.searchUsers).toHaveBeenCalledWith('foo', expect.objectContaining({ activeOnly: true }));
+      expect(userManager.searchUsers).toHaveBeenCalledWith('foo', expect.objectContaining({ activeOnly: true }), expect.objectContaining({ username: expect.any(String) }));
     });
 
     it('respects offset and pageSize when slicing oversampled fetch', async () => {
@@ -1088,7 +1088,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
       const ids = payload.results.map((r: { id: string; providerId: string }) => `${r.providerId}:${r.id}`);
       expect(ids).toEqual(['page:Welcome', 'user:alice']);
-      expect(userMgr.searchUsers).toHaveBeenCalledWith('', expect.objectContaining({ activeOnly: true }));
+      expect(userMgr.searchUsers).toHaveBeenCalledWith('', expect.objectContaining({ activeOnly: true }), expect.objectContaining({ username: expect.any(String) }));
       expect(asset.search).not.toHaveBeenCalled();
     });
 

@@ -56,6 +56,8 @@ export interface JobContext {
   viaToken?: AgentTokenGrant;
   /** The share the requesting call presented, when it did (#1222). Carried for the same reason. */
   viaShare?: ShareGrant;
+  /** The address the requesting call came from (#1179), when there was one. Provenance for the record. */
+  ipAddress?: string;
   /** ISO 8601. When the work was requested, not when it ran. */
   requestedAt: string;
   /** Why, for origins with no person to ask. Free text, for the audit record. */
@@ -67,6 +69,7 @@ export interface RequestIdentity {
   username?: string | null;
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
+  ipAddress?: string;
 }
 
 /**
@@ -97,8 +100,28 @@ export function jobContextFromRequest(
     origin: 'request',
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
     ...(identity?.viaShare ? { viaShare: identity.viaShare } : {}),
+    ...(identity?.ipAddress ? { ipAddress: identity.ipAddress } : {}),
     requestedAt: now.toISOString()
   };
+}
+
+/**
+ * A request-origin context that also says why (#1179).
+ *
+ * For an act inside a request that has no subject of its own yet, or acts for
+ * someone other than the caller: self-registration (the new account is the
+ * identity, the reason says so), an identity provider provisioning an account
+ * (the system principal is the identity, the reason names the provider), a
+ * sign-in refreshing login statistics. The reason is mandatory for the same
+ * cause as in `jobContextFromSystem`: an act that cannot say why is the one an
+ * assessor asks about.
+ */
+export function jobContextFromRequestWithReason(
+  identity: RequestIdentity | null | undefined,
+  reason: string,
+  now: Date = new Date()
+): JobContext {
+  return { ...jobContextFromRequest(identity, now), reason };
 }
 
 /**

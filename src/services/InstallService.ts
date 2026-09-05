@@ -1,4 +1,6 @@
 import fs from 'fs-extra';
+import { systemContext } from '../context/bootActions.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -30,7 +32,7 @@ interface ConfigManager {
  */
 interface UserManager {
   hasRole(username: string, role: string): Promise<boolean>;
-  updateUser(username: string, updates: Record<string, unknown>): Promise<void>;
+  updateUser(username: string, updates: Record<string, unknown>, ctx: ActorContext): Promise<void>;
   provider?: {
     loadUsers(): Promise<void>;
   };
@@ -863,7 +865,7 @@ class InstallService {
       // email: 'admin@localhost' - FIXED, cannot change
     };
 
-    await userManager.updateUser('admin', updates);
+    await userManager.updateUser('admin', updates, systemContext(this.engine, 'install: set the bootstrap admin password'));
   }
 
   /**

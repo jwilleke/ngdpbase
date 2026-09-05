@@ -21,6 +21,7 @@
 import { Router, type Request, type Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
 import WikiContext from '../../../dist/src/context/WikiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
@@ -128,7 +129,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           'journal.defaultPrivate': body['defaultPrivate'] === 'on'
         };
 
-        await userManager.updateUser(ctx.username!, { preferences: updated });
+        await userManager.updateUser(ctx.username!, { preferences: updated }, jobContextFromRequest(ctx));
         res.redirect('/journal/settings?success=Settings+saved');
       } catch (err) {
         handleError(err, res);
@@ -173,7 +174,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         //   3. true (privacy-first hard default)
         const userManager = um();
         const freshUser = userManager ? await userManager.getUser(username) : null;
-        const userPref = (freshUser?.preferences as Record<string, unknown> | undefined)?.['journal.defaultPrivate'];
+        const userPref = (freshUser?.preferences)?.['journal.defaultPrivate'];
         const fleetDefaultPrivate = config['defaultPrivate'] !== false;
         const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;

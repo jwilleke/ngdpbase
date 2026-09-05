@@ -8,6 +8,9 @@
 
 import UserManager from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+/** #1179: the account writes take the actor's context — a request subject here. */
+const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
+
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -145,13 +148,13 @@ describe('UserManager', () => {
       userManager.provider.userExists = vi.fn().mockResolvedValue(true);
       userManager.provider.getAllUsernames = vi.fn().mockResolvedValue(['test', 'admin']);
 
-      await expect(userManager.createUser(userData)).rejects.toThrow('Username already exists');
+      await expect(userManager.createUser(userData, ACTOR)).rejects.toThrow('Username already exists');
     });
 
     test('deleteUser() should throw if user not found', async () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
 
-      await expect(userManager.deleteUser('nonexistent')).rejects.toThrow('User not found');
+      await expect(userManager.deleteUser('nonexistent', ACTOR)).rejects.toThrow('User not found');
     });
 
     test('deleteUser() should call provider for existing user', async () => {
@@ -159,7 +162,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
       userManager.provider.deleteUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.deleteUser('test');
+      await userManager.deleteUser('test', ACTOR);
 
       expect(userManager.provider.deleteUser).toHaveBeenCalledWith('test');
     });
@@ -540,7 +543,7 @@ describe('UserManager', () => {
         userExists: vi.fn().mockResolvedValue(false),
         createUser: vi.fn()
       };
-      await expect(userManager.createUser({ username: 'Svc-NgdpBase', password: 'x', email: 'a@b.c' }))
+      await expect(userManager.createUser({ username: 'Svc-NgdpBase', password: 'x', email: 'a@b.c' }, ACTOR))
         .rejects.toMatchObject({ reason: 'username-taken' });
       expect(userManager.provider.createUser).not.toHaveBeenCalled();
     });

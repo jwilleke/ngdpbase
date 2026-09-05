@@ -253,9 +253,10 @@ describe('GoogleOIDCProvider', () => {
 
       const result = await provider.verify({ token: 'code', state: capturedNonce });
       expect(result).toEqual({ username: 'alice' });
+      // #1179: the sign-in's context rides along — the user, origin request, and why.
       expect(userManager.updateUser).toHaveBeenCalledWith('alice', expect.objectContaining({
         loginCount: 6
-      }));
+      }), expect.objectContaining({ username: 'alice', origin: 'request', reason: expect.stringContaining('google-oidc') }));
     });
 
     test('returns null for existing non-external (password) account — hijack prevention', async () => {
@@ -299,7 +300,7 @@ describe('GoogleOIDCProvider', () => {
         email: 'user@example.com',
         isExternal: true,
         roles: ['occupant']
-      }), { username: 'system', provider: 'google-oidc' }); // #1204: provisioned, not registered
+      }), expect.objectContaining({ origin: 'request', reason: 'provisioned by google-oidc' })); // #1204: provisioned, not registered; #1179: the reason names the provider
     });
 
     test('derives de-duped username when base is taken', async () => {
@@ -364,7 +365,7 @@ describe('GoogleOIDCProvider', () => {
       await provider.verify({ token: 'code', state: capturedNonce });
       expect(userManager.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'user@example.com' }),
-        { username: 'system', provider: 'google-oidc' } // #1204
+        expect.objectContaining({ origin: 'request', reason: 'provisioned by google-oidc' }) // #1204 / #1179
       );
     });
   });
