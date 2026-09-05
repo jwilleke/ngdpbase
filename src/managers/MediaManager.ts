@@ -380,14 +380,15 @@ class MediaManager extends BaseManager implements CatalogSource {
     // availability). `canUserAccessPage` returns false in those cases
     // (conservative-on-security). Matches the documented Slice C/D
     // shift in #714.
-    if (item.linkedPageName && wikiContext) {
+    //
+    // #1223: the question is the evaluator's, in full. `canUserAccessMediaItem`
+    // runs the linked-page rule above and, for a subject carrying `viaShare`,
+    // the share ceiling on the item itself — so the share routes no longer
+    // need a decision of their own.
+    if (wikiContext) {
       const aclManager = this.engine.getManager<ACLManager>('ACLManager');
       if (aclManager) {
-        const allowed = await aclManager.canUserAccessPage(
-          wikiContext.userContext ?? null,
-          item.linkedPageName,
-          'view'
-        );
+        const allowed = await aclManager.canUserAccessMediaItem(wikiContext.userContext ?? null, item);
         if (!allowed) return null;
       }
     }

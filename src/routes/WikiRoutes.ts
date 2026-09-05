@@ -29,7 +29,7 @@ import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
-import { Request, Response, Application } from 'express';
+import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import logger from '../utils/logger.js';
@@ -41,7 +41,8 @@ import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.j
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
-import type { ShareScope } from '../types/Share.js';
+import type { ShareScope, SharePageEntry } from '../types/Share.js';
+import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
@@ -14562,6 +14563,9 @@ ${panes}
     registerDawarichCompatRoutes(app, this.engine);
 
     // Share routes (#853) — token-gated anonymous access (epic #842 slice 2)
+    // #1223: one resolver for every /share/:token* request. It turns the token
+    // into the share subject and attaches it; the handlers below decide nothing.
+    app.use('/share/:token', (req: Request, res: Response, next: NextFunction) => this.shareResolve(req, res, next));
     app.get('/share/:token', (req: Request, res: Response) => void this.shareAlbum(req, res));
     app.get('/share/:token/file/:id', (req: Request, res: Response) => void this.shareFile(req, res));
     app.get('/share/:token/thumb/:id', (req: Request, res: Response) => void this.shareThumb(req, res));
@@ -17508,8 +17512,13 @@ ${description}
   /**
    * GET /media/thumb/:id
    * Lazy-generated thumbnail.
-   * Stub: returns 404 (no thumbnails generated yet).
    * Query param: size (e.g. "300x300")
+   *
+   * #1223: asks the evaluator first, through `MediaManager.getItem` — the same
+   * question the file door asks. Until now a thumbnail was served to anyone
+   * who could name the id, whatever the item's linked page allowed, and the
+   * share thumbnail route could only hand off here once this door decided.
+   * A share subject gets `Cache-Control: private`: its URL embeds the token.
    */
   async mediaThumb(req: Request, res: Response) {
     const mediaManager = this.engine.getManager('MediaManager');
@@ -17517,13 +17526,18 @@ ${description}
       return res.status(503).send('Media manager not enabled');
     }
     try {
+      const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
+      const item = await mediaManager.getItem(req.params.id, wikiContext);
+      if (!item) {
+        return res.status(404).send('Thumbnail not available');
+      }
       const size = (req.query.size as string) || '300x300';
-      const buffer = await mediaManager.getThumbnailBuffer(req.params.id, size);
+      const buffer = await mediaManager.getThumbnailBuffer(item.id, size);
       if (!buffer) {
         return res.status(404).send('Thumbnail not available');
       }
       res.set('Content-Type', 'image/webp');
-      res.set('Cache-Control', 'public, max-age=86400');
+      res.set('Cache-Control', req.userContext?.viaShare ? 'private, max-age=3600' : 'public, max-age=86400');
       return res.send(buffer);
     } catch (err: unknown) {
       logger.error('[media] Error serving thumbnail:', err);
@@ -17536,22 +17550,30 @@ ${description}
   // ---------------------------------------------------------------------------
 
   /**
-   * Common gate for every /share/:token* request (#853).
+   * Resolve a share token into the request's subject (#853, #1223).
    *
-   * - Rate-limits per token+IP BEFORE validation so invalid-token probing
+   * Runs once, ahead of every `/share/:token*` handler, and is the ONLY place
+   * on that path that knows what a share is:
+   *
+   * - Rate-limits per token+IP BEFORE resolution so invalid-token probing
    *   burns the same budget as real traffic (decision 5).
    * - Unknown, expired, and revoked tokens — and a disabled ShareManager —
    *   all produce an IDENTICAL 404 so share existence never leaks.
-   * - Scope is re-validated on every request, never cached per token.
+   * - Resolves the token through `ShareManager.subjectFor` (#1222) and sets
+   *   the result as `req.userContext`, __replacing__ whatever session identity
+   *   the request carried: the token is the credential presented on this
+   *   path, and a share must read the same for every holder of the link.
    * - Sets `X-Robots-Tag: noindex` and records an aggregated access hit.
    *
-   * Returns the validated scope + manager, or null after having responded.
+   * The handlers then hand off to the ordinary doors — `checkPageReadAccess`,
+   * `mediaFile`, `mediaThumb` — which ask the evaluator as they do for a
+   * session, and the evaluator applies `viaShare` as a ceiling. A separate
+   * route tree is structurally where a second door appears; this is what
+   * keeps the share routes from being one. `WikiRoutes.shareDoors.test.ts`
+   * holds it statically.
    */
-  private shareGate(req: Request, res: Response): { shareManager: ShareManager; scope: ShareScope } | null {
-    const notFound = (): null => {
-      res.status(404).send('Not Found');
-      return null;
-    };
+  private shareResolve(req: Request, res: Response, next: NextFunction): void {
+    const notFound = (): void => { res.status(404).send('Not Found'); };
     const shareManager = this.engine.getManager('ShareManager');
     if (!shareManager || !shareManager.isEnabled()) return notFound();
 
@@ -17561,33 +17583,64 @@ ${description}
       res.status(429)
         .set('Retry-After', String(Math.ceil(rl.retryAfterMs / 1000)))
         .send('Too Many Requests');
-      return null;
+      return;
     }
 
+    const subject = shareManager.subjectFor(token);
     const scope = shareManager.validate(token);
-    if (!scope) return notFound();
+    if (!subject || !scope) return notFound();
 
+    // The subject IS the request's identity now. PermissionSubject has no index
+    // signature; the request type does — the spread is the widening, nothing else.
+    req.userContext = { ...subject };
+    res.locals.shareScope = scope;
     res.setHeader('X-Robots-Tag', 'noindex');
     shareManager.recordAccess(token);
-    return { shareManager, scope };
+    next();
+  }
+
+  /** The scope the resolver attached — the share's candidate set, for listing. */
+  private shareScopeOf(res: Response): ShareScope {
+    return res.locals.shareScope as ShareScope;
   }
 
   /**
    * GET /share/:token
-   * Anonymous album view: thumbnail grid of in-scope media + list of
-   * in-scope pages. Chrome-free standalone template — no site nav.
+   * Anonymous album view: thumbnail grid of media + list of pages the share
+   * subject may read. Chrome-free standalone template — no site nav.
+   *
+   * #1223: `resolveScope` enumerates the CANDIDATES — everything carrying the
+   * keyword. Whether the visitor may see each one is the evaluator's answer,
+   * asked per item through the same doors the item's own URL uses: the page
+   * read gate and `MediaManager.getItem`. Until #1219's listing filter lands
+   * this is that filter, done here.
    */
   async shareAlbum(req: Request, res: Response) {
     try {
-      const gate = this.shareGate(req, res);
-      if (!gate) return;
-      const resolved = await gate.shareManager.resolveScope(gate.scope);
+      const scope = this.shareScopeOf(res);
+      const shareManager = this.engine.getManager('ShareManager');
+      if (!shareManager) return res.status(404).send('Not Found');
+      const candidates = await shareManager.resolveScope(scope);
+      const mediaManager = this.engine.getManager('MediaManager');
+      const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
+
+      const pages: SharePageEntry[] = [];
+      for (const entry of candidates.pages) {
+        const { allowed } = await this.checkPageReadAccess(req, entry.name);
+        if (allowed) pages.push(entry);
+      }
+      const media: MediaItem[] = [];
+      for (const candidate of candidates.media) {
+        const item = mediaManager ? await mediaManager.getItem(candidate.id, wikiContext) : null;
+        if (item) media.push(item);
+      }
+
       return res.render('share-album', {
         token: req.params.token,
-        keyword: gate.scope.keyword,
-        media: resolved.media,
-        pages: resolved.pages,
-        title: `Shared — ${gate.scope.keyword}`
+        keyword: scope.keyword,
+        media,
+        pages,
+        title: `Shared — ${scope.keyword}`
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering share album:', err);
@@ -17597,84 +17650,58 @@ ${description}
 
   /**
    * GET /share/:token/file/:id
-   * Stream a media file only if the item is in the share's LIVE scope.
+   * The ordinary media door, reached as the share subject (#1223).
    */
   async shareFile(req: Request, res: Response) {
-    try {
-      const gate = this.shareGate(req, res);
-      if (!gate) return;
-      const resolved = await gate.shareManager.resolveScope(gate.scope);
-      const item = resolved.media.find(m => m.id === req.params.id);
-      if (!item) return res.status(404).send('Not Found');
-      return await this.streamMediaItemFile(req, res, item.filePath, item.mimeType, item.id);
-    } catch (err: unknown) {
-      logger.error('[share] Error serving share file:', err);
-      return res.status(500).send('Internal server error');
-    }
+    return this.mediaFile(req, res);
   }
 
   /**
    * GET /share/:token/thumb/:id
-   * Thumbnail, only if the item is in the share's LIVE scope.
-   * Cache-Control is `private` — the URL embeds the capability token, so
-   * shared caches must not store it.
+   * The ordinary thumbnail door, reached as the share subject (#1223). The
+   * door answers `Cache-Control: private` for a share subject — the URL
+   * embeds the capability token, so shared caches must not store it.
    */
   async shareThumb(req: Request, res: Response) {
-    try {
-      const gate = this.shareGate(req, res);
-      if (!gate) return;
-      const resolved = await gate.shareManager.resolveScope(gate.scope);
-      const item = resolved.media.find(m => m.id === req.params.id);
-      if (!item) return res.status(404).send('Not Found');
-      const mediaManager = this.engine.getManager('MediaManager');
-      const size = (req.query.size as string) || '300x300';
-      const buffer = mediaManager ? await mediaManager.getThumbnailBuffer(item.id, size) : null;
-      if (!buffer) return res.status(404).send('Not Found');
-      res.set('Content-Type', 'image/webp');
-      res.set('Cache-Control', 'private, max-age=3600');
-      return res.send(buffer);
-    } catch (err: unknown) {
-      logger.error('[share] Error serving share thumbnail:', err);
-      return res.status(500).send('Internal server error');
-    }
+    return this.mediaThumb(req, res);
   }
 
   /**
    * GET /share/:token/page/:name
-   * Read-only rendered page, only if in the share's LIVE scope.
+   * Read-only rendered page, through the same read gate as `/view` and the
+   * export routes (#1060, #1223). A page the share subject may not read is
+   * indistinguishable from one that does not exist.
    *
    * Known v1 caveat (documented, not fixed): links inside the rendered HTML
    * point at normal /view/ URLs the anonymous visitor may not be able to open.
    */
   async sharePage(req: Request, res: Response) {
     try {
-      const gate = this.shareGate(req, res);
-      if (!gate) return;
       const name = req.params.name;
-      const resolved = await gate.shareManager.resolveScope(gate.scope);
-      const entry = resolved.pages.find(p => p.name === name);
-      if (!entry) return res.status(404).send('Not Found');
+      const { allowed, metadata } = await this.checkPageReadAccess(req, name);
+      if (!allowed) return res.status(404).send('Not Found');
 
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
       const markdown = pageManager
-        ? await pageManager.getPageContent(entry.name).catch(() => null)
+        ? await pageManager.getPageContent(name).catch(() => null)
         : null;
       if (markdown === null || !renderingManager) return res.status(404).send('Not Found');
 
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.VIEW,
-        pageName: entry.name,
+        pageName: name,
         response: res
       });
       const html = await renderingManager.textToHTML(wikiContext, markdown);
+      const pageTitle = metadata?.title ?? name;
       return res.render('share-page', {
         token: req.params.token,
-        keyword: gate.scope.keyword,
-        pageName: entry.name,
-        pageTitle: entry.title ?? entry.name,
+        keyword: this.shareScopeOf(res).keyword,
+        pageName: name,
+        pageTitle,
         html,
-        title: `Shared — ${entry.title ?? entry.name}`
+        title: `Shared — ${pageTitle}`
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering share page:', err);

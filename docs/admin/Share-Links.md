@@ -22,7 +22,7 @@ Share links shown on `/shares` are built from `ngdpbase.application.base-url` (f
 | Create a share | policy grants `share-manage` (shipped to `admin` and `editor`; #1224) | `POST /shares/create` (CSRF-protected) |
 | List shares | `share-manage`: own. `admin-system`: all. | `GET /shares` |
 | Revoke | Creator (`share-manage`) or `admin-system` | `POST /shares/:id/revoke` (CSRF-protected) |
-| View shared content | Anyone holding the token | `GET /share/:token[...]` (anonymous) |
+| View shared content | Anyone holding the token, evaluated as the share subject — a signed-in visitor's own session is __not__ consulted on `/share/*` ([#1223](https://github.com/jwilleke/ngdpbase/issues/1223)) | `GET /share/:token[...]` (anonymous) |
 
 ## How a share visit is evaluated
 
@@ -35,6 +35,8 @@ A share is a delegation by the user who issued it, not a copy of their authority
 
 What passes the ceiling is then subject to the page's own rules exactly as any anonymous visitor is: `private: true`, a restricted `audience`, or a per-action `access` list refuses. Only after that does the share stand in for global policy, which is what lets a share work on an instance whose policy gives anonymous nothing.
 
+Media items go through the same evaluator: `ACLManager.canUserAccessMediaItem` applies the share ceiling to the item (`asset-read` delegated, unexpired, the item's EXIF/XMP keywords covered, not private, issuer live) and then the linked page's own rules. The `/share/*` routes contain no access decision of their own ([#1223](https://github.com/jwilleke/ngdpbase/issues/1223)): a resolver turns the token into the share subject, and every handler hands off to the door the content's own URL uses — the page read gate, `/media/file/:id`, `/media/thumb/:id`. The album lists the keyword's candidates filtered by those doors.
+
 Every denial a share visit produces is an `authorization-deny` record with `viaShareId` and `viaShareIssuer` in its metadata, so the trail reads "anonymous via share, issued by".
 
 ## Hard exclusions (safe by construction)
@@ -43,7 +45,7 @@ Never exposed through any share, regardless of keyword (decisions 1 and 3): cont
 
 ## Abuse controls and audit
 
-- Unknown, expired, and revoked tokens return byte-identical 404s — share existence never leaks.
+- Unknown, expired, and revoked tokens return byte-identical 404s — share existence never leaks. A page or item the evaluator refuses the share subject is also a 404.
 - All `/share/*` responses carry `X-Robots-Tag: noindex`; share templates also set the `robots` meta tag.
 - Rate limit: 600 requests per token+IP per 10 minutes, applied before token validation so probing burns the same budget. Currently a hardcoded constant in `WikiRoutes` (`shareRateLimiter`); one album view costs one request per thumbnail, so large albums consume budget quickly. Behind a reverse proxy or tunnel, all visitors currently share one bucket per token until the trust-proxy work lands (#861).
 - Audit events via AuditManager: `share_create`, `share_revoke`, and aggregated `share_access` rows (one per share per 5-minute window — never per-view rows, decision 5).

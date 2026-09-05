@@ -1,8 +1,12 @@
 /**
- * Share route tests (#855 — epic #842 slice 4).
+ * Share route tests (#855 — epic #842 slice 4; #1223 — epic #1225).
  *
  * Public routes (#853): happy paths, identical 404s for every invalid-token
- * flavor, out-of-scope direct fetch, noindex header, rate limiting.
+ * flavor, noindex header, rate limiting. Since #1223 the handlers decide
+ * nothing: the resolver sets the share subject on the request and each
+ * handler hands off to the ordinary door, so what a share serves is exactly
+ * what the evaluator allows that subject — the ACL and MediaManager stubs
+ * here ARE the decision, and the tests assert the routes obey them.
  * Management routes (#854): role gates (admin/editor create, creator/admin
  * revoke), CSRF via the real middleware, redirect contracts.
  */
@@ -65,9 +69,29 @@ const shareState: {
   records: []
 };
 
+/** The share subject the resolver attaches — anonymous plus the delegation (#1222). */
+const SHARE_SUBJECT = {
+  username: 'Anonymous',
+  roles: ['anonymous', 'All'],
+  isAuthenticated: false,
+  viaShare: {
+    id: 'share-1', issuer: 'ed', actions: ['page-read', 'asset-read'],
+    resources: [{ type: 'page', pattern: 'keyword:trip' }, { type: 'media', pattern: 'keyword:trip' }],
+    expiresAt: null
+  }
+};
+
+/** Pages the evaluator refuses the share subject (the ACL stub's decision). */
+let deniedPages: string[] = [];
+/** Media ids the door refuses the share subject (the MediaManager stub's decision). */
+let deniedMedia: string[] = [];
+/** The userContext each door was asked about, for the "reached as the share subject" assertions. */
+let doorSubjects: unknown[] = [];
+
 const mockShareManager = {
   isEnabled: vi.fn(() => shareState.enabled),
   validate: vi.fn((token: string) => (shareState.validToken !== null && token === shareState.validToken ? SCOPE : null)),
+  subjectFor: vi.fn((token: string) => (shareState.validToken !== null && token === shareState.validToken ? { ...SHARE_SUBJECT } : null)),
   resolveScope: vi.fn(async () => ({ media: shareState.media, pages: shareState.pages })),
   recordAccess: vi.fn(),
   issue: vi.fn(async (scope: unknown, ttl: unknown, issuer: { username?: string }) => ({
@@ -87,6 +111,13 @@ const mockShareManager = {
 };
 
 const mockMediaManager = {
+  // #1223: the media door. Answers from the share's candidate list minus what
+  // the evaluator refuses — the shape MediaManager.getItem has for real.
+  getItem: vi.fn(async (id: string, wikiContext?: { userContext?: unknown }) => {
+    doorSubjects.push(wikiContext?.userContext);
+    if (deniedMedia.includes(id)) return null;
+    return shareState.media.find((m) => m.id === id) ?? null;
+  }),
   getThumbnailBuffer: vi.fn(async () => Buffer.from('thumb-bytes')),
   listByKeyword: vi.fn(async () => []),
   getTranscodedBuffer: vi.fn(async () => null)
@@ -164,7 +195,12 @@ vi.mock('../../WikiEngine', () => {
           },
           ACLManager: {
             checkPagePermission: vi.fn().mockResolvedValue(true),
-            checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+            // #1223: the page read gate. The share page and album routes ask
+            // it per page; a refused page reads as not found.
+            checkPagePermissionWithContext: vi.fn(async (ctx: { pageName?: string; userContext?: unknown }) => {
+              doorSubjects.push(ctx.userContext);
+              return !deniedPages.includes(ctx.pageName ?? '');
+            }),
             removeACLMarkup: vi.fn().mockImplementation((c: string) => c),
             parseACL: vi.fn().mockReturnValue({ permissions: [] })
           },
@@ -223,6 +259,9 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     shareState.media = [];
     shareState.pages = [];
     shareState.records = [];
+    deniedPages = [];
+    deniedMedia = [];
+    doorSubjects = [];
     shareRateLimiter.reset();
     shareRateLimiter.configure({ max: 600, windowMs: 10 * 60 * 1000 });
 
@@ -268,6 +307,34 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       await request(app).get(`/share/${VALID_TOKEN}`);
       await request(app).get(`/share/${VALID_TOKEN}`);
       expect(mockShareManager.validate).toHaveBeenCalledTimes(2);
+      expect(mockShareManager.subjectFor).toHaveBeenCalledTimes(2);
+    });
+
+    test('#1223: the album lists exactly what the evaluator allows the share subject', async () => {
+      shareState.media = [
+        { id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' },
+        { id: 'm2', filePath: mediaFilePath, mimeType: 'image/jpeg' }
+      ];
+      shareState.pages = [{ name: 'Trip', title: 'Trip' }, { name: 'Secret', title: 'Secret' }];
+      deniedPages = ['Secret'];
+      deniedMedia = ['m2'];
+
+      const res = await request(app).get(`/share/${VALID_TOKEN}`);
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.text) as { media: Array<{ id: string }>; pages: Array<{ name: string }> };
+      expect(body.media.map((m) => m.id)).toEqual(['m1']);
+      expect(body.pages.map((p) => p.name)).toEqual(['Trip']);
+    });
+
+    test('#1223: every door is asked about the share subject, not the session', async () => {
+      mockUserContext = { ...adminUser };   // an admin opening a share link
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      shareState.pages = [{ name: 'Trip', title: 'Trip' }];
+      await request(app).get(`/share/${VALID_TOKEN}`);
+      expect(doorSubjects.length).toBeGreaterThan(0);
+      for (const subject of doorSubjects) {
+        expect(subject).toMatchObject({ username: 'Anonymous', viaShare: { id: 'share-1', issuer: 'ed' } });
+      }
     });
 
     test('unknown token, revoked/expired token, and disabled manager return IDENTICAL 404s', async () => {
@@ -315,11 +382,23 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.body.toString()).toBe('jpeg-bytes-here');
     });
 
-    test('denies an out-of-scope file id with 404', async () => {
+    test('a file the door refuses the share subject is 404', async () => {
       shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
-      const res = await request(app).get(`/share/${VALID_TOKEN}/file/other-id`);
-      expect(res.status).toBe(404);
-      expect(res.text).toBe('Not Found');
+      const unknown = await request(app).get(`/share/${VALID_TOKEN}/file/other-id`);
+      expect(unknown.status).toBe(404);
+      deniedMedia = ['m1'];
+      const refused = await request(app).get(`/share/${VALID_TOKEN}/file/m1`);
+      expect(refused.status).toBe(404);
+      expect(refused.text).toBe(unknown.text);
+    });
+
+    test('#1223: the file route is the ordinary media door reached as the share subject', async () => {
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      await request(app).get(`/share/${VALID_TOKEN}/file/m1`);
+      expect(mockMediaManager.getItem).toHaveBeenCalledWith('m1', expect.objectContaining({
+        userContext: expect.objectContaining({ viaShare: expect.objectContaining({ id: 'share-1' }) })
+      }));
+      expect(mockShareManager.resolveScope).not.toHaveBeenCalled();
     });
 
     // ── #1078: Range handling ────────────────────────────────────────────────
@@ -411,17 +490,32 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(res.headers['cache-control']).toBe('private, max-age=3600');
     });
 
-    test('denies an out-of-scope thumbnail with 404', async () => {
-      const res = await request(app).get(`/share/${VALID_TOKEN}/thumb/other-id`);
-      expect(res.status).toBe(404);
+    test('a thumbnail the door refuses the share subject is 404', async () => {
+      const unknown = await request(app).get(`/share/${VALID_TOKEN}/thumb/other-id`);
+      expect(unknown.status).toBe(404);
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      deniedMedia = ['m1'];
+      const refused = await request(app).get(`/share/${VALID_TOKEN}/thumb/m1`);
+      expect(refused.status).toBe(404);
+      expect(mockMediaManager.getThumbnailBuffer).not.toHaveBeenCalled();
+    });
+
+    test('#1223: the thumbnail door asks the evaluator for a session too, and caches publicly', async () => {
+      mockUserContext = { ...readerUser };
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      const ok = await request(app).get('/media/thumb/m1');
+      expect(ok.status).toBe(200);
+      expect(ok.headers['cache-control']).toBe('public, max-age=86400');
+      deniedMedia = ['m1'];
+      const refused = await request(app).get('/media/thumb/m1');
+      expect(refused.status).toBe(404);
     });
   });
 
   // ── public: page ───────────────────────────────────────────────────────────
 
   describe('GET /share/:token/page/:name', () => {
-    test('renders an in-scope page read-only', async () => {
-      shareState.pages = [{ name: 'Trip', title: 'Trip' }];
+    test('renders a page the share subject may read, read-only', async () => {
       const res = await request(app).get(`/share/${VALID_TOKEN}/page/Trip`);
       expect(res.status).toBe(200);
       const body = JSON.parse(res.text) as { view: string; html: string };
@@ -429,14 +523,20 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(body.html).toBe('<p>shared html</p>');
     });
 
-    test('denies an out-of-scope page name with 404', async () => {
-      shareState.pages = [{ name: 'Trip', title: 'Trip' }];
+    test('a page the read gate refuses the share subject is 404', async () => {
+      deniedPages = ['Secret'];
       const res = await request(app).get(`/share/${VALID_TOKEN}/page/Secret`);
       expect(res.status).toBe(404);
+      expect(mockPageManager.getPageContent).not.toHaveBeenCalled();
+    });
+
+    test('#1223: the page route is the ordinary read gate reached as the share subject', async () => {
+      await request(app).get(`/share/${VALID_TOKEN}/page/Trip`);
+      expect(doorSubjects).toContainEqual(expect.objectContaining({ viaShare: expect.objectContaining({ id: 'share-1' }) }));
+      expect(mockShareManager.resolveScope).not.toHaveBeenCalled();
     });
 
     test('404 when the page content no longer exists', async () => {
-      shareState.pages = [{ name: 'Trip', title: 'Trip' }];
       mockPageManager.getPageContent.mockRejectedValueOnce(new Error('not found'));
       const res = await request(app).get(`/share/${VALID_TOKEN}/page/Trip`);
       expect(res.status).toBe(404);

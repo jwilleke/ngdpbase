@@ -10,6 +10,7 @@ import type PolicyEvaluator from './PolicyEvaluator.js';
 import type NotificationManager from './NotificationManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversResource, type ShareGrant } from '../types/Share.js';
+import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { resolveMaintenanceState } from '../utils/maintenanceState.js';
 
@@ -698,6 +699,60 @@ class ACLManager extends BaseManager {
   }
 
   /**
+   * May this user read this media item? (#1223, epic #1225)
+   *
+   * The media door's question, asked of the evaluator rather than answered
+   * in `MediaManager.getItem` and again in the share routes. Two parts:
+   *
+   * 1. __The share ceiling__, for a subject carrying `viaShare` — the twin of
+   *    the page ceiling in `_runEvaluator`: `asset-read` must be delegated,
+   *    the share unexpired, the item's keywords covered by the share's media
+   *    resources (and not `owner-only`), the item not private, and the issuer
+   *    still holding `asset-read` live. An ordinary session skips this part.
+   * 2. __The linked page's own rules__, for everyone: an item linked to a page
+   *    is readable only by someone who may view that page (#714 Slice D),
+   *    which for a share subject runs the page ceiling too.
+   *
+   * A refusal is audited as `authorization-deny` on the media resource, with
+   * the share attribution when there is one.
+   */
+  async canUserAccessMediaItem(
+    userContext: UserContext | null | undefined,
+    item: MediaItem
+  ): Promise<boolean> {
+    const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
+    if (viaShare) {
+      const refuse = (reason: string, detail: string): false => {
+        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${detail} — media ${item.id} denied`);
+        void this.auditDenial(userContext?.username || 'anonymous', item.id, 'asset-read', reason, viaShare, 'media');
+        return false;
+      };
+      if (!viaShare.actions.includes('asset-read')) {
+        return refuse('share_action_deny', 'does not delegate asset-read');
+      }
+      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
+        return refuse('share_expired', `expired ${viaShare.expiresAt}`);
+      }
+      // `metadata.keywords` sits under the index signature as string | string[].
+      const raw = item.metadata?.keywords;
+      const keywords: string[] = Array.isArray(raw)
+        ? raw.filter((k): k is string => typeof k === 'string')
+        : typeof raw === 'string' ? [raw] : [];
+      if (item.isPrivate || !shareCoversResource(viaShare.resources, 'media', keywords)) {
+        return refuse('share_resource_deny', 'does not cover the item');
+      }
+      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
+      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, 'asset-read'))) {
+        return refuse('share_issuer_deny', 'issuer no longer holds asset-read');
+      }
+    }
+    if (item.linkedPageName) {
+      return this.canUserAccessPage(userContext, item.linkedPageName, 'view');
+    }
+    return true;
+  }
+
+  /**
    * Check front matter audience / access fields (Tier 1.5).
    * Returns a decision object; decided=false means no front matter restriction — fall through.
    */
@@ -1203,7 +1258,8 @@ class ACLManager extends BaseManager {
     pageName: string | undefined,
     action: string | undefined,
     reason: string | undefined,
-    viaShare?: ShareGrant
+    viaShare?: ShareGrant,
+    resourceType: 'page' | 'media' = 'page'
   ): Promise<void> {
     // #1205: through recordAuditEvent, so the enabled switch, the tier and the
     // outcome are the same door every emitter uses. Standard tier: a slow
@@ -1217,7 +1273,7 @@ class ACLManager extends BaseManager {
         ipAddress: undefined,
         action: action ?? 'unknown',
         resource: pageName ?? '',
-        resourceType: 'page',
+        resourceType,
         result: 'deny',
         reason: reason || 'not permitted',
         severity: 'medium',

@@ -41,13 +41,17 @@ Scope is a typed object `{ kind: 'keyword', keyword }` (`src/types/Share.ts`); f
 
 ## Public routes (#853, slice 2)
 
-Anonymous, token-gated, re-validated per request (never cached per token); all set `X-Robots-Tag: noindex`:
+Anonymous, token-gated, re-validated per request (never cached per token); all set `X-Robots-Tag: noindex`.
 
-- `GET /share/:token` — album: thumbnail grid of in-scope media + list of in-scope pages (chrome-free standalone template)
-- `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id` — stream only if the item is in the share's live scope
-- `GET /share/:token/page/:name` — read-only rendered page, only if in scope; known v1 caveat: links inside the rendered HTML point at normal `/view/` URLs
+Since [#1223](https://github.com/jwilleke/ngdpbase/issues/1223) the handlers decide nothing. One resolver middleware on `/share/:token` turns the token into the share subject (`subjectFor`) and sets it as the request's identity — replacing any session the visitor had, since the token is the credential presented on this path — and each handler hands off to the ordinary door, which asks the evaluator as it does for a session ([how the evaluator applies the share](../admin/Share-Links.md#how-a-share-visit-is-evaluated)):
 
-Requests are rate-limited per `token:ip` (600 / 10 min, `shareRateLimiter` in WikiRoutes) *before* validation, so invalid-token probing burns the same budget.
+- `GET /share/:token` — album: `resolveScope` enumerates the candidates (everything carrying the keyword); each page is kept only if the page read gate allows it, each media item only if `MediaManager.getItem` returns it (chrome-free standalone template)
+- `GET /share/:token/file/:id`, `GET /share/:token/thumb/:id` — the `/media/file/:id` and `/media/thumb/:id` doors, reached as the share subject; the thumbnail door answers `Cache-Control: private` to a share subject
+- `GET /share/:token/page/:name` — the same read gate as `/view` and export, then a read-only render; known v1 caveat: links inside the rendered HTML point at normal `/view/` URLs
+
+`WikiRoutes.shareDoors.test.ts` holds statically that no handler contains an access decision.
+
+Requests are rate-limited per `token:ip` (600 / 10 min, `shareRateLimiter` in WikiRoutes) *before* resolution, so invalid-token probing burns the same budget.
 
 ## Audit (decision 5)
 
