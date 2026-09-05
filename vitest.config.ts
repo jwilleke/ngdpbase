@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import type { Plugin } from 'vite';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 // Strip `module.exports = X` CJS compat shims from TypeScript source files.
 // These shims cause "Cannot set property default" errors in Vitest's ESM module
@@ -30,14 +32,40 @@ const stripCjsShims: Plugin = {
   }
 };
 
+/**
+ * #1230 — the SOURCE wins over the compiled `.js` beside it.
+ *
+ * Every bundled addon compiles in place, so `Foo.js` sits next to `Foo.ts`,
+ * and an ESM import of `'./Foo.js'` — the spelling TypeScript requires — found
+ * the compiled file, because it exists. (Vite's own `.js`→`.ts` fallback only
+ * fires when the `.js` is MISSING, which is why `src/` never noticed.) The
+ * addon suites were therefore testing the previous build, and a sabotage of
+ * the `.ts` stayed green until `npx tsc` ran.
+ *
+ * This resolver maps a relative `.js` import to its `.ts` sibling whenever
+ * that sibling exists. `dist/` imports are untouched — there is no `.ts`
+ * beside them — so `vi.mock('../../../dist/src/http/guardedFetch.js')` keeps
+ * its id. `resolve.extensions` below does the same for extensionless imports.
+ */
+const sourceOverCompiled: Plugin = {
+  name: 'source-over-compiled',
+  enforce: 'pre',
+  resolveId(source, importer) {
+    if (!importer || importer.includes('node_modules')) return null;
+    if (!source.startsWith('.') || !source.endsWith('.js')) return null;
+    const ts = path.resolve(path.dirname(importer), source.slice(0, -3) + '.ts');
+    return existsSync(ts) ? ts : null;
+  }
+};
+
 export default defineConfig({
-  plugins: [stripCjsShims],
+  plugins: [sourceOverCompiled, stripCjsShims],
   resolve: {
-    // Map .js imports to .ts sources so Vitest can resolve ESM-style imports
-    // (TypeScript emits `import './foo.js'` but source files are `.ts`)
-    extensionAlias: {
-      '.js': ['.ts', '.js']
-    }
+    // #1230: an EXTENSIONLESS import (`'../src/FeedManager'`) beside compiled
+    // output must find the source. Vite's default order tries `.js` first.
+    // (An `extensionAlias` key used to sit here; Vite has no such option and
+    // it did nothing — `src/` only worked because it has no `.js` files.)
+    extensions: ['.ts', '.mts', '.tsx', '.js', '.mjs', '.jsx', '.json']
   },
   test: {
     globals: true,
