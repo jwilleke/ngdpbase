@@ -90,7 +90,8 @@ describe('GET /admin/trash — authorisation (#969)', () => {
   test('redirects an anonymous caller to login, not a JSON 401', async () => {
     // The API answers 401 JSON; a browser tab needs somewhere to go.
     const res = createMockRes();
-    await makeRoutes().adminTrash(createMockReq(null), res);
+    // #1198: policy refuses the anonymous subject; the refusal is the redirect.
+    await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(null), res);
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/admin/trash'));
     expect(res.render).not.toHaveBeenCalled();
   });
@@ -99,7 +100,8 @@ describe('GET /admin/trash — authorisation (#969)', () => {
     const res = createMockRes();
     await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(plainUser), res);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.render).not.toHaveBeenCalled();
+    // #1198: the refusal renders the error page, never the trash page.
+    expect(res.render).not.toHaveBeenCalledWith('admin-trash', expect.anything());
   });
 });
 

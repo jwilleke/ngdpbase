@@ -1624,6 +1624,21 @@
       "icon": "share-alt",
       "color": "#20c997"
     },
+    "profile-manage": {
+      "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
+      "icon": "user-cog",
+      "color": "#6f42c1"
+    },
+    "comment-create": {
+      "description": "Add a comment, and delete your own; deleting anyone's is admin-system (#1198)",
+      "icon": "comment",
+      "color": "#0dcaf0"
+    },
+    "token-mint": {
+      "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope",
+      "icon": "key",
+      "color": "#fd7e14"
+    },
     "asset-edit": {
       "description": "Edit asset metadata (EXIF/IPTC/XMP)",
       "icon": "pen",
@@ -1695,6 +1710,7 @@
         "asset-upload",
         "asset-delete",
         "share-manage",
+        "token-mint",
         "asset-edit",
         "search-page",
         "search-user",
@@ -1740,6 +1756,7 @@
         "asset-upload",
         "asset-delete",
         "share-manage",
+        "token-mint",
         "search-page"
       ]
     },
@@ -1852,6 +1869,7 @@
         "asset-upload",
         "asset-delete",
         "share-manage",
+        "token-mint",
         "asset-edit",
         "search-page",
         "search-user",
@@ -1948,6 +1966,7 @@
         "asset-upload",
         "asset-delete",
         "share-manage",
+        "token-mint",
         "search-page"
       ]
     },
@@ -2026,6 +2045,29 @@
         "page-read",
         "asset-read",
         "search-page"
+      ]
+    },
+    {
+      "id": "authenticated-self-service",
+      "name": "Self-service for every signed-in account",
+      "description": "Anyone with an account may manage their own profile and comment. One policy on the Authenticated role, so a role added later has it without editing its policy; a role that must not gets a deny (#1198)",
+      "priority": 55,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "Authenticated"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "profile-manage",
+        "comment-create"
       ]
     },
     {

@@ -1,4 +1,5 @@
 import WikiRoutes from '../WikiRoutes';
+import { policyShaped } from './__fixtures__/policyShaped';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 // Mock dependencies
@@ -13,7 +14,7 @@ const mockAttachmentManager = {
 // #1059: serveAttachment gates on asset-read via WikiContext.hasPermission →
 // UserManager. Default grant; individual tests flip it to exercise the deny path.
 const mockUserManager = {
-  hasPermission: vi.fn().mockResolvedValue(true)
+  hasPermission: vi.fn(policyShaped)   // #1198: anonymous holds only the read trio
 };
 
 const mockEngine = {
@@ -102,14 +103,15 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
-        error: 'Authentication required to upload attachments'
+        error: 'Authentication required'
       });
     });
 
     test('should deny access when user is not authenticated', async () => {
       // Setup - user context exists but isAuthenticated is false
+      // #1198: policy decides; the anonymous subject is refused and 401 classifies it.
       const mockReq = createMockReq(
-        { username: 'guest', isAuthenticated: false },
+        { username: 'anonymous', isAuthenticated: false, roles: ['anonymous', 'All'] },
         { page: 'TestPage' },
         {}
       );
@@ -122,7 +124,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
-        error: 'Authentication required to upload attachments'
+        error: 'Authentication required'
       });
     });
 

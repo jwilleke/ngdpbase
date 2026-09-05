@@ -114,7 +114,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
 
   test('401 when unauthenticated', async () => {
     const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
-    installContextSpy(routes);
+    installContextSpy(routes, false);   // #1198: policy refuses the anonymous subject; 401 classifies it
     const res = createRes();
     await routes.ingestPageMarkdown(createReq({ isAuthenticated: false }, { pageName: 'X', markdown: 'y' }), res);
     expect(res.status).toHaveBeenCalledWith(401);

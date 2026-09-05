@@ -24,6 +24,7 @@
  *   GET  /api/users/search
  */
 import express from 'express';
+import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -297,7 +298,7 @@ function resetMocks() {
   mockExportManager.exportToMarkdown.mockResolvedValue('# markdown');
 
   mockUserManager.getCurrentUser.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockResolvedValue(true);
+  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockUserManager.getRoles.mockReturnValue(new Map());
@@ -644,11 +645,19 @@ describe('WikiRoutes — coverage batch 4', () => {
       expect(res.status).toBe(200);
     });
 
-    test('returns 403 when user lacks admin access', async () => {
-      mockACLManager.checkPagePermission.mockResolvedValue(false);
-      mockUserContext = null;
+    test('returns 403 when a signed-in user lacks admin-read', async () => {
+      // #1198: the dashboard asks admin-read of policy, like every admin
+      // surface; the refusal is 403 for a signed-in subject.
+      mockUserManager.hasPermission.mockResolvedValue(false);
       const res = await request(app).get('/admin');
       expect(res.status).toBe(403);
+    });
+
+    test('sends an anonymous visitor to log in — it used to fall through to a page-read check', async () => {
+      mockUserContext = null;
+      const res = await request(app).get('/admin');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toMatch(/^\/login\?redirect=/);
     });
   });
 

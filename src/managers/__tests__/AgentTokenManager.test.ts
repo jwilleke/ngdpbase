@@ -77,6 +77,11 @@ describe('AgentTokenManager (#946)', () => {
       await expect(m.mint('jim', 'x', [])).rejects.toThrow(/scope/i);
     });
 
+    test('refuses token-mint as a scope — a token never mints a token (#1198)', async () => {
+      const m = await makeManager();
+      await expect(m.mint('jim', 'x', ['page-ingest', 'token-mint'])).rejects.toThrow(/never mints/);
+    });
+
     test('refuses admin-* scopes outright', async () => {
       const m = await makeManager();
       await expect(m.mint('jim', 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);

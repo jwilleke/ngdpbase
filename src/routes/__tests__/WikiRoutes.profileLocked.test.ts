@@ -53,6 +53,8 @@ const createMockRes = () => ({
 
 function makeRoutes(account: Record<string, unknown>) {
   const userManager = {
+    // #1198: the profile routes ask profile-manage of policy; a reader holds it.
+    hasPermission: vi.fn(() => Promise.resolve(true)),
     getUser: vi.fn(() => Promise.resolve(account)),
     updateUser: vi.fn(() => Promise.resolve(account)),
     authenticateUser: vi.fn(() => Promise.resolve(true))

@@ -18,6 +18,8 @@ vi.mock('../../utils/LocaleUtils', () => {
 // Note: mockUserContext is accessed by the mock factory function
 let mockUserContext = null;
 
+const mockHolder = vi.hoisted(() => ({ userManager: null }));
+
 vi.mock('../../context/WikiContext', () => {
   const MockWikiContext = vi.fn().mockImplementation(function (engine, options = {}) {
     const userContext = (options.userContext as { roles?: string[]; username?: string } | null | undefined) || mockUserContext;
@@ -48,7 +50,15 @@ vi.mock('../../context/WikiContext', () => {
         const roles = ((options.userContext as { roles?: string[] } | null | undefined)?.roles) ?? mockUserContext?.roles ?? [];
         return names.some(n => roles.includes(n));
       }),
-      hasPermission: vi.fn(async (action: string) => { try { return await mockUserManager.hasPermission(userContext?.username ?? '', action); } catch { return true; } }),
+      // The factory is hoisted above the describe-scoped `mockUserManager`, so
+      // a direct reference here threw ReferenceError and the catch returned
+      // true — the context's hasPermission has always said yes in this file
+      // (#1198). The holder is filled in beforeEach once the manager exists.
+      hasPermission: vi.fn(async (action: string) => {
+        const um = mockHolder.userManager;
+        if (!um) return true;
+        return await um.hasPermission(userContext?.username ?? '', action);
+      }),
       canAccess: vi.fn().mockResolvedValue(true),
       getPrincipals: vi.fn(() => {
         const uc = (options.userContext as { roles?: string[]; username?: string } | null | undefined) || mockUserContext;
@@ -446,6 +456,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     // Get mock managers from the same engine instance
     mockUserManager = mockEngine.getManager('UserManager');
+    mockHolder.userManager = mockUserManager as never;
     mockPageManager = mockEngine.getManager('PageManager');
     mockACLManager = mockEngine.getManager('ACLManager');
     mockNotificationManager = mockEngine.getManager('NotificationManager');
@@ -980,9 +991,10 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 403 for non-admin user', async () => {
-        // #632: adminDashboard now uses checkPagePermissionWithContext.
-        // Mock the canonical method to deny access for non-admin users.
-        mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+        // #1198: the dashboard asks admin-read of policy, like every other
+        // admin surface. It used to ask `view` on a fake page, which global
+        // policy granted to anyone, behind an isAuthenticated pre-check.
+        mockUserManager.hasPermission.mockReturnValue(false);
 
         const response = await request(app).get('/admin');
         expect(response.status).toBe(403);

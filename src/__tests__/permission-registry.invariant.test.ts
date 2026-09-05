@@ -42,7 +42,12 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   /\bhasPermission\(\s*'([^']+)'/g,
   /\bcheckPermission\(\s*'([^']+)'/g,
   /\brequirePermission\(\s*'([^']+)'/g,
-  /\bcheckPagePermission\w*\(\s*'([^']+)'/g
+  /\bcheckPagePermission\w*\(\s*'([^']+)'/g,
+  // #1198: the route door and the plugin/middleware door — both are
+  // hasPermission with the subject forwarded, and both name the permission
+  // as their second / third argument.
+  /\bpermitted\(\s*\w+,\s*'([^']+)'/g,
+  /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g
 ];
 
 /**

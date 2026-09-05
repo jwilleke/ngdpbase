@@ -13,6 +13,7 @@
  *   getPageSuggestions: short query, matching query
  */
 import express from 'express';
+import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -275,7 +276,7 @@ function resetMocks() {
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
   mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
-  mockUserManager.hasPermission.mockResolvedValue(true);
+  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockUserManager.getRoles.mockResolvedValue([]);
@@ -556,7 +557,7 @@ describe('WikiRoutes — coverage batch 2', () => {
         .send({ displayName: 'New Name', _csrf: csrf });
 
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/login');
+      expect(res.headers.location).toMatch(/^\/login(\?|$)/);   // #1198: the refusal carries a redirect back
     });
 
     test('redirects with error when current password is missing for password change', async () => {
@@ -633,7 +634,7 @@ describe('WikiRoutes — coverage batch 2', () => {
         .send({ _csrf: csrf });
 
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/login');
+      expect(res.headers.location).toMatch(/^\/login(\?|$)/);   // #1198: the refusal carries a redirect back
     });
 
     test('saves preferences and redirects on success', async () => {

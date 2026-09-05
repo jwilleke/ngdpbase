@@ -26,6 +26,7 @@ const policyUserManager = {
   hasPermission: vi.fn(async (subject: { roles?: string[] } | null | undefined, action: string) => {
     const roles = subject?.roles ?? [];
     if (action === 'admin-system') return roles.includes('admin');
+    if (action === 'comment-create') return (subject as { isAuthenticated?: boolean } | null | undefined)?.isAuthenticated === true;
     return roles.includes('admin') || roles.includes('editor') || roles.includes('contributor');
   })
 };

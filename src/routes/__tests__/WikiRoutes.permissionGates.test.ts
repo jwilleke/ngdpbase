@@ -41,6 +41,32 @@ function makeRoutes(granted: string[], managers: Record<string, unknown> = {}) {
 
 const editor = { username: 'ed', isAuthenticated: true, roles: ['editor'] };
 
+describe('#1198 no route decides allow or deny by isAuthenticated', () => {
+  /**
+   * The honest uses of the flag (security-posture P2): classifying a refusal
+   * after policy said no, login-vs-profile chrome, sending a signed-in
+   * visitor away from the login page, and a session-file sweep that reads
+   * the flag off disk. Everything else asks `permitted()`.
+   */
+  const HONEST = new Set(['refuse', 'getCommonTemplateData', 'loginPage', 'adminLoginPage', 'sweepAnonymousSessions']);
+  // `assetSearch` reads the `authenticated` alias for the #694 people-search scope — pending the operator's permission choice; it is not gated here because the test matches `isAuthenticated` only.
+
+  test('every isAuthenticated test in WikiRoutes.ts is in a listed method', () => {
+    const lines = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8').split('\n');
+    const offenders: string[] = [];
+    lines.forEach((l, i) => {
+      if (!/isAuthenticated/.test(l) || /^\s*(\/\/|\*)/.test(l) || !/if \(|\? |const anonymous =/.test(l)) return;
+      let method = '?';
+      for (let j = i; j >= 0; j--) {
+        const m = lines[j].match(/^(?:export )?(?:async )?function (\w+)|^ {2}(?:private )?(?:async )?(\w+)\(/);
+        if (m) { method = m[1] ?? m[2]; break; }
+      }
+      if (!HONEST.has(method)) offenders.push(`${method}:${i + 1}: ${l.trim()}`);
+    });
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('#1198 no route decides allow or deny by role name', () => {
   test('WikiRoutes.ts contains no hasRole gate', () => {
     const src = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8');
@@ -55,7 +81,8 @@ describe('#1198 listing every agent token asks for admin-system', () => {
   const tokens = { listAll: () => [{ id: 'all' }], listForOwner: () => [{ id: 'mine' }] };
 
   test('refused by policy: 403, and the permission asked is admin-system', async () => {
-    const { routes, asked } = makeRoutes([], { AgentTokenManager: tokens });
+    // #1198: token-mint is the door to the token routes; admin-system is asked for the all= view.
+    const { routes, asked } = makeRoutes(['token-mint'], { AgentTokenManager: tokens });
     const res = createMockRes();
     await routes.listAgentTokens(createMockReq(editor, { query: { all: 'true' } }), res);
     expect(res.status).toHaveBeenCalledWith(403);
@@ -65,7 +92,7 @@ describe('#1198 listing every agent token asks for admin-system', () => {
   test('granted by policy: the full list, regardless of role name', async () => {
     // The subject's roles say "editor"; policy says admin-system. Policy wins —
     // that is the whole point of P2.
-    const { routes } = makeRoutes(['admin-system'], { AgentTokenManager: tokens });
+    const { routes } = makeRoutes(['token-mint', 'admin-system'], { AgentTokenManager: tokens });
     const res = createMockRes();
     await routes.listAgentTokens(createMockReq(editor, { query: { all: 'true' } }), res);
     expect(res.json).toHaveBeenCalledWith({ success: true, tokens: [{ id: 'all' }] });

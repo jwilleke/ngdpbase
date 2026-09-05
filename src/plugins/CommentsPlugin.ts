@@ -111,7 +111,9 @@ const CommentsPlugin: SimplePlugin = {
     parts.push(await renderCommentListHtml(comments, isAuthenticated, username, isAdmin, pageUuid, engine));
     parts.push('</div>');
 
-    if (isAuthenticated) {
+    // #1198: the add-comment form is offered to whoever policy lets comment.
+    const canComment = await subjectMayDo(engine, userContext as never, 'comment-create');
+    if (canComment) {
       parts.push(`<form class="comment-form mt-3" onsubmit="ngdpSubmitComment(event,'${escapeHtml(pageUuid)}')">`);
       parts.push('  <div class="mb-2">');
       parts.push(`    <label class="form-label">Add a comment (as <strong>${escapeHtml(displayName)}</strong>)</label>`);

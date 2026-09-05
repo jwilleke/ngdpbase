@@ -349,6 +349,8 @@ describe('WikiRoutes capture (#881)', () => {
       const engine = {
         getManager: vi.fn((name) => {
           if (name === 'PageManager') return { getPagesByCreator: mockGetPagesByCreator };
+          // #1198: /my/captures asks profile-manage of policy; the signed-in user holds it.
+          if (name === 'UserManager') return { hasPermission: vi.fn(async (subject) => subject?.isAuthenticated === true) };
           if (name === 'ConfigurationManager') {
             return {
               getProperty: vi.fn((key, def) => {

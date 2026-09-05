@@ -8,6 +8,7 @@
  *   previewPage: happy path, error
  */
 import express from 'express';
+import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -283,7 +284,7 @@ function resetMocks() {
 
   // User
   mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
-  mockUserManager.hasPermission.mockResolvedValue(true);
+  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockUserManager.getRoles.mockResolvedValue([]);

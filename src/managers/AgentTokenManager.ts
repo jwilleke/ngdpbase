@@ -80,6 +80,8 @@ const TOKEN_BYTES = 32;
 
 /** Actions a token may never carry, however privileged its owner (#946 decision 3). */
 const FORBIDDEN_SCOPE_PREFIX = 'admin-';
+/** The permission to mint a token — and therefore the one scope a token may never carry (#1198). */
+export const MINT_PERMISSION = 'token-mint';
 
 /**
  * Convenience aliases expanded at mint time.
@@ -438,6 +440,12 @@ class AgentTokenManager extends BaseManager {
     const forbidden = effectiveScopes.filter(s => s.startsWith(FORBIDDEN_SCOPE_PREFIX));
     if (forbidden.length > 0) {
       throw new Error(`Tokens cannot carry admin scopes: ${forbidden.join(', ')}`);
+    }
+    // #1198: a token never mints a token. `token-mint` is the permission to
+    // create a standing credential; carried on a token it would let a leaked
+    // credential breed. Refused the way admin-* is, after expansion.
+    if (effectiveScopes.includes(MINT_PERMISSION)) {
+      throw new Error(`Tokens cannot carry ${MINT_PERMISSION}: a token never mints a token`);
     }
 
     const ttl = ttlHours ?? this.tokenConfig.defaultTtlHours;

@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import WikiRoutes from '../WikiRoutes';
 
@@ -34,6 +35,8 @@ describe('WikiRoutes - Version Management API', () => {
     mockEngine = {
       getManager: vi.fn((name) => {
         if (name === 'PageManager') return mockPageManager;
+        // #1198: restoring asks page-edit of policy; the test user holds it.
+        if (name === 'UserManager') return { hasPermission: vi.fn(policyShaped) };
         if (name === 'ConfigurationManager') {
           return {
             getProperty: vi.fn((key, defaultValue) => defaultValue)

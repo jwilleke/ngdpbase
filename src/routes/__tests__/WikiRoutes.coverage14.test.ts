@@ -3,6 +3,7 @@
  *   page history/diff, preview, export.
  */
 import express from 'express';
+import { policyShaped } from './__fixtures__/policyShaped';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import path from 'path';
@@ -282,7 +283,7 @@ function resetMocks() {
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
   mockUserManager.getCurrentUser.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockResolvedValue(true);
+  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockUserManager.getRoles.mockReturnValue(new Map());
@@ -834,7 +835,7 @@ describe('WikiRoutes — coverage batch 14', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ displayName: 'New Name' });
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/login');
+      expect(res.headers.location).toMatch(/^\/login(\?|$)/);   // #1198: the refusal carries a redirect back
     });
 
     test('updates profile and redirects on success', async () => {
@@ -876,7 +877,7 @@ describe('WikiRoutes — coverage batch 14', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({});
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/login');
+      expect(res.headers.location).toMatch(/^\/login(\?|$)/);   // #1198: the refusal carries a redirect back
     });
 
     test('saves preferences and redirects on success', async () => {
