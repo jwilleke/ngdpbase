@@ -537,7 +537,7 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
   test('uploadAttachment checks asset-upload and denies a caller lacking it', async () => {
     const { mgr } = makePermEngine(async (_ctx, action) => action !== 'asset-upload');
     await expect(
-      mgr.uploadAttachment(Buffer.from('x'), { originalName: 'a.txt', mimeType: 'text/plain', size: 1 }, { context: authed })
+      mgr.uploadAttachment(Buffer.from('x'), { originalName: 'a.txt', mimeType: 'text/plain', size: 1 }, authed)
     ).rejects.toThrow('Permission denied');
   });
 

@@ -28,6 +28,7 @@
  */
 
 import path from 'path';
+import type { ActorContext } from '../context/ActorContext.js';
 import fs from 'fs-extra';
 import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
@@ -46,7 +47,6 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
-import type { PermissionSubject } from './UserManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
 import type CacheManager from './CacheManager.js';
@@ -136,7 +136,8 @@ export interface ImportOptions {
    * Optional because non-request callers have none yet. Absent, the upload's
    * permission check denies — the safe direction.
    */
-  actorContext?: PermissionSubject;
+  /** #1179: who is importing — the request's subject, forwarded. Mandatory: the upload door records it. */
+  actorContext: ActorContext;
 
   /**
    * What to do when a file's title matches an existing page (#874).
@@ -1281,16 +1282,13 @@ class ImportManager extends BaseManager {
           size: fileBuffer.length
         };
 
-        const uploadOptions = {
+        // #1179: forward the initiator's identity. Never rebuild one, and
+        // never invent roles — `author` is read from the imported file, so
+        // trusting it was trusting the input.
+        const uploaded = await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, options.actorContext, {
           pageName,
-          description: originalFilename,
-          // #1179: forward the initiator's identity. Never rebuild one, and
-          // never invent roles — `author` is read from the imported file, so
-          // trusting it was trusting the input.
-          context: options.actorContext
-        };
-
-        const uploaded = await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, uploadOptions);
+          description: originalFilename
+        });
         stats.imported++;
         if (uploaded?.identifier) {
           stats.idsByFilename[originalFilename] = uploaded.identifier;

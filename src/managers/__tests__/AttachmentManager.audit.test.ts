@@ -18,6 +18,7 @@
  * for the callers somebody remembered.
  */
 import AttachmentManager from '../AttachmentManager';
+import { jobContextFromSystem } from '../../context/JobContext';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
 
@@ -48,6 +49,7 @@ function makeManager(engine: never, provider: Record<string, unknown>) {
 
 const CTX = { username: 'testuser', isAuthenticated: true, roles: ['admin'] };
 const WITH_IP = { request: { ip: '203.0.113.7' } };
+
 
 describe('#1183 — asset-delete is recorded at the door', () => {
   test('records, naming the file that was destroyed', async () => {
@@ -121,7 +123,7 @@ describe('#1183 — asset-upload is recorded at the door', () => {
   test('records after the bytes are stored', async () => {
     const sink: Recorded[] = [];
     await uploadManager(sink).uploadAttachment(
-      Buffer.from('x'), FILE, { pageName: 'Welcome', context: CTX, wikiContext: WITH_IP as never }
+      Buffer.from('x'), FILE, CTX, { pageName: 'Welcome', wikiContext: WITH_IP as never }
     );
 
     expect(sink).toHaveLength(1);
@@ -137,14 +139,14 @@ describe('#1183 — asset-upload is recorded at the door', () => {
     // otherwise have silently dropped the IP the route used to record.
     const sink: Recorded[] = [];
     await uploadManager(sink).uploadAttachment(
-      Buffer.from('x'), FILE, { context: CTX, wikiContext: WITH_IP as never }
+      Buffer.from('x'), FILE, CTX, { wikiContext: WITH_IP as never }
     );
     expect(sink[0].ipAddress).toBe('203.0.113.7');
   });
 
   test('an in-engine caller with no request records without an IP, rather than a fabricated one', async () => {
     const sink: Recorded[] = [];
-    await uploadManager(sink).uploadAttachment(Buffer.from('x'), FILE, { context: CTX });
+    await uploadManager(sink).uploadAttachment(Buffer.from('x'), FILE, CTX);
     expect(sink[0].ipAddress).toBeUndefined();
     expect(sink[0].user).toBe('testuser');
   });
@@ -154,15 +156,38 @@ describe('#1183 — asset-upload is recorded at the door', () => {
     // refuse a write that is not destruction.
     const m = uploadManager([], { auditFails: true });
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, { context: CTX, wikiContext: WITH_IP as never })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { wikiContext: WITH_IP as never })
     ).resolves.toMatchObject({ identifier: 'att-9' });
   });
 
   test('no AuditManager during early boot is a configuration state, not a failure', async () => {
     const m = uploadManager([], { noAudit: true });
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, { context: CTX })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX)
     ).resolves.toMatchObject({ identifier: 'att-9' });
+  });
+});
+
+describe('#1179 — the record is read from the context the door was handed', () => {
+  const FILE = { originalName: 'photo.jpg', mimeType: 'image/jpeg', size: 1 };
+  const store = { storeAttachment: () => Promise.resolve({ identifier: 'att-9', name: 'photo.jpg' }) };
+
+  test('a request subject carrying its address: who, the address, origin request — no WikiContext needed', async () => {
+    const sink: Recorded[] = [];
+    const m = makeManager(makeEngine(sink), store);
+    await m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, ipAddress: '198.51.100.9' });
+    expect(sink[0]).toMatchObject({ user: 'testuser', ipAddress: '198.51.100.9' });
+  });
+
+  test('a JobContext: the system principal, origin boot, and the reason', async () => {
+    const sink: Recorded[] = [];
+    const m = makeManager(makeEngine(sink), store);
+    await m.uploadAttachment(Buffer.from('x'), FILE, jobContextFromSystem('System', 'seed the sample images'));
+    expect(sink[0]).toMatchObject({ user: 'System' });
+    expect(sink[0].ipAddress).toBeUndefined();
+    // Sabotage: rebuild the actor inside recordAttachmentEvent and this
+    // stays 'System' only by luck of the name — the address case above and
+    // the delegation case below are the ones that go red.
   });
 });
 
@@ -178,10 +203,8 @@ describe('#1183 — the delegation reaches the record', () => {
     await m.uploadAttachment(
       Buffer.from('x'),
       { originalName: 'photo.jpg', mimeType: 'image/jpeg', size: 1 },
-      {
-        context: { ...CTX, viaToken: { id: 'tok-1', name: 'ingester', scopes: ['asset-upload'] } } as never,
-        wikiContext: WITH_IP as never
-      }
+      { ...CTX, viaToken: { id: 'tok-1', name: 'ingester', scopes: ['asset-upload'] } },
+      { wikiContext: WITH_IP as never }
     );
 
     expect(sink[0].metadata).toMatchObject({ viaTokenId: 'tok-1' });

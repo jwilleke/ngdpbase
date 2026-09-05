@@ -1,4 +1,7 @@
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { toPermissionSubject } from '../context/JobContext.js';
+import type { JobSubject } from './UserManager.js';
 import type { PermissionSubject } from './UserManager.js';
 import logger from '../utils/logger.js';
 
@@ -69,23 +72,15 @@ export interface FileInfo {
 export interface UploadOptions {
   pageName?: string;
   description?: string;
-  context?: UserContext;
   /** WikiContext for the current request — used to resolve page privacy */
   wikiContext?: import('../context/WikiContext.js').default;
 }
 
-/**
- * User context for permission checks
- */
-export interface UserContext {
-  /** #1212: the three authorisation fields are required — the caller's own context, forwarded. */
-  username: string;
-  name?: string;
-  email?: string;
-  isAuthenticated: boolean;
-  roles: string[];
-  user?: User;
-}
+// #1179: the acting methods below take an `ActorContext` — the request's
+// subject or a JobContext — mandatory and positional. The optional
+// `UserContext` this file used to declare recorded `unknown` when omitted;
+// a missing context now fails the permission check closed AND cannot be
+// omitted at compile time.
 
 /**
  * User object interface
@@ -423,11 +418,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * no policy engine to consult is denied, not waved through.
    *
    * @param {string} permission - Registry permission ({target}-{action}, e.g. 'asset-upload')
-   * @param {UserContext} userContext - User context with username and roles
+   * @param userContext - The caller's context, forwarded (#1179)
    * @returns {Promise<boolean>} True if allowed
    * @private
    */
-  private async checkPermission(permission: string, userContext?: UserContext): Promise<boolean> {
+  private async checkPermission(permission: string, userContext: ActorContext | undefined): Promise<boolean> {
     // #1198: no `isAuthenticated` gate ahead of policy. This one refused the
     // system principal (#631) and turned #1181's thumbnail path into a silent
     // null — before policy was ever asked. Allow or deny is policy's answer;
@@ -442,7 +437,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const userManager = this.engine.getManager<{
       // #1164: the context form only. The inline string|object type here was a
       // second copy of the signature that let this file drop the token ceiling.
-      hasPermission(subject: PermissionSubject, action: string): Promise<boolean>;
+      hasPermission(subject: PermissionSubject | JobSubject, action: string): Promise<boolean>;
         }>('UserManager');
     if (!userManager) {
       logger.warn(`📎 Permission denied for ${permission}: UserManager unavailable`);
@@ -460,7 +455,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     //
     // Forwarding the caller's own context keeps the role fast-path (roles ride
     // along when present) and carries the token when there is one.
-    const allowed = await userManager.hasPermission(userContext, permission);
+    // A JobContext carries identity and provenance, not authority: it is
+    // handed over as a JobSubject whose roles policy resolves now (#631).
+    const allowed = await userManager.hasPermission(isJobContext(userContext) ? toPermissionSubject(userContext) : userContext, permission);
     if (!allowed) {
       logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
     }
@@ -475,27 +472,26 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {UploadOptions} options - Upload options
    * @param {string} options.pageName - Page to attach to (optional)
    * @param {string} options.description - File description
-   * @param {UserContext} options.context - WikiContext with user information
+   * @param ctx - Who is uploading (#1179): the request's subject, or a JobContext for an in-engine caller. Mandatory and positional.
    * @returns {Promise<AttachmentMetadata>} Attachment metadata
    */
-  async uploadAttachment(fileBuffer: Buffer, fileInfo: FileInfo, options: UploadOptions = {}): Promise<AttachmentMetadata> {
+  async uploadAttachment(fileBuffer: Buffer, fileInfo: FileInfo, ctx: ActorContext, options: UploadOptions = {}): Promise<AttachmentMetadata> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
 
     // Check permission
-    const allowed = await this.checkPermission('asset-upload', options.context);
+    const allowed = await this.checkPermission('asset-upload', ctx);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to upload attachments');
     }
 
-    // Extract user info from context (context is the full userContext object)
-    const user = options.context
-      ? {
-        name: options.context.username || options.context.name || 'Unknown',
-        email: options.context.email || undefined
-      }
-      : null;
+    // The uploader, from the context. A request subject built from a session
+    // carries the account's fields; a JobContext carries a name only.
+    const user = {
+      name: ctx.username,
+      email: (ctx as { email?: string }).email || undefined
+    };
 
     // Resolve page privacy from the page context entry.
     // pageName is used for storage-location decisions (private/ dir) only —
@@ -535,7 +531,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in
     // WikiRoutes. on-failure: continue, so a failed record is logged, not fatal.
-    await this.recordAttachmentEvent('upload', options.context, {
+    await this.recordAttachmentEvent('upload', ctx, {
       attachmentId: String(attachmentMetadata.identifier ?? ''),
       filename: fileInfo.originalName,
       pageName: pageName ?? null,
@@ -687,12 +683,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * Delete an attachment
    *
    * @param {string} attachmentId - Attachment identifier
-   * @param {UserContext} context - WikiContext with user information
+   * @param context - Who is acting (#1179): the request's subject, or a JobContext
    * @returns {Promise<boolean>} Success status
    */
   async deleteAttachment(
     attachmentId: string,
-    context?: UserContext,
+    context: ActorContext,
     wikiContext?: { request?: { ip?: string } | null }
   ): Promise<boolean> {
     if (!this.attachmentProvider) {
@@ -747,7 +743,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    */
   private async recordAttachmentEvent(
     op: 'upload' | 'delete',
-    context: UserContext | undefined,
+    context: ActorContext,
     detail: { attachmentId: string; filename: string; pageName?: string | null; sizeBytes?: number | null },
     wikiContext?: { request?: { ip?: string } | null }
   ): Promise<void> {
@@ -756,15 +752,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
     if (!sink) return;
 
+    // #1179: read from the context — who, and the address it came from. The
+    // WikiContext's request IP remains as the fallback for a caller whose
+    // subject predates the address riding on it.
+    const who = actorOf(context);
     const event = buildAttachmentAuditEvent({
       op,
-      username: context?.username,
-      // From the WikiContext the caller already carries (#1183). The manager
-      // does not see the Express request, so moving the emit to this door
-      // would otherwise have dropped the IP that the two previously audited
-      // routes recorded. Absent for in-engine callers that have no request —
-      // honest, rather than invented.
-      ipAddress: wikiContext?.request?.ip,
+      username: who.user,
+      ipAddress: who.ipAddress ?? wikiContext?.request?.ip,
       attachmentId: detail.attachmentId,
       filename: detail.filename,
       pageName: detail.pageName,
@@ -772,7 +767,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // Forwarded, never rebuilt — the delegation rides on the caller's
       // context (P1). Without it a token-driven upload records as its owner
       // with no sign a token was involved.
-      viaToken: (context as { viaToken?: { id: string; name: string; scopes: string[] } } | undefined)?.viaToken
+      viaToken: context.viaToken
     });
 
     if (op === 'delete') {
@@ -795,18 +790,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /** #1204: an attachment's metadata changed; field NAMES only, at the door both edit paths pass through. */
-  private async recordAssetEdit(attachmentId: string, fields: string[], context?: UserContext): Promise<void> {
+  private async recordAssetEdit(attachmentId: string, fields: string[], context: ActorContext): Promise<void> {
     const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
+    const who = actorOf(context);
     await recordAuditEvent(sink, {
       eventType: AUDIT_EVENT.ASSET_EDIT,
-      user: context?.username ?? 'unknown',
-      ipAddress: undefined,
+      user: who.user,
+      ipAddress: who.ipAddress,
       action: 'asset-edit',
       result: 'success',
       severity: 'low',
       resource: attachmentId,
       resourceType: 'attachment',
-      metadata: { attachmentId, fields, ...(context ? {} : { actorMissing: true }) }
+      metadata: { ...who.metadata, attachmentId, fields }
     }, (err) => logger.warn(`[AttachmentManager] Audit record failed for asset-edit of ${attachmentId}:`, err));
   }
 
@@ -815,10 +811,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @param {string} attachmentId - Attachment identifier
    * @param {Partial<AttachmentMetadata>} updates - Metadata updates
-   * @param {UserContext} context - WikiContext with user information
+   * @param context - Who is acting (#1179): the request's subject, or a JobContext
    * @returns {Promise<boolean>} Success status
    */
-  async updateAttachmentMetadata(attachmentId: string, updates: Partial<AttachmentMetadata>, context?: UserContext): Promise<boolean> {
+  async updateAttachmentMetadata(attachmentId: string, updates: Partial<AttachmentMetadata>, context: ActorContext): Promise<boolean> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
@@ -829,17 +825,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Permission denied: You do not have permission to update attachment metadata');
     }
 
-    // Update editor information
-    if (context?.user) {
-      updates.editor = {
-        '@type': 'Person',
-        name: context.user.name || 'Unknown',
-        email: context.user.email || undefined
-      };
-    }
+    // The record names the fields the CALLER changed; the editor stamp added
+    // below is this door's own doing, not one of them.
+    const fields = Object.keys(updates);
+
+    // The editor, from the context (#1179).
+    updates.editor = {
+      '@type': 'Person',
+      name: context.username,
+      email: (context as { email?: string }).email || undefined
+    };
 
     const ok = await this.attachmentProvider.updateAttachmentMetadata(attachmentId, updates);
-    if (ok) await this.recordAssetEdit(attachmentId, Object.keys(updates), context);
+    if (ok) await this.recordAssetEdit(attachmentId, fields, context);
     return ok;
   }
 
@@ -875,7 +873,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   async updateAssetMetadata(
     attachmentId: string,
     patch: import('../types/Asset.js').AssetMetadataPatch,
-    context?: UserContext
+    context: ActorContext
   ): Promise<import('../types/Asset.js').AssetRecord | null> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');

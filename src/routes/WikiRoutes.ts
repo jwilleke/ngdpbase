@@ -5648,18 +5648,18 @@ ${panes}
         size: req.file.size
       };
 
-      // Prepare options with full user context for permission checks.
+      // The subject goes to the door positionally (#1179); options carry the rest.
       // pageName is for private-page storage detection only — not for linkage.
       const options = {
         pageName: pageName,
-        description: req.body.description || req.file.originalname,
-        context: currentUser // Pass full userContext for PolicyManager
+        description: req.body.description || req.file.originalname
       };
 
       // Upload via AttachmentManager (handles permission checks)
       const attachment = await attachmentManager.uploadAttachment(
         fileBuffer,
         fileInfo,
+        currentUser,
         options
       );
 
@@ -12952,11 +12952,13 @@ ${panes}
       if (!(await wikiContext.hasPermission('asset-delete'))) {
         return res.status(403).json({ success: false, error: 'asset-delete permission required to delete attachments' });
       }
+      // Policy allowed but there is nobody to act as — refuse, never fall through silently (#1179).
+      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'asset-delete');
 
       const { attachmentId } = req.params;
       const attachmentManager = this.engine.getManager('AttachmentManager');
 
-      const deleted = await attachmentManager.deleteAttachment(attachmentId, currentUser ?? undefined);
+      const deleted = await attachmentManager.deleteAttachment(attachmentId, currentUser);
 
       if (!deleted) {
         return res.status(404).json({ success: false, error: 'Attachment not found' });
@@ -13288,7 +13290,7 @@ ${panes}
   private async localizePageImages(
     ncmContent: string,
     pageName: string,
-    userContext: UserContext | null | undefined,
+    userContext: ActorContext,
     dryRun: boolean
   ): Promise<{ content: string; warnings: string[] }> {
     const cm = this.engine.getManager('ConfigurationManager');
@@ -13328,7 +13330,8 @@ ${panes}
         const meta = await attachmentManager.uploadAttachment(
           bytes,
           { originalName, mimeType: mime, size: bytes.length },
-          { pageName, description: `NCM embedded image from ${sourceUrl}`, context: userContext ?? undefined }
+          userContext,
+          { pageName, description: `NCM embedded image from ${sourceUrl}` }
         );
         return (meta.url as string) || `/attachments/${encodeURIComponent((meta.name as string) || originalName)}`;
       }
@@ -13383,6 +13386,8 @@ ${panes}
       if (!wikiContext) {
         return res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
       }
+      // #1179: localizing uploads on the editor's behalf; a request with no subject has nobody to act as.
+      if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: dry-run image localization (preview must not persist).
@@ -13427,6 +13432,8 @@ ${panes}
       if (!wikiContext) {
         return res.status(403).json({ success: false, error: 'You do not have permission to convert this page' });
       }
+      // #1179: localizing uploads on the editor's behalf; a request with no subject has nobody to act as.
+      if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
       const ncm = normalizeExistingPageToNcm(original);
       // S5a-ii: real image localization (persists attachments via AttachmentManager).

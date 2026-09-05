@@ -163,9 +163,11 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
 
       await wikiRoutes.uploadAttachment(mockReq, mockRes);
 
+      // #1179: the subject is the third argument — forwarded, not tucked into options.
       expect(mockAttachmentManager.uploadAttachment).toHaveBeenCalledWith(
         expect.any(Buffer),
         expect.objectContaining({ originalName: 'photo.jpg' }),
+        expect.objectContaining({ username: expect.any(String) }),
         expect.objectContaining({ pageName: 'MyPage' })
       );
       expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));

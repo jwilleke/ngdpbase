@@ -318,11 +318,15 @@ describe('ImportManager', () => {
 
       const targetDir = path.join(testDir, 'output');
 
+      // #1179: the importer's own context travels to the upload door — never
+      // rebuilt from the imported file's `author` (#1181).
+      const IMPORTER = { username: 'importer', roles: ['admin'], isAuthenticated: true };
       const result = await importManager.importSinglePage(sourceFile, {
         sourceDir: testDir,
         targetDir,
         format: 'jspwiki',
-        dryRun: false
+        dryRun: false,
+        actorContext: IMPORTER
       });
 
       expect(result).not.toBeNull();
@@ -335,6 +339,7 @@ describe('ImportManager', () => {
           originalName: 'photo.jpg',
           mimeType: 'image/jpeg'
         }),
+        IMPORTER,
         expect.objectContaining({
           pageName: 'Test Page',
           description: 'photo.jpg'
