@@ -685,17 +685,116 @@ class ACLManager extends BaseManager {
     // have a full request-scope context here (no req/res, no rendering
     // context); the evaluator only reads pageName / userContext /
     // pageMetadata / context fields.
+    //
+    // #1219: `hasRole` is carried. Tier 0 asks `wikiContext.hasRole('admin')`
+    // for the private-page bypass, and this shape never had it, so an admin
+    // was refused a private page through every cross-page check — the
+    // attachment owning-page check, linked media, `canAccess(action, other)` —
+    // while the same-page path allowed it. The two doors disagreed; a filter
+    // that has to agree with both made it visible.
+    const ctxRoles = userContext?.roles ?? [];
     const minimalCtx = {
       pageName,
       userContext: userContext ?? null,
       pageMetadata,
       content: null,
-      context: 'cross-page-check'
+      context: 'cross-page-check',
+      hasRole: (...names: string[]) => names.some((n) => ctxRoles.includes(n))
     };
     return this.checkPagePermissionWithContext(
       minimalCtx as unknown as WikiContext,
       action
     );
+  }
+
+  /**
+   * Which of these pages may this user perform `action` on? (#1219)
+   *
+   * Rule 10's `filter(ctx, action, query)`: the tiers `_runEvaluator` applies
+   * to ONE page, applied over the page index — no disk read (metadata comes
+   * from the provider's in-memory cache), no log line and no audit record per
+   * page. Listing many and deciding one are the same evaluator, so a listing
+   * can never name a page its reader cannot open, nor hide one they can.
+   *
+   * Tier by tier, mirroring `_runEvaluator`: the token and share ceilings
+   * (once for the subject, then the share's resource cover per page); tier 0
+   * private through `PageManager.checkPrivatePageAccess`; tier 0.5
+   * author-lock for `edit`; tier 1 frontmatter audience/access; tier 2 global
+   * policy, compiled once through `PolicyEvaluator.compile`, or the share
+   * standing in for it. Tier 3 — deprecated page-ACL markup, blocked on new
+   * saves — needs page content and is not indexed: a page whose only grant is
+   * that markup is hidden here. That is the conservative direction, and it is
+   * the one documented divergence from `canUserAccessPage`.
+   *
+   * A candidate without metadata is not listed (#714's convention). Order is
+   * preserved. Returns titles.
+   */
+  async filterAccessiblePages(
+    userContext: UserContext | null | undefined,
+    action: string,
+    candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
+  ): Promise<string[]> {
+    const actionMap: Record<string, string> = {
+      view: 'page-read', edit: 'page-edit', delete: 'page-delete', create: 'page-create', rename: 'page-rename', upload: 'asset-upload'
+    };
+    const policyAction = actionMap[action.toLowerCase()] || action;
+    const roles = userContext?.roles ?? [];
+    const username = userContext?.username ?? '';
+    const isAdmin = roles.includes('admin');
+
+    // The ceilings that bound the SUBJECT decide once, for every page.
+    const viaToken = (userContext as { viaToken?: { scopes: string[] } } | null | undefined)?.viaToken;
+    if (viaToken && !viaToken.scopes.includes(policyAction)) return [];
+    const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
+    if (viaShare) {
+      if (!viaShare.actions.includes(policyAction)) return [];
+      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) return [];
+      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
+      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, policyAction))) return [];
+    }
+
+    const pageManager = this.engine.getManager<{
+      checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
+        }>('PageManager');
+    // Tier 0 reads `hasRole('admin')` off the context, as the decider's does.
+    const privateCtx = { userContext: userContext ?? null, hasRole: (r: string) => roles.includes(r) } as unknown as WikiContext;
+    const decidePolicy = this.policyEvaluator?.compile(userContext ?? undefined, policyAction);
+
+    const out: string[] = [];
+    for (const { title, metadata } of candidates) {
+      if (!metadata) continue;
+
+      if (viaShare && !shareCoversResource(viaShare.resources, 'page', metadata['user-keywords'] ?? [])) continue;
+
+      // Tier 0: private — through the same helper the decider uses (index
+      // creator, admin bypass); the frontmatter flag is the fallback where the
+      // helper is absent (fixtures without a PageManager).
+      if (pageManager?.checkPrivatePageAccess) {
+        const decision = await pageManager.checkPrivatePageAccess(privateCtx, title);
+        if (decision === false) continue;
+        if (decision === true) { out.push(title); continue; }
+      } else if (metadata.private === true) {
+        if (!(isAdmin || (username && username === (metadata.author ?? '')))) continue;
+        out.push(title); continue;
+      }
+
+      // Tier 0.5: author-lock denies a non-author, non-admin edit; it grants nothing.
+      if (action.toLowerCase() === 'edit' && metadata['author-lock'] === true) {
+        if (!isAdmin && username !== (metadata.author ?? '')) continue;
+      }
+
+      // Tier 1: frontmatter audience / access decides when it states a rule.
+      const fm = this.checkFrontmatterAccess(metadata, userContext, action);
+      if (fm.decided) { if (fm.allowed) out.push(title); continue; }
+
+      // Tier 2: the share is the policy for a share subject; global policy otherwise.
+      if (viaShare) { out.push(title); continue; }
+      const policy = decidePolicy?.(title);
+      if (policy?.hasDecision) { if (policy.allowed) out.push(title); continue; }
+
+      // Tier 3 is not indexed; default deny.
+    }
+    return out;
   }
 
   /**

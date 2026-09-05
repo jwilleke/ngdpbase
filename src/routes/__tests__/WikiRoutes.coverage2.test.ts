@@ -66,6 +66,7 @@ const mockPageManager = {
   getPageContent: vi.fn(),
   getPageMetadata: vi.fn(),
   getAllPages: vi.fn(),
+  listPagesFor: vi.fn(),
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
@@ -226,6 +227,7 @@ function resetMocks() {
   mockPageManager.getPageContent.mockResolvedValue('# Page content');
   mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', uuid: 'test-uuid-1', 'system-category': 'general' });
   mockPageManager.getAllPages.mockResolvedValue(['Welcome', 'TestPage', 'AnotherPage']);
+  mockPageManager.listPagesFor.mockResolvedValue(['Welcome', 'TestPage', 'AnotherPage']);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
@@ -835,6 +837,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns matching page names for valid query', async () => {
       mockPageManager.getAllPages.mockResolvedValue(['TestPage', 'Welcome', 'TestingNotes']);
+      mockPageManager.listPagesFor.mockResolvedValue(['TestPage', 'Welcome', 'TestingNotes']);
       mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', slug: 'testpage', 'system-category': 'general' });
 
       const res = await request(app).get('/api/page-suggestions?q=Test');
@@ -846,6 +849,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns empty when no pages match query', async () => {
       mockPageManager.getAllPages.mockResolvedValue(['Welcome', 'HomePage']);
+      mockPageManager.listPagesFor.mockResolvedValue(['Welcome', 'HomePage']);
 
       const res = await request(app).get('/api/page-suggestions?q=xyz');
 

@@ -74,7 +74,11 @@ function makeRoutes(canView: boolean, granted: string[]) {
       if (name === 'PageManager') {
         return {
           getPageMetadata: vi.fn().mockResolvedValue({ 'system-category': 'private' }),
-          getAllPages: vi.fn().mockResolvedValue(['SecretPlans', 'PublicNotes'])
+          getAllPages: vi.fn().mockResolvedValue(['SecretPlans', 'PublicNotes']),
+          // #1219: the listing door answers per subject — the owner sees the
+          // private page, anyone else does not.
+          listPagesFor: vi.fn(async (subject: { username?: string } | null | undefined) =>
+            subject?.username === 'owner' ? ['SecretPlans', 'PublicNotes'] : ['PublicNotes'])
         };
       }
       if (name === 'UserManager') {
@@ -174,6 +178,22 @@ describe('#1060 — the export picker and the saved-export listing', () => {
     await routes.exportPage(createMockReq(anonymous), res);
 
     expect(res.render).toHaveBeenCalled();
+  });
+
+  test('#1219: the picker names only the pages this caller may read', async () => {
+    // A title is content. The list is the evaluator's answer for the caller,
+    // not the index — sabotage: swap listPagesFor back to getAllPages and
+    // SecretPlans is offered to anonymous.
+    const res = createMockRes();
+    const routes = makeRoutes(true, []) as unknown as Record<
+      string, (a: unknown, b: unknown) => Promise<void>
+    >;
+    await routes.exportPage(createMockReq(anonymous), res);
+    expect(res.render).toHaveBeenCalledWith('export', expect.objectContaining({ pageNames: ['PublicNotes'] }));
+
+    const owner = { username: 'owner', isAuthenticated: true, roles: ['editor', 'All'] };
+    await routes.exportPage(createMockReq(owner), res);
+    expect(res.render).toHaveBeenLastCalledWith('export', expect.objectContaining({ pageNames: ['SecretPlans', 'PublicNotes'] }));
   });
 
   test('the saved-export listing is admin-only — a different question entirely', async () => {

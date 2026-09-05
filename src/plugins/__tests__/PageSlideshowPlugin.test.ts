@@ -6,7 +6,7 @@
  * - No pages/random params → error
  * - Explicit pages: all null → "no accessible pages"
  * - Explicit pages: renders carousel
- * - random parameter → uses getAllPages + shuffleArray
+ * - random parameter → uses listPagesFor (#1219) + shuffleArray
  * - showTitle/showLink/controls/indicators flags
  * - interval=0 disables autoplay
  * - height/cssclass params
@@ -16,14 +16,21 @@
 
 import PageSlideshowPlugin from '../PageSlideshowPlugin';
 
+/** `allPages` is what the viewer may read (#1219); `denied` are pages that exist but the evaluator refuses. */
 const makePageManager = (allPages: string[] = [], pages: Record<string, unknown> = {}) => ({
   getAllPages: vi.fn().mockResolvedValue(allPages),
+  listPagesFor: vi.fn().mockResolvedValue(allPages),
   getPage: vi.fn(async (name: string) => pages[name] ?? null)
 });
 
+let denied: string[] = [];
 const makeEngine = (pageManager: unknown = null) => ({
-  getManager: vi.fn((name: string) => name === 'PageManager' ? pageManager : null)
+  getManager: vi.fn((name: string) =>
+    name === 'PageManager' ? pageManager
+      : name === 'ACLManager' ? { canUserAccessPage: vi.fn(async (_u: unknown, page: string) => !denied.includes(page)) }
+        : null)
 });
+beforeEach(() => { denied = []; });
 
 const samplePage = (title = 'Test Page', content = 'Some content about the topic here.') => ({
   title,
@@ -121,14 +128,23 @@ describe('PageSlideshowPlugin', () => {
   });
 
   describe('random parameter', () => {
-    test('uses getAllPages when random is set', async () => {
+    test('#1219: a named page the evaluator refuses is not a slide', async () => {
+      const pm = makePageManager(['Public'], { Public: samplePage('Public'), Secret: samplePage('Secret', 'the secret text') });
+      denied = ['Secret'];
+      const html = await PageSlideshowPlugin.execute({ engine: makeEngine(pm) }, { pages: 'Public,Secret' });
+      expect(html).toContain('Public');
+      expect(html).not.toContain('secret text');
+      expect(pm.getPage).not.toHaveBeenCalledWith('Secret');
+    });
+
+    test('uses the listing door when random is set', async () => {
       const pm = makePageManager(
         ['Page1', 'Page2', 'Page3'],
         { Page1: samplePage('P1'), Page2: samplePage('P2'), Page3: samplePage('P3') }
       );
       const context = { engine: makeEngine(pm) };
       const result = await PageSlideshowPlugin.execute(context, { random: '2' });
-      expect(pm.getAllPages).toHaveBeenCalled();
+      expect(pm.listPagesFor).toHaveBeenCalled();
       expect(result).toContain('carousel');
     });
 
@@ -136,7 +152,7 @@ describe('PageSlideshowPlugin', () => {
       const pm = makePageManager(['P1'], { P1: samplePage('P1') });
       const context = { engine: makeEngine(pm) };
       const result = await PageSlideshowPlugin.execute(context, { random: '0' });
-      expect(pm.getAllPages).toHaveBeenCalled();
+      expect(pm.listPagesFor).toHaveBeenCalled();
       expect(result).toContain('carousel');
     });
   });

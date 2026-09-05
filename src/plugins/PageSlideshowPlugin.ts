@@ -38,6 +38,7 @@ interface PageRecord {
 
 interface PageManagerLike {
   getAllPages(): Promise<string[]>;
+  listPagesFor(subject: unknown, action?: string): Promise<string[]>;
   getPage(name: string): Promise<PageRecord | null>;
 }
 
@@ -50,6 +51,9 @@ const PageSlideshowPlugin: SimplePlugin = {
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
     const pageManager = context.engine?.getManager('PageManager') as PageManagerLike | undefined;
+    const aclManager = context.engine?.getManager('ACLManager') as
+      { canUserAccessPage(user: unknown, page: string, action: string): Promise<boolean> } | undefined;
+    const viewer = (context as { userContext?: unknown }).userContext ?? null;
     if (!pageManager) {
       return '<span class="text-muted"><em>[PageSlideshowPlugin: PageManager unavailable]</em></span>';
     }
@@ -62,8 +66,8 @@ const PageSlideshowPlugin: SimplePlugin = {
     if (explicitPages.length > 0) {
       pageNames = explicitPages;
     } else if (randomCount > 0) {
-      const all = await pageManager.getAllPages();
-      pageNames = shuffleArray(all).slice(0, randomCount);
+      // #1219: draw from what this viewer may read, not the whole index.
+      pageNames = shuffleArray(await pageManager.listPagesFor(viewer, 'view')).slice(0, randomCount);
     } else {
       return '<span class="text-muted"><em>[PageSlideshowPlugin: specify pages or random parameter]</em></span>';
     }
@@ -73,8 +77,12 @@ const PageSlideshowPlugin: SimplePlugin = {
     const slides: { title: string; excerpt: string; url: string }[] = [];
 
     for (const name of pageNames) {
+      // #1219: `getPage` does not evaluate access — the comment that said
+      // "null = no access" was wrong, and `pages=` named any page's excerpt
+      // to any viewer. The decider says; a refused page is not a slide.
+      if (aclManager && !(await aclManager.canUserAccessPage(viewer, name, 'view'))) continue;
       const page = await pageManager.getPage(name);
-      if (!page) continue;                           // null = not found or no access
+      if (!page) continue;
 
       const raw = String(page.rawContent ?? page.content ?? '');
       slides.push({

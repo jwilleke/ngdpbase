@@ -43,6 +43,10 @@ async evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<
 // linked-page filters and attachment owning-page resolution.
 // Added in #714 Slice B.
 async canUserAccessPage(userContext: UserContext | null, pageName: string, action: string): Promise<boolean>;
+// #1219 — rule 10's filter: the same tiers over many pages, from the in-memory index, no log or audit record per page
+async filterAccessiblePages(userContext: UserContext | null, action: string, candidates: Array<{ title: string; metadata: PageFrontmatter | null }>): Promise<string[]>;
+// #1223 — the media door's question: share ceiling on the item, then the linked page's own rules
+async canUserAccessMediaItem(userContext: UserContext | null, item: MediaItem): Promise<boolean>;
 ```
 
 Most callers should reach the evaluator through the canonical facade __`WikiContext.canAccess(action, pageNameOverride?)`__ (`src/context/WikiContext.ts`) instead of importing `ACLManager` directly — it handles the same-page-vs-cross-page routing and per-context memoization for free.

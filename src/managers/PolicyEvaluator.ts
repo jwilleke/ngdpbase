@@ -247,6 +247,33 @@ class PolicyEvaluator extends BaseManager {
    * );
    * // matches === true
    */
+  /**
+   * `evaluateAccess` with the subject and the action fixed (#1219) — rule 10's
+   * `filter` shape, compiled once and applied to many resources.
+   *
+   * Policies that cannot match this subject or this action are dropped here,
+   * once; the predicate matches resources only, in the same order as
+   * `evaluateAccess` so first-match-wins gives the same answer. No log line
+   * per call: a listing asks this ~18k times, and the per-policy INFO line
+   * `evaluateAccess` writes is right for one decision and wrong for a filter.
+   */
+  compile(userContext: UserContext | undefined, action: string): (pageName: string) => EvaluationResult {
+    if (!this.policyManager) {
+      return () => ({ hasDecision: false, allowed: false, reason: 'PolicyManager not initialized', policyName: null });
+    }
+    const applicable = (this.policyManager.getAllPolicies() as unknown as Policy[])
+      .filter((policy) => this.matchesSubject(policy.subjects, userContext) && this.matchesAction(policy.actions, action));
+    logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
+    return (pageName: string): EvaluationResult => {
+      for (const policy of applicable) {
+        if (this.matchesResource(policy.resources, pageName)) {
+          return { hasDecision: true, allowed: policy.effect === 'allow', reason: `Policy match: ${policy.id}`, policyName: policy.id };
+        }
+      }
+      return { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null };
+    };
+  }
+
   matchesResource(resources: PolicyResource[] | undefined, pageName: string): boolean {
     if (!resources || resources.length === 0) {
       return true; // No resources specified means it applies to all.

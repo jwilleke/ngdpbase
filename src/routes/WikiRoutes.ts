@@ -280,6 +280,8 @@ interface IPageManager {
   getPage(name: string): Promise<WikiPage | null>;
   getPageContent(name: string): Promise<string>;
   getAllPages(): Promise<string[]>;
+  /** The pages `subject` may `action` on — the door for anything listed to a reader (#1219). */
+  listPagesFor(subject: unknown, action?: string): Promise<string[]>;
   getAllPageNames(): Promise<string[]>;
   getPageNames?(): Promise<string[]>;
   getPageMetadata(name: string): Promise<PageFrontmatter | null>;
@@ -889,7 +891,6 @@ class WikiRoutes {
     // #950: ACLManager is no longer needed here — site chrome is not
     // permission-checked. Nothing else in this method consults it.
     const renderingManager = this.engine.getManager('RenderingManager');
-    const pageManager = this.engine.getManager('PageManager');
     const configManager = this.engine.getManager('ConfigurationManager');
 
     // Get the user context directly from the request.
@@ -1007,7 +1008,6 @@ class WikiRoutes {
       appName: unknown;
       applicationName: unknown;
       faviconPath: unknown;
-      pages: unknown;
       activeTheme: string;
       coreCssPath: string;
       variablesCssPath: string;
@@ -1054,7 +1054,10 @@ class WikiRoutes {
       // Theme owns favicon/logo; config key only overrides when explicitly set in custom config
       // (app-default-config.json sets a fallback but should not win over a theme's own assets)
       faviconPath: (configManager?.getCustomProperty('ngdpbase.favicon-path')) || themePaths.faviconPath,
-      pages: await pageManager.getAllPages(),
+      // #1219: `pages: await pageManager.getAllPages()` used to sit here — every
+      // title, unfiltered, handed to every render. No template read it. Gone
+      // rather than filtered: a listing nothing consumes is pure cost, and one
+      // any template could reach was a disclosure waiting for a reader.
       activeTheme: themePaths.activeTheme,
       coreCssPath: themePaths.coreCssPath,
       variablesCssPath: themePaths.variablesCssPath,
@@ -3244,9 +3247,9 @@ ${panes}
         );
       }
 
-      // Get all pages for selection
+      // The pages this caller may edit — the listing door, not the index (#1219).
       const pageManager = this.engine.getManager('PageManager');
-      const allPages = await pageManager.getAllPages();
+      const allPages = await pageManager.listPagesFor(req.userContext, 'edit');
 
       // Sort pages alphabetically
       const sortedPages = allPages.sort((a: string, b: string) => a.localeCompare(b));
@@ -5286,7 +5289,7 @@ ${panes}
       const interval = Math.max(1, parseInt(req.query.interval as string, 10) || 8);
 
       const pageManager      = this.engine.getManager('PageManager') as {
-        getAllPages(): Promise<string[]>;
+        listPagesFor(subject: unknown, action?: string): Promise<string[]>;
         getPage(name: string): Promise<{ title?: string; content?: string; rawContent?: string } | null>;
       };
       const renderingManager = this.engine.getManager('RenderingManager') as {
@@ -5301,13 +5304,22 @@ ${panes}
         names = pagesParam.split(',').map(s => s.trim()).filter(Boolean);
       } else {
         const count = Math.min(50, Math.max(1, parseInt(req.query.count as string, 10) || 10));
-        const all   = await pageManager.getAllPages();
+        // #1219: draw from the pages this viewer may read, not the whole index.
+        const all   = await pageManager.listPagesFor(req.userContext, 'view');
         names = shuffleArray([...all]).slice(0, count);
       }
 
-      // Render each page through the wiki engine (reader mode — full HTML)
+      // Render each page through the wiki engine (reader mode — full HTML).
+      //
+      // #1219: through the read gate first. `getPage` does not evaluate access,
+      // so the kiosk rendered the full content of any page the request named —
+      // `?pages=` accepted a private title from anyone — and of any page the
+      // random draw landed on. The same gate `/view` and export use decides;
+      // a refused page is simply not a slide.
       const slides: { name: string; title: string; html: string; url: string }[] = [];
       for (const name of names) {
+        const { allowed } = await this.checkPageReadAccess(req, name);
+        if (!allowed) continue;
         const page = await pageManager.getPage(name);
         if (!page) continue;
         const raw = String(page.rawContent ?? page.content ?? '');
@@ -6263,12 +6275,11 @@ ${panes}
       // The picker is open, like the pages it lists. `denyExport` is what
       // stops an unreadable page being extracted from here (#1060).
       //
-      // NOTE: this list is not ACL-filtered, so it can name pages the caller
-      // cannot read. Selecting one yields 404, so no content leaks — but the
-      // titles do. `getAllPages()` is unfiltered at every one of its call
-      // sites; tracked separately rather than fixed here with a per-request
-      // ACL evaluation of ~18k pages.
-      const pageNames = await pageManager.getAllPages();
+      // #1219: the list is the evaluator's answer for this caller. It used to
+      // be the whole index — a title is content, and a private page named for
+      // what it holds disclosed by appearing here. The filter runs over the
+      // in-memory index, not per-page ACL evaluation.
+      const pageNames = await pageManager.listPagesFor(req.userContext, 'view');
 
       return res.render('export', {
         ...commonData,
@@ -15361,8 +15372,9 @@ ${panes}
         return res.status(500).json({ error: 'Search not available' });
       }
 
-      // Get all page names (getAllPages returns an array of page name strings)
-      const allPageNames = await pageManager.getAllPages();
+      // #1219: the pages this caller may read. The autocomplete reaches every
+      // user who types, so it was the widest of the title disclosures.
+      const allPageNames = await pageManager.listPagesFor(req.userContext, 'view');
 
       // Filter page names that match the query (case-insensitive)
       const queryLower = query.toLowerCase();

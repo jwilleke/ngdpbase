@@ -64,7 +64,8 @@ await pageManager.deletePage('My Page');
 | `savePage(name, content, metadata)` | `Promise<void>` | Save page |
 | `deletePage(identifier)` | `Promise<boolean>` | Delete page |
 | `pageExists(identifier)` | `boolean` | Check if page exists |
-| `getAllPages()` | `Promise<string[]>` | Get all page titles |
+| `getAllPages()` | `Promise<string[]>` | Every title — the raw index, for callers with no reader (indexing, link graphs, jobs, `admin-system` surfaces). Never rendered to a request ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
+| `listPagesFor(subject, action?)` | `Promise<string[]>` | The titles `subject` may `action` on (default `view`) — the door for anything listed to a reader; the evaluator's `filterAccessiblePages` over the in-memory index. Lists nothing without an ACLManager |
 | `refreshPageList()` | `Promise<void>` | Rescan storage |
 
 ## WikiContext Methods

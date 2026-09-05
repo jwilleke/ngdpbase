@@ -6,6 +6,7 @@ import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter } from '../types/Page.js';
+import type { PermissionSubject } from './UserManager.js';
 import type {
   CatalogSource,
   CatalogQuery,
@@ -1375,6 +1376,37 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager: Provider not initialized');
     }
     return this.provider.getAllPages();
+  }
+
+  /**
+   * The pages `subject` may perform `action` on — the door for anything that
+   * lists pages to a reader (#1219, guiding-framework rule 10).
+   *
+   * A title is content: a private page named for what it holds discloses by
+   * appearing in a list. `getAllPages()` above is the unfiltered index and
+   * stays for callers with no reader — indexing, link graphs, jobs, and admin
+   * surfaces already gated by `admin-system`. Anything rendered to a request
+   * goes through here, so the listing and `canAccess` are the same evaluator
+   * (`ACLManager.filterAccessiblePages`). Without an ACLManager nothing is
+   * listed — never the unfiltered index by accident.
+   *
+   * @param subject - The reader's own context, forwarded (viaToken / viaShare ride on it)
+   * @param action  - Legacy verb (`view`, `edit`) or policy action; default `view`
+   */
+  async listPagesFor(subject: PermissionSubject | null | undefined, action: string = 'view'): Promise<string[]> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    const acl = this.engine.getManager<{
+      filterAccessiblePages(subject: PermissionSubject | null | undefined, action: string, candidates: Array<{ title: string; metadata: PageFrontmatter | null }>): Promise<string[]>;
+        }>('ACLManager');
+    if (!acl) {
+      logger.warn('[PageManager] listPagesFor: ACLManager unavailable — listing nothing');
+      return [];
+    }
+    const infos = await this.provider.getAllPageInfo();
+    const titles = await acl.filterAccessiblePages(subject, action, infos.map((i) => ({ title: i.title, metadata: i.metadata ?? null })));
+    return titles.sort((a, b) => a.localeCompare(b));
   }
 
   /**

@@ -181,6 +181,8 @@ Resource-level attributes beat global policy. That ordering is how "everything e
 
 If only the first exists, list endpoints grow their own path, and that path will not be audited. __Anything that lists resources must reach the same evaluator as the thing that decides access to one.__ A lister that reimplements the check will eventually disagree with it, and the disagreement is silent in both directions: it can list what it should hide, and hide what it should list.
 
+In `src/` ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)): `ACLManager.canUserAccessPage` decides one; `ACLManager.filterAccessiblePages` filters many with the same tiers, over the page index, with no log or audit record per page; `PageManager.listPagesFor(subject, action)` is the door, and `getAllPages()` is the raw index for callers with no reader. `WikiRoutes.listingDoor.test.ts` holds the reader-facing handlers to the door statically, and `ACLManager.filter.test.ts` holds the filter to the decider in both directions.
+
 ### Access without an account
 
 A share token resolves to a principal and goes through the same evaluator. A separate route tree is structurally where a second door appears — those handlers must resolve the token into a subject, not answer access questions themselves.
@@ -276,7 +278,7 @@ Gaps that are *settings* or *audit completeness* belong in [security-posture.md]
 
 - __`UserManager` is 1,907 lines__ carrying password hashing, permission resolution, middleware and page creation, with three role methods left as `never` after a split to `RoleManager`. It is the example of a single path being read as a single class.
 - __Allow and deny still come from `isAuthenticated` and role names in places.__ The only honest allow is `hasPermission` / `canAccess`. `isAuthenticated` classifies the failure; `hasRole` is a membership lookup. `src/routes` is clean and held so by a static test; addon routes, a few plugins and services, and the `isAuthenticated` pre-checks remain — [security-posture.md](security-posture.md) P2 / [#1198](https://github.com/jwilleke/ngdpbase/issues/1198).
-- __Listing is not the same evaluator.__ `PolicyEvaluator` has no `filter()`. `PageManager.getAllPages()` returns every title; callers note that the list is unfiltered and that titles of unreadable pages leak. Rule 10 is unimplemented. Filed as a disclosure bug: [#1219](https://github.com/jwilleke/ngdpbase/issues/1219).
+- __Listing skips tier 3.__ Rule 10 is implemented ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)): `PolicyEvaluator.compile()` is `evaluateAccess` with the subject fixed, `ACLManager.filterAccessiblePages()` applies the tiers over the in-memory index, and `PageManager.listPagesFor()` is the door every reader-facing listing uses. One tier is not indexed: deprecated page-ACL markup (tier 3, blocked on new saves) needs page content, so a page whose only grant is that markup is hidden from listings while `/view` opens it. The conservative direction, and a divergence all the same. Two sites deliberately still read the raw index as an existence set, not a listing — `UndefinedPagesPlugin` and `AppHealthPlugin`'s broken-link check — because filtering them would report unreadable pages as missing, which is the disclosure in reverse.
 
 ### Backup (contracts)
 

@@ -61,6 +61,7 @@ const mockPageManager = {
   getPageContent: vi.fn(),
   getPageMetadata: vi.fn(),
   getAllPages: vi.fn(),
+  listPagesFor: vi.fn(),
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
@@ -275,6 +276,7 @@ function resetMocks() {
   mockPageManager.getPageContent.mockResolvedValue('# Page content');
   mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', uuid: 'test-uuid-1', 'user-keywords': [] });
   mockPageManager.getAllPages.mockResolvedValue(['Welcome', 'TestPage']);
+  mockPageManager.listPagesFor.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);

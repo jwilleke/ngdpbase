@@ -11,6 +11,7 @@ import { escapeHtml } from '../utils/pluginFormatters.js';
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
+  listPagesFor(subject: unknown, action?: string): Promise<string[]>;
 }
 
 interface IndexParams extends PluginParams {
@@ -40,8 +41,11 @@ const IndexPlugin: SimplePlugin = {
         return '<p class="error">PageManager not available</p>';
       }
 
-      // Get all page names
-      const allPageNames = await pageManager.getAllPages();
+      // #1219: the pages this viewer may read — the plugin renders inside any
+      // page its viewer can reach, so an unfiltered index here named private
+      // pages to whoever loaded the page.
+      const viewer = (context as { userContext?: unknown }).userContext ?? null;
+      const allPageNames = await pageManager.listPagesFor(viewer, 'view');
 
       // Filter pages based on include/exclude patterns
       let filteredPages = allPageNames;

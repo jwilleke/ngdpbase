@@ -76,7 +76,8 @@ describe('All Plugins (via PluginManager)', () => {
           return mockConfigManager;
         case 'PageManager':
           return {
-            getAllPages: vi.fn().mockReturnValue(['TestPage1', 'TestPage2', 'TestPage3'])
+            getAllPages: vi.fn().mockReturnValue(['TestPage1', 'TestPage2', 'TestPage3']),
+            listPagesFor: vi.fn().mockResolvedValue(['TestPage1', 'TestPage2', 'TestPage3'])
           };
         default:
           return null;

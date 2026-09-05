@@ -7,17 +7,27 @@
 import IndexPluginModule from '../IndexPlugin' ;
 import type { SimplePlugin } from '../types';
 const IndexPlugin = IndexPluginModule as unknown as SimplePlugin;
+/** The viewer sees `pages`; the index holds those plus a page they may not open. */
 function makeContext(pages) {
   return {
+    userContext: { username: 'viewer', roles: ['reader', 'All'] },
     engine: {
       getManager: () => ({
-        getAllPages: async () => pages
+        getAllPages: async () => [...pages, 'Zzz Private Diary'],
+        listPagesFor: async (subject, action) =>
+          subject?.username === 'viewer' && action === 'view' ? pages : []
       })
     }
   };
 }
 
 describe('IndexPlugin', () => {
+  test('#1219: lists what the viewer may read, never the raw index', async () => {
+    const html = await IndexPlugin.execute(makeContext(['Apple']), {});
+    expect(html).toContain('href="/view/Apple"');
+    expect(html).not.toContain('Private Diary');
+  });
+
   test('groups pages by first letter', async () => {
     const html = await IndexPlugin.execute(makeContext(['Apple', 'Banana', 'Avocado']), {});
     expect(html).toContain('collapse');          // collapsible sections exist

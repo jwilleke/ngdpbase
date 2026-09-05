@@ -8,6 +8,7 @@ import { formatAsCount } from '../utils/pluginFormatters.js';
 
 interface PageManager {
   getAllPages(): Promise<unknown[]>;
+  listPagesFor(subject: unknown, action?: string): Promise<string[]>;
 }
 
 const TotalPagesPlugin: SimplePlugin = {
@@ -30,8 +31,11 @@ const TotalPagesPlugin: SimplePlugin = {
 
     try {
       const pageManager = engine.getManager('PageManager') as PageManager | undefined;
-      if (pageManager && pageManager.getAllPages) {
-        const pages = await pageManager.getAllPages();
+      if (pageManager && pageManager.listPagesFor) {
+        // #1219: the count of pages this viewer may read. A total that
+        // includes pages the viewer cannot open still says they exist.
+        const viewer = (context as { userContext?: unknown }).userContext ?? null;
+        const pages = await pageManager.listPagesFor(viewer, 'view');
         return Array.isArray(pages) ? formatAsCount(pages.length) : '0';
       }
       return '0';

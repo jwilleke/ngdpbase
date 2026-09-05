@@ -120,6 +120,10 @@ PolicyEvaluator is the __decision engine__ in ngdpbase's access control system. 
 
 ## Key Methods
 
+### `compile(userContext, action)`
+
+`evaluateAccess` with the subject and action fixed ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)). Drops the policies that cannot match this subject or action once, and returns `(pageName) => EvaluationResult` that matches resources only, in the same first-match-wins order, with no log line per call. `ACLManager.filterAccessiblePages` uses it to decide tier 2 for every page in a listing.
+
 ### `evaluateAccess(context)`
 
 Evaluates all relevant policies to make an access decision.
