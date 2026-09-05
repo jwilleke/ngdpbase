@@ -40,7 +40,18 @@ function makeContext(opts: {
     pageName: opts.hostPage ?? 'HostPage',
     linkGraph: {},
     engine: {
-      getManager: (name: string) => managers[name],
+      // #1198 / rule 10: visibility is the evaluator's answer. This stand-in
+      // applies the private rule — owner or admin — the way the decider does.
+      getManager: (name: string) => managers[name] ?? (name === 'ACLManager' ? {
+        canUserAccessPage: async (user: { username?: string; roles?: string[] } | null, page: string) => {
+          const md = (managers.PageManager as { getPage?: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> } | undefined)?.getPage
+            ? (await (managers.PageManager as { getPage: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> }).getPage(page))?.metadata ?? {}
+            : {};
+          if (md.private !== true) return true;
+          const viewer = user?.username ?? '';
+          return (user?.roles ?? []).includes('admin') || (viewer !== '' && (md.author === viewer || md.creator === viewer));
+        }
+      } : undefined),
       logger: { error: vi.fn() }
     },
     userContext: opts.userContext ?? { username: 'alice', authenticated: true, roles: ['reader'] }

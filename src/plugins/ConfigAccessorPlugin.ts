@@ -33,7 +33,7 @@
  */
 
 import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
-import WikiContext from '../context/WikiContext.js';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import {
   escapeHtml,
   parsePageSizeParam,
@@ -1657,7 +1657,7 @@ const ConfigAccessorPlugin: SimplePlugin = {
   /**
    * Execute the plugin
    */
-  execute(context: PluginContext, params: PluginParams): string {
+  async execute(context: PluginContext, params: PluginParams): Promise<string> {
     const opts = (params || {}) as ConfigAccessorParams;
     const key = opts.key;
     const type = opts.type;
@@ -1725,7 +1725,8 @@ const ConfigAccessorPlugin: SimplePlugin = {
         return displayPolicies(configManager);
 
       case 'authmethods': {
-        const isAdmin = WikiContext.userHasRole((context as ExtendedPluginContext).userContext, 'admin');
+        // #1198: policy, not a role name.
+        const isAdmin = await subjectMayDo(context.engine, (context as ExtendedPluginContext).userContext as never, 'admin-system');
         return displayAuthMethods(configManager, isAdmin);
       }
 

@@ -16,7 +16,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import WikiContext from '../context/WikiContext.js';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import type { PageFootnote } from '../managers/FootnoteManager.js';
 import { parseBoolParam, escapeHtml } from '../utils/pluginFormatters.js';
@@ -144,11 +144,14 @@ function renderFootnoteRow(fn: PageFootnote, canEdit: boolean, canDelete: boolea
 export async function renderFootnoteListHtml(
   footnoteManager: FootnoteManager,
   pageUuid: string,
-  userContext: { isAuthenticated?: boolean; username?: string; roles?: string[] } | undefined
+  userContext: { isAuthenticated?: boolean; username?: string; roles?: string[] } | undefined,
+  engine?: { getManager: (name: string) => unknown } | null
 ): Promise<string> {
   const isAuthenticated = userContext?.isAuthenticated === true;
-  const isEditor = isAuthenticated && WikiContext.userHasRole(userContext, 'editor', 'contributor', 'admin');
-  const isAdmin = WikiContext.userHasRole(userContext, 'admin');
+  // #1198: the affordances mirror the routes' own gates — page-edit to edit,
+  // admin-system to delete anyone's — asked of policy, not read off a role.
+  const isEditor = await subjectMayDo(engine, userContext as never, 'page-edit');
+  const isAdmin = await subjectMayDo(engine, userContext as never, 'admin-system');
 
   const footnotes: PageFootnote[] = await footnoteManager.getFootnotes(pageUuid);
 
@@ -273,8 +276,8 @@ const FootnotesPlugin: SimplePlugin = {
       username?: string;
       roles?: string[];
     } | undefined;
-    const isAuthenticated = userContext?.isAuthenticated === true;
-    const isEditor = isAuthenticated && WikiContext.userHasRole(userContext, 'editor', 'contributor', 'admin');
+    // #1198: the add form is offered to whoever policy lets add — the route asks page-edit.
+    const isEditor = await subjectMayDo(engine, userContext as never, 'page-edit');
     // isAdmin is computed inside renderFootnoteListHtml() per row; not needed here.
 
     const parts: string[] = ['<section class="page-footnotes">'];
@@ -286,7 +289,7 @@ const FootnotesPlugin: SimplePlugin = {
     if (footnoteManager?.isEnabled() && pageUuid) {
       // List wrapped in a stable container so #590 can swap its innerHTML
       // after add/edit/delete instead of doing a full page reload.
-      const listHtml = await renderFootnoteListHtml(footnoteManager, pageUuid, userContext);
+      const listHtml = await renderFootnoteListHtml(footnoteManager, pageUuid, userContext, engine);
       parts.push(`<div id="footnote-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
       parts.push(listHtml);
       parts.push('</div>');

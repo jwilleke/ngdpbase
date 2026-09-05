@@ -9093,7 +9093,7 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-footnotes"><em>Footnotes are not enabled.</em></p>');
       }
-      const html = await renderFootnoteListHtml(footnoteManager, pageUuid, req.userContext);
+      const html = await renderFootnoteListHtml(footnoteManager, pageUuid, req.userContext, this.engine);
       return res.type('text/html').send(html);
     } catch (err: unknown) {
       logger.error('Error rendering footnote list HTML:', err);

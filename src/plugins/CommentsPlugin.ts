@@ -1,5 +1,5 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import WikiContext from '../context/WikiContext.js';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type { PageComment } from '../types/Comment.js';
 import { parseBoolParam } from '../utils/pluginFormatters.js';
@@ -95,7 +95,8 @@ const CommentsPlugin: SimplePlugin = {
     const isAuthenticated = userContext?.isAuthenticated === true;
     const username = userContext?.username ?? '';
     const displayName = userContext?.displayName ?? userContext?.name ?? username;
-    const isAdmin = WikiContext.userHasRole(userContext, 'admin');
+    // #1198: the delete-anyone affordance mirrors the route's own gate — policy, not a role name.
+    const isAdmin = await subjectMayDo(engine, userContext as never, 'admin-system');
 
     const noheader = parseBoolParam(params?.['noheader'], false);
 

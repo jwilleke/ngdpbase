@@ -12,8 +12,18 @@
 
 import FootnotesPlugin from '../FootnotesPlugin';
 
+// #1198: the plugin asks policy, not a role name. This stand-in answers as the
+// shipped policies do for the roles the tests use.
+const policyUserManager = {
+  hasPermission: vi.fn(async (subject: { roles?: string[] } | null | undefined, action: string) => {
+    const roles = subject?.roles ?? [];
+    if (action === 'admin-system') return roles.includes('admin');
+    if (action === 'page-edit') return roles.includes('admin') || roles.includes('editor') || roles.includes('contributor');
+    return false;
+  })
+};
 const makeEngine = (overrides: Record<string, unknown> = {}) => ({
-  getManager: vi.fn((name: string) => overrides[name] ?? null)
+  getManager: vi.fn((name: string) => overrides[name] ?? (name === 'UserManager' ? policyUserManager : null))
 });
 
 const makeFootnoteManager = (footnotes: unknown[] = []) => ({

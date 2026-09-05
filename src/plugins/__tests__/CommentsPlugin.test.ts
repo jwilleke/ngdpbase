@@ -20,8 +20,17 @@ const makeCommentManager = (enabled = true, comments: unknown[] = []) => ({
   getComments: vi.fn().mockResolvedValue(comments)
 });
 
+// #1198: the plugin asks policy, not a role name. This stand-in answers as the
+// shipped policies do for the roles the tests use.
+const policyUserManager = {
+  hasPermission: vi.fn(async (subject: { roles?: string[] } | null | undefined, action: string) => {
+    const roles = subject?.roles ?? [];
+    if (action === 'admin-system') return roles.includes('admin');
+    return roles.includes('admin') || roles.includes('editor') || roles.includes('contributor');
+  })
+};
 const makeEngine = (managers: Record<string, unknown> = {}) => ({
-  getManager: vi.fn((name: string) => managers[name] ?? null),
+  getManager: vi.fn((name: string) => managers[name] ?? (name === 'UserManager' ? policyUserManager : null)),
   logger: { error: vi.fn() }
 });
 

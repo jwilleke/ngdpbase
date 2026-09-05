@@ -12,6 +12,7 @@
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
 import { sessionSecretOrigin } from './bootstrap-env.js';
+import { subjectMayDo } from './utils/subjectMayDo.js';
 
 import path from 'path';
 import express, { Request, Response, NextFunction } from 'express';
@@ -36,7 +37,6 @@ import { gateDecision, describeBlocked } from './utils/startupState.js';
 import WikiEngine from './WikiEngine.js';
 import type { WikiEngine as IWikiEngine } from './types/WikiEngine.js';
 import WikiRoutes from './routes/WikiRoutes.js';
-import WikiContext from './context/WikiContext.js';
 import InstallRoutes from './routes/InstallRoutes.js';
 import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
@@ -879,7 +879,7 @@ void (async (): Promise<void> => {
   //
   // Resolved per request rather than captured here, so the toggle takes effect
   // immediately and closing or reopening an instance needs no restart.
-  app.use((req: Request, res: Response, next: NextFunction): void => {
+  app.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const maintenanceCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
     const maintenance = resolveMaintenanceState(
       (key, fallback) => maintenanceCm?.getProperty?.(key, fallback)
@@ -893,8 +893,11 @@ void (async (): Promise<void> => {
       next(); return;
     }
 
-    const isAdmin = WikiContext.userHasRole(req.userContext, 'admin');
-    if (maintenance.allowAdmins && isAdmin) {
+    // #1198: the bypass is a permission, not a role name. A role check skips
+    // policy and the token ceiling — an admin's read-only token would have
+    // walked through maintenance on its owner's role.
+    const isAdmin = maintenance.allowAdmins && await subjectMayDo(engine, req.userContext, 'admin-system');
+    if (isAdmin) {
       next(); return;
     }
 
@@ -935,7 +938,8 @@ void (async (): Promise<void> => {
   // Distinction: `/metrics` is always the Prometheus endpoint.
   //              The wiki Metrics page lives at `/view/Metrics` — a completely separate URL.
   app.get('/metrics', async (req: Request, res: Response): Promise<void> => {
-    const isAdmin = WikiContext.userHasRole(req.userContext, 'admin');
+    // #1198: policy, not a role name.
+    const isAdmin = await subjectMayDo(engine, req.userContext, 'admin-system');
     const ip = req.ip ?? '';
     const isLocalhost = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
     // Prometheus sends Accept headers that don't include text/html
