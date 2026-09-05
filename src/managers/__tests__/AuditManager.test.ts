@@ -17,6 +17,7 @@
  */
 
 import fs from 'fs';
+import { pendingBootActions, recordSystemAction, resetBootActions, systemContext } from '../../context/bootActions';
 import path from 'path';
 import AuditManager from '../AuditManager';
 import logger from '../../utils/logger';
@@ -87,6 +88,19 @@ function makeManagerWithMockProvider(): AuditManager {
 
 describe('AuditManager', () => {
   describe('initialize()', () => {
+    test('#1197: drains the boot ledger once the sink is up — nothing recorded before it waits forever', async () => {
+      resetBootActions();
+      const noSink = { getManager: (n: string) => (n === 'UserManager' ? { systemPrincipalName: () => 'svc' } : null) };
+      await recordSystemAction(noSink, systemContext(noSink, 'seed'), {
+        eventType: 'page-create', action: 'create', resource: 'Welcome', resourceType: 'page', result: 'success', severity: 'low', metadata: {}
+      });
+      expect(pendingBootActions()).toHaveLength(1);
+
+      await makeInitializedManager();
+
+      expect(pendingBootActions()).toHaveLength(0);
+    });
+
     test('initializes with NullAuditProvider', async () => {
       const am = await makeInitializedManager();
       expect(am).toBeDefined();

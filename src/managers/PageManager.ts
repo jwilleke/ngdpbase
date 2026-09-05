@@ -1,4 +1,6 @@
 import path from 'path';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
@@ -355,6 +357,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * at the file level for FileSystemProvider-compatible storage.
    */
   private async seedRequiredPages(configManager: ConfigurationManager): Promise<void> {
+    const seedContext = systemContext(this.engine, 'required-pages seed at boot — copy shipped pages the instance lacks');
     try {
       const pagesDirResolved: string = configManager.getResolvedDataPath(
         'ngdpbase.page.provider.filesystem.storagedir',
@@ -436,6 +439,18 @@ class PageManager extends BaseManager implements CatalogSource {
         const cleaned: string = matter.stringify(parsed.content, parsed.data);
         await fse.writeFile(dstPath, cleaned, 'utf8');
         seeded++;
+        // #1197: the seed ACTS — a page now exists that did not. Recorded under
+        // the system principal, origin boot; the audit sink is not up yet at
+        // this point in boot, so the record waits in the boot ledger.
+        void recordSystemAction(this.engine, seedContext, {
+          eventType: AUDIT_EVENT.PAGE_CREATE,
+          action: 'create',
+          resource: typeof parsed.data['title'] === 'string' ? parsed.data['title'] : file,
+          resourceType: 'page',
+          result: 'success',
+          severity: 'low',
+          metadata: { uuid: parsed.data['uuid'] ?? null, seed: 'required-pages', file }
+        });
       }
 
       logger.info(`[PageManager] Required pages seeded: ${seeded} new, ${skipped} already present${devSkipped ? `, ${devSkipped} github-only skipped` : ''}`);

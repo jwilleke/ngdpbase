@@ -52,6 +52,14 @@ describe('#1149 — assessPreviousRun', () => {
   });
 });
 
+describe('#1197 — lifecycle records name the principal and the origin', () => {
+  test('the system principal from .env, not the literal, and origin boot', () => {
+    const event = buildLifecycleAuditEvent({ phase: 'start', version: '4.16.0', pid: 1, principal: 'svc-ngdpbase' });
+    expect(event.user).toBe('svc-ngdpbase');
+    expect(event.metadata.origin).toBe('boot');
+  });
+});
+
 describe('#1149 — buildLifecycleAuditEvent', () => {
   test('a shutdown event names itself and carries the run', () => {
     const event = buildLifecycleAuditEvent({ phase: 'shutdown', version: '4.12.2', pid: 4242 });

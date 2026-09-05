@@ -1,4 +1,5 @@
 import BaseManager, { BackupData } from './BaseManager.js';
+import { recordSystemAction, systemContext } from '../context/bootActions.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
@@ -626,6 +627,17 @@ class UserManager extends BaseManager {
     };
 
     await this.provider.createUser(adminUser);
+    // #1197: the bootstrap ACTS — an account now exists. Recorded under the
+    // system principal, origin boot; deferred until the audit sink is up.
+    void recordSystemAction(this.engine, systemContext(this.engine, 'create the bootstrap admin account at first boot'), {
+      eventType: AUDIT_EVENT.USER_CREATE,
+      action: 'create',
+      resource: adminUser.username,
+      resourceType: 'user',
+      result: 'success',
+      severity: 'high',
+      metadata: { bootstrap: true }
+    });
 
     await this.syncPersonOnCreate(adminUser);
     await this.applyRoleDiff(adminUser.username, [], ['admin']);

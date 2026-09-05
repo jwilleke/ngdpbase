@@ -13,6 +13,7 @@
  */
 
 import UserManager from '../UserManager';
+import { pendingBootActions, resetBootActions } from '../../context/bootActions';
 
 function makeManager(existing: Record<string, unknown>) {
   const store = new Map(Object.entries(existing));
@@ -63,6 +64,19 @@ describe('bootstrap admin recreation', () => {
     await runBootstrapCheck(manager, provider);
 
     expect(store.has('admin')).toBe(true);
+  });
+
+  test('#1197: the creation is recorded as user-create under the system principal, origin boot, held until the sink is up', async () => {
+    resetBootActions();
+    const { manager, provider } = makeManager({});
+
+    await runBootstrapCheck(manager, provider);
+    await new Promise((r) => setTimeout(r, 0));   // the record is fire-and-forget
+
+    const pending = pendingBootActions();
+    expect(pending).toHaveLength(1);
+    expect(pending[0].event).toMatchObject({ eventType: 'user-create', resource: 'admin', metadata: { origin: 'boot', bootstrap: true } });
+    expect(pending[0].context.reason).toMatch(/bootstrap admin/);
   });
 
   test('recreates admin when it is missing but other accounts remain', async () => {

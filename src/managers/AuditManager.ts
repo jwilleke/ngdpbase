@@ -38,6 +38,7 @@ export class AuditQueryForbiddenError extends Error {
  * await auditManager.logAccess('admin', 'Main', 'view', 'granted');
  */
 import BaseManager from './BaseManager.js';
+import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
@@ -323,6 +324,11 @@ class AuditManager extends BaseManager {
     // because an instance whose auditing is off should not emit it at all —
     // the null provider makes that decision for us.
     await this.recordStart();
+
+    // #1197: everything the instance did to itself before this sink existed —
+    // the required-pages seed, the bootstrap admin, the start-up purge — is
+    // waiting in the boot ledger, attributed to the system principal. Flush it.
+    await drainBootActions(this as unknown as AuditEventSink);
 
     // #1118: one line saying what auditing this instance actually does.
     const posture = this.getAuditPosture();
@@ -884,9 +890,11 @@ class AuditManager extends BaseManager {
     }
 
     try {
+      // #1197: attributed to the system principal, origin boot.
+      const recorder = systemContext(this.engine, 'record the security posture at start-up (D19)');
       await recordAuditEvent(this as unknown as AuditEventSink, {
         eventType: AUDIT_EVENT.POSTURE_RECORDED,
-        user: 'system',
+        user: attributedTo(recorder).user,
         ipAddress: undefined,
         action: 'posture-recorded',
         result: 'success',
@@ -894,6 +902,7 @@ class AuditManager extends BaseManager {
         // looking for; an unchanged posture is not.
         severity: drifted ? 'high' : 'low',
         metadata: {
+          ...attributedTo(recorder).metadata,
           posture: current,
           comparedWithPrevious: diff.comparable,
           ...(drifted
@@ -931,7 +940,8 @@ class AuditManager extends BaseManager {
         version,
         pid: process.pid,
         previousRun,
-        scheme: tls.mode === 'https' ? 'https' : 'http'
+        scheme: tls.mode === 'https' ? 'https' : 'http',
+        principal: systemPrincipalOf(this.engine)
       }));
     } catch (err) {
       // Declared critical, so recordAuditEvent rethrows on failure. A lifecycle

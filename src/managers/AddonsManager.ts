@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import { systemPrincipalOf } from '../context/bootActions.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
@@ -1058,6 +1059,9 @@ class AddonsManager extends BaseManager {
               ...(reseedAccess ? { access: reseedAccess } : {}),
               'addon-source-hash': srcHash
             };
+            // #1197: savePage records page-edit under `metadata.editor`; the
+            // system principal, not a literal, is who reseeded it.
+            reseedMetadata.editor = systemPrincipalOf(this.engine);
             await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, { skipValidation: true });
             reseeded++;
             logger.info(legacy
@@ -1110,6 +1114,9 @@ class AddonsManager extends BaseManager {
         // skipValidation: this is content the addon SHIPS, not user input.
         // Seeding runs during startup, so a content rule aimed at page authors
         // must never be able to stop the instance booting (#1037).
+        // #1197: savePage records page-create under `metadata.editor`; the
+        // system principal, not a literal, is who seeded it.
+        (metadata).editor = systemPrincipalOf(this.engine);
         await pageManager.savePage(slug, parsed.content, metadata, { skipValidation: true });
 
         // Update search index so the page is discoverable via category search

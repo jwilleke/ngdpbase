@@ -524,6 +524,27 @@ __What the software says about all of this: nothing.__ Consistent with D13 and D
 
 __Issues:__ Mechanism by [#1138](https://github.com/jwilleke/ngdpbase/issues/1138) — __landed 2026-09-01__; the verifier that reads it is [#1161](https://github.com/jwilleke/ngdpbase/issues/1161). The instance-name defect in failure mode 3 was fixed on 2026-09-02.
 
+### D24 — Boot paths: which act, which only wire, and how an acting one is attributed
+
+Boot-time code runs with no request and therefore no actor ([#1197](https://github.com/jwilleke/ngdpbase/issues/1197), split from [#631](https://github.com/jwilleke/ngdpbase/issues/631)). Every `initialize()` / `register()` in `src/` and `addons/` — 93 by count, 2026-09-05 — was walked and classified. A path __wires__ when it registers handlers, reads configuration, builds objects or creates its own storage directory. A path __acts__ when a page, an account, a record or the instance's own configuration exists or is gone afterwards. Only acting paths receive a context; a parameter nothing reads is the ceremony this decision refuses.
+
+__The constraint that shaped the mechanism.__ `AuditManager` is the last manager to initialise, so the required-pages seed, the bootstrap admin and the start-up retention purge run before any audit sink exists. `src/context/bootActions.ts` gives an acting path `systemContext(engine, reason)` — the principal named in `.env` (#631), origin `boot`, a stated reason — and `recordSystemAction()`, which records now when the sink is up and otherwise holds the record in the boot ledger, flushed once by `AuditManager.initialize` after `system-start`. Either way the record names who, from where and why.
+
+| Boot path | Classification | What it does, and the record |
+| --- | --- | --- |
+| `PageManager.seedRequiredPages` | __acts__ | copies shipped pages the instance lacks — `page-create` per page, principal, origin `boot`, via the ledger |
+| `AddonsManager.seedAddonPages` (from `app.ts` after the engine) | __acts__ | seeds and reseeds addon pages through `savePage` — recorded by `savePage` as `page-create` / `page-edit` with `editor` = the principal |
+| `UserManager.createDefaultAdmin` | __acts__ | creates the bootstrap account — `user-create`, principal, `boot`, via the ledger |
+| `VersioningFileProvider.runRetentionPurge('startup')` | __acts__ | destroys pages past the delete-retention window — `page-delete` action `purge` per page, principal, origin `boot`; the hourly tick records the same with origin `schedule` (the purge half of [#1196](https://github.com/jwilleke/ngdpbase/issues/1196)) |
+| `bootstrap-env` session-secret backfill (#1194) | __acts__ | writes `NGDPBASE_SESSION_SECRET` into the instance `.env` — `config-change`, principal, `boot`, recorded from `app.ts` once the sink is up; the value itself is never recorded |
+| `AuditManager.recordStart` → `system-start`, `posture-recorded` | __acts__ (records) | the lifecycle and posture records themselves — now attributed to the principal with origin `boot` rather than the literal `system` |
+| `AgentTokenManager.purgeExpired` | acts on housekeeping, unrecorded by design | drops token records that are already expired or revoked; the revoke or the expiry was the auditable moment and was recorded then |
+| `SearchManager` / `LunrSearchProvider` index build, `MediaManager` index load, `CacheManager` warm, `AddonsManager.backfillIndexAddonStamps` | acts on derived state, unrecorded by design | rebuilds what can be rebuilt from the pages and files; nothing an assessor asks "who" about |
+| `BackupManager`, `MediaManager` scan timer, `NotificationManager` autosave | wires a timer | the tick is [#1196](https://github.com/jwilleke/ngdpbase/issues/1196)'s question |
+| every other `initialize()` / `register()` — managers, providers, parsers, plugins, the six addon `register()`s | __wires__ | registers, reads, builds; `mkdir` of its own storage directory counts as wiring |
+
+Two paths were re-read on the way and found to be wiring after all: `FileAuditProvider.initialize` (opens the log, writes nothing until an event arrives) and `BasicAttachmentProvider.initialize` (creates an empty metadata file when none exists — storage, not content).
+
 ## Deferred to implementation
 
 Not decisions — settled things that must not be lost when this document is read for its decisions.

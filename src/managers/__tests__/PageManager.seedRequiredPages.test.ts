@@ -1,6 +1,7 @@
 'use strict';
 
 import path from 'path';
+import { pendingBootActions, resetBootActions } from '../../context/bootActions';
 import os from 'os';
 import { promises as fs } from 'fs';
 import fse from 'fs-extra';
@@ -94,6 +95,22 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     await new PageManager(engine).initialize();
 
     expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000001.md');
+  });
+
+  test('#1197: each seeded page is recorded as page-create under the system principal, origin boot, held in the ledger', async () => {
+    resetBootActions();
+    await fse.writeFile(
+      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000001.md'),
+      makeFrontmatter('Normal Page', 'general')
+    );
+
+    await new PageManager(makeEngine()).initialize();
+    await new Promise((r) => setTimeout(r, 0));   // the record is fire-and-forget
+
+    const seeds = pendingBootActions().filter((p) => p.event.metadata.seed === 'required-pages');
+    expect(seeds).toHaveLength(1);
+    expect(seeds[0].event).toMatchObject({ eventType: 'page-create', resource: 'Normal Page', metadata: { origin: 'boot' } });
+    expect(seeds[0].context.reason).toMatch(/required-pages seed/);
   });
 
   test('skips pages with system-category=developer (storageLocation=github)', async () => {

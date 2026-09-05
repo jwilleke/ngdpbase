@@ -1,4 +1,6 @@
 import FileSystemProvider from './FileSystemProvider.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
@@ -1917,7 +1919,7 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   private async runRetentionPurge(trigger: 'startup' | 'scheduled'): Promise<void> {
     try {
-      await this.purgeExpiredDeletedPages();
+      await this.purgeExpiredDeletedPages(trigger);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`[VersioningFileProvider] Delete-retention purge failed (${trigger})`, { error: errorMessage });
@@ -2112,15 +2114,31 @@ class VersioningFileProvider extends FileSystemProvider {
    *
    * @returns Number of pages purged
    */
-  async purgeExpiredDeletedPages(): Promise<number> {
+  async purgeExpiredDeletedPages(trigger: 'startup' | 'scheduled' = 'scheduled'): Promise<number> {
     if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) return 0;
 
     const cutoff = Date.now() - this.deleteRetentionDays * 24 * 60 * 60 * 1000;
     let purged = 0;
+    // #1197 / #1196: the purge ACTS — pages are destroyed for good. Each one
+    // is recorded under the system principal, origin boot or schedule by
+    // trigger, so a retention purge is no longer "deleted by nobody".
+    const reason = `delete-retention purge (${trigger}): pages soft-deleted more than ${this.deleteRetentionDays} day(s) ago`;
+    const purger = trigger === 'startup' ? systemContext(this.engine, reason) : scheduleContext(this.engine, reason);
 
     for (const entry of this.getDeletedPages()) {
       if (new Date(entry.deletedAt).getTime() < cutoff) {
-        if (await this.purgeDeletedPage(entry.uuid)) purged++;
+        if (await this.purgeDeletedPage(entry.uuid)) {
+          purged++;
+          void recordSystemAction(this.engine, purger, {
+            eventType: AUDIT_EVENT.PAGE_DELETE,
+            action: 'purge',
+            resource: entry.title,
+            resourceType: 'page',
+            result: 'success',
+            severity: 'medium',
+            metadata: { uuid: entry.uuid, deletedAt: entry.deletedAt, retentionDays: this.deleteRetentionDays }
+          });
+        }
       }
     }
 

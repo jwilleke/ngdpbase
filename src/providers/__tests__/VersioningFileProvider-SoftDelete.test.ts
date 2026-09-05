@@ -15,6 +15,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { pendingBootActions, resetBootActions } from '../../context/bootActions';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -265,9 +266,19 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     provider['pageIndex'].deletedPages[oldUuid].deletedAt =
       new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
 
+    resetBootActions();
     expect(await provider.purgeExpiredDeletedPages()).toBe(1);
     expect(provider['pageIndex'].deletedPages[oldUuid]).toBeUndefined();
     expect(provider['pageIndex'].deletedPages[freshUuid]).toBeDefined();
+
+    // #1197 / #1196: the purge is recorded — page-delete, action purge — under
+    // the system principal, with the origin the trigger gives it. No sink in
+    // this fixture, so it waits in the boot ledger.
+    await new Promise((r) => setTimeout(r, 0));
+    const purges = pendingBootActions().filter((p) => p.event.eventType === 'page-delete');
+    expect(purges).toHaveLength(1);
+    expect(purges[0].event).toMatchObject({ action: 'purge', resource: 'Old', metadata: { origin: 'schedule', uuid: oldUuid } });
+    expect(purges[0].context.reason).toMatch(/delete-retention purge \(scheduled\)/);
   });
 
   test('an hourly scheduler expires tombstones without needing a restart', async () => {
@@ -327,7 +338,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     provider['deleteRetentionDays'] = 0;
     provider['pageIndex'].deletedPages[uuid].deletedAt = new Date(0).toISOString();
 
-    expect(await provider.purgeExpiredDeletedPages()).toBe(0);
+    expect(await provider.purgeExpiredDeletedPages('startup')).toBe(0);
     expect(provider['pageIndex'].deletedPages[uuid]).toBeDefined();
   });
 });

@@ -70,6 +70,8 @@ export function assessPreviousRun(
 }
 
 export interface LifecycleEventInput {
+  /** The system principal (#631). Falls back to the literal only where no UserManager answers. */
+  principal?: string;
   phase: 'start' | 'shutdown';
   /** The running version, so a restart is distinguishable from an upgrade. */
   version: string;
@@ -110,9 +112,12 @@ export function buildLifecycleAuditEvent(input: LifecycleEventInput): AuditEvent
   // for; an ordinary restart is not.
   const severity: AuditSeverity = unclean ? 'high' : 'low';
 
+  // #1197: the system principal named in .env (#631), and the origin, so
+  // "the system did this" is a name and a place, not a literal.
+  metadata.origin = 'boot';
   return {
     eventType: phase === 'start' ? AUDIT_EVENT.SYSTEM_START : AUDIT_EVENT.SYSTEM_SHUTDOWN,
-    user: 'system',
+    user: input.principal ?? 'system',
     ipAddress: undefined,
     action: phase === 'start' ? 'system-start' : 'system-shutdown',
     result: 'success',

@@ -12,6 +12,8 @@
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
 import { sessionSecretOrigin } from './bootstrap-env.js';
+import { AUDIT_EVENT } from './utils/auditEventNames.js';
+import { recordSystemAction, systemContext } from './context/bootActions.js';
 import { subjectMayDo } from './utils/subjectMayDo.js';
 
 import path from 'path';
@@ -567,6 +569,18 @@ void (async (): Promise<void> => {
       '🔐 Session secret was not set. Generated one and wrote NGDPBASE_SESSION_SECRET to ' +
       `${sessionSecretOrigin.path} (#1194). Sessions survive restarts as long as that file does.`
     );
+    // #1197: the instance changed its own configuration on disk. Recorded as a
+    // config-change under the system principal, origin boot — the sink is up
+    // by now, so this records directly.
+    void recordSystemAction(engine, systemContext(engine, 'generate the session secret and write it to the instance .env (#1194)'), {
+      eventType: AUDIT_EVENT.CONFIG_CHANGE,
+      action: 'generate',
+      resource: 'NGDPBASE_SESSION_SECRET',
+      resourceType: 'config',
+      result: 'success',
+      severity: 'medium',
+      metadata: { path: sessionSecretOrigin.path, valueRecorded: false }
+    });
   } else if (sessionSecretOrigin.kind === 'instance-env-file') {
     logger.info(`🔐 Session secret: from ${sessionSecretOrigin.path} (the environment had it blank)`);
   }
