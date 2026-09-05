@@ -60,9 +60,12 @@ done
 
 # #1194 — no NGDPBASE_SESSION_SECRET was passed, so the instance must have
 # generated one into the mounted volume's .env. Must print a line; must not be
-# the shipped literal.
-grep '^NGDPBASE_SESSION_SECRET=' "$SM/.env" | sed 's/=.*/=<set>/'
-grep -q 'ngdpbase-session-secret-change-in-production' "$SM/.env" && echo "FAILED: shipped literal"
+# the shipped literal. Read it THROUGH the container, as CI does: the file is
+# root-owned 0600, and a host-side grep only works here because Docker Desktop
+# maps the bind mount's ownership to your user — on the CI runner it does not,
+# which is how v4.14.0's image build failed after a green local run.
+docker exec ngdpbase-release-smoke grep '^NGDPBASE_SESSION_SECRET=' /app/data/.env | sed 's/=.*/=<set>/'
+docker exec ngdpbase-release-smoke grep -q 'ngdpbase-session-secret-change-in-production' /app/data/.env && echo "FAILED: shipped literal"
 
 # #1192 — every bundled addon must have loaded IN THE IMAGE. AddonsManager
 # logs and continues on a dead addon, so the container is healthy either way.
