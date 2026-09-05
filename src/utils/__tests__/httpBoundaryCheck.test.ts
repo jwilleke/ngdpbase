@@ -10,7 +10,10 @@
  * The real tree passing is asserted last, and is the weakest assertion here:
  * a check that matched nothing at all would also pass it.
  */
-import { checkFile, run, isInsideTemplateLiteral } from '../../../scripts/check-http-boundary';
+import { checkFile, collectSources, run, isInsideTemplateLiteral } from '../../../scripts/check-http-boundary';
+import fs from 'fs-extra';
+import os from 'os';
+import path from 'path';
 
 const at = (src: string): ReturnType<typeof checkFile> => checkFile('src/example.ts', src);
 
@@ -164,6 +167,69 @@ describe('#1139 — the plugin template-literal trap', () => {
   test('an escaped backtick does not flip the parity', () => {
     const lines = ['const a = "\\`";', 'outside'];
     expect(isInsideTemplateLiteral(lines, 1)).toBe(false);
+  });
+});
+
+describe('#1189 — the scan visits the addon code that actually loads', () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdp-http-boundary-'));
+    const put = (rel: string, body: string) => fs.outputFile(path.join(repo, rel), body);
+    await put('src/http/guardedFetch.ts', 'export const guardedFetch = fetch;');
+    await put('src/routes/a.ts', 'export const a = 1;');
+    // A JS-only addon: no .ts anywhere, an outbound call in its server code.
+    await put('addons/jsonly/index.js', "import axios from 'axios';\nexport const register = () => axios.get(url);");
+    // Browser code an addon serves — fetch() is what browsers do.
+    await put('addons/jsonly/public/app.js', "fetch('/api/x');");
+    // A compiled addon: the .js beside its .ts is build output, read once via the .ts.
+    await put('addons/compiled/index.ts', "export const r = await fetch('https://example.com');");
+    await put('addons/compiled/index.js', "export const r = await fetch('https://example.com');");
+    await put('addons/compiled/dist/index.js', "fetch('https://example.com');");
+    await put('addons/compiled/index.d.ts', 'export declare const r: unknown;');
+    await put('addons/compiled/__tests__/index.test.ts', "fetch('https://example.com');");
+  });
+
+  afterEach(async () => {
+    // This test's own temp dir only — never a live data tree.
+    await fs.remove(repo);
+  });
+
+  test('a .js file with no .ts beside it is source and is scanned', () => {
+    expect(collectSources(repo)).toContain(path.join('addons', 'jsonly', 'index.js'));
+    const v = run(repo).filter((x) => x.file.startsWith(path.join('addons', 'jsonly')));
+    expect(v.map((x) => x.rule).sort()).toEqual(['client-library']);
+  });
+
+  test('browser files under public/, build output under dist/, tests and declarations are not', () => {
+    const seen = collectSources(repo);
+    expect(seen).not.toContain(path.join('addons', 'jsonly', 'public', 'app.js'));
+    expect(seen).not.toContain(path.join('addons', 'compiled', 'dist', 'index.js'));
+    expect(seen).not.toContain(path.join('addons', 'compiled', 'index.d.ts'));
+    expect(seen.some((f) => f.includes('__tests__'))).toBe(false);
+  });
+
+  test('a compiled .js beside its .ts is read once, through the .ts', () => {
+    const seen = collectSources(repo);
+    expect(seen).toContain(path.join('addons', 'compiled', 'index.ts'));
+    expect(seen).not.toContain(path.join('addons', 'compiled', 'index.js'));
+    const v = run(repo).filter((x) => x.file.startsWith(path.join('addons', 'compiled')));
+    expect(v).toHaveLength(1);
+    expect(v[0].file).toBe(path.join('addons', 'compiled', 'index.ts'));
+  });
+
+  test('the boundary itself is exempt and src/ is still walked', () => {
+    const seen = collectSources(repo);
+    expect(seen).toContain(path.join('src', 'routes', 'a.ts'));
+    expect(seen).not.toContain(path.join('src', 'http', 'guardedFetch.ts'));
+  });
+
+  test('the real tree: the scan reaches a bundled addon and none of its public/ files', () => {
+    const seen = collectSources();
+    expect(seen).toContain(path.join('addons', 'forms', 'index.ts'));
+    expect(seen.some((f) => f.startsWith('addons' + path.sep))).toBe(true);
+    expect(seen.some((f) => f.includes(path.sep + 'public' + path.sep))).toBe(false);
+    expect(seen.some((f) => f.includes(path.sep + 'dist' + path.sep))).toBe(false);
   });
 });
 

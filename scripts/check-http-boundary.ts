@@ -34,7 +34,7 @@
  * `.husky/pre-commit`. Exits 1 on any violation.
  */
 
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -226,24 +226,58 @@ export function checkFile(relPath: string, source: string): Violation[] {
   return violations;
 }
 
+/**
+ * Directories that never hold server-side source: dependencies, tests, build
+ * output, and the browser files an addon serves from `public/`.
+ */
+const SKIPPED_DIRS = new Set(['node_modules', '__tests__', 'dist', 'public']);
+
+/**
+ * Is this file server-side source the process will load?
+ *
+ * `.ts` always (declarations aside). `.js` only when no `.ts` sits beside it
+ * (#1189): every bundled addon compiles in place, so a `.js` with a `.ts`
+ * sibling is build output and scanning it would report each finding twice.
+ * A `.js` with no sibling IS the source — a JS-only addon, or an addon the
+ * operator dropped into `addons/` — and until #1189 it was never looked at
+ * while the success line claimed `addons/` was covered.
+ */
+function isSource(full: string): boolean {
+  if (full.endsWith('.d.ts')) return false;
+  if (full.endsWith('.ts')) return true;
+  if (!full.endsWith('.js')) return false;
+  return !existsSync(full.slice(0, -3) + '.ts');
+}
+
 function walk(dir: string, acc: string[] = []): string[] {
+  if (!existsSync(dir)) return acc;
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry);
     if (statSync(full).isDirectory()) {
-      if (entry === 'node_modules' || entry === '__tests__') continue;
+      if (SKIPPED_DIRS.has(entry)) continue;
       walk(full, acc);
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
+    } else if (isSource(full)) {
       acc.push(full);
     }
   }
   return acc;
 }
 
-export function run(): Violation[] {
-  const boundary = path.join(REPO, BOUNDARY);
-  return SCAN_ROOTS.flatMap((r) => walk(path.join(REPO, r)))
+/**
+ * Every file the check reads, relative to `repo`. Exported so a test can
+ * assert what the scan actually visits — a guard whose scope is only claimed
+ * in its success message is the defect #1189 found.
+ */
+export function collectSources(repo: string = REPO, roots: string[] = SCAN_ROOTS): string[] {
+  const boundary = path.join(repo, BOUNDARY);
+  return roots.flatMap((r) => walk(path.join(repo, r)))
     .filter((f) => !f.startsWith(boundary + path.sep))
-    .flatMap((f) => checkFile(path.relative(REPO, f), readFileSync(f, 'utf8')));
+    .map((f) => path.relative(repo, f));
+}
+
+export function run(repo: string = REPO): Violation[] {
+  return collectSources(repo)
+    .flatMap((f) => checkFile(f, readFileSync(path.join(repo, f), 'utf8')));
 }
 
 // Only when executed directly, so the functions above stay importable by tests.
