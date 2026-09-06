@@ -1,0 +1,109 @@
+# Dependabot version updates (#1243). Decision recorded on the issue:
+# version updates on, root plus every bundled addon directory (each is its own
+# npm root with its own lockfile, and Dependabot only sees a directory it is
+# told about), weekly, minor+patch grouped per directory, majors separate.
+# Security updates are unaffected by this file: they arrive regardless, one PR
+# per advisory, never grouped. GitHub Actions bumps are watched too.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      root-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: "/addons/feeds"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      feeds-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: "/addons/forms"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      forms-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: "/addons/journal"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      journal-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: "/addons/calendar"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      calendar-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: "/addons/elasticsearch"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      elasticsearch-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
