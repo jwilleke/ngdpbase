@@ -44,8 +44,19 @@ const SCAN_DIRS = [
   'src/plugins',
   'src/parsers/handlers'
 ];
-/** Addon client assets — addons/<name>/public/**. */
-const ADDON_PUBLIC_GLOB = 'addons';
+/**
+ * Addon directories whose files run, or emit scripts that run, in the browser.
+ *
+ * `public` was the only one until #1176: the guard learned #727's nine rows,
+ * which were all in `public/js` and `views`, and never looked at an addon's
+ * `views`. `forms-submission-detail.ejs` carried a bare mutating fetch that
+ * failed on every click while `npm run lint` said no tokenless fetch existed.
+ * `plugins` is here for the same reason `src/plugins` is: a plugin emits
+ * client code into the page. Scoped to where the property must hold, not to
+ * where the last bug was found (#1177).
+ */
+const ADDONS_ROOT = 'addons';
+const ADDON_SCAN_DIRS = ['public', 'views', 'plugins'];
 
 const FILE_EXT = new Set(['.js', '.ejs', '.ts']);
 const IGNORE_FILE = new Set([
@@ -79,34 +90,56 @@ function walk(dir: string, acc: string[]): void {
   }
 }
 
-function collectFiles(): string[] {
+/**
+ * Every file the guard reads, relative to `repo`. Exported so a test can
+ * assert the scope rather than trust the success line (#1176, #1189).
+ */
+export function collectFiles(repo: string = REPO): string[] {
   const files: string[] = [];
-  for (const d of SCAN_DIRS) walk(path.join(REPO, d), files);
-  // addons/<name>/public/**
-  const addonsRoot = path.join(REPO, ADDON_PUBLIC_GLOB);
+  for (const d of SCAN_DIRS) {
+    const dir = path.join(repo, d);
+    if (existsSync(dir)) walk(dir, files);
+  }
+  const addonsRoot = path.join(repo, ADDONS_ROOT);
   if (existsSync(addonsRoot)) {
     for (const addon of readdirSync(addonsRoot)) {
-      const pub = path.join(addonsRoot, addon, 'public');
-      if (existsSync(pub) && statSync(pub).isDirectory()) walk(pub, files);
+      for (const sub of ADDON_SCAN_DIRS) {
+        const dir = path.join(addonsRoot, addon, sub);
+        if (existsSync(dir) && statSync(dir).isDirectory()) walk(dir, files);
+      }
     }
   }
-  return files;
+  return files.map((f) => path.relative(repo, f));
+}
+
+/**
+ * Remove JS line and block comments and HTML comments, so prose never
+ * satisfies the mechanism check (#1176). The first fix for the forms view
+ * carried a comment saying "csrfFetch is loaded by the shared header" — and
+ * with the bare fetch put back, the guard stayed green because the word was
+ * in the file. A mention is not a mechanism.
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
 }
 
 function hasCsrfMechanism(src: string): boolean {
+  const code = stripComments(src);
   return (
-    src.includes('csrfFetch') ||
-    /X-CSRF-Token/i.test(src) ||
-    /\b_csrf\b/.test(src)
+    code.includes('csrfFetch') ||
+    /X-CSRF-Token/i.test(code) ||
+    /\b_csrf\b/.test(code)
   );
 }
 
-function findViolations(): Violation[] {
+export function findViolations(repo: string = REPO): Violation[] {
   const out: Violation[] = [];
-  for (const abs of collectFiles()) {
-    const rel = path.relative(REPO, abs);
+  for (const rel of collectFiles(repo)) {
     if (IGNORE_FILE.has(rel)) continue;
-    const src = readFileSync(abs, 'utf-8');
+    const src = readFileSync(path.join(repo, rel), 'utf-8');
     if (src.includes(SUPPRESS_MARKER)) continue;
     if (!MUTATION_METHOD.test(src)) continue; // no mutating fetch anywhere
     if (hasCsrfMechanism(src)) continue; // file handles CSRF — trust it
@@ -156,4 +189,7 @@ function main(): void {
   process.exit(1);
 }
 
-main();
+// Only when executed directly, so the functions above stay importable by tests.
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main();
+}

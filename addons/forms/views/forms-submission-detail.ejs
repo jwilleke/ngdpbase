@@ -101,7 +101,10 @@ document.getElementById('status-form').addEventListener('submit', async (e) => {
   const data = Object.fromEntries(new FormData(e.target));
   const result = document.getElementById('status-result');
   try {
-    const res = await fetch('/addons/forms/<%= encodeURIComponent(form.id) %>/submissions/<%= encodeURIComponent(submission.id) %>/status', {
+    // #1176: a mutating request carries the CSRF token. csrfFetch is loaded
+    // by the shared header (/js/csrf.js); the bare fetch here was refused by
+    // the CSRF middleware on every use and surfaced as "Network error."
+    const res = await (window.csrfFetch || fetch)('/addons/forms/<%= encodeURIComponent(form.id) %>/submissions/<%= encodeURIComponent(submission.id) %>/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
