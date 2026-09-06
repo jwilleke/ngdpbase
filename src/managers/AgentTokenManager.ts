@@ -67,6 +67,7 @@ import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type { PermissionSubject } from './UserManager.js';
 
 /** Configuration namespace. See the extraction note in the file header. */
 const CONFIG_PREFIX = 'ngdpbase.auth.agent-token';
@@ -412,13 +413,24 @@ class AgentTokenManager extends BaseManager {
     return this.engine.getManager('AuditManager') as AuditEventSink | null;
   }
 
+  /**
+   * Mint a token for `subject`, the owner acting through a session (#1178).
+   *
+   * Takes the subject rather than a username because minting asks a policy
+   * question: does the owner hold every scope the token would carry? A scope
+   * the owner lacks is inert at use time (effective permission is owner ∩
+   * scopes), so refusing it here is honesty rather than security — a token
+   * that silently cannot do the thing it names is a support ticket. The
+   * refusal names the missing scopes so the caller can act on it.
+   */
   async mint(
-    owner: string,
+    subject: PermissionSubject,
     name: string,
     scopes: string[],
     ttlHours?: number,
     now: number = Date.now()
   ): Promise<MintResult> {
+    const owner = subject?.username;
     if (!owner) throw new Error('owner is required');
     if (!name || !name.trim()) throw new Error('A token name is required');
 
@@ -446,6 +458,23 @@ class AgentTokenManager extends BaseManager {
     // credential breed. Refused the way admin-* is, after expansion.
     if (effectiveScopes.includes(MINT_PERMISSION)) {
       throw new Error(`Tokens cannot carry ${MINT_PERMISSION}: a token never mints a token`);
+    }
+
+    // #1178: every scope must be one the owner holds right now. Asked of
+    // policy through UserManager, the same answer the token would get at use
+    // time; with no UserManager there is no answer, and no answer is a refusal.
+    const userManager = this.engine.getManager('UserManager') as
+      { hasPermission(subject: PermissionSubject, action: string): Promise<boolean> } | null;
+    if (!userManager) throw new Error('Cannot mint: the owner\'s permissions cannot be verified');
+    const lacking: string[] = [];
+    for (const scope of effectiveScopes) {
+      if (!(await userManager.hasPermission(subject, scope))) lacking.push(scope);
+    }
+    if (lacking.length > 0) {
+      throw new Error(
+        `You do not hold ${lacking.join(', ')}. A token can only carry permissions its owner has, ` +
+        'so it would not be able to use ' + (lacking.length === 1 ? 'that scope' : 'those scopes') + '.'
+      );
     }
 
     const ttl = ttlHours ?? this.tokenConfig.defaultTtlHours;

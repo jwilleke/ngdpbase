@@ -8,8 +8,20 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import AgentTokenManager from '../AgentTokenManager';
+import type { PermissionSubject } from '../UserManager';
 
 let tmpDir: string;
+
+/** A session-backed owner (#1178): mint takes the subject, not a username. */
+function subject(username: string): PermissionSubject {
+  return { username, roles: ['editor'], isAuthenticated: true };
+}
+
+/**
+ * The permissions the mock UserManager grants. Every scope by default; a test
+ * that wants a refusal names the scopes the owner lacks.
+ */
+let lackingScopes: string[] = [];
 
 function makeEngine(overrides: Record<string, unknown> = {}) {
   return {
@@ -19,6 +31,9 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
           getProperty: (key: string, dflt: unknown) => (key in overrides ? overrides[key] : dflt),
           getResolvedDataPath: () => tmpDir
         };
+      }
+      if (name === 'UserManager' && !overrides.__noUserManager) {
+        return { hasPermission: async (_s: PermissionSubject, action: string) => !lackingScopes.includes(action) };
       }
       return null;
     }
@@ -33,6 +48,47 @@ async function makeManager(overrides: Record<string, unknown> = {}): Promise<Age
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdp-agent-tokens-'));
+  lackingScopes = [];
+});
+
+describe('#1178 — a token carries only what its owner holds', () => {
+  test('mints when the owner holds every effective scope', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint(subject('jim'), 'ok', ['page-ingest']);
+    expect(record.scopes).toEqual(['page-create', 'page-edit']);
+  });
+
+  test('refuses a scope the owner lacks, naming it', async () => {
+    lackingScopes = ['page-delete'];
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'bad', ['page-edit', 'page-delete']))
+      .rejects.toThrow(/You do not hold page-delete/);
+    expect(m.listForOwner('jim')).toHaveLength(0);
+  });
+
+  test('checks the expanded scopes, so an alias cannot smuggle one in', async () => {
+    lackingScopes = ['page-create'];
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'alias', ['page-ingest'])).rejects.toThrow(/You do not hold page-create/);
+  });
+
+  test('names every missing scope, in the order requested', async () => {
+    lackingScopes = ['page-delete', 'page-rename'];
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'two', ['page-delete', 'page-edit', 'page-rename']))
+      .rejects.toThrow(/You do not hold page-delete, page-rename/);
+  });
+
+  test('with no UserManager there is no answer, and no answer is a refusal', async () => {
+    const m = await makeManager({ __noUserManager: true });
+    await expect(m.mint(subject('jim'), 'x', ['page-edit'])).rejects.toThrow(/cannot be verified/);
+  });
+
+  test('admin-* and token-mint are refused before policy is even asked', async () => {
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'x', ['admin-system'])).rejects.toThrow(/admin scopes/);
+    await expect(m.mint(subject('jim'), 'x', ['token-mint'])).rejects.toThrow(/never mints/);
+  });
 });
 
 afterEach(async () => {
@@ -44,7 +100,7 @@ describe('AgentTokenManager (#946)', () => {
   describe('mint', () => {
     test('returns a prefixed cleartext token and a record without the hash', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'claude-laptop', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'claude-laptop', ['page-ingest']);
 
       expect(token.startsWith('ngdp_at_')).toBe(true);
       expect(token.length).toBeGreaterThan(40);
@@ -58,15 +114,15 @@ describe('AgentTokenManager (#946)', () => {
 
     test('two mints never collide', async () => {
       const m = await makeManager();
-      const a = await m.mint('jim', 'a', ['page-ingest']);
-      const b = await m.mint('jim', 'b', ['page-ingest']);
+      const a = await m.mint(subject('jim'), 'a', ['page-ingest']);
+      const b = await m.mint(subject('jim'), 'b', ['page-ingest']);
       expect(a.token).not.toBe(b.token);
       expect(a.record.id).not.toBe(b.record.id);
     });
 
     test('the cleartext token is never written to disk', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'claude-laptop', ['page-ingest']);
+      const { token } = await m.mint(subject('jim'), 'claude-laptop', ['page-ingest']);
       const onDisk = await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8');
       expect(onDisk).not.toContain(token);
       expect(onDisk).toContain('sha256:');
@@ -74,58 +130,58 @@ describe('AgentTokenManager (#946)', () => {
 
     test('rejects an unscoped token rather than treating it as unrestricted', async () => {
       const m = await makeManager();
-      await expect(m.mint('jim', 'x', [])).rejects.toThrow(/scope/i);
+      await expect(m.mint(subject('jim'), 'x', [])).rejects.toThrow(/scope/i);
     });
 
     test('refuses token-mint as a scope — a token never mints a token (#1198)', async () => {
       const m = await makeManager();
-      await expect(m.mint('jim', 'x', ['page-ingest', 'token-mint'])).rejects.toThrow(/never mints/);
+      await expect(m.mint(subject('jim'), 'x', ['page-ingest', 'token-mint'])).rejects.toThrow(/never mints/);
     });
 
     test('refuses admin-* scopes outright', async () => {
       const m = await makeManager();
-      await expect(m.mint('jim', 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
-      await expect(m.mint('jim', 'x', ['admin-roles'])).rejects.toThrow(/admin/i);
+      await expect(m.mint(subject('jim'), 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
+      await expect(m.mint(subject('jim'), 'x', ['admin-roles'])).rejects.toThrow(/admin/i);
     });
 
     test('requires a name', async () => {
       const m = await makeManager();
-      await expect(m.mint('jim', '   ', ['page-ingest'])).rejects.toThrow(/name/i);
+      await expect(m.mint(subject('jim'), '   ', ['page-ingest'])).rejects.toThrow(/name/i);
     });
 
     test('rejects a TTL above the configured maximum', async () => {
       const m = await makeManager();
-      await expect(m.mint('jim', 'x', ['page-ingest'], 48)).rejects.toThrow(/maximum/i);
+      await expect(m.mint(subject('jim'), 'x', ['page-ingest'], 48)).rejects.toThrow(/maximum/i);
     });
 
     test('honours a raised max-ttl-hours', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-ttl-hours': 72 });
-      const { record } = await m.mint('jim', 'x', ['page-ingest'], 48);
+      const { record } = await m.mint(subject('jim'), 'x', ['page-ingest'], 48);
       expect(record.expiresAt).toBeTruthy();
     });
 
     test('enforces the per-user live-token cap', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': 2 });
-      await m.mint('jim', 'a', ['page-ingest']);
-      await m.mint('jim', 'b', ['page-ingest']);
-      await expect(m.mint('jim', 'c', ['page-ingest'])).rejects.toThrow(/limit/i);
+      await m.mint(subject('jim'), 'a', ['page-ingest']);
+      await m.mint(subject('jim'), 'b', ['page-ingest']);
+      await expect(m.mint(subject('jim'), 'c', ['page-ingest'])).rejects.toThrow(/limit/i);
       // Another user is unaffected.
-      await expect(m.mint('molly', 'a', ['page-ingest'])).resolves.toBeTruthy();
+      await expect(m.mint(subject('molly'), 'a', ['page-ingest'])).resolves.toBeTruthy();
     });
 
     test('a revoked token frees a slot under the cap', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': 1 });
-      const first = await m.mint('jim', 'a', ['page-ingest']);
-      await expect(m.mint('jim', 'b', ['page-ingest'])).rejects.toThrow(/limit/i);
+      const first = await m.mint(subject('jim'), 'a', ['page-ingest']);
+      await expect(m.mint(subject('jim'), 'b', ['page-ingest'])).rejects.toThrow(/limit/i);
       await m.revoke(first.record.id, 'jim');
-      await expect(m.mint('jim', 'b', ['page-ingest'])).resolves.toBeTruthy();
+      await expect(m.mint(subject('jim'), 'b', ['page-ingest'])).resolves.toBeTruthy();
     });
   });
 
   describe('verify', () => {
     test('accepts a freshly minted token and returns the owner', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'claude-laptop', ['page-ingest']);
+      const { token } = await m.mint(subject('jim'), 'claude-laptop', ['page-ingest']);
       const record = await m.verify(token);
       expect(record?.owner).toBe('jim');
       expect(record?.scopes).toEqual(['page-create', 'page-edit']);
@@ -133,26 +189,26 @@ describe('AgentTokenManager (#946)', () => {
 
     test('rejects an unknown token', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'x', ['page-ingest']);
+      await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(await m.verify('ngdp_at_totallyMadeUpValue')).toBeNull();
     });
 
     test('rejects a value without the prefix', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'x', ['page-ingest']);
+      const { token } = await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(await m.verify(token.replace('ngdp_at_', ''))).toBeNull();
     });
 
     test('rejects an expired token', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'x', ['page-ingest'], 1);
+      const { token } = await m.mint(subject('jim'), 'x', ['page-ingest'], 1);
       const twoHoursLater = Date.now() + 2 * 3_600_000;
       expect(await m.verify(token, twoHoursLater)).toBeNull();
     });
 
     test('rejects a revoked token immediately', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'x', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(await m.verify(token)).not.toBeNull();
       await m.revoke(record.id, 'jim');
       expect(await m.verify(token)).toBeNull();
@@ -160,7 +216,7 @@ describe('AgentTokenManager (#946)', () => {
 
     test('stamps lastUsedAt', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'x', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(m.getById(record.id)?.lastUsedAt).toBeNull();
       await m.verify(token);
       expect(m.getById(record.id)?.lastUsedAt).not.toBeNull();
@@ -170,7 +226,7 @@ describe('AgentTokenManager (#946)', () => {
       // Permissions must resolve live from the user record; a snapshot here
       // would let a demoted user keep their old authority via an old token.
       const m = await makeManager();
-      const { record } = await m.mint('jim', 'x', ['page-ingest']);
+      const { record } = await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(Object.keys(record)).not.toContain('roles');
       const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
       expect(JSON.stringify(onDisk)).not.toContain('"roles"');
@@ -180,8 +236,8 @@ describe('AgentTokenManager (#946)', () => {
   describe('listing and revocation', () => {
     test('listForOwner returns only that owner\'s live tokens', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'a', ['page-ingest']);
-      await m.mint('molly', 'b', ['page-ingest']);
+      await m.mint(subject('jim'), 'a', ['page-ingest']);
+      await m.mint(subject('molly'), 'b', ['page-ingest']);
       expect(m.listForOwner('jim')).toHaveLength(1);
       expect(m.listForOwner('molly')).toHaveLength(1);
       expect(m.listForOwner('nobody')).toHaveLength(0);
@@ -189,14 +245,14 @@ describe('AgentTokenManager (#946)', () => {
 
     test('listAll spans users, for admin oversight', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'a', ['page-ingest']);
-      await m.mint('molly', 'b', ['page-ingest']);
+      await m.mint(subject('jim'), 'a', ['page-ingest']);
+      await m.mint(subject('molly'), 'b', ['page-ingest']);
       expect(m.listAll()).toHaveLength(2);
     });
 
     test('listings never include the hash', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'a', ['page-ingest']);
+      await m.mint(subject('jim'), 'a', ['page-ingest']);
       for (const t of m.listAll()) {
         expect((t as Record<string, unknown>).hash).toBeUndefined();
       }
@@ -204,8 +260,8 @@ describe('AgentTokenManager (#946)', () => {
 
     test('revoked and expired tokens drop out of listings', async () => {
       const m = await makeManager();
-      const a = await m.mint('jim', 'a', ['page-ingest']);
-      await m.mint('jim', 'b', ['page-ingest'], 1);
+      const a = await m.mint(subject('jim'), 'a', ['page-ingest']);
+      await m.mint(subject('jim'), 'b', ['page-ingest'], 1);
       await m.revoke(a.record.id, 'jim');
       expect(m.listForOwner('jim')).toHaveLength(1);
       expect(m.listForOwner('jim', Date.now() + 2 * 3_600_000)).toHaveLength(0);
@@ -213,7 +269,7 @@ describe('AgentTokenManager (#946)', () => {
 
     test('revoke records who did it', async () => {
       const m = await makeManager();
-      const { record } = await m.mint('jim', 'a', ['page-ingest']);
+      const { record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       await m.revoke(record.id, 'admin');
       const after = m.getById(record.id);
       expect(after?.revokedBy).toBe('admin');
@@ -222,7 +278,7 @@ describe('AgentTokenManager (#946)', () => {
 
     test('revoking twice is reported as a no-op', async () => {
       const m = await makeManager();
-      const { record } = await m.mint('jim', 'a', ['page-ingest']);
+      const { record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       expect(await m.revoke(record.id, 'jim')).toBe(true);
       expect(await m.revoke(record.id, 'jim')).toBe(false);
     });
@@ -236,7 +292,7 @@ describe('AgentTokenManager (#946)', () => {
   describe('persistence and retention', () => {
     test('tokens survive a restart', async () => {
       const m1 = await makeManager();
-      const { token } = await m1.mint('jim', 'a', ['page-ingest']);
+      const { token } = await m1.mint(subject('jim'), 'a', ['page-ingest']);
 
       const m2 = await makeManager();
       expect(await m2.verify(token)).not.toBeNull();
@@ -244,8 +300,8 @@ describe('AgentTokenManager (#946)', () => {
 
     test('purge drops dead records past the retention window but keeps live ones', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.retention-days': 30 });
-      await m.mint('jim', 'live', ['page-ingest']);
-      await m.mint('jim', 'expiring', ['page-ingest'], 1);
+      await m.mint(subject('jim'), 'live', ['page-ingest']);
+      await m.mint(subject('jim'), 'expiring', ['page-ingest'], 1);
 
       const wellPastRetention = Date.now() + 40 * 86_400_000;
       const purged = await m.purgeExpired(wellPastRetention);
@@ -255,7 +311,7 @@ describe('AgentTokenManager (#946)', () => {
 
     test('purge leaves recently-expired records alone', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'a', ['page-ingest'], 1);
+      await m.mint(subject('jim'), 'a', ['page-ingest'], 1);
       const justAfterExpiry = Date.now() + 2 * 3_600_000;
       expect(await m.purgeExpired(justAfterExpiry)).toBe(0);
     });
@@ -268,25 +324,25 @@ describe('scope aliases (#946 — found by live testing)', () => {
     // `page-ingest` is not an action, so an unexpanded value matched nothing
     // and every ingest was denied — caught only against a running server.
     const m = await makeManager();
-    const { record } = await m.mint('jim', 'x', ['page-ingest']);
+    const { record } = await m.mint(subject('jim'), 'x', ['page-ingest']);
     expect(record.scopes).toEqual(['page-create', 'page-edit']);
   });
 
   test('explicit action names pass through unchanged', async () => {
     const m = await makeManager();
-    const { record } = await m.mint('jim', 'x', ['page-read', 'page-edit']);
+    const { record } = await m.mint(subject('jim'), 'x', ['page-read', 'page-edit']);
     expect(record.scopes).toEqual(['page-read', 'page-edit']);
   });
 
   test('expansion de-duplicates', async () => {
     const m = await makeManager();
-    const { record } = await m.mint('jim', 'x', ['page-ingest', 'page-edit']);
+    const { record } = await m.mint(subject('jim'), 'x', ['page-ingest', 'page-edit']);
     expect(record.scopes).toEqual(['page-create', 'page-edit']);
   });
 
   test('an alias cannot smuggle in an admin scope', async () => {
     const m = await makeManager();
-    await expect(m.mint('jim', 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
+    await expect(m.mint(subject('jim'), 'x', ['page-ingest', 'admin-system'])).rejects.toThrow(/admin/i);
   });
 });
 
@@ -305,7 +361,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
   describe('rule 1 — the read path does no disk IO', () => {
     test('verify() writes nothing, however many times it is called', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'a', ['page-ingest']);
+      const { token } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       const before = (await fs.readdir(tmpDir)).length;
 
       for (let i = 0; i < 25; i++) expect(await m.verify(token)).not.toBeNull();
@@ -317,7 +373,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
 
     test('a buffered lastUsedAt is visible immediately and durable after a flush', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       await m.verify(token);
 
       expect(m.getById(record.id)?.lastUsedAt).not.toBeNull();
@@ -329,7 +385,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
 
     test('shutdown flushes a pending stamp rather than losing it', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       await m.verify(token);
       await m.shutdown();
 
@@ -343,7 +399,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
       // a liability whichever path writes it, and restoring one un-revokes
       // tokens somebody deliberately killed.
       const m = await makeManager();
-      for (let i = 0; i < 6; i++) await m.mint('jim', `t${i}`, ['page-ingest'], 1, Date.now() + i);
+      for (let i = 0; i < 6; i++) await m.mint(subject('jim'), `t${i}`, ['page-ingest'], 1, Date.now() + i);
       expect(await backupsIn()).toEqual([]);
     });
   });
@@ -385,14 +441,14 @@ describe('AgentTokenManager hardening (#1108)', () => {
       expect(m.getById('tok_broken')).toBeNull();
 
       // ...but a later save must not destroy the evidence of corruption.
-      await m.mint('jim', 'fresh', ['page-ingest']);
+      await m.mint(subject('jim'), 'fresh', ['page-ingest']);
       const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
       expect(onDisk.tok_broken).toBeTruthy();
     });
 
     test('an unparseable expiresAt is treated as expired by verify and by listings alike', async () => {
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'a', ['page-ingest']);
+      const { token, record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       // Reach in and break the date the way a bad edit would.
       const stored = (m as unknown as { tokens: Map<string, { expiresAt: string }> }).tokens.get(record.id);
       if (!stored) throw new Error('expected the minted record to be in the store');
@@ -406,7 +462,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
   describe('rule 3 — nothing hands out a live reference to a stored record', () => {
     test('verify() returns no hash', async () => {
       const m = await makeManager();
-      const { token } = await m.mint('jim', 'a', ['page-ingest']);
+      const { token } = await m.mint(subject('jim'), 'a', ['page-ingest']);
       const record = await m.verify(token);
       expect((record as unknown as Record<string, unknown>).hash).toBeUndefined();
     });
@@ -416,7 +472,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
       // ACLManager reads them as the permission ceiling. Sharing the stored
       // array let anything downstream grant itself admin in place.
       const m = await makeManager();
-      const { token, record } = await m.mint('jim', 'a', ['page-edit']);
+      const { token, record } = await m.mint(subject('jim'), 'a', ['page-edit']);
 
       const seen = await m.verify(token);
       seen!.scopes.push('admin-system');
@@ -427,7 +483,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
 
     test('listings hand out their own arrays too', async () => {
       const m = await makeManager();
-      const { record } = await m.mint('jim', 'a', ['page-edit']);
+      const { record } = await m.mint(subject('jim'), 'a', ['page-edit']);
       m.listAll()[0]!.scopes.push('admin-system');
       expect(m.getById(record.id)?.scopes).toEqual(['page-edit']);
     });
@@ -439,7 +495,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
       // throw "function is not iterable" — a 500 from a user-supplied string.
       const m = await makeManager();
       for (const evil of ['constructor', '__proto__', 'toString']) {
-        await expect(m.mint('jim', 'x', [evil])).resolves.toBeTruthy();
+        await expect(m.mint(subject('jim'), 'x', [evil])).resolves.toBeTruthy();
       }
     });
 
@@ -447,8 +503,8 @@ describe('AgentTokenManager hardening (#1108)', () => {
       const m = await makeManager();
       // Parsed from a body, which is how a non-string scope actually arrives.
       const fromRequestBody = JSON.parse('{"scopes":[42]}') as { scopes: string[] };
-      await expect(m.mint('jim', 'x', fromRequestBody.scopes)).rejects.toThrow(/non-empty string/i);
-      await expect(m.mint('jim', 'x', ['  '])).rejects.toThrow(/non-empty string/i);
+      await expect(m.mint(subject('jim'), 'x', fromRequestBody.scopes)).rejects.toThrow(/non-empty string/i);
+      await expect(m.mint(subject('jim'), 'x', ['  '])).rejects.toThrow(/non-empty string/i);
     });
   });
 
@@ -457,12 +513,12 @@ describe('AgentTokenManager hardening (#1108)', () => {
       // Number('24h') is NaN, and `ttl > NaN` is false — so the original let a
       // config typo silently mint tokens of any length.
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-ttl-hours': '24h' });
-      await expect(m.mint('jim', 'x', ['page-ingest'], 24 * 365)).rejects.toThrow(/maximum/i);
+      await expect(m.mint(subject('jim'), 'x', ['page-ingest'], 24 * 365)).rejects.toThrow(/maximum/i);
     });
 
     test('a negative max-per-user falls back rather than locking everyone out', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': -1 });
-      await expect(m.mint('jim', 'x', ['page-ingest'])).resolves.toBeTruthy();
+      await expect(m.mint(subject('jim'), 'x', ['page-ingest'])).resolves.toBeTruthy();
     });
   });
 
@@ -470,7 +526,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
     test('concurrent writes leave a store that still parses', async () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': 50 });
       await Promise.all(
-        Array.from({ length: 20 }, (_, i) => m.mint('jim', `concurrent-${i}`, ['page-ingest']))
+        Array.from({ length: 20 }, (_, i) => m.mint(subject('jim'), `concurrent-${i}`, ['page-ingest']))
       );
       const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
       expect(Object.keys(onDisk)).toHaveLength(20);
@@ -480,7 +536,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
   describe('backup', () => {
     test('carries no hashes and says plainly that it cannot restore', async () => {
       const m = await makeManager();
-      await m.mint('jim', 'a', ['page-ingest']);
+      await m.mint(subject('jim'), 'a', ['page-ingest']);
       const result = await m.backup();
       const data = result.data as { restorable: boolean; count: number; tokens: unknown[] };
 
@@ -510,7 +566,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
 
   test('a mutation writes no backup file beside the store', async () => {
     const mgr = await makeManager();
-    const { record } = await mgr.mint('alice', 'probe', ['page-read']);
+    const { record } = await mgr.mint(subject('alice'), 'probe', ['page-read']);
     await mgr.revoke(record.id, 'alice');
     await mgr.purgeExpired();
 
@@ -525,10 +581,10 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
     // that the queue recovers from a genuine rejection.
     const mgr = await makeManager();
     await fs.chmod(tmpDir, 0o500);
-    await expect(mgr.mint('alice', 'doomed', ['page-read'])).rejects.toThrow();
+    await expect(mgr.mint(subject('alice'), 'doomed', ['page-read'])).rejects.toThrow();
 
     await fs.chmod(tmpDir, 0o700);
-    await expect(mgr.mint('alice', 'later', ['page-read'])).resolves.toBeDefined();
+    await expect(mgr.mint(subject('alice'), 'later', ['page-read'])).resolves.toBeDefined();
 
     const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
     const names = Object.values(onDisk).map((r) => (r as { name: string }).name);
@@ -540,7 +596,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
     // does: app.ts awaits engine.shutdown() and then exits, so the token is
     // live again after restart.
     const mgr = await makeManager();
-    const { record } = await mgr.mint('alice', 'doomed', ['page-read']);
+    const { record } = await mgr.mint(subject('alice'), 'doomed', ['page-read']);
     void mgr.revoke(record.id, 'alice');
     await mgr.shutdown();
 
@@ -572,7 +628,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
 
   test('retention-days: 0 purges a revoked record on the next sweep', async () => {
     const mgr = await makeManager({ [`${KEY}.retention-days`]: 0 });
-    const { record } = await mgr.mint('alice', 'probe', ['page-read']);
+    const { record } = await mgr.mint(subject('alice'), 'probe', ['page-read']);
     await mgr.revoke(record.id, 'alice');
     expect(await mgr.purgeExpired()).toBe(1);
     expect(mgr.listAll()).toHaveLength(0);
@@ -603,6 +659,7 @@ describe('#1111 the token lifecycle is audited', () => {
         // #1121: token-mint and token-revoke are CRITICAL, so the sink must be
         // able to flush or the write is refused rather than silently unrecorded.
         if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
+        if (name === 'UserManager') return { hasPermission: async () => true };
         return null;
       }
     } as never;
@@ -613,7 +670,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
 
     const minted = events.filter((e) => e.eventType === 'token-mint');
     expect(minted).toHaveLength(1);
@@ -626,7 +683,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
     await m.revoke(record.id, 'admin');
 
     const revoked = events.filter((e) => e.eventType === 'token-revoke');
@@ -656,12 +713,13 @@ describe('#1111 the token lifecycle is audited', () => {
           return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => tmpDir };
         }
         if (name === 'AuditManager') return { logAuditEvent: async () => { throw new Error('sink down'); }, flushAuditQueue: async () => {} };
+        if (name === 'UserManager') return { hasPermission: async () => true };
         return null;
       }
     } as never;
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    await expect(m.mint('alice', 'ci', ['page-read'])).rejects.toThrow(/on-failure: refuse/i);
+    await expect(m.mint(subject('alice'), 'ci', ['page-read'])).rejects.toThrow(/on-failure: refuse/i);
 
     // And nothing was left behind — the point of auditing before persisting.
     expect(m.listAll()).toHaveLength(0);
@@ -669,7 +727,7 @@ describe('#1111 the token lifecycle is audited', () => {
 
   test('no audit manager at all is not an error', async () => {
     const m = await makeManager();
-    await expect(m.mint('alice', 'ci', ['page-read'])).resolves.toBeDefined();
+    await expect(m.mint(subject('alice'), 'ci', ['page-read'])).resolves.toBeDefined();
   });
 
   test('backup carries dead records, not just live ones', async () => {
@@ -677,7 +735,7 @@ describe('#1111 the token lifecycle is audited', () => {
     // shipping listAll(), which filters to live. A token revoked an hour before
     // the backup — the case incident response wants — was absent.
     const m = await makeManager();
-    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
     await m.revoke(record.id, 'alice');
 
     const data = (await m.backup()).data as { restorable: boolean; tokens: Array<{ id: string }> };
@@ -687,7 +745,7 @@ describe('#1111 the token lifecycle is audited', () => {
 
   test('backup never carries hashes', async () => {
     const m = await makeManager();
-    await m.mint('alice', 'ci', ['page-read']);
+    await m.mint(subject('alice'), 'ci', ['page-read']);
     const data = (await m.backup()).data as { tokens: Array<Record<string, unknown>> };
     expect(JSON.stringify(data)).not.toContain('hash');
     expect(data.tokens.every((t) => !('hash' in t))).toBe(true);
@@ -703,7 +761,7 @@ describe('#1111 the token lifecycle is audited', () => {
 
   test('retention-days: 0 leaves nothing behind once the lifecycle is audited', async () => {
     const m = await makeManager({ [`${KEY}.retention-days`]: 0 });
-    const { record } = await m.mint('alice', 'ci', ['page-read']);
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
     await m.revoke(record.id, 'alice');
     await m.purgeExpired();
     expect(m.listAll()).toHaveLength(0);

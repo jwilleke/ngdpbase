@@ -8701,7 +8701,7 @@ ${panes}
         : ['page-ingest'];
       const ttlHours = body.ttlHours === undefined ? undefined : Number(body.ttlHours);
 
-      const result = await manager.mint(user.username, name, scopes, ttlHours);
+      const result = await manager.mint(user, name, scopes, ttlHours);
 
       // Audit before the cleartext leaves the process, so the record exists
       // even if the response never reaches the caller.

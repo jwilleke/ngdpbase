@@ -73,7 +73,7 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 | Method | Purpose |
 |---|---|
-| `mint(owner, name, scopes, ttlHours?)` | Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. |
+| `mint(subject, name, scopes, ttlHours?)` | `subject` is the owner's `PermissionSubject` from the session (#1178). Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. |
 | `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
 | `listForOwner(owner)` | That owner's live tokens, without hashes. |
 | `listAll()` | Every live token — admin oversight. |
@@ -88,6 +88,7 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 - __`admin-*` scopes are refused outright__ — a token can never carry them, however privileged its owner. This is a refusal, not a warning: warnings get clicked through.
 - TTL above `max-ttl-hours` is rejected; the max defaults equal to the default so nothing longer-lived can be minted without an operator raising the ceiling.
 - The per-user cap counts __live__ tokens only — revoking one frees a slot.
+- __Every scope must be one the owner holds right now__ (#1178). Asked of policy through `UserManager.hasPermission` per expanded scope; the refusal names the missing scopes (`You do not hold page-delete. …`) and the route returns it as a 400, which the profile card shows in its error alert. A scope the owner lacks would be inert anyway (effective permission is owner ∩ scopes), so this is an accurate error at the moment the user can act on it rather than a silent token that cannot do what it says. No `UserManager` means no answer, and no answer is a refusal.
 
 ## HTTP surface
 
