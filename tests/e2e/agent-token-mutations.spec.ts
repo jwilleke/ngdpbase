@@ -1,4 +1,41 @@
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+
+/**
+ * Bearer requests go to the instance's canonical origin, never through a
+ * redirect.
+ *
+ * An instance that terminates TLS itself answers plain HTTP on the same port
+ * with a 308 to its https origin (#1163). Clients drop `Authorization` when a
+ * redirect changes origin — curl does, and Playwright's request client does
+ * from 1.62 (1.57 carried it across). With the default `http://localhost`
+ * base URL every bearer call in this file then arrived at the route with no
+ * bearer, fell through to the CSRF guard, and `tokensUsable` read that as
+ * "tokens unusable" — six tests silently skipped by a dependency bump.
+ *
+ * A bearer client must use the canonical URL, so the fixture finds it once
+ * (one un-followed request, reading `Location`) and rebinds `request` to it
+ * with the same session state. Where there is no redirect the fixture is the
+ * stock one.
+ */
+const test = base.extend<{ request: APIRequestContext }>({
+  request: async ({ request, playwright }, use) => {
+    const probe = await request.get('/api/tokens', { maxRedirects: 0 });
+    const location = probe.headers()['location'];
+    if (probe.status() >= 300 && probe.status() < 400 && location) {
+      const origin = new URL(location, 'http://localhost').origin;
+      const canonical = await playwright.request.newContext({
+        baseURL: origin,
+        ignoreHTTPSErrors: true,
+        storageState: await request.storageState()
+      });
+      await use(canonical);
+      await canonical.dispose();
+      return;
+    }
+    await use(request);
+  }
+});
 
 /**
  * #946 slice 2 — DELETE /api/page/:identifier and POST /api/page/:identifier/rename,
