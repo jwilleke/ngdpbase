@@ -3,20 +3,25 @@
  * src/http/, in src/ and addons/ alike.
  *
  * The editor-time half of check-http-boundary. Its scope is asserted here the
- * way the scripts' is: a probe file is written where the rule must fire (an
- * addon's source, inside that addon's tsconfig so the type-aware parser
- * accepts it) and where it must not (src/http/, the door), linted with the
- * repo's real config, and removed. If either probe is ever left behind by a
- * crash, lint:code goes red on it — which is the right failure.
+ * way the scripts' is — but in memory. The first version wrote probe files
+ * into the tree and linted them in place; under coverage's parallel workers
+ * the http-boundary "real tree" test scanned the probe and went red. A test
+ * that mutates the tree races every other test that reads it.
+ *
+ * So: the rule block is taken from the repo's own eslint.config.mjs (the
+ * block that carries no-restricted-globals), and the probe source is linted
+ * through ESLint's lintText with a virtual path — the files / ignores
+ * patterns apply to that path exactly as they would on disk. Type-aware
+ * parsing is not needed for these two rules, so the parser runs without a
+ * project. Sabotage: remove the block from the config and the two positive
+ * cases go red.
  */
-import fs from 'fs-extra';
 import path from 'path';
-import { ESLint } from 'eslint';
+import { ESLint, type Linter } from 'eslint';
+import tseslint from 'typescript-eslint';
+import repoConfig from '../../../eslint.config.mjs';
 
 const REPO = path.resolve(__dirname, '..', '..', '..');
-const PROBE_ADDON = path.join(REPO, 'addons', 'demo', 'src', '__lint_probe_1239__.ts');
-const PROBE_DOOR = path.join(REPO, 'src', 'http', '__lint_probe_1239__.ts');
-const PROBE_SRC = path.join(REPO, 'src', 'utils', '__lint_probe_1239__.ts');
 const CODE = [
   "import axios from 'axios';",
   "import type { Client } from '@elastic/elasticsearch';",
@@ -25,36 +30,46 @@ const CODE = [
   ''
 ].join('\n');
 
-async function lint(file: string): Promise<string[]> {
-  const eslint = new ESLint({ cwd: REPO });
-  const [result] = await eslint.lintFiles([file]);
+/** The repo's outbound-HTTP block(s), and nothing else from the config. */
+const ruleBlocks = (repoConfig as Linter.Config[]).filter((b) => b.rules && 'no-restricted-globals' in b.rules);
+
+async function lint(virtualPath: string): Promise<string[]> {
+  const eslint = new ESLint({
+    cwd: REPO,
+    overrideConfigFile: true,
+    overrideConfig: [
+      {
+        files: ['**/*.ts'],
+        plugins: { '@typescript-eslint': tseslint.plugin },
+        languageOptions: { parser: tseslint.parser, ecmaVersion: 2022, sourceType: 'module' }
+      },
+      ...ruleBlocks
+    ]
+  });
+  const [result] = await eslint.lintText(CODE, { filePath: path.join(REPO, virtualPath) });
   return result.messages.filter((m) => m.severity === 2).map((m) => m.ruleId ?? 'parse-error');
 }
 
 describe('#1239 — the outbound-HTTP rules', () => {
-  afterEach(async () => {
-    for (const f of [PROBE_ADDON, PROBE_DOOR, PROBE_SRC]) await fs.remove(f);
+  test('the config carries exactly one such block', () => {
+    expect(ruleBlocks).toHaveLength(1);
   });
 
   test('an addon source file with a bare fetch and a client-library import is refused; the type-only import is not', async () => {
-    await fs.outputFile(PROBE_ADDON, CODE);
-    const rules = await lint(PROBE_ADDON);
+    const rules = await lint('addons/demo/src/probe.ts');
     expect(rules).toContain('no-restricted-globals');
     expect(rules).toContain('@typescript-eslint/no-restricted-imports');
     expect(rules.filter((r) => r === '@typescript-eslint/no-restricted-imports')).toHaveLength(1);
-  }, 60_000);
+  });
 
   test('the same file under src/ is refused the same way', async () => {
-    await fs.outputFile(PROBE_SRC, CODE);
-    const rules = await lint(PROBE_SRC);
+    const rules = await lint('src/utils/probe.ts');
     expect(rules).toContain('no-restricted-globals');
     expect(rules).toContain('@typescript-eslint/no-restricted-imports');
-  }, 60_000);
+  });
 
-  test('src/http/ is the door: the same file there trips neither rule', async () => {
-    await fs.outputFile(PROBE_DOOR, CODE);
-    const rules = await lint(PROBE_DOOR);
-    expect(rules).not.toContain('no-restricted-globals');
-    expect(rules).not.toContain('@typescript-eslint/no-restricted-imports');
-  }, 60_000);
+  test('src/http/ is the door, and tests are exempt: the same file there trips neither rule', async () => {
+    expect(await lint('src/http/probe.ts')).toEqual([]);
+    expect(await lint('addons/demo/__tests__/probe.test.ts')).toEqual([]);
+  });
 });
