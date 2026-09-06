@@ -163,6 +163,14 @@ function importedSymbols(line: string): string[] {
  * to catch, kept green (#1185). Every signature in the tree carries a return
  * type, so the `:` already covers `fetch(cfg): Promise<...>;`.
  */
+/**
+ * Global `fetch` used as a value: after `=`, `(`, `,` or `:` (an object literal
+ * value), followed by a terminator rather than `(`. A property access
+ * (`window.fetch`, `this.fetch`) is not the global, and `fetch(` is the call
+ * form handled above.
+ */
+const ALIASES_FETCH = /(?:[=(,:{]\s*)(?<![.\w$])fetch\s*(?:[;,)\]}]|$)/;
+
 const DECLARES_FETCH = /^\s*(?:(?:public|private|protected|static|readonly|async)\s+)*fetch\s*\([^)]*\)\s*(?::|\{)/;
 
 export function checkFile(relPath: string, source: string): Violation[] {
@@ -233,6 +241,16 @@ export function checkFile(relPath: string, source: string): Violation[] {
       if (isInsideTemplateLiteral(rawLines, i)) return; // browser code emitted into a page
       if (DECLARES_FETCH.test(line)) return;            // a METHOD named fetch, not a call to one
       report('fetch', `calls fetch(). Global fetch is not used in this codebase — route it through ${BOUNDARY}/guardedFetch so the egress policy applies.`);
+      return;
+    }
+
+    // #1246: the global taken as a VALUE rather than called — `const f = fetch;`,
+    // `fn(fetch)`, `{ fetch }` passed along — is the same capability under a
+    // different name, and the call site then reads `f(url)`, which the rule
+    // above cannot see. SessionsPlugin hid a self-request that way.
+    if (ALIASES_FETCH.test(line)) {
+      if (isInsideTemplateLiteral(rawLines, i)) return;
+      report('fetch', `takes global fetch as a value (aliased or passed on). The call it enables is invisible to this check — route it through ${BOUNDARY}/guardedFetch instead.`);
     }
   });
 

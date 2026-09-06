@@ -24,6 +24,8 @@
 import path from 'path';
 import fs from 'fs-extra';
 import PluginManager from '../../managers/PluginManager';
+const sessionStats = { hasStore: () => true, count: vi.fn(), users: vi.fn() };
+
 describe('All Plugins (via PluginManager)', () => {
   let pluginManager;
   let mockEngine;
@@ -79,6 +81,8 @@ describe('All Plugins (via PluginManager)', () => {
             getAllPages: vi.fn().mockReturnValue(['TestPage1', 'TestPage2', 'TestPage3']),
             listPagesFor: vi.fn().mockResolvedValue(['TestPage1', 'TestPage2', 'TestPage3'])
           };
+        case 'SessionStatsManager':
+          return sessionStats;
         default:
           return null;
         }
@@ -105,15 +109,8 @@ describe('All Plugins (via PluginManager)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Setup global fetch for SessionsPlugin tests
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ sessionCount: 3 })
-    });
-  });
-
-  afterEach(() => {
-    delete global.fetch;
+    // SessionsPlugin reads SessionStatsManager in-process (#1246); no fetch.
+    sessionStats.count = vi.fn().mockResolvedValue({ sessionCount: 3, distinctUsers: 3 });
   });
 
   afterAll(() => {
@@ -247,8 +244,8 @@ describe('All Plugins (via PluginManager)', () => {
       expect(result).toBe('3');
     });
 
-    test('should handle SessionsPlugin network errors', async () => {
-      global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+    test('should handle SessionsPlugin store errors', async () => {
+      sessionStats.count = vi.fn().mockRejectedValue(new Error('store error'));
 
       const result = await pluginManager.execute('SessionsPlugin', 'TestPage', {}, mockContext);
 

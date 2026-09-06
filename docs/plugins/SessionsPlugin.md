@@ -95,37 +95,33 @@ __Output:__ `3 users are online.`
 
 ```javascript
 async execute(context, params = {}) {
-  const cfgMgr = context.engine?.getManager?.('ConfigurationManager');
-  const host = cfgMgr?.getProperty('ngdpbase.server.host', 'localhost');
-  const port = cfgMgr?.getProperty('ngdpbase.server.port', 3000);
+  const stats = context.engine.getManager('SessionStatsManager');
+  if (!stats?.hasStore()) return '0';
 
-  const resp = await fetch(`http://${host}:${port}/api/session-count`);
-  const data = await resp.json();
-
-  if (property === 'distinctusers') {
-    return String(data.distinctUsers ?? 0);
+  if (property === 'users') {
+    const { users, anonymous } = await stats.users();
+    // render links + anonymous count
   }
-  return String(data.sessionCount ?? 0);
+  const data = await stats.count();
+  if (property === 'distinctusers') return String(data.distinctUsers);
+  return String(data.sessionCount);
 }
 ```
 
-### API Endpoint
+### Data source
 
-The plugin calls `/api/session-count` which returns:
+The plugin reads the session store in-process through [SessionStatsManager](../managers/SessionStatsManager.md). It makes no HTTP request. Before #1246 it fetched this server's own `/api/session-count` URL through a bare global `fetch`, which was an outbound call outside `src/http/` and rendered `0` whenever the configured host was not reachable from inside the container.
+
+`/api/session-count` and `/api/session-users` still exist for callers outside the process and return the same shapes:
 
 ```json
-{
-  "sessionCount": 5,
-  "distinctUsers": 3
-}
+{ "sessionCount": 5, "distinctUsers": 3 }
+{ "users": ["alice", "bob"], "anonymous": 1, "total": 4 }
 ```
 
 ### Configuration
 
-| Property | Default | Description |
-| ---------- | --------- | ------------- |
-| `ngdpbase.server.host` | localhost | Server hostname |
-| `ngdpbase.server.port` | 3000 | Server port |
+None. `ngdpbase.server.host` and `ngdpbase.server.port` no longer affect the plugin.
 
 ## JSPWiki Compatibility
 

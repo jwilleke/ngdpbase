@@ -12,6 +12,7 @@
  */
 
 import path from 'path';
+import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
 import multer, { StorageEngine, Multer } from 'multer';
 import fs from 'fs';
@@ -1218,72 +1219,23 @@ class WikiRoutes {
   }
 
   /**
-   * Session count (uses app.js sessionStore)
+   * Session count. Reads req.sessionStore through the same helper
+   * SessionStatsManager uses, so the plugin and the route agree (#1246).
    */
-  getActiveSesssionCount(req: Request, res: Response): void {
+  async getActiveSesssionCount(req: Request, res: Response): Promise<void> {
+    const store = req.sessionStore as SessionStoreLike | undefined;
+    if (!store) {
+      res.status(503).json({ error: 'Session store not available' });
+      return;
+    }
     try {
-      const store = req.sessionStore;
-      if (!store) {
-        res.status(503).json({ error: 'Session store not available' });
+      res.json(await countSessions(store));
+    } catch (err) {
+      if (err instanceof SessionStoreUnsupportedError) {
+        res.status(501).json({ error: 'Session count not supported by store' });
         return;
       }
-
-      if (typeof store.length === 'function') {
-        store.length((err: unknown, count?: number) => {
-          if (err) {
-            res.status(500).json({ error: 'Failed to obtain session count' });
-            return;
-          }
-          res.json({
-            sessionCount: count || 0,
-            distinctUsers: count || 0
-          });
-        });
-        return;
-      }
-
-      if (typeof store.all === 'function') {
-        store.all((err: unknown, sessions) => {
-          if (err)
-            return res
-              .status(500)
-              .json({ error: 'Failed to obtain session count' });
-
-          // Convert to array if needed
-          const sessionArray = Array.isArray(sessions)
-            ? sessions
-            : sessions
-              ? Object.values(sessions)
-              : [];
-
-          const sessionCount = sessionArray.length;
-
-          // Count distinct users (unique usernames, including anonymous)
-          const usernames = new Set();
-          for (const session of sessionArray) {
-            if (session && session.username) {
-              usernames.add(session.username);
-            } else {
-              // Session without username is also counted as 'anonymous'
-              usernames.add('anonymous');
-            }
-          }
-          const distinctUsers = usernames.size;
-
-          return res.json({
-            sessionCount: sessionCount,
-            distinctUsers: distinctUsers
-          });
-        });
-      }
-
-      res
-        .status(501)
-        .json({ error: 'Session count not supported by store' });
-      return;
-    } catch {
       res.status(500).json({ error: 'Failed to obtain session count' });
-      return;
     }
   }
 
@@ -1533,61 +1485,22 @@ class WikiRoutes {
   }
 
   /**
-   * Active session users — lists authenticated usernames and anonymous session count.
-   * Used by SessionsPlugin property=users.
+   * Active session users — authenticated usernames and the anonymous count,
+   * through the same helper SessionStatsManager uses (#1246).
    */
-  getActiveSessionUsers(req: Request, res: Response): void {
+  async getActiveSessionUsers(req: Request, res: Response): Promise<void> {
+    const store = req.sessionStore as SessionStoreLike | undefined;
+    if (!store) {
+      res.status(503).json({ error: 'Session store not available' });
+      return;
+    }
     try {
-      const store = req.sessionStore;
-      if (!store) {
-        res.status(503).json({ error: 'Session store not available' });
+      res.json(await listSessionUsers(store));
+    } catch (err) {
+      if (err instanceof SessionStoreUnsupportedError) {
+        res.status(501).json({ error: 'Session user list not supported by store' });
         return;
       }
-
-      if (typeof store.all === 'function') {
-        store.all((err: unknown, sessions) => {
-          if (err) {
-            res.status(500).json({ error: 'Failed to obtain session users' });
-            return;
-          }
-          const sessionsObj = sessions as Record<string, unknown> | unknown[] | null;
-          const sessionArray = Array.isArray(sessionsObj)
-            ? sessionsObj
-            : sessionsObj ? Object.values(sessionsObj) : [];
-
-          const userSet = new Set<string>();
-          let anonymous = 0;
-          for (const rawSession of sessionArray) {
-            const session = rawSession as Record<string, unknown>;
-            if (typeof session?.username === 'string' && session.username) {
-              userSet.add(session.username);
-            } else {
-              anonymous++;
-            }
-          }
-          res.json({
-            users: Array.from(userSet).sort(),
-            anonymous,
-            total: sessionArray.length
-          });
-        });
-        return;
-      }
-
-      // Fallback: store.length only — return counts without user list
-      if (typeof store.length === 'function') {
-        store.length((err: unknown, count?: number) => {
-          if (err) {
-            res.status(500).json({ error: 'Failed to obtain session users' });
-            return;
-          }
-          res.json({ users: [], anonymous: count || 0, total: count || 0 });
-        });
-        return;
-      }
-
-      res.status(501).json({ error: 'Session user list not supported by store' });
-    } catch {
       res.status(500).json({ error: 'Failed to obtain session users' });
     }
   }
@@ -14569,10 +14482,10 @@ ${panes}
     );
 
     app.get('/api/session-count', (req: Request, res: Response) => {
-      this.getActiveSesssionCount(req, res);
+      void this.getActiveSesssionCount(req, res);
     });
     app.get('/api/session-users', (req: Request, res: Response) => {
-      this.getActiveSessionUsers(req, res);
+      void this.getActiveSessionUsers(req, res);
     });
     // #776 — admin-only per-session listing for the dashboard
     app.get('/api/sessions/list', (req: Request, res: Response) =>

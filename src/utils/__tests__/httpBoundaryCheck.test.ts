@@ -113,6 +113,31 @@ describe('#1139 — inbound is not the risk, and is not flagged', () => {
   });
 });
 
+describe('#1246 — global fetch taken as a value is the same capability', () => {
+  test('const fetchFn = fetch; is a violation (the exact SessionsPlugin form)', () => {
+    const v = at('const fetchFn: FetchFunction = fetch;');
+    expect(v).toHaveLength(1);
+    expect(v[0].rule).toBe('fetch');
+  });
+
+  test('passing fetch as an argument or an object value is a violation', () => {
+    expect(at('makeClient(fetch)')[0].rule).toBe('fetch');
+    expect(at('const deps = { fetch };')[0].rule).toBe('fetch');
+    expect(at('const deps = { fetch: fetch, log };')[0].rule).toBe('fetch');
+  });
+
+  test('a property named fetch, a parameter named fetch, and prose are not', () => {
+    expect(at('const f = window.fetch;')).toEqual([]);
+    expect(at('const f = this.fetch;')).toEqual([]);
+    expect(at('function run(fetch: FetchFn) { return fetch; }')).toEqual([]);
+    expect(at('const label = "fetch";')).toEqual([]);
+  });
+
+  test('a call site is reported once, not twice', () => {
+    expect(at('const r = await fetch(url);')).toHaveLength(1);
+  });
+});
+
 describe('#1185 — a statement fetch(url); is a call, not a declaration', () => {
   // The declaration exemption skipped `fetch(...)` when followed by `:`, `{`
   // OR `;`. The `;` also matched a fire-and-forget statement, so a raw

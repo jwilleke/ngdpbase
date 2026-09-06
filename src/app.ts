@@ -597,13 +597,19 @@ void (async (): Promise<void> => {
   }
   logger.info(`🔐 System principal: ${systemPrincipal.trim()} (NGDPBASE_SYSTEM_USER)`);
 
+  const sessionStore = new FileStore({
+    path: sessionPath,
+    ttl: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000) / 1000,
+    retries: 0,
+    reapInterval: 3600
+  });
+  // #1246: the same store object the routes see as req.sessionStore, handed to
+  // the manager so SessionsPlugin reads it in-process instead of requesting
+  // this server's own URL.
+  (engine.getManager('SessionStatsManager') as { attachStore(store: unknown): void } | null)?.attachStore(sessionStore);
+
   app.use(session({
-    store: new FileStore({
-      path: sessionPath,
-      ttl: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000) / 1000,
-      retries: 0,
-      reapInterval: 3600
-    }),
+    store: sessionStore,
     // #1194: the ONLY reader of the session secret. bootstrap-env.ts made
     // NGDPBASE_SESSION_SECRET true (from the environment, the instance .env,
     // or by generating and backfilling it) or exited; this re-check is the

@@ -33,6 +33,7 @@ import AuthManager from './managers/AuthManager.js';
 import AgentTokenManager from './managers/AgentTokenManager.js';
 import EmailManager from './managers/EmailManager.js';
 import MetricsManager from './managers/MetricsManager.js';
+import SessionStatsManager from './managers/SessionStatsManager.js';
 import BackgroundJobManager from './managers/BackgroundJobManager.js';
 import CatalogManager from './managers/CatalogManager.js';
 import CommentManager from './managers/CommentManager.js';
@@ -171,6 +172,12 @@ class WikiEngine extends Engine {
     this.registerManager('MetricsManager', metricsManager);
     await metricsManager.initialize();
     this.setCapability('metrics', metricsManager.isEnabled());
+
+    // 2b'. SessionStatsManager — in-process session counts for the routes and
+    // SessionsPlugin; app.ts attaches the express-session store (#1246).
+    const sessionStatsManager = new SessionStatsManager(this);
+    this.registerManager('SessionStatsManager', sessionStatsManager);
+    await sessionStatsManager.initialize();
 
     // 2c. OrganizationManager + PersonManager — canonical core identity
     // records (#617). Loaded before UserManager so downstream managers can

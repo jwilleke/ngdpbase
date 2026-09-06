@@ -6,83 +6,43 @@
  *   [{INSERT SessionsPlugin property=count}]         — total session count (default)
  *   [{INSERT SessionsPlugin property=distinctUsers}] — number of distinct users/sessions
  *
+ * Reads the session store in-process through SessionStatsManager (#1246). It
+ * used to request this server's own /api/session-count URL through a bare
+ * global fetch: an outbound call outside src/http/ that the egress policy
+ * refuses (loopback), and a `0` whenever the configured host was not
+ * reachable from inside the container.
+ *
  * Based on JSPWiki SessionsPlugin:
  * https://jspwiki-wiki.apache.org/Wiki.jsp?page=SessionsPlugin
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { escapeHtml, formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
+import type { SessionCount, SessionUsers } from '../managers/SessionStatsManager.js';
 
-interface ConfigManager {
-  getProperty(key: string, defaultValue: string | number): string | number;
+interface SessionStats {
+  hasStore(): boolean;
+  count(): Promise<SessionCount>;
+  users(): Promise<SessionUsers>;
 }
-
-interface SessionCountData {
-  sessionCount?: number;
-  distinctUsers?: number;
-}
-
-interface SessionUsersData {
-  users?: string[];
-  anonymous?: number;
-  total?: number;
-}
-
-interface FetchResponse {
-  ok: boolean;
-  json(): Promise<unknown>;
-}
-
-type FetchFunction = (url: string, init?: { method: string }) => Promise<FetchResponse>;
 
 const SessionsPlugin: SimplePlugin = {
   name: 'SessionsPlugin',
   description: 'Shows active session count or list of authenticated users',
   author: 'ngdpbase',
-  version: '2.0.0',
+  version: '3.0.0',
 
   async execute(context: PluginContext, params: PluginParams = {}): Promise<string> {
+    const property = String(params.property || 'count').toLowerCase();
     try {
-      let host = 'localhost';
-      let port = 3000;
-
-      try {
-        const cfgMgr = (
-          context.engine?.getManager?.('ConfigurationManager') ||
-          context.engine?.getManager?.('ConfigManager')
-        ) as ConfigManager | undefined;
-
-        if (cfgMgr?.getProperty) {
-          host = cfgMgr.getProperty('ngdpbase.server.host', host) as string;
-          port = cfgMgr.getProperty('ngdpbase.server.port', port) as number;
-        } else if (typeof context.engine?.getConfig === 'function') {
-          const config = context.engine.getConfig() as { get?: (key: string, defaultValue: unknown) => unknown } | undefined;
-          if (config?.get) {
-            host = config.get('ngdpbase.server.host', host) as string;
-            port = config.get('ngdpbase.server.port', port) as number;
-          }
-        }
-      } catch {
-        // use defaults
+      const stats = context.engine?.getManager?.('SessionStatsManager') as SessionStats | null | undefined;
+      if (!stats?.hasStore?.()) {
+        return property === 'users' ? '<span class="sessions-plugin">0</span>' : '0';
       }
-
-      const baseUrl = `http://${host}:${port}`;
-      // #1246: an HTTP round-trip to this server's own address — a boundary
-      // violation the regex guard never saw (no `fetch(` here) and one that
-      // guardedFetch cannot take (loopback is refused). The fix is to read the
-      // session store in-process; until then this is the one stated exemption.
-      // eslint-disable-next-line no-restricted-globals
-      const fetchFn: FetchFunction = fetch;
-      const property = String(params.property || 'count').toLowerCase();
 
       // property=users — list authenticated users + anonymous count
       if (property === 'users') {
-        const resp = await fetchFn(`${baseUrl}/api/session-users`, { method: 'GET' });
-        if (!resp?.ok) return '<span class="sessions-plugin">0</span>';
-
-        const data = await resp.json() as SessionUsersData;
-        const users = data.users ?? [];
-        const anonymous = data.anonymous ?? 0;
+        const { users, anonymous } = await stats.users();
 
         if (users.length === 0 && anonymous === 0) {
           return '<span class="sessions-plugin text-muted">No active sessions</span>';
@@ -109,26 +69,15 @@ const SessionsPlugin: SimplePlugin = {
       }
 
       // property=count / property=sessions / property=distinctusers — numeric
-      const resp = await fetchFn(`${baseUrl}/api/session-count`, { method: 'GET' });
-      if (!resp?.ok) return '0';
-
-      let data: SessionCountData;
-      try {
-        data = await resp.json() as SessionCountData;
-      } catch {
-        data = { sessionCount: 0, distinctUsers: 0 };
-      }
-
+      const data = await stats.count();
       if (property === 'distinctusers') {
         return String(data.distinctUsers ?? data.sessionCount ?? 0);
       }
       return String(data.sessionCount ?? 0);
-
     } catch (e) {
       const error = e as Error;
-      if (error.message?.includes('Config instance is invalid')) return '0';
       context.engine?.logger?.error?.(`SessionsPlugin error: ${error.message}`);
-      return '0';
+      return property === 'users' ? '<span class="sessions-plugin">0</span>' : '0';
     }
   }
 };
