@@ -1,11 +1,11 @@
 {
   "name": "@ngdpbase/feeds",
   "version": "0.1.0",
-  "description": "Data-ingestion framework \u2014 scheduled external feeds exposed as CatalogSources (#685)",
+  "description": "Data-ingestion framework — scheduled external feeds exposed as CatalogSources (#685)",
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@types/node": "^18.0.0",
+    "@types/node": "^24.13.3",
     "typescript": "^5.0.0"
   },
   "engines": {
