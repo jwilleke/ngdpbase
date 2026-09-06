@@ -15,6 +15,10 @@ vi.unmock('../BaseAuditProvider');
 import BaseAuditProvider from '../BaseAuditProvider';
 import { verifyChain, GENESIS_HASH } from '../../utils/auditChain';
 
+/** #1179: a chain restart is authorised by a context, never a bare name. */
+const JIM = { username: 'jim', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
+import { jobContextFromOperator } from '../../context/JobContext';
+
 type Rec = Record<string, unknown>;
 
 /** A subclass that only stores — exactly what the contract asks of it. */
@@ -114,12 +118,26 @@ describe('#1119 the base stamps, the subclass only stores', () => {
  * #1124 — restarting a chain is an operator action that leaves a record.
  */
 describe('#1124 chain restart', () => {
+  it('#1179 the marker is attributed from the context: who, the address, the origin', async () => {
+    const p = new MemoryProvider(engine);
+    await p.logAuditEvent(event(1));
+    await p.restartChain('records predate the #1119 fix', JIM);
+    const marker = p.written[1];
+    expect(marker).toMatchObject({ user: 'jim', ipAddress: '203.0.113.7', metadata: { origin: 'request', actor: 'jim', reason: 'records predate the #1119 fix' } });
+
+    const q = new MemoryProvider(engine);
+    await q.logAuditEvent(event(1));
+    await q.restartChain('operator command', jobContextFromOperator('ops', 'operator command: records predate the #1119 fix'));
+    expect(q.written[1]).toMatchObject({ user: 'ops', metadata: { origin: 'operator', actor: 'ops' } });
+    expect(q.written[1].ipAddress).toBeUndefined();
+  });
+
   it('writes a marker that begins a new chain', async () => {
     const p = new MemoryProvider(engine);
     for (let i = 1; i <= 3; i++) await p.logAuditEvent(event(i));
     const abandoned = p.written[2].hash as string;
 
-    await p.restartChain('records predate the #1119 fix', 'jim');
+    await p.restartChain('records predate the #1119 fix', JIM);
 
     const marker = p.written[3];
     expect(marker.eventType).toBe('audit-chain-restart');
@@ -131,7 +149,7 @@ describe('#1124 chain restart', () => {
   it('subsequent records continue from the marker', async () => {
     const p = new MemoryProvider(engine);
     await p.logAuditEvent(event(1));
-    await p.restartChain('why', 'jim');
+    await p.restartChain('why', JIM);
     await p.logAuditEvent(event(2));
     expect(p.written[2].seq).toBe(2);
     expect(p.written[2].prevHash).toBe(p.written[1].hash);
@@ -139,12 +157,12 @@ describe('#1124 chain restart', () => {
 
   it('refuses without a reason, because an unexplained restart is a finding', async () => {
     const p = new MemoryProvider(engine);
-    await expect(p.restartChain('   ', 'jim')).rejects.toThrow(/reason/i);
+    await expect(p.restartChain('   ', JIM)).rejects.toThrow(/reason/i);
   });
 
   it('refuses on a provider that does not chain', async () => {
     const p = new UnchainedProvider(engine);
-    await expect(p.restartChain('why', 'jim')).rejects.toThrow(/does not chain/i);
+    await expect(p.restartChain('why', JIM)).rejects.toThrow(/does not chain/i);
   });
 
   it('a marker that cannot be written leaves the head where it was (#1202)', async () => {
@@ -164,7 +182,7 @@ describe('#1124 chain restart', () => {
     const head = p.written[0].hash as string;
 
     p.failNext = true;
-    await expect(p.restartChain('why', 'jim')).rejects.toThrow(/disk full/);
+    await expect(p.restartChain('why', JIM)).rejects.toThrow(/disk full/);
 
     await p.logAuditEvent(event(2));
     expect(p.written).toHaveLength(2);
@@ -177,7 +195,7 @@ describe('#1124 chain restart', () => {
     // unverifiable claim about what came before.
     const p = new MemoryProvider(engine);
     p.resumeFrom = null;
-    await p.restartChain('previous log unreadable', 'jim');
+    await p.restartChain('previous log unreadable', JIM);
     expect((p.written[0].metadata as Record<string, unknown>).previousHash).toBeNull();
   });
 });

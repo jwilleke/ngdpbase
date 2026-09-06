@@ -10399,7 +10399,7 @@ ${panes}
       logger.debug(`📦 Admin backup requested by: ${currentUser.username}`);
 
       // Create backup
-      const backupPath = await backupManager.createBackup({}, { username: currentUser.username, ipAddress: req.ip });
+      const backupPath = await backupManager.createBackup(currentUser);
       logger.debug(`✅ Backup created: ${backupPath}`);
 
       // Get backup filename

@@ -38,7 +38,7 @@ import type { ShareGrant } from '../types/Share.js';
  * `request` is a person. The rest have no person behind them, which is exactly
  * why they need naming rather than defaulting to anonymous.
  */
-export type JobOrigin = 'request' | 'schedule' | 'boot';
+export type JobOrigin = 'request' | 'schedule' | 'boot' | 'operator';
 
 /** The identity a background job runs under. Flat, and serialisable by construction. */
 export interface JobContext {
@@ -122,6 +122,15 @@ export function jobContextFromRequestWithReason(
   now: Date = new Date()
 ): JobContext {
   return { ...jobContextFromRequest(identity, now), reason };
+}
+
+/**
+ * An operator acting from the command line (#1179) — `scripts/restart-audit-chain.ts`
+ * and its kind. There is a person, named on the command, and no request; the
+ * origin says so, and the reason is the command's own.
+ */
+export function jobContextFromOperator(username: string, reason: string, now: Date = new Date()): JobContext {
+  return { username, origin: 'operator', reason, requestedAt: now.toISOString() };
 }
 
 /**

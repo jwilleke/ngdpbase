@@ -123,7 +123,7 @@ describe('#1215 backup-create', () => {
     (bm as unknown as { initialized: boolean; backupDirectory: string }).initialized = true;
     (bm as unknown as { backupDirectory: string }).backupDirectory = os.tmpdir();
 
-    const where = await bm.createBackup({ filename: 'x.json.gz' }, ADMIN);
+    const where = await bm.createBackup(ADMIN, { filename: 'x.json.gz' });
 
     expect(where).toBe('/backups/x.json.gz');
     expect(sink[0]).toMatchObject({ eventType: 'backup-create', user: 'root', resource: '/backups/x.json.gz', metadata: { filename: 'x.json.gz' } });

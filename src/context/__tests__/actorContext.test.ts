@@ -5,7 +5,7 @@
  * reach the record, and a job's context names its origin and reason.
  */
 import { actorOf, isJobContext } from '../ActorContext';
-import { jobContextFromSchedule, jobContextFromSystem } from '../JobContext';
+import { jobContextFromOperator, jobContextFromSchedule, jobContextFromSystem } from '../JobContext';
 
 describe('#1179 actorOf', () => {
   test('a request subject: name, address, origin request, no roles', () => {
@@ -27,6 +27,9 @@ describe('#1179 actorOf', () => {
     expect(boot.ipAddress).toBeUndefined();
     expect(boot.metadata).toMatchObject({ origin: 'boot', reason: 'seed at boot' });
     expect(actorOf(jobContextFromSchedule('System', 'tick')).metadata).toMatchObject({ origin: 'schedule', reason: 'tick' });
+    // #1179: an operator on the command line is a person with no request.
+    const op = actorOf(jobContextFromOperator('jim', 'operator command: restart the chain'));
+    expect(op).toMatchObject({ user: 'jim', metadata: { origin: 'operator', reason: 'operator command: restart the chain' } });
   });
 
   test('isJobContext tells the two apart', () => {

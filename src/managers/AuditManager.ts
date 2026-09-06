@@ -39,6 +39,7 @@ export class AuditQueryForbiddenError extends Error {
  */
 import BaseManager from './BaseManager.js';
 import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from '../context/bootActions.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
@@ -410,14 +411,14 @@ class AuditManager extends BaseManager {
    * a system that silently repairs its own audit chain is worse than one that
    * stays visibly broken.
    */
-  async restartAuditChain(reason: string, actor: string): Promise<string> {
+  async restartAuditChain(reason: string, ctx: ActorContext): Promise<string> {
     const withRestart = this.provider as unknown as {
-      restartChain?: (reason: string, actor: string) => Promise<string>;
+      restartChain?: (reason: string, ctx: ActorContext) => Promise<string>;
     } | null;
     if (!withRestart?.restartChain) {
       throw new Error('The active audit provider does not support chain restart');
     }
-    return withRestart.restartChain(reason, actor);
+    return withRestart.restartChain(reason, ctx);
   }
 
   /**

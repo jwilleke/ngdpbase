@@ -4,6 +4,7 @@ import logger from '../utils/logger.js';
 import { stampRecord, GENESIS_HASH, CHAIN_RESTART_EVENT } from '../utils/auditChain.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import BaseProvider, { type ProviderDurability } from './BaseProvider.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 /**
  * Audit search filters
@@ -346,10 +347,10 @@ abstract class BaseAuditProvider extends BaseProvider {
    * the discontinuity is known, by whom, and why.
    *
    * @param reason - Why the chain is being restarted. Recorded verbatim.
-   * @param actor - Who authorised it.
+   * @param ctx - Who authorised it (#1179): the operator's context, never a bare name.
    * @returns The id of the marker record.
    */
-  async restartChain(reason: string, actor: string): Promise<string> {
+  async restartChain(reason: string, ctx: ActorContext): Promise<string> {
     if (!this.chainEnabled()) {
       throw new Error('This audit provider does not chain its records, so there is no chain to restart');
     }
@@ -373,17 +374,20 @@ abstract class BaseAuditProvider extends BaseProvider {
     // Through prepareRecord like any other record, so the marker gets whatever
     // id and timestamp the provider assigns. Building it directly meant it had
     // no id and the write returned undefined.
+    const who = actorOf(ctx);
     const prepared = this.prepareRecord({
       eventType: CHAIN_RESTART_EVENT,
-      user: actor,
+      user: who.user,
+      ipAddress: who.ipAddress,
       severity: 'high',
       result: 'success',
       action: 'audit-chain-restart',
       metadata: {
+        ...who.metadata,
         previousSeq: head?.seq ?? null,
         previousHash: head?.hash ?? null,
         reason: reason.trim(),
-        actor
+        actor: who.user
       }
     });
 
@@ -400,7 +404,7 @@ abstract class BaseAuditProvider extends BaseProvider {
     this.chainPrevHash = marker.hash as string;
 
     logger.warn(
-      `[audit] CHAIN RESTARTED by ${actor}: ${reason.trim()}. ` +
+      `[audit] CHAIN RESTARTED by ${who.user}: ${reason.trim()}. ` +
       `Abandoned chain head ${head?.hash ?? '(unreadable)'} at seq ${head?.seq ?? '(unknown)'}. ` +
       'The abandoned records remain in the log and remain unverifiable.'
     );

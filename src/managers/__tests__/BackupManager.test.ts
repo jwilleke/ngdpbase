@@ -122,7 +122,7 @@ describe('BackupManager', () => {
 
   describe('createBackup()', () => {
     test('creates a .json.gz file in the backup directory', async () => {
-      const backupPath = await bm.createBackup();
+      const backupPath = await bm.createBackup(ADMIN_CTX);
 
       expect(backupPath).toContain(tmpDir);
       expect(backupPath.endsWith('.json.gz')).toBe(true);
@@ -130,7 +130,7 @@ describe('BackupManager', () => {
     });
 
     test('backup file contains valid compressed JSON', async () => {
-      const backupPath = await bm.createBackup();
+      const backupPath = await bm.createBackup(ADMIN_CTX);
 
       const { promisify } = await import('util');
       const { gunzip } = await import('zlib');
@@ -157,7 +157,7 @@ describe('BackupManager', () => {
         return null;
       });
 
-      await bm.createBackup();
+      await bm.createBackup(ADMIN_CTX);
 
       expect(mockPageManager.backup).toHaveBeenCalled();
     });
@@ -166,21 +166,21 @@ describe('BackupManager', () => {
       const spyBackup = vi.spyOn(bm, 'backup');
       mockEngine.getRegisteredManagers.mockReturnValue(['BackupManager']);
 
-      await bm.createBackup();
+      await bm.createBackup(ADMIN_CTX);
 
       // backup() should not be called on BackupManager during createBackup
       expect(spyBackup).not.toHaveBeenCalled();
     });
 
     test('accepts a custom filename option', async () => {
-      const backupPath = await bm.createBackup({ filename: 'custom-test-backup.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'custom-test-backup.json.gz' });
 
       expect(backupPath).toContain('custom-test-backup.json.gz');
       expect(await fs.pathExists(backupPath)).toBe(true);
     });
 
     test('writes uncompressed JSON when compress is false', async () => {
-      const backupPath = await bm.createBackup({ compress: false, filename: 'uncompressed.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { compress: false, filename: 'uncompressed.json.gz' });
       const fileData = await fs.readFile(backupPath, 'utf8');
       const parsed = JSON.parse(fileData);
 
@@ -195,7 +195,7 @@ describe('BackupManager', () => {
     });
 
     test('restores managers from a valid backup file', async () => {
-      const backupPath = await bm.createBackup({ filename: 'test-restore.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'test-restore.json.gz' });
 
       const mockTargetManager = {
         restore: vi.fn().mockResolvedValue(undefined)
@@ -227,7 +227,7 @@ describe('BackupManager', () => {
     });
 
     test('skips managers that are not registered', async () => {
-      const backupPath = await bm.createBackup({ filename: 'skip-test.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'skip-test.json.gz' });
 
       const { promisify } = await import('util');
       const { gzip, gunzip } = await import('zlib');
@@ -248,7 +248,7 @@ describe('BackupManager', () => {
     });
 
     test('skips managers with backup errors', async () => {
-      const backupPath = await bm.createBackup({ filename: 'error-skip.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'error-skip.json.gz' });
 
       const { promisify } = await import('util');
       const { gzip, gunzip } = await import('zlib');
@@ -276,7 +276,7 @@ describe('BackupManager', () => {
     });
 
     test('respects managerFilter option', async () => {
-      const backupPath = await bm.createBackup({ filename: 'filtered.json.gz' });
+      const backupPath = await bm.createBackup(ADMIN_CTX, { filename: 'filtered.json.gz' });
 
       const { promisify } = await import('util');
       const { gzip, gunzip } = await import('zlib');
@@ -317,10 +317,10 @@ describe('BackupManager', () => {
     });
 
     test('returns backup files sorted newest first', async () => {
-      const p1 = await bm.createBackup({ filename: 'first-ngdpbase-backup.json.gz' });
+      const p1 = await bm.createBackup(ADMIN_CTX, { filename: 'first-ngdpbase-backup.json.gz' });
       // Small delay to ensure different mtime
       await new Promise(r => setTimeout(r, 20));
-      await bm.createBackup({ filename: 'second-ngdpbase-backup.json.gz' });
+      await bm.createBackup(ADMIN_CTX, { filename: 'second-ngdpbase-backup.json.gz' });
 
       const list = await bm.listBackups();
 
@@ -340,7 +340,7 @@ describe('BackupManager', () => {
     });
 
     test('returns path to most recent backup', async () => {
-      await bm.createBackup({ filename: 'latest-ngdpbase-backup.json.gz' });
+      await bm.createBackup(ADMIN_CTX, { filename: 'latest-ngdpbase-backup.json.gz' });
       const latest = await bm.getLatestBackup();
 
       expect(latest).not.toBeNull();
@@ -359,7 +359,7 @@ describe('BackupManager', () => {
     });
 
     test('returns lastBackup date when backups exist', async () => {
-      await bm.createBackup({ filename: 'status-ngdpbase-backup.json.gz' });
+      await bm.createBackup(ADMIN_CTX, { filename: 'status-ngdpbase-backup.json.gz' });
 
       const status = await bm.getAutoBackupStatus();
 

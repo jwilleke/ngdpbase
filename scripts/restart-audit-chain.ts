@@ -19,10 +19,11 @@
  *   npx tsx scripts/restart-audit-chain.ts --reason "..." --actor "..."
  */
 import WikiEngine from '../src/WikiEngine.js';
+import { jobContextFromOperator, type JobContext } from '../src/context/JobContext.js';
 
 interface AuditManagerLike {
   getAuditPosture?: () => { provider: string; degraded: boolean };
-  restartAuditChain?: (reason: string, actor: string) => Promise<string>;
+  restartAuditChain?: (reason: string, ctx: JobContext) => Promise<string>;
   /** NOT optional: a marker that never reaches disk is worse than not restarting at all. */
   flushAuditQueue: () => Promise<void>;
 }
@@ -58,7 +59,8 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const id = await audit.restartAuditChain(reason.trim(), actor);
+  // #1179: the operator's context — named on the command, origin `operator`, the reason its own.
+  const id = await audit.restartAuditChain(reason.trim(), jobContextFromOperator(actor, `operator command: ${reason.trim()}`));
 
   // The provider queues writes and flushes on a timer. A short-lived command
   // exits long before that, so the marker has to be forced to disk or the

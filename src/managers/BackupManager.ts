@@ -1,6 +1,6 @@
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
 import { scheduleContext } from '../context/bootActions.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
 import { promisify } from 'util';
 import logger from '../utils/logger.js';
@@ -87,7 +87,7 @@ export interface BackupFileInfo {
  *
  * @example
  * const backupManager = engine.getManager('BackupManager');
- * const backupPath = await backupManager.createBackup();
+ * const backupPath = await backupManager.createBackup(wikiContext.userContext);
  * console.log('Backup created:', backupPath);
  */
 /** Auto-backup schedule configuration */
@@ -279,9 +279,10 @@ class BackupManager extends BaseManager {
    * @param {BackupOptions} options - Backup options
    * @param {string} options.filename - Custom filename (optional)
    * @param {boolean} options.compress - Whether to compress (default: true)
+   * @param ctx - Who asked (#1179): the request's subject, or the schedule's JobContext. First and mandatory — a full copy of the instance is made on someone's behalf.
    * @returns {Promise<string>} Path to created backup file
    */
-  async createBackup(options: BackupOptions = {}, actor?: { username?: string; ipAddress?: string; origin?: string; reason?: string }): Promise<string> {
+  async createBackup(ctx: ActorContext, options: BackupOptions = {}): Promise<string> {
     const startTime = Date.now();
     logger.info('🔄 Starting backup operation...');
 
@@ -358,20 +359,17 @@ class BackupManager extends BaseManager {
       // #1215: a full copy of the instance now exists somewhere; say who asked
       // and where it went. on-failure: continue — the backup is already written and a
       // slow sink must not fail it.
+      const who = actorOf(ctx);
       await recordAuditEvent(this.engine.getManager('AuditManager'), {
         eventType: AUDIT_EVENT.BACKUP_CREATE,
-        user: actor?.username ?? 'unknown',
-        ipAddress: actor?.ipAddress,
+        user: who.user,
+        ipAddress: who.ipAddress,
         action: 'backup-create',
         result: 'success',
         severity: 'medium',
         resource: backupPath,
         resourceType: 'backup',
-        metadata: {
-          filename, bytes: finalData.length, managers: managerNames.length,
-          ...(actor?.origin ? { origin: actor.origin, reason: actor.reason ?? null } : {}),
-          ...(actor ? {} : { actorMissing: true })
-        }
+        metadata: { ...who.metadata, filename, bytes: finalData.length, managers: managerNames.length }
       }, (err) => logger.warn('[BackupManager] Audit record failed for backup-create:', err));
 
       // Clean up old backups
@@ -696,8 +694,7 @@ class BackupManager extends BaseManager {
       logger.info(`⏰ Scheduled auto-backup triggered at ${hhmm} (${dayName})`);
       // #1196: a scheduled backup has an actor — the system principal on a
       // schedule — so backup-create no longer records "unknown".
-      const ctx = scheduleContext(this.engine, `scheduled auto-backup at ${this.autoBackupTime} (${this.autoBackupDays})`);
-      await this.createBackup({}, { username: ctx.username, origin: ctx.origin, reason: ctx.reason });
+      await this.createBackup(scheduleContext(this.engine, `scheduled auto-backup at ${this.autoBackupTime} (${this.autoBackupDays})`));
     } catch (err) {
       logger.error('❌ Scheduled auto-backup failed:', err);
     }
