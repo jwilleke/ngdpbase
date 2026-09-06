@@ -113,6 +113,44 @@ describe('argument parsing', () => {
   });
 });
 
+describe('#1244 — the generated addon has the guarded defaults, and passes every boundary guard', () => {
+  test('route, view, config and manager carry the three doors', async () => {
+    await scaffoldAddon(opts());
+    const dir = path.join(tmp, 'volcano-watch');
+    const route = await fs.readFile(path.join(dir, 'routes', 'api.ts'), 'utf8');
+    const view = await fs.readFile(path.join(dir, 'views', 'volcano-watch-status.ejs'), 'utf8');
+    const index = await fs.readFile(path.join(dir, 'index.ts'), 'utf8');
+    const config = await fs.readJson(path.join(dir, 'config', 'default-config.json'));
+    const manager = await fs.readFile(path.join(dir, 'managers', 'VolcanoDataManager.ts'), 'utf8');
+
+    expect(route).toContain("requirePermission('volcano-watch-manage')");
+    // Code only — the route's header comment names the things it must never do.
+    const routeCode = route.split('\n').filter((l) => !/^\s*(\/\*|\*|\/\/)/.test(l)).join('\n');
+    expect(routeCode).not.toMatch(/isAuthenticated|hasRole|roles\s*:/);
+    expect(view).toContain('(window.csrfFetch || fetch)');
+    expect(index).toContain('guardedFetch(');
+    expect(index).toContain('resolveEgressPolicy(');
+    expect(manager).toContain('fetchJson');
+    expect(manager).not.toMatch(/\bfetch\(/);
+    expect(config['ngdpbase.permissions.definitions']['volcano-watch-manage']).toBeDefined();
+    expect(config['ngdpbase.access.policies'][0].actions).toEqual(['volcano-watch-manage']);
+  });
+
+  test('the host guards report nothing over a freshly generated addon', async () => {
+    // Scaffold into <repo>/addons/<id> so each guard sees it where an addon lives.
+    const repo = path.join(tmp, 'repo');
+    await scaffoldAddon(opts({ target: path.join(repo, 'addons', 'volcano-watch') }));
+    const csrf = await import('../check-csrf-fetch');
+    const http = await import('../check-http-boundary');
+    const subject = await import('../check-permission-subject');
+    expect(csrf.findViolations(repo)).toEqual([]);
+    expect(http.run(repo)).toEqual([]);
+    expect(subject.run(repo)).toEqual([]);
+    // And the view IS in the csrf guard's scope — a tokenless POST there would be reported.
+    expect(csrf.collectFiles(repo)).toContain(path.join('addons', 'volcano-watch', 'views', 'volcano-watch-status.ejs'));
+  });
+});
+
 describe('generated addon', () => {
   test('package.json carries the authoritative ngdpbase manifest block', async () => {
     await scaffoldAddon(opts());
