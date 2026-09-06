@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
@@ -172,8 +173,16 @@ export interface AddonModule {
    *      config flag (`<% if (enabled) %>`), your save handler MUST re-check
    *      the same flag server-side before writing — otherwise a crafted
    *      POST can bypass the admin's gate.
+   *
+   * __Since #1234 the first argument is the caller's context, not a name.__
+   * `ctx` is the request's subject (`PermissionSubject`: `username`, `roles`,
+   * `isAuthenticated`, `ipAddress`, `viaToken` / `viaShare` when delegated)
+   * — forward it to whatever you write (`userManager.updateUser(ctx.username,
+   * updates, ctx)`), never rebuild one from `ctx.username`. An addon still
+   * written against the old `(username, body)` shape gets a warning at load
+   * naming it; its saves then fail per call and are logged.
    */
-  saveProfileSection?(username: string, body: Record<string, unknown>): Promise<void> | void;
+  saveProfileSection?(ctx: ActorContext, body: Record<string, unknown>): Promise<void> | void;
 
   /**
    * Optional cleanup on app shutdown.
@@ -552,6 +561,7 @@ class AddonsManager extends BaseManager {
         error: null,
         manifest
       });
+      this.warnOldProfileHook(canonicalId, addonModule);
 
       const label = addonModule.name === canonicalId ? canonicalId : `${canonicalId} (name: ${addonModule.name})`;
       logger.info(
@@ -1503,6 +1513,29 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * #1234: say at load when an addon still implements the pre-#1234 hook.
+   *
+   * The two shapes have the same arity, so the only tell is the name the
+   * addon gave its first parameter — a heuristic, and stated as one. A false
+   * negative costs nothing new: the save still fails per call and is logged
+   * by `saveProfileSections`. A hit turns that silent stop into a boot line
+   * naming the addon and the migration.
+   */
+  private warnOldProfileHook(addonName: string, module: AddonModule): void {
+    // Read the source text only — the hook is never called or detached here.
+    const hook = (module as { saveProfileSection?: unknown }).saveProfileSection;
+    if (typeof hook !== 'function') return;
+    const source = Function.prototype.toString.call(hook);
+    const first = /^(?:async\s*)?(?:function\s*[\w$]*\s*)?\(?\s*([A-Za-z_$][\w$]*)/.exec(source)?.[1];
+    if (first && /^(username|user|userName|name|login|by)$/.test(first)) {
+      logger.warn(
+        `[AddonsManager] Add-on '${addonName}' implements saveProfileSection(${first}, body) — since #1234 the first argument is the caller's context ` +
+        '(a PermissionSubject: username, roles, isAuthenticated, ipAddress, viaToken/viaShare). Its profile-section saves will fail until it is updated to (ctx, body).'
+      );
+    }
+  }
+
+  /**
    * Fan out `POST /preferences` body to every loaded addon that registered a
    * `saveProfileSection()` handler (#534).
    *
@@ -1527,14 +1560,15 @@ class AddonsManager extends BaseManager {
    * Errors are caught per-addon and logged so one bad addon cannot block
    * other addons' saves or the core-preferences save.
    */
-  async saveProfileSections(username: string, body: Record<string, unknown>): Promise<void> {
+  async saveProfileSections(ctx: ActorContext, body: Record<string, unknown>): Promise<void> {
     const flatBody = flattenDottedKeys(body);
 
     for (const [name, addon] of this.addons) {
       if (!addon.loaded || typeof addon.module.saveProfileSection !== 'function') continue;
 
       try {
-        await addon.module.saveProfileSection(username, flatBody);
+        // #1234: the caller's context, forwarded — the addon writes on its behalf.
+        await addon.module.saveProfileSection(ctx, flatBody);
       } catch (err) {
         logger.warn(
           `[AddonsManager] saveProfileSection() failed for addon '${name}': ${err instanceof Error ? err.message : String(err)}`

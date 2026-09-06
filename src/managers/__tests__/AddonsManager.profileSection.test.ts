@@ -15,6 +15,9 @@ import path from 'path';
 import fs from 'fs-extra';
 import type { User } from '../../types/User.js';
 
+/** #1234: the profile-section save fan-out takes the caller's context. */
+const ALICE = { username: 'alice', roles: ['reader'], isAuthenticated: true, ipAddress: '203.0.113.7' };
+
 const makeUser = (username = 'alice'): User => ({
   username,
   email: `${username}@example.com`,
@@ -246,13 +249,30 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
     });
   });
 
+  describe('#1234 — the pre-#1234 hook shape is named at load', () => {
+    it('warns once, naming the addon, when saveProfileSection still takes a username', async () => {
+      const loggerMod = await import('../../utils/logger');
+      const logger = (loggerMod as { default?: { warn: ReturnType<typeof vi.fn> } }).default ?? loggerMod;
+      (logger.warn as ReturnType<typeof vi.fn>).mockClear();
+
+      await writeAddon('old-shape', 'saveProfileSection: async (username, body) => { void username; void body; }');
+      await writeAddon('new-shape', 'saveProfileSection: async (ctx, body) => { void ctx; void body; }');
+      const mgr = new AddonsManager(makeEngine(makeConfigManager(['old-shape', 'new-shape'])));
+      await mgr.initialize();
+
+      const warnings = (logger.warn as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+      expect(warnings.filter((w) => w.includes("'old-shape'") && w.includes('saveProfileSection(username, body)'))).toHaveLength(1);
+      expect(warnings.some((w) => w.includes("'new-shape'"))).toBe(false);
+    });
+  });
+
   describe('saveProfileSections()', () => {
     it('is a no-op when no addons implement saveProfileSection', async () => {
       await writeAddon('plain', 'status: () => ({ healthy: true })');
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['plain'])));
       await mgr.initialize();
 
-      await expect(mgr.saveProfileSections('alice', { foo: 'bar' })).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, { foo: 'bar' })).resolves.toBeUndefined();
     });
 
     it('fans the same body out to every addon with a saveProfileSection handler', async () => {
@@ -270,12 +290,13 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['a', 'b'])));
       await mgr.initialize();
 
-      await mgr.saveProfileSections('alice', { 'a.x': 'on', 'b.y': '42' });
+      await mgr.saveProfileSections(ALICE, { 'a.x': 'on', 'b.y': '42' });
 
       const aMark = JSON.parse(await fs.readFile(path.join(markerDir, 'a.json'), 'utf8'));
       const bMark = JSON.parse(await fs.readFile(path.join(markerDir, 'b.json'), 'utf8'));
-      expect(aMark).toEqual({ u: 'alice', body: { 'a.x': 'on', 'b.y': '42' } });
-      expect(bMark).toEqual({ u: 'alice', body: { 'a.x': 'on', 'b.y': '42' } });
+      // #1234: the addon receives the subject itself, not a name.
+      expect(aMark).toEqual({ u: ALICE, body: { 'a.x': 'on', 'b.y': '42' } });
+      expect(bMark).toEqual({ u: ALICE, body: { 'a.x': 'on', 'b.y': '42' } });
     });
 
     it('flattens nested body shapes before fan-out — addon always sees flat dotted keys', async () => {
@@ -293,7 +314,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Caller passes a NESTED body (simulating allowDots:true or hand-built request).
-      await mgr.saveProfileSections('alice', {
+      await mgr.saveProfileSections(ALICE, {
         journal: { defaultTemplate: 'daily', voiceToText: 'on' },
         'display.theme': 'dark' // already flat — should also pass through
       });
@@ -320,11 +341,11 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Must not throw out of saveProfileSections
-      await expect(mgr.saveProfileSections('alice', { x: '1' })).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, { x: '1' })).resolves.toBeUndefined();
 
       // The downstream addon still saw the body
       const mark = JSON.parse(await fs.readFile(path.join(markerDir, 'survives.json'), 'utf8'));
-      expect(mark.u).toBe('alice');
+      expect(mark.u).toEqual(ALICE);
     });
 
     it('runs SEQUENTIALLY — addon B sees addon A\'s side-effects (no race on user-prefs writes)', async () => {
@@ -346,7 +367,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       const mgr = new AddonsManager(makeEngine(makeConfigManager(['a', 'b'])));
       await mgr.initialize();
 
-      await mgr.saveProfileSections('alice', {});
+      await mgr.saveProfileSections(ALICE, {});
 
       const bSaw = await fs.readFile(path.join(markerDir, 'b-saw.json'), 'utf8');
       expect(bSaw).toBe('A-wrote');
@@ -361,7 +382,7 @@ describe('AddonsManager — profile-section hooks (#534)', () => {
       await mgr.initialize();
 
       // Calling saveProfileSections must not invoke the failed addon
-      await expect(mgr.saveProfileSections('alice', {})).resolves.toBeUndefined();
+      await expect(mgr.saveProfileSections(ALICE, {})).resolves.toBeUndefined();
     });
   });
 });

@@ -43,7 +43,7 @@ import ejs from 'ejs';
 import type { WikiEngine } from '../../dist/src/types/WikiEngine.js';
 import type { AddonStatusDetails, AddonProfileSection, AddonProfileUser } from '../../dist/src/managers/AddonsManager.js';
 import type UserManager from '../../dist/src/managers/UserManager.js';
-import { jobContextFromRequestWithReason } from '../../dist/src/context/JobContext.js';
+import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
@@ -252,14 +252,14 @@ const journalAddon = {
    *
    * Errors propagate to AddonsManager's per-addon try/catch.
    */
-  async saveProfileSection(username: string, body: Record<string, unknown>): Promise<void> {
+  async saveProfileSection(ctx: ActorContext, body: Record<string, unknown>): Promise<void> {
     if (body['journal._rendered'] !== '1') return;
     if (!engineRef) return;
 
     const userManager = engineRef.getManager<UserManager>('UserManager');
     if (!userManager) return;
 
-    const freshUser = await userManager.getUser(username);
+    const freshUser = await userManager.getUser(ctx.username);
     const existing = (freshUser?.preferences ?? {}) as Record<string, unknown>;
     const updated: Record<string, unknown> = { ...existing };
 
@@ -276,9 +276,8 @@ const journalAddon = {
     const rt = body['journal.reminderTime'];
     updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
 
-    // #1179: the addon profile hook hands this a name, not the caller's context
-    // (AddonsManager.saveProfileSections is a later slice); say what this is.
-    await userManager.updateUser(username, { preferences: updated }, jobContextFromRequestWithReason({ username }, 'journal preferences saved through the profile section'));
+    // #1234: the caller's context, forwarded — never rebuilt from a name.
+    await userManager.updateUser(ctx.username, { preferences: updated }, ctx);
   },
 
 

@@ -8519,8 +8519,9 @@ ${panes}
           && typeof (addonsManager as { saveProfileSections?: unknown }).saveProfileSections === 'function'
         ) {
           const bodyClone = { ...(req.body as Record<string, unknown>) };
-          await (addonsManager as { saveProfileSections: (u: string, b: Record<string, unknown>) => Promise<void> })
-            .saveProfileSections(currentUser.username, bodyClone);
+          // #1234: the subject itself, forwarded — the addons write on its behalf.
+          await (addonsManager as { saveProfileSections: (ctx: ActorContext, b: Record<string, unknown>) => Promise<void> })
+            .saveProfileSections(currentUser, bodyClone);
         }
       } catch (addonErr) {
         logger.warn('[/preferences] addon saveProfileSections threw — core preferences saved successfully, fan-out failed', addonErr);
