@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "undici": "^6.28.0"
