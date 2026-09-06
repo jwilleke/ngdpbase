@@ -1,0 +1,23 @@
+{
+  "_comment": "Advisories the operator has decided to carry, for now (#1242). Every entry names the issue holding the decision and a review date; past that date the entry stops counting and the audit goes red again. A package fails unless EVERY advisory behind it is listed here.",
+  "entries": [
+    {
+      "advisory": "GHSA-rmmh-p597-ppvv",
+      "issue": "#1247",
+      "reason": "showdown ReDoS in link parsing; no fixed version exists (last release 2023-07). Decision on the converter pending on the issue.",
+      "reviewBy": "2026-10-06"
+    },
+    {
+      "advisory": "GHSA-cr32-g25g-vxjj",
+      "issue": "#1247",
+      "reason": "showdown stored XSS via metadata title; no fixed version. Decision pending on the issue.",
+      "reviewBy": "2026-10-06"
+    },
+    {
+      "advisory": "GHSA-22g5-r2x5-97cx",
+      "issue": "#1247",
+      "reason": "showdown stored XSS via table header id; no fixed version. Decision pending on the issue.",
+      "reviewBy": "2026-10-06"
+    }
+  ]
+}
