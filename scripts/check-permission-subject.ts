@@ -29,7 +29,7 @@
  * `lint:ci` / `.husky/pre-commit`. Exits 1 on any violation.
  */
 
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -63,8 +63,16 @@ const SCAN_DIRS = [
   // `{ username: author, isAuthenticated: true, roles: ['admin'] }` from an
   // imported file's own frontmatter — an admin principal invented from input.
   'src/managers',
-  'src/parsers/handlers'
+  'src/parsers/handlers',
+  // #1241 (#1177): addon code runs in the ngdpbase process; a subject rebuilt
+  // in an addon route drops the same ceilings. Every addon's routes, entry
+  // point, managers, plugins and src/ — compiled output beside the source
+  // (dist/, .d.ts), browser files (public/) and tests are skipped below.
+  'addons'
 ];
+
+/** Directories that never hold server-side source: dependencies, tests, build output, browser files. */
+const SKIPPED_DIRS = new Set(['node_modules', '__tests__', 'dist', 'public']);
 
 export interface Violation {
   file: string;
@@ -170,10 +178,11 @@ export function checkSource(relPath: string, source: string): Violation[] {
 }
 
 function walk(dir: string, acc: string[] = []): string[] {
+  if (!existsSync(dir)) return acc;
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry);
     if (statSync(full).isDirectory()) {
-      if (entry === 'node_modules' || entry === '__tests__') continue;
+      if (SKIPPED_DIRS.has(entry)) continue;
       walk(full, acc);
     } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
       acc.push(full);
@@ -182,9 +191,14 @@ function walk(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
-export function run(): Violation[] {
-  return SCAN_DIRS.flatMap((d) => walk(path.join(REPO, d)))
-    .flatMap((f) => checkSource(path.relative(REPO, f), readFileSync(f, 'utf8')));
+/** Every file the check reads, relative to `repo` — exported so a test asserts the scope (#1241). */
+export function collectSources(repo: string = REPO, roots: string[] = SCAN_DIRS): string[] {
+  return roots.flatMap((d) => walk(path.join(repo, d))).map((f) => path.relative(repo, f));
+}
+
+export function run(repo: string = REPO): Violation[] {
+  return collectSources(repo)
+    .flatMap((f) => checkSource(f, readFileSync(path.join(repo, f), 'utf8')));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
