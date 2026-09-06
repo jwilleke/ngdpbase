@@ -14668,10 +14668,8 @@ ${panes}
       const notificationId = req.params.id;
       const notificationManager = this.engine.getManager('NotificationManager');
 
-      const success = await notificationManager.dismissNotification(
-        notificationId,
-        currentUser.username ?? ''
-      );
+      // #1235: the subject itself, forwarded.
+      const success = await notificationManager.dismissNotification(notificationId, currentUser);
 
       if (success) {
         return res.redirect('/admin?success=Notification dismissed successfully');

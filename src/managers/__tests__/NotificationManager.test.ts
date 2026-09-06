@@ -3,6 +3,9 @@ import path from 'path';
 import NotificationManager from '../NotificationManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 
+/** #1235: dismissal takes the caller's context; the dismisser is its username. */
+const TESTUSER = { username: 'testuser', roles: ['admin'], isAuthenticated: true };
+
 // Mock logger to avoid console output during tests
 vi.mock('../../utils/logger', () => ({
   default: {
@@ -459,7 +462,7 @@ describe('NotificationManager', () => {
       expect(userNotifications).toHaveLength(1);
 
       // Dismiss the notification
-      await notificationManager.dismissNotification(id, 'testuser');
+      await notificationManager.dismissNotification(id, TESTUSER);
 
       // Now user should not see the notification
       userNotifications = notificationManager.getUserNotifications('testuser');
@@ -501,7 +504,7 @@ describe('NotificationManager', () => {
         message: 'Test message'
       });
 
-      const success = await notificationManager.dismissNotification(id, 'testuser');
+      const success = await notificationManager.dismissNotification(id, TESTUSER);
       expect(success).toBe(true);
 
       const notification = notificationManager.notifications.get(id);
@@ -509,7 +512,7 @@ describe('NotificationManager', () => {
     });
 
     test('should return false for non-existent notification', async () => {
-      const success = await notificationManager.dismissNotification('nonexistent', 'testuser');
+      const success = await notificationManager.dismissNotification('nonexistent', TESTUSER);
       expect(success).toBe(false);
     });
 
@@ -521,8 +524,8 @@ describe('NotificationManager', () => {
       });
 
       // Dismiss twice
-      await notificationManager.dismissNotification(id, 'testuser');
-      await notificationManager.dismissNotification(id, 'testuser');
+      await notificationManager.dismissNotification(id, TESTUSER);
+      await notificationManager.dismissNotification(id, TESTUSER);
 
       const notification = notificationManager.notifications.get(id);
       expect(notification.dismissedBy).toEqual(['testuser']); // Should only appear once

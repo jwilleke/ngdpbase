@@ -5,6 +5,7 @@ import path from 'path';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import { scheduleContext } from '../context/bootActions.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import type EmailManager from './EmailManager.js';
 import type UserManager from './UserManager.js';
 
@@ -297,17 +298,22 @@ class NotificationManager extends BaseManager {
   }
 
   /**
-   * Dismiss a notification for a user
+   * Dismiss a notification for the caller.
+   *
+   * #1235: takes the caller's context, not a name, for a uniform door — the
+   * dismisser is `ctx.username`. Hides the banner from that one person and
+   * changes nothing else; recorded in the log line, not the audit trail.
    * @param {string} notificationId - Notification ID
-   * @param {string} username - Username dismissing the notification
+   * @param ctx - Who is dismissing: the request's subject, forwarded
    * @returns {Promise<boolean>} Success status
    */
-  async dismissNotification(notificationId: string, username: string): Promise<boolean> {
+  async dismissNotification(notificationId: string, ctx: ActorContext): Promise<boolean> {
     const notification = this.notifications.get(notificationId);
     if (!notification) {
       return false;
     }
 
+    const username = ctx.username;
     if (!notification.dismissedBy.includes(username)) {
       notification.dismissedBy.push(username);
       this.logger.info(`Notification ${notificationId} dismissed by ${username}`);
