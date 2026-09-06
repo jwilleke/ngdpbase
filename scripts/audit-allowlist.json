@@ -4,19 +4,19 @@
     {
       "advisory": "GHSA-rmmh-p597-ppvv",
       "issue": "#1247",
-      "reason": "showdown ReDoS in link parsing; no fixed version exists (last release 2023-07). Decision on the converter pending on the issue.",
+      "reason": "showdown ReDoS in link parsing; no fixed version (last release 2023-07). Mitigated: src/utils/showdownGuard.ts (#599) escapes the unclosed link opener that triggers it, on every converter input; covered by showdownGuardCoverage.test.ts. Carried until the converter decision on #1247.",
       "reviewBy": "2026-10-06"
     },
     {
       "advisory": "GHSA-cr32-g25g-vxjj",
       "issue": "#1247",
-      "reason": "showdown stored XSS via metadata title; no fixed version. Decision pending on the issue.",
+      "reason": "showdown XSS via metadata title; needs the metadata + completeHTMLDocument options, which no converter here enables. Pinned off by showdown-converter-options.invariant.test.ts (#1064). Carried until the converter decision on #1247.",
       "reviewBy": "2026-10-06"
     },
     {
       "advisory": "GHSA-22g5-r2x5-97cx",
       "issue": "#1247",
-      "reason": "showdown stored XSS via table header id; no fixed version. Decision pending on the issue.",
+      "reason": "showdown stored XSS via table header id; needs tablesHeaderId, which no converter here enables (probed 2026-09-06: the payload renders as inert text). Pinned off by showdown-converter-options.invariant.test.ts (#1064). Carried until the converter decision on #1247.",
       "reviewBy": "2026-10-06"
     }
   ]
