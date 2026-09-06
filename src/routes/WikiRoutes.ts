@@ -4442,9 +4442,21 @@ ${panes}
     } | null | undefined;
     if (!meta) return;
 
+    // Only what the removed gate ever honoured counts (#1275). The gate
+    // evaluated `view`, and the frontmatter resolver reads `access[action]`, so
+    // `audience` (view shorthand), a non-empty `access.view`, and `private`
+    // are the restrictions that used to blank the chrome. An `access` object
+    // carrying only `edit` never affected rendering and is still enforced on
+    // edits of the page itself — and every addon system page carries exactly
+    // that stamp (#971), so warning on it fired on every render of every
+    // deployment whose chrome comes from an addon, for a restriction that did
+    // not exist.
     const restrictions: string[] = [];
     if (Array.isArray(meta.audience) && meta.audience.length > 0) restrictions.push('audience');
-    if (meta.access && typeof meta.access === 'object') restrictions.push('access');
+    const view = meta.access && typeof meta.access === 'object'
+      ? (meta.access as Record<string, unknown>)['view']
+      : undefined;
+    if (Array.isArray(view) && view.length > 0) restrictions.push('access.view');
     if (meta.private === true) restrictions.push('private:true');
     if (restrictions.length === 0) return;
 

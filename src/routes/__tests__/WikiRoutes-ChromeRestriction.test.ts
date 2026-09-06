@@ -47,9 +47,31 @@ describe('#950 chrome restriction reporting', () => {
     expect(message).toContain('Move the restriction to the linked pages');
   });
 
-  test('warns when a chrome page declares per-action access', () => {
+  test('warns when a chrome page declares access.view, naming the key', () => {
     routes.warnOnChromeRestriction('Footer', { access: { view: ['admin'] } });
-    expect(String(warn.mock.calls[0][0])).toContain('access');
+    expect(String(warn.mock.calls[0][0])).toContain('declares access.view');
+  });
+
+  test('#1275 says nothing for the access.edit stamp every addon system page carries', () => {
+    // AddonsManager stamps `{ edit: ['admin'] }` on addon system pages (#971).
+    // geohazardwatch's LeftMenu is one, and this fired on every render there
+    // for a restriction the removed gate never evaluated: it gated `view`
+    // only, and `access.edit` is still enforced on edits of the page itself.
+    routes.warnOnChromeRestriction('LeftMenu', { access: { edit: ['admin'] } });
+    routes.warnOnChromeRestriction('Footer', { access: { edit: ['admin'], delete: ['admin'] } });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('#1275 says nothing for an empty access.view — the resolver treats it as no rule', () => {
+    routes.warnOnChromeRestriction('LeftMenu', { access: { view: [] } });
+    routes.warnOnChromeRestriction('LeftMenu', { access: {} });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('#1275 access.edit beside a real view rule still warns, about the view rule', () => {
+    routes.warnOnChromeRestriction('LeftMenu', { access: { edit: ['admin'], view: ['admin'] } });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('declares access.view');
   });
 
   test('calls out private:true by name', () => {
@@ -60,10 +82,10 @@ describe('#950 chrome restriction reporting', () => {
   });
 
   test('reports every restriction present, not just the first', () => {
-    routes.warnOnChromeRestriction('LeftMenu', { audience: ['a'], access: { view: [] }, private: true });
+    routes.warnOnChromeRestriction('LeftMenu', { audience: ['a'], access: { view: ['a'] }, private: true });
     const message = String(warn.mock.calls[0][0]);
     expect(message).toContain('audience');
-    expect(message).toContain('access');
+    expect(message).toContain('access.view');
     expect(message).toContain('private:true');
   });
 
