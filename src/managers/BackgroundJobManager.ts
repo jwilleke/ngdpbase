@@ -3,6 +3,13 @@ import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { describeJobContext, type JobContext } from '../context/JobContext.js';
+
+/** A JobContext a JavaScript caller actually supplied: an object naming who and from where. */
+function isUsableContext(value: unknown): value is JobContext {
+  return typeof value === 'object' && value !== null
+    && typeof (value as { username?: unknown }).username === 'string'
+    && typeof (value as { origin?: unknown }).origin === 'string';
+}
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 
@@ -131,6 +138,31 @@ class BackgroundJobManager extends BaseManager {
    * @throws Error if jobId is not registered
    */
   async enqueue(jobId: string, requestedBy: JobContext): Promise<string> {
+    // #1238: a caller with no usable context is refused — as a failed run
+    // that says why, never as an exception the host dies of. The addon that
+    // crash-looped geohazardwatch called the pre-#631 one-argument shape
+    // from a setInterval; nothing at build time refuses that in JavaScript,
+    // and the TypeError inside the fire-and-forget promise took the process
+    // down every tick. "Fails closed" means the call is refused, not the pod.
+    if (!isUsableContext(requestedBy)) {
+      const runId = randomUUID();
+      const detail = `enqueue('${jobId}') was called without a JobContext — since #631 the second argument is who asked ` +
+        '(a JobContext: username, origin, requestedAt; build one with jobContextFromRequest / scheduleContext / systemContext). Refused.';
+      logger.error(`[BackgroundJobManager] ${detail}\n${new Error('caller').stack ?? ''}`);
+      const refused: JobRun = {
+        runId,
+        jobId,
+        displayName: this.jobs.get(jobId)?.displayName ?? jobId,
+        requestedBy: { username: 'unknown', origin: 'request', requestedAt: new Date().toISOString(), reason: 'refused: no context supplied' },
+        status: 'failed',
+        result: { success: false, error: detail },
+        startedAt: new Date(),
+        completedAt: new Date()
+      };
+      this.runs.set(runId, refused);
+      return runId;
+    }
+
     const existingRunId = this.activeByJobId.get(jobId);
     if (existingRunId) {
       const existing = this.runs.get(existingRunId);
@@ -160,8 +192,15 @@ class BackgroundJobManager extends BaseManager {
     this.runs.set(runId, run);
     this.activeByJobId.set(jobId, runId);
 
-    // Fire and forget — caller polls via getStatus()
-    void this.executeJob(def, run);
+    // Fire and forget — caller polls via getStatus(). #1238: with a catch, so
+    // nothing a job does can become an unhandled rejection in the host.
+    this.executeJob(def, run).catch((err: unknown) => {
+      run.status = 'failed';
+      run.result = { success: false, error: err instanceof Error ? err.message : String(err) };
+      run.completedAt = new Date();
+      if (this.activeByJobId.get(jobId) === runId) this.activeByJobId.delete(jobId);
+      logger.error(`[BackgroundJobManager] job '${jobId}' run ${runId} failed outside its own handler:`, err);
+    });
 
     return runId;
   }

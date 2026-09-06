@@ -91,6 +91,49 @@ describe('BackgroundJobManager', () => {
     });
   });
 
+  describe('#1238 — a caller with no context cannot take the host down', () => {
+    test('enqueue with no context is refused as a failed run, not thrown', async () => {
+      const mgr = await makeManager();
+      let ran = false;
+      mgr.registerJob({ id: 'guarded.job', displayName: 'Guarded', run: async () => { ran = true; return { success: true }; } });
+
+      // The shape the geohazardwatch addon used: one argument, from a timer, unawaited.
+      const runId = await (mgr as unknown as { enqueue: (id: string) => Promise<string> }).enqueue('guarded.job');
+      await new Promise((r) => setTimeout(r, 20));
+
+      const run = mgr.getStatus(runId);
+      expect(run?.status).toBe('failed');
+      expect(run?.result?.error).toContain('without a JobContext');
+      expect(ran).toBe(false);
+      // A later, correct call still runs — the refusal left no stuck "active" entry.
+      const okId = await mgr.enqueue('guarded.job', TEST_REQUESTER);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(mgr.getStatus(okId)?.status).toBe('completed');
+      expect(ran).toBe(true);
+    });
+
+    test('a non-context object is refused the same way', async () => {
+      const mgr = await makeManager();
+      mgr.registerJob({ id: 'guarded2.job', displayName: 'Guarded', run: async () => ({ success: true }) });
+      const runId = await mgr.enqueue('guarded2.job', { nope: true });
+      expect(mgr.getStatus(runId)?.status).toBe('failed');
+    });
+
+    test('a job that throws outside its own handler becomes a failed run, not an unhandled rejection', async () => {
+      const mgr = await makeManager();
+      mgr.registerJob({ id: 'boom.job', displayName: 'Boom', run: async () => ({ success: true }) });
+      // Break the logging step executeJob runs before its try/catch.
+      const runId = await mgr.enqueue('boom.job', { ...TEST_REQUESTER, get viaToken(): never { throw new Error('poisoned context'); } } as never);
+      await new Promise((r) => setTimeout(r, 20));
+      const run = mgr.getStatus(runId);
+      expect(run?.status).toBe('failed');
+      expect(run?.result?.error).toContain('poisoned context');
+      // The job id is free again.
+      const again = await mgr.enqueue('boom.job', TEST_REQUESTER);
+      expect(again).not.toBe(runId);
+    });
+  });
+
   describe('getStatus()', () => {
     test('returns null for unknown runId', async () => {
       const mgr = await makeManager();
