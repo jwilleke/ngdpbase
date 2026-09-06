@@ -8,7 +8,9 @@ import globals from "globals";
 export default tseslint.config(
   {
     // Ignore config and common root files from type-aware linting
-    ignores: ["eslint.config.mjs", "node_modules/", "dist/", "addons/*/public/", "src/**/__fixtures__/**/*.js"],
+    // #1239: addons are linted like src/. Their compiled output beside the source
+    // (declarations, dist/) and their vendored trees are not source.
+    ignores: ["eslint.config.mjs", "node_modules/", "dist/", "addons/*/public/", "addons/**/*.d.ts", "addons/*/dist/**", "addons/*/node_modules/**", "src/**/__fixtures__/**/*.js"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -204,6 +206,11 @@ export default tseslint.config(
   // Applied to src/ only: scripts/ and tests legitimately reach past managers,
   // and addons/ have their own boundaries. The exemptions below are narrow and
   // stated, so a future reader can tell a decision from an oversight.
+  //
+  // #1239 / #1177: the outbound-HTTP boundary (#1133) is NOT one of those
+  // addon-local boundaries — addon code runs in the ngdpbase process and
+  // opens sockets from it, so the block after this one applies to src/ and
+  // addons/ alike, with src/http/ as the only door.
   {
     files: ["src/**/*.ts"],
     ignores: [
@@ -235,9 +242,38 @@ export default tseslint.config(
         }]
       }]
     }
-  }
+  },
 
   // ────────────────────────────────────────────────────────────────
   // Add this as the **very last** item
   //eslintPluginPrettierRecommended
+  // #1239 (#1177): outbound HTTP has one door, src/http/ (#1133, #1139).
+  //
+  // The editor-time half of scripts/check-http-boundary.ts, and the more
+  // accurate half: the AST knows a `fetch('/api/x')` inside a template
+  // literal is a string, where the script has to count backticks. Both stay,
+  // because their bypass surfaces differ — an eslint-disable comment silences
+  // this and does nothing to the script; the script cannot speak in the
+  // editor. Getting a raw fetch through now takes a visible disable comment
+  // AND a red CI check.
+  //
+  // Applies to src/ and addons/ identically: addon code runs in the ngdpbase
+  // process. Tests are out — they stub and spy on fetch on purpose.
+  {
+    files: ["src/**/*.ts", "addons/**/*.ts"],
+    ignores: ["src/http/**", "**/__tests__/**", "**/*.test.ts"],
+    rules: {
+      "no-restricted-globals": ["error", {
+        name: "fetch",
+        message: "Global fetch is not used outside src/http/ (#1133). Route outbound requests through src/http/guardedFetch, which applies the egress policy and re-checks the address on every redirect hop."
+      }],
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        paths: ["axios", "got", "undici", "node-fetch", "superagent", "request", "@elastic/elasticsearch", "@elastic/transport"].map((name) => ({
+          name,
+          allowTypeImports: true,
+          message: `"${name}" opens sockets of its own. Outbound requests belong in src/http/ (#1133, #1188); a type-only import is fine — write \`import type { X } from '${name}'\`.`
+        }))
+      }]
+    }
+  }
 );

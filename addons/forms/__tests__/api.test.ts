@@ -73,7 +73,7 @@ describe('POST /api/forms/submit/:formId — guards', () => {
           ? { getDefinition: () => null, saveSubmission: async (s: object) => s }
           : undefined
     };
-    const app = makeContext(engine as never);
+    const app = makeContext(engine);
     const res = await request(app).post('/api/forms/submit/no-such-form').send({ name: 'Alice' });
     expect(res.status).toBe(404);
     expect(res.body.ok).toBe(false);

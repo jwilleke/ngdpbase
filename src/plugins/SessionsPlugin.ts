@@ -67,6 +67,11 @@ const SessionsPlugin: SimplePlugin = {
       }
 
       const baseUrl = `http://${host}:${port}`;
+      // #1246: an HTTP round-trip to this server's own address — a boundary
+      // violation the regex guard never saw (no `fetch(` here) and one that
+      // guardedFetch cannot take (loopback is refused). The fix is to read the
+      // session store in-process; until then this is the one stated exemption.
+      // eslint-disable-next-line no-restricted-globals
       const fetchFn: FetchFunction = fetch;
       const property = String(params.property || 'count').toLowerCase();
 

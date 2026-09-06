@@ -76,7 +76,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           submittedAt: new Date().toISOString(),
           submittedBy,
           onBehalfOf,
-          data: validationResult.data as Record<string, unknown>,
+          data: validationResult.data,
           status: 'pending'
         });
 

@@ -83,7 +83,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         //   3. true (privacy-first hard default)
         const userManager = um();
         const freshUser = userManager ? await userManager.getUser(username) : null;
-        const userPref = (freshUser?.preferences as Record<string, unknown> | undefined)?.['journal.defaultPrivate'];
+        const userPref = (freshUser?.preferences)?.['journal.defaultPrivate'];
         const fleetDefaultPrivate = config['defaultPrivate'] !== false;
         const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
