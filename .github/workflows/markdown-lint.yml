@@ -10,7 +10,7 @@ jobs:
   markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No globs here on purpose. This block was a third hand-maintained copy
       # of the ignore list, kept in sync by comment rather than by anything
