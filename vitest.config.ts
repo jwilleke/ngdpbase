@@ -111,11 +111,19 @@ export default defineConfig({
     minWorkers: 1,
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      // #1240 (#1177): addon code runs in the ngdpbase process and is measured
+      // like src/. Excluded before, an untested addon file read as zero lines
+      // — green in the same words a real pass would use.
+      include: ['src/**/*.ts', 'addons/**/*.ts'],
       exclude: [
         'src/**/__tests__/**',
         'src/legacy/**',
-        '**/*.d.ts'
+        '**/*.d.ts',
+        '**/__tests__/**',
+        '**/*.test.ts',
+        '**/node_modules/**',
+        '**/dist/**',
+        'addons/*/public/**'
       ],
       reporter: ['text', 'lcov', 'html'],
       reportsDirectory: 'coverage'
