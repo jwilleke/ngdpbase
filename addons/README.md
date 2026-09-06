@@ -115,10 +115,39 @@ The AddonsManager will:
 
 ## Security Notes
 
-- Add-ons run in the same Node.js process as ngdpbase
-- Only install add-ons from trusted sources
-- Review add-on code before installation
-- Add-on databases should be stored in `./data/addons/` or within the add-on directory
+This section is written to the add-on author. The operator-facing part is short: an add-on runs in the ngdpbase process with the host's privileges, so install only add-ons whose code you have read, and keep an add-on's own data under `./data/addons/` or inside the add-on directory.
+
+### The invariant
+
+> Add-on code runs in the ngdpbase process. Every check that enforces a __runtime property__ of `src/` applies to `addons/` identically. A check that scans only `src/` is a bug in the check.
+
+An add-on is not a plugin sandbox. It is host code that happens to be loaded from a different directory, and a mistake in it is a mistake in the host: an unguarded outbound request is a server-side request forgery from the host's network position, a role-name check is a policy the operator cannot configure, a call without a context is an audit record without an actor, and a background job enqueued without a context crash-loops the whole server (geohazardwatch#288, fixed by #1238). The rules below are the same rules `src/` lives under; there is no relaxed set for add-ons.
+
+### What that means when you write one
+
+- __Outbound HTTP goes through `src/http/guardedFetch`__ (`dist/src/http/guardedFetch.js` from an add-on), resolved against the deployment's egress policy. Never a bare `fetch`, never `axios`, `got`, `undici`, `node-fetch` or an Elasticsearch client built outside `src/http/`. The scaffold hands the manager a `fetchJson` that already does this.
+- __A mutating browser request carries the CSRF token.__ In a view or `public/` script, send state-changing requests with `csrfFetch`, never `fetch`. The scaffold's status view shows the shape: `(window.csrfFetch || fetch)(url, { method: 'POST', ... })`.
+- __A permission decision is `ctx.requirePermission(...)` or `hasPermission(...)` on the forwarded subject.__ Never a role name, never `isAuthenticated` as an allow, never a subject rebuilt from `req.session` or a username. An add-on's routes build an `ApiContext.from(req, engine)` and ask it.
+- __An acting call takes an `ActorContext`__ (`PermissionSubject` from a request, or a `JobContext` from a timer, boot or operator action), never a bare username and never nothing. `enqueue`, `createBackup`, `upload`, `addComment` and the rest all refuse or misattribute without one.
+- __An add-on declares its own permissions and policies__ in its `config/default-config.json` (the `<id>-manage` entries the scaffold writes). It never edits the host catalog in `config/app-default-config.json`.
+- __An add-on never imports host source by a `src/` path.__ Import the compiled `dist/src/...` module; a value import of `src/` makes the add-on's build emit `.js` beside host source, and the container has no `src/`.
+
+### The guards that run over `addons/`
+
+These run in `npm run lint` (and `lint:ci`) over the host and every bundled add-on alike:
+
+- `lint:code` — eslint over `src/**/*.ts` and `addons/**/*.ts`, including the bare-`fetch` and HTTP-client-library bans outside `src/http/`.
+- `lint:csrf` — `check-csrf-fetch`: no tokenless state-changing client fetch in `views/`, `public/` or a plugin, add-on views included.
+- `lint:http` — `check-http-boundary`: no network access originates outside `src/http/`, in `src` or `addons`.
+- `lint:permission-subject` — `check-permission-subject`: no permission subject rebuilt in a route, manager, handler or add-on.
+- `lint:gates` — `check-permission-gates`: no role-name gate and no `isAuthenticated` allow, in `src`, `addons` and views.
+- `lint:addons` — `check-addon-boundary`: no add-on value-imports host `src/`, no compiled `.js` under `src/`.
+- `lint:audit-deps` — `check-lockfile-audit`: `npm audit` over every lockfile in the repo, the add-ons' own included, with an expiring allowlist.
+- Per-add-on `tsc` — `build:addons` compiles each bundled add-on against its own `tsconfig.json` under the host's compiler options.
+
+The one deliberate exemption is `lint:docs` (`check-docs-coverage`): it measures this project's obligation to document its own managers, plugins and providers. An add-on documents itself in its own README. That exemption is about documentation, not a runtime property, which is why it does not contradict the invariant.
+
+If you add a check that enforces a runtime property and it scans only `src/`, extend it to `addons/` in the same change. See [`docs/security-posture.md`](../docs/security-posture.md) for the posture these checks defend and [`docs/planning/Security-auditing.md`](../docs/planning/Security-auditing.md) for the audit side.
 
 ## Example Add-ons
 

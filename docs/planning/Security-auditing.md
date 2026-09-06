@@ -266,6 +266,7 @@ This all applies more sharply to YourPHR, where [yourphr#507](https://github.com
 
 ## Related
 
+- [`addons/README.md` — Security Notes](../../addons/README.md#security-notes) — the invariant that every runtime check on `src/` applies to `addons/` identically, and the list of guards that enforce it (#1177, #1245); an add-on's audit records and permission decisions are the host's
 - [#1109](https://github.com/jwilleke/ngdpbase/issues/1109) — who owns a write spanning two managers; audit loss is its live instance
 - [#1113](https://github.com/jwilleke/ngdpbase/issues/1113) — the audit page was unreachable (fixed)
 - [#1115](https://github.com/jwilleke/ngdpbase/issues/1115) — event vocabulary; emitter half fixed, naming half open
