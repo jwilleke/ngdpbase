@@ -28,7 +28,7 @@
  */
 
 import path from 'path';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import fs from 'fs-extra';
 import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
@@ -100,24 +100,14 @@ export interface ImportOptions {
   importType?: string;
 
   /**
-   * Principal that initiated this run (#738 + #631 forward-compat).
-   * For request-bound manual imports, the admin's `req.userContext.username`.
-   * For scheduled #685 ingestion (when it lands), the system principal's
-   * username per #631. Defaults to `'unknown'` when not supplied.
-   */
-  actor?: string;
-
-  /**
-   * True when `actor` is the #631 canonical system principal. Default false.
-   * Reserved for non-request code paths (#685 ingestion, background jobs).
-   */
-  actorIsSystem?: boolean;
-
-  /**
    * The identity that initiated this run, forwarded rather than flattened
-   * (#1164, #1179).
+   * (#1164, #1179, #1236).
    *
-   * `actor` above is a USERNAME STRING, and a string cannot carry a
+   * Until #1236 this sat beside `actor?: string` and `actorIsSystem?`, two
+   * more carriers of the same fact that the run summary and the page
+   * frontmatter read instead. One identity now: the run's actor, the page's
+   * `editor` and its `author` fallback, and the summary's `isSystem` are all
+   * derived from this context. A username string cannot carry a
    * delegation. `importPageAttachments` needed a context to authorise an
    * upload, could not get one from a string, and __fabricated__ one:
    *
@@ -133,10 +123,9 @@ export interface ImportOptions {
    * That is P1 twice over: a parameter that could not carry provenance, and a
    * synthetic admin principal invented to fill the gap it left.
    *
-   * Optional because non-request callers have none yet. Absent, the upload's
-   * permission check denies — the safe direction.
+   * Mandatory: the upload door records it, the summary names it, the page
+   * carries it. A non-request caller passes a JobContext with its reason.
    */
-  /** #1179: who is importing — the request's subject, forwarded. Mandatory: the upload door records it. */
   actorContext: ActorContext;
 
   /**
@@ -588,8 +577,12 @@ class ImportManager extends BaseManager {
           startedAt: startedAtIso,
           finishedAt: finishedAtIso,
           importType: options.importType ?? 'import',
-          actor: options.actor ?? 'unknown',
-          isSystem: options.actorIsSystem === true,
+          // #1236: one identity. A job with no person behind it — boot, a
+          // schedule, an operator command — is the system's run; a request,
+          // or a request-origin job, is a person's.
+          actor: options.actorContext.username,
+          isSystem: isJobContext(options.actorContext) && options.actorContext.origin !== 'request',
+          origin: actorOf(options.actorContext).metadata.origin as string,
           total: result.total,
           converted: result.converted,
           skipped: result.skipped,
@@ -884,10 +877,10 @@ class ImportManager extends BaseManager {
       // predate the save pipeline (raw imports) may lack `author` — fall back
       // to the import actor rather than carrying undefined into the save.
       uuid: base.uuid,
-      author: (base.author) || options.actor || 'unknown',
+      author: (base.author) || options.actorContext.username,
       ...(base.created !== undefined ? { created: base.created } : {}),
       ...(base.slug !== undefined ? { slug: base.slug } : {}),
-      editor: options.actor || 'unknown'
+      editor: options.actorContext.username
     };
     // js-yaml (via gray-matter) throws "unacceptable kind of an object to
     // dump" on undefined values — strip them so one absent field can't fail
@@ -918,8 +911,8 @@ class ImportManager extends BaseManager {
       throw new Error('PageManager unavailable — cannot import page');
     }
     const metadata = this.buildImportMetadata(conversionResult, pageUuid);
-    metadata.author = (metadata.author) || options.actor || 'unknown';
-    metadata.editor = options.actor || 'unknown';
+    metadata.author = (metadata.author) || options.actorContext.username;
+    metadata.editor = options.actorContext.username;
     // See overwriteExistingPage: undefined values fail the YAML dump.
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];

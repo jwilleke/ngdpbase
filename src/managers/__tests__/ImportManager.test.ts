@@ -5,6 +5,18 @@
 import path from 'path';
 import fs from 'fs-extra';
 import ImportManager from '../ImportManager';
+import { jobContextFromSystem } from '../../context/JobContext';
+import { writeRunSummary } from '../../utils/importRunSummary';
+
+// #1236: the run summary is asserted on, not read back from disk.
+vi.mock('../../utils/importRunSummary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../utils/importRunSummary')>();
+  return { ...actual, writeRunSummary: vi.fn(async () => undefined) };
+});
+
+/** #1236: every import carries the importer's own context — the summary, the page editor and the upload door all read it. */
+const IMPORTER = { username: 'importer', roles: ['admin'], isAuthenticated: true };
+const IMPORTER_USER = { username: 'importer-user', roles: ['admin'], isAuthenticated: true };
 
 // Mock AttachmentManager
 const mockUploadAttachment = vi.fn().mockResolvedValue({ identifier: 'abc123' });
@@ -164,6 +176,7 @@ describe('ImportManager', () => {
       const targetDir = path.join(testDir, 'output');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'mock',
@@ -180,6 +193,7 @@ describe('ImportManager', () => {
       await fs.writeFile(sourceFile, 'Unknown content');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'auto'
       });
@@ -192,6 +206,7 @@ describe('ImportManager', () => {
       await fs.writeFile(sourceFile, 'Content');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'auto',
         dryRun: true
@@ -211,10 +226,29 @@ describe('ImportManager', () => {
       await fs.writeFile(path.join(testDir, 'ignored.xyz'), 'Ignored');
     });
 
+    it('#1236 the run summary names the context: a request is a person, a job is the system', async () => {
+      const targetDir = path.join(testDir, 'output');
+      vi.mocked(writeRunSummary).mockClear();
+
+      // A dry run writes no summary — the record is of a run that happened.
+      await importManager.importPages({ actorContext: IMPORTER, sourceDir: testDir, targetDir, format: 'mock', dryRun: false });
+      expect(vi.mocked(writeRunSummary)).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ actor: 'importer', isSystem: false, origin: 'request' })
+      );
+
+      await importManager.importPages({ actorContext: jobContextFromSystem('System', 'seed at boot'), sourceDir: testDir, targetDir, format: 'mock', dryRun: false });
+      expect(vi.mocked(writeRunSummary)).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ actor: 'System', isSystem: true, origin: 'boot' })
+      );
+    });
+
     it('should import multiple files', async () => {
       const targetDir = path.join(testDir, 'output');
 
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'mock',
@@ -228,6 +262,7 @@ describe('ImportManager', () => {
 
     it('should respect limit option', async () => {
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'mock',
         limit: 1,
@@ -239,6 +274,7 @@ describe('ImportManager', () => {
 
     it('should respect offset option', async () => {
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'mock',
         offset: 1,
@@ -250,6 +286,7 @@ describe('ImportManager', () => {
 
     it('should return error for non-existent directory', async () => {
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: '/non/existent/path',
         dryRun: true
       });
@@ -265,6 +302,7 @@ describe('ImportManager', () => {
       await fs.writeFile(path.join(subDir, 'nested.mock'), 'Nested content');
 
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'mock',
         dryRun: true
@@ -320,8 +358,8 @@ describe('ImportManager', () => {
 
       // #1179: the importer's own context travels to the upload door — never
       // rebuilt from the imported file's `author` (#1181).
-      const IMPORTER = { username: 'importer', roles: ['admin'], isAuthenticated: true };
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'jspwiki',
@@ -361,6 +399,7 @@ describe('ImportManager', () => {
       const targetDir = path.join(testDir, 'output');
 
       await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'jspwiki',
@@ -386,6 +425,7 @@ describe('ImportManager', () => {
       mockUploadAttachment.mockClear();
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'jspwiki',
         dryRun: true
@@ -401,6 +441,7 @@ describe('ImportManager', () => {
       await fs.writeFile(sourceFile, '!!! No Attachments');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'jspwiki',
         dryRun: true
@@ -418,6 +459,7 @@ describe('ImportManager', () => {
       await fs.writeFile(sourceFile, 'Content about action potentials');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'jspwiki',
         dryRun: true
@@ -431,6 +473,7 @@ describe('ImportManager', () => {
       await fs.writeFile(sourceFile, 'Content about beta-hydroxybutyric acid');
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'jspwiki',
         dryRun: true
@@ -455,6 +498,7 @@ See [OtherPage] for more.`;
       await fs.writeFile(sourceFile, jspwikiContent);
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'jspwiki',
         dryRun: true
@@ -477,6 +521,7 @@ See [OtherPage] for more.`;
       await fs.ensureDir(targetDir);
 
       const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'jspwiki',
@@ -529,6 +574,7 @@ See [OtherPage] for more.`;
       await fs.ensureDir(targetDir);
 
       const result = await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'jspwiki',
@@ -573,7 +619,7 @@ See [OtherPage] for more.`;
       const targetDir = path.join(testDir, 'out-kw1');
       await fs.ensureDir(targetDir);
 
-      const result = await mgr.importSinglePage(sourceFile, { sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
+      const result = await mgr.importSinglePage(sourceFile, { actorContext: IMPORTER, sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
       expect(result.written).toBe(true);
       const written = await fs.readFile(result.targetPath, 'utf-8');
       expect(written).toMatch(/user-keywords:\s*\n\s+-\s+metrics/);
@@ -591,7 +637,7 @@ See [OtherPage] for more.`;
       const targetDir = path.join(testDir, 'out-kw2');
       await fs.ensureDir(targetDir);
 
-      const result = await mgr.importSinglePage(sourceFile, { sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
+      const result = await mgr.importSinglePage(sourceFile, { actorContext: IMPORTER, sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
       expect(result.written).toBe(true);
       const written = await fs.readFile(result.targetPath, 'utf-8');
       expect(written).toMatch(/user-keywords:\s*\n\s+-\s+foo/);
@@ -610,7 +656,7 @@ See [OtherPage] for more.`;
       const targetDir = path.join(testDir, 'out-kw3');
       await fs.ensureDir(targetDir);
 
-      const result = await mgr.importSinglePage(sourceFile, { sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
+      const result = await mgr.importSinglePage(sourceFile, { actorContext: IMPORTER, sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
       expect(result.written).toBe(true);
       const written = await fs.readFile(result.targetPath, 'utf-8');
       expect(written).toMatch(/- alpha/);
@@ -628,7 +674,7 @@ See [OtherPage] for more.`;
       const targetDir = path.join(testDir, 'out-kw4');
       await fs.ensureDir(targetDir);
 
-      const result = await mgr.importSinglePage(sourceFile, { sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
+      const result = await mgr.importSinglePage(sourceFile, { actorContext: IMPORTER, sourceDir: testDir, targetDir, format: 'kw-test', dryRun: false });
       expect(result.written).toBe(true);
       const written = await fs.readFile(result.targetPath, 'utf-8');
       expect(written).not.toMatch(/system-keywords: internal system/);
@@ -714,6 +760,7 @@ See [OtherPage] for more.`;
       const targetDir = path.join(testDir, 'out-conflict');
       await fs.ensureDir(targetDir);
       const result = await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir,
         format: 'conflict-test',
@@ -741,7 +788,7 @@ See [OtherPage] for more.`;
       const result = await importOne({
         dryRun: false,
         conflictPolicy: 'overwrite',
-        actor: 'importer-user'
+        actorContext: IMPORTER_USER
       });
 
       expect(result.written).toBe(true);
@@ -762,7 +809,7 @@ See [OtherPage] for more.`;
     });
 
     it('updates search index and link graph in-band after overwrite', async () => {
-      await importOne({ dryRun: false, conflictPolicy: 'overwrite', actor: 'importer-user' });
+      await importOne({ dryRun: false, conflictPolicy: 'overwrite', actorContext: IMPORTER_USER });
       expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
       expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Existing Page');
       expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
@@ -820,7 +867,7 @@ See [OtherPage] for more.`;
       const result = await importOne({
         dryRun: false,
         conflictPolicy: 'overwrite',
-        actor: 'importer-user'
+        actorContext: IMPORTER_USER
       });
 
       expect(result.written).toBe(true);
@@ -900,6 +947,7 @@ See [OtherPage] for more.`;
       const sourceFile = path.join(testDir, 'new-page.ptest');
       await fs.writeFile(sourceFile, 'fresh content');
       const result = await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
         sourceDir: testDir,
         format: 'pipeline-test',
         ...options
@@ -909,7 +957,7 @@ See [OtherPage] for more.`;
     }
 
     it('creates new pages via PageManager.savePage when targeting the live pages dir', async () => {
-      const result = await importNew({ dryRun: false, actor: 'importer-user' });
+      const result = await importNew({ dryRun: false, actorContext: IMPORTER_USER });
 
       expect(result.written).toBe(true);
       expect(mockSavePage).toHaveBeenCalledTimes(1);
@@ -924,21 +972,21 @@ See [OtherPage] for more.`;
     });
 
     it('updates search index and link graph in-band for new pages', async () => {
-      await importNew({ dryRun: false, actor: 'importer-user' });
+      await importNew({ dryRun: false, actorContext: IMPORTER_USER });
       expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
       expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Brand New Page');
       expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
     });
 
     it('does not raw-write a file when the pipeline path is used', async () => {
-      await importNew({ dryRun: false, actor: 'importer-user' });
+      await importNew({ dryRun: false, actorContext: IMPORTER_USER });
       expect(await fs.pathExists(scratchPagesDir)).toBe(false);
     });
 
     it('explicit non-live targetDir keeps the raw file write (export mode)', async () => {
       const exportDir = path.join(testDir, 'export-out');
       await fs.ensureDir(exportDir);
-      const result = await importNew({ dryRun: false, targetDir: exportDir, actor: 'importer-user' });
+      const result = await importNew({ dryRun: false, targetDir: exportDir, actorContext: IMPORTER_USER });
 
       expect(mockSavePage).not.toHaveBeenCalled();
       expect(result.written).toBe(true);
@@ -961,6 +1009,7 @@ See [OtherPage] for more.`;
     it('auto-detects .docx by extension and converts through the html→NCM path', async () => {
       await fs.copy(FIXTURE, path.join(testDir, 'sample.docx'));
       const result = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir: path.join(testDir, 'output'),
         format: 'auto',
@@ -978,6 +1027,7 @@ See [OtherPage] for more.`;
     it('the converted body is NCM markdown, not HTML', async () => {
       await fs.copy(FIXTURE, path.join(testDir, 'body.docx'));
       const single = await importManager.importPages({
+        actorContext: IMPORTER,
         sourceDir: testDir,
         targetDir: path.join(testDir, 'out2'),
         format: 'auto',

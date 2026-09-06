@@ -13010,7 +13010,6 @@ ${panes}
         limit: limit ? Number(limit) : undefined,
         generateUUIDs: generateUUIDs !== false,
         conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
-        actor: currentUser.username,
         // #1179: the identity itself, not just its name — a string cannot carry
         // the delegation, and the attachment upload needs one to authorise.
         actorContext: currentUser
@@ -13077,7 +13076,6 @@ ${panes}
         generateUUIDs: generateUUIDs !== false,
         dryRun: false,
         conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
-        actor: currentUser.username,
         // #1179: the identity itself, not just its name — a string cannot carry
         // the delegation, and the attachment upload needs one to authorise.
         actorContext: currentUser
@@ -13159,7 +13157,6 @@ ${panes}
         generateUUIDs: generateUUIDs !== false,
         dryRun: false,
         conflictPolicy: conflictPolicy === 'overwrite' ? 'overwrite' : 'skip',
-        actor: currentUser.username,
         // #1179: the identity itself, not just its name — a string cannot carry
         // the delegation, and the attachment upload needs one to authorise.
         actorContext: currentUser,

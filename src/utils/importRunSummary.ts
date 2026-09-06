@@ -27,19 +27,19 @@ export interface ImportRunSummary {
   /** What kind of import surfaced this run (`paste`, `url`, `file`, `ingest:<sourceId>`). */
   importType: string;
   /**
-   * Principal that initiated the run. Today populated from `req.userContext.username`
-   * for admin-triggered manual imports. Reserved for #631's system principal model
-   * when #685 ingestion (scheduled, no request) starts emitting summaries — at that
-   * point the value comes from `WikiContext.system().userContext.username` (`'System'`)
-   * or `WikiContext.forUser(actor).userContext.username` per the enqueuer's intent.
+   * Who initiated the run — `ImportOptions.actorContext.username` (#1236): the
+   * request's subject for a manual import, the system principal for a job.
    */
   actor: string;
   /**
-   * True when `actor` is the #631 canonical system principal — lets the trend view
-   * distinguish "alice triggered an import" from "scheduled feed ingested overnight".
-   * Defaults to false / absent for request-bound manual imports.
+   * True when the run was a job with no person behind it (a JobContext whose
+   * origin is boot, schedule or operator) — lets the trend view distinguish
+   * "alice triggered an import" from "scheduled feed ingested overnight".
+   * False for a request, or a request-origin job.
    */
   isSystem?: boolean;
+  /** Where the run came from: `request`, `boot`, `schedule` or `operator` (#1236). Absent on records written before it. */
+  origin?: string;
   /** Total items the run attempted. */
   total: number;
   /** Items successfully converted to pages. */
