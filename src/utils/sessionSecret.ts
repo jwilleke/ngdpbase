@@ -176,7 +176,7 @@ export function ensureSessionSecret(
       'set the variable yourself:\n' +
       `  ${SESSION_SECRET_ENV}=$(openssl rand -base64 32)\n` +
       '(#1194)'
-    );
+      , { cause: err });
   }
 
   return { secret, origin: { kind: 'generated', path: envPath } };

@@ -285,7 +285,7 @@ class InstallService {
     const pagesExist = await this.#hasPagesInDirectory(pagesDir);
 
     // Check if pages directory exists but is empty
-    let pagesDirExists = false;
+    let pagesDirExists: boolean;
     try {
       const stats = await fs.stat(pagesDir);
       pagesDirExists = stats.isDirectory();

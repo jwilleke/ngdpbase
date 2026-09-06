@@ -602,7 +602,7 @@ class LunrSearchProvider extends BaseSearchProvider {
     const statusList = Array.isArray(statuses) ? statuses : (statuses ? [statuses] : []);
     const searchInList = Array.isArray(searchIn) ? searchIn : (searchIn ? [searchIn] : ['all']);
 
-    let results: SearchResult[] = [];
+    let results: SearchResult[];
 
     if (query.trim()) {
       // Build field-specific query based on searchIn option

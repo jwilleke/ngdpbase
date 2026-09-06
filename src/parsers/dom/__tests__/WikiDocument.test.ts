@@ -463,7 +463,8 @@ describe('WikiDocument', () => {
       // Verify context is accessible
       expect(doc.getContext()).toEqual(context);
 
-      // Clear the reference (allowing GC)
+      // Clear the reference (allowing GC) — the assignment IS the point here.
+      // eslint-disable-next-line no-useless-assignment
       context = null;
 
       // Force garbage collection if available (V8)

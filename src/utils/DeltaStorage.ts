@@ -162,7 +162,7 @@ export default class DeltaStorage {
         const errorMessage = error instanceof Error ? error.message : String(error);
         throw new Error(
           `Failed to apply diff ${i + 1} of ${diffArray.length}: ${errorMessage}`
-        );
+          , { cause: error });
       }
     }
 

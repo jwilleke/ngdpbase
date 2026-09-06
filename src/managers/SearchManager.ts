@@ -309,11 +309,11 @@ class SearchManager extends BaseManager {
 
         this.provider = new ProviderClass(this.engine);
         if (!this.provider) {
-          throw new Error('Failed to create fallback search provider');
+          throw new Error('Failed to create fallback search provider', { cause: err });
         }
         await this.provider.initialize();
       } else {
-        throw new Error(`Failed to load search provider: ${(err as Error).message}`);
+        throw new Error(`Failed to load search provider: ${(err as Error).message}`, { cause: err });
       }
     }
   }

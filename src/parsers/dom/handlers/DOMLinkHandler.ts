@@ -448,7 +448,7 @@ class DOMLinkHandler {
       : rawFragment;
 
     // Try fuzzy matching if PageNameMatcher is available
-    let matchedPage: string | null = null;
+    let matchedPage: string | null;
     if (this.pageNameMatcher && this.pageNames.size > 0) {
       const allPages = Array.from(this.pageNames);
       matchedPage = this.pageNameMatcher.findMatch(pageName, allPages);
@@ -675,7 +675,7 @@ class DOMLinkHandler {
       const fragment = rawFragment.startsWith('section=')
         ? headingSlug(rawFragment.slice('section='.length))
         : rawFragment;
-      let matchedPage: string | null = null;
+      let matchedPage: string | null;
 
       if (this.pageNameMatcher && this.pageNames.size > 0) {
         const allPages = Array.from(this.pageNames);

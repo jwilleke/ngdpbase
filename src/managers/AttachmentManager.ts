@@ -1235,7 +1235,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (pageManager?.getAllPages && pageManager.getPage) {
       const pageNames = await pageManager.getAllPages();
       for (const pageName of pageNames) {
-        let content = '';
+        let content: string;
         try {
           content = (await pageManager.getPage(pageName))?.content ?? '';
         } catch { continue; }

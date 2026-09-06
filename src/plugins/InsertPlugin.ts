@@ -313,7 +313,7 @@ const InsertPlugin: SimplePlugin = {
     // follow-up bug: e.g. "MEW-Medical Summary" instead of the source
     // section's own title).
     const renderingManager = ctx.engine?.getManager('RenderingManager') as RenderingManagerLike | undefined;
-    let renderedHtml = '';
+    let renderedHtml: string;
     if (renderingManager?.renderMarkdown) {
       try {
         renderedHtml = await renderingManager.renderMarkdown(

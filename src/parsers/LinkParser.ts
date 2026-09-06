@@ -530,7 +530,7 @@ export class LinkParser {
       : rawFragment;
 
     // Try fuzzy matching if PageNameMatcher is available
-    let matchedPage: string | null = null;
+    let matchedPage: string | null;
     if (this.pageNameMatcher) {
       const allPages = Array.from(this.pageNames);
       matchedPage = this.pageNameMatcher.findMatch(pageName, allPages);

@@ -49,7 +49,7 @@ function renderField(field: ResolvedField): string {
   const requiredBadge = field.required ? ' <span class="text-danger">*</span>' : '';
   const pv = field.prefillValue ?? '';
 
-  let control = '';
+  let control: string;
 
   if (field.type === 'textarea') {
     control = `<textarea name="${escHtml(field.name)}" class="form-control"${placeholder}${required} rows="4">${escHtml(pv)}</textarea>`;

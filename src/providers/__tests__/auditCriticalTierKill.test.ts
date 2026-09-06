@@ -110,7 +110,7 @@ describe.skipIf(!built)('#1158 — a critical record survives an unclean exit', 
         throw new Error(
           `child did not die by SIGKILL (signal=${String(e.signal)} status=${String(e.status)}): ` +
           String(e.stderr ?? '')
-        );
+          , { cause: err });
       }
     }
 

@@ -437,7 +437,7 @@ class FilterChain {
       }
 
       if (this.config.failOnError) {
-        throw new Error(`FilterChain execution failed: ${(error as Error).message}`);
+        throw new Error(`FilterChain execution failed: ${(error as Error).message}`, { cause: error });
       }
 
       logger.error('❌ FilterChain execution error (continuing with original content):', (error as Error).message);

@@ -420,7 +420,7 @@ class AssetManager extends BaseManager {
   private _sort(items: AssetRecord[], sort: 'date' | 'caption', order: 'asc' | 'desc'): void {
     const asc = order === 'asc';
     items.sort((a, b) => {
-      let cmp = 0;
+      let cmp: number;
       if (sort === 'caption') {
         const cap = (r: AssetRecord): string => (r.description ?? r.filename ?? '').toLowerCase();
         cmp = cap(a).localeCompare(cap(b));

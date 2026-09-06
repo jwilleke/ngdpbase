@@ -377,7 +377,7 @@ export class Sist2AssetProvider implements AssetProvider {
    * @returns Health, plus a message identifying the specific failure
    */
   async healthCheckDetailed(): Promise<{ healthy: boolean; message: string }> {
-    let indexExists = false;
+    let indexExists: boolean;
     try {
       indexExists = await this.esClient.indices.exists({ index: this.esIndex });
     } catch (err) {
@@ -422,7 +422,7 @@ export class Sist2AssetProvider implements AssetProvider {
       };
     }
 
-    let sist2Ok = false;
+    let sist2Ok: boolean;
     try {
       const probe = await guardedFetch(`${this.sist2Url}/i`, { policy });
       sist2Ok = probe.status >= 200 && probe.status < 300;

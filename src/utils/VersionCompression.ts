@@ -106,7 +106,7 @@ export default class VersionCompression {
       return Buffer.from(compressed);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Compression failed: ${errorMessage}`);
+      throw new Error(`Compression failed: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -137,7 +137,7 @@ export default class VersionCompression {
       return Buffer.from(decompressed).toString('utf8');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Decompression failed: ${errorMessage}`);
+      throw new Error(`Decompression failed: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -193,7 +193,7 @@ export default class VersionCompression {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to compress file ${filePath}: ${errorMessage}`);
+      throw new Error(`Failed to compress file ${filePath}: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -248,7 +248,7 @@ export default class VersionCompression {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to decompress file ${filePath}: ${errorMessage}`);
+      throw new Error(`Failed to decompress file ${filePath}: ${errorMessage}`, { cause: error });
     }
   }
 

@@ -212,14 +212,13 @@ class WikiTagHandler extends BaseSyntaxHandler {
     const attributes = this.parseTagAttributes(attributeString);
 
     // Check cache for tag result if caching enabled
-    let cachedResult: string | null = null;
     const contentHash = this.generateContentHash(matchInfo.fullMatch);
     const contextHash = this.generateContextHash(context);
 
     if (this.options.enabled) {
       const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
       if (markupParser) {
-        cachedResult = await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
+        const cachedResult = await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
         if (cachedResult) {
           return cachedResult;
         }
@@ -350,7 +349,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
 
     } catch (error) {
       const err = error as Error;
-      throw new Error(`Failed to include page ${pageName}: ${err.message}`);
+      throw new Error(`Failed to include page ${pageName}: ${err.message}`, { cause: error });
     }
   }
 

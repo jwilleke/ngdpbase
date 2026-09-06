@@ -16832,7 +16832,7 @@ ${description}
     const asc = order === 'asc';
 
     const sorted = [...items].sort((a, b) => {
-      let cmp = 0;
+      let cmp: number;
       if (sort === 'caption') {
         const getMeta = (item: Record<string, unknown>) => item['metadata'] as Record<string, unknown> | undefined;
         const getCaption = (item: Record<string, unknown>) => {

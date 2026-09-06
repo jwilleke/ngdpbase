@@ -405,7 +405,7 @@ export async function recordAuditEvent(
     if (critical) {
       throw new Error(
         `Audit write failed for ${event.eventType}, which is declared on-failure: refuse: ${dropStats.lastError}`
-      );
+        , { cause: err });
     }
     return 'dropped';
   }

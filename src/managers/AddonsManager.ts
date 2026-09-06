@@ -1756,7 +1756,7 @@ class AddonsManager extends BaseManager {
 
     let stamped = 0;
     for (const { name, pagesDir } of this.getEnabledAddonPagesDirectories()) {
-      let files: string[] = [];
+      let files: string[];
       try {
         files = (await fs.promises.readdir(pagesDir)).filter(f => f.endsWith('.md'));
       } catch { continue; }

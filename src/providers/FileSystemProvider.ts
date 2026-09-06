@@ -480,7 +480,7 @@ class FileSystemProvider extends BasePageProvider {
         // using an incorrect path for a legacy page). Treat as page not found so the
         // caller can handle it gracefully rather than rendering a 500 error.
         logger.warn(`[FileSystemProvider] Page file missing (stale cache path?): ${info.title} at ${info.filePath}`);
-        throw new Error(`Page '${identifier}' not found.`);
+        throw new Error(`Page '${identifier}' not found.`, { cause: err });
       }
       throw err;
     }
