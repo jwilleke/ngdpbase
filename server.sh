@@ -45,6 +45,12 @@ fi
 _FAST_CFG="$_FAST_RESOLVED/config/app-custom-config.json"
 unset _FAST_RESOLVED
 _DEFAULT_CFG="$SCRIPT_DIR/config/app-default-config.json"
+# Strip ANSI colour codes; pm2 colours its banners and status tables.
+_strip_ansi() { perl -pe 's/\e\[[0-9;]*m//g'; }
+
+# PID of whatever is listening on this instance's port, or nothing.
+_port_pid() { lsof -ti tcp:"${PORT:-3000}" -sTCP:LISTEN 2>/dev/null | head -1; }
+
 _get_app_name() {
   local v
   for f in "$_FAST_CFG" "$_DEFAULT_CFG"; do
@@ -283,8 +289,15 @@ case "${1:-}" in
       WAIT_COUNT=$((WAIT_COUNT + 1))
 
       # Check if PM2 shows the app as online
-      PM2_STATUS=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | grep -E "^\s*status" | awk '{print $NF}' || true)
+      PM2_STATUS=$(npx --no pm2 show "$APP_NAME" 2>/dev/null | _strip_ansi | grep -E "^\s*status" | awk '{print $NF}' || true)
       if [ "$PM2_STATUS" = "online" ]; then
+        break
+      fi
+      # The app listening on its port is the fact that matters. When the pm2
+      # CLI and the daemon disagree on version (a dependency bump moved one and
+      # not the other), `pm2 show` prints only an out-of-date banner and the
+      # loop above would run its full 30 s against a server that is already up.
+      if [ -n "$(_port_pid)" ]; then
         break
       fi
 
@@ -303,7 +316,12 @@ case "${1:-}" in
     done
 
     # STEP 9: Verify server started and write PID file
-    PM2_PID=$(npx --no pm2 pid "$APP_NAME" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    # Only a line that IS a number is a PID. `pm2 pid` prefixes an out-of-date
+    # banner in colour when CLI and daemon versions differ, and the first digits
+    # in that output were `31` from the red escape code, reported here as a PID
+    # that did not exist. The listening process on the port is the fallback.
+    PM2_PID=$(npx --no pm2 pid "$APP_NAME" 2>/dev/null | _strip_ansi | grep -oE '^[0-9]+$' | head -1)
+    [ -z "$PM2_PID" ] && PM2_PID=$(_port_pid)
     if [ -n "$PM2_PID" ] && [ "$PM2_PID" != "0" ]; then
       # Verify the process is actually running
       if ps -p "$PM2_PID" > /dev/null 2>&1; then
