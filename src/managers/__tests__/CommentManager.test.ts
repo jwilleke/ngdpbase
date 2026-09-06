@@ -28,9 +28,17 @@ const mockConfigManager = {
   getResolvedDataPath: vi.fn((_key: string, _default: string) => tmpDir)
 };
 
+/** #1232: the door takes the request's subject; author and display name are read from it. */
+const subject = (username: string, displayName?: string) => ({ username, displayName, roles: ['reader'], isAuthenticated: true, ipAddress: '203.0.113.7' });
+
+/** Every record the manager writes, so a test can read who did what. */
+const sink: Array<Record<string, unknown>> = [];
+const mockAuditManager = { logAuditEvent: vi.fn(async (e: Record<string, unknown>) => { sink.push(e); return 'id'; }) };
+
 const mockEngine = {
   getManager: vi.fn((name: string) => {
     if (name === 'ConfigurationManager') return mockConfigManager;
+    if (name === 'AuditManager') return mockAuditManager;
     return null;
   })
 } as unknown as WikiEngine;
@@ -47,6 +55,7 @@ describe('CommentManager', () => {
     });
     cm = new CommentManager(mockEngine);
     await cm.initialize();
+    sink.length = 0;
   });
 
   afterEach(() => {
@@ -129,7 +138,7 @@ describe('CommentManager', () => {
 
   describe('addComment()', () => {
     test('creates a comment and returns it', async () => {
-      const result = await cm.addComment('page-010', 'alice', 'Alice A', 'Hello world');
+      const result = await cm.addComment('page-010', subject('alice', 'Alice A'), 'Hello world');
       expect(result.id).toBeTruthy();
       expect(result.author).toBe('alice');
       expect(result.authorDisplayName).toBe('Alice A');
@@ -139,7 +148,7 @@ describe('CommentManager', () => {
     });
 
     test('persists comment to disk', async () => {
-      const c = await cm.addComment('page-011', 'bob', 'Bob B', 'Persisted');
+      const c = await cm.addComment('page-011', subject('bob', 'Bob B'), 'Persisted');
       const filePath = path.join(tmpDir, 'page-011', `${c.id}.json`);
       expect(fs.existsSync(filePath)).toBe(true);
       const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { content: string };
@@ -147,7 +156,7 @@ describe('CommentManager', () => {
     });
 
     test('comment is retrievable via getComments', async () => {
-      await cm.addComment('page-012', 'carol', 'Carol C', 'Retrievable');
+      await cm.addComment('page-012', subject('carol', 'Carol C'), 'Retrievable');
       const comments = await cm.getComments('page-012');
       expect(comments).toHaveLength(1);
       expect(comments[0]?.content).toBe('Retrievable');
@@ -156,13 +165,13 @@ describe('CommentManager', () => {
 
   describe('deleteComment()', () => {
     test('returns false for non-existent comment', async () => {
-      const result = await cm.deleteComment('page-020', 'no-such-id', 'admin');
+      const result = await cm.deleteComment('page-020', 'no-such-id', subject('admin'));
       expect(result).toBe(false);
     });
 
     test('marks comment as deleted and returns true', async () => {
-      const c = await cm.addComment('page-021', 'dave', 'Dave D', 'To be deleted');
-      const result = await cm.deleteComment('page-021', c.id, 'admin');
+      const c = await cm.addComment('page-021', subject('dave', 'Dave D'), 'To be deleted');
+      const result = await cm.deleteComment('page-021', c.id, subject('admin'));
       expect(result).toBe(true);
 
       // Should no longer appear in getComments
@@ -171,8 +180,8 @@ describe('CommentManager', () => {
     });
 
     test('sets deletedBy and deletedAt fields', async () => {
-      const c = await cm.addComment('page-022', 'eve', 'Eve E', 'Delete me');
-      await cm.deleteComment('page-022', c.id, 'admin-user');
+      const c = await cm.addComment('page-022', subject('eve', 'Eve E'), 'Delete me');
+      await cm.deleteComment('page-022', c.id, subject('admin-user'));
 
       const filePath = path.join(tmpDir, 'page-022', `${c.id}.json`);
       const saved = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as { deleted: boolean; deletedBy: string; deletedAt: string };
@@ -189,10 +198,50 @@ describe('CommentManager', () => {
     });
 
     test('returns comment by id', async () => {
-      const c = await cm.addComment('page-031', 'frank', 'Frank F', 'Find me');
+      const c = await cm.addComment('page-031', subject('frank', 'Frank F'), 'Find me');
       const found = await cm.getComment('page-031', c.id);
       expect(found).not.toBeNull();
       expect(found?.content).toBe('Find me');
+    });
+  });
+
+  describe('#1232 — comment writes are recorded from the context the door was handed', () => {
+    test('comment-create names who, the address, origin request, and the comment — never its text', async () => {
+      const c = await cm.addComment('page-900', subject('alice', 'Alice A'), 'secret sauce recipe');
+      const rec = sink.find((e) => e.eventType === 'comment-create');
+      expect(rec).toMatchObject({ user: 'alice', ipAddress: '203.0.113.7', resource: c.id, resourceType: 'comment', metadata: { origin: 'request', pageUuid: 'page-900', length: 19 } });
+      expect(JSON.stringify(rec)).not.toContain('secret sauce');
+    });
+
+    test('the author and display name come from the subject, and the name falls back to the username', async () => {
+      const a = await cm.addComment('page-901', subject('alice', 'Alice A'), 'x');
+      expect(a).toMatchObject({ author: 'alice', authorDisplayName: 'Alice A' });
+      const b = await cm.addComment('page-901', subject('bob'), 'y');
+      expect(b).toMatchObject({ author: 'bob', authorDisplayName: 'bob' });
+    });
+
+    test('comment-delete says whose comment it was and whether the deleter was its author', async () => {
+      const c = await cm.addComment('page-902', subject('alice', 'Alice A'), 'mine');
+      sink.length = 0;
+      await cm.deleteComment('page-902', c.id, subject('root'));
+      const rec = sink.find((e) => e.eventType === 'comment-delete');
+      expect(rec).toMatchObject({ user: 'root', resource: c.id, metadata: { origin: 'request', pageUuid: 'page-902', author: 'alice', ownComment: false } });
+      const d = await cm.addComment('page-902', subject('alice'), 'also mine');
+      sink.length = 0;
+      await cm.deleteComment('page-902', d.id, subject('alice'));
+      expect(sink[0]?.metadata).toMatchObject({ ownComment: true });
+    });
+
+    test('a JobContext records the principal, origin and reason', async () => {
+      const { jobContextFromSystem } = await import('../../context/JobContext');
+      await cm.addComment('page-903', jobContextFromSystem('System', 'import: carry the source comments over'), 'imported');
+      expect(sink[0]).toMatchObject({ eventType: 'comment-create', user: 'System', metadata: { origin: 'boot', reason: 'import: carry the source comments over' } });
+      expect(sink[0].ipAddress).toBeUndefined();
+    });
+
+    test('a missing comment records nothing', async () => {
+      expect(await cm.deleteComment('page-904', 'nope', subject('root'))).toBe(false);
+      expect(sink).toEqual([]);
     });
   });
 });

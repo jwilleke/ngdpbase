@@ -358,6 +358,14 @@
       "on-failure": "refuse",
       "description": "Page deleted; destruction, so the record must outlive the page"
     },
+    "comment-create": {
+      "on-failure": "continue",
+      "description": "Comment added to a page — user content written on someone's behalf, the page-edit class (#1232)"
+    },
+    "comment-delete": {
+      "on-failure": "continue",
+      "description": "Comment marked deleted; who removed it and whose it was (#1232)"
+    },
     "page-read": {
       "on-failure": "continue",
       "enabled": false,

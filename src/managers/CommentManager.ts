@@ -6,6 +6,9 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PageComment } from '../types/Comment.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 export default class CommentManager extends BaseManager {
   private commentsDir: string = './data/comments';
@@ -61,13 +64,21 @@ export default class CommentManager extends BaseManager {
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async addComment(pageUuid: string, author: string, authorDisplayName: string, content: string): Promise<PageComment> {
+  /**
+   * Add a comment on someone's behalf (#1232, security-posture P1).
+   *
+   * `ctx` is the request's subject — `wikiContext.userContext`, forwarded —
+   * or a JobContext for an import; never a name. The author and display
+   * name are read from it, and the write is recorded as `comment-create`.
+   */
+  async addComment(pageUuid: string, ctx: ActorContext, content: string): Promise<PageComment> {
     const id = randomUUID();
+    const displayName = (ctx as { displayName?: string }).displayName;
     const comment: PageComment = {
       id,
       pageUuid,
-      author,
-      authorDisplayName,
+      author: ctx.username,
+      authorDisplayName: displayName && displayName.trim() ? displayName : ctx.username,
       content,
       createdAt: new Date().toISOString()
     };
@@ -76,21 +87,61 @@ export default class CommentManager extends BaseManager {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(comment, null, 2), 'utf-8');
     this.invalidateHandlerCache(pageUuid);
+
+    // At the door, after the write, on-failure: continue — the same footing as
+    // page-edit. The content itself is never recorded; its length is.
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.auditSink(), {
+      eventType: AUDIT_EVENT.COMMENT_CREATE,
+      user: who.user,
+      ipAddress: who.ipAddress,
+      action: 'comment-create',
+      result: 'success',
+      severity: 'low',
+      resource: id,
+      resourceType: 'comment',
+      metadata: { ...who.metadata, pageUuid, commentId: id, length: content.length }
+    }, (err) => logger.warn(`[CommentManager] Audit record failed for comment-create ${id}:`, err));
+
     return comment;
   }
 
-  async deleteComment(pageUuid: string, commentId: string, deletedBy: string): Promise<boolean> {
+  /**
+   * Mark a comment deleted on someone's behalf (#1232). Soft: the file stays
+   * with `deleted`, `deletedBy`, `deletedAt`. Recorded as `comment-delete`,
+   * naming whose comment it was and whether the deleter was its author.
+   */
+  async deleteComment(pageUuid: string, commentId: string, ctx: ActorContext): Promise<boolean> {
     const filePath = path.join(this.commentsDir, pageUuid, `${commentId}.json`);
     if (!fs.existsSync(filePath)) return false;
 
     const raw = fs.readFileSync(filePath, 'utf-8');
     const comment = JSON.parse(raw) as PageComment;
     comment.deleted = true;
-    comment.deletedBy = deletedBy;
+    comment.deletedBy = ctx.username;
     comment.deletedAt = new Date().toISOString();
     fs.writeFileSync(filePath, JSON.stringify(comment, null, 2), 'utf-8');
     this.invalidateHandlerCache(pageUuid);
+
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.auditSink(), {
+      eventType: AUDIT_EVENT.COMMENT_DELETE,
+      user: who.user,
+      ipAddress: who.ipAddress,
+      action: 'comment-delete',
+      result: 'success',
+      severity: 'low',
+      resource: commentId,
+      resourceType: 'comment',
+      metadata: { ...who.metadata, pageUuid, commentId, author: comment.author, ownComment: comment.author === ctx.username }
+    }, (err) => logger.warn(`[CommentManager] Audit record failed for comment-delete ${commentId}:`, err));
+
     return true;
+  }
+
+  /** Lazily resolved: AuditManager initialises last, and a missing sink is a configuration state, not a failure. */
+  private auditSink(): AuditEventSink | null {
+    return (this.engine?.getManager?.('AuditManager')) ?? null;
   }
 
   async getComment(pageUuid: string, commentId: string): Promise<PageComment | null> {

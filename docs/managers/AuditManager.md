@@ -493,6 +493,8 @@ audited.
 | `page-edit` | Page edited | continue | yes |
 | `page-rename` | Page renamed | continue | yes |
 | `page-delete` | Page deleted; destruction, so the record must outlive the page | refuse | yes |
+| `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
+| `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
 | `page-read` | Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129) | continue | no |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `asset-upload` | File uploaded | continue | yes |

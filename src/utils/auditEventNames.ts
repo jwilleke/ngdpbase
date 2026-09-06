@@ -53,6 +53,9 @@ export const AUDIT_EVENT = {
   USER_EDIT: 'user-edit',
   USER_DELETE: 'user-delete',
   SEARCH_USER: 'search-user',
+  /** #1232: a comment is user content written on someone's behalf — the page-edit class. */
+  COMMENT_CREATE: 'comment-create',
+  COMMENT_DELETE: 'comment-delete',
   PAGE_EXPORT: 'page-export',
   ASSET_EDIT: 'asset-edit',
   CONFIG_RESET: 'config-reset',

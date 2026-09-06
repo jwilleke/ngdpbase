@@ -8697,8 +8697,8 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comments are not enabled' });
       }
 
-      const displayName = (currentUser.displayName ?? currentUser.username) ?? 'Unknown';
-      const comment = await commentManager.addComment(pageUuid, currentUser.username ?? '', displayName, content.trim());
+      // #1232: the subject goes to the door; the manager reads author and display name from it and records the write.
+      const comment = await commentManager.addComment(pageUuid, currentUser, content.trim());
       await this.flushPluginCaches();
       return res.json({ success: true, comment });
     } catch (err: unknown) {
@@ -9100,7 +9100,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
 
-      await commentManager.deleteComment(pageUuid, commentId, currentUser.username ?? '');
+      await commentManager.deleteComment(pageUuid, commentId, currentUser);
       await this.flushPluginCaches();
       return res.json({ success: true });
     } catch (err: unknown) {
