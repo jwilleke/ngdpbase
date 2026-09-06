@@ -495,6 +495,7 @@ audited.
 | `page-delete` | Page deleted; destruction, so the record must outlive the page | refuse | yes |
 | `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
+| `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
 | `page-read` | Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129) | continue | no |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `asset-upload` | File uploaded | continue | yes |

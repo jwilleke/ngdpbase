@@ -783,11 +783,12 @@ class ImportManager extends BaseManager {
     {
       const targetUuid = overwriteExistingUuid ?? pageUuid;
       const footnoteManager = this.engine.getManager('FootnoteManager') as
-        | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: string, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
+        | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: ActorContext, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
         | null;
       if (targetUuid && footnoteManager?.isEnabled?.() && footnoteManager.transferFromContent) {
+        // #1233: the importer's own context, not a literal 'import'.
         const fn = await footnoteManager.transferFromContent(
-          targetUuid, conversionResult.content, 'import', options.dryRun === true
+          targetUuid, conversionResult.content, options.actorContext, options.dryRun === true
         );
         if (fn.warnings.length > 0) {
           conversionResult.content = fn.content;

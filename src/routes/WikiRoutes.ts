@@ -9016,7 +9016,7 @@ ${panes}
       const fn = await this.transferPageFootnotes(
         ncm.content,
         ncmDoc.data.uuid as string | undefined,
-        currentUser.username ?? 'unknown',
+        currentUser,
         false
       );
       const finalDoc = fn.warnings.length > 0 ? matter(fn.content) : ncmDoc;
@@ -9206,7 +9206,7 @@ ${panes}
 
       const footnote = await footnoteManager.addFootnote(
         pageUuid, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
-        currentUser.username ?? 'anonymous'
+        currentUser
       );
       await this.flushPluginCaches();
       return res.json({ success: true, footnote });
@@ -9222,7 +9222,10 @@ ${panes}
   async updateFootnote(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through silently (#1233).
+      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'page-edit');
 
       const { pageUuid, footnoteId } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
@@ -9236,7 +9239,7 @@ ${panes}
       }
 
       const footnote = await footnoteManager.updateFootnote(
-        pageUuid, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }
+        pageUuid, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
       );
       if (!footnote) return res.status(404).json({ success: false, error: 'Footnote not found' });
       await this.flushPluginCaches();
@@ -9289,7 +9292,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
 
-      await footnoteManager.deleteFootnote(pageUuid, footnoteId);
+      await footnoteManager.deleteFootnote(pageUuid, footnoteId, currentUser);
       await this.flushPluginCaches();
       return res.json({ success: true });
     } catch (err: unknown) {
@@ -13395,7 +13398,7 @@ ${panes}
       // #1125: dry-run footnote transfer — the preview shows the body with
       // definitions moved to the footnote list, but writes nothing.
       const fn = await this.transferPageFootnotes(
-        img.content, page.metadata?.uuid, wikiContext.userContext?.username ?? 'unknown', true
+        img.content, page.metadata?.uuid, wikiContext.userContext, true
       );
       return res.json({
         success: true,
@@ -13440,7 +13443,7 @@ ${panes}
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
       // #1125: real footnote transfer — definitions land in the sidecar list.
       const fn = await this.transferPageFootnotes(
-        img.content, page.metadata?.uuid, wikiContext.userContext?.username ?? 'unknown', false
+        img.content, page.metadata?.uuid, wikiContext.userContext, false
       );
       const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings, ...fn.warnings];
       if (fn.content === original) {
@@ -13483,19 +13486,19 @@ ${panes}
   private async transferPageFootnotes(
     content: string,
     pageUuid: string | undefined,
-    username: string,
+    ctx: ActorContext,
     dryRun: boolean
   ): Promise<{ content: string; warnings: string[] }> {
     // #1126: FootnoteManager.transferFromContent is THE implementation —
     // convert, ingest, and import all delegate there so the funnel cannot
-    // drift per-path.
+    // drift per-path. #1233: the caller's subject goes with it, never a name.
     const footnoteManager = this.engine.getManager('FootnoteManager') as
-      | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: string, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
+      | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: ActorContext, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
       | null;
     if (!pageUuid || !footnoteManager?.isEnabled?.() || !footnoteManager.transferFromContent) {
       return { content, warnings: [] };
     }
-    return footnoteManager.transferFromContent(pageUuid, content, username, dryRun);
+    return footnoteManager.transferFromContent(pageUuid, content, ctx, dryRun);
   }
 
   /**

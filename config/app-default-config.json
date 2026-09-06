@@ -366,6 +366,10 @@
       "on-failure": "continue",
       "description": "Comment marked deleted; who removed it and whose it was (#1232)"
     },
+    "footnote-edit": {
+      "on-failure": "continue",
+      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)"
+    },
     "page-read": {
       "on-failure": "continue",
       "enabled": false,

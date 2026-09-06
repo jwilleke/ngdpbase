@@ -4,6 +4,9 @@ import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 export interface PageFootnote {
   id: string;
@@ -79,11 +82,19 @@ export default class FootnoteManager extends BaseManager {
     });
   }
 
+  /**
+   * Add a footnote on someone's behalf (#1233, security-posture P1).
+   *
+   * `ctx` is the request's subject — `wikiContext.userContext`, forwarded —
+   * or a JobContext for an import; never a name. `createdBy` is read from
+   * it, and the write is recorded as `footnote-edit` / `add`.
+   */
   async addFootnote(
     pageUuid: string,
     data: { display: string; url: string; note: string },
-    createdBy: string
+    ctx: ActorContext
   ): Promise<PageFootnote> {
+    const createdBy = ctx.username;
     const map = this.readMap(pageUuid);
 
     // Assign next sequential numeric id
@@ -102,6 +113,7 @@ export default class FootnoteManager extends BaseManager {
     map[nextId] = footnote;
     this.writeMap(pageUuid, map);
     this.invalidateHandlerCache(pageUuid);
+    await this.recordEdit('add', pageUuid, ctx, { footnoteId: nextId });
     return footnote;
   }
 
@@ -118,8 +130,15 @@ export default class FootnoteManager extends BaseManager {
     pageUuid: string,
     id: string,
     data: { display: string; url: string; note: string },
-    createdBy: string
+    ctx: ActorContext
   ): Promise<boolean> {
+    const ok = this.putImported(pageUuid, id, data, ctx.username);
+    if (ok) await this.recordEdit('import', pageUuid, ctx, { footnoteId: id });
+    return ok;
+  }
+
+  /** The write behind `importFootnote` and `transferFromContent`; the callers record it, once each. */
+  private putImported(pageUuid: string, id: string, data: { display: string; url: string; note: string }, createdBy: string): boolean {
     const map = this.readMap(pageUuid);
     if (map[id]) return false;
 
@@ -146,7 +165,7 @@ export default class FootnoteManager extends BaseManager {
   async transferFromContent(
     pageUuid: string,
     content: string,
-    createdBy: string,
+    ctx: ActorContext,
     dryRun: boolean
   ): Promise<{ content: string; warnings: string[] }> {
     if (!this.enabled) return { content, warnings: [] };
@@ -156,15 +175,19 @@ export default class FootnoteManager extends BaseManager {
 
     const warnings: string[] = [];
     const kept: string[] = [];
+    const transferred: string[] = [];
+    const skipped: string[] = [];
     for (const def of extracted.defs) {
       if (dryRun) {
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
         continue;
       }
-      const ok = await this.importFootnote(pageUuid, def.id, def, createdBy);
+      const ok = this.putImported(pageUuid, def.id, def, ctx.username);
       if (ok) {
+        transferred.push(def.id);
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
       } else {
+        skipped.push(def.id);
         warnings.push(`footnote-skipped-exists: [^${def.id}] already in the footnote list; body definition kept`);
         kept.push(`[^${def.id}]: ${def.display && def.url ? `[${def.display}](${def.url})` : def.url || def.note}`);
       }
@@ -172,13 +195,18 @@ export default class FootnoteManager extends BaseManager {
     const body = kept.length > 0
       ? `${extracted.content.replace(/\s*$/, '')}\n\n${kept.join('\n')}\n`
       : extracted.content;
+    // One record for the whole transfer; a dry run writes nothing and records nothing.
+    if (!dryRun && transferred.length > 0) {
+      await this.recordEdit('transfer', pageUuid, ctx, { footnoteIds: transferred, skipped });
+    }
     return { content: ensureFootnotesPlugin(body), warnings };
   }
 
   async updateFootnote(
     pageUuid: string,
     id: string,
-    data: { display: string; url: string; note: string }
+    data: { display: string; url: string; note: string },
+    ctx: ActorContext
   ): Promise<PageFootnote | null> {
     const map = this.readMap(pageUuid);
     if (!map[id]) return null;
@@ -191,12 +219,14 @@ export default class FootnoteManager extends BaseManager {
     };
     this.writeMap(pageUuid, map);
     this.invalidateHandlerCache(pageUuid);
+    await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
     return map[id];
   }
 
-  async deleteFootnote(pageUuid: string, id: string): Promise<boolean> {
+  async deleteFootnote(pageUuid: string, id: string, ctx: ActorContext): Promise<boolean> {
     const map = this.readMap(pageUuid);
     if (!map[id]) return false;
+    const createdBy = map[id].createdBy;
 
     delete map[id];
 
@@ -208,7 +238,34 @@ export default class FootnoteManager extends BaseManager {
       this.writeMap(pageUuid, map);
     }
     this.invalidateHandlerCache(pageUuid);
+    await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote: createdBy === ctx.username });
     return true;
+  }
+
+  /**
+   * `footnote-edit`, attributed from the context (#1233). Ids only — display,
+   * url and note are content, and the record does not repeat content.
+   * on-failure: continue, the page-edit footing.
+   */
+  private async recordEdit(
+    action: 'add' | 'import' | 'transfer' | 'update' | 'delete',
+    pageUuid: string,
+    ctx: ActorContext,
+    detail: Record<string, unknown>
+  ): Promise<void> {
+    const who = actorOf(ctx);
+    const sink = (this.engine?.getManager?.('AuditManager')) ?? null;
+    await recordAuditEvent(sink, {
+      eventType: AUDIT_EVENT.FOOTNOTE_EDIT,
+      user: who.user,
+      ipAddress: who.ipAddress,
+      action,
+      result: 'success',
+      severity: 'low',
+      resource: pageUuid,
+      resourceType: 'page',
+      metadata: { ...who.metadata, pageUuid, ...detail }
+    }, (err) => logger.warn(`[FootnoteManager] Audit record failed for footnote-edit/${action} on ${pageUuid}:`, err));
   }
 
   hasFootnotes(pageUuid: string): boolean {

@@ -118,7 +118,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
         if (name === 'FootnoteManager') {
           return {
             isEnabled: () => true,
-            async transferFromContent(uuid: string, content: string, by: string, dryRun: boolean) {
+            async transferFromContent(uuid: string, content: string, by: { username: string }, dryRun: boolean) {
               const { extractFootnoteDefs, ensureFootnotesPlugin } = await import('../../converters/ncm/footnotes');
               const ex = extractFootnoteDefs(content);
               if (ex.defs.length === 0) return { content, warnings: [] };
@@ -167,8 +167,8 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     const res = makeRes();
     await routes.adminConvertExecute(makeReq({ page: 'Noted' }), res);
     expect(importFootnote).toHaveBeenCalledTimes(2);
-    expect(importFootnote).toHaveBeenCalledWith('uuid-n', '1', expect.objectContaining({ note: 'Supporting note.' }), 'alice');
-    expect(importFootnote).toHaveBeenCalledWith('uuid-n', 'src', expect.objectContaining({ url: 'https://example.org/paper' }), 'alice');
+    expect(importFootnote).toHaveBeenCalledWith('uuid-n', '1', expect.objectContaining({ note: 'Supporting note.' }), expect.objectContaining({ username: 'alice' }));
+    expect(importFootnote).toHaveBeenCalledWith('uuid-n', 'src', expect.objectContaining({ url: 'https://example.org/paper' }), expect.objectContaining({ username: 'alice' }));
     expect(savePageWithContext).toHaveBeenCalledOnce();
   });
 

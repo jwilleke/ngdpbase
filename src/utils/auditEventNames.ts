@@ -56,6 +56,8 @@ export const AUDIT_EVENT = {
   /** #1232: a comment is user content written on someone's behalf — the page-edit class. */
   COMMENT_CREATE: 'comment-create',
   COMMENT_DELETE: 'comment-delete',
+  /** #1233: one name for the footnote sidecar; `action` says add / import / transfer / update / delete. */
+  FOOTNOTE_EDIT: 'footnote-edit',
   PAGE_EXPORT: 'page-export',
   ASSET_EDIT: 'asset-edit',
   CONFIG_RESET: 'config-reset',
