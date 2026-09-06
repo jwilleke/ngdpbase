@@ -109,10 +109,13 @@ for (const file of addonFiles) {
   }
 }
 
-// 2. Emission symptom: compiled js under src/.
+// 2. Emission symptom: compiled js under src/. A `.js` inside a `__fixtures__`
+// directory is test material committed on purpose (#1230 keeps a .ts/.js pair
+// to prove the resolver prefers source), not an addon build's emission.
 const strayJs: string[] = [];
 walk(SRC, '.js', strayJs);
 for (const f of strayJs) {
+  if (f.split(path.sep).includes('__fixtures__')) continue;
   findings.push({
     file: path.relative(REPO, f),
     line: 0,
