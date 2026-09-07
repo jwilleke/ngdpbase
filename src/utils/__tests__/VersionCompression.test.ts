@@ -133,6 +133,36 @@ describe('VersionCompression', () => {
     });
   });
 
+  describe('history written by pako 2', () => {
+    // Produced by pako 2.1.0 (gzip level 6) before the pako 3 upgrade. Version
+    // history already on disk was compressed by that major, so decompress must
+    // keep reading it.
+    const PAKO_2_GZIP_BASE64 =
+      'H4sIAAAAAAAAA8tLTylISixOVShLLSrOzM9TyMgsLskvqlTIycxLVcjPS+UqSi1ITSxJTVFIyk+pVChJrShRGBUaFRr2QlyhIW66FlYKyYlph1cqPGqYopCXeHh9WSqY+Wz60mdz1rxYNY8LAFX0pZVBAwAA';
+
+    const ORIGINAL =
+      'ngdpbase version history line one\n' +
+      'repeated body text '.repeat(40) +
+      '\nUTF-8: caf\u00e9 \u2014 na\u00efve \u2014 \u65e5\u672c\u8a9e\n';
+
+    test('should decompress gzip written by the previous major', () => {
+      const compressed = Buffer.from(PAKO_2_GZIP_BASE64, 'base64');
+
+      expect(VersionCompression.decompress(compressed)).toBe(ORIGINAL);
+    });
+
+    test('should decompress a .gz history file written by the previous major', async () => {
+      const filePath = path.join(testDir, 'old-version.txt');
+      await fs.writeFile(`${filePath}.gz`, Buffer.from(PAKO_2_GZIP_BASE64, 'base64'));
+
+      expect(await VersionCompression.isCompressed(`${filePath}.gz`)).toBe(true);
+
+      await VersionCompression.decompressFile(`${filePath}.gz`);
+
+      expect(await fs.readFile(filePath, 'utf8')).toBe(ORIGINAL);
+    });
+  });
+
   describe('compressFile', () => {
     test('should compress a file', async () => {
       const filePath = path.join(testDir, 'test.txt');

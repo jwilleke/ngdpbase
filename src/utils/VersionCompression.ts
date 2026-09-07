@@ -1,4 +1,4 @@
-import pako from 'pako';
+import { gzip, ungzip } from 'pako';
 import fs from 'fs-extra';
 
 /**
@@ -101,7 +101,7 @@ export default class VersionCompression {
       const inputBuffer = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8');
 
       // Compress using pako with specified level
-      const compressed = pako.gzip(inputBuffer, { level: level as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 });
+      const compressed = gzip(inputBuffer, { level });
 
       return Buffer.from(compressed);
     } catch (error) {
@@ -131,7 +131,7 @@ export default class VersionCompression {
 
     try {
       // Decompress using pako
-      const decompressed = pako.ungzip(compressed);
+      const decompressed = ungzip(compressed);
 
       // Convert to string
       return Buffer.from(decompressed).toString('utf8');
