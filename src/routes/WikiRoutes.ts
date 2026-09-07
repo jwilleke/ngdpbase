@@ -2820,10 +2820,27 @@ ${panes}
       const renderCacheKey = `rendered-pages:${pageUUID}:${roleKey}`;
       type RenderCacheEntry = { html: string; tabSectionHtml: string };
 
+      // #1307: the key holds no query string, so caching a query-bearing view
+      // would serve it back for every other query on the same page — which is
+      // exactly what left paginated plugins stuck on page 1.
+      //
+      // The fix is to skip the cache for these requests rather than to key on
+      // the query. A plugin reads `context.query` freely and may read any key,
+      // including one an addon invented, so no whitelist of render-affecting
+      // parameters can be complete. Keying on the raw query would be complete
+      // and unbounded: anything appending `?x=<random>` mints a cache entry
+      // per request, which is a memory-exhaustion lever rather than a cache.
+      //
+      // The cost is that a link carrying tracking parameters renders uncached.
+      // That is a minority of page views, and correctness is not negotiable
+      // against it.
+      const hasQueryParams = Object.keys(req.query ?? {}).length > 0;
+      const useRenderCache = renderCacheEnabled && !hasQueryParams;
+
       let html: string;
       let tabSectionHtml = '';
 
-      const cachedRender = renderCacheEnabled && cacheManager?.isInitialized?.()
+      const cachedRender = useRenderCache && cacheManager?.isInitialized?.()
         ? (await cacheManager.get(renderCacheKey) as RenderCacheEntry | undefined) ?? null
         : null;
 
@@ -2850,8 +2867,10 @@ ${panes}
           }
         }
 
-        // Store rendered output in cache (invalidated on save/delete/rename)
-        if (renderCacheEnabled && cacheManager?.isInitialized?.()) {
+        // Store rendered output in cache (invalidated on save/delete/rename).
+        // Not written for a query-bearing view: that HTML is one page number's,
+        // and the key cannot say so (#1307).
+        if (useRenderCache && cacheManager?.isInitialized?.()) {
           const ttl = configManager?.getProperty('ngdpbase.cache.rendered-pages.ttl', 0) as number;
           await cacheManager.set(renderCacheKey, { html, tabSectionHtml }, ttl ? { ttl } : {}).catch(() => { /* non-fatal */ });
           logger.debug(`[VIEW] render cache SET: ${renderCacheKey}`);

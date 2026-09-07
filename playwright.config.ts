@@ -89,7 +89,7 @@ export default defineConfig({
     // Chromium tests (main browser) - excludes files owned by dedicated viewport projects
     {
       name: 'chromium',
-      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)/,
+      testIgnore: /admin-maintenance\.spec\.(js|ts)|mobile-navigation\.spec\.(js|ts)|agent-token-mutations\.spec\.(js|ts)|plugin-pagination\.spec\.(js|ts)/,
       use: {
         browserName: 'chromium',
         // Use setup project for authenticated tests
@@ -130,6 +130,22 @@ export default defineConfig({
       dependencies: ['chromium']
     },
 
+    // Plugin pagination creates a page and then reads it back under several
+    // query strings. Same conflict as the token spec above and for the same
+    // reason: page creation goes through the serialized page-index write queue,
+    // and under parallel load its beforeAll passed 30s and timed out — flaky in
+    // the full suite while passing 3/3 in isolation. Chained after the token
+    // project rather than racing it.
+    {
+      name: 'chromium-plugin-pagination',
+      testMatch: /plugin-pagination\.spec\.(js|ts)/,
+      use: {
+        browserName: 'chromium',
+        storageState: './tests/e2e/.auth/user.json'
+      },
+      dependencies: ['chromium-agent-tokens']
+    },
+
     // Admin maintenance tests run LAST since they toggle server-wide maintenance mode
     // which would cause other parallel tests to get 503 responses — including the
     // agent-token project above, hence the chain rather than both depending on
@@ -141,7 +157,7 @@ export default defineConfig({
         browserName: 'chromium',
         storageState: './tests/e2e/.auth/user.json'
       },
-      dependencies: ['chromium-agent-tokens']
+      dependencies: ['chromium-plugin-pagination']
     }
   ],
 
