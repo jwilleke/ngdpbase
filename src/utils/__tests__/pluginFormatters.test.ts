@@ -7,7 +7,8 @@
  *   resolveUserParam,
  *   parseSortParam,
  *   formatAsTable,
- *   parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks
+ *   parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks,
+ *   formatPaginationNav
  *
  * Related: GitHub Issue #238 (Code Consolidation)
  */
@@ -25,6 +26,7 @@ import {
   parsePageSizeParam,
   applyPagination,
   formatPaginationLinks,
+  formatPaginationNav,
   parsePlacementParam,
   placementClass,
   resolveManagerFetch,
@@ -615,5 +617,120 @@ describe('resolveCurrentKeyword', () => {
     // slug('chemistry') === 'chemistry' === name → slug lookup skipped
     expect(calls).toEqual(['chemistry']);
     expect(r.keyword).toBe('chemistry');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatPaginationNav (#1300)
+// ---------------------------------------------------------------------------
+
+describe('formatPaginationNav', () => {
+  const href = (page: number): string => `/list?page=${page}`;
+
+  test('renders nothing for a single page', () => {
+    // Nothing to navigate. A control that only ever shows "1" is noise.
+    expect(formatPaginationNav(1, 1, href)).toBe('');
+    expect(formatPaginationNav(1, 0, href)).toBe('');
+  });
+
+  describe('the wrapper carries the state the enhancer needs', () => {
+    test('exposes current page, total pages and the marker attribute', () => {
+      const out = formatPaginationNav(3, 12, href);
+
+      expect(out).toContain('data-pagination');
+      expect(out).toContain('data-current-page="3"');
+      expect(out).toContain('data-total-pages="12"');
+    });
+
+    test('exposes prev and next URLs so keyboard and swipe need no page numbers', () => {
+      const out = formatPaginationNav(3, 12, href);
+
+      expect(out).toContain('data-prev-url="/list?page=2"');
+      expect(out).toContain('data-next-url="/list?page=4"');
+    });
+
+    test('omits the prev URL on the first page and the next URL on the last', () => {
+      expect(formatPaginationNav(1, 5, href)).not.toContain('data-prev-url');
+      expect(formatPaginationNav(5, 5, href)).not.toContain('data-next-url');
+    });
+  });
+
+  describe('markup shape', () => {
+    test('is a labelled nav wrapping a Bootstrap pagination list', () => {
+      const out = formatPaginationNav(1, 3, href);
+
+      expect(out).toMatch(/^<nav /);
+      expect(out).toContain('aria-label="Pagination"');
+      expect(out).toContain('<ul class="pagination pagination-sm mb-0">');
+    });
+
+    test('the current page is marked active and is not a link', () => {
+      const out = formatPaginationNav(2, 3, href);
+
+      expect(out).toContain('<li class="page-item active"><span class="page-link">2</span></li>');
+    });
+
+    test('other pages are links to their own href', () => {
+      const out = formatPaginationNav(2, 3, href);
+
+      expect(out).toContain('<a class="page-link" href="/list?page=1">1</a>');
+      expect(out).toContain('<a class="page-link" href="/list?page=3">3</a>');
+    });
+
+    test('prev is disabled on the first page and next on the last', () => {
+      const first = formatPaginationNav(1, 3, href);
+      const last = formatPaginationNav(3, 3, href);
+
+      expect(first).toContain('<li class="page-item disabled"><span class="page-link" aria-label="Previous">');
+      expect(last).toContain('<li class="page-item disabled"><span class="page-link" aria-label="Next">');
+    });
+  });
+
+  describe('the sliding window', () => {
+    test('shows every page when they fit', () => {
+      const out = formatPaginationNav(1, 5, href);
+
+      for (const n of [1, 2, 3, 4, 5]) expect(out).toContain(`>${n}</`);
+      expect(out).not.toContain('&hellip;');
+    });
+
+    test('caps at seven page numbers', () => {
+      const out = formatPaginationNav(10, 50, href);
+      const numbered = out.match(/class="page-link"[^>]*>\d+</g) ?? [];
+
+      // Seven in the window, plus the first and last shortcuts.
+      expect(numbered.length).toBe(9);
+    });
+
+    test('leads with an ellipsis and the first page when the window has moved off the start', () => {
+      const out = formatPaginationNav(20, 50, href);
+
+      expect(out).toContain('&hellip;');
+      expect(out).toContain('>1</a>');
+      expect(out).toContain('>50</a>');
+    });
+
+    test('does not render an ellipsis that hides a single page', () => {
+      // Window starts at 2: page 1 is adjacent, so an ellipsis would stand in
+      // for nothing and cost the user a click to discover that.
+      const out = formatPaginationNav(5, 20, href);
+      const beforeWindow = out.slice(0, out.indexOf('>2<'));
+
+      expect(beforeWindow).not.toContain('&hellip;');
+    });
+
+    test('keeps the window full at the end of the range', () => {
+      const out = formatPaginationNav(50, 50, href);
+
+      for (const n of [44, 45, 46, 47, 48, 49, 50]) expect(out).toContain(`>${n}<`);
+    });
+  });
+
+  test('escapes the URLs it is given', () => {
+    const nasty = (page: number): string => `/list?q="><script>alert(${page})</script>`;
+    const out = formatPaginationNav(2, 3, nasty);
+
+    expect(out).not.toContain('<script>');
+    expect(out).toContain('&quot;&gt;&lt;script&gt;');
   });
 });

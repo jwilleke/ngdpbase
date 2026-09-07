@@ -101,6 +101,13 @@
 
         var ul = document.createElement('ul');
         ul.className = 'pagination pagination-sm mb-0';
+        // #1300: the marker is the contract, not the tag. A server-emitted
+        // pager is a <nav> and this one is a <ul>, and one selector finds both.
+        // No prev/next URLs here: this pager navigates by callback, and their
+        // absence is how enhance() knows not to claim the arrow keys from it.
+        ul.setAttribute('data-pagination', '');
+        ul.setAttribute('data-current-page', String(currentPage));
+        ul.setAttribute('data-total-pages', String(totalPages));
 
         items.forEach(function (item) {
             ul.appendChild(item.el);
@@ -135,10 +142,24 @@
     }
 
     /**
+     * Whether something has already claimed the page's arrow keys.
+     *
+     * #1300: these bind on `document`, so a page carrying two pagers — the
+     * common top-and-bottom pair — would advance two pages per keypress. First
+     * binder wins, which is also what keeps enhance() from overriding a page
+     * that wires its own callbacks.
+     */
+    var _keyboardBound = false;
+    var _swipeBound = false;
+
+    /**
      * Bind ArrowLeft / ArrowRight keyboard shortcuts.
      * Skips when focus is inside an interactive text element.
+     * Only the first call on a page takes effect.
      */
     WikiPagination.attachKeyboard = function (onPrev, onNext) {
+        if (_keyboardBound) return;
+        _keyboardBound = true;
         document.addEventListener('keydown', function (e) {
             if (_isTyping(e.target)) return;
             if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -152,6 +173,8 @@
      * Swipe right → onPrev, swipe left → onNext.
      */
     WikiPagination.attachSwipe = function (el, onPrev, onNext) {
+        if (_swipeBound) return;
+        _swipeBound = true;
         var _sx = 0, _sy = 0;
         el.addEventListener('touchstart', function (e) {
             _sx = e.changedTouches[0].screenX;
@@ -189,6 +212,44 @@
         var tag = el.tagName;
         return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
                el.isContentEditable;
+    }
+
+    /**
+     * Give every canonical pager on the page its keyboard and swipe behaviour.
+     *
+     * A pager emitted by `formatPaginationNav` carries its prev/next URLs in
+     * the markup, so there is nothing for the page to wire: clicks are real
+     * links and work already, and this adds the two affordances that need
+     * JavaScript. Runs automatically on DOMContentLoaded — a surface gets the
+     * whole control by emitting the markup and nothing else.
+     *
+     * Pagers without URLs are left alone. Those are the callback-driven ones
+     * built by renderNav, which already own their navigation.
+     *
+     * @param {Document|Element} [root=document] - Subtree to scan.
+     */
+    WikiPagination.enhance = function (root) {
+        var scope = root || document;
+        var pagers = scope.querySelectorAll('[data-pagination][data-prev-url], [data-pagination][data-next-url]');
+        if (!pagers.length) return;
+
+        // Bind against the first URL-driven pager. A page's pagers are the same
+        // control repeated, so the first one's URLs are every one's URLs.
+        var pager = pagers[0];
+        var prevUrl = pager.getAttribute('data-prev-url');
+        var nextUrl = pager.getAttribute('data-next-url');
+
+        var goPrev = prevUrl ? function () { global.location.href = prevUrl; } : null;
+        var goNext = nextUrl ? function () { global.location.href = nextUrl; } : null;
+
+        WikiPagination.attachKeyboard(goPrev, goNext);
+        WikiPagination.attachSwipe(document.body, goPrev, goNext);
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { WikiPagination.enhance(); });
+    } else {
+        WikiPagination.enhance();
     }
 
     global.WikiPagination = WikiPagination;

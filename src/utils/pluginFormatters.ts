@@ -506,6 +506,105 @@ export function applyPagination<T>(items: T[], page: number, pageSize: number): 
 }
 
 /**
+ * How many numbered pages the sliding window shows at once.
+ *
+ * Mirrors `WikiPagination.renderNav` in public/js/wiki-pagination.js on
+ * purpose: the two layers must produce the same control, so the window they
+ * slide has to be the same width. Changing one without the other is how the
+ * application ended up with pagination that looked different depending on
+ * whether the page was rendered on the server or in the browser (#1299).
+ */
+const PAGINATION_WINDOW = 7;
+
+/** Prev/next glyphs, matching the client-side control's Font Awesome chevrons. */
+const PAGINATION_CHEVRON_LEFT = '<i class="fas fa-chevron-left"></i>';
+const PAGINATION_CHEVRON_RIGHT = '<i class="fas fa-chevron-right"></i>';
+
+/** One `<li>` of the pagination list. */
+function paginationItem(html: string, href: string | null, ariaLabel?: string, active = false): string {
+  const label = ariaLabel ? ` aria-label="${ariaLabel}"` : '';
+  if (active) {
+    return `<li class="page-item active"><span class="page-link"${label}>${html}</span></li>`;
+  }
+  if (href === null) {
+    return `<li class="page-item disabled"><span class="page-link"${label}>${html}</span></li>`;
+  }
+  return `<li class="page-item"><a class="page-link" href="${escapeHtml(href)}"${label}>${html}</a></li>`;
+}
+
+/**
+ * Render the canonical pagination control (#1300).
+ *
+ * This is the one pagination markup in the application. `WikiPagination`
+ * produces the same shape in the browser and enhances any instance it finds —
+ * clicks, arrow keys and swipe — so a surface gets the full control by emitting
+ * this and nothing else.
+ *
+ * The wrapper carries `data-current-page`, `data-total-pages` and the prev/next
+ * URLs, which is what lets the enhancer work without being told anything by the
+ * page. Everything it needs is in the markup.
+ *
+ * Returns '' for a single page: a control that can only ever show "1" is noise.
+ *
+ * @param currentPage - The current page number (1-based)
+ * @param totalPages  - Total number of pages
+ * @param hrefFor     - Builds the URL for a given 1-based page number
+ * @param ariaLabel   - Accessible name for the nav landmark
+ * @example
+ * formatPaginationNav(3, 12, (p) => `/view/Index?page=${p}`)
+ */
+export function formatPaginationNav(
+  currentPage: number,
+  totalPages: number,
+  hrefFor: (page: number) => string,
+  ariaLabel = 'Pagination'
+): string {
+  if (totalPages <= 1) return '';
+
+  const current = Math.min(Math.max(1, Math.floor(currentPage) || 1), totalPages);
+  const items: string[] = [];
+
+  items.push(current > 1
+    ? paginationItem(PAGINATION_CHEVRON_LEFT, hrefFor(current - 1), 'Previous')
+    : paginationItem(PAGINATION_CHEVRON_LEFT, null, 'Previous'));
+
+  const half = Math.floor(PAGINATION_WINDOW / 2);
+  let startPage = Math.max(1, current - half);
+  const endPage = Math.min(totalPages, startPage + PAGINATION_WINDOW - 1);
+  if (endPage - startPage < PAGINATION_WINDOW - 1) {
+    startPage = Math.max(1, endPage - PAGINATION_WINDOW + 1);
+  }
+
+  if (startPage > 1) {
+    items.push(paginationItem('1', hrefFor(1)));
+    // An ellipsis standing in for a single page hides nothing and costs a
+    // click to discover that, so only draw one when it covers a gap.
+    if (startPage > 2) items.push(paginationItem('&hellip;', null));
+  }
+
+  for (let page = startPage; page <= endPage; page++) {
+    items.push(paginationItem(String(page), hrefFor(page), undefined, page === current));
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) items.push(paginationItem('&hellip;', null));
+    items.push(paginationItem(String(totalPages), hrefFor(totalPages)));
+  }
+
+  items.push(current < totalPages
+    ? paginationItem(PAGINATION_CHEVRON_RIGHT, hrefFor(current + 1), 'Next')
+    : paginationItem(PAGINATION_CHEVRON_RIGHT, null, 'Next'));
+
+  const prevAttr = current > 1 ? ` data-prev-url="${escapeHtml(hrefFor(current - 1))}"` : '';
+  const nextAttr = current < totalPages ? ` data-next-url="${escapeHtml(hrefFor(current + 1))}"` : '';
+
+  return `<nav class="wiki-pagination" aria-label="${escapeHtml(ariaLabel)}" data-pagination `
+    + `data-current-page="${current}" data-total-pages="${totalPages}"${prevAttr}${nextAttr}>`
+    + `<ul class="pagination pagination-sm mb-0">${items.join('')}</ul>`
+    + '</nav>';
+}
+
+/**
  * Build prev/next pagination HTML for a plugin result set.
  * Returns '' when there is only one page (nothing to navigate).
  *
