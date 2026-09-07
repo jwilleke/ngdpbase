@@ -7,7 +7,13 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
+import {
+  escapeHtml,
+  parsePageParam,
+  parsePageSizeParam,
+  applyPagination,
+  formatPaginationLinks
+} from '../utils/pluginFormatters.js';
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
@@ -17,7 +23,20 @@ interface PageManager {
 interface IndexParams extends PluginParams {
   include?: string;
   exclude?: string;
+  /** Entries per page. `0` renders the whole index. */
+  pageSize?: string | number;
+  /** Which page, when the caller is not navigating by query string. */
+  page?: string | number;
 }
+
+/**
+ * Entries per page when the caller does not say (#1305).
+ *
+ * The plugin used to render every page it had — 17,742 of them on the instance
+ * that reported this. A default of 0 would have kept that, so the bound is on
+ * by default and `pageSize='0'` is how someone asks for the whole list.
+ */
+const DEFAULT_INDEX_PAGE_SIZE = 250;
 
 const IndexPlugin: SimplePlugin = {
   name: 'IndexPlugin',
@@ -73,6 +92,21 @@ const IndexPlugin: SimplePlugin = {
       // Sort pages alphabetically (case-insensitive)
       filteredPages.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
+      // #1305: bound the output and offer the shared control. The slice happens
+      // after include/exclude and the sort, so a page number addresses a stable
+      // position in the whole index rather than in whatever survived a filter
+      // in some other order. Letter grouping is then applied to the slice — a
+      // long letter spans several pages, which is what an index does on paper.
+      const totalEntries = filteredPages.length;
+      const pageSize = parsePageSizeParam(opts.pageSize, DEFAULT_INDEX_PAGE_SIZE);
+      let paginationHtml = '';
+      if (pageSize > 0) {
+        const page = parsePageParam(context.query?.['page'] ?? opts.page);
+        const paged = applyPagination(filteredPages, page, pageSize);
+        filteredPages = paged.items;
+        paginationHtml = formatPaginationLinks(paged.currentPage, paged.totalPages, context.pageName);
+      }
+
       // Group pages by first letter
       // Note: '#' is used as the display label for non-letter pages but 'num' is used as the
       // safe ID key — Bootstrap's data-bs-target is a CSS selector, and '#' inside a selector
@@ -100,6 +134,13 @@ const IndexPlugin: SimplePlugin = {
       // Unique prefix so multiple [{IndexPlugin}] on one page don't collide
       const uid = Math.random().toString(36).slice(2, 8);
 
+      // The count states the whole index, and what of it is on screen — a
+      // bounded list that reports only what it drew reads as a smaller wiki.
+      const shown = filteredPages.length;
+      const countLabel = shown === totalEntries
+        ? `${totalEntries} page${totalEntries !== 1 ? 's' : ''}`
+        : `${shown} of ${totalEntries} pages`;
+
       // Jump-to nav
       let html = '<div class="index-plugin">\n';
       if (sections.length > 1) {
@@ -126,7 +167,7 @@ const IndexPlugin: SimplePlugin = {
         `onclick="document.querySelectorAll('.index-plugin-${uid} .collapse').forEach(` +
         'el=>bootstrap.Collapse.getOrCreateInstance(el).hide())">' +
         'Collapse all</button>\n' +
-        `  <span class="text-muted small">${filteredPages.length} page${filteredPages.length !== 1 ? 's' : ''}</span>\n` +
+        `  <span class="text-muted small">${countLabel}</span>\n` +
         '</div>\n';
 
       html = html.replace('class="index-plugin"', `class="index-plugin index-plugin-${uid}"`);
@@ -153,6 +194,7 @@ const IndexPlugin: SimplePlugin = {
         html += '    </ul>\n  </div>\n</div>\n';
       }
 
+      html += paginationHtml;
       html += '</div>';
 
       return html;

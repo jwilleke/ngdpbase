@@ -1,7 +1,7 @@
 ---
 name: IndexPlugin
 description: Generates an alphabetical index of all wiki pages
-dateModified: '2025-12-18'
+dateModified: '2026-09-07'
 category: plugins
 code: src/plugins/IndexPlugin.ts
 relatedModules:
@@ -51,6 +51,24 @@ Shows all pages in alphabetical order.
 | ----------- | ------ | --------- | ---------- | ------------- |
 | include | string | - | No | Regex pattern to include pages |
 | exclude | string | - | No | Regex pattern to exclude pages |
+| pageSize | number | `250` | No | Entries per page. `0` renders the whole index. |
+| page | number | `1` | No | Which page to show, when not navigating by query string. |
+
+### Why the index is paged by default (#1305)
+
+The plugin used to render every page it had; on a 17,742-page instance that was
+the whole index in one response. The bound is therefore on by default, and a
+caller who wants the complete list asks for it with `pageSize='0'`.
+
+Grouping is applied to the page, not before it: a letter with more entries than
+`pageSize` spans several pages, and the jump-to links cover the letters on the
+page you are looking at. The count reads `250 of 17,742 pages` so the bound is
+visible rather than implied.
+
+Page links are the canonical control from `pluginFormatters`, so keyboard and
+swipe come from `WikiPagination` without this plugin wiring anything. They
+address `?page=N` on the page the plugin is embedded in, which means two
+`[{IndexPlugin}]` calls on one page turn together.
 
 ### Filter Patterns
 

@@ -119,3 +119,48 @@ test.describe('plugin pagination (#1301)', () => {
     await expect(page.locator('[data-pagination]').first()).toHaveAttribute('data-current-page', '1');
   });
 });
+
+/**
+ * #1305 — the two plugins that rendered everything.
+ *
+ * These run against the shipped `PageIndex` and `Recent Changes` pages rather
+ * than a fixture, because the defect was that those pages, as shipped and with
+ * no parameters, emitted their whole data set — 17,742 rows on the instance
+ * that reported it. A fixture with parameters would not have caught that.
+ */
+test.describe('bounded plugin output (#1305)', () => {
+  test('PageIndex renders one page of the index, not all of it', async ({ page }) => {
+    await waitForServerReady(page);
+    await page.goto('/view/PageIndex');
+
+    const links = page.locator('.index-plugin a.wikipage');
+    const shown = await links.count();
+    const pager = page.locator('.index-plugin nav[data-pagination]');
+    test.skip(await pager.count() === 0, 'this instance has fewer pages than one index page');
+
+    // The default bound. Before this the same page emitted every row it had.
+    expect(shown).toBeLessThanOrEqual(250);
+
+    // The count states the whole index, so the bound is visible rather than
+    // implied — a bounded list reporting only what it drew reads as a smaller wiki.
+    await expect(page.locator('.index-plugin').first()).toContainText(/of \d+ pages/);
+
+    await pager.getByRole('link', { name: '2', exact: true }).click();
+    await expect(page).toHaveURL(/[?&]page=2/);
+    await expect(page.locator('.index-plugin nav[data-pagination]')).toHaveAttribute('data-current-page', '2');
+  });
+
+  test('Recent Changes is capped rather than unbounded', async ({ page }) => {
+    await waitForServerReady(page);
+    await page.goto('/view/Recent%20Changes');
+
+    const rows = page.locator('.recent-changes-plugin a.wikipage');
+    test.skip(await rows.count() === 0, 'no recent changes on this instance');
+
+    // Each [{RecentChangesPlugin}] call on the page is capped at its own limit;
+    // none of them may render the whole change set.
+    for (const plugin of await page.locator('.recent-changes-plugin').all()) {
+      expect(await plugin.locator('a.wikipage').count()).toBeLessThanOrEqual(50);
+    }
+  });
+});

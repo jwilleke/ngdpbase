@@ -1,7 +1,7 @@
 ---
 name: RecentChangesPlugin
 description: "Lists recent page changes in chronological order for \"what changed lately\" feeds"
-dateModified: '2026-05-14'
+dateModified: '2026-09-07'
 category: plugins
 code: src/plugins/RecentChangesPlugin.ts
 ---
@@ -57,6 +57,24 @@ Shows recent changes in compact format (same as default).
 | ----------- | ------ | --------- | ------------- |
 | `since` | number | `7` | Number of days to look back for changes |
 | `format` | string | `compact` | Display format: `compact` or `full` |
+| `limit` | number | `50` | Most rows to show. Applied at the manager. A non-numeric or zero value is an error, not a fallback. |
+| `pageSize` | number | `0` | Rows per page. Above zero, replaces the flat cap with the shared pagination control. |
+| `page` | number | `1` | Which page to show, when not navigating by query string. |
+
+### Why there is a default limit (#1305)
+
+`limit` was declared on this plugin's parameters and never read, so
+`[{RecentChangesPlugin limit='20'}]` rendered every change and reported no
+problem. Silently ignoring a parameter is worse than refusing one, which is why
+a malformed `limit` is now an error.
+
+The default bounds the output at 50 rows. `pageSize` is the alternative: it
+offers the canonical pagination control instead of a cap, and the count line
+states the whole set rather than the slice — `120 changes (showing 25)`.
+
+Page links address `?page=N` on the page the plugin is embedded in. A page
+holding several `[{RecentChangesPlugin}]` calls therefore turns them together,
+so use `pageSize` on pages with one.
 
 ### Parameter Details
 

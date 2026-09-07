@@ -101,3 +101,71 @@ describe('IndexPlugin', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 });
+
+/**
+ * #1305 — the index rendered every page it had. On the instance that reported
+ * this, `[{IndexPlugin}]` emitted all 17,742 pages in one response. The file
+ * imported `escapeHtml` from the module that already exports applyPagination,
+ * parsePageParam and formatPaginationLinks, and took only the escaper.
+ */
+describe('#1305 the index is bounded', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => `Page ${String(i).padStart(5, '0')}`);
+
+  test('a large index renders one page of it, not all of it', async () => {
+    const html = await IndexPlugin.execute(makeContext(many(600)), {});
+    const links = html.match(/href="\/view\//g) ?? [];
+    expect(links.length).toBeLessThan(600);
+  });
+
+  test('and says how many there are in total, so the cap is visible', async () => {
+    const html = await IndexPlugin.execute(makeContext(many(600)), {});
+    expect(html).toContain('600');
+  });
+
+  test('offers the canonical pagination control', async () => {
+    const html = await IndexPlugin.execute(makeContext(many(600)), { pageSize: '100' });
+    expect(html).toContain('data-pagination');
+    expect(html).toContain('data-total-pages="6"');
+  });
+
+  test('a small index renders whole, with no control to click', async () => {
+    const html = await IndexPlugin.execute(makeContext(['Apple', 'Banana']), {});
+    expect(html).toContain('href="/view/Apple"');
+    expect(html).toContain('href="/view/Banana"');
+    expect(html).not.toContain('data-pagination');
+  });
+
+  test('pageSize decides how many, and page decides which', async () => {
+    const ctx = makeContext(many(30));
+    const first = await IndexPlugin.execute(ctx, { pageSize: '10' });
+    const second = await IndexPlugin.execute({ ...ctx, query: { page: '2' } }, { pageSize: '10' });
+
+    expect(first).toContain('href="/view/Page%2000000"');
+    expect(first).not.toContain('href="/view/Page%2000010"');
+    expect(second).toContain('href="/view/Page%2000010"');
+    expect(second).not.toContain('href="/view/Page%2000000"');
+  });
+
+  test('the page number can also come from the plugin call', async () => {
+    // A page author writing [{IndexPlugin page='2'}] means it; the query string
+    // is what a pagination link supplies.
+    const html = await IndexPlugin.execute(makeContext(many(30)), { pageSize: '10', page: '2' });
+    expect(html).toContain('href="/view/Page%2000010"');
+  });
+
+  test("pageSize='0' turns the bound off for someone who wants the whole list", async () => {
+    const html = await IndexPlugin.execute(makeContext(many(600)), { pageSize: '0' });
+    const links = html.match(/href="\/view\//g) ?? [];
+    expect(links.length).toBe(600);
+    expect(html).not.toContain('data-pagination');
+  });
+
+  test('include and exclude still decide what is counted before the page is cut', async () => {
+    const html = await IndexPlugin.execute(
+      makeContext([...many(20), 'Zebra']),
+      { pageSize: '5', include: '^Page' }
+    );
+    expect(html).not.toContain('Zebra');
+    expect(html).toContain('data-total-pages="4"');
+  });
+});
