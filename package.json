@@ -164,7 +164,7 @@
     "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.69.0",
     "@vitest/coverage-v8": "^4.1.5",
-    "baseline-browser-mapping": "^2.11.20",
+    "baseline-browser-mapping": "^2.11.21",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-formatter-summary": "^2.0.2",
