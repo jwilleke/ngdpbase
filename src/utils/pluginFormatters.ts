@@ -524,7 +524,10 @@ const PAGINATION_CHEVRON_RIGHT = '<i class="fas fa-chevron-right"></i>';
 function paginationItem(html: string, href: string | null, ariaLabel?: string, active = false): string {
   const label = ariaLabel ? ` aria-label="${ariaLabel}"` : '';
   if (active) {
-    return `<li class="page-item active"><span class="page-link"${label}>${html}</span></li>`;
+    // aria-current is how a screen reader learns which page it is on. The old
+    // plugin control said "Page 2 of 5" in visible text; a numbered pager makes
+    // that redundant for sighted users but silent for everyone else without it.
+    return `<li class="page-item active"><span class="page-link" aria-current="page"${label}>${html}</span></li>`;
   }
   if (href === null) {
     return `<li class="page-item disabled"><span class="page-link"${label}>${html}</span></li>`;
@@ -605,7 +608,17 @@ export function formatPaginationNav(
 }
 
 /**
- * Build prev/next pagination HTML for a plugin result set.
+ * Build pagination HTML for a plugin result set, addressed by page name.
+ *
+ * A thin wrapper over `formatPaginationNav` (#1301): it turns a page name and a
+ * query parameter into the `/view/{page}?{param}=N` URLs this application uses,
+ * and leaves the markup to the canonical control.
+ *
+ * It previously emitted its own `.plugin-pagination` div — prev/next text links
+ * with no page numbers and no styling, since that class had no CSS anywhere in
+ * the repo. Its signature and its single-page behaviour are unchanged, so the
+ * plugins calling it did not have to change; what they render did.
+ *
  * Returns '' when there is only one page (nothing to navigate).
  *
  * @param currentPage - The current page number (1-based)
@@ -619,17 +632,12 @@ export function formatPaginationLinks(
   pageName: string,
   queryParam = 'page'
 ): string {
-  if (totalPages <= 1) return '';
-
   const base = `/view/${encodeURIComponent(pageName)}`;
-  const prev = currentPage > 1
-    ? `<a href="${base}?${queryParam}=${currentPage - 1}">\u00ab Prev</a>`
-    : '<span class="disabled">\u00ab Prev</span>';
-  const next = currentPage < totalPages
-    ? `<a href="${base}?${queryParam}=${currentPage + 1}">Next \u00bb</a>`
-    : '<span class="disabled">Next \u00bb</span>';
-
-  return `<div class="plugin-pagination">${prev}&nbsp;&nbsp;Page ${currentPage} of ${totalPages}&nbsp;&nbsp;${next}</div>`;
+  return formatPaginationNav(
+    currentPage,
+    totalPages,
+    (page) => `${base}?${queryParam}=${page}`
+  );
 }
 
 // ---------------------------------------------------------------------------

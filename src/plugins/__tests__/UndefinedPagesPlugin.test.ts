@@ -165,25 +165,36 @@ describe('formatPaginationLinks', () => {
     expect(formatPaginationLinks(1, 0, 'MyPage')).toBe('');
   });
 
+  // #1301: this delegates to the canonical control now. The URLs it builds are
+  // unchanged — that is the part this plugin depends on — but the markup is
+  // Bootstrap pagination rather than the unstyled `.plugin-pagination` text it
+  // emitted before, and the position is carried by the active item and
+  // `data-current-page` rather than a "Page X of Y" string.
+
   test('first page disables Prev, shows Next link', () => {
     const html = formatPaginationLinks(1, 3, 'MyPage');
-    expect(html).toContain('class="disabled"');
+    expect(html).toContain('page-item disabled');
+    expect(html).toContain('aria-label="Previous"');
     expect(html).toContain('href="/view/MyPage?page=2"');
-    expect(html).toContain('Page 1 of 3');
+    expect(html).toContain('data-current-page="1"');
+    expect(html).toContain('data-total-pages="3"');
   });
 
   test('last page shows Prev link, disables Next', () => {
     const html = formatPaginationLinks(3, 3, 'MyPage');
     expect(html).toContain('href="/view/MyPage?page=2"');
-    expect(html).toContain('class="disabled"');
-    expect(html).toContain('Page 3 of 3');
+    expect(html).toContain('page-item disabled');
+    expect(html).toContain('aria-label="Next"');
+    expect(html).toContain('data-current-page="3"');
   });
 
   test('middle page shows both links', () => {
     const html = formatPaginationLinks(2, 5, 'MyPage');
     expect(html).toContain('href="/view/MyPage?page=1"');
     expect(html).toContain('href="/view/MyPage?page=3"');
-    expect(html).not.toContain('class="disabled"');
+    expect(html).toContain('data-prev-url="/view/MyPage?page=1"');
+    expect(html).toContain('data-next-url="/view/MyPage?page=3"');
+    expect(html).not.toContain('page-item disabled');
   });
 
   test('encodes page name in URL', () => {
@@ -358,14 +369,16 @@ describe('UndefinedPagesPlugin — pagination', () => {
   test('pagination HTML is included when pageSize > 0', async () => {
     const ctx = makeContext(existingPages, linkGraph);
     const html = await UndefinedPagesPlugin.execute(ctx, { pageSize: '3', page: '1' });
-    expect(html).toContain('plugin-pagination');
-    expect(html).toContain('Page 1 of 2');
+    expect(html).toContain('data-pagination');
+    expect(html).toContain('data-current-page="1"');
+    expect(html).toContain('data-total-pages="2"');
   });
 
   test('page beyond total clamps to last page', async () => {
     const ctx = makeContext(existingPages, linkGraph);
     const html = await UndefinedPagesPlugin.execute(ctx, { pageSize: '3', page: '99' });
-    expect(html).toContain('Page 2 of 2');
+    expect(html).toContain('data-current-page="2"');
+    expect(html).toContain('data-total-pages="2"');
     expect(html).toContain('PageD');
     expect(html).toContain('PageE');
   });
@@ -376,7 +389,7 @@ describe('UndefinedPagesPlugin — pagination', () => {
     expect(html).toContain('PageA');
     expect(html).toContain('PageB');
     expect(html).not.toContain('PageC');
-    expect(html).not.toContain('plugin-pagination');
+    expect(html).not.toContain('data-pagination');
   });
 
   test('query.page overrides page param when pageSize active', async () => {
@@ -391,7 +404,7 @@ describe('UndefinedPagesPlugin — pagination', () => {
   test('no pagination HTML when pageSize=0', async () => {
     const ctx = makeContext(existingPages, linkGraph);
     const html = await UndefinedPagesPlugin.execute(ctx, {});
-    expect(html).not.toContain('plugin-pagination');
+    expect(html).not.toContain('data-pagination');
   });
 });
 

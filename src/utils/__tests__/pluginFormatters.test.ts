@@ -432,34 +432,63 @@ describe('applyPagination', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatPaginationLinks', () => {
+  // #1301: this now delegates to formatPaginationNav. Its signature and its
+  // single-page behaviour are unchanged — the three plugins calling it did not
+  // change — but the markup it returns is the canonical control rather than the
+  // unstyled `.plugin-pagination` text links it emitted before.
+
   test('returns empty string when only one page', () => {
     expect(formatPaginationLinks(1, 1, 'MyPage')).toBe('');
   });
 
-  test('renders prev/next links', () => {
+  test('builds /view/{page}?page=N URLs from the page name', () => {
     const out = formatPaginationLinks(2, 3, 'My Page');
-    expect(out).toContain('plugin-pagination');
-    expect(out).toContain('page=1');
-    expect(out).toContain('page=3');
-    expect(out).toContain('My%20Page');
-  });
 
-  test('disables prev on first page', () => {
-    const out = formatPaginationLinks(1, 3, 'P');
-    expect(out).toContain('<span class="disabled">');
-    expect(out).toContain('page=2');
-  });
-
-  test('disables next on last page', () => {
-    const out = formatPaginationLinks(3, 3, 'P');
-    expect(out).toContain('<span class="disabled">');
-    expect(out).toContain('page=2');
+    expect(out).toContain('/view/My%20Page?page=1');
+    expect(out).toContain('/view/My%20Page?page=3');
   });
 
   test('uses custom queryParam', () => {
     const out = formatPaginationLinks(2, 4, 'P', 'p');
+
     expect(out).toContain('p=1');
     expect(out).toContain('p=3');
+  });
+
+  test('emits the canonical control, not the old unstyled markup', () => {
+    // `.plugin-pagination` had no CSS anywhere in the repo, so these three
+    // plugin surfaces rendered as bare inline text next to a styled Bootstrap
+    // pager elsewhere in the application. That is the whole point of #1301.
+    const out = formatPaginationLinks(2, 3, 'P');
+
+    expect(out).not.toContain('plugin-pagination');
+    expect(out).toContain('data-pagination');
+    expect(out).toContain('<ul class="pagination pagination-sm mb-0">');
+  });
+
+  test('carries the prev/next URLs the client enhancer reads', () => {
+    const out = formatPaginationLinks(2, 3, 'P');
+
+    expect(out).toContain('data-prev-url="/view/P?page=1"');
+    expect(out).toContain('data-next-url="/view/P?page=3"');
+  });
+
+  test('disables prev on the first page and next on the last', () => {
+    const first = formatPaginationLinks(1, 3, 'P');
+    const last = formatPaginationLinks(3, 3, 'P');
+
+    expect(first).toContain('aria-label="Previous"');
+    expect(first).not.toContain('data-prev-url');
+    expect(last).toContain('aria-label="Next"');
+    expect(last).not.toContain('data-next-url');
+  });
+
+  test('numbers the pages, which the old prev/next-only control never did', () => {
+    const out = formatPaginationLinks(2, 3, 'P');
+
+    expect(out).toContain('>1</a>');
+    expect(out).toContain('<li class="page-item active"><span class="page-link" aria-current="page">2</span></li>');
+    expect(out).toContain('>3</a>');
   });
 });
 
@@ -664,10 +693,10 @@ describe('formatPaginationNav', () => {
       expect(out).toContain('<ul class="pagination pagination-sm mb-0">');
     });
 
-    test('the current page is marked active and is not a link', () => {
+    test('the current page is marked active, carries aria-current, and is not a link', () => {
       const out = formatPaginationNav(2, 3, href);
 
-      expect(out).toContain('<li class="page-item active"><span class="page-link">2</span></li>');
+      expect(out).toContain('<li class="page-item active"><span class="page-link" aria-current="page">2</span></li>');
     });
 
     test('other pages are links to their own href', () => {
