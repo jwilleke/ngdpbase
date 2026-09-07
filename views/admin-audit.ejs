@@ -428,7 +428,11 @@
                     `;
 
                     $('#logDetailsContent').html(detailsHtml);
-                    $('#logDetailsModal').modal('show');
+                    // #1298: Bootstrap 5 registers no jQuery plugins, so the
+                    // Bootstrap 4 jQuery modal call this used threw into the
+                    // catch below — which then alerted "Failed to load log
+                    // details" for a fetch that had already succeeded.
+                    new bootstrap.Modal(document.getElementById('logDetailsModal')).show();
                 })
                 .catch(error => {
                     console.error('Failed to load log details:', error);
