@@ -38,7 +38,7 @@ import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
-import { shuffleArray } from '../utils/pluginFormatters.js';
+import { shuffleArray, formatPaginationNav } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
@@ -14961,6 +14961,44 @@ ${panes}
   }
 
   /**
+   * Resolve the audit query's paging window from the query string (#1237).
+   *
+   * Shared by the page and the API for the same reason `auditFiltersFromQuery`
+   * is: the view links to `?page=N`, and an endpoint that reads a different
+   * paging vocabulary from the one the links speak is exactly the bug this
+   * fixes — the handler read only `limit`/`offset`, so all 166 page links
+   * rendered page 1.
+   *
+   * `page` is the address; `offset` stays supported for callers that predate
+   * it, and is used only when no page is given.
+   */
+  private auditPagingFromQuery(req: Request): { limit: number; offset: number; page: number } {
+    const limit = Math.max(1, parseInt(req.query.limit as string) || 50);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const offset = req.query.page !== undefined
+      ? (page - 1) * limit
+      : Math.max(0, parseInt(req.query.offset as string) || 0);
+    return { limit, offset, page: Math.floor(offset / limit) + 1 };
+  }
+
+  /**
+   * URL builder for the audit page's pagination control (#1237).
+   *
+   * Every link carries the filters and the page size, because a full page load
+   * is the only thing that changes the page: the old control kept the filters
+   * in a module-level `currentFilters` that the navigation itself reset to `{}`.
+   */
+  private auditPageHref(filters: Record<string, unknown>, limit: number): (page: number) => string {
+    return (page: number) => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) params.set(key, String(value));
+      if (limit !== 50) params.set('limit', String(limit));
+      params.set('page', String(page));
+      return `/admin/audit?${params.toString()}`;
+    };
+  }
+
+  /**
    * The audit sink as a queryable manager, or null when auditing is
    * unconfigured. #1116: every query takes the caller's username — a fact —
    * and the manager derives the admin-system decision itself; the route's
@@ -14999,8 +15037,7 @@ ${panes}
 
       const audit = this.auditQuery();
       const filters = this.auditFiltersFromQuery(req);
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const { limit, offset, page } = this.auditPagingFromQuery(req);
 
       // An unconfigured audit provider renders an empty page rather than a
       // 500: "auditing is off" and "auditing is broken" must not look alike.
@@ -15011,12 +15048,28 @@ ${panes}
         ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }, caller)
         : { results: [], total: 0, limit, offset, hasMore: false };
 
+      // #1237: the control is rendered by the server, from the canonical
+      // markup in pluginFormatters, so this page navigates the same way every
+      // other paginated surface does — and WikiPagination.enhance() gives it
+      // keyboard and swipe without the view calling anything.
+      const totals = auditLogs as { total?: number };
+      const totalPages = Math.max(1, Math.ceil((totals.total || 0) / limit));
+      const paginationHtml = formatPaginationNav(
+        page,
+        totalPages,
+        this.auditPageHref(filters, limit),
+        'Audit log pagination'
+      );
+
       const templateData = await this.getCommonTemplateData(req);
       return res.render('admin-audit', {
         ...templateData,
         auditStats,
         auditLogs,
         auditAvailable: Boolean(audit?.searchAuditLogs),
+        paginationHtml,
+        currentPage: page,
+        limit,
         // #1115: the filter options come from the vocabulary rather than a
         // hand-kept list in the template. The hand-kept list offered four
         // options of which three matched zero records in a 2,687-record log,
@@ -15057,8 +15110,7 @@ ${panes}
       }
 
       const audit = this.auditQuery();
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const { limit, offset } = this.auditPagingFromQuery(req);
       if (!audit?.searchAuditLogs) {
         return res.json({ results: [], total: 0, limit, offset, hasMore: false });
       }

@@ -133,6 +133,91 @@ describe('#1113 admin audit routes', () => {
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
+  /**
+   * #1237 — the page nav linked to `?page=N` and the handler read only `limit`
+   * and `offset`, so every one of 166 page links re-rendered page 1. These pin
+   * the contract the view now depends on: `page` is the address of a page, and
+   * the control that navigates it is emitted by the server.
+   */
+  describe('#1237 paging', () => {
+    test('page is read and becomes an offset', async () => {
+      const audit = workingAudit();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ page: '3' }), makeRes());
+      expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ limit: 50, offset: 100 }), expect.anything());
+    });
+
+    test('page is relative to limit, not to a fixed page size', async () => {
+      const audit = workingAudit();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ page: '3', limit: '25' }), makeRes());
+      expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ limit: 25, offset: 50 }), expect.anything());
+    });
+
+    test.each([['0'], ['-4'], ['abc'], ['']])('a page of %s is page 1, not a negative offset', async (bad) => {
+      const audit = workingAudit();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ page: bad }), makeRes());
+      expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ offset: 0 }), expect.anything());
+    });
+
+    test('an explicit offset still works when no page is given', async () => {
+      // The API contract predates `page` and other callers may rely on it.
+      const audit = workingAudit();
+      await makeRoutes(audit).adminAuditLogsApi(makeReq({ offset: '200' }), makeRes());
+      expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ offset: 200 }), expect.anything());
+    });
+
+    test('the API reads page the same way the page does', async () => {
+      // One paging contract, for the same reason auditFiltersFromQuery is shared:
+      // two endpoints answering one query string differently is the bug itself.
+      const audit = workingAudit();
+      await makeRoutes(audit).adminAuditLogsApi(makeReq({ page: '2', limit: '10' }), makeRes());
+      expect(audit.searchAuditLogs).toHaveBeenCalledWith({}, expect.objectContaining({ limit: 10, offset: 10 }), expect.anything());
+    });
+
+    test('the page renders the canonical control, marked for the enhancer', async () => {
+      const audit = workingAudit();
+      audit.searchAuditLogs.mockResolvedValue({ results: [], total: 500, limit: 50, offset: 100, hasMore: true });
+      const res = makeRes();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ page: '3' }), res);
+
+      const html = (res.render.mock.calls[0][1] as { paginationHtml: string }).paginationHtml;
+      expect(html).toContain('data-pagination');
+      expect(html).toContain('data-current-page="3"');
+      expect(html).toContain('data-total-pages="10"');
+    });
+
+    test('every page link carries the filters and the page size', async () => {
+      // Losing the filter on page 2 is how the old control behaved: changePage()
+      // re-sent a currentFilters that a full page load had already reset to {}.
+      const audit = workingAudit();
+      audit.searchAuditLogs.mockResolvedValue({ results: [], total: 500, limit: 25, offset: 0, hasMore: true });
+      const res = makeRes();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ user: 'alice', severity: 'high', limit: '25' }), res);
+
+      const html = (res.render.mock.calls[0][1] as { paginationHtml: string }).paginationHtml;
+      expect(html).toContain('/admin/audit?');
+      expect(html).toContain('user=alice');
+      expect(html).toContain('severity=high');
+      expect(html).toContain('limit=25');
+      expect(html).toContain('page=2');
+    });
+
+    test('a single page of results renders no control at all', async () => {
+      const audit = workingAudit();
+      const res = makeRes();
+      await makeRoutes(audit).adminAuditLogs(makeReq(), res);
+      expect((res.render.mock.calls[0][1] as { paginationHtml: string }).paginationHtml).toBe('');
+    });
+
+    test('the view is told the current page and page size it is displaying', async () => {
+      // The page-size control has to render its own current value, and it is
+      // the server that resolved it.
+      const audit = workingAudit();
+      const res = makeRes();
+      await makeRoutes(audit).adminAuditLogs(makeReq({ page: '2', limit: '100' }), res);
+      expect(res.render).toHaveBeenCalledWith('admin-audit', expect.objectContaining({ currentPage: 2, limit: 100 }));
+    });
+  });
+
   test.each(['adminAuditLogs', 'adminAuditLogsApi', 'adminAuditLogDetails', 'adminAuditExport'])(
     '%s refuses a caller without admin-system',
     async (handler) => {
