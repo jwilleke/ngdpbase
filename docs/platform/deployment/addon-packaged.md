@@ -1,6 +1,6 @@
 # Packaged Addons (npm distribution)
 
-> See also: [`addon-architecture.md`](../addon-architecture.md) for the three distribution models, [`addon-development-guide.md`](../addon-development-guide.md) for building an addon, and [`addon-page-handling.md`](../addon-page-handling.md) for how an addon's pages seed/update. This document covers the __`packaged`__ model (#673): shipping an addon as an npm package discovered from `node_modules`.
+> See also: [`addon-architecture.md`](../addon-architecture.md) for the three distribution models, [`addons-developer-guide.md`](../../guides/addons-developer-guide.md) for building an addon, and [`addon-page-handling.md`](../addon-page-handling.md) for how an addon's pages seed/update. This document covers the __`packaged`__ model (#673): shipping an addon as an npm package discovered from `node_modules`.
 
 ---
 
@@ -175,6 +175,6 @@ Identical to the other models. A packaged addon's `pages/` seed and update exact
 ## Related
 
 - [`addon-architecture.md`](../addon-architecture.md#distribution-models) — the three models table.
-- [`addon-development-guide.md`](../addon-development-guide.md) — building an addon.
+- [`addons-developer-guide.md`](../../guides/addons-developer-guide.md) — building an addon.
 - [`addon-page-handling.md`](../addon-page-handling.md) — page seeding/reseed.
 - [#673](https://github.com/jwilleke/ngdpbase/issues/673) — this feature. [#672](https://github.com/jwilleke/ngdpbase/issues/672) — the version-drift outage it addresses.

@@ -87,6 +87,7 @@ status: stable
 - `providers` - Provider implementation documentation
 - `plugins` - Plugin documentation (developer-facing)
 - `architecture` - System design and architecture docs
+- `guides` - Area developer guides (`docs/guides/*-developer-guide.md`)
 - `user-guide` - End-user documentation
 - `admin` - Administration and deployment guides
 - `testing` - Test documentation and guides
@@ -113,20 +114,21 @@ Examples:
 
 ```
 docs/
-├── DOCUMENTATION-STANDARDS.md   # This file
-├── README.md                    # Documentation index
-├── project_log.md               # AI session log
-├── templates/                   # Documentation templates
-├── architecture/                # System design docs
-├── managers/                    # Manager documentation
-├── providers/                   # Provider documentation
-├── plugins/                     # Plugin developer docs
-├── user-guide/                  # End-user documentation
-├── admin/                       # Administration guides
-├── api/                         # API reference (auto-generated)
-├── testing/                     # Test documentation
-├── planning/                    # Active roadmaps only
-└── archive/                     # Deprecated/completed docs
+├── DOCUMENTATION-STANDARDS.md
+├── README.md
+├── guides/                      # Area developer guides (the door)
+├── security-posture.md          # Standing security law
+├── audit-posture.md             # Standing audit law
+├── guiding-framework.md
+├── templates/
+├── architecture/
+├── managers/
+├── providers/
+├── plugins/
+├── platform/
+├── admin/                       # Operator how-tos in git
+├── testing/
+└── planning/                    # Exploration; posture files win on disagreement
 ```
 
 ## Document Types

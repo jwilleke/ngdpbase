@@ -5,6 +5,7 @@ This document outlines the project structure and architectural decisions. All ar
 
 Related documents:
 
+- [Developer guides](docs/guides/README.md) — how to change this codebase, by area
 - [CODE_STANDARDS.md](./CODE_STANDARDS.md) - Coding standards and conventions
 - [SECURITY.md](./SECURITY.md) - Security guidelines and best practices
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - Development workflow

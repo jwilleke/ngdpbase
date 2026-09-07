@@ -183,7 +183,7 @@ cd addons/calendar && npm install
 ## Related Documentation
 
 - [calendar add-on README](../../addons/calendar/README.md) — installation and full API reference
-- [Add-on Development Guide](../platform/addon-development-guide.md) — building your own add-ons
+- [Addons developer guide](../guides/addons-developer-guide.md) — building your own add-ons
 - [FullCalendar documentation](https://fullcalendar.io/docs) — upstream UI library
 
 ## Version History

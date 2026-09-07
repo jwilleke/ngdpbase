@@ -1,6 +1,6 @@
 # Addon System Architecture
 
-Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addon-development-guide.md`](./addon-development-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
+Internal reference for the ngdpbase addon subsystem. Covers load order, manager contracts, config resolution, type setup, and integration points. For build-your-own-addon instructions, see [`addons-developer-guide.md`](../guides/addons-developer-guide.md). For the slug-naming rules every addon must follow (and what breaks if you rename one), see [`addon-identity-contract.md`](./addon-identity-contract.md).
 
 __Three distribution models, one slug + module + load contract:__ addons reach a running ngdpbase instance as __`bundled`__ (in this repo's `addons/<slug>/`), __`drop-in`__ (any directory listed in the `addons-path` config), or __`packaged`__ (`npm install`, discovered from `node_modules` via a `node_modules:<glob>` `addons-path` entry — #673). Names locked in by #668. Pick by how the addon is owned and shipped — see the [Distribution Models](#distribution-models) table immediately below.
 

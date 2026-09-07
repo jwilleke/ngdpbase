@@ -166,7 +166,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Code Style: [CODE_STANDARDS.md](./CODE_STANDARDS.md) — global preferences, TypeScript config, Prettier, ESLint, Markdownlint (MD036: no bold-as-heading), naming, commit format. __Read this first.__
 - TypeScript: [docs/TypeScript-Style-Guide.md](./docs/TypeScript-Style-Guide.md) — patterns, type definitions, TSDoc conventions.
 - Security: [SECURITY.md](./SECURITY.md) — secrets, auth, dependencies
-- Testing: [docs/testing/PREVENTING-REGRESSIONS.md](docs/testing/PREVENTING-REGRESSIONS.md) — CRITICAL, read before modifying code. Also see [CODE_STANDARDS.md § Testing](./CODE_STANDARDS.md#testing).
+- Testing: [docs/guides/testing-developer-guide.md](docs/guides/testing-developer-guide.md) — CRITICAL, read before modifying code. Also see [CODE_STANDARDS.md § Testing](./CODE_STANDARDS.md#testing).
 - Glossary: [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical terms (Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild)
 
 ## Process
@@ -221,7 +221,7 @@ Always use the platform's native link syntax — never construct raw `/view/` UR
 
 1. TypeScript Migration: "One File Done Right" — for the JS→TS migration specifically, ensure tests pass before deleting the `.js` file, and use atomic commits per file. General TS, ESLint, naming, and formatting rules live in [CODE_STANDARDS.md](./CODE_STANDARDS.md#typescript-configuration).
 2. Configuration: never hardcode. Use `ConfigurationManager.getInstance()`. See [config/app-default-config.json](config/app-default-config.json).
-3. Testing: TDD only — write the failing test first, then the code. Unit tests run with `npm test` (Vitest, mock file I/O); E2E uses Playwright (Chromium). Coverage and test-style rules live in [CODE_STANDARDS.md](./CODE_STANDARDS.md#testing); regression-prevention rules in [docs/testing/PREVENTING-REGRESSIONS.md](docs/testing/PREVENTING-REGRESSIONS.md). One additional non-negotiable: __test teardown must never wipe `./data/` wholesale__ — remove only specific test-created subdirectories. Patterns like `fs.rmSync(dataDir, {recursive:true})` or `fs.remove(path.join(cwd(), 'data'))` have previously destroyed live page, config, and install state on `npm test` runs.
+3. Testing: TDD only — write the failing test first, then the code. Unit tests run with `npm test` (Vitest, mock file I/O); E2E uses Playwright (Chromium). Coverage and test-style rules live in [CODE_STANDARDS.md](./CODE_STANDARDS.md#testing); regression-prevention rules in [docs/guides/testing-developer-guide.md](docs/guides/testing-developer-guide.md). One additional non-negotiable: __test teardown must never wipe `./data/` wholesale__ — remove only specific test-created subdirectories. Patterns like `fs.rmSync(dataDir, {recursive:true})` or `fs.remove(path.join(cwd(), 'data'))` have previously destroyed live page, config, and install state on `npm test` runs.
 4. `WikiContext`: always use it for request/user state (code identifier; see no-wiki rule above).
 5. `WikiDocument`: use the DOM-based pipeline for parsing (code identifier; see no-wiki rule above).
 6. Secrets: never commit unencrypted secrets to git or any CMS. Store in gitignored `.env`; see [SECURITY.md](./SECURITY.md).

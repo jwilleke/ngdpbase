@@ -239,9 +239,7 @@ Testing documentation and strategies:
 
 | Document | Description |
 | ---------- | ------------- |
-| [Testing-Summary](testing/Testing-Summary.md) | Current test status and quick reference |
-| [Complete-Testing-Guide](testing/Complete-Testing-Guide.md) | Comprehensive testing documentation |
-| [PREVENTING-REGRESSIONS](testing/PREVENTING-REGRESSIONS.md) | Regression prevention strategy |
+| [Testing developer guide](guides/testing-developer-guide.md) | Standing rules for tests |
 
 ---
 
@@ -265,10 +263,12 @@ npm run docs:html   # Generate HTML
 
 ## Developer Guides
 
+Area doors: [guides/README.md](guides/README.md).
+
 ### Installation & Setup
 
 - [Implementation](installation/Implementation.md) — __Lead document.__ The four ways an instance is implemented and what each inherits from this repository
-- [bootstrap-methodology](bootstrap-methodology.md) — The three boot layers, `.env` precedence, and where a new environment variable goes
+- [Bootstrap developer guide](guides/bootstrap-developer-guide.md) — The three boot layers, `.env` precedence, and where a new environment variable goes
 - [installation-system](installation/installation-system.md) — Installation wizard details
 - [install-complete marker](installation/install-complete.md) — `.install-complete` marker lifecycle
 - [startup-process](installation/startup-process.md) — Startup sequence documentation

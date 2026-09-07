@@ -4,7 +4,7 @@ Status of the "an AI agent (or any HTTP client) posts Markdown and ngdpbase stor
 
 ## Summary
 
-Send Markdown over HTTP → ngdpbase verifies an Authentik OAuth bearer token → normalizes the Markdown to [NCM](../NGDP-Compatible-Markdown.md) → upserts a page authored by the token's user (immutable across edits) → immediately viewable and searchable (the request goes through the live server, so its in-memory indexes stay correct — unlike the stdio MCP `create_page` path).
+Send Markdown over HTTP → ngdpbase verifies an Authentik OAuth bearer token → normalizes the Markdown to [NCM](../guides/ncm-developer-guide.md) → upserts a page authored by the token's user (immutable across edits) → immediately viewable and searchable (the request goes through the live server, so its in-memory indexes stay correct — unlike the stdio MCP `create_page` path).
 
 __Status: built, tested, and live-verified on jimstest__ with a real Authentik token (create `201` / update `200`, `author=jim`, NCM table up-conversion applied). Production deployment wiring is the only open item — see [Not yet in place](#not-yet-in-place).
 

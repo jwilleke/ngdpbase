@@ -1,6 +1,6 @@
 # Agent Markdown → NCM Ingest API
 
-`POST /api/page/ingest` lets an AI agent (or any HTTP client) send Markdown and have ngdpbase store it as an [NCM](NGDP-Compatible-Markdown.md) page, authored by the authenticated user, creating or updating in place. It is the HTTP counterpart to the MCP server's `ngdpbase_create_page` tool.
+`POST /api/page/ingest` lets an AI agent (or any HTTP client) send Markdown and have ngdpbase store it as an [NCM](guides/ncm-developer-guide.md) page, authored by the authenticated user, creating or updating in place. It is the HTTP counterpart to the MCP server's `ngdpbase_create_page` tool.
 
 ## When to use this vs the MCP server
 
@@ -160,6 +160,6 @@ __Both checks still run.__ Passing the gate does not authorize the request — t
 ## See also
 
 - [AuthentikBearerAuthProvider](providers/AuthentikBearerAuthProvider.md) — token verification
-- [NGDP-Compatible Markdown](NGDP-Compatible-Markdown.md) — the stored format
+- [NCM developer guide](guides/ncm-developer-guide.md) — the stored format
 - [MCP Server](MCP-SERVER.md) — the stdio alternative
 - `src/security/tokenRouteMap.ts` — the reachable-surface map and its matcher

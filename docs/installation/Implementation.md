@@ -37,9 +37,9 @@ The two implementations differ in exactly the way the inheritance table below pr
 | `.env` and `.env.example` | `.env.example` is the template you copy; `.env` is yours | neither; the image has no `.env` | neither | neither |
 | `app-custom-config.json` | never; it is the instance's own | never | never | never |
 
-The row that matters most is the Dockerfile `ENV` row. A value the application requires at boot must reach every instance. In methods 2, 3 and 4 it rides in the image and arrives with the next release on its own. In method 1 nothing rides: every required variable is a line the operator writes in `.env`. The rule for which file a new variable belongs in is [bootstrap-methodology.md — Where a new variable goes](../bootstrap-methodology.md#where-a-new-variable-goes).
+The row that matters most is the Dockerfile `ENV` row. A value the application requires at boot must reach every instance. In methods 2, 3 and 4 it rides in the image and arrives with the next release on its own. In method 1 nothing rides: every required variable is a line the operator writes in `.env`. The rule for which file a new variable belongs in is [bootstrap developer guide — Where a new variable goes](../guides/bootstrap-developer-guide.md#where-a-new-variable-goes).
 
-Everything below the environment is the same in all four. `bootstrap-env.ts` loads `.env` files, `ConfigurationManager` merges the shipped defaults with the instance's overrides and resolves `$VAR` references, and the install marker gates the wizard. That sequence, and the precedence rules inside it, are in [bootstrap-methodology.md](../bootstrap-methodology.md) and [startup-process.md](./startup-process.md).
+Everything below the environment is the same in all four. `bootstrap-env.ts` loads `.env` files, `ConfigurationManager` merges the shipped defaults with the instance's overrides and resolves `$VAR` references, and the install marker gates the wizard. That sequence, and the precedence rules inside it, are in [bootstrap-developer-guide.md](../guides/bootstrap-developer-guide.md) and [startup-process.md](./startup-process.md).
 
 ## 1. Direct install
 
@@ -51,7 +51,7 @@ Also called a bare-metal or host install. This repository is cloned, dependencie
 - __Addons from another repository.__ Point `ngdpbase.managers.addons-manager.addons-path` at that repository's `addons/` directory. This is how The Fairways is built: `fairways-base` is a clone of this repository run by PM2 on port 2121, and `fairways-gen2-website/addons` supplies the `fairways` addon. The instance is still a direct install of ngdpbase; only the addons directory is elsewhere.
 - __Several instances on one machine.__ Each is its own clone with its own `.env`, `PORT`, `FAST_STORAGE` and `SLOW_STORAGE`. jimstest and The Fairways share this Mac that way.
 
-Detail pages: [SETUP.md](../../SETUP.md) for the first-time walkthrough, [SERVER-MANAGEMENT.md](../SERVER-MANAGEMENT.md) for `server.sh` and PM2, [bootstrap-methodology.md](../bootstrap-methodology.md) for `.env` handling.
+Detail pages: [SETUP.md](../../SETUP.md) for the first-time walkthrough, [SERVER-MANAGEMENT.md](../SERVER-MANAGEMENT.md) for `server.sh` and PM2, [bootstrap-developer-guide.md](../guides/bootstrap-developer-guide.md) for `.env` handling.
 
 ## 2. Container from the published image
 
@@ -81,7 +81,7 @@ A second repository whose Dockerfile begins `FROM ghcr.io/jwilleke/ngdpbase:${NG
 - __How a release reaches it.__ Renovate in the downstream repository watches the base image and bumps the `ARG`; that commit triggers the downstream tag and image build; the cluster picks up the new image. No hands, and the steps that can miss are listed in [RELEASES.md — Consumer guidance](../../RELEASES.md#consumer-guidance-informational-not-promised).
 - __What ngdpbase promises it.__ Only what [RELEASES.md](../../RELEASES.md) states: the tag, the image, the changelog. No notifications, no cross-repository pin updates, no redeploys.
 
-geohazardwatch is this method. Detail pages: [RELEASES.md](../../RELEASES.md), [DEPLOYMENT.md — Published Image](../../docker/DEPLOYMENT.md#published-image), [addon-development-guide.md](../platform/addon-development-guide.md) for the Renovate recipe.
+geohazardwatch is this method. Detail pages: [RELEASES.md](../../RELEASES.md), [DEPLOYMENT.md — Published Image](../../docker/DEPLOYMENT.md#published-image), [addons-developer-guide.md](../guides/addons-developer-guide.md) for the Renovate recipe.
 
 ## Choosing
 
@@ -94,7 +94,7 @@ A domain implementation can be either 1 or 4. The Fairways and geohazardwatch sh
 
 ## Related
 
-- [bootstrap-methodology.md](../bootstrap-methodology.md) — the three boot layers, `.env` precedence, where a new variable goes
+- [bootstrap-developer-guide.md](../guides/bootstrap-developer-guide.md) — the three boot layers, `.env` precedence, where a new variable goes
 - [startup-process.md](./startup-process.md) — the startup sequence and the environment-variable override table
 - [installation-system.md](./installation-system.md) — the install wizard and headless install
 - [RELEASES.md](../../RELEASES.md) — what a release publishes, for methods 2 to 4

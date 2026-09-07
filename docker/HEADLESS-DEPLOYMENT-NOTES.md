@@ -177,7 +177,7 @@ node -e "console.log(require('crypto').randomUUID())"
 
 The destination filename in `data/pages/` is `{uuid}.md` — the source filename is ignored. Use a fresh UUID per page and never copy them between addons (cross-addon UUID collisions cause `[AddonsManager] Page conflict` warnings and silent skips).
 
-See `docs/platform/addon-development-guide.md` UUID requirements section for the full rules.
+See `docs/guides/addons-developer-guide.md` UUID requirements section for the full rules.
 
 ---
 

@@ -21,21 +21,13 @@ See [docs/](./docs/) directory for comprehensive documentation on:
 
 ### Developer Documentation Index
 
-__[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)__ - Complete index of all developer documentation:
+__[docs/guides/README.md](./docs/guides/README.md)__ — how to change this codebase, by area.
 
-- 18 Managers (quick reference + complete guides)
-- 12 Plugins (developer + user guides)
-- 5 Providers (storage and services)
-- Architecture patterns and design documents
-- Testing guides and strategies
-- API reference (auto-generated)
+__[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)__ — generated index of managers, plugins, and providers.
 
 ### Documentation by Category
 
-- __[docs/managers/](./docs/managers/)__ - Manager documentation (18 managers)
-  - Quick reference guides (~100-200 lines each)
-  - Complete guides (~500-1000+ lines each)
-  - PageManager, RenderingManager, UserManager, ConfigurationManager, etc.
+- __[docs/managers/](./docs/managers/)__ - One file per manager (`code:` frontmatter). How to add a manager: [managers-developer-guide.md](./docs/guides/managers-developer-guide.md)
 
 - __[docs/plugins/](./docs/plugins/)__ - Plugin documentation (12 plugins)
   - Developer implementation guides
@@ -56,7 +48,7 @@ __[docs/Developer-Documentation.md](./docs/Developer-Documentation.md)__ - Compl
 - __[docs/testing/](./docs/testing/)__ - Testing documentation
   - Testing-Summary.md - Current test status
   - Complete-Testing-Guide.md - Comprehensive guide
-  - PREVENTING-REGRESSIONS.md - Regression prevention
+  - [testing-developer-guide.md](docs/guides/testing-developer-guide.md) - Standing rules for tests
 
 - __[docs/migration/](./docs/migration/)__ - Migration guides
   - Upgrade instructions

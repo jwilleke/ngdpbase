@@ -432,7 +432,7 @@ member and not a filter link. Examples in this codebase:
 Note: Chips and Badges currently share the Bootstrap `.badge` CSS class — the
 __visual is not the semantic__. Both are *rendered product* (produced from
 frontmatter/config at view time), so neither is an authoring construct in page
-Markdown — see [`docs/NGDP-Compatible-Markdown.md`](./NGDP-Compatible-Markdown.md) §2.1/§3.2 (#728).
+Markdown — see [`docs/guides/ncm-developer-guide.md`](./guides/ncm-developer-guide.md) §2.1/§3.2 (#728).
 
 ---
 

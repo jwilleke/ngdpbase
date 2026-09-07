@@ -4,9 +4,9 @@ Review the current work and determine whether end-user documentation and / or de
 
 ## Reference
 
-Read `docs/proper-documentation-pages.md` for the documentation standards and conventions used on this site. Follow those guidelines for any pages you create or edit.
+Read `docs/DOCUMENTATION-STANDARDS.md` for GitHub `docs/` (developer). Read `docs/proper-documentation-pages.md` for in-app pages (`required-pages/`, addon `pages/`).
 
-If developer documentation, add to docs/Developer-Documentation.md
+If the change is how to work in an area of the codebase, update the matching file under `docs/guides/`. Module docs go in `docs/managers|plugins|providers/` with a `code:` field; do not hand-edit the AUTO tables in `docs/Developer-Documentation.md`.
 
 ## Steps
 
