@@ -1,13 +1,13 @@
 ---
 name: Documentation Standards
-description: Standards and conventions for ngdpbase documentation
-dateModified: 2025-12-18
+description: Standards and conventions for GitHub docs/ developer documentation
+dateModified: 2026-09-07
 category: standards
 ---
 
 # Documentation Standards
 
-This document defines the standards and conventions for all ngdpbase documentation.
+This document is the contract for GitHub `docs/` (developer). In-app pages (`required-pages/`, addon `pages/`, user-authored pages) follow [proper-documentation-pages.md](./proper-documentation-pages.md).
 
 ## Front Matter Schema
 
@@ -63,9 +63,9 @@ ngdpbase has two distinct frontmatter schemas in the project. They are not inter
 | Schema | Where | Fields | Purpose |
 | --- | --- | --- | --- |
 | __Doc-style__ (this file) | `docs/` | `name`, `description`, `dateModified`, `category`, `code` | GitHub-only metadata; consumed by lint/index tooling. Files render as raw markdown on GitHub. |
-| __Page-style__ ([proper-documentation-pages.md](./proper-documentation-pages.md)) | `required-pages/`, addon `pages/`, user-authored pages on disk | `title`, `uuid`, `system-category`, `user-keywords`, `slug`, `lastModified`, `author` | Wiki-rendered pages served at `/view/<slug>`; indexed by SearchManager. |
+| __Page-style__ ([proper-documentation-pages.md](./proper-documentation-pages.md)) | `required-pages/`, addon `pages/`, user-authored pages on disk | `title`, `uuid`, `system-category`, `user-keywords`, `slug`, `lastModified`, `author` | Pages the running system serves at `/view/<slug>`; indexed by SearchManager. |
 
-Do not put `title:`, `uuid:`, `system-category:`, or `slug:` in `docs/` files — those signal "this should be rendered by the wiki," which `docs/` files are not (per #660 decision, 2026-05-14). Use the doc-style schema only.
+Do not put `title:`, `uuid:`, `system-category:`, or `slug:` in `docs/` files — those signal "this should be rendered as an in-app page," which `docs/` files are not (per #660 decision, 2026-05-14). Use the doc-style schema only. This file and [proper-documentation-pages.md](./proper-documentation-pages.md) are both GitHub `docs/`; only the latter describes page-style frontmatter, and it does not use that schema on itself.
 
 ### Example (manager doc)
 

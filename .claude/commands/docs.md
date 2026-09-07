@@ -16,7 +16,7 @@ Review what was built or changed in this session and ask:
 
 - Is this a new plugin, feature, or configuration property that a user would need to look up?
 - Does an existing documentation page need to be updated to reflect changes?
-- Is there a `required-pages/` entry (or a live wiki page) that should document this?
+- Is there a `required-pages/` entry (or a live page) that should document this?
 
 If the answer to any of the above is __yes__, proceed to Step 2. If not, state that no end-user documentation is needed and stop.
 
@@ -43,7 +43,7 @@ Follow the structure and style in `docs/proper-documentation-pages.md`:
 
 Key rules from the standard:
 
-- Do __not__ use the word "Wiki" — use "this site" or the site name via `[{ConfigAccessor type='siteName'}]`
+- Do __not__ use the word "Wiki" — use "this site" or `[{$applicationname}]`
 - Use ngdpbase table syntax (not markdown tables) for pages in `required-pages/`
 - Use `[{ConfigAccessor key='prefix.*'}]` for config property tables
 - Use built-in plugins instead of static lists
