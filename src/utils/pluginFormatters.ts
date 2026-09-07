@@ -607,6 +607,133 @@ export function formatPaginationNav(
     + '</nav>';
 }
 
+// ---------------------------------------------------------------------------
+// Summary-stat filter bar (#1303)
+// ---------------------------------------------------------------------------
+
+/** Bootstrap card tones the bar will emit. Anything else falls back to neutral. */
+const STAT_TONES = ['primary', 'success', 'info', 'warning', 'danger', 'secondary'] as const;
+
+export type StatTone = typeof STAT_TONES[number];
+
+/** One card in a stat filter bar. */
+export interface StatFilter {
+  /** Card heading, e.g. "Active Users". */
+  label: string;
+  /** The count (or any short value) shown beneath it. */
+  value: string | number;
+  /**
+   * Server-side filter: the card becomes a link to this URL. Use on any
+   * surface whose list is paginated — see the note on `match`.
+   */
+  href?: string;
+  /**
+   * Client-side filter: `attr=value`, matched against a row's `data-<attr>`.
+   * Only correct when every row is already on the page. On a paginated list it
+   * would filter the current page while implying it filtered the set, which is
+   * the defect #1237 documents in the audit log's DataTables search box — use
+   * `href` there instead.
+   */
+  match?: string;
+  /**
+   * The card that clears the filter — "Total", and whatever a surface calls
+   * its everything card. Clickable, but selects nothing.
+   */
+  clears?: boolean;
+  /** Marks the card whose filter is currently in effect (server-side bars). */
+  active?: boolean;
+  /** Card colour. */
+  tone?: StatTone;
+  /** Tooltip / accessible description. */
+  title?: string;
+}
+
+export interface StatFilterOptions {
+  /** CSS selector for the rows a client-side filter hides. */
+  rowSelector?: string;
+  /** Accessible name for the group. */
+  ariaLabel?: string;
+  /** Bootstrap column class per card (default: four across). */
+  columnClass?: string;
+}
+
+/** Card colour classes, kept in one place so a tone means one thing everywhere. */
+function statToneClass(tone?: string): string {
+  if (!tone || !(STAT_TONES as readonly string[]).includes(tone)) return 'bg-light';
+  return tone === 'warning' || tone === 'info' ? `bg-${tone} text-dark` : `bg-${tone} text-white`;
+}
+
+/**
+ * Render the canonical summary-stat filter bar (#1303).
+ *
+ * `/admin/users` had four cards that filter its table when clicked. Nine other
+ * surfaces render summary counts in five presentations and none of them filter
+ * — `admin-keywords` pixel-identical to the one that works, `admin-audit`
+ * defining a `:hover` rule on cards with no click handler. An inconsistent
+ * appearance is untidy; an inconsistent affordance is a lie.
+ *
+ * The markup is the contract, as it is for `formatPaginationNav`: a card is
+ * clickable because of what it carries, and `WikiStatFilters.enhance()` wires
+ * any bar it finds. That is what lets a plugin an admin wrote offer the same
+ * interaction as a core admin page.
+ *
+ * Three kinds of card, and the difference is the whole design:
+ *
+ * - `href` — a link. The server filters, so it is correct on a paginated list.
+ * - `match` — a client-side row filter. Correct only when every row is loaded.
+ * - `clears` — the card that puts everything back.
+ * - none of them — a card that reports a number and does not pretend to filter.
+ *
+ * Returns '' for an empty list.
+ *
+ * @param stats   - The cards, in display order
+ * @param options - Row selector, aria label, column class
+ * @example
+ * formatStatFilters(
+ *   [{ label: 'Active', value: 9, match: 'status=active', tone: 'success' }],
+ *   { rowSelector: 'tbody tr[data-username]' }
+ * )
+ */
+export function formatStatFilters(stats: StatFilter[], options: StatFilterOptions = {}): string {
+  if (!stats.length) return '';
+
+  const { rowSelector, ariaLabel = 'Summary filters', columnClass = 'col-md-3' } = options;
+
+  const cards = stats.map((stat) => {
+    const body = '<div class="card-body">'
+      + `<h5 class="card-title">${escapeHtml(stat.label)}</h5>`
+      + `<h3 class="mb-0">${escapeHtml(String(stat.value))}</h3>`
+      + '</div>';
+
+    const classes = `card stat-filter ${statToneClass(stat.tone)}`;
+    const titleAttr = stat.title ? ` title="${escapeHtml(stat.title)}"` : '';
+    const activeAttr = stat.active ? ' data-stat-active' : '';
+
+    let card: string;
+    if (stat.href) {
+      card = `<a class="${classes} text-decoration-none"${titleAttr}${activeAttr}`
+        + ` href="${escapeHtml(stat.href)}">${body}</a>`;
+    } else if (stat.match || stat.clears) {
+      // A div rather than a button: the card is a block of markup, and a
+      // button element restyled to look like one loses more than role and
+      // tabindex give back here.
+      const behaviour = stat.match
+        ? ` data-stat-match="${escapeHtml(stat.match)}"`
+        : ' data-stat-clear';
+      card = `<div class="${classes}" role="button" tabindex="0"${titleAttr}${activeAttr}`
+        + `${behaviour}>${body}</div>`;
+    } else {
+      card = `<div class="${classes}"${titleAttr}>${body}</div>`;
+    }
+
+    return `<div class="${escapeHtml(columnClass)}">${card}</div>`;
+  });
+
+  const rowsAttr = rowSelector ? ` data-stat-rows="${escapeHtml(rowSelector)}"` : '';
+  return `<div class="row mb-4 wiki-stat-filters" role="group" aria-label="${escapeHtml(ariaLabel)}"`
+    + ` data-stat-filters${rowsAttr}>${cards.join('')}</div>`;
+}
+
 /**
  * Build pagination HTML for a plugin result set, addressed by page name.
  *

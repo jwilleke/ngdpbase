@@ -47,8 +47,7 @@ const ROLE_READ_ALLOWED: Record<string, string> = {
   'src/services/InstallService.ts': 'asks whether the bootstrap admin account exists — a lookup about a named user, before any request',
   'src/parsers/handlers/WikiTagHandler.ts': "the [{If role='…'}] content directive — a page author's conditional, documented syntax, not a system gate",
   'src/managers/ACLManager.ts': 'the evaluator itself: tier 0 private-page bypass and the filter that mirrors it',
-  'src/routes/WikiRoutes.ts': "validates a user-update PAYLOAD — whether an external account is being handed 'admin' — not the caller's roles",
-  'views/admin-users.ejs': 'counts and filters the accounts that HOLD the admin role — data about users, not an affordance for the viewer',
+  'src/routes/WikiRoutes.ts': "validates a user-update PAYLOAD — whether an external account is being handed 'admin' — not the caller's roles; and counts the accounts that HOLD admin for the /admin/users stat bar (#1303), which is data about users",
   'views/header.ejs': "the 'Admin' badge beside the signed-in name states a membership; the links and actions around it ask can()"
 };
 

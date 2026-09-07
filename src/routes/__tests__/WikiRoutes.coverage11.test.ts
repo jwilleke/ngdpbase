@@ -38,6 +38,12 @@ vi.mock('../../context/WikiContext', async () => {
     });
   });
   (MockWikiContext as unknown as { CONTEXT: typeof MOCK_WIKI_CONTEXT_CONSTANTS }).CONTEXT = MOCK_WIKI_CONTEXT_CONSTANTS;
+  // #1303: adminUsers counts the accounts that hold admin through
+  // WikiContext.userHasRole — the one membership test in the codebase. It is a
+  // pure static over a roles array, so the real one is carried onto the mock
+  // rather than restated here, where a copy would drift from it.
+  const actual = await vi.importActual<{ default: { userHasRole: unknown } }>('../../context/WikiContext');
+  (MockWikiContext as unknown as { userHasRole: unknown }).userHasRole = actual.default.userHasRole;
   return { default: MockWikiContext };
 });
 

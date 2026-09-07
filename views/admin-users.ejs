@@ -59,41 +59,12 @@
         </div>
       <% } %>
 
-      <!-- User Statistics — clickable cards act as quick filters -->
-      <div class="row mb-4">
-        <div class="col-md-3">
-          <div class="card bg-primary text-white" style="cursor:pointer;" onclick="setQuickFilter('total')" id="statCard-total" title="Show all users">
-            <div class="card-body">
-              <h5 class="card-title">Total Users</h5>
-              <h3><%= users.length %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-success text-white" style="cursor:pointer;" onclick="setQuickFilter('active')" id="statCard-active" title="Filter: Active users">
-            <div class="card-body">
-              <h5 class="card-title">Active Users</h5>
-              <h3><%= users.filter(u => u.isActive).length %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-info text-dark" style="cursor:pointer;" onclick="setQuickFilter('admin')" id="statCard-admin" title="Filter: Admin users">
-            <div class="card-body">
-              <h5 class="card-title">Admin Users</h5>
-              <h3><%= users.filter(u => u.roles.includes('admin')).length %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-warning text-dark" style="cursor:pointer;" onclick="setQuickFilter('system')" id="statCard-system" title="Filter: System users">
-            <div class="card-body">
-              <h5 class="card-title">System Users</h5>
-              <h3><%= users.filter(u => u.isSystem).length %></h3>
-            </div>
-          </div>
-        </div>
-      </div>
+      <%# #1303: the canonical stat filter bar. This was four hand-rolled cards
+          with hardcoded ids and 30 lines of toggle logic below — the only
+          working instance of the interaction in the application, which nine
+          other surfaces imitate without it doing anything. The control now
+          lives in pluginFormatters and WikiStatFilters wires it. %>
+      <%- statFiltersHtml %>
 
       <!-- Users Table -->
       <div class="card">
@@ -271,26 +242,18 @@
 </div>
 
 <script>
-let activeQuickFilter = null;
+// #1303: the toggle, the dimming and the outline are WikiStatFilters' job now.
+// This page keeps only what is genuinely its own — how a quick filter combines
+// with the search box and the two selects. That compound filter is also why the
+// bar does NOT carry data-stat-rows: a bar that hid rows itself would fight it.
+const statFilterBar = document.querySelector('[data-stat-filters]');
 
-function setQuickFilter(type) {
-  // Toggle off if already active
-  if (activeQuickFilter === type) {
-    activeQuickFilter = null;
-  } else {
-    activeQuickFilter = type;
-  }
-  updateStatCardHighlight();
-  filterUsers();
+function activeQuickMatch() {
+  return statFilterBar ? statFilterBar.getAttribute('data-stat-current') : null;
 }
 
-function updateStatCardHighlight() {
-  ['total','active','admin','system'].forEach(id => {
-    const card = document.getElementById('statCard-' + id);
-    if (!card) return;
-    card.style.opacity = (!activeQuickFilter || activeQuickFilter === id) ? '1' : '0.5';
-    card.style.outline = activeQuickFilter === id ? '3px solid white' : '';
-  });
+if (statFilterBar) {
+  statFilterBar.addEventListener('wiki-stat-filter', filterUsers);
 }
 
 function filterUsers() {
@@ -303,10 +266,11 @@ function filterUsers() {
     const matchQ = !q || row.dataset.username.includes(q) || row.dataset.displayname.includes(q) || row.dataset.email.includes(q);
     const matchRole = !role || row.dataset.roles.split(' ').includes(role);
     const matchStatus = !status || row.dataset.status === status;
-    const matchQuick = !activeQuickFilter || activeQuickFilter === 'total'
-      || (activeQuickFilter === 'active' && row.dataset.status === 'active')
-      || (activeQuickFilter === 'admin' && row.dataset.roles.split(' ').includes('admin'))
-      || (activeQuickFilter === 'system' && row.dataset.system === 'true');
+    const quick = activeQuickMatch();
+    const matchQuick = !quick
+      || (quick === 'status=active' && row.dataset.status === 'active')
+      || (quick === 'roles=admin' && row.dataset.roles.split(' ').includes('admin'))
+      || (quick === 'system=true' && row.dataset.system === 'true');
     const show = matchQ && matchRole && matchStatus && matchQuick;
     row.style.display = show ? '' : 'none';
     if (show) visible++;
@@ -318,8 +282,7 @@ function clearUserFilters() {
   document.getElementById('userSearchInput').value = '';
   document.getElementById('userRoleFilter').value = '';
   document.getElementById('userStatusFilter').value = '';
-  activeQuickFilter = null;
-  updateStatCardHighlight();
+  if (statFilterBar) WikiStatFilters.select(statFilterBar, null);
   filterUsers();
 }
 

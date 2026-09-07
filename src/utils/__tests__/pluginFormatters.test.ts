@@ -8,7 +8,7 @@
  *   parseSortParam,
  *   formatAsTable,
  *   parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks,
- *   formatPaginationNav
+ *   formatPaginationNav, formatStatFilters
  *
  * Related: GitHub Issue #238 (Code Consolidation)
  */
@@ -27,6 +27,7 @@ import {
   applyPagination,
   formatPaginationLinks,
   formatPaginationNav,
+  formatStatFilters,
   parsePlacementParam,
   placementClass,
   resolveManagerFetch,
@@ -761,5 +762,117 @@ describe('formatPaginationNav', () => {
 
     expect(out).not.toContain('<script>');
     expect(out).toContain('&quot;&gt;&lt;script&gt;');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatStatFilters (#1303)
+// ---------------------------------------------------------------------------
+
+describe('formatStatFilters', () => {
+  // /admin/users renders four cards that filter the table when clicked. Nine
+  // other surfaces render the same-looking cards and do nothing — one of them
+  // pixel-identical, another defining a :hover rule on a card with no click
+  // handler. An inconsistent appearance is untidy; an inconsistent affordance
+  // is a lie, and that is what this control exists to end.
+
+  test('a bar with no stats renders nothing', () => {
+    expect(formatStatFilters([])).toBe('');
+  });
+
+  test('renders one card per stat, with its label and count', () => {
+    const html = formatStatFilters([
+      { label: 'Total Users', value: 12 },
+      { label: 'Active Users', value: 9 }
+    ]);
+    expect(html).toContain('Total Users');
+    expect(html).toContain('>12<');
+    expect(html).toContain('Active Users');
+    expect(html).toContain('>9<');
+  });
+
+  test('the bar carries the marker the enhancer looks for', () => {
+    // Same contract as the pagination control: the markup is what the client
+    // enhancer finds, so a surface gets the behaviour by emitting this and
+    // calling nothing.
+    expect(formatStatFilters([{ label: 'Total', value: 1 }])).toContain('data-stat-filters');
+  });
+
+  test('a stat with a match is a client-side filter — keyboard reachable, not a link', () => {
+    const html = formatStatFilters([{ label: 'Active', value: 9, match: 'status=active' }]);
+    expect(html).toContain('data-stat-match="status=active"');
+    expect(html).toContain('role="button"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).not.toContain('<a ');
+  });
+
+  test('a clearing card is clickable and carries no match of its own', () => {
+    // "Total" is the card that shows everything again. /admin/users lets you
+    // click it to clear, and dropping that would be a regression in the one
+    // surface this control has to match exactly.
+    const html = formatStatFilters([{ label: 'Total Users', value: 12, clears: true }]);
+    expect(html).toContain('data-stat-clear');
+    expect(html).toContain('role="button"');
+    expect(html).not.toContain('data-stat-match');
+  });
+
+  test('a stat with an href is a server-side filter — an ordinary link', () => {
+    // The decision this issue left open. A paginated surface CANNOT filter by
+    // hiding loaded rows: it would filter the page and imply it filtered the
+    // set, which is the defect #1237 documents in the audit search box. Such a
+    // surface passes an href and the card navigates.
+    const html = formatStatFilters([{ label: 'Denied', value: 896, href: '/admin/audit?result=deny' }]);
+    expect(html).toContain('<a ');
+    expect(html).toContain('href="/admin/audit?result=deny"');
+    expect(html).not.toContain('data-stat-match');
+  });
+
+  test('a stat with neither is a plain card that reports and does not pretend to filter', () => {
+    const html = formatStatFilters([{ label: 'Security Incidents', value: 3 }]);
+    expect(html).not.toContain('role="button"');
+    expect(html).not.toContain('<a ');
+    expect(html).not.toContain('cursor');
+  });
+
+  test('the server marks which filter is in effect', () => {
+    const html = formatStatFilters([
+      { label: 'All', value: 20, href: '/admin/audit' },
+      { label: 'Denied', value: 896, href: '/admin/audit?result=deny', active: true }
+    ]);
+    expect(html).toContain('data-stat-active');
+  });
+
+  test('a tone becomes the card colour, and an unknown tone does not emit a bogus class', () => {
+    expect(formatStatFilters([{ label: 'Total', value: 1, tone: 'primary' }])).toContain('bg-primary');
+    expect(formatStatFilters([{ label: 'Total', value: 1, tone: 'nonsense' as never }])).not.toContain('bg-nonsense');
+  });
+
+  test('labels and values are escaped', () => {
+    const html = formatStatFilters([{ label: '<script>x</script>', value: '<b>7</b>' }]);
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<b>7</b>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  test('an href is escaped', () => {
+    const html = formatStatFilters([{ label: 'X', value: 1, href: '/a?b="c"&d=e' }]);
+    expect(html).toContain('&quot;');
+    expect(html).toContain('&amp;');
+  });
+
+  test('the rows selector travels on the bar, so the enhancer knows what to hide', () => {
+    const html = formatStatFilters(
+      [{ label: 'Active', value: 9, match: 'status=active' }],
+      { rowSelector: 'tbody tr[data-username]' }
+    );
+    expect(html).toContain('data-stat-rows="tbody tr[data-username]"');
+  });
+
+  test('without a rows selector the bar filters nothing itself — the page owns it', () => {
+    // /admin/users combines the quick filter with a search box and two selects,
+    // so it listens for the change and runs its own compound filter. A bar that
+    // also hid rows would fight it.
+    const html = formatStatFilters([{ label: 'Active', value: 9, match: 'status=active' }]);
+    expect(html).not.toContain('data-stat-rows');
   });
 });

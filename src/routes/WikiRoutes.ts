@@ -38,7 +38,7 @@ import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
-import { shuffleArray, formatPaginationNav } from '../utils/pluginFormatters.js';
+import { shuffleArray, formatPaginationNav, formatStatFilters } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
@@ -9844,10 +9844,25 @@ ${panes}
       })));
       const roles = userManager.getRoles();
 
+      // #1303: the four quick-filter cards are the canonical control now. They
+      // were the only working instance of this interaction in the application,
+      // hand-rolled in the template with four hardcoded ids; nine other
+      // surfaces imitate their appearance and filter nothing.
+      const statFiltersHtml = formatStatFilters([
+        { label: 'Total Users', value: users.length, clears: true, tone: 'primary', title: 'Show all users' },
+        { label: 'Active Users', value: users.filter((u) => (u as { isActive?: boolean }).isActive).length, match: 'status=active', tone: 'success', title: 'Filter: Active users' },
+        // userHasRole rather than an inline roles.includes: this counts the
+        // accounts that HOLD admin, and the one membership test in the codebase
+        // should be the same call whoever the subject is (#625).
+        { label: 'Admin Users', value: users.filter((u) => WikiContext.userHasRole(u, 'admin')).length, match: 'roles=admin', tone: 'info', title: 'Filter: Admin users' },
+        { label: 'System Users', value: users.filter((u) => (u as { isSystem?: boolean }).isSystem).length, match: 'system=true', tone: 'warning', title: 'Filter: System users' }
+      ], { ariaLabel: 'User summary filters' });
+
       return res.render('admin-users', {
         ...commonData,
         title: 'User Management',
         users: users,
+        statFiltersHtml,
         roles: roles,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
