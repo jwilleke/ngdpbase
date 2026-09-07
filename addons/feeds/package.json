@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^25.9.5",
     "typescript": "^5.0.0"
   },
   "engines": {
