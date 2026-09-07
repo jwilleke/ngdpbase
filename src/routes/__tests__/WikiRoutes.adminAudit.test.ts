@@ -208,6 +208,19 @@ describe('#1113 admin audit routes', () => {
       expect((res.render.mock.calls[0][1] as { paginationHtml: string }).paginationHtml).toBe('');
     });
 
+    test('the Result options come from the vocabulary, not a hand-kept list', async () => {
+      // The first draft of this filter listed allow/deny/error. The log holds
+      // success, deny and failure — two options matched zero records, and the
+      // value on most of the log could not be filtered for at all. Same defect
+      // as #1115, one field over.
+      const res = makeRes();
+      await makeRoutes(workingAudit()).adminAuditLogs(makeReq(), res);
+      const data = res.render.mock.calls[0][1] as { resultOptions: string[] };
+      expect(data.resultOptions).toContain('success');
+      expect(data.resultOptions).toContain('deny');
+      expect(data.resultOptions).toContain('failure');
+    });
+
     test('the view is told the current page and page size it is displaying', async () => {
       // The page-size control has to render its own current value, and it is
       // the server that resolved it.

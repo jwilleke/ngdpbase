@@ -60,7 +60,8 @@ import {
   recordAuditEvent,
   type AuditEventSink,
   type AuditViaToken,
-  getAuditDropStats
+  getAuditDropStats,
+  AUDIT_RESULTS
 } from '../utils/auditEvents.js';
 import { stringifyJsonLdForScript, wantsJsonLd } from '../utils/buildPageJsonLd.js';
 import { articleToPageJsonLd } from '../utils/articleToPageJsonLd.js';
@@ -15075,6 +15076,11 @@ ${panes}
         // options of which three matched zero records in a 2,687-record log,
         // while page.* — 91% of the log — could not be filtered for at all.
         eventTypeOptions: auditEventTypes(),
+        // #1237: same reason as eventTypeOptions above. The hand-kept Result
+        // list offered `allow`, `deny`, `error` while the log holds `success`,
+        // `deny` and `failure` — two options matching nothing, and the value on
+        // 5,859 of 8,665 records not offered at all.
+        resultOptions: [...AUDIT_RESULTS],
         filters,
         title: 'Audit Logs - Admin',
         currentUser

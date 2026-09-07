@@ -53,13 +53,26 @@ export interface AuditEventSink {
 
 export type AuditSeverity = 'low' | 'medium' | 'high';
 
+/**
+ * The result vocabulary, as a runtime value (#1237).
+ *
+ * The type alone could not be offered as filter options, so the audit page
+ * hand-kept its own list — and it offered `allow`, `deny`, `error` while the
+ * log holds `success` (5,859), `deny` (896) and `failure` (79). Two of the
+ * three options matched zero records and the largest value was unfilterable.
+ * Exactly the #1115 failure, one field over.
+ */
+export const AUDIT_RESULTS = ['success', 'failure', 'allow', 'deny', 'error', 'logout'] as const;
+
+export type AuditResult = typeof AUDIT_RESULTS[number];
+
 export interface AuditEvent {
   eventType: AuditEventName;
   user: string;
   ipAddress: string | undefined;
   action: string;
   /** How it went. Mutations record `success`; decisions record `allow` / `deny`; sign-in records `failure` / `logout`. */
-  result: 'success' | 'failure' | 'allow' | 'deny' | 'error' | 'logout';
+  result: AuditResult;
   severity: AuditSeverity;
   metadata: Record<string, unknown>;
   /** What the action was about, where there is a single subject (a share id, a page). */

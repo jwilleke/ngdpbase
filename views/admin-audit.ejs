@@ -168,7 +168,11 @@
                             <label class="form-label">Result</label>
                             <select class="form-select" id="filterResult">
                                 <option value="">All Results</option>
-                                <% ['allow', 'deny', 'error'].forEach(function (r) { %>
+                                <%# Generated from the result vocabulary, not hand-kept.
+                                    The first draft of this control listed allow/deny/error,
+                                    two of which match zero records, while `success` — the
+                                    value on most of the log — could not be filtered for. %>
+                                <% (typeof resultOptions !== 'undefined' ? resultOptions : []).forEach(function (r) { %>
                                 <option value="<%= r %>" <%= filters.result === r ? 'selected' : '' %>><%= r.charAt(0).toUpperCase() + r.slice(1) %></option>
                                 <% }); %>
                             </select>
