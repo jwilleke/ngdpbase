@@ -69,6 +69,17 @@ interface PageManager {
 }
 
 /**
+ * How the window is described in the heading (#1312).
+ *
+ * `since` is a day count, and `null` is the unbounded window — "Last 0 days"
+ * was the only thing the old string could have said about it, which is both
+ * wrong and unreadable.
+ */
+function windowLabel(since: number | null): string {
+  return since === null ? 'all time' : `Last ${since} day${since !== 1 ? 's' : ''}`;
+}
+
+/**
  * The count beneath the list (#1305).
  *
  * A capped list must not report its cap as a total. When the bound was applied
@@ -96,9 +107,9 @@ function countLine(
  * @param total - Size of the whole change set, or null when the cap was applied
  *                at the manager and the true total was never counted.
  */
-function generateFullFormat(pages: RecentChange[], since: number, total: number | null = pages.length): string {
+function generateFullFormat(pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
   let html = '<div class="recent-changes-plugin recent-changes-full">\n';
-  html += `<h4>Recent Changes (Last ${since} day${since !== 1 ? 's' : ''})</h4>\n`;
+  html += `<h4>Recent Changes (${windowLabel(since)})</h4>\n`;
   html += '<div class="table-responsive">\n';
   html += '<table class="table table-hover">\n';
   html += '  <thead>\n';
@@ -137,9 +148,9 @@ function generateFullFormat(pages: RecentChange[], since: number, total: number 
  * Generate compact format output
  */
 /** @param total - As `generateFullFormat`: null when the total is not known. */
-function generateCompactFormat(pages: RecentChange[], since: number, total: number | null = pages.length): string {
+function generateCompactFormat(pages: RecentChange[], since: number | null, total: number | null = pages.length): string {
   let html = '<div class="recent-changes-plugin recent-changes-compact">\n';
-  html += `<h5>Recent Changes (Last ${since} day${since !== 1 ? 's' : ''})</h5>\n`;
+  html += `<h5>Recent Changes (${windowLabel(since)})</h5>\n`;
   html += '<ul class="list-unstyled">\n';
 
   for (const page of pages) {
@@ -173,11 +184,16 @@ const RecentChangesPlugin: SimplePlugin = {
         return '<p class="error">PageManager not available</p>';
       }
 
-      const since = parseInt(String(opts.since || '7'), 10);
+      // #1312: `all` is the unbounded window, represented as null the whole way
+      // down. `0` keeps its own meaning — since midnight today — because moving
+      // it would silently widen the window under any page already using it.
+      const sinceRaw = String(opts.since ?? '7').trim();
+      const isAllTime = sinceRaw.toLowerCase() === 'all';
+      const since = isAllTime ? null : parseInt(sinceRaw, 10);
       const format = String(opts.format || 'compact').toLowerCase();
 
-      if (isNaN(since) || since < 0) {
-        return '<p class="error">Invalid "since" parameter: must be a positive number</p>';
+      if (since !== null && (isNaN(since) || since < 0)) {
+        return '<p class="error">Invalid "since" parameter: must be a positive number, or "all"</p>';
       }
 
       // #1305: `limit` was declared on this interface and never read, so
@@ -197,9 +213,12 @@ const RecentChangesPlugin: SimplePlugin = {
         return '<p class="error">Invalid "format" parameter: must be "full" or "compact"</p>';
       }
 
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - since);
-      cutoffDate.setHours(0, 0, 0, 0);
+      let cutoffDate: Date | null = null;
+      if (since !== null) {
+        cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - since);
+        cutoffDate.setHours(0, 0, 0, 0);
+      }
 
       // #635/#1116: principals are FACTS about the caller — the provider
       // derives the admin bypass from them. Anonymous (no userContext) →
@@ -216,13 +235,15 @@ const RecentChangesPlugin: SimplePlugin = {
       // flat cap is applied at the source: rendering 50 of 8,000 rows the
       // manager already built bounds the output, not the work.
       const recentChanges = await pageManager.getRecentChanges({
-        since: cutoffDate,
+        ...(cutoffDate ? { since: cutoffDate } : {}),
         principals,
         ...(pageSize > 0 ? {} : { limit })
       });
 
       if (recentChanges.length === 0) {
-        return `<p class="text-muted">No changes in the last ${since} day${since !== 1 ? 's' : ''}.</p>`;
+        return since === null
+          ? '<p class="text-muted">No changes recorded.</p>'
+          : `<p class="text-muted">No changes in the last ${since} day${since !== 1 ? 's' : ''}.</p>`;
       }
 
       let shown = recentChanges;

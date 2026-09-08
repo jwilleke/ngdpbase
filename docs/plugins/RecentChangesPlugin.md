@@ -1,7 +1,7 @@
 ---
 name: RecentChangesPlugin
 description: "Lists recent page changes in chronological order for \"what changed lately\" feeds"
-dateModified: '2026-09-07'
+dateModified: '2026-09-08'
 category: plugins
 code: src/plugins/RecentChangesPlugin.ts
 ---
@@ -55,11 +55,26 @@ Shows recent changes in compact format (same as default).
 
 | Parameter | Type | Default | Description |
 | ----------- | ------ | --------- | ------------- |
-| `since` | number | `7` | Number of days to look back for changes |
+| `since` | number \| `all` | `7` | Days to look back, or `all` for no cutoff. `0` means "since midnight today", not "everything" |
 | `format` | string | `compact` | Display format: `compact` or `full` |
 | `limit` | number | `50` | Most rows to show. Applied at the manager. A non-numeric or zero value is an error, not a fallback. |
 | `pageSize` | number | `0` | Rows per page. Above zero, replaces the flat cap with the shared pagination control. |
 | `page` | number | `1` | Which page to show, when not navigating by query string. |
+
+### `since='all'` (#1312)
+
+`since` is a day count, so before this there was no value meaning *unbounded* —
+the widest window a page author could write was a made-up number like
+`since='3650'`. `since='all'` (case-insensitive) passes no cutoff at all, and
+the heading says `Recent Changes (all time)` rather than claiming a day count.
+
+`since='0'` is deliberately unchanged and still means "since midnight today".
+Redefining it would have silently widened the window on any page already using
+it.
+
+The cap still applies: all time is still 50 rows unless `limit` says otherwise,
+and the count line says `Showing the 50 most recent changes` rather than
+implying it drew everything.
 
 ### Why there is a default limit (#1305)
 

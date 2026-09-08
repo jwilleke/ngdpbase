@@ -302,3 +302,72 @@ describe('#1305 recent changes are bounded', () => {
     expect((html.match(/href="\/view\//g) ?? []).length).toBe(15);
   });
 });
+
+/**
+ * #1312 — `since` is a day count with no unbounded value.
+ *
+ * `since='0'` means "since midnight today", so the widest window anyone could
+ * write was a made-up large number. That is a workaround pretending to be a
+ * parameter, and the seeded Recent Changes page could not offer "all time"
+ * because of it.
+ */
+describe('#1312 since=all', () => {
+  const one = (changes: RecentChange[] = []) => {
+    const pageManager = makePageManager(changes);
+    return { pageManager, engine: makeEngine(pageManager) };
+  };
+
+  const change = (): RecentChange => ({
+    title: 'Page', uuid: 'u1', lastModified: new Date().toISOString(), editor: 'jim', currentVersion: 1
+  });
+
+  test('passes no cutoff to the manager', async () => {
+    const { pageManager, engine } = one([change()]);
+    await RecentChangesPlugin.execute({ engine }, { since: 'all' });
+    const args = pageManager.getRecentChanges.mock.calls[0][0];
+    expect(args.since).toBeUndefined();
+  });
+
+  test('is case-insensitive, because a page author types what reads naturally', async () => {
+    const { pageManager, engine } = one([change()]);
+    await RecentChangesPlugin.execute({ engine }, { since: 'All' });
+    expect(pageManager.getRecentChanges.mock.calls[0][0].since).toBeUndefined();
+  });
+
+  test('says so in the heading rather than claiming a number of days', async () => {
+    const { engine } = one([change()]);
+    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    expect(html).toContain('all time');
+    expect(html).not.toMatch(/Last \d+ day/);
+  });
+
+  test('the empty case does not talk about days either', async () => {
+    const { engine } = one([]);
+    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    expect(html).not.toMatch(/last \d+ day/i);
+  });
+
+  test('the cap still applies — all time is not all rows', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => ({
+      title: `Page ${i}`, uuid: `u${i}`, lastModified: new Date().toISOString(), editor: 'jim', currentVersion: 1
+    }));
+    const { engine } = one(many);
+    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    expect((html.match(/href="\/view\//g) ?? []).length).toBe(50);
+  });
+
+  test("since='0' is unchanged — it still means since midnight today", async () => {
+    // Moving 0 to mean "all" would silently widen the window under any page
+    // already using it.
+    const { pageManager, engine } = one([change()]);
+    await RecentChangesPlugin.execute({ engine }, { since: '0' });
+    expect(pageManager.getRecentChanges.mock.calls[0][0].since).toBeInstanceOf(Date);
+  });
+
+  test('a word that is not "all" is still refused', async () => {
+    const { engine } = one([change()]);
+    const html = await RecentChangesPlugin.execute({ engine }, { since: 'forever' }) as string;
+    expect(html).toContain('error');
+    expect(html).toContain('since');
+  });
+});
