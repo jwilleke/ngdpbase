@@ -118,6 +118,13 @@
                 </tbody>
               </table>
             </div>
+            <%# #1302: trash grows with the retention window, so the list is paged. %>
+            <% if (paginationHtml) { %>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <small class="text-muted"><%= pages.length %> of <%= totalPages %> deleted pages</small>
+                <%- paginationHtml %>
+              </div>
+            <% } %>
           </div>
 
         <% } %>

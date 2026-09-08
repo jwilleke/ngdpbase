@@ -236,3 +236,64 @@ describe('admin-trash.ejs content invariants (#969)', () => {
     expect(view).toMatch(/retentionDays > 0/);
   });
 });
+
+/**
+ * #1302 — the list surfaces that render every row, always.
+ *
+ * Trash grows with the retention window, so it is one of the two this issue
+ * names as eventual scale work rather than pure consistency. These pin the
+ * contract the view depends on: a page of rows, a control that addresses the
+ * rest, and a link that keeps whatever else was in the query string.
+ */
+describe('GET /admin/trash — pagination (#1302)', () => {
+  const manyDeleted = (n: number) => Array.from({ length: n }, (_, i) => ({
+    pageName: `Deleted ${String(i).padStart(3, '0')}`,
+    uuid: `u${i}`,
+    deletedAt: daysAgo(1),
+    deletedBy: 'admin'
+  }));
+
+  const renderArgs = (res: { render: { mock: { calls: unknown[][] } } }) =>
+    res.render.mock.calls[0][1] as { pages: unknown[]; paginationHtml: string };
+
+  test('renders one page of rows, not every deleted page', async () => {
+    const res = createMockRes();
+    await makeRoutes({ deleted: manyDeleted(60) }).adminTrash(createMockReq(adminUser), res);
+    expect(renderArgs(res).pages.length).toBeLessThan(60);
+  });
+
+  test('offers the canonical control', async () => {
+    const res = createMockRes();
+    await makeRoutes({ deleted: manyDeleted(60) }).adminTrash(createMockReq(adminUser), res);
+    const html = renderArgs(res).paginationHtml;
+    expect(html).toContain('data-pagination');
+    expect(html).toContain('data-current-page="1"');
+  });
+
+  test('page 2 is a different set of rows', async () => {
+    const first = createMockRes();
+    const second = createMockRes();
+    const routes = makeRoutes({ deleted: manyDeleted(60) });
+    await routes.adminTrash(createMockReq(adminUser), first);
+    const req2 = { ...createMockReq(adminUser), query: { page: '2' } };
+    await routes.adminTrash(req2, second);
+
+    expect(renderArgs(second).pages[0]).not.toEqual(renderArgs(first).pages[0]);
+  });
+
+  test('a short trash renders whole, with no control', async () => {
+    const res = createMockRes();
+    await makeRoutes({ deleted: manyDeleted(3) }).adminTrash(createMockReq(adminUser), res);
+    expect(renderArgs(res).pages).toHaveLength(3);
+    expect(renderArgs(res).paginationHtml).toBe('');
+  });
+
+  test('page links keep the rest of the query string', async () => {
+    // Every one of these surfaces has some other parameter — a log file, a list
+    // kind, a filter — and a page link that drops it navigates somewhere else.
+    const res = createMockRes();
+    const req = { ...createMockReq(adminUser), query: { sort: 'name' } };
+    await makeRoutes({ deleted: manyDeleted(60) }).adminTrash(req, res);
+    expect(renderArgs(res).paginationHtml).toContain('sort=name');
+  });
+});

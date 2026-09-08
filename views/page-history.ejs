@@ -101,6 +101,14 @@
             </tbody>
           </table>
         </div>
+        <%# #1302: history grows without bound on an actively edited page. The
+            count in the heading stays the whole count; this states the window. %>
+        <% if (typeof paginationHtml !== 'undefined' && paginationHtml) { %>
+          <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted"><%= versions.length %> of <%= versionCount %> versions</small>
+            <%- paginationHtml %>
+          </div>
+        <% } %>
 
         <!-- Version Comparison Tool -->
         <div class="card mt-4">

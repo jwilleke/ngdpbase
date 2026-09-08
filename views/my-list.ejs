@@ -69,6 +69,14 @@
               </table>
             </div>
           <% } %>
+          <%# #1302: all five of the "my" lists render through this view, so one
+              control here covers pages, journal entries and links alike. %>
+          <% if (typeof paginationHtml !== 'undefined' && paginationHtml) { %>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <small class="text-muted"><%= items.length %> of <%= totalItems %></small>
+              <%- paginationHtml %>
+            </div>
+          <% } %>
         </div>
       </div>
     </div>

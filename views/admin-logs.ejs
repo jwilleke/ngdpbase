@@ -58,6 +58,15 @@
         </div>
         <div class="card-body">
           <pre style="background-color: var(--pre-bg, #f8f9fa); color: var(--pre-text, #212529); padding: 15px; border-radius: 5px; max-height: 600px; overflow-y: auto; border: 1px solid var(--border-color, #dee2e6);"><%= logContent || 'No log content available' %></pre>
+          <%# #1302: the viewer showed the last 100 lines and the rest of the
+              file could not be reached from a browser at all. Page 1 is still
+              the newest 100; the control walks backwards through the file. %>
+          <% if (typeof logPaginationHtml !== 'undefined' && logPaginationHtml) { %>
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <small class="text-muted"><%= linesPerPage %> of <%= logLineCount %> lines, newest first</small>
+              <%- logPaginationHtml %>
+            </div>
+          <% } %>
         </div>
       </div>
 

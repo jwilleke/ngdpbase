@@ -164,3 +164,31 @@ test.describe('bounded plugin output (#1305)', () => {
     }
   });
 });
+
+/**
+ * #1302 — the log viewer is the one adopted list surface with enough rows on a
+ * running instance to page through in a browser. Page history and trash hold
+ * fewer rows than a page here, so their behaviour is pinned in unit tests
+ * instead; asserting a skip in a browser proves nothing.
+ */
+test.describe('list surface pagination (#1302)', () => {
+  test('the log viewer walks backwards through the file', async ({ page }) => {
+    await waitForServerReady(page);
+    await page.goto('/admin/logs');
+
+    const pager = page.locator('nav[data-pagination]');
+    test.skip(await pager.count() === 0, 'this log file is shorter than one page');
+
+    const firstPage = await page.locator('pre').innerText();
+
+    await pager.getByRole('link', { name: '2', exact: true }).click();
+    await expect(page).toHaveURL(/[?&]page=2/);
+
+    const secondPage = await page.locator('pre').innerText();
+    expect(secondPage).not.toBe(firstPage);
+
+    // Page 1 was the newest lines and stays that way — the change is that the
+    // rest of the file is now reachable, not that the default moved.
+    await expect(page.locator('nav[data-pagination]')).toHaveAttribute('data-current-page', '2');
+  });
+});

@@ -38,7 +38,13 @@ import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
-import { shuffleArray, formatPaginationNav, formatStatFilters } from '../utils/pluginFormatters.js';
+import {
+  shuffleArray,
+  formatPaginationNav,
+  formatStatFilters,
+  applyPagination,
+  parsePageParam
+} from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
@@ -143,6 +149,14 @@ import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 const DEFAULT_SEEDED_FIELDS = ['system-category', 'system-keywords', 'user-keywords', 'slug'] as const;
 
 const MAX_REWRITE_REFERRERS = 200;
+
+/**
+ * Log lines shown per page in the admin log viewer (#1302).
+ *
+ * Was the hardcoded tail length: the page showed the last 100 lines and the
+ * rest of the file could not be reached from the browser at all.
+ */
+const LOG_LINES_PER_PAGE = 100;
 
 /**
  * Wall-clock budget for the whole rewrite pass, in milliseconds.
@@ -7995,11 +8009,14 @@ ${panes}
         })
         : [];
       const commonData = await this.getCommonTemplateData(req);
+      const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
         title: spec.title,
         icon: spec.icon,
-        items,
+        items: pagedList.items,
+        totalItems: pagedList.totalItems,
+        paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
         emptyMessage: spec.emptyMessage
       });
@@ -8028,11 +8045,14 @@ ${panes}
         ? await pageManager.getPagesByEditor(currentUser.username)
         : [];
       const commonData = await this.getCommonTemplateData(req);
+      const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
         title: 'My Recent Edits',
         icon: 'fa-history',
-        items,
+        items: pagedList.items,
+        totalItems: pagedList.totalItems,
+        paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
         emptyMessage: 'You haven\'t edited any pages yet.'
       });
@@ -8062,11 +8082,14 @@ ${panes}
         ? await pageManager.getPagesSharedWith(principals)
         : [];
       const commonData = await this.getCommonTemplateData(req);
+      const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
         title: 'Pages Shared With Me',
         icon: 'fa-share-alt',
-        items,
+        items: pagedList.items,
+        totalItems: pagedList.totalItems,
+        paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
         emptyMessage: 'No pages have been shared with you via the audience field.'
       });
@@ -8117,11 +8140,14 @@ ${panes}
         lastModified: e.journalDate
       }));
       const commonData = await this.getCommonTemplateData(req);
+      const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
         title: 'My Journal Entries',
         icon: 'fa-book',
-        items,
+        items: pagedList.items,
+        totalItems: pagedList.totalItems,
+        paginationHtml: pagedList.paginationHtml,
         listKind: 'journal',
         journalEnabled,
         emptyMessage: journalManager
@@ -8154,11 +8180,14 @@ ${panes}
         pinnedAt: p.pinnedAt
       }));
       const commonData = await this.getCommonTemplateData(req);
+      const pagedList = this.pageOfList(items, req, 25, 'List pagination');
       res.render('my-list', {
         ...commonData,
         title: 'My Links',
         icon: 'fa-link',
-        items,
+        items: pagedList.items,
+        totalItems: pagedList.totalItems,
+        paginationHtml: pagedList.paginationHtml,
         listKind: 'links',
         emptyMessage: 'You haven\'t pinned any pages yet. Pin pages from the page menu to add them here.'
       });
@@ -13520,6 +13549,8 @@ ${panes}
       let logContent = '';
       let logFiles: Array<{ name: string; mtime: Date; size: number }> = [];
       let selectedFile = '';
+      let logPaginationHtml = '';
+      let logLineCount = 0;
 
       try {
         if (await fse.pathExists(logDir)) {
@@ -13546,9 +13577,18 @@ ${panes}
           if (selectedFile) {
             const logPath = path.join(logDir, selectedFile);
             const content = await fse.readFile(logPath, 'utf8');
-            // Get last 100 lines
+            // #1302: this showed the last 100 lines and nothing else, so the
+            // rest of the file was unreachable from the browser. The window is
+            // now a page: page 1 is still the newest 100 lines, and the control
+            // walks backwards through the file. Ordering is newest-first
+            // between pages and oldest-first within one, which is how a log
+            // reads — the same lines, in the same order, as page 1 always was.
             const lines = content.split('\n');
-            logContent = lines.slice(-100).join('\n');
+            const newestFirst = [...lines].reverse();
+            const paged = this.pageOfList(newestFirst, req, LOG_LINES_PER_PAGE, 'Log pagination');
+            logContent = [...paged.items].reverse().join('\n');
+            logPaginationHtml = paged.paginationHtml;
+            logLineCount = lines.length;
           }
         }
       } catch (err: unknown) {
@@ -13561,6 +13601,9 @@ ${panes}
         title: 'System Logs',
         logFiles,
         logContent,
+        logPaginationHtml,
+        logLineCount,
+        linesPerPage: LOG_LINES_PER_PAGE,
         selectedFile,
         csrfToken: req.session.csrfToken
       });
@@ -14998,6 +15041,48 @@ ${panes}
   }
 
   /**
+   * Page a server-rendered list and build its control (#1302).
+   *
+   * The eight list surfaces this epic names each render every row they have.
+   * None is slow today — 4 users, 17 versions — but a user who pages through
+   * attachments with a numbered control and then meets an unbounded page
+   * history learns that pagination here is arbitrary, which is the complaint
+   * behind #431 and is not fixed by making one more page work.
+   *
+   * The page links keep the rest of the query string, because every one of
+   * these surfaces has some other parameter — a log file, a list kind, a sort —
+   * and a link that drops it navigates somewhere else.
+   *
+   * @param items    - The whole list, already ordered
+   * @param req      - The request, for `?page=` and the parameters to preserve
+   * @param pageSize - Rows per page
+   * @param label    - Accessible name for the control
+   */
+  private pageOfList<T>(
+    items: T[],
+    req: Request,
+    pageSize: number,
+    label = 'Pagination'
+  ): { items: T[]; paginationHtml: string; currentPage: number; totalItems: number } {
+    const paged = applyPagination(items, parsePageParam(req.query.page as string | undefined), pageSize);
+    const hrefFor = (page: number): string => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.query)) {
+        if (key === 'page' || typeof value !== 'string') continue;
+        params.set(key, value);
+      }
+      params.set('page', String(page));
+      return `${req.path}?${params.toString()}`;
+    };
+    return {
+      items: paged.items,
+      paginationHtml: formatPaginationNav(paged.currentPage, paged.totalPages, hrefFor, label),
+      currentPage: paged.currentPage,
+      totalItems: items.length
+    };
+  }
+
+  /**
    * Resolve the audit query's paging window from the query string (#1237).
    *
    * Shared by the page and the API for the same reason `auditFiltersFromQuery`
@@ -15894,12 +15979,19 @@ ${panes}
         };
       });
 
+      // #1302: trash grows with the retention window, so it is one of the two
+      // surfaces here that will be scale work eventually and not only
+      // consistency work.
+      const pagedTrash = this.pageOfList(pages, req, 25, 'Trash pagination');
+
       return res.render('admin-trash', {
         ...commonData,
         title: 'Trash',
         supported: true,
         retentionDays,
-        pages,
+        pages: pagedTrash.items,
+        totalPages: pagedTrash.totalItems,
+        paginationHtml: pagedTrash.paginationHtml,
         csrfToken: req.session?.csrfToken || ''
       });
     } catch (error: unknown) {
@@ -16073,12 +16165,19 @@ ${panes}
       // Get common template data (includes theme paths, user, pages, etc.)
       const templateData = await this.getCommonTemplateData(req);
 
+      // #1302: history grows without bound on an actively edited page — the
+      // other surface here that is eventual scale work, not only consistency.
+      // versionCount stays the whole count: the heading states how many
+      // versions the page has, not how many are on screen.
+      const pagedVersions = this.pageOfList(versions, req, 25, 'Version history pagination');
+
       res.render('page-history', {
         ...templateData,
         pageName: pageName,
         pageUuid: pageMetadata?.uuid,
-        versions: versions,
-        versionCount: versions.length
+        versions: pagedVersions.items,
+        versionCount: versions.length,
+        paginationHtml: pagedVersions.paginationHtml
       });
 
     } catch (error: unknown) {
