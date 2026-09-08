@@ -1040,6 +1040,32 @@ main p, main div, main span, main li {
     color: var(--text-primary);
 }
 
+/*
+ * #1304: the stat filter bar carries its tone on the card, and the rule above
+ * paints an opaque card-body over it — which turned /admin/audit's cards white
+ * with white labels on them, while the same markup rendered correctly on
+ * /admin/users because that page's stylesheet order left card-body transparent.
+ * A control whose appearance depends on which page it is on is not a control,
+ * so it opts out of both here rather than relying on the cascade.
+ */
+.stat-filter .card-body,
+.stat-filter .card-body h3,
+.stat-filter .card-title {
+    background-color: transparent;
+    color: inherit;
+}
+
+/*
+ * A server-side bar's cards are links, so the page reloads and the active one
+ * is marked by the server rather than by the enhancer. It needs to be visible
+ * without a click having just happened: this is the "you are looking at the
+ * denied events" state on a page you might have arrived at from a bookmark.
+ */
+.stat-filter[data-stat-active] {
+    outline: 3px solid rgba(0, 0, 0, 0.45);
+    outline-offset: -3px;
+}
+
 .bg-light {
     /* Override Bootstrap's --bs-light variable so bg-light utility picks up theme colour */
     --bs-light-rgb: var(--bg-secondary-rgb, 248, 249, 250);

@@ -28,41 +28,10 @@
         </div>
       <% } %>
 
-      <!-- Keyword Statistics -->
-      <div class="row mb-4">
-        <div class="col-md-3">
-          <div class="card bg-primary text-white" >
-            <div class="card-body">
-              <h5 class="card-title">Total Keywords</h5>
-              <h3><%= stats.total %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-success text-white" >
-            <div class="card-body">
-              <h5 class="card-title">Enabled</h5>
-              <h3><%= stats.enabled %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-info text-dark" >
-            <div class="card-body">
-              <h5 class="card-title">With Pages</h5>
-              <h3><%= stats.withPages %></h3>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-warning text-dark" >
-            <div class="card-body">
-              <h5 class="card-title">In Use</h5>
-              <h3><%= stats.inUse %></h3>
-            </div>
-          </div>
-        </div>
-      </div>
+      <%# #1304: the shared stat filter bar. These four cards were pixel-identical
+          to the working ones on /admin/users and inert — anyone who learned the
+          interaction there tried it here and concluded the application was broken. %>
+      <%- keywordStatsHtml %>
 
       <!-- Keywords Table -->
       <div class="card">
@@ -79,7 +48,7 @@
         </div>
         <div class="card-body">
           <div class="table-responsive">
-            <table class="table table-striped">
+            <table id="keywordsTable" class="table table-striped">
               <thead>
                 <tr>
                   <th>Label</th>
@@ -93,7 +62,11 @@
               </thead>
               <tbody>
                 <% keywords.forEach(keyword => { %>
-                <tr data-keyword-id="<%= keyword.id %>">
+                <%# The filter bar reads these: one attribute per card it offers. %>
+                <tr data-keyword-id="<%= keyword.id %>"
+                    data-enabled="<%= keyword.enabled ? 'true' : 'false' %>"
+                    data-haspage="<%= keyword.hasPage ? 'true' : 'false' %>"
+                    data-inuse="<%= (keyword.usageCount > 0 || keyword.mediaCount > 0) ? 'true' : 'false' %>">
                   <td><%= keyword.label %></td>
                   <td><code><%= keyword.id %></code></td>
                   <td><%= keyword.category || '-' %></td>

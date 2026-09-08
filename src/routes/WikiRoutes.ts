@@ -15060,6 +15060,13 @@ ${panes}
       const emptyStats = { totalEvents: 0, eventsByType: {}, eventsByResult: {}, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 0 };
       const caller = { username: currentUser.username };
       const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters, caller) : emptyStats;
+      // #1304: the stat bar navigates, so its numbers are of the whole log, not
+      // of the current filter. Filtered stats make "Total Events" agree with the
+      // filter it is offering to replace — click Denied and every card reads 40,
+      // which hides what else is there and makes the bar useless for moving on.
+      const barStats = Object.keys(filters).length === 0
+        ? auditStats
+        : (audit?.getAuditStats ? await audit.getAuditStats({}, caller) : emptyStats);
       const auditLogs = audit?.searchAuditLogs
         ? await audit.searchAuditLogs(filters, { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' }, caller)
         : { results: [], total: 0, limit, offset, hasMore: false };
@@ -15077,10 +15084,33 @@ ${panes}
         'Audit log pagination'
       );
 
+      // #1304: the audit cards carried a :hover rule and no click handler —
+      // an explicit "I am clickable" affordance with nothing behind it. They
+      // are links, not row filters: the table is paginated, so hiding loaded
+      // rows would filter the page while implying it filtered the log.
+      const stats = barStats as { totalEvents?: number; eventsByResult?: Record<string, number>; securityIncidents?: number };
+      const auditFilterHref = this.auditPageHref({}, limit);
+      const withResult = (value: string) => {
+        const params = new URLSearchParams();
+        params.set('result', value);
+        if (limit !== 50) params.set('limit', String(limit));
+        return `/admin/audit?${params.toString()}`;
+      };
+      const statFiltersHtml = formatStatFilters([
+        { label: 'Total Events', value: stats.totalEvents ?? 0, href: auditFilterHref(1), tone: 'primary', title: 'Show all events', active: Object.keys(filters).length === 0 },
+        { label: 'Access Allowed', value: stats.eventsByResult?.allow ?? 0, href: withResult('allow'), tone: 'success', title: 'Filter: allowed access decisions', active: filters.result === 'allow' },
+        { label: 'Access Denied', value: stats.eventsByResult?.deny ?? 0, href: withResult('deny'), tone: 'danger', title: 'Filter: denied access decisions', active: filters.result === 'deny' },
+        // securityIncidents counts high OR critical, but AuditSeverity has no
+        // critical — so the filter behind this card is severity=high, which is
+        // what the number is made of on any log this application writes.
+        { label: 'Security Incidents', value: stats.securityIncidents ?? 0, href: `/admin/audit?severity=high${limit !== 50 ? `&limit=${limit}` : ''}`, tone: 'warning', title: 'Filter: high-severity events', active: filters.severity === 'high' }
+      ], { ariaLabel: 'Audit summary filters' });
+
       const templateData = await this.getCommonTemplateData(req);
       return res.render('admin-audit', {
         ...templateData,
         auditStats,
+        statFiltersHtml,
         auditLogs,
         auditAvailable: Boolean(audit?.searchAuditLogs),
         paginationHtml,
@@ -16544,11 +16574,23 @@ ${description}
       // win. `csrfToken` is in both, and the local one is the request's own.
       const commonData = await this.getCommonTemplateData(req);
 
+      // #1304: these four cards were pixel-identical to the working ones on
+      // /admin/users and did nothing when clicked — the sharpest case of an
+      // affordance that lies. Every keyword is on the page, so they filter the
+      // loaded rows; the bar names them and does the hiding itself.
+      const keywordStatsHtml = formatStatFilters([
+        { label: 'Total Keywords', value: totalKeywords, clears: true, tone: 'primary', title: 'Show all keywords' },
+        { label: 'Enabled', value: enabledKeywords, match: 'enabled=true', tone: 'success', title: 'Filter: enabled keywords' },
+        { label: 'With Pages', value: keywordsWithPages, match: 'haspage=true', tone: 'info', title: 'Filter: keywords that have a page' },
+        { label: 'In Use', value: keywordsInUse, match: 'inuse=true', tone: 'warning', title: 'Filter: keywords used by a page or media item' }
+      ], { rowSelector: '#keywordsTable tbody tr[data-keyword-id]', ariaLabel: 'Keyword summary filters' });
+
       res.render('admin-keywords', {
         ...commonData,
         title: 'Keyword Management',
         currentUser,
         keywords,
+        keywordStatsHtml,
         stats: {
           total: totalKeywords,
           enabled: enabledKeywords,

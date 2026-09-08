@@ -25,12 +25,6 @@
             border-radius: 0.375rem;
             margin-bottom: 1rem;
         }
-        .stats-card {
-            transition: transform 0.2s;
-        }
-        .stats-card:hover {
-            transform: translateY(-2px);
-        }
         .log-details {
             max-height: 400px;
             overflow-y: auto;
@@ -72,61 +66,11 @@
                     </div>
                 </div>
 
-                <!-- Audit Statistics -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card stats-card">
-                            <div class="card-body text-center">
-                                <h5 class="card-title text-primary"><%= auditStats.totalEvents %></h5>
-                                <p class="card-text">Total Events
-                                    <i class="fas fa-info-circle help-icon"
-                                       data-bs-toggle="tooltip"
-                                       data-bs-placement="top"
-                                       title="Total number of audit events logged"></i>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card stats-card">
-                            <div class="card-body text-center">
-                                <h5 class="card-title text-success"><%= auditStats.eventsByResult.allow || 0 %></h5>
-                                <p class="card-text">Access Allowed
-                                    <i class="fas fa-info-circle help-icon"
-                                       data-bs-toggle="tooltip"
-                                       data-bs-placement="top"
-                                       title="Number of access requests that were allowed"></i>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card stats-card">
-                            <div class="card-body text-center">
-                                <h5 class="card-title text-danger"><%= auditStats.eventsByResult.deny || 0 %></h5>
-                                <p class="card-text">Access Denied
-                                    <i class="fas fa-info-circle help-icon"
-                                       data-bs-toggle="tooltip"
-                                       data-bs-placement="top"
-                                       title="Number of access requests that were denied"></i>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card stats-card">
-                            <div class="card-body text-center">
-                                <h5 class="card-title text-warning"><%= auditStats.securityIncidents %></h5>
-                                <p class="card-text">Security Incidents
-                                    <i class="fas fa-info-circle help-icon"
-                                       data-bs-toggle="tooltip"
-                                       data-bs-placement="top"
-                                       title="Number of high/critical severity security events"></i>
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <%# #1304: the shared stat filter bar. These cards defined a :hover
+                    rule and had no click handler — an explicit clickability
+                    affordance with nothing behind it. They are links rather than
+                    row filters because this table is paginated. %>
+                <%- statFiltersHtml %>
 
                 <!-- Audit Filters -->
                 <div class="audit-filters">

@@ -94,3 +94,65 @@ test.describe('summary-stat filter bar', () => {
     }
   });
 });
+
+/**
+ * #1304 — the two surfaces that misled rather than merely differed.
+ *
+ * `/admin/keywords` rendered cards pixel-identical to the working ones and did
+ * nothing when clicked. `/admin/audit` defined a `:hover` rule on cards with no
+ * handler behind them. Both now carry the shared control — and they carry two
+ * DIFFERENT kinds of it, which is the distinction worth protecting: keywords
+ * filters loaded rows, audit navigates, because the audit table is paginated.
+ */
+test.describe('adopted stat bars (#1304)', () => {
+  test('the keywords bar filters the table it sits above', async ({ page }) => {
+    await waitForServerReady(page);
+    await page.goto('/admin/keywords');
+
+    const bar = page.locator('[data-stat-filters]');
+    await expect(bar).toBeVisible();
+
+    const rows = page.locator('#keywordsTable tbody tr[data-keyword-id]');
+    const all = await rows.count();
+    test.skip(all === 0, 'no keywords on this instance');
+
+    const withPages = page.locator('[data-stat-match="haspage=true"]');
+    await withPages.click();
+
+    const visible = await rows.locator('visible=true').count();
+    expect(visible).toBeLessThanOrEqual(all);
+    // Every row still showing must be one the filter admits.
+    for (const row of await rows.locator('visible=true').all()) {
+      await expect(row).toHaveAttribute('data-haspage', 'true');
+    }
+  });
+
+  test('the audit bar navigates instead of hiding rows', async ({ page }) => {
+    // Hiding loaded rows on a paginated table filters the page and implies it
+    // filtered the log — the defect #1237 documents. These cards are links.
+    await waitForServerReady(page);
+    await page.goto('/admin/audit');
+
+    const denied = page.locator('a.stat-filter', { hasText: 'Access Denied' });
+    await expect(denied).toBeVisible();
+    await expect(denied).toHaveAttribute('href', /result=deny/);
+
+    await denied.click();
+    await expect(page).toHaveURL(/[?&]result=deny/);
+    await expect(page.locator('#filterResult')).toHaveValue('deny');
+    await expect(page.locator('a.stat-filter[data-stat-active]')).toContainText('Access Denied');
+  });
+
+  test('the audit counts stay whole while a filter is applied', async ({ page }) => {
+    // A bar whose numbers follow the current filter cannot be used to move to
+    // another one: click Denied and every card reads the denied count.
+    await waitForServerReady(page);
+    await page.goto('/admin/audit');
+    const totalBefore = await page.locator('.stat-filter', { hasText: 'Total Events' }).textContent();
+
+    await page.goto('/admin/audit?result=deny');
+    const totalAfter = await page.locator('.stat-filter', { hasText: 'Total Events' }).textContent();
+
+    expect(totalAfter).toBe(totalBefore);
+  });
+});
