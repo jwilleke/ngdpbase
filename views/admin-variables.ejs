@@ -216,32 +216,9 @@ Generated at [{$timestamp}]</textarea>
                             </div>
 
                             <h6>Debug Information</h6>
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <div class="card">
-                                        <div class="card-body text-center">
-                                            <h5 class="card-title"><%= debugInfo.systemVariables %></h5>
-                                            <p class="card-text">System Variables</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="card">
-                                        <div class="card-body text-center">
-                                            <h5 class="card-title"><%= debugInfo.contextualVariables %></h5>
-                                            <p class="card-text">Contextual Variables</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="card">
-                                        <div class="card-body text-center">
-                                            <h5 class="card-title"><%= debugInfo.totalVariables %></h5>
-                                            <p class="card-text">Total Variables</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <%# #1304: the shared bar in report-only mode — three
+                                counts with no list beside them to filter. %>
+                            <%- variableStatsHtml %>
                         </div>
                     </div>
                 </div>

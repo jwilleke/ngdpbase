@@ -29,41 +29,10 @@
         </div>
     </div>
 
-    <!-- Notification Statistics -->
-    <div class="row mt-4">
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h3 class="card-title text-primary"><%= stats.total %></h3>
-                    <p class="card-text">Total Notifications</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h3 class="card-title text-success"><%= stats.active %></h3>
-                    <p class="card-text">Active</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h3 class="card-title text-warning"><%= stats.expired %></h3>
-                    <p class="card-text">Expired</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h3 class="card-title text-info"><%= Object.keys(stats.byType).length %></h3>
-                    <p class="card-text">Types</p>
-                </div>
-            </div>
-        </div>
-    </div>
+    <%# #1304: report-only. This page already filters through its Active / All /
+        Expired tabs; a second control over the same three sets is the
+        two-paginators problem from #1237 in another costume. %>
+    <%- notificationStatsHtml %>
 
     <!-- Notification Filters -->
     <div class="row mt-4">

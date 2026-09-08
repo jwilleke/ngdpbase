@@ -10981,6 +10981,14 @@ ${panes}
           contextualVariables: debugInfo.contextualVariables.length,
           totalVariables: debugInfo.totalVariables
         },
+        // #1304: report-only. Three counts in a debug panel, with no list of
+        // variables beside them to filter — a card that offered a click here
+        // would have nothing to do with it.
+        variableStatsHtml: formatStatFilters([
+          { label: 'System Variables', value: debugInfo.systemVariables.length, tone: 'primary' },
+          { label: 'Contextual Variables', value: debugInfo.contextualVariables.length, tone: 'info' },
+          { label: 'Total Variables', value: debugInfo.totalVariables, tone: 'secondary' }
+        ], { columnClass: 'col-md-4', ariaLabel: 'Variable counts' }),
         leftMenu: leftMenuContent,
         csrfToken: req.session.csrfToken
       };
@@ -14714,9 +14722,22 @@ ${panes}
       // Get notification statistics
       const stats = notificationManager.getStats();
 
+      // #1304: report-only. This page already filters through its Active / All
+      // / Expired tabs, and a second control over the same three sets is the
+      // two-paginators problem from #1237 in another costume.
+      const notificationStatsHtml = formatStatFilters([
+        { label: 'Total Notifications', value: stats.total, tone: 'primary' },
+        { label: 'Active', value: stats.active, tone: 'success' },
+        { label: 'Expired', value: stats.expired, tone: 'warning' },
+        // byType is optional on the stats shape; the template used to read it
+        // unguarded, which only stayed harmless while nothing evaluated it.
+        { label: 'Types', value: Object.keys(stats.byType ?? {}).length, tone: 'info' }
+      ], { ariaLabel: 'Notification summary' });
+
       res.render('admin-notifications', {
         ...commonData,
         title: 'Notification Management',
+        notificationStatsHtml,
         allNotifications: allNotifications,
         activeNotifications: activeNotifications,
         expiredNotifications: expiredNotifications,
@@ -17880,10 +17901,22 @@ ${description}
       }
 
       const commonData = await this.getCommonTemplateData(req);
+      // #1304: shares had no summary at all while every row carried a status
+      // badge. The counts are worth stating, and since every share is on the
+      // page they can filter it too.
+      const shareStatus = (value: string) => shares.filter((sh) => sh.status === value).length;
+      const shareStatsHtml = formatStatFilters([
+        { label: 'Total Shares', value: shares.length, clears: true, tone: 'primary', title: 'Show all shares' },
+        { label: 'Active', value: shareStatus('active'), match: 'status=active', tone: 'success', title: 'Filter: active shares' },
+        { label: 'Expired', value: shareStatus('expired'), match: 'status=expired', tone: 'secondary', title: 'Filter: expired shares' },
+        { label: 'Revoked', value: shareStatus('revoked'), match: 'status=revoked', tone: 'danger', title: 'Filter: revoked shares' }
+      ], { rowSelector: '#sharesTable tbody tr[data-share-id]', ariaLabel: 'Share summary filters' });
+
       return res.render('shares', {
         ...commonData,
         wikiContext,
         shares,
+        shareStatsHtml,
         isAdmin,
         backLink,
         baseUrl: this.shareBaseUrl(req),

@@ -48,11 +48,16 @@
         </div>
     </div>
 
+    <%# #1304: shares had no summary at all while every row carried a status
+        badge. The counts are worth stating, and every share is on the page, so
+        they filter it too. %>
+    <%- shareStatsHtml %>
+
     <% if (shares.length === 0) { %>
         <div class="alert alert-info"><i class="fas fa-info-circle"></i> No shares yet.</div>
     <% } else { %>
         <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table id="sharesTable" class="table table-sm align-middle">
                 <thead>
                     <tr>
                         <th>Keyword</th>
@@ -67,7 +72,7 @@
                 <tbody>
                     <% shares.forEach(function(s) { %>
                         <% const url = baseUrl + '/share/' + s.token; %>
-                        <tr class="<%= s.id === createdId ? 'table-success' : '' %>">
+                        <tr data-share-id="<%= s.id %>" data-status="<%= s.status %>" class="<%= s.id === createdId ? 'table-success' : '' %>">
                             <td><a href="/media/keyword/<%= encodeURIComponent(s.scope.keyword) %>"><%= s.scope.keyword %></a></td>
                             <td>
                                 <% if (s.status === 'active') { %>
