@@ -17,7 +17,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
+import { formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
 import type { SessionCount, SessionUsers } from '../managers/SessionStatsManager.js';
 
 interface SessionStats {
@@ -60,8 +60,12 @@ const SessionsPlugin: SimplePlugin = {
         }
 
         if (anonymous > 0) {
-          html += `<ul><li class="text-muted">${escapeHtml(`Anonymous (${formatAsCount(anonymous)})`)}` +
-                  '</li></ul>\n';
+          // #1306: the same list as the named users above it. This was the one
+          // line of hand-rolled markup left in a plugin that otherwise uses the
+          // vocabulary — and it rendered a different <ul> right beneath one.
+          html += formatAsList(
+            [{ href: '', text: 'Anonymous', cssClass: 'text-muted', badge: formatAsCount(anonymous) }]
+          ) + '\n';
         }
 
         html += '</div>';

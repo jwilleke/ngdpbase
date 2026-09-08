@@ -29,7 +29,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { parseMaxParam, escapeHtml } from '../utils/pluginFormatters.js';
+import { parseMaxParam, escapeHtml, formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
 
 interface AppHealthParams extends PluginParams {
   checks?:    string;
@@ -78,20 +78,21 @@ function makeFilter(
 
 function section(title: string, pages: string[], hrefBase: string, max: number): string {
   const total = pages.length;
-  let html = `<div class="app-health-section"><h4>${escapeHtml(title)} (${total})</h4>`;
+  let html = `<div class="app-health-section"><h4>${escapeHtml(title)} (${formatAsCount(total)})</h4>`;
   if (total === 0) {
     html += '<p class="text-muted">None.</p></div>';
     return html;
   }
   const shown = max > 0 ? pages.slice(0, max) : pages;
-  html += '<ul class="app-health-list">';
-  for (const p of shown) {
-    const href = `${hrefBase}/${encodeURIComponent(p)}`;
-    html += `<li><a href="${escapeHtml(href)}">${escapeHtml(p)}</a></li>`;
-  }
-  html += '</ul>';
+  // #1306: the list is the shared one. This built its own <ul> of anchors,
+  // which is the same list every plugin author ends up writing because the
+  // vocabulary was only ever imported for escapeHtml.
+  html += formatAsList(
+    shown.map((p) => ({ href: `${hrefBase}/${encodeURIComponent(p)}`, text: p })),
+    { listClass: 'app-health-list' }
+  );
   if (shown.length < total) {
-    html += `<p class="text-muted">… and ${total - shown.length} more</p>`;
+    html += `<p class="text-muted">… and ${formatAsCount(total - shown.length)} more</p>`;
   }
   html += '</div>';
   return html;
@@ -194,10 +195,10 @@ const AppHealthPlugin: SimplePlugin = {
 
       if (String(opts.format ?? 'sections').toLowerCase() === 'count') {
         const parts: string[] = [];
-        if (selected.includes('orphans')) parts.push(`Orphans: ${results.orphans.length}`);
-        if (selected.includes('broken')) parts.push(`Broken links: ${results.broken.length}`);
+        if (selected.includes('orphans')) parts.push(`Orphans: ${formatAsCount(results.orphans.length)}`);
+        if (selected.includes('broken')) parts.push(`Broken links: ${formatAsCount(results.broken.length)}`);
         if (selected.includes('stale')) {
-          parts.push(staleSkipped ? 'Stale: n/a' : `Stale: ${results.stale.length}`);
+          parts.push(staleSkipped ? 'Stale: n/a' : `Stale: ${formatAsCount(results.stale.length)}`);
         }
         return `<p class="app-health-count">${escapeHtml(parts.join(' · '))}</p>`;
       }

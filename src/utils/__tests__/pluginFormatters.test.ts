@@ -876,3 +876,67 @@ describe('formatStatFilters', () => {
     expect(html).not.toContain('data-stat-rows');
   });
 });
+
+// ---------------------------------------------------------------------------
+// formatAsList — the #1306 extension
+// ---------------------------------------------------------------------------
+
+describe('formatAsList carries badges, actions and classes (#1306)', () => {
+  // Sixteen plugins imported this module for escapeHtml and then hand-rolled
+  // their markup. Three of them did so for one reason each: a count badge, a
+  // per-item button, a Bootstrap list class. Those are gaps in the vocabulary,
+  // and the issue asks for the vocabulary to grow rather than be worked around.
+
+  const links = [{ href: '/view/A', text: 'A' }, { href: '/view/B', text: 'B' }];
+
+  test('a badge rides along with the item', () => {
+    const html = formatAsList([{ href: '/view/A', text: 'A', badge: '12' }]);
+    expect(html).toContain('badge');
+    expect(html).toContain('>12<');
+  });
+
+  test('a badge is escaped — it is a value, not markup', () => {
+    const html = formatAsList([{ href: '/view/A', text: 'A', badge: '<b>7</b>' }]);
+    expect(html).not.toContain('<b>7</b>');
+    expect(html).toContain('&lt;b&gt;');
+  });
+
+  test('trailing HTML is inserted verbatim, because it is a control', () => {
+    // The caller owns this string: it is how a per-item action button gets in,
+    // and a button is markup. Documented as the caller's responsibility.
+    const html = formatAsList([
+      { href: '/view/A', text: 'A', trailingHtml: '<button class="x">×</button>' }
+    ]);
+    expect(html).toContain('<button class="x">×</button>');
+  });
+
+  test('the list and its items can carry the caller\'s classes', () => {
+    const html = formatAsList(links, { listClass: 'nav flex-column', itemClass: 'nav-item' });
+    expect(html).toContain('<ul class="nav flex-column">');
+    expect(html).toContain('<li class="nav-item">');
+  });
+
+  test('an item with a badge or an action lays out as a row, not as loose text', () => {
+    const html = formatAsList([{ href: '/view/A', text: 'A', badge: '3' }]);
+    expect(html).toContain('d-flex');
+  });
+
+  test('an icon rides in front of the text as a class name, not as markup', () => {
+    // Two of the three plugins put a Font Awesome icon before the label. Taking
+    // the class rather than the markup is what keeps the caller from having to
+    // hand-roll the anchor to get one.
+    const html = formatAsList([{ href: '/view/A', text: 'A', icon: 'fas fa-bookmark' }]);
+    expect(html).toContain('<i class="fas fa-bookmark"></i> A</a>');
+  });
+
+  test('an icon class is escaped — it lands in an attribute', () => {
+    const html = formatAsList([{ href: '/view/A', text: 'A', icon: 'x" onload="alert(1)' }]);
+    expect(html).not.toContain('onload="alert(1)"');
+    expect(html).toContain('&quot;');
+  });
+
+  test('none of it changes a plain list', () => {
+    // The eight plugins already calling this must render exactly as before.
+    expect(formatAsList(links)).toBe('<ul>\n<li><a href="/view/A">A</a></li>\n<li><a href="/view/B">B</a></li>\n</ul>');
+  });
+});

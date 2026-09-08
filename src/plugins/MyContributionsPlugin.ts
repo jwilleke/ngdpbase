@@ -17,7 +17,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, formatAsCount, resolveUserParam } from '../utils/pluginFormatters.js';
+import { escapeHtml, formatAsCount, formatAsList, resolveUserParam } from '../utils/pluginFormatters.js';
 
 interface UserManagerLike {
   getUser?: (username: string) => Promise<{ username: string } | undefined | null>;
@@ -220,19 +220,20 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
   // headerLabel holds plain text; escapeHtml is applied at insertion time below.
   const headerLabel = isSelfView ? 'My Contributions' : `Contributions — ${target}`;
 
-  const items = rows.map(row => {
-    const valueHtml = row.value !== undefined ? formatAsCount(row.value) : '&ndash;';
-    const labelHtml = `<i class="fas ${row.icon}"></i> ${escapeHtml(row.label)}`;
-    const labelCell = row.href
-      ? `<a href="${row.href}" class="text-decoration-none">${labelHtml}</a>`
-      : `<span>${labelHtml}</span>`;
-    return [
-      '        <li class="list-group-item d-flex align-items-center justify-content-between">',
-      `          ${labelCell}`,
-      `          <span class="badge bg-secondary">${valueHtml}</span>`,
-      '        </li>'
-    ].join('\n');
-  }).join('\n');
+  // #1306: label, icon and count badge are the shared list now. The rows that
+  // have no page to link to keep a href of '' — an anchor to nowhere is what
+  // this rendered before, as a <span>, and changing that is a UI decision
+  // rather than a tidy-up.
+  const items = formatAsList(
+    rows.map(row => ({
+      href: row.href ?? '',
+      text: row.label,
+      icon: `fas ${row.icon}`,
+      cssClass: 'text-decoration-none',
+      badge: row.value !== undefined ? formatAsCount(row.value) : '–'
+    })),
+    { listClass: 'list-group list-group-flush', itemClass: 'list-group-item' }
+  );
 
   // Empty-state hint when every count is zero or undefined — distinguishes
   // "user exists with no activity" from "card is broken" (operator feedback
@@ -248,9 +249,7 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
     `    <h6><i class="fas fa-star"></i> ${escapeHtml(headerLabel)}</h6>`,
     '  </div>',
     '  <div class="card-body p-0">',
-    '    <ul class="list-group list-group-flush">',
     items,
-    '    </ul>',
     '  </div>',
     emptyHint,
     '</div>'

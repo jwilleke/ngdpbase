@@ -9,7 +9,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
+import { escapeHtml, formatAsList } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems } from '../utils/pinnedItems.js';
 
 interface UserContext {
@@ -45,23 +45,23 @@ const MyLinksPlugin: SimplePlugin = {
     html += '    <span class="text-muted small text-uppercase fw-semibold">My Links</span>\n';
     html += '  </div>\n';
     html += '  <div class="my-links-scroll" style="max-height:200px;overflow-y:auto;">\n';
-    html += '    <ul class="nav flex-column">\n';
-
-    for (const item of pinned) {
-      const href = escapeHtml(item.url);
-      const label = escapeHtml(item.title);
-      const ident = escapeHtml(item.url).replace(/'/g, '&#39;');
-      html += '      <li class="nav-item d-flex align-items-center">\n';
-      html += `        <a class="nav-link flex-grow-1 py-1 ps-0" href="${href}">\n`;
-      html += `          <i class="fas fa-bookmark me-1 small text-muted"></i>${label}\n`;
-      html += '        </a>\n';
-      html += `        <button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" title="Remove from My Links" onclick="removePinnedItem('${ident}'); return false;">\n`;
-      html += '          <i class="fas fa-times small"></i>\n';
-      html += '        </button>\n';
-      html += '      </li>\n';
-    }
-
-    html += '    </ul>\n';
+    // #1306: this hand-rolled its whole list for one remove button. The
+    // vocabulary now carries a per-item action, so the list is the shared one
+    // and only the button is this plugin's own markup.
+    html += formatAsList(
+      pinned.map((item) => ({
+        href: escapeHtml(item.url),
+        text: item.title,
+        cssClass: 'nav-link flex-grow-1 py-1 ps-0',
+        icon: 'fas fa-bookmark me-1 small text-muted',
+        trailingHtml:
+          '<button class="btn btn-link btn-sm p-0 ms-1 text-muted my-links-remove" '
+          + 'title="Remove from My Links" '
+          + `onclick="removePinnedItem('${escapeHtml(item.url).replace(/'/g, '&#39;')}'); return false;">`
+          + '<i class="fas fa-times small"></i></button>'
+      })),
+      { listClass: 'nav flex-column', itemClass: 'nav-item' }
+    );
     html += '  </div>\n';
     html += '</div>\n';
 

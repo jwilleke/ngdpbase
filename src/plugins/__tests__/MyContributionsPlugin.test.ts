@@ -168,9 +168,14 @@ describe('MyContributionsPlugin', () => {
     });
 
     test('renders en-dash for missing counts when manager method absent', async () => {
+      // #1306: the badge goes through the shared list now, which escapes it —
+      // a badge is a value, not markup. So the dash arrives as the character
+      // rather than as the entity. Same glyph, and one fewer way for a count
+      // to smuggle in HTML.
       const ctx = makeContext({ username: 'alice', pageManager: {} });
       const result = await MyContributionsPlugin.execute!(ctx, {}) as string;
-      expect(result).toContain('&ndash;');
+      expect(result).toContain('–');
+      expect(result).not.toContain('&ndash;');
     });
   });
 

@@ -13,12 +13,34 @@ export interface PageLink {
   cssClass?: string;
   style?: string;
   title?: string;
+  /**
+   * Font Awesome (or any) class for an icon rendered before the text (#1306).
+   * A class name, not markup — escaped into the attribute.
+   */
+  icon?: string;
+  /**
+   * A value shown at the end of the row — a count, a status (#1306). Escaped:
+   * it is data, not markup.
+   */
+  badge?: string;
+  /**
+   * Markup appended after the link — a per-item action button, typically.
+   * Inserted verbatim, so the CALLER owns escaping anything interpolated into
+   * it. This exists because MyLinksPlugin hand-rolled its whole list for one
+   * remove button, which is the vocabulary being too small rather than the
+   * plugin being wrong.
+   */
+  trailingHtml?: string;
 }
 
 /** Options for list/item formatting */
 export interface FormatOptions {
   before?: string;
   after?: string;
+  /** Classes for the `<ul>` — a plugin keeping its Bootstrap layout (#1306). */
+  listClass?: string;
+  /** Classes for each `<li>`. */
+  itemClass?: string;
 }
 
 /**
@@ -76,14 +98,32 @@ export function formatAsList(links: PageLink[], options: FormatOptions = {}): st
     const cls   = link.cssClass ? ` class="${link.cssClass}"` : '';
     const style = link.style    ? ` style="${link.style}"`    : '';
     const title = link.title    ? ` title="${escapeHtml(link.title)}"` : '';
-    return `<a href="${link.href}"${cls}${style}${title}>${escapeHtml(link.text)}</a>`;
+    const icon  = link.icon     ? `<i class="${escapeHtml(link.icon)}"></i> ` : '';
+    return `<a href="${link.href}"${cls}${style}${title}>${icon}${escapeHtml(link.text)}</a>`;
   };
+
+  // #1306: a row is the anchor plus whatever rides along with it. A link with
+  // neither a badge nor an action renders exactly the markup it always did —
+  // the eight plugins already calling this must not change.
+  const buildItem = (link: PageLink): string => {
+    const anchor = buildAnchor(link);
+    const badge = link.badge !== undefined
+      ? `<span class="badge bg-secondary">${escapeHtml(link.badge)}</span>`
+      : '';
+    const trailing = link.trailingHtml ?? '';
+    if (!badge && !trailing) return anchor;
+    return `<span class="d-flex align-items-center justify-content-between w-100">${anchor}${badge}${trailing}</span>`;
+  };
+
+  const itemAttr = options.itemClass ? ` class="${options.itemClass}"` : '';
+  const listAttr = options.listClass ? ` class="${options.listClass}"` : '';
+  const renderItems = (): string =>
+    links.map(l => `<li${itemAttr}>${buildItem(l)}</li>`).join('\n');
 
   if (processedBefore || processedAfter) {
     const isList = processedBefore.includes('*') || processedBefore.includes('-');
     if (isList) {
-      const items = links.map(l => `<li>${buildAnchor(l)}</li>`).join('\n');
-      return `<ul>\n${items}\n</ul>`;
+      return `<ul${listAttr}>\n${renderItems()}\n</ul>`;
     }
     const safeBefore = processedBefore.replace(/\*/g, '&#42; ');
     const safeAfter  = processedAfter.replace(/\*/g,  '&#42; ');
@@ -94,8 +134,7 @@ export function formatAsList(links: PageLink[], options: FormatOptions = {}): st
   }
 
   // Default: <ul><li> list
-  const items = links.map(l => `<li>${buildAnchor(l)}</li>`).join('\n');
-  return `<ul>\n${items}\n</ul>`;
+  return `<ul${listAttr}>\n${renderItems()}\n</ul>`;
 }
 
 /**

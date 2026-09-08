@@ -11,7 +11,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
+import { escapeHtml, formatAsTable } from '../utils/pluginFormatters.js';
 
 interface VariablesParams extends PluginParams {
   type?: string;
@@ -144,31 +144,18 @@ const VariablesPlugin: SimplePlugin = {
         html += '    <small class="text-muted">Variables that don\'t require user or page context</small>\n';
         html += '  </div>\n';
         html += '  <div class="card-body">\n';
+        // #1306: the shared table. Cells carry markup deliberately — a variable
+        // name is shown as code and its value as code — so each is escaped here
+        // before it is wrapped, which is the contract formatAsTable documents.
         html += '    <div class="table-responsive">\n';
-        html += '      <table class="table table-sm table-hover">\n';
-        html += '        <thead>\n';
-        html += '          <tr>\n';
-        html += '            <th style="width: 25%;">Variable Name</th>\n';
-        html += '            <th style="width: 35%;">Current Value</th>\n';
-        html += '            <th style="width: 40%;">Description</th>\n';
-        html += '          </tr>\n';
-        html += '        </thead>\n';
-        html += '        <tbody>\n';
-
-        // Add system variables
-        for (const varName of debugInfo.systemVariables) {
-          const value = variableManager.getVariable(varName, context);
-          const description = getVariableDescription(varName);
-
-          html += '          <tr>\n';
-          html += `            <td><code>[{$${escapeHtml(varName)}}]</code></td>\n`;
-          html += `            <td><code>${escapeHtml(String(value))}</code></td>\n`;
-          html += `            <td><small class="text-muted">${description}</small></td>\n`;
-          html += '          </tr>\n';
-        }
-
-        html += '        </tbody>\n';
-        html += '      </table>\n';
+        html += formatAsTable(
+          ['Variable Name', 'Current Value', 'Description'],
+          debugInfo.systemVariables.map((varName) => [
+            `<code>[{$${escapeHtml(varName)}}]</code>`,
+            `<code>${escapeHtml(String(variableManager.getVariable(varName, context)))}</code>`,
+            `<small class="text-muted">${getVariableDescription(varName)}</small>`
+          ])
+        );
         html += '    </div>\n';
         html += '  </div>\n';
         html += '</div>\n';
@@ -185,30 +172,14 @@ const VariablesPlugin: SimplePlugin = {
         html += '  </div>\n';
         html += '  <div class="card-body">\n';
         html += '    <div class="table-responsive">\n';
-        html += '      <table class="table table-sm table-hover">\n';
-        html += '        <thead>\n';
-        html += '          <tr>\n';
-        html += '            <th style="width: 25%;">Variable Name</th>\n';
-        html += '            <th style="width: 35%;">Your Current Value</th>\n';
-        html += '            <th style="width: 40%;">Description</th>\n';
-        html += '          </tr>\n';
-        html += '        </thead>\n';
-        html += '        <tbody>\n';
-
-        // Add contextual variables
-        for (const varName of debugInfo.contextualVariables) {
-          const value = variableManager.getVariable(varName, context);
-          const description = getVariableDescription(varName);
-
-          html += '          <tr>\n';
-          html += `            <td><code>[{$${escapeHtml(varName)}}]</code></td>\n`;
-          html += `            <td><code>${escapeHtml(String(value))}</code></td>\n`;
-          html += `            <td><small class="text-muted">${description}</small></td>\n`;
-          html += '          </tr>\n';
-        }
-
-        html += '        </tbody>\n';
-        html += '      </table>\n';
+        html += formatAsTable(
+          ['Variable Name', 'Your Current Value', 'Description'],
+          debugInfo.contextualVariables.map((varName) => [
+            `<code>[{$${escapeHtml(varName)}}]</code>`,
+            `<code>${escapeHtml(String(variableManager.getVariable(varName, context)))}</code>`,
+            `<small class="text-muted">${getVariableDescription(varName)}</small>`
+          ])
+        );
         html += '    </div>\n';
         html += '  </div>\n';
         html += '</div>\n';
@@ -226,37 +197,20 @@ const VariablesPlugin: SimplePlugin = {
         html += '  <div class="card-body">\n';
 
         if (pluginManager && pluginManager.plugins && pluginManager.plugins.size > 0) {
-          html += '    <div class="table-responsive">\n';
-          html += '      <table class="table table-sm table-hover">\n';
-          html += '        <thead>\n';
-          html += '          <tr>\n';
-          html += '            <th style="width: 25%;">Plugin Name</th>\n';
-          html += '            <th style="width: 40%;">Description</th>\n';
-          html += '            <th style="width: 15%;">Version</th>\n';
-          html += '            <th style="width: 20%;">Author</th>\n';
-          html += '          </tr>\n';
-          html += '        </thead>\n';
-          html += '        <tbody>\n';
-
           // Sort plugins alphabetically
           const pluginArray = Array.from(pluginManager.plugins.entries());
           pluginArray.sort((a, b) => a[0].localeCompare(b[0]));
 
-          for (const [pluginName, plugin] of pluginArray) {
-            const description = plugin.description || 'No description';
-            const version = plugin.version || 'N/A';
-            const author = plugin.author || 'Unknown';
-
-            html += '          <tr>\n';
-            html += `            <td><code>[{${escapeHtml(pluginName)}}]</code></td>\n`;
-            html += `            <td><small class="text-muted">${escapeHtml(description)}</small></td>\n`;
-            html += `            <td><span class="badge bg-info">${escapeHtml(version)}</span></td>\n`;
-            html += `            <td><small>${escapeHtml(author)}</small></td>\n`;
-            html += '          </tr>\n';
-          }
-
-          html += '        </tbody>\n';
-          html += '      </table>\n';
+          html += '    <div class="table-responsive">\n';
+          html += formatAsTable(
+            ['Plugin Name', 'Description', 'Version', 'Author'],
+            pluginArray.map(([pluginName, plugin]) => [
+              `<code>[{${escapeHtml(pluginName)}}]</code>`,
+              `<small class="text-muted">${escapeHtml(plugin.description || 'No description')}</small>`,
+              `<span class="badge bg-info">${escapeHtml(plugin.version || 'N/A')}</span>`,
+              `<small>${escapeHtml(plugin.author || 'Unknown')}</small>`
+            ])
+          );
           html += '    </div>\n';
         } else {
           html += '    <p class="text-muted">No plugins currently registered</p>\n';

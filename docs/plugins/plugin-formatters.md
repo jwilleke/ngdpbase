@@ -1,7 +1,7 @@
 ---
 name: plugin-formatters
 description: Shared utility functions for plugin authors — consistent parameter parsing, HTML output, pagination, and date formatting across the platform.
-dateModified: '2026-05-14'
+dateModified: '2026-09-08'
 category: plugins
 code: src/utils/pluginFormatters.ts
 ---
@@ -25,6 +25,37 @@ import {
 ```
 
 Import only what you need. All exports are named; there is no default export.
+
+## Start here, not with a string of HTML
+
+This module is the display vocabulary of the platform, and it is the default
+path for plugin output rather than a convenience. A plugin is the intended
+extension point of this application: if the shared vocabulary is optional, every
+extension invents its own look and there is no house style to inherit.
+
+Measured over the 34 bundled plugins when
+[#1306](https://github.com/jwilleke/ngdpbase/issues/1306) was filed, 16 imported
+this module __only__ for `escapeHtml` and the parameter helpers and then built
+their own markup. Adoption had stopped at the utilities, so everyone who needed
+a table wrote one.
+
+So:
+
+- A list of links is `formatAsList`, including one with icons, count badges or a
+  per-item button.
+- Rows of data are `formatAsTable`.
+- A number shown to a person is `formatAsCount` — it carries the thousands
+  separators.
+- A list that can grow gets `applyPagination` + `formatPaginationLinks`, which
+  emit the same control every other paginated surface uses.
+
+`SearchPlugin` and `UndefinedPagesPlugin` use the whole vocabulary end to end
+and are the ones to copy.
+
+__If your output genuinely does not fit, the vocabulary is missing something.__
+Say so on an issue and extend it here, rather than hand-rolling around it — that
+is how `icon`, `badge`, `trailingHtml`, `listClass` and `itemClass` came to
+exist.
 
 ---
 
@@ -225,6 +256,27 @@ function formatAsList(links: PageLink[], options?: FormatOptions): string
 | `cssClass` | `string` | No | CSS class on the `<a>` element |
 | `style` | `string` | No | Inline style on the `<a>` element |
 | `title` | `string` | No | `title` attribute on the `<a>` element |
+| `icon` | `string` | No | Icon class rendered before the text (e.g. `fas fa-bookmark`). A class name, escaped into the attribute — not markup |
+| `badge` | `string` | No | Value shown at the end of the row, e.g. a count. HTML-escaped: a badge is data |
+| `trailingHtml` | `string` | No | Markup appended after the link — a per-item action button. Inserted __verbatim__, so escaping anything interpolated into it is the caller's job |
+
+`FormatOptions` also takes `listClass` and `itemClass`, which put your classes on
+the `<ul>` and each `<li>`. Between them these five fields are why a plugin no
+longer has to hand-roll a list to get a count badge, an icon or a remove button
+([#1306](https://github.com/jwilleke/ngdpbase/issues/1306)) — the three reasons
+plugins actually had.
+
+```ts
+formatAsList(
+  pinned.map(item => ({
+    href: item.url,
+    text: item.title,
+    icon: 'fas fa-bookmark',
+    trailingHtml: `<button onclick="unpin('${item.id}')">×</button>`
+  })),
+  { listClass: 'nav flex-column', itemClass: 'nav-item' }
+);
+```
 
 ```ts
 const links: PageLink[] = pages.map(p => ({ href: `/view/${p.slug}`, text: p.title }));
@@ -369,11 +421,16 @@ interface PageLink {
   cssClass?: string;
   style?: string;
   title?: string;
+  icon?: string;          // icon CLASS, escaped into the attribute
+  badge?: string;         // escaped — a badge is a value
+  trailingHtml?: string;  // verbatim — the caller owns escaping
 }
 
 interface FormatOptions {
   before?: string;
   after?: string;
+  listClass?: string;
+  itemClass?: string;
 }
 
 interface TableOptions {
