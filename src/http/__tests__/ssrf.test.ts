@@ -102,6 +102,19 @@ describe('numeric host forms fail closed', () => {
       expect(isAddressAllowed(form, CLOSED)).toBe(false);
     }
   });
+
+  // Under ipaddr.js 1 every form above was refused because `parse` threw. Under
+  // 2 they are decoded — octal and hex read as the resolver reads them — and
+  // refused by the loopback and link-local ranges instead. Same verdict, and
+  // now for the reason that is actually true, so both halves are pinned: the
+  // internal ones stay refused, and a form that decodes to a genuinely public
+  // address is allowed rather than refused for being unreadable.
+  it('decodes numeric forms and judges the address they reach', () => {
+    expect(isAddressAllowed('0x7f.1', CLOSED)).toBe(false); // 127.0.0.1
+    expect(isAddressAllowed('0251.0376.0.1', CLOSED)).toBe(false); // 169.254.0.1
+    expect(isAddressAllowed('010.0.0.1', CLOSED)).toBe(true); // octal 010 is 8 — 8.0.0.1, public
+    expect(isAddressAllowed('0x1.2.3.4', CLOSED)).toBe(true); // 1.2.3.4, public
+  });
 });
 
 describe('IPv6 forms carrying an IPv4 destination', () => {

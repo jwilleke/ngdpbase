@@ -123,8 +123,16 @@ function ipv4From(octets: number[]): Addr | null {
  *
  * Returns null for anything unparseable, which callers treat as a refusal: an
  * address we cannot parse is not one we can vouch for, and the alternative is
- * connecting blind. `127.1` is the live example — `ipaddr.js` rejects it while
- * the system resolver reads it as `127.0.0.1`.
+ * connecting blind.
+ *
+ * `ipaddr.js` 2 decodes the short and numeric forms this comment used to say it
+ * rejected — `127.1`, `0x7f.1`, `2130706433` all now parse, with the same octal
+ * and hex reading the system resolver uses. The verdict on each is unchanged,
+ * because what refuses them is the loopback range, not a parse failure; the
+ * difference is that the guard now judges the address the resolver would reach
+ * instead of refusing a string it could not read. That closes the differential
+ * rather than covering it, so the null path here is the narrower fallback it
+ * was always meant to be.
  */
 function canonicalise(address: string): Addr | null {
   let parsed: Addr;
