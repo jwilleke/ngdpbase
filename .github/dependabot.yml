@@ -18,6 +18,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -33,6 +42,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -48,6 +66,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -63,6 +90,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -78,6 +114,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -93,6 +138,15 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # @types/node tracks the Node the runtime actually is, not the newest one
+      # published. The engine is Node >=24 and root pins ^24, so a major bump
+      # here describes APIs that are not there at run time. Decided when
+      # Dependabot proposed 18 to 26 (#1249, #1255-#1258, closed) and again at
+      # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
+      # the engine moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
