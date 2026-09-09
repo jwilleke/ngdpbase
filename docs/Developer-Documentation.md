@@ -268,6 +268,7 @@ Area doors: [guides/README.md](guides/README.md).
 ### Installation & Setup
 
 - [Implementation](installation/Implementation.md) — __Lead document.__ The four ways an instance is implemented and what each inherits from this repository
+- [Related repositories and deployments](related-repositories.md) — The repository-level companion: which repositories consume ngdpbase, what each takes, and how it is packaged
 - [Bootstrap developer guide](guides/bootstrap-developer-guide.md) — The three boot layers, `.env` precedence, and where a new environment variable goes
 - [installation-system](installation/installation-system.md) — Installation wizard details
 - [install-complete marker](installation/install-complete.md) — `.install-complete` marker lifecycle

@@ -4,6 +4,8 @@ The repositories and sites that surround ngdpbase, and what each one actually ta
 
 Dependency runs one way. Every repository below consumes something ngdpbase publishes; ngdpbase consumes nothing from any of them and does not know they exist. [RELEASES.md](../RELEASES.md) is the contract that makes that work — ngdpbase publishes on its own cadence, each consumer subscribes on theirs.
 
+This page is the __repository-level__ view: which repositories exist, what each one takes, and how it is packaged. For __how an instance is implemented and what it inherits__ — the four methods, the inheritance table, and the per-instance specifics — [installation/Implementation.md](installation/Implementation.md) is the lead document and the authority. Where the two disagree, that one is right.
+
 The useful distinction is not "which repo" but __what each one consumes, and how__. There are four different answers, and two repositories that look alike from the outside sit on opposite sides of it.
 
 | Site or repository | What it takes from ngdpbase | How it takes it |
@@ -31,10 +33,10 @@ Its front page redirects to `/view/Demo Welcome`, which is the ordinary page rou
 A volcano and geology platform: ngdpbase plus one domain addon. This is the more involved of the two addon repositories, because the addon is packaged twice over.
 
 - `addons/geohazardwatch/` is published to GitHub Packages as `@jwilleke/geohazardwatch-addon`
-- its `Dockerfile` builds `FROM ghcr.io/jwilleke/ngdpbase:<version>-devtools`, installs that package into the image, compiles it, and produces `ghcr.io/jwilleke/geohazardwatch`
-- the result is deployed to `geohazardwatch.nerdsbythehour.com` from mj-infra-flux under `apps/production/geohazardwatch/`
+- its `Dockerfile` is a two-stage build: an installer stage `FROM ghcr.io/jwilleke/ngdpbase:<version>-devtools` installs and compiles that package, and the runtime stage `FROM ghcr.io/jwilleke/ngdpbase:<version>` copies the result in
+- that produces `ghcr.io/jwilleke/geohazardwatch`, deployed to `geohazardwatch.nerdsbythehour.com` from mj-infra-flux under `apps/production/geohazardwatch/`
 
-The `-devtools` tag exists for exactly this: it is the runtime image with npm retained, so a derived build can install into it. A deployed image should never be built from it directly.
+The two stages are the point. `-devtools` is the runtime image with npm retained, so a derived build can install into it; the deployed artefact is built from the plain image, which has no npm. A deployed image should never be the `-devtools` one.
 
 The ngdpbase version is pinned in that repository's `Dockerfile` as `ARG NGDPBASE_VERSION`, and Renovate raises the bump when a new ngdpbase release appears. So the coupling is explicit, visible in a diff, and moves on the consumer's schedule.
 
@@ -46,9 +48,11 @@ Because the addon is a published package, its `package.json` is the only place i
 
 The Fairways Condominiums site. Also ngdpbase plus one domain addon, and from the outside that makes it sound like geohazardwatch. It is not: __there is no image and no version pin__. No `Dockerfile`, no `NGDPBASE_VERSION`, and no npm dependency on ngdpbase anywhere in the repository.
 
-Instead ngdpbase is cloned and run directly on the host, and the addon directory is used from that checkout. The addon installs nothing of its own — it uses Express from the instance it is running inside. Its `ngdpbase.domainDefaults` block sets the application name and session-cookie policy, so the deployment's identity travels with the addon rather than living in host configuration.
+Instead ngdpbase is cloned separately and run on the host, and that clone is pointed at this repository's `addons/` directory. The addon installs nothing of its own — it uses Express from the instance it is running inside. Its `ngdpbase.domainDefaults` block sets the application name and session-cookie policy, so the deployment's identity travels with the addon rather than living in host configuration. [Implementation.md — Known implementations](installation/Implementation.md#known-implementations) has the operational specifics.
 
-The practical consequence is that this consumer has __no automatic upgrade path__. A geohazardwatch upgrade arrives as a Renovate pull request against a pinned version; a Fairways upgrade is someone pulling a newer ngdpbase into the checkout the site runs from. Nothing announces that a release happened, by design — see the explicit non-promises in [RELEASES.md](../RELEASES.md).
+The practical consequence is that this consumer has __no automatic upgrade path__. A geohazardwatch upgrade arrives as a Renovate pull request against a pinned version; a Fairways upgrade is someone pulling a newer ngdpbase into the base clone by hand. Nothing announces that a release happened, by design — see the explicit non-promises in [RELEASES.md](../RELEASES.md).
+
+The sharpest form of that difference is environment: a value baked into `docker/Dockerfile` reaches geohazardwatch on its next base bump and never reaches The Fairways at all, because a direct install inherits nothing from the image. That is the single row worth remembering from Implementation.md's inheritance table.
 
 ## ngdpbase-addon-template — the shape, not a deployment
 
