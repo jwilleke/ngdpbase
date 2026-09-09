@@ -2,6 +2,14 @@
   "name": "@ngdpbase/feeds",
   "version": "0.1.0",
   "description": "Data-ingestion framework — scheduled external feeds exposed as CatalogSources (#685)",
+  "peerDependencies": {
+    "express": "^5.2.1"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
   "private": true,
   "type": "module",
   "devDependencies": {
@@ -16,7 +24,6 @@
     "type": "additive"
   },
   "dependencies": {
-    "express": "^5.2.1",
     "fast-xml-parser": "^5.11.1"
   }
 }
