@@ -115,6 +115,12 @@ export function buildMarkdownIt(): MarkdownIt {
     return `<pre><code class="${cls} language-${cls}">${body}</code></pre>\n`;
   };
 
+  // Strikethrough: showdown emits `<del>`, markdown-it `<s>`. They render alike
+  // by default, but a stylesheet rule on either tag follows only one of them.
+  // Matched for the same reason as the fence class above.
+  md.renderer.rules.s_open = (): string => '<del>';
+  md.renderer.rules.s_close = (): string => '</del>';
+
   // showdown's `ellipsis` option defaults to TRUE and nothing in
   // RenderingManager turns it off, so production already rewrites `...` to `…`
   // on every page. markdown-it does that only under `typographer`, which also
@@ -158,6 +164,20 @@ const BLOCK = new Set([
 ]);
 
 /**
+ * HTML's whitespace — space, tab, LF, FF, CR — and nothing wider.
+ *
+ * NOT `\s`, which also matches U+00A0. A no-break space is content: HTML never
+ * collapses it, and it is the whole reason to write one. Folding it into an
+ * ordinary space would hide a converter that turned one into the other.
+ */
+const WS = '[ \\t\\n\\f\\r]';
+const WS_RUN = new RegExp(`${WS}+`, 'g');
+const WS_LEAD = new RegExp(`^${WS}+`);
+const WS_TRAIL = new RegExp(`${WS}+$`);
+const WS_ONLY = new RegExp(`^${WS}*$`);
+const WS_BETWEEN_TAGS = new RegExp(`>${WS}+<`, 'g');
+
+/**
  * Reduce HTML to the shape a reader would call "the same page".
  *
  * Attribute order and inter-tag whitespace are artefacts of whichever converter
@@ -171,9 +191,33 @@ export function normaliseHtml(html: string): string {
   const root = document.getElementById('__root');
   if (!root) return html.trim();
 
+  // linkedom gives every character reference its own text node: `It&nbsp;does`
+  // parses to three nodes, the middle one a lone U+00A0, where a browser builds
+  // one. The walk below removes whitespace-only nodes as inter-tag noise, and
+  // it used to test that with `trim()`, which counts U+00A0 as whitespace — so
+  // it deleted the no-break space itself. showdown writes `&nbsp;` and
+  // markdown-it the literal character, so only showdown's side lost it: `It
+  // does not` became `Itdoes not`. That was the "dropped space" no snippet
+  // could reproduce, because snippets were typed with plain spaces. It was 565
+  // of 1,636 differing pages on jimstest — three in four of `other`.
+  //
+  // Merging first, as a browser would, is the fix, and on its own it clears
+  // all 565. It also covers the case `WS_ONLY` cannot: one converter writing an
+  // entity and the other the character — `&quot; <em>` splits off a lone
+  // space the walk deletes, where `" <em>` keeps it (25 of the 565). `WS_ONLY`
+  // stays as the second guard, for a no-break space that really is a node of
+  // its own, between two elements.
+  root.normalize();
+
   const walk = (node: Element, verbatim: boolean): void => {
     const names = node.getAttributeNames().slice().sort();
-    const values = new Map(names.map((n) => [n, node.getAttribute(n) ?? '']));
+    // A declaration list's final `;` is optional CSS: showdown writes
+    // `style="text-align:center;"` on a table cell and markdown-it
+    // `style="text-align:center"`. Same rule, different punctuation.
+    const values = new Map(names.map((n) => {
+      const v = node.getAttribute(n) ?? '';
+      return [n, n === 'style' ? v.replace(/[\s;]+$/, '') : v];
+    }));
     for (const n of names) node.removeAttribute(n);
     for (const n of names) node.setAttribute(n, values.get(n) ?? '');
 
@@ -182,14 +226,16 @@ export function normaliseHtml(html: string): string {
     for (const child of children) {
       if (child.nodeType === 3) {
         if (!inVerbatim) {
-          let collapsed = (child.textContent ?? '').replace(/\s+/g, ' ');
-          // `<br>` is itself the break, so a space beside it is not rendered.
-          // showdown writes `text, <br>` where markdown-it writes `text,<br>`.
-          const prev = child.previousSibling as Element | null;
-          const next = child.nextSibling as Element | null;
-          if (next && next.nodeType === 1 && next.tagName === 'BR') collapsed = collapsed.replace(/\s+$/, '');
-          if (prev && prev.nodeType === 1 && prev.tagName === 'BR') collapsed = collapsed.replace(/^\s+/, '');
-          if (collapsed.trim() === '') child.remove();
+          let collapsed = (child.textContent ?? '').replace(WS_RUN, ' ');
+          // A break — `<br>` or the edge of a block — is not preceded or
+          // followed by rendered space. showdown writes `text, <br>` where
+          // markdown-it writes `text,<br>`, and inside a list item showdown
+          // writes `include:<ul>` where markdown-it writes `include: <ul>`.
+          const breaks = (n: Node | null): boolean =>
+            !!n && n.nodeType === 1 && ((n as Element).tagName === 'BR' || BLOCK.has((n as Element).tagName));
+          if (breaks(child.nextSibling)) collapsed = collapsed.replace(WS_TRAIL, '');
+          if (breaks(child.previousSibling)) collapsed = collapsed.replace(WS_LEAD, '');
+          if (WS_ONLY.test(collapsed)) child.remove();
           else child.textContent = collapsed;
         }
       } else if (child.nodeType === 1) {
@@ -203,16 +249,16 @@ export function normaliseHtml(html: string): string {
       const first = kids[0];
       const last = kids[kids.length - 1];
       if (first && first.nodeType === 3) {
-        first.textContent = (first.textContent ?? '').replace(/^\s+/, '');
+        first.textContent = (first.textContent ?? '').replace(WS_LEAD, '');
       }
       if (last && last.nodeType === 3) {
-        last.textContent = (last.textContent ?? '').replace(/\s+$/, '');
+        last.textContent = (last.textContent ?? '').replace(WS_TRAIL, '');
       }
     }
   };
 
   walk(root as unknown as Element, false);
-  return (root.innerHTML ?? '').replace(/>\s+</g, '><').trim();
+  return (root.innerHTML ?? '').replace(WS_BETWEEN_TAGS, '><').trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -228,9 +274,24 @@ export type DiffClass =
   | 'emphasis'
   | 'code-blocks'
   | 'backslash'
+  | 'sub-sup'
+  | 'ordered-start'
+  | 'list-split'
+  | 'blockquote'
+  | 'paragraphs'
   | 'other';
 
 const count = (html: string, re: RegExp): number => (html.match(re) ?? []).length;
+
+/** Every capture of `re`'s first group, in document order. */
+function captures(html: string, re: RegExp): string[] {
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) out.push(m[1]);
+  return out;
+}
+
+const differ = (a: string[], b: string[]): boolean => JSON.stringify(a) !== JSON.stringify(b);
 
 /** Every `id=` on a heading, in document order. */
 function headingIds(html: string): string[] {
@@ -241,13 +302,17 @@ function headingIds(html: string): string[] {
   return out;
 }
 
-/** Opening emphasis tags in document order — nesting, not just how many. */
+/**
+ * Each emphasis tag with the text it opens on, in document order — nesting and
+ * extent, not just how many.
+ *
+ * The text matters as much as the tag. An underscore run like
+ * `Unit_5:_Innate_Immunity/…_` gives both converters one `<em>`, but opened at
+ * different underscores, so the tag sequence alone matched and the page fell
+ * into `other`.
+ */
 function emphasisSequence(html: string): string[] {
-  const out: string[] = [];
-  const re = /<(em|strong)\b/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) out.push(m[1].toLowerCase());
-  return out;
+  return captures(html, /(<(?:em|strong)\b[^>]*>[^<]{0,40})/gi).map((s) => s.toLowerCase());
 }
 
 /** Deepest nesting of `ul`/`ol`, which is what a sublist-indent difference moves. */
@@ -304,9 +369,41 @@ export function classifyDifference(showdownHtml: string, markdownItHtml: string)
   if (count(showdownHtml, /\\/g) !== count(markdownItHtml, /\\/g)) {
     classes.push('backslash');
   }
-  if (count(showdownHtml, /<pre\b/gi) !== count(markdownItHtml, /<pre\b/gi) ||
-      count(showdownHtml, /<code\b/gi) !== count(markdownItHtml, /<code\b/gi)) {
+  // Contents as well as counts: showdown expands a tab inside a fenced block to
+  // spaces and markdown-it keeps the tab — same block, different bytes.
+  const code = (html: string): string[] => captures(html, /<code\b[^>]*>([\s\S]*?)<\/code>/gi);
+  if (differ(code(showdownHtml), code(markdownItHtml))) {
     classes.push('code-blocks');
+  }
+
+  // The house extension matches `~…~` and `^…^` across spaces; markdown-it-sub
+  // and -sup do not. So `(~5%) but relatively numerous (~` — a tilde meaning
+  // "about", twice — is a subscript in production today and plain text after
+  // the swap.
+  if (differ(captures(showdownHtml, /<(su[bp])\b/gi), captures(markdownItHtml, /<(su[bp])\b/gi))) {
+    classes.push('sub-sup');
+  }
+  // An ordered list that follows a bullet list with no paragraph between: both
+  // converters honour `2.` as `start="2"` anywhere else, but here showdown
+  // drops it and the item renders as `1.`.
+  if (differ(captures(showdownHtml, /<ol\b[^>]*\bstart="([^"]*)"/gi),
+    captures(markdownItHtml, /<ol\b[^>]*\bstart="([^"]*)"/gi))) {
+    classes.push('ordered-start');
+  }
+  // CommonMark starts a new list when the bullet character changes (`-` then
+  // `*`); showdown carries on the same list. Same items, more lists.
+  if (count(showdownHtml, /<(?:ul|ol)\b/gi) !== count(markdownItHtml, /<(?:ul|ol)\b/gi)) {
+    classes.push('list-split');
+  }
+  // `> a`, a blank line, `> b`: one quote of two paragraphs to showdown, two
+  // quotes to CommonMark.
+  if (count(showdownHtml, /<blockquote\b/gi) !== count(markdownItHtml, /<blockquote\b/gi)) {
+    classes.push('blockquote');
+  }
+  // Loose-versus-tight lists (`<li><p>`) and text after a raw HTML block
+  // (CommonMark ends the block at a blank line, showdown at the closing tag).
+  if (count(showdownHtml, /<p\b/gi) !== count(markdownItHtml, /<p\b/gi)) {
+    classes.push('paragraphs');
   }
 
   if (classes.length === 0) classes.push('other');

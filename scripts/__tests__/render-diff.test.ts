@@ -46,6 +46,50 @@ describe('normaliseHtml — removes what is not meaning', () => {
     const once = normaliseHtml('<p>a   b</p>\n<p>c</p>');
     expect(normaliseHtml(once)).toBe(once);
   });
+
+  // The artefact behind three in four `other` pages on jimstest. linkedom puts
+  // a character reference in its own text node, and a lone U+00A0 looked like
+  // inter-tag whitespace to the walk, which deleted it.
+  it('keeps a no-break space written as an entity', () => {
+    expect(normaliseHtml('<p>It&nbsp;does</p>')).not.toContain('Itdoes');
+  });
+
+  it('treats &nbsp; and a literal U+00A0 as the same text', () => {
+    expect(normaliseHtml('<p>It&nbsp;does</p>')).toBe(normaliseHtml('<p>It\u00a0does</p>'));
+  });
+
+  it('keeps a no-break space that stands alone between two elements', () => {
+    expect(normaliseHtml('<p><em>a</em>&nbsp;<em>b</em></p>')).toContain('&#160;');
+  });
+
+  it('does not fold a no-break space into an ordinary one', () => {
+    expect(normaliseHtml('<p>a&nbsp;b</p>')).not.toBe(normaliseHtml('<p>a b</p>'));
+  });
+
+  it('does not let a split entity node defeat the whitespace-beside-<br> rule', () => {
+    expect(normaliseHtml('<p>a &amp; b <br>c</p>')).toBe(normaliseHtml('<p>a &amp; b<br>c</p>'));
+  });
+
+  // Entity on one side, character on the other: without merging, the entity
+  // split leaves a lone space node the walk deletes, and only one side loses it.
+  it('treats an entity and its character alike when a space follows', () => {
+    expect(normaliseHtml('<p>say &quot; <em>x</em></p>')).toBe(normaliseHtml('<p>say " <em>x</em></p>'));
+  });
+
+  it('ignores whitespace before a nested block, which is not rendered', () => {
+    const a = '<ul><li>include: <ul><li>x</li></ul></li></ul>';
+    const b = '<ul><li>include:<ul><li>x</li></ul></li></ul>';
+    expect(normaliseHtml(a)).toBe(normaliseHtml(b));
+  });
+
+  it('keeps whitespace between inline elements, which is rendered', () => {
+    expect(normaliseHtml('<p><em>a</em> b</p>')).not.toBe(normaliseHtml('<p><em>a</em>b</p>'));
+  });
+
+  it('treats a trailing semicolon in style as punctuation', () => {
+    expect(normaliseHtml('<td style="text-align:center;">x</td>'))
+      .toBe(normaliseHtml('<td style="text-align:center">x</td>'));
+  });
 });
 
 describe('classifyDifference — names the construct that moved', () => {
@@ -104,8 +148,44 @@ describe('classifyDifference — names the construct that moved', () => {
     expect(classifyDifference('<p>a\\<br>b</p>', '<p>a<br>b</p>')).toContain('backslash');
   });
 
+  it('catches emphasis that opens at a different point, same tags', () => {
+    const a = '<p>Unit_5:<em>Innate_Immunity/11.4:_</em></p>';
+    const b = '<p>Unit_5:_Innate_Immunity/11.4:<em></em></p>';
+    expect(classifyDifference(a, b)).toContain('emphasis');
+  });
+
+  it('catches a code block whose contents differ, not only its count', () => {
+    expect(classifyDifference('<pre><code>    x</code></pre>', '<pre><code>\tx</code></pre>')).toContain('code-blocks');
+  });
+
+  it('sub and superscript', () => {
+    expect(classifyDifference('<p>(<sub>5%) but (</sub>6%)</p>', '<p>(~5%) but (~6%)</p>')).toContain('sub-sup');
+  });
+
+  it('an ordered list that starts somewhere else', () => {
+    expect(classifyDifference('<ol><li>a</li></ol>', '<ol start="2"><li>a</li></ol>')).toContain('ordered-start');
+  });
+
+  it('one list split into two, same items', () => {
+    const one = '<ul><li>a</li><li>b</li></ul>';
+    const two = '<ul><li>a</li></ul><ul><li>b</li></ul>';
+    const classes = classifyDifference(one, two);
+    expect(classes).toContain('list-split');
+    expect(classes).not.toContain('list-nesting');
+  });
+
+  it('one blockquote split into two', () => {
+    const one = '<blockquote><p>a</p><p>b</p></blockquote>';
+    const two = '<blockquote><p>a</p></blockquote><blockquote><p>b</p></blockquote>';
+    expect(classifyDifference(one, two)).toContain('blockquote');
+  });
+
+  it('paragraphs — a loose list against a tight one', () => {
+    expect(classifyDifference('<ul><li><p>a</p></li></ul>', '<ul><li>a</li></ul>')).toContain('paragraphs');
+  });
+
   it('falls back to other only when nothing specific fires', () => {
-    expect(classifyDifference('<p>a</p>', '<div>a</div>')).toEqual(['other']);
+    expect(classifyDifference('<p><a href="c">a</a></p>', '<p><a href="">a</a></p>')).toEqual(['other']);
   });
 });
 
@@ -227,6 +307,18 @@ describe('comparePage — the converters agree on ordinary markdown', () => {
     expect(buildShowdown().makeHtml('Wait... really')).toContain('…');
     expect(buildMarkdownIt().render('Wait... really')).toContain('…');
     expect(comparePage('Wait... really').differs).toBe(false);
+  });
+
+  it('emits <del> for strikethrough, as showdown does', () => {
+    expect(buildShowdown().makeHtml('x ~~gone~~ y')).toContain('<del>gone</del>');
+    expect(buildMarkdownIt().render('x ~~gone~~ y')).toContain('<del>gone</del>');
+    expect(comparePage('x ~~gone~~ y').differs).toBe(false);
+  });
+
+  // End to end, the case that the normaliser fix exists for: a page with a
+  // no-break space beside emphasis was a difference and is not one.
+  it('agrees on a no-break space beside bold text', () => {
+    expect(comparePage('It\u00a0**does not**\u00a0act.').differs).toBe(false);
   });
 
   it('leaves an ellipsis inside a code span alone', () => {
