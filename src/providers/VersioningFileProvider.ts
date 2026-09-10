@@ -15,7 +15,8 @@ import {
   PageFrontmatter,
   VersionContent,
   VersionDiff,
-  VersionHistoryEntry
+  VersionHistoryEntry,
+  PageSaveOptions
 } from '../types/index.js';
 import { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -1644,7 +1645,12 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param metadata - Page metadata
    * @returns Promise<void>
    */
-  async savePage(pageName: string, content: string, metadata: Partial<PageFrontmatter> = {}): Promise<void> {
+  async savePage(
+    pageName: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> = {},
+    options?: PageSaveOptions
+  ): Promise<void> {
     // Check if page exists using public method
     const pageExists = this.pageExists(pageName);
 
@@ -1719,7 +1725,10 @@ class VersioningFileProvider extends FileSystemProvider {
     // artifact behind (the failure the addon-seed re-save exposed). Safe to
     // reorder: createNewVersion() diffs against the version-history dir, not the
     // {uuid}.md page file super.savePage() writes, so its baseline is unaffected.
-    await super.savePage(pageName, content, { ...metadata, uuid, created });
+    // #1325: pass options through — FileSystemProvider already honours
+    // `preserveLastModified` for the on-disk frontmatter; dropping it here meant
+    // a migration could not keep a page's date.
+    await super.savePage(pageName, content, { ...metadata, uuid, created }, options);
 
     try {
       if (pageInfo) {
@@ -1751,7 +1760,11 @@ class VersioningFileProvider extends FileSystemProvider {
       currentVersion: await this.getCurrentVersion(uuid, location),
       location: location,
       creator: creator,
-      lastModified: new Date().toISOString(),
+      // The index must agree with the page file: keep the page's own date
+      // when the caller asked to (a migration), otherwise stamp now.
+      lastModified: options?.preserveLastModified && metadata.lastModified
+        ? String(metadata.lastModified)
+        : new Date().toISOString(),
       created,
       editor: metadata.editor || metadata.author || 'unknown',
       author: metadata.author ? String(metadata.author) : undefined,
