@@ -5,7 +5,7 @@ Status: Phase 1 + Phase 2 shipped (v3.18.0; [#728](https://github.com/jwilleke/n
 ## Standing rules
 
 - NCM is the only on-disk page-content format. Import, MCP, paste, convert, and ingest emit NCM. Nothing writes HTML or a bespoke format into pages.
-- The editor `/save` path is outside the funnel: authored content is never silently rewritten.
+- The editor `/save` path is outside the NCM funnel. A save runs only the fix steps that are safe on save (§3.5): they rewrite text that is not Markdown, the author is told, and the previous version keeps the original.
 - A new ingestion path must go through the normalizer and be added to `converters/ncm/__tests__/funnelCoverage.test.ts`.
 - Footnote transfer has one implementation: `FootnoteManager.transferFromContent`. Convert, ingest, and import delegate to it.
 Code: `src/converters/ncm/` · `src/utils/ncmNotify.ts` · wired into `ImportManager`, the `/admin/convert` tool, and `mcp-server.ts`.
@@ -109,7 +109,7 @@ NCM extends the __existing__ `IContentConverter` registry — no parallel system
 - __`ncmVersion` stamp.__ The normalizer writes integer `ncmVersion` to frontmatter (__current value: `NCM_VERSION = 2`__ — v2 added the §2.1 GFM-table up-convert). Idempotent within a version. A profile change bumps the version; existing pages are re-normalized __only__ via an explicit, opt-in migration — __never__ silently on read/edit. Protects versioned-page git history and gives provenance for free.
 - __Interactive single-item ops (single-page import, convert-existing-page) preview-and-confirm before write__ — the user sees exactly what will change/drop, then confirms. Never a silent in-place rewrite of authored content.
 - __Bulk import, #685 ingestion, MCP__ cannot gate on a human → they rely on structured `warnings[]` + the in-body placeholder (§3.3) __plus__ a `NotificationManager.addNotification(...)` summary surfaced in `/admin/notifications` as the durable signal.
-- __Hookup points:__ `ImportManager` (all html/jspwiki/markdown imports normalize to NCM), the `/admin/convert` admin tool + the per-page editor entry ([#1127](https://github.com/jwilleke/ngdpbase/issues/1127)), `POST /api/page/ingest` (agent ingest), and `mcp-server.ts` (MCP `create_page`/`update_page` normalize to NCM, returning `ncmVersion` + `ncmWarnings`). __The funnel is enforced by test__ ([#1126](https://github.com/jwilleke/ngdpbase/issues/1126), `converters/ncm/__tests__/funnelCoverage.test.ts`): each entry point must reference the normalizer, the footnote transfer must keep its one implementation (`FootnoteManager.transferFromContent`) with convert/ingest/import as delegating adopters, and adding a new ingestion path means adding it to the enumeration — the review moment the funnel needs. The editor `/save` path is deliberately outside the funnel: authored content is never silently rewritten.
+- __Hookup points:__ `ImportManager` (all html/jspwiki/markdown imports normalize to NCM), the `/admin/convert` admin tool + the per-page editor entry ([#1127](https://github.com/jwilleke/ngdpbase/issues/1127)), `POST /api/page/ingest` (agent ingest), and `mcp-server.ts` (MCP `create_page`/`update_page` normalize to NCM, returning `ncmVersion` + `ncmWarnings`). __The funnel is enforced by test__ ([#1126](https://github.com/jwilleke/ngdpbase/issues/1126), `converters/ncm/__tests__/funnelCoverage.test.ts`): each entry point must reach NCM through `PageManager.convertPageToNcm` and no route or MCP tool may call the normalizer or the fix module itself, the footnote transfer must keep its one implementation (`FootnoteManager.transferFromContent`) with convert/ingest/import as delegating adopters, and adding a new ingestion path means adding it to the enumeration — the review moment the funnel needs. The editor `/save` path is deliberately outside the funnel. It runs only the save-safe fix steps (§3.5), and tells the author.
 
 ### 3.1 Determinism (hard requirement — for #685)
 
@@ -151,7 +151,10 @@ A future surface with untrusted authors adopts `untrusted-inline` rather than re
 Every rewrite of page text toward the house style lives in `src/converters/ncm/fix/`, one small step per file. Each step is pure and idempotent, reads the page through a block map built from markdown-it's parser (`buildBlockMap`: code and HTML lines, lists and their items, from the source line range on every block token), and edits only the lines it must. Code lines are the union of markdown-it's code and MarkupParser Step 0's fenced blocks, so a step never edits what either treats as code.
 
 - __Safe on save__ steps rewrite text that is not Markdown at all (JSPWiki `**` bullets). __Convert only__ steps change valid Markdown to the house style (`-` markers, tight lists).
-- `PageManager.normalizePageContent(body, { mode: 'save' | 'convert' })` is the only way app code runs them; it returns the new body and what each step changed. Routes must not call the fix module or the NCM normalizers directly; the three `WikiRoutes` calls to `normalizeExistingPageToNcm` move behind PageManager in a later #1332 slice.
+- `PageManager.normalizePageContent(body, { mode: 'save' | 'convert' })` runs them and returns the new body and what each step changed. App code reaches it two ways:
+  - `savePageWithContext` runs `save` mode on every save, before validation, and returns `{ content, fixes }`. The editor route sends the author to `/view/<page>?fixed=<step ids>`, and the view shows each step's summary (the words come from the registry, never the URL).
+  - `convertPageToNcm(raw)` runs `convert` mode and then `normalizeExistingPageToNcm`, for Convert to NCM (preview and apply), `POST /api/page/ingest` and the MCP `create_page` / `update_page` tools. Each step that changed something is also a `converter-note` warning.
+- Routes and the MCP server never call the fix module or the NCM normalizers themselves (`funnelCoverage.test.ts` enforces it). `ImportManager` does not run the fix steps yet.
 - `scripts/fix-page-markdown.ts` runs the same steps across a page store (dry run by default, `--apply` writes one `system` version per page and keeps `lastModified`).
 - A new step: add a file with a `FixStep`, register it in `FIX_STEPS` (order matters), test it in `fix/__tests__/steps.test.ts` including idempotence, and dry-run it over a real page store before shipping.
 
@@ -171,7 +174,7 @@ Sequencing: NCM normalizer (done) → #501 (re-scoped serializer) → #685.
 3. __Lossy-conversion reporting:__ the structured `ConversionResult.warnings` channel (rendered by `admin-import.ejs`); preview+confirm on interactive single-item ops; non-preview paths (bulk import / #685 / MCP) additionally push a per-event summary to `/admin/notifications`. Distinct from __#738__ (aggregate metrics/trend = "fix-if-many").
 4. __Profile versioning:__ `ncmVersion` frontmatter stamp + explicit-migration only, never silent rewrite-on-read.
 
-__No auto-migration guarantee:__ `PageManager` save/load is untouched by NCM. There is no batch/loop/startup/cron/on-read normalization path — every NCM invocation is an explicit single item (import, admin-convert Apply, MCP create/update). (Known accepted caveat: MCP `update_page` with metadata-only still NCM-normalizes that one page's body — explicit-per-page, not bulk.)
+__No auto-migration guarantee:__ `PageManager` save/load is untouched by the NCM conversion; a save applies only the save-safe fix steps (§3.5). There is no batch/loop/startup/cron/on-read normalization path — every NCM invocation is an explicit single item (import, admin-convert Apply, MCP create/update). (Known accepted caveat: MCP `update_page` with metadata-only still NCM-normalizes that one page's body — explicit-per-page, not bulk.)
 
 ## Known gaps
 

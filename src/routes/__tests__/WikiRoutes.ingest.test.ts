@@ -3,8 +3,8 @@
  *
  * Strategy mirrors the authorLock suite: spy createWikiContext (via the shared
  * mock fixture) so hasPermission is controllable, and mock the engine managers
- * the handler touches. The NCM normalizer (normalizeExistingPageToNcm) runs for
- * real so we exercise the actual Markdown→NCM path; savePageWithContext is
+ * the handler touches. The NCM conversion (PageManager.convertPageToNcm) runs
+ * for real so we exercise the actual Markdown→NCM path; savePageWithContext is
  * mocked (its author-attribution logic is covered in PageManager tests).
  *
  * Covers:
@@ -18,6 +18,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import WikiRoutes from '../WikiRoutes';
 import { createMockWikiContext } from './__fixtures__/createMockWikiContext';
+import { withRealPageConvert } from './__fixtures__/realPageConvert';
 
 const AUTHED = { username: 'jim', displayName: 'Jim Willeke', roles: ['editor'], isAuthenticated: true };
 
@@ -37,6 +38,7 @@ function makeSavedPage(overrides: Record<string, unknown> = {}) {
 }
 
 function makeEngine(pageManager: Record<string, unknown>) {
+  withRealPageConvert(pageManager);
   const configManager = {
     getProperty: vi.fn((key: string, def: unknown) => {
       if (key === 'ngdpbase.system-category') {

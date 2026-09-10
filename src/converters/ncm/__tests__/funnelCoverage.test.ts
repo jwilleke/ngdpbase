@@ -10,8 +10,11 @@
  * The enumeration is DELIBERATE, not discovered: a brand-new ingestion path
  * will not appear here by itself — adding one means adding it to this list,
  * which is exactly the review moment the funnel needs. The editor /save path
- * is deliberately absent: authored content is never silently rewritten
- * (spec: "No auto-migration guarantee").
+ * is deliberately absent from the NCM conversion: an ordinary save runs only
+ * the #1332 steps safe on save, at PageManager's door, and tells the author.
+ *
+ * #1332: the convert paths reach NCM through PageManager.convertPageToNcm,
+ * never by calling the normalizer or the fix module themselves.
  */
 import { readFileSync } from 'fs';
 import path from 'path';
@@ -32,6 +35,7 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
   const wikiRoutes = read('src/routes/WikiRoutes.ts');
   const importManager = read('src/managers/ImportManager.ts');
   const mcpServer = read('mcp-server.ts');
+  const pageManager = read('src/managers/PageManager.ts');
 
   test('ImportManager.importPages normalizes registered text formats', () => {
     expect(importManager).toMatch(/normalizeToNcm\(content, formatId/);
@@ -39,18 +43,31 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
 
   test('agent ingest (POST /api/page/ingest) normalizes', () => {
     const ingest = region(wikiRoutes, 'async ingestPageMarkdown(', '\n  async ');
-    expect(ingest).toContain('normalizeExistingPageToNcm(');
+    expect(ingest).toContain('convertPageToNcm(');
   });
 
   test('the convert endpoints normalize', () => {
     const preview = region(wikiRoutes, 'async adminConvertPreview(', '\n  async ');
     const execute = region(wikiRoutes, 'async adminConvertExecute(', '\n  async ');
-    expect(preview).toContain('normalizeExistingPageToNcm(');
-    expect(execute).toContain('normalizeExistingPageToNcm(');
+    expect(preview).toContain('convertPageToNcm(');
+    expect(execute).toContain('convertPageToNcm(');
   });
 
   test('the MCP server normalizes create and update', () => {
-    expect(mcpServer).toContain('normalizeExistingPageToNcm');
+    expect(mcpServer.match(/pageManager\.convertPageToNcm\(/g)).toHaveLength(2);
+  });
+
+  test('PageManager.convertPageToNcm runs the fix steps and the normalizer', () => {
+    const convert = region(pageManager, '  convertPageToNcm(raw: string)', '\n  }\n');
+    expect(convert).toContain("mode: 'convert'");
+    expect(convert).toContain('normalizeExistingPageToNcm(');
+  });
+
+  test('no route or MCP tool calls the normalizer or the fix module directly (#1332)', () => {
+    for (const source of [wikiRoutes, mcpServer]) {
+      expect(source).not.toMatch(/normalizeExistingPageToNcm\(/);
+      expect(source).not.toContain('converters/ncm/fix');
+    }
   });
 });
 

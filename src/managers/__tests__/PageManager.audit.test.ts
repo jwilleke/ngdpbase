@@ -41,7 +41,7 @@ function makeManager(existing: StoredPage[] = []) {
     getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : null))
   }) as unknown as {
     provider: unknown;
-    savePageWithContext: (ctx: unknown, meta?: unknown, opts?: unknown) => Promise<void>;
+    savePageWithContext: (ctx: unknown, meta?: unknown, opts?: unknown) => Promise<unknown>;
   };
   manager.provider = provider;
 
@@ -167,11 +167,11 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
           ? { logAuditEvent: vi.fn(async () => { throw new Error('audit down'); }) }
           : null
       )
-    }) as unknown as { provider: unknown; savePageWithContext: (c: unknown, m?: unknown) => Promise<void> };
+    }) as unknown as { provider: unknown; savePageWithContext: (c: unknown, m?: unknown) => Promise<unknown> };
     broken.provider = provider;
 
     await expect(broken.savePageWithContext(context('Still Saves'), { title: 'Still Saves' }))
-      .resolves.toBeUndefined();
+      .resolves.toEqual({ content: 'body', fixes: [] });
     await settle();
     expect(provider.savePage).toHaveBeenCalled();
   });

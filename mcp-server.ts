@@ -33,7 +33,7 @@ import * as fs from 'fs-extra';
 import WikiEngine from './src/WikiEngine.js';
 import type { WikiConfig } from './src/types/Config.js';
 import matter from 'gray-matter';
-import { normalizeExistingPageToNcm } from './src/converters/ncm/index.js';
+import type { NcmResult } from './src/converters/ncm/index.js';
 import { notifyNcmConversion } from './src/utils/ncmNotify.js';
 import { isStaleSave, versionTokenOf } from './src/utils/pageVersionToken.js';
 
@@ -269,6 +269,8 @@ interface PageManagerType {
   getAllPages(): Promise<string[]>;
   savePage(pageName: string, content: string, metadata: Record<string, unknown>): Promise<void>;
   deletePage(identifier: string): Promise<boolean>;
+  /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
+  convertPageToNcm(raw: string): NcmResult;
 }
 
 /**
@@ -1269,9 +1271,10 @@ class NgdpbaseMCPServer {
     metadata.author = 'mcp-server';
     metadata.editor = 'mcp-server';
 
-    // #728 S5c: normalize MCP-supplied content to NCM (links + ncmVersion).
+    // #728 S5c: normalize MCP-supplied content to NCM (links + ncmVersion),
+    // with the #1332 fix steps, through PageManager like every convert path.
     // Image localization is deferred (MCP is non-preview; like ImportManager).
-    const ncm = normalizeExistingPageToNcm(
+    const ncm = pageManager.convertPageToNcm(
       matter.stringify(content, metadata)
     );
     const ncmDoc = matter(ncm.content);
@@ -1358,8 +1361,9 @@ class NgdpbaseMCPServer {
 
     const updatedContent = content !== undefined ? content : existing.content;
 
-    // #728 S5c: normalize to NCM (links + ncmVersion) before save.
-    const ncm = normalizeExistingPageToNcm(
+    // #728 S5c: normalize to NCM (links + ncmVersion, and the #1332 fix
+    // steps) through PageManager before save.
+    const ncm = pageManager.convertPageToNcm(
       matter.stringify(updatedContent, updatedMetadata)
     );
     const ncmDoc = matter(ncm.content);

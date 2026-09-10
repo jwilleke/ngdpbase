@@ -9,6 +9,7 @@
  * record names the USER who converted, not 'system'.
  */
 import WikiRoutes from '../WikiRoutes';
+import { withRealPageConvert } from './__fixtures__/realPageConvert';
 
 const editor = { username: 'alice', isAuthenticated: true, roles: ['editor'] };
 
@@ -42,7 +43,7 @@ function makeRoutes(canEdit: boolean) {
   };
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'PageManager') return pageManager;
+      if (name === 'PageManager') return withRealPageConvert(pageManager);
       if (name === 'ACLManager') return aclManager;
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
@@ -113,7 +114,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     };
     const engine = {
       getManager: vi.fn((name: string) => {
-        if (name === 'PageManager') return pageManager;
+        if (name === 'PageManager') return withRealPageConvert(pageManager);
         if (name === 'ACLManager') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
         if (name === 'FootnoteManager') {
           return {

@@ -257,7 +257,7 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockResolvedValue(true);
+  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content, fixes: [] }));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
@@ -632,6 +632,22 @@ describe('WikiRoutes — coverage batch 15', () => {
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/view/');
+      expect(res.headers.location).not.toContain('fixed=');
+    });
+
+    // #1332: the manager fixed JSPWiki bullets on the way in; the author is
+    // sent to the page with the step ids, and the page names what changed.
+    test('#1332 — carries the fix steps the save applied to the page it redirects to', async () => {
+      mockPageManager.savePageWithContext.mockImplementationOnce(async (ctx: { content: string }) => ({
+        content: ctx.content,
+        fixes: [{ step: 'jspwiki-bullets', summary: 'JSPWiki ** bullets became nested - bullets', lines: [2] }]
+      }));
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '* a\n** b', title: 'TestPage', 'system-category': 'general' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toMatch(/[?&]fixed=jspwiki-bullets(&|$)/);
     });
 
     test('returns 403 when user lacks page-create permission for non-required page', async () => {

@@ -172,7 +172,7 @@ vi.mock('../../WikiEngine', () => {
       });
     }),
     savePage: vi.fn().mockResolvedValue(true),
-    savePageWithContext: vi.fn().mockResolvedValue(true),
+    savePageWithContext: vi.fn().mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content, fixes: [] })),
     deletePage: vi.fn().mockResolvedValue(true),
     deletePageWithContext: vi.fn().mockResolvedValue(true),
     getPageContent: vi.fn().mockImplementation((pageName) => {
@@ -625,7 +625,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
-        mockPageManager.savePageWithContext.mockResolvedValue(true);
+        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content, fixes: [] }));
         // Mock existing page for the save operation
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',

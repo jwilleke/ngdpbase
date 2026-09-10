@@ -21,7 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import { normalizeExistingPageToNcm, localizeNcmImages } from '../converters/ncm/index.js';
+import { localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
@@ -92,7 +92,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
-import { PageContentValidationError, type PageSaveOptions } from '../managers/PageManager.js';
+import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -312,7 +312,11 @@ interface IPageManager {
     wikiContext: unknown,
     metadata?: Partial<PageFrontmatter>,
     options?: PageSaveOptions
-  ): Promise<void>;
+  ): Promise<PageSaveResult>;
+  /** #1332: NCM conversion with every fix step — Convert to NCM and ingest go through here. */
+  convertPageToNcm(raw: string): PageConvertResult;
+  /** #1332: plain-language summaries of fix step ids, for the after-save notice. */
+  fixStepSummaries(ids: readonly string[]): string[];
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
@@ -2935,6 +2939,12 @@ ${panes}
         : _unknownTagsParam
           ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
           : null;
+      // #1332: the save that brought the author here fixed their text. Only
+      // step ids come from the URL; the words come from the step registry, so
+      // a hand-made link cannot put its own text on the page.
+      const fixNotice = typeof req.query.fixed === 'string' && req.query.fixed
+        ? pageManager.fixStepSummaries(req.query.fixed.split(','))
+        : [];
       const sectionEditingEnabled =
         canEdit && !!userContext?.preferences?.['display.sectionEditing'];
 
@@ -3094,6 +3104,7 @@ ${panes}
         lastModified: metadata?.lastModified,
         referringPages: [], // TODO: Implement backlink detection
         warningMessage,
+        fixNotice,
         extraPageMetaBar
       });
     } catch (error: unknown) {
@@ -4129,9 +4140,13 @@ ${panes}
       // Save the page using WikiContext (author is automatically extracted from context)
       // #1121: PageManager emits the page.* audit event. The route only adds
       // the client IP, which is the one thing it knows and the manager cannot.
-      await pageManager.savePageWithContext(wikiContext, metadata, {
+      // #1332: the manager may fix JSPWiki `**` bullets on the way in. What it
+      // wrote is what the link graph and search index below must see, and
+      // the author is told on the page they land on.
+      const saved = await pageManager.savePageWithContext(wikiContext, metadata, {
         audit: { ipAddress: req.ip }
       });
+      content = saved.content ?? content;
 
       // Notify admins when a required page is edited in the wiki UI
       if (storageLocation === 'required') {
@@ -4232,6 +4247,7 @@ ${panes}
       const warnParams = new URLSearchParams();
       if (saveWarning) warnParams.set('warning', 'github-page');
       if (unknownTagWarning) warnParams.set('unknown-tags', unknownTagWarning);
+      if (saved.fixes.length) warnParams.set('fixed', saved.fixes.map((f) => f.step).join(','));
       const warnParam = warnParams.size > 0 ? `?${warnParams.toString()}` : '';
       res.redirect(`/view/${encodeURIComponent(redirectName)}${warnParam}`);
     } catch (err: unknown) {
@@ -8925,7 +8941,7 @@ ${panes}
       // Normalize Markdown → NCM (links + table up-convert + ncmVersion stamp),
       // mirroring the MCP create path. savePageWithContext then sets `author`
       // from the WikiContext user (immutable across edits — decision A).
-      const ncm = normalizeExistingPageToNcm(matter.stringify(markdown, metadata));
+      const ncm = pageManager.convertPageToNcm(matter.stringify(markdown, metadata));
       const ncmDoc = matter(ncm.content);
       const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
@@ -8936,9 +8952,9 @@ ${panes}
       //
       // Validates ncmDoc.content, the POST-normalisation text that actually
       // gets written. The `markdown` as received is the wrong thing to check:
-      // normalizeExistingPageToNcm rewrites links and up-converts tables, so
-      // validating the input would approve something other than what lands on
-      // disk.
+      // convertPageToNcm rewrites links, up-converts tables and applies the
+      // #1332 fix steps, so validating the input would approve something
+      // other than what lands on disk.
       const validationManager = this.engine.getManager('ValidationManager');
       if (validationManager?.collectContentErrors) {
         const validationErrors = await validationManager.collectContentErrors(ncmDoc.content, {
@@ -13372,7 +13388,10 @@ ${panes}
         return res.status(400).json({ success: false, error: 'page is required' });
       }
       const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
-      const page = await pageManager?.getPage(pageName);
+      if (!pageManager) {
+        return res.status(500).json({ success: false, error: 'PageManager not available' });
+      }
+      const page = await pageManager.getPage(pageName);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
@@ -13387,7 +13406,7 @@ ${panes}
       // #1179: localizing uploads on the editor's behalf; a request with no subject has nobody to act as.
       if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
-      const ncm = normalizeExistingPageToNcm(original);
+      const ncm = pageManager.convertPageToNcm(original);
       // S5a-ii: dry-run image localization (preview must not persist).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, true);
       // #1125: dry-run footnote transfer — the preview shows the body with
@@ -13421,7 +13440,10 @@ ${panes}
         return res.status(400).json({ success: false, error: 'page is required' });
       }
       const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
-      const page = await pageManager?.getPage(pageName);
+      if (!pageManager) {
+        return res.status(500).json({ success: false, error: 'PageManager not available' });
+      }
+      const page = await pageManager.getPage(pageName);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
@@ -13433,7 +13455,7 @@ ${panes}
       // #1179: localizing uploads on the editor's behalf; a request with no subject has nobody to act as.
       if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
-      const ncm = normalizeExistingPageToNcm(original);
+      const ncm = pageManager.convertPageToNcm(original);
       // S5a-ii: real image localization (persists attachments via AttachmentManager).
       const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
       // #1125: real footnote transfer — definitions land in the sidecar list.
@@ -13449,7 +13471,7 @@ ${panes}
       // write as 'system', and the person who converted is exactly what the
       // record is for.
       (wikiContext as unknown as { content: string | null }).content = split.content;
-      await pageManager?.savePageWithContext(
+      await pageManager.savePageWithContext(
         wikiContext as unknown as Parameters<NonNullable<typeof pageManager>['savePageWithContext']>[0],
         split.data,
         { audit: { ipAddress: req.ip } }

@@ -21,7 +21,8 @@ import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
 import { buildPageMutationAuditEvent, recordAuditEvent, type PageMutationOp } from '../utils/auditEvents.js';
-import { runFixes, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
+import { FIX_STEPS, runFixes, type FixChange, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
+import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 
@@ -71,6 +72,19 @@ export interface PageSaveOptions {
      */
     skip?: boolean;
   };
+}
+
+/** What {@link PageManager.savePageWithContext} wrote (#1332). */
+export interface PageSaveResult {
+  /** The body as saved — the caller's text after the save-safe fix steps. */
+  content: string;
+  /** The fix steps that changed the body; empty when it was saved as given. */
+  fixes: FixChange[];
+}
+
+/** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
+export interface PageConvertResult extends NcmResult {
+  fixes: FixChange[];
 }
 
 export class PageContentValidationError extends Error {
@@ -957,7 +971,7 @@ class PageManager extends BaseManager implements CatalogSource {
     wikiContext: WikiContext,
     metadata: Partial<PageFrontmatter> = {},
     options: PageSaveOptions = {}
-  ): Promise<void> {
+  ): Promise<PageSaveResult> {
     if (!wikiContext) {
       throw new Error('PageManager.savePageWithContext requires a WikiContext');
     }
@@ -967,7 +981,22 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     const pageName = wikiContext.pageName;
-    const content = wikiContext.content;
+
+    // #1332: the fix steps safe on any save — they rewrite only text that is
+    // not Markdown at all (JSPWiki `**` bullets), so the author loses nothing
+    // and the previous version keeps the original. Run at the door, like the
+    // audit record below, so no save path can skip them; the caller gets the
+    // list back to tell the author, and validation checks the text that is
+    // actually written.
+    let content = wikiContext.content;
+    let fixes: FixChange[] = [];
+    if (typeof content === 'string' && content) {
+      const fixed = this.normalizePageContent(content, { mode: 'save' });
+      if (fixed.changes.length) {
+        content = fixed.content;
+        fixes = fixed.changes;
+      }
+    }
 
     await this.assertContentPasses(pageName, content, {
       userName: (wikiContext as unknown as { userContext?: { username?: string } }).userContext?.username,
@@ -1229,6 +1258,50 @@ class PageManager extends BaseManager implements CatalogSource {
         (err) => logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
       );
     }
+
+    return { content, fixes };
+  }
+
+  /**
+   * Convert a stored page (frontmatter + body) to NCM, with every fix step
+   * (#1332) — the one implementation behind Convert to NCM, agent ingest and
+   * the MCP create/update tools.
+   *
+   * The fix steps run on the body first, then `normalizeExistingPageToNcm`
+   * (links, table up-convert, `ncmVersion`), so NCM's determinism stays owned
+   * in one place. Each step that changed something is also reported as a
+   * `converter-note` warning, so the existing preview and notification
+   * surfaces show it without knowing about steps.
+   *
+   * Pure: nothing is saved.
+   *
+   * @param raw - Full page text, YAML frontmatter and body
+   * @returns The NCM result and the fix steps that changed the body
+   */
+  convertPageToNcm(raw: string): PageConvertResult {
+    const parsed = matter(raw);
+    const fixed = this.normalizePageContent(parsed.content, { mode: 'convert' });
+    const source = fixed.changes.length ? matter.stringify(fixed.content, parsed.data) : raw;
+    const ncm = normalizeExistingPageToNcm(source);
+    return {
+      ...ncm,
+      warnings: [
+        ...fixed.changes.map((c) => ({ kind: 'converter-note' as const, detail: `${c.summary} (${c.step})` })),
+        ...ncm.warnings
+      ],
+      fixes: fixed.changes
+    };
+  }
+
+  /**
+   * The plain-language summary of each fix step id, for telling an author
+   * what a save changed. Unknown ids are skipped, so a hand-edited URL can
+   * only ever show a real summary.
+   *
+   * @param ids - Fix step ids, as in {@link PageSaveResult.fixes}
+   */
+  fixStepSummaries(ids: readonly string[]): string[] {
+    return FIX_STEPS.filter((s) => ids.includes(s.id)).map((s) => s.summary);
   }
 
   /**
