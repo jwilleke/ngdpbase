@@ -262,6 +262,34 @@ describe('maskJspwiki — stands constructs down the way extraction does', () =>
     expect(buildShowdown().makeHtml(token)).toContain(token.trim());
   });
 
+  // MarkupParser's Step 0 extracts code before anything else; the converter
+  // never sees it. The mask has to do the same or it measures code handling
+  // that only the DOM pipeline performs.
+  it('takes a fenced code block out whole, as production does', () => {
+    const out = maskJspwiki('before\n```js\nconst x = [{Plugin}];\n```\nafter');
+    expect(out).toMatch(/^before\njspwikinode\d+x\nafter$/);
+  });
+
+  it('takes an inline code span out whole', () => {
+    expect(maskJspwiki('Use `^[A-M].*` here')).toMatch(/^Use jspwikinode\d+x here$/);
+  });
+
+  // The "Page Content" failure: a `[` inside a code span began a page-link
+  // match that ran across lines and swallowed the next fence's opener.
+  it('never lets a bracket inside code reach past it', () => {
+    const md = 'Type inside `[`, then:\n\n```\n[Hover hint|Page Name|title=\'x\']\n```\n\nText after.';
+    const out = maskJspwiki(md);
+    expect(out).toContain('Text after.');
+    expect(out.split('\n').filter((l) => /^jspwikinode\d+x$/.test(l))).toHaveLength(1);
+  });
+
+  // Production's fence scanner only takes fences at column 0; its inline scanner
+  // then pairs any two equal backtick runs (MarkupParser.ts, "Inline code
+  // spans"), so an indented fence becomes one inline span. Mirror that.
+  it('takes an indented fence as one inline span, as production does', () => {
+    expect(maskJspwiki('- item\n  ```\n  code\n  ```')).toMatch(/^- item\n {2}jspwikinode\d+x$/);
+  });
+
   it('leaves plain markdown byte-identical', () => {
     const md = '# Title\n\n- a\n- b\n\nSome *text*.';
     expect(maskJspwiki(md)).toBe(md);

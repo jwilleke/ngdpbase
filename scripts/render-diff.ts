@@ -428,6 +428,40 @@ export function hasJspwikiSyntax(markdown: string): boolean {
 const MASK = (n: number): string => `jspwikinode${String(n).padStart(6, '0')}x`;
 
 /**
+ * Take code out first, as MarkupParser's Step 0 does, so neither converter
+ * ever sees it.
+ *
+ * Production extracts every fenced code block (`MarkupParser.ts`, the
+ * line scanner under "Step 0") and every inline code span into placeholders
+ * before any JSPWiki construct is touched and long before the converter runs;
+ * the DOM pipeline puts the code back afterwards. The harness used to hand
+ * code straight to both converters and mask JSPWiki syntax *inside* it, which
+ * measured things production never does: fence and tab handling that only the
+ * DOM pipeline performs, and — worse — a `[` inside a code span starting a
+ * page-link match that ran across lines and swallowed the next fence, so a
+ * well-formed page read as broken under both converters.
+ *
+ * The fence rule is production's own: a line of three or more backticks with
+ * an optional language, closed by a line with the same backtick run. An
+ * unclosed fence runs to the end, as production's scanner does. Inline spans
+ * pair backtick runs of equal length, and may cross lines.
+ */
+function extractCode(markdown: string, token: () => string): string {
+  const lines = markdown.split(/\r?\n/);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^(`{3,})(\S*)\s*$/.exec(lines[i]);
+    if (!open) { out.push(lines[i]); continue; }
+    const close = new RegExp(`^${open[1]}\\s*$`);
+    let j = i + 1;
+    while (j < lines.length && !close.test(lines[j])) j++;
+    out.push(token());
+    i = j; // the closing fence, or past the end when unclosed
+  }
+  return out.join('\n').replace(/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, () => token());
+}
+
+/**
  * Stand JSPWiki constructs down to inert tokens, the way the real pipeline
  * stands them down to UUID placeholders.
  *
@@ -449,7 +483,7 @@ const MASK = (n: number): string => `jspwikinode${String(n).padStart(6, '0')}x`;
  */
 export function maskJspwiki(markdown: string): string {
   let n = 0;
-  return markdown
+  return extractCode(markdown, () => MASK(n++))
     // [{Plugin}] and [{$variable}] — the whole construct is opaque.
     .replace(/\[\{[^}]*\}\]/g, () => MASK(n++))
     // Style-block open and close markers only; the body between them is markdown.
