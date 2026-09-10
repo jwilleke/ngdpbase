@@ -295,6 +295,61 @@ describe('MarkupParser.extractJSPWikiSyntax()', () => {
       expect(sanitized).not.toContain('```');
     });
 
+    // #1335: an indented fence, or one with a space before its language, used
+    // to fall through to the inline-code scanner and render as ONE inline span.
+    describe('indented and spaced fences (#1335)', () => {
+      test('extracts a fence indented inside a list item, language and all', () => {
+        const content = '1. __Check the server:__\n\n   ```bash\n   ./server.sh status\n   # or\n   ps aux\n   ```\n\n2. Next step';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].type).toBe('fenced-code');
+        expect(jspwikiElements[0].codeLanguage).toBe('bash');
+        // The fence's own indent is stripped from the code lines.
+        expect(jspwikiElements[0].codeContent).toBe('./server.sh status\n# or\nps aux\n');
+        expect(sanitized).not.toContain('```');
+        // The placeholder keeps the indent, so it stays inside the list item.
+        expect(sanitized).toMatch(/\n {3}<span data-jspwiki-placeholder="[^"]+"><\/span>\n/);
+        expect(sanitized).toContain('2. Next step');
+      });
+
+      test('accepts a space before the language', () => {
+        const { jspwikiElements } = parser.extractJSPWikiSyntax('``` text\nUser Request → ACL\n```');
+
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].type).toBe('fenced-code');
+        expect(jspwikiElements[0].codeLanguage).toBe('text');
+        expect(jspwikiElements[0].codeContent).toBe('User Request → ACL\n');
+      });
+
+      test('an example fence four spaces in does not close the block around it', () => {
+        // FootnoteExample shape: a column-0 ```markdown block showing a fence
+        // indented inside a footnote.
+        const content = '```markdown\n[^n]: First.\n\n    ```\n    inner code\n    ```\n```\nafter';
+        const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);
+
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].codeLanguage).toBe('markdown');
+        expect(jspwikiElements[0].codeContent).toBe('[^n]: First.\n\n    ```\n    inner code\n    ```\n');
+        expect(sanitized).toContain('after');
+      });
+
+      test('handles an indented fence with CRLF line endings', () => {
+        const { jspwikiElements } = parser.extractJSPWikiSyntax('- item\r\n\r\n  ```js\r\n  const x = 1;\r\n  ```\r\n');
+
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].codeLanguage).toBe('js');
+        expect(jspwikiElements[0].codeContent).toBe('const x = 1;\n');
+      });
+
+      test('still treats a triple-backtick span inside a line as inline code', () => {
+        const { jspwikiElements } = parser.extractJSPWikiSyntax('A ```x``` B');
+
+        expect(jspwikiElements).toHaveLength(1);
+        expect(jspwikiElements[0].type).toBe('code');
+      });
+    });
+
     test('extracts inline code span as code DOM node', () => {
       const content = 'Use `const` for constants';
       const { sanitized, jspwikiElements } = parser.extractJSPWikiSyntax(content);

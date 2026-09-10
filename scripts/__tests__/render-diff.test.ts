@@ -283,11 +283,14 @@ describe('maskJspwiki — stands constructs down the way extraction does', () =>
     expect(out.split('\n').filter((l) => /^jspwikinode\d+x$/.test(l))).toHaveLength(1);
   });
 
-  // Production's fence scanner only takes fences at column 0; its inline scanner
-  // then pairs any two equal backtick runs (MarkupParser.ts, "Inline code
-  // spans"), so an indented fence becomes one inline span. Mirror that.
-  it('takes an indented fence as one inline span, as production does', () => {
-    expect(maskJspwiki('- item\n  ```\n  code\n  ```')).toMatch(/^- item\n {2}jspwikinode\d+x$/);
+  // Since #1335 production takes an indented fence (a code block inside a list
+  // item) as a block, keeping its indent on the placeholder. Mirror that.
+  it('takes an indented fence out as a block, keeping its indent', () => {
+    expect(maskJspwiki('- item\n\n  ```js\n  code\n  ```\n\n- next')).toMatch(/^- item\n\n {2}jspwikinode\d+x\n\n- next$/);
+  });
+
+  it('takes a fence with a space before its language out whole', () => {
+    expect(maskJspwiki('``` text\nx\n```\nafter')).toMatch(/^jspwikinode\d+x\nafter$/);
   });
 
   it('leaves plain markdown byte-identical', () => {

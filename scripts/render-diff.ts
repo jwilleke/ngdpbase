@@ -441,21 +441,23 @@ const MASK = (n: number): string => `jspwikinode${String(n).padStart(6, '0')}x`;
  * page-link match that ran across lines and swallowed the next fence, so a
  * well-formed page read as broken under both converters.
  *
- * The fence rule is production's own: a line of three or more backticks with
- * an optional language, closed by a line with the same backtick run. An
- * unclosed fence runs to the end, as production's scanner does. Inline spans
- * pair backtick runs of equal length, and may cross lines.
+ * The fence rule is production's own (#1335): a line of three or more
+ * backticks, optionally indented, with an optional language that may follow a
+ * space; closed by the same backtick run indented no further than the opening
+ * fence or 3 spaces. An unclosed fence runs to the end, as production's
+ * scanner does. The placeholder keeps the fence's indent. Inline spans pair
+ * backtick runs of equal length, and may cross lines.
  */
 function extractCode(markdown: string, token: () => string): string {
   const lines = markdown.split(/\r?\n/);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const open = /^(`{3,})(\S*)\s*$/.exec(lines[i]);
+    const open = /^([ \t]*)(`{3,})[ \t]*([^\s`]*)[^`]*$/.exec(lines[i]);
     if (!open) { out.push(lines[i]); continue; }
-    const close = new RegExp(`^${open[1]}\\s*$`);
+    const close = new RegExp(`^[ \\t]{0,${Math.max(3, open[1].length)}}${open[2]}\\s*$`);
     let j = i + 1;
     while (j < lines.length && !close.test(lines[j])) j++;
-    out.push(token());
+    out.push(open[1] + token());
     i = j; // the closing fence, or past the end when unclosed
   }
   return out.join('\n').replace(/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, () => token());

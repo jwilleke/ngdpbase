@@ -1359,16 +1359,35 @@ class MarkupParser extends BaseManager {
       const outputLines: string[] = [];
       let li = 0;
       while (li < inputLines.length) {
-        const fenceOpen = inputLines[li].match(/^(`{3,})(\S*)\s*$/);
+        // #1335: a fence may be indented — a code block inside a list item sits
+        // at the item's content indent — and may have a space before its
+        // language (```` ``` text ````). Both are CommonMark. The old test,
+        // /^(`{3,})(\S*)\s*$/, took only column-0 fences with the language
+        // glued on; anything else fell through to the inline-code scanner
+        // below, which paired the two ``` runs into ONE inline span — the
+        // whole block on a single line, language name included.
+        const fenceOpen = inputLines[li].match(/^([ \t]*)(`{3,})[ \t]*([^\s`]*)[^`]*$/);
         if (fenceOpen) {
-          const fence = fenceOpen[1]; // the actual backtick sequence (``` or longer)
-          const lang = fenceOpen[2] || '';
+          const indent = fenceOpen[1];
+          const fence = fenceOpen[2]; // the actual backtick sequence (``` or longer)
+          const lang = fenceOpen[3] || '';
+          // A closing fence may be indented up to the opening fence's indent,
+          // or 3 spaces, whichever is more — never further. That keeps an
+          // example fence written inside a column-0 block (four spaces in, as
+          // on FootnoteExample) from closing the block around it.
+          const closeIndentMax = Math.max(3, indent.length);
+          const closeRe = new RegExp(`^([ \\t]{0,${closeIndentMax}})${fence}\\s*$`);
           const contentLines: string[] = [];
           const startLine = li;
           li++;
           // Collect lines until matching closing fence (same length, no language tag)
-          while (li < inputLines.length && !new RegExp(`^${fence}\\s*$`).test(inputLines[li])) {
-            contentLines.push(inputLines[li]);
+          while (li < inputLines.length && !closeRe.test(inputLines[li])) {
+            // Strip the fence's own indent from each code line, so indented
+            // code is not shifted right by the list it sits in.
+            const line = inputLines[li];
+            let strip = 0;
+            while (strip < indent.length && strip < line.length && (line[strip] === ' ' || line[strip] === '\t')) strip++;
+            contentLines.push(line.slice(strip));
             li++;
           }
           if (li < inputLines.length) li++; // skip closing fence line
@@ -1382,7 +1401,9 @@ class MarkupParser extends BaseManager {
             id: id++,
             position: startLine
           });
-          outputLines.push(`<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
+          // Keep the fence's indent on the placeholder so an indented block
+          // stays inside the list item it was written in.
+          outputLines.push(`${indent}<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
         } else {
           outputLines.push(inputLines[li]);
           li++;
