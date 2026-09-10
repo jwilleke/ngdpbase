@@ -65,11 +65,11 @@ ngdpbase uses different configuration files based on the `NODE_ENV` environment 
 
 ### How Configuration Loading Works
 
-1. __Default Config__: `config/app-default-config.json` is always loaded first (base settings)
-2. __Environment Config__: Based on `NODE_ENV`, loads environment-specific config
-3. __Custom Config__: `config/app-custom-config.json` is loaded last and overrides everything
-   - This file is `.gitignore`d for local-only settings
-   - Use this for machine-specific overrides (API keys, local ports, etc.)
+- 1 __Default Config__: `config/app-default-config.json` is always loaded first (base settings)
+- 2 __Environment Config__: Based on `NODE_ENV`, loads environment-specific config
+- 3 __Custom Config__: `config/app-custom-config.json` is loaded last and overrides everything
+  - This file is `.gitignore`d for local-only settings
+  - Use this for machine-specific overrides (API keys, local ports, etc.)
 
 ### Starting with Different Environments
 
@@ -113,26 +113,26 @@ The server uses a PID lock file (`.ngdpbase.pid`) to prevent multiple instances 
 
 ### If You Get "Another instance is already running"
 
-1. __Check if server is actually running:__
+- 1 __Check if server is actually running:__
 
-   ```bash
-   ./server.sh status
-   # or
-   ps aux | grep "node app.js" | grep -v grep
-   ```
+```bash
+./server.sh status
+# or
+ps aux | grep "node app.js" | grep -v grep
+```
 
-2. __If server is running but shouldn't be:__
+- 2 __If server is running but shouldn't be:__
 
-   ```bash
-   ./server.sh stop
-   ```
+```bash
+./server.sh stop
+```
 
-3. __If server crashed and lock file is stale:__
+- 3 __If server crashed and lock file is stale:__
 
-   ```bash
-   ./server.sh unlock
-   ./server.sh start
-   ```
+```bash
+./server.sh unlock
+./server.sh start
+```
 
 ## Server Logs Location
 
