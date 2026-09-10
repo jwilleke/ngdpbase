@@ -103,6 +103,7 @@ NCM extends the __existing__ `IContentConverter` registry — no parallel system
 | `localizeNcmImages` | §2.2 image→attachment localization. |
 | `ncmToConversionResult` | Bridge NCM warnings → the `ConversionResult` contract (lossless). |
 | `formatDroppedPlaceholder` / `isDroppedPlaceholderLine` | Build / recognise the §3.3 placeholder. |
+| `fix/` (`runFixes`, `FIX_STEPS`) | The Markdown fix steps (§3.5), called through `PageManager.normalizePageContent`. |
 
 - __Structured warnings.__ `ConversionResult.warnings` is `Array<{ kind: string; detail: string }>`. `kind` is a stable code (e.g. `html-dropped:<tag>`, `img-attached`, `img-rejected:type|size|adhost|sniff-mismatch`, `link-externalized`, `placeholder-inserted`) — the prerequisite for conversion metrics (__#738__) and for §3.1 determinism (enum > prose).
 - __`ncmVersion` stamp.__ The normalizer writes integer `ncmVersion` to frontmatter (__current value: `NCM_VERSION = 2`__ — v2 added the §2.1 GFM-table up-convert). Idempotent within a version. A profile change bumps the version; existing pages are re-normalized __only__ via an explicit, opt-in migration — __never__ silently on read/edit. Protects versioned-page git history and gives provenance for free.
@@ -144,6 +145,17 @@ The render pipeline was designed for __trusted page authors__: raw HTML survives
 | `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same showdown core (CommonMark only — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); same SecurityFilter with its config __forced on__ (not site-configurable — an operator toggling render filtering must not change what commenters can inject) and a tightened tag list (no `iframe`, no `img`); the #1000 ReDoS guard on input; escape-everything fallback on any failure — degraded is safe, never open |
 
 A future surface with untrusted authors adopts `untrusted-inline` rather than re-deciding; wiki-link support inside it (with viewer-context resolution, per the #1116 rule) is a possible extension, deliberately not in the first cut — a red-link in a comment is a page-creation lure and an existence probe.
+
+### 3.5 Markdown fix steps (#1332)
+
+Every rewrite of page text toward the house style lives in `src/converters/ncm/fix/`, one small step per file. Each step is pure and idempotent, reads the page through a block map built from markdown-it's parser (`buildBlockMap`: code and HTML lines, lists and their items, from the source line range on every block token), and edits only the lines it must. Code lines are the union of markdown-it's code and MarkupParser Step 0's fenced blocks, so a step never edits what either treats as code.
+
+- __Safe on save__ steps rewrite text that is not Markdown at all (JSPWiki `**` bullets). __Convert only__ steps change valid Markdown to the house style (`-` markers, tight lists).
+- `PageManager.normalizePageContent(body, { mode: 'save' | 'convert' })` is the only way app code runs them; it returns the new body and what each step changed. Routes must not call the fix module or the NCM normalizers directly; the three `WikiRoutes` calls to `normalizeExistingPageToNcm` move behind PageManager in a later #1332 slice.
+- `scripts/fix-page-markdown.ts` runs the same steps across a page store (dry run by default, `--apply` writes one `system` version per page and keeps `lastModified`).
+- A new step: add a file with a `FixStep`, register it in `FIX_STEPS` (order matters), test it in `fix/__tests__/steps.test.ts` including idempotence, and dry-run it over a real page store before shipping.
+
+The house style itself is recorded in the decision log on [#1271](https://github.com/jwilleke/ngdpbase/issues/1271) and, for authors, on the "Markdown as we use it" page.
 
 ## 4. Consumers
 

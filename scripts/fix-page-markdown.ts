@@ -1,13 +1,16 @@
 #!/usr/bin/env tsx
 /**
- * Page list clean-ups across a page store (#1325, #1271), one per run:
- *   --fix bullets (default): JSPWiki `**` bullets become Markdown nested
- *     bullets, and every `*` / `+` bullet marker becomes `-`;
- *   --fix tighten: empty lines between list items are removed, so lists render
- *     tight rather than spread out (a visible change: spacing only).
+ * Run the Markdown fix steps (#1332) across a page store — the migration form
+ * of Convert to NCM.
+ *
+ * The steps are the ones PageManager.normalizePageContent runs
+ * (src/converters/ncm/fix/): `--mode convert` (the default) runs every step,
+ * `--mode save` only the ones safe on an ordinary save, and
+ * `--steps id,id` exactly the named ones. The ids are listed by `--steps
+ * list`. Every step is idempotent, so pages already fixed are skipped.
  *
  * By default a DRY RUN: reads page files, never writes them, and produces a
- * report of every page and line that would change.
+ * report of every page that would change, with a few changed lines each.
  *
  * With `--apply` it writes the same changes through the page store, the only
  * way that keeps version history and the page index right: one new version per
@@ -18,16 +21,11 @@
  * Each page is re-read and re-converted at apply time; the dry-run report is
  * never used as input.
  *
- * The conversions are `convertJspwikiBullets` (src/utils/jspwikiBullets.ts) and
- * `normalizeBulletMarkers` (src/utils/bulletMarkers.ts), applied in that order.
- * Both are idempotent, so pages already converted are skipped. The first is
- * the one the on-save rewrite will use, so a migration and a later save cannot
- * disagree.
- *
  * Usage:
- *   npx tsx scripts/migrate-jspwiki-bullets.ts --data /path/to/pages \
- *     [--report private/jspwiki-bullets-dry-run.md] [--base-url https://host/view/]
- *   npx tsx scripts/migrate-jspwiki-bullets.ts --data /path/to/pages --apply
+ *   npx tsx scripts/fix-page-markdown.ts --data /path/to/pages \
+ *     [--steps jspwiki-bullets,bullet-markers] [--report private/fix-dry-run.md] \
+ *     [--base-url https://host/view/]
+ *   npx tsx scripts/fix-page-markdown.ts --data /path/to/pages --apply
  *
  * `--apply` boots the engine from the same `.env` the server uses, so `--data`
  * must be that instance's page directory; the script checks they match.
@@ -38,16 +36,27 @@
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
-import { convertJspwikiBullets } from '../src/utils/jspwikiBullets.js';
-import { normalizeBulletMarkers } from '../src/utils/bulletMarkers.js';
-import { tightenLists } from '../src/utils/tightenLists.js';
+import { structuredPatch } from 'diff';
+import { FIX_STEPS, runFixes, selectFixSteps, type RunFixesOptions } from '../src/converters/ncm/fix/index.js';
 
-/** `**` bullets first, then markers: the second step sees the first's output. */
-function convertPage(content: string): { content: string; changed: number; lines: number[] } {
-  const a = convertJspwikiBullets(content);
-  const b = normalizeBulletMarkers(a.content);
-  const lines = [...new Set([...a.lines, ...b.lines])].sort((x, y) => x - y);
-  return { content: b.content, changed: lines.length, lines };
+/** Up to `max` changed lines, as `before → after`, from a line diff. */
+function samples(before: string, after: string, max = 3): Array<{ line: number; before: string; after: string }> {
+  const out: Array<{ line: number; before: string; after: string }> = [];
+  for (const hunk of structuredPatch('', '', before, after, '', '', { context: 0 }).hunks) {
+    const removed = hunk.lines.filter((l) => l.startsWith('-')).map((l) => l.slice(1));
+    const added = hunk.lines.filter((l) => l.startsWith('+')).map((l) => l.slice(1));
+    for (let i = 0; i < Math.max(removed.length, added.length) && out.length < max; i++) {
+      const b = removed[i];
+      const a = added[i];
+      out.push({
+        line: hunk.oldStart + i,
+        before: b === undefined ? '(nothing)' : b.trim() === '' ? '(empty line)' : b,
+        after: a === undefined ? '(removed)' : a.trim() === '' ? '(empty line)' : a
+      });
+    }
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** The server's PID lock (src/app.ts). A live PID means the server is up. */
@@ -73,7 +82,7 @@ interface PageChange {
   file: string;
   author: string;
   isPrivate: boolean;
-  changed: number;
+  steps: string[];
   samples: Array<{ line: number; before: string; after: string }>;
 }
 
@@ -97,18 +106,30 @@ async function main(): Promise<void> {
     return i === -1 ? undefined : argv[i + 1];
   };
   const apply = argv.includes('--apply');
+  const stepsArg = get('--steps');
+  if (stepsArg === 'list') {
+    for (const s of FIX_STEPS) console.log(`${s.id}${s.safeOnSave ? ' (safe on save)' : ''}: ${s.summary}`);
+    return;
+  }
   const dataDir = get('--data');
   if (!dataDir || !(await fs.pathExists(dataDir))) {
     console.error('✗ --data <page store directory> is required and must exist');
     process.exit(1);
   }
-  const fix = get('--fix') ?? 'bullets';
-  if (fix !== 'bullets' && fix !== 'tighten') {
-    console.error('✗ --fix must be bullets or tighten');
+  const mode = get('--mode') ?? 'convert';
+  if (mode !== 'convert' && mode !== 'save') {
+    console.error('✗ --mode must be convert or save');
     process.exit(1);
   }
-  const convert = fix === 'tighten' ? tightenLists : convertPage;
-  const reportPath = get('--report') ?? `private/${fix}-dry-run.md`;
+  const options: RunFixesOptions = stepsArg ? { steps: stepsArg.split(',').map((s) => s.trim()) } : { mode };
+  let stepIds: string[];
+  try {
+    stepIds = selectFixSteps(options).map((s) => s.id);
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : String(err)} (see --steps list)`);
+    process.exit(1);
+  }
+  const reportPath = get('--report') ?? `private/fix-${apply ? 'applied' : 'dry-run'}.md`;
   const baseUrl = get('--base-url');
 
   let provider: ProviderLike | null = null;
@@ -138,7 +159,7 @@ async function main(): Promise<void> {
   const files = (await walk(dataDir)).sort();
   const failed: Array<{ title: string; error: string }> = [];
   const changes: PageChange[] = [];
-  let totalLines = 0;
+  const stepCounts = new Map<string, number>();
 
   for (const file of files) {
     const raw = await fs.readFile(file, 'utf8');
@@ -148,10 +169,8 @@ async function main(): Promise<void> {
     } catch {
       continue; // unparseable frontmatter is a page problem, not this migration's
     }
-    const result = convert(parsed.content);
-    if (!result.changed) continue;
-    const before = parsed.content.split('\n');
-    const after = result.content.split('\n');
+    const result = runFixes(parsed.content, options);
+    if (!result.changes.length) continue;
     const data = parsed.data as Record<string, unknown>;
     if (provider) {
       const title = String(data['title'] ?? '');
@@ -163,18 +182,14 @@ async function main(): Promise<void> {
         continue;
       }
     }
-    totalLines += result.changed;
+    for (const c of result.changes) stepCounts.set(c.step, (stepCounts.get(c.step) ?? 0) + 1);
     changes.push({
       title: String(data['title'] ?? path.basename(file, '.md')),
       file: path.relative(dataDir, file),
       author: String(data['author'] ?? ''),
       isPrivate: data['private'] === true || file.includes(`${path.sep}private${path.sep}`),
-      changed: result.changed,
-      samples: result.lines.slice(0, 3).map((n) => ({
-        line: n,
-        before: (fix === 'tighten' ? `${before[n - 2] ?? ''} ⏎ (empty) ⏎ ${before[n] ?? ''}` : before[n - 1]).replace(/\r/g, ''),
-        after: (fix === 'tighten' ? `${before[n - 2] ?? ''} ⏎ ${before[n] ?? ''}` : after[n - 1]).replace(/\r/g, '')
-      }))
+      steps: result.changes.map((c) => c.step),
+      samples: samples(parsed.content.replace(/\r/g, ''), result.content.replace(/\r/g, ''))
     });
   }
 
@@ -183,25 +198,24 @@ async function main(): Promise<void> {
   const privateOthers = changes.filter((c) => c.isPrivate && c.author && c.author !== 'jim' && c.author !== 'system');
 
   const out: string[] = [
-    `# ${fix === 'tighten' ? 'Tighten lists' : 'Bullet clean-up'}: ${apply ? 'applied' : 'dry run'}`,
+    `# Markdown fixes: ${apply ? 'applied' : 'dry run'}`,
     '',
     `Corpus: \`${dataDir}\`. Generated ${new Date().toISOString()}. ${apply ? 'Pages were saved as one version each by system, keeping lastModified.' : 'Nothing was written.'}`,
     '',
     `- Pages scanned: ${files.length}`,
+    `- Steps: ${stepIds.join(', ')}`,
     `- Pages ${apply ? 'changed' : 'that would change'}: ${changes.length}`,
-    `- Lines ${apply ? 'changed' : 'that would change'}: ${totalLines}`,
+    ...stepIds.map((id) => `  - ${id}: ${stepCounts.get(id) ?? 0}`),
     ...(apply ? [`- Pages that failed: ${failed.length}`] : []),
     `- Private pages of other users among them: ${privateOthers.length}`,
     '',
-    fix === 'tighten'
-      ? 'Each empty line between two items of the same list is removed, so the list renders tight. Lists with a real second paragraph in an item are left alone. Nothing else on the page changes.'
-      : 'Each `** item` line becomes `  - item` (`*** item` becomes `    - item`), and each `* item` or `+ item` becomes `- item` at the same indent. Nothing else on the page changes.',
+    ...FIX_STEPS.filter((st) => stepIds.includes(st.id)).map((st) => `- ${st.id}: ${st.summary}.`),
     '',
     '## Pages',
     ''
   ];
   for (const c of changes) {
-    out.push(`- ${link(c.title)}: ${c.changed} line${c.changed === 1 ? '' : 's'}${c.isPrivate ? ` (private, ${c.author || 'unknown'})` : ''}`);
+    out.push(`- ${link(c.title)}: ${c.steps.join(', ')}${c.isPrivate ? ` (private, ${c.author || 'unknown'})` : ''}`);
     for (const s of c.samples) {
       out.push(`  - line ${s.line}: \`${s.before.replace(/`/g, "'")}\` → \`${s.after.replace(/`/g, "'")}\``);
     }
@@ -215,14 +229,14 @@ async function main(): Promise<void> {
   await fs.ensureDir(path.dirname(reportPath));
   await fs.writeFile(reportPath, out.join('\n'), 'utf8');
 
-  console.log(`Scanned ${files.length} pages: ${changes.length} ${apply ? 'changed' : 'would change'} (${totalLines} lines); ${privateOthers.length} private pages of other users.${apply ? ` Failed: ${failed.length}.` : ''}`);
+  console.log(`Scanned ${files.length} pages: ${changes.length} ${apply ? 'changed' : 'would change'} (${stepIds.map((id) => `${id} ${stepCounts.get(id) ?? 0}`).join(', ')}); ${privateOthers.length} private pages of other users.${apply ? ` Failed: ${failed.length}.` : ''}`);
   console.log(`Report: ${reportPath}`);
   if (apply) process.exit(failed.length ? 1 : 0);
 }
 
-if (process.argv[1] && process.argv[1].endsWith('migrate-jspwiki-bullets.ts')) {
+if (process.argv[1] && process.argv[1].endsWith('fix-page-markdown.ts')) {
   main().catch((err: unknown) => {
-    console.error('✗ migrate-jspwiki-bullets failed:', err instanceof Error ? err.message : String(err));
+    console.error('✗ fix-page-markdown failed:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   });
 }

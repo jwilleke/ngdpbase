@@ -21,6 +21,7 @@ import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
 import { buildPageMutationAuditEvent, recordAuditEvent, type PageMutationOp } from '../utils/auditEvents.js';
+import { runFixes, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 
@@ -1228,6 +1229,29 @@ class PageManager extends BaseManager implements CatalogSource {
         (err) => logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
       );
     }
+  }
+
+  /**
+   * Run the Markdown fix steps over a page body (#1332).
+   *
+   * The one entry point for rewriting page text, so a save, Convert to NCM,
+   * import and migrations cannot disagree about what a page should become.
+   * `save` runs only the steps that rewrite text that is not Markdown at all
+   * (JSPWiki `**` bullets); `convert` runs every step, including the house
+   * style changes to valid Markdown. `steps` picks steps by id instead.
+   *
+   * Pure: nothing is saved. The result lists what each step changed, so the
+   * caller can tell the author.
+   *
+   * @param content - Page body, without frontmatter
+   * @param options - `mode` (default `convert`), or `steps` by id
+   * @returns The fixed body and the changes, empty when nothing changed
+   *
+   * @example
+   * const { content, changes } = pageManager.normalizePageContent(body, { mode: 'save' });
+   */
+  normalizePageContent(content: string, options: RunFixesOptions = {}): FixResult {
+    return runFixes(content, options);
   }
 
   /**
