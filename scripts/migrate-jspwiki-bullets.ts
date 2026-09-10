@@ -1,7 +1,10 @@
 #!/usr/bin/env tsx
 /**
- * Bullet clean-up across a page store (#1325, #1271 S1): JSPWiki `**` bullets
- * become Markdown nested bullets, and every `*` / `+` bullet marker becomes `-`.
+ * Page list clean-ups across a page store (#1325, #1271), one per run:
+ *   --fix bullets (default): JSPWiki `**` bullets become Markdown nested
+ *     bullets, and every `*` / `+` bullet marker becomes `-`;
+ *   --fix tighten: empty lines between list items are removed, so lists render
+ *     tight rather than spread out (a visible change: spacing only).
  *
  * By default a DRY RUN: reads page files, never writes them, and produces a
  * report of every page and line that would change.
@@ -37,6 +40,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import { convertJspwikiBullets } from '../src/utils/jspwikiBullets.js';
 import { normalizeBulletMarkers } from '../src/utils/bulletMarkers.js';
+import { tightenLists } from '../src/utils/tightenLists.js';
 
 /** `**` bullets first, then markers: the second step sees the first's output. */
 function convertPage(content: string): { content: string; changed: number; lines: number[] } {
@@ -98,7 +102,13 @@ async function main(): Promise<void> {
     console.error('✗ --data <page store directory> is required and must exist');
     process.exit(1);
   }
-  const reportPath = get('--report') ?? 'private/jspwiki-bullets-dry-run.md';
+  const fix = get('--fix') ?? 'bullets';
+  if (fix !== 'bullets' && fix !== 'tighten') {
+    console.error('✗ --fix must be bullets or tighten');
+    process.exit(1);
+  }
+  const convert = fix === 'tighten' ? tightenLists : convertPage;
+  const reportPath = get('--report') ?? `private/${fix}-dry-run.md`;
   const baseUrl = get('--base-url');
 
   let provider: ProviderLike | null = null;
@@ -138,7 +148,7 @@ async function main(): Promise<void> {
     } catch {
       continue; // unparseable frontmatter is a page problem, not this migration's
     }
-    const result = convertPage(parsed.content);
+    const result = convert(parsed.content);
     if (!result.changed) continue;
     const before = parsed.content.split('\n');
     const after = result.content.split('\n');
@@ -162,8 +172,8 @@ async function main(): Promise<void> {
       changed: result.changed,
       samples: result.lines.slice(0, 3).map((n) => ({
         line: n,
-        before: before[n - 1].replace(/\r$/, ''),
-        after: after[n - 1].replace(/\r$/, '')
+        before: (fix === 'tighten' ? `${before[n - 2] ?? ''} ⏎ (empty) ⏎ ${before[n] ?? ''}` : before[n - 1]).replace(/\r/g, ''),
+        after: (fix === 'tighten' ? `${before[n - 2] ?? ''} ⏎ ${before[n] ?? ''}` : after[n - 1]).replace(/\r/g, '')
       }))
     });
   }
@@ -173,7 +183,7 @@ async function main(): Promise<void> {
   const privateOthers = changes.filter((c) => c.isPrivate && c.author && c.author !== 'jim' && c.author !== 'system');
 
   const out: string[] = [
-    apply ? '# Bullet clean-up: applied' : '# Bullet clean-up: dry run',
+    `# ${fix === 'tighten' ? 'Tighten lists' : 'Bullet clean-up'}: ${apply ? 'applied' : 'dry run'}`,
     '',
     `Corpus: \`${dataDir}\`. Generated ${new Date().toISOString()}. ${apply ? 'Pages were saved as one version each by system, keeping lastModified.' : 'Nothing was written.'}`,
     '',
@@ -183,7 +193,9 @@ async function main(): Promise<void> {
     ...(apply ? [`- Pages that failed: ${failed.length}`] : []),
     `- Private pages of other users among them: ${privateOthers.length}`,
     '',
-    'Each `** item` line becomes `  - item` (`*** item` becomes `    - item`), and each `* item` or `+ item` becomes `- item` at the same indent. Nothing else on the page changes.',
+    fix === 'tighten'
+      ? 'Each empty line between two items of the same list is removed, so the list renders tight. Lists with a real second paragraph in an item are left alone. Nothing else on the page changes.'
+      : 'Each `** item` line becomes `  - item` (`*** item` becomes `    - item`), and each `* item` or `+ item` becomes `- item` at the same indent. Nothing else on the page changes.',
     '',
     '## Pages',
     ''
