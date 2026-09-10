@@ -28,7 +28,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
-import { getLeftMenu } from './helpers.js';
+import { getLeftMenu, journalPageName, findJournalEntrySlug } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -151,23 +151,21 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           ? req.query['date']
           : new Date().toISOString().slice(0, 10);
 
-        const slug = `journal-${username}-${date}`;
-
         const p = pm();
         if (!p) { res.status(503).send('PageManager not available'); return; }
 
         // If entry already exists for today, go straight to the standard editor
-        const existing = await p.getPageBySlug(slug);
-        if (existing) {
-          res.redirect(`/edit/${encodeURIComponent(slug)}`);
+        const existingSlug = await findJournalEntrySlug(p, date, username);
+        if (existingSlug) {
+          res.redirect(`/edit/${encodeURIComponent(existingSlug)}`);
           return;
         }
 
         // Create stub entry with journal frontmatter
         const uuid = uuidv4();
-        // #789: per-user title to avoid PageManager title-uniqueness collision
-        // when two users journal on the same date. Mirrors the per-user slug.
-        const title = `Journal — ${username} — ${date}`;
+        // #1329: title and slug are the same per-user name (#789 kept users apart).
+        const slug = journalPageName(date, username);
+        const title = slug;
         // #802 — Default Journal Visibility:
         //   1. user pref `journal.defaultPrivate` (if set, wins)
         //   2. deployment-wide `config.defaultPrivate` (fleet fallback)
@@ -192,10 +190,11 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           ...(defaultPrivate    ? { private: true }       : {})
         };
 
+        // #1328: empty, not ' ' — the author's first keystroke starts the line.
         const wikiCtx = new WikiContext(engine, {
           context:     WikiContext.CONTEXT.EDIT,
           pageName:    slug,
-          content:     ' ',
+          content:     '',
           userContext: await resolveUserContext(req)
         });
 

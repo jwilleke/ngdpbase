@@ -3,6 +3,41 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 
+/**
+ * Title and slug of a user's journal entry for a date (#1329).
+ *
+ * `2026-09-10-1-journal-jim` — the form the 345 entries imported from JSPWiki
+ * already use, so the whole history reads and sorts as one scheme. The `1` is
+ * the entry number within the day; the addon allows one entry per user per
+ * day, so it is always 1. The username keeps two users on the same day apart
+ * (#789).
+ */
+export function journalPageName(date: string, username: string): string {
+  return `${date}-1-journal-${username}`;
+}
+
+/** The slug entries were created under before #1329. */
+export function legacyJournalSlug(date: string, username: string): string {
+  return `journal-${username}-${date}`;
+}
+
+/**
+ * Slug of the user's existing entry for a date, or null.
+ *
+ * Looks under the legacy slug too: an entry started before the rename must be
+ * found and reopened, not duplicated under the new name.
+ */
+export async function findJournalEntrySlug(
+  pm: Pick<PageManager, 'getPageBySlug'>,
+  date: string,
+  username: string
+): Promise<string | null> {
+  for (const slug of [journalPageName(date, username), legacyJournalSlug(date, username)]) {
+    if (await pm.getPageBySlug(slug)) return slug;
+  }
+  return null;
+}
+
 function formatLeftMenuContent(content: string): string {
   content = content.replace(/<ul>/g, '<ul class="nav flex-column">');
   content = content.replace(/<li>/g, '<li class="nav-item">');

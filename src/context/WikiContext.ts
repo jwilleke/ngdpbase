@@ -321,7 +321,11 @@ class WikiContext {
     this.engine = engine;
     this.context = options.context || WikiContext.CONTEXT.NONE;
     this.pageName = options.pageName || null;
-    this.content = options.content || null;
+    // `??`, not `||`: an empty page body is real content, not an absent one.
+    // `||` turned '' into null, the save path crashed on it, and the journal
+    // addon worked around that by creating entries with a single space — which
+    // the author then typed after, storing ` # heading` (#1328).
+    this.content = options.content ?? null;
     this.userContext = options.userContext || null;
     this.request = options.request || null;
     this.response = options.response || null;

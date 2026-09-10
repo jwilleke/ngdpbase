@@ -75,6 +75,12 @@ describe('WikiContext', () => {
       expect(minimalContext.content).toBeNull();
       expect(minimalContext.userContext).toBeNull();
     });
+
+    // #1328: '' is an empty page, not a missing one. Coercing it to null made
+    // the save path crash, so callers padded new pages with a space.
+    test('keeps an empty body as an empty string', () => {
+      expect(new WikiContext(mockEngine, { content: '' }).content).toBe('');
+    });
   });
 
   describe('getContext', () => {

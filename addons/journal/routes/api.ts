@@ -21,6 +21,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
+import { journalPageName, findJournalEntrySlug } from './helpers.js';
 
 export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -65,15 +66,13 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
         const username = ctx.username!;
         const date = qs(req.query['date']) ?? new Date().toISOString().slice(0, 10);
-        const slug = `journal-${username}-${date}`;
-
         const p = pm();
         if (!p) { res.status(503).json({ error: 'PageManager not available' }); return; }
 
         // Redirect to existing entry if one already exists for this date
-        const existing = await p.getPageBySlug(slug);
-        if (existing) {
-          res.redirect(`/journal/${encodeURIComponent(slug)}/edit`);
+        const existingSlug = await findJournalEntrySlug(p, date, username);
+        if (existingSlug) {
+          res.redirect(`/journal/${encodeURIComponent(existingSlug)}/edit`);
           return;
         }
 
@@ -88,10 +87,9 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
         const defaultAuthorLock = config['defaultAuthorLock'] !== false;
         const uuid = uuidv4();
-        // #789: include username so two users journaling on the same day don't
-        // collide on the PageManager title-uniqueness check. Slug is already
-        // per-user (`journal-${username}-${date}`); title now mirrors that.
-        const title = `Journal — ${username} — ${date}`;
+        // #1329: title and slug are the same per-user name (#789 kept users apart).
+        const slug = journalPageName(date, username);
+        const title = slug;
         const now = new Date().toISOString();
 
         const metadata: Record<string, unknown> = {
@@ -107,10 +105,11 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
           ...(defaultPrivate ? { private: true } : {})
         };
 
+        // #1328: empty, not ' ' — the author's first keystroke starts the line.
         const wikiContext = new WikiContext(engine, {
           context:     WikiContext.CONTEXT.EDIT,
           pageName:    slug,
-          content:     ' ',
+          content:     '',
           userContext: await resolveUserContext(req)
         });
 
