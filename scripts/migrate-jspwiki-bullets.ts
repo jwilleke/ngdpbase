@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 /**
- * JSPWiki `**` bullets → Markdown nested bullets, across a page store (#1325).
+ * Bullet clean-up across a page store (#1325, #1271 S1): JSPWiki `**` bullets
+ * become Markdown nested bullets, and every `*` / `+` bullet marker becomes `-`.
  *
  * By default a DRY RUN: reads page files, never writes them, and produces a
  * report of every page and line that would change.
@@ -14,9 +15,11 @@
  * Each page is re-read and re-converted at apply time; the dry-run report is
  * never used as input.
  *
- * The conversion itself is `convertJspwikiBullets` (src/utils/jspwikiBullets.ts),
- * the same function the on-save rewrite will use, so the migration and future
- * saves cannot disagree.
+ * The conversions are `convertJspwikiBullets` (src/utils/jspwikiBullets.ts) and
+ * `normalizeBulletMarkers` (src/utils/bulletMarkers.ts), applied in that order.
+ * Both are idempotent, so pages already converted are skipped. The first is
+ * the one the on-save rewrite will use, so a migration and a later save cannot
+ * disagree.
  *
  * Usage:
  *   npx tsx scripts/migrate-jspwiki-bullets.ts --data /path/to/pages \
@@ -33,6 +36,15 @@ import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
 import { convertJspwikiBullets } from '../src/utils/jspwikiBullets.js';
+import { normalizeBulletMarkers } from '../src/utils/bulletMarkers.js';
+
+/** `**` bullets first, then markers: the second step sees the first's output. */
+function convertPage(content: string): { content: string; changed: number; lines: number[] } {
+  const a = convertJspwikiBullets(content);
+  const b = normalizeBulletMarkers(a.content);
+  const lines = [...new Set([...a.lines, ...b.lines])].sort((x, y) => x - y);
+  return { content: b.content, changed: lines.length, lines };
+}
 
 /** The server's PID lock (src/app.ts). A live PID means the server is up. */
 function serverRunning(): number | null {
@@ -126,7 +138,7 @@ async function main(): Promise<void> {
     } catch {
       continue; // unparseable frontmatter is a page problem, not this migration's
     }
-    const result = convertJspwikiBullets(parsed.content);
+    const result = convertPage(parsed.content);
     if (!result.changed) continue;
     const before = parsed.content.split('\n');
     const after = result.content.split('\n');
@@ -161,7 +173,7 @@ async function main(): Promise<void> {
   const privateOthers = changes.filter((c) => c.isPrivate && c.author && c.author !== 'jim' && c.author !== 'system');
 
   const out: string[] = [
-    apply ? '# JSPWiki `**` bullets: applied' : '# JSPWiki `**` bullets: dry run',
+    apply ? '# Bullet clean-up: applied' : '# Bullet clean-up: dry run',
     '',
     `Corpus: \`${dataDir}\`. Generated ${new Date().toISOString()}. ${apply ? 'Pages were saved as one version each by system, keeping lastModified.' : 'Nothing was written.'}`,
     '',
@@ -171,7 +183,7 @@ async function main(): Promise<void> {
     ...(apply ? [`- Pages that failed: ${failed.length}`] : []),
     `- Private pages of other users among them: ${privateOthers.length}`,
     '',
-    'Each `** item` line becomes `  - item` (`*** item` becomes `    - item`). Nothing else on the page changes.',
+    'Each `** item` line becomes `  - item` (`*** item` becomes `    - item`), and each `* item` or `+ item` becomes `- item` at the same indent. Nothing else on the page changes.',
     '',
     '## Pages',
     ''

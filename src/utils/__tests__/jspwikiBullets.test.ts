@@ -36,6 +36,10 @@ describe('convertJspwikiBullets', () => {
     expect(convertJspwikiBullets(md).lines).toEqual([6]);
   });
 
+  it('converts a ** item whose text starts with a no-break space', () => {
+    expect(convertJspwikiBullets('* a\n** \u00a0b').content).toBe('* a\n  - \u00a0b');
+  });
+
   it('preserves CRLF line endings', () => {
     const r = convertJspwikiBullets('* a\r\n** b\r\n');
     expect(r.content).toBe('* a\r\n  - b\r\n');

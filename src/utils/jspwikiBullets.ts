@@ -32,7 +32,8 @@ export interface JspwikiBulletResult {
 }
 
 const OPEN_FENCE = /^([ \t]*)(`{3,})[ \t]*[^\s`]*[^`]*$/;
-const JSPWIKI_BULLET = /^(\*{2,})[ \t]+(\S.*)$/;
+// `[^ \t]`, not `\S`: `\S` rejects a no-break space at the start of the text.
+const JSPWIKI_BULLET = /^(\*{2,})[ \t]+([^ \t].*)$/;
 
 export function convertJspwikiBullets(markdown: string): JspwikiBulletResult {
   const parts = markdown.split('\n');
