@@ -520,6 +520,14 @@ main p, main div, main span, main li {
     color: var(--text-content, #333);
 }
 
+/* A sub-list sits inside its parent item; the 1rem above is for the space
+   after a whole list. Bootstrap's reboot zeroes it for nested lists, but the
+   rule above is more specific and put it back, leaving a gap under every
+   sub-list that read as separate lists. */
+.markdown-body li > ul, .markdown-body li > ol {
+    margin-bottom: 0;
+}
+
 .markdown-body pre {
     padding: 1rem;
     background-color: var(--code-bg, var(--bg-secondary));
