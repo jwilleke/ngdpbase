@@ -35,11 +35,18 @@ NCM is a *profile* + a *normalization pass* layered on the existing machinery (`
 
 NCM = __CommonMark/GFM core__ (as rendered by the existing showdown config) __plus__ the ngdp wiki extensions supported by `MarkupParser`, constrained to a sanitizable, deterministic subset.
 
+The author-facing summary of what renders, and the house style NCM output follows, is the shipped help page __Markdown as we use it__ ([`required-pages/960066eb-27b4-4fac-a016-a4e1d64b645c.md`](../../required-pages/960066eb-27b4-4fac-a016-a4e1d64b645c.md)). The reasons behind each rule are in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
+
 ### 2.1 Constructs
 
 | Construct | NCM form | Backed by |
 |---|---|---|
-| Headings, emphasis, lists, code | CommonMark | showdown |
+| Headings, emphasis, lists, code | CommonMark, written in the house style: `#` headings, `__bold__` / `*italic*`, hyphen bullets, 2-space nesting (3 under a numbered item), numbered steps as `- 1 words`, ```` ```lang ```` fences. Output does not follow it everywhere yet ([#1332](https://github.com/jwilleke/ngdpbase/issues/1332)) | showdown |
+| Line breaks | A single newline is a break; `\\` forces one mid-line, `\\\` also clears floats. Raw `<br>` is refused on save | `MarkupParser` (Step 0.6), `SecurityFilter` `no-raw-br` |
+| Strikethrough, sub/superscript | `~~text~~`; `H~2~O`, `X^2^` (no spaces inside), `%%sub … /%` / `%%sup … /%` for longer spans | showdown options / extension, `MarkupParser` inline styles |
+| Emoji | `:shortcode:` | `MarkupParser` (Step 0.7) |
+| Style blocks | `%%class … /%` blocks, `%%(css) … /%` inline | `MarkupParser`, `JSPWikiPreprocessor` |
+| Section links | `[Text\|Page#section=Heading Text]`; heading IDs come from the plain heading text (`SectionUtils.headingSlug`) | `LinkParser`, `DOMLinkHandler` |
 | __Tables__ | __Up-convert (NCM v2).__ GFM pipe tables are rewritten on normalization to the rich JSPWiki canonical form — `\|\|Header\|\|`/`\|cell\|` rows wrapped in the configured style blocks (default `%%table-fit`/`-bordered`/`-striped`/`-hover`/`sortable`), giving imported tables fit/border/zebra/hover + client-side sorting. Style classes are operator-configurable via `ngdpbase.markdown.ncm.table.default-classes` (set `[]` for no wrapper). Up-convert only — there is no down-convert. Idempotent: the styled form has no GFM separator row, so re-normalizing converts nothing. Existing JSPWiki tables in a body are never matched/re-wrapped. *(v1 left both forms as passthrough; the v1→v2 profile bump is applied to new normalizations only — existing pages migrate explicitly, never silently on read.)* | `converters/ncm/tables.ts`, `JSPWikiPreprocessor`, `public/js/tableSort.js` |
 | __Links__ | JSPWiki form (see §2.4): internal `[Display\|PageName]`, external `[Display\|https://url\|target="_blank"]`, InterWiki `[Display\|Site:Ref]` — __not__ CommonMark `[text](url)` | `LinkParserHandler` |
 | __Footnotes__ | `[^id]` reference + `[^id]: text` definition (single- and multi-paragraph). __Conversion transfers definitions to the sidecar footnote list__ ([#1125](https://github.com/jwilleke/ngdpbase/issues/1125)): the convert-existing path moves `[^id]: text` into `FootnoteManager` records (id preserved verbatim — refs must keep resolving), leaves the refs in the body, and appends `[{FootnotesPlugin}]` when absent. A colliding sidecar id keeps the body definition and warns. The extraction (`converters/ncm/footnotes.ts`) is pure; the sidecar write lives with the caller, mirroring the §2.2 image split. | `FootnoteManager`, `FootnotesPlugin`, `showdown-footnotes-fixed` |
