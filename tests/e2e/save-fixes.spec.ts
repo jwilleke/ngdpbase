@@ -2,11 +2,13 @@ import { test, expect } from '@playwright/test';
 import { TEST_PAGE_PREFIX, deletePage, waitForPageReady } from './fixtures/helpers';
 
 /**
- * #1332 — an ordinary save fixes JSPWiki `**` bullets and tells the author.
+ * #1332 — an ordinary save fixes JSPWiki `{{{ }}}` code and `**` bullets and
+ * tells the author.
  *
- * `** item` is not Markdown: it renders as literal stars. The save rewrites it
- * to a nested `-` bullet (the one step safe on any save), and the page the
- * author lands on says so. Valid Markdown on the same page is left as written.
+ * Neither is Markdown: `** item` renders as literal stars and `{{{` as literal
+ * braces. The save rewrites them (the steps safe on any save), and the page
+ * the author lands on says so. The `**` inside the code block stays as typed,
+ * and valid Markdown on the same page is left as written.
  */
 test.describe('Save-time Markdown fixes', () => {
   test.use({ storageState: './tests/e2e/.auth/user.json' });
@@ -55,21 +57,26 @@ test.describe('Save-time Markdown fixes', () => {
 
     const contentArea = page.locator('textarea#editorContent, textarea[name="content"], .CodeMirror textarea');
     await contentArea.first().waitFor({ state: 'visible', timeout: 10000 });
-    await contentArea.first().fill('* Laboratory tests:\n** Skin testing\n** Blood tests\n\n* Other');
+    await contentArea.first().fill('* Laboratory tests:\n** Skin testing\n** Blood tests\n\n* Other\n\n{{{\n** Example.One\n}}}');
 
     const saveButton = page.locator('button:has-text("Save"), button[type="submit"]:has-text("Save")');
     await Promise.all([
-      page.waitForURL(/\/view\/.*[?&]fixed=jspwiki-bullets/, { timeout: 30000 }),
+      page.waitForURL(/\/view\/.*[?&]fixed=jspwiki-code-markers(?:,|%2C)jspwiki-bullets/, { timeout: 30000 }),
       saveButton.first().click()
     ]);
     await waitForPageReady(page);
 
     const notice = page.getByTestId('fix-notice');
     await expect(notice).toBeVisible();
+    await expect(notice).toContainText('JSPWiki {{{ }}} code markers became Markdown code');
     await expect(notice).toContainText('JSPWiki ** bullets became nested - bullets');
 
     // Rendered as a list nested under "Laboratory tests", not literal stars.
     await expect(page.locator('li li', { hasText: 'Skin testing' })).toBeVisible();
     await expect(page.locator('body')).not.toContainText('** Skin testing');
+
+    // The {{{ }}} block is a code block, and the ** inside it stays as typed.
+    await expect(page.locator('pre code', { hasText: '** Example.One' })).toBeVisible();
+    await expect(page.locator('article.markdown-body')).not.toContainText('{{{');
   });
 });

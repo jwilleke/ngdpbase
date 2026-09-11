@@ -2,10 +2,89 @@
  * #1332 — the fix steps, one describe per step, and the registry.
  */
 import { describe, it, expect } from 'vitest';
+import { jspwikiCodeMarkers } from '../jspwikiCodeMarkers.js';
 import { jspwikiBullets } from '../jspwikiBullets.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
 import { FIX_STEPS, runFixes, selectFixSteps } from '../index.js';
+
+describe('jspwiki-code-markers', () => {
+  const apply = (md: string) => jspwikiCodeMarkers.apply(md);
+
+  it('turns a {{{ }}} block into a fenced code block', () => {
+    const r = apply('Text\n{{{\ncode line\n}}}\nAfter');
+    expect(r.content).toBe('Text\n```\ncode line\n```\nAfter');
+    expect(r.lines).toEqual([2, 4]);
+  });
+
+  it('moves text after {{{ onto the first code line', () => {
+    expect(apply('{{{GetHash() = 0x0\nhashMerkleRoot = 0x4\n}}}').content).toBe('```\nGetHash() = 0x0\nhashMerkleRoot = 0x4\n```');
+    expect(apply('{{{{\n  "id": 1\n}\n}}}').content).toBe('```\n{\n  "id": 1\n}\n```');
+  });
+
+  it('closes at the first }}}, keeping text before and after it on their own lines', () => {
+    expect(apply('{{{\na\n  vMerkleTree: 4a5e1e}}}\n\n## Next').content).toBe('```\na\n  vMerkleTree: 4a5e1e\n```\n\n## Next');
+    expect(apply('%%prettify\n{{{\nx = 1\n}}} /%\nAfter').content).toBe('%%prettify\n```\nx = 1\n```\n/%\nAfter');
+  });
+
+  it('leaves JSPWiki syntax inside the block as code, for the steps that run after it', () => {
+    const r = runFixes('{{{\n* One\n** One.One\n}}}\n** real bullet', { mode: 'save' });
+    expect(r.content).toBe('```\n* One\n** One.One\n```\n  - real bullet');
+  });
+
+  it('closes a {{{ block at a ``` line', () => {
+    expect(apply('{{{export A=1\nkubectl config view\n```\nAfter').content).toBe('```\nexport A=1\nkubectl config view\n```\nAfter');
+  });
+
+  it('keeps the opener\'s indent on both fences', () => {
+    expect(apply('- item\n\n  {{{\n  code\n  }}}').content).toBe('- item\n\n  ```\n  code\n  ```');
+  });
+
+  it('turns {{{x}}} on one line into an inline code span', () => {
+    const r = apply('| Plugins | {{{[{LastModified}] and [{lastmodified}]}}} both work |');
+    expect(r.content).toBe('| Plugins | `[{LastModified}] and [{lastmodified}]` both work |');
+    expect(r.lines).toEqual([1]);
+    expect(apply('|{{{ {PageName}.txt }}} ,`.properties` | {{{ {PageName}.txt}}}').content).toBe('|`{PageName}.txt` ,`.properties` | `{PageName}.txt`');
+  });
+
+  it('uses a longer backtick run when the code holds a backtick', () => {
+    expect(apply('see {{{a `b` c}}} here').content).toBe('see ``a `b` c`` here');
+    expect(apply('see {{{`x}}} here').content).toBe('see `` `x `` here');
+  });
+
+  it('leaves braces inside code alone', () => {
+    const md = '```\n{{{\n}}}\n```\n\nText `{{{x}}}` here\n\n    {{{ indented code }}}';
+    expect(apply(md)).toEqual({ content: md, lines: [] });
+  });
+
+  it('leaves }}} with no opener alone', () => {
+    const md = '{\\displaystyle {\\boldsymbol {\\tau }}}, the letter tau';
+    expect(apply(md)).toEqual({ content: md, lines: [] });
+  });
+
+  it('leaves a {{{ that opens mid-line and closes on a later line alone', () => {
+    const md = '- the formula {{{\nCH3CH2CO2H}}}[^1].';
+    expect(apply(md)).toEqual({ content: md, lines: [] });
+  });
+
+  it('changes nothing on a page with an unclosed {{{ block', () => {
+    const md = '{{{a}}}\n\n{{{\ncode to the end';
+    expect(apply(md)).toEqual({ content: md, lines: [] });
+  });
+
+  it('leaves an HTML block alone', () => {
+    expect(apply('<div>\n{{{x}}}\n</div>\n\n{{{y}}}').content).toBe('<div>\n{{{x}}}\n</div>\n\n`y`');
+  });
+
+  it('preserves CRLF line endings', () => {
+    expect(apply('{{{a\r\nb}}}\r\nc {{{d}}}\r\n').content).toBe('```\r\na\r\nb\r\n```\r\nc `d`\r\n');
+  });
+
+  it('is idempotent', () => {
+    const once = apply('{{{x\ny}}} /%\n\nand {{{z}}}').content;
+    expect(apply(once).lines).toEqual([]);
+  });
+});
 
 describe('jspwiki-bullets (#1325)', () => {
   const apply = (md: string) => jspwikiBullets.apply(md);
@@ -169,7 +248,7 @@ describe('tighten-lists', () => {
 
 describe('registry', () => {
   it('save mode runs only the steps safe on save', () => {
-    expect(selectFixSteps({ mode: 'save' }).map((s) => s.id)).toEqual(['jspwiki-bullets']);
+    expect(selectFixSteps({ mode: 'save' }).map((s) => s.id)).toEqual(['jspwiki-code-markers', 'jspwiki-bullets']);
     expect(selectFixSteps({ mode: 'convert' })).toEqual(FIX_STEPS);
   });
 
