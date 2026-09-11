@@ -154,7 +154,7 @@ Every rewrite of page text toward the house style lives in `src/converters/ncm/f
 - `PageManager.normalizePageContent(body, { mode: 'save' | 'convert' })` runs them and returns the new body and what each step changed. App code reaches it two ways:
   - `savePageWithContext` runs `save` mode on every save, before validation, and returns `{ content, fixes }`. The editor route sends the author to `/view/<page>?fixed=<step ids>`, and the view shows each step's summary (the words come from the registry, never the URL).
   - `convertPageToNcm(raw)` runs `convert` mode and then `normalizeExistingPageToNcm`, for Convert to NCM (preview and apply), `POST /api/page/ingest` and the MCP `create_page` / `update_page` tools. Each step that changed something is also a `converter-note` warning.
-- Routes and the MCP server never call the fix module or the NCM normalizers themselves (`funnelCoverage.test.ts` enforces it). `ImportManager` does not run the fix steps yet.
+- Routes and the MCP server never call the fix module or the NCM normalizers themselves (`funnelCoverage.test.ts` enforces it). `ImportManager` runs `convert` mode on every file import in an NCM format (HTML, JSPWiki, Markdown, docx) and on URL imports, through `normalizePageContent`, with each step as a `converter-note` warning in the import preview and run notification.
 - `scripts/fix-page-markdown.ts` runs the same steps across a page store (dry run by default, `--apply` writes one `system` version per page and keeps `lastModified`).
 - A new step: add a file with a `FixStep`, register it in `FIX_STEPS` (order matters), test it in `fix/__tests__/steps.test.ts` including idempotence, and dry-run it over a real page store before shipping.
 

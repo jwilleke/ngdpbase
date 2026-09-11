@@ -510,6 +510,65 @@ See [OtherPage] for more.`;
     });
   });
 
+  // #1332: imports get every Markdown fix step, through PageManager — the
+  // same steps as Convert to NCM — and each one shows up as a note.
+  describe('Markdown fix steps (#1332)', () => {
+    it('fixes the imported body and reports each step', async () => {
+      const { default: PageManager } = await import('../PageManager');
+      const pageManager = new PageManager({ getManager: () => null });
+      const engine = {
+        getManager: vi.fn((name: string) => {
+          if (name === 'PageManager') return pageManager;
+          if (name === 'AttachmentManager') return { uploadAttachment: mockUploadAttachment };
+          return { getProperty: vi.fn().mockReturnValue('./data/pages') };
+        })
+      };
+      const manager = new ImportManager(engine);
+      await manager.initialize();
+
+      const sourceFile = path.join(testDir, 'Lists.md');
+      await fs.writeFile(sourceFile, '# Lists\n\n* Tests:\n** Skin\n\n* Other\n');
+      const targetDir = path.join(testDir, 'output');
+      await fs.ensureDir(targetDir);
+
+      const result = await manager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
+        sourceDir: testDir,
+        targetDir,
+        format: 'markdown',
+        dryRun: false
+      });
+
+      const written = await fs.readFile(result.targetPath, 'utf-8');
+      expect(written).toContain('- Tests:\n  - Skin\n- Other');
+      expect(result.warnings).toEqual(expect.arrayContaining([
+        'converter-note: JSPWiki ** bullets became nested - bullets (jspwiki-bullets)',
+        'converter-note: Every bullet now starts with "-" (bullet-markers)',
+        'converter-note: Empty lines between list items were removed (tighten-lists)'
+      ]));
+      await manager.shutdown();
+    });
+
+    it('leaves formats the steps cannot read alone', async () => {
+      const { default: PageManager } = await import('../PageManager');
+      const pageManager = new PageManager({ getManager: () => null });
+      const normalize = vi.spyOn(pageManager, 'normalizePageContent');
+      const engine = {
+        getManager: vi.fn((name: string) => (name === 'PageManager' ? pageManager : { getProperty: vi.fn().mockReturnValue('./data/pages') }))
+      };
+      const manager = new ImportManager(engine);
+      await manager.initialize();
+      manager.registerConverter(new MockConverter());
+      const sourceFile = path.join(testDir, 'x.mock');
+      await fs.writeFile(sourceFile, '* a\n** b');
+
+      await manager.importSinglePage(sourceFile, { actorContext: IMPORTER, sourceDir: testDir, format: 'mock', dryRun: true });
+
+      expect(normalize).not.toHaveBeenCalled();
+      await manager.shutdown();
+    });
+  });
+
   describe('frontmatter defaults', () => {
     it('should include slug, system-category, user-keywords, lastModified in frontmatter', async () => {
       const content = '!!! Year\nSome content';

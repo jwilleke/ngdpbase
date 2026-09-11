@@ -33,7 +33,7 @@ import fs from 'fs-extra';
 import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import { IContentConverter, ConversionResult } from '../converters/IContentConverter.js';
+import { IContentConverter, ConversionResult, type ConversionWarning } from '../converters/IContentConverter.js';
 import { normalizeToNcm, ncmToConversionResult, DEFAULT_TABLE_CLASSES } from '../converters/ncm/index.js';
 import { notifyNcmConversion } from '../utils/ncmNotify.js';
 import { writeRunSummary, type ImportRunSummary } from '../utils/importRunSummary.js';
@@ -657,6 +657,11 @@ class ImportManager extends BaseManager {
     } else {
       conversionResult = converter.convert(content);
     }
+    // #1332: an imported page gets every Markdown fix step, the same as
+    // Convert to NCM. Only the NCM formats: the fix steps read Markdown.
+    if (converter.convertBuffer || formatId === 'html' || formatId === 'jspwiki' || formatId === 'markdown') {
+      conversionResult.content = this.applyFixSteps(conversionResult.content, conversionResult.warnings);
+    }
 
     // The NCM markdown path does not stamp provenance the way MarkdownConverter
     // does; preserve `importedFrom: markdown` for parity with the JSPWiki/HTML
@@ -1071,9 +1076,10 @@ class ImportManager extends BaseManager {
 
     // Build frontmatter and content with source citation
     const importDate = (conversionResult.metadata['importedAt'] as string).split('T')[0];
-    const sourceCitation = `\n\n----\n* [#1] - [${pageTitle}|${url}|target='_blank'] - based on information obtained ${importDate}\n`;
-    const finalContent = this.buildUrlFrontmatter(conversionResult, pageUuid)
-      + '\n\n' + conversionResult.content + sourceCitation;
+    const sourceCitation = `\n\n----\n- [#1] - [${pageTitle}|${url}|target='_blank'] - based on information obtained ${importDate}\n`;
+    // #1332: the same Markdown fix steps as a file import or Convert to NCM.
+    const body = this.applyFixSteps(conversionResult.content + sourceCitation, conversionResult.warnings);
+    const finalContent = this.buildUrlFrontmatter(conversionResult, pageUuid) + '\n\n' + body;
 
     // Determine target path
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -1108,6 +1114,25 @@ class ImportManager extends BaseManager {
       warnings: conversionResult.warnings.map(w => `${w.kind}: ${w.detail}`),
       written
     };
+  }
+
+  /**
+   * Run every Markdown fix step over an imported body (#1332), through
+   * PageManager — the steps Convert to NCM runs. Each step that changed
+   * something is added to `warnings` as a `converter-note`, which the import
+   * preview and the run notification already show. Without a PageManager the
+   * body is returned unchanged.
+   *
+   * @param body - Page body, without frontmatter
+   * @param warnings - The conversion's warnings, appended to
+   * @returns The fixed body
+   */
+  private applyFixSteps(body: string, warnings: ConversionWarning[]): string {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (typeof pageManager?.normalizePageContent !== 'function') return body;
+    const fixed = pageManager.normalizePageContent(body, { mode: 'convert' });
+    for (const c of fixed.changes) warnings.push({ kind: 'converter-note', detail: `${c.summary} (${c.step})` });
+    return fixed.content;
   }
 
   /**

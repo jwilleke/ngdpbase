@@ -41,6 +41,15 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
     expect(importManager).toMatch(/normalizeToNcm\(content, formatId/);
   });
 
+  test('both import paths run the fix steps through PageManager (#1332)', () => {
+    const file = region(importManager, 'async importSinglePage(', '\n  async ');
+    const url = region(importManager, 'async importFromUrl(', '\n  async ');
+    expect(file).toContain('this.applyFixSteps(');
+    expect(url).toContain('this.applyFixSteps(');
+    expect(region(importManager, 'private applyFixSteps(', '\n  }\n')).toContain("normalizePageContent(body, { mode: 'convert' })");
+    expect(importManager).not.toContain('converters/ncm/fix');
+  });
+
   test('agent ingest (POST /api/page/ingest) normalizes', () => {
     const ingest = region(wikiRoutes, 'async ingestPageMarkdown(', '\n  async ');
     expect(ingest).toContain('convertPageToNcm(');
