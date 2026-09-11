@@ -637,10 +637,7 @@ class ImportManager extends BaseManager {
     // up-convert, and stamps ncmVersion), bridged back to ConversionResult.
     // Any other format (e.g. test mocks) keeps the direct converter path.
     // Table style classes are operator-configurable (§2.1, NCM v2).
-    const tableClasses = configManager?.getProperty(
-      'ngdpbase.markdown.ncm.table.default-classes',
-      DEFAULT_TABLE_CLASSES
-    ) as string[] ?? DEFAULT_TABLE_CLASSES;
+    const tableClasses = this.ncmTableClasses();
     let conversionResult: ConversionResult;
     if (converter.convertBuffer) {
       // #1131: a binary source (docx). The utf-8 read above was zip garbage —
@@ -818,7 +815,7 @@ class ImportManager extends BaseManager {
       if (overwriteExistingUuid !== undefined) {
         await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
       } else if (isLivePagesTarget) {
-        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
+        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options.actorContext);
       } else {
         await fs.ensureDir(path.dirname(targetPath));
         await fs.writeFile(targetPath, finalContent, 'utf-8');
@@ -909,15 +906,15 @@ class ImportManager extends BaseManager {
     pageTitle: string,
     conversionResult: ConversionResult,
     pageUuid: string | undefined,
-    options: ImportOptions
+    actorContext: ActorContext
   ): Promise<void> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot import page');
     }
     const metadata = this.buildImportMetadata(conversionResult, pageUuid);
-    metadata.author = (metadata.author) || options.actorContext.username;
-    metadata.editor = options.actorContext.username;
+    metadata.author = (metadata.author) || actorContext.username;
+    metadata.editor = actorContext.username;
     // See overwriteExistingPage: undefined values fail the YAML dump.
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];
@@ -958,16 +955,19 @@ class ImportManager extends BaseManager {
   /**
    * Import a page from a URL
    *
-   * Fetches the URL, converts HTML to Markdown using the html converter,
-   * and writes the page file with schema.org metadata in frontmatter.
+   * Fetches the URL and imports it like a file import of the same HTML
+   * (#1337): the NCM normalizer (links, tables, `ncmVersion`), the #1332 fix
+   * steps, then a save through PageManager — validated, audited as the
+   * importer, versioned and indexed. The fetched page's schema.org metadata
+   * and the source URL are kept in frontmatter.
    *
    * @param url - URL to fetch and import
-   * @param options - Optional overrides (title, dryRun)
+   * @param options - The importer's context, and optional title and dryRun
    * @returns Imported file info
    */
   async importFromUrl(
     url: string,
-    options: { title?: string; dryRun?: boolean } = {}
+    options: { actorContext: ActorContext; title?: string; dryRun?: boolean }
   ): Promise<ImportedFile> {
     // Validate URL
     let parsedUrl: URL;
@@ -1022,8 +1022,10 @@ class ImportManager extends BaseManager {
       throw new Error('HTML converter not registered');
     }
 
-    // Convert HTML to Markdown
-    const conversionResult = converter.convert(html);
+    // #1337: through the NCM funnel, like a file import of the same HTML —
+    // links, the table up-convert and the ncmVersion stamp, not the bare
+    // converter.
+    const conversionResult = ncmToConversionResult(normalizeToNcm(html, 'html', { tableClasses: this.ncmTableClasses() }));
 
     // Override title if provided
     if (options.title) {
@@ -1078,28 +1080,21 @@ class ImportManager extends BaseManager {
     const importDate = (conversionResult.metadata['importedAt'] as string).split('T')[0];
     const sourceCitation = `\n\n----\n- [#1] - [${pageTitle}|${url}|target='_blank'] - based on information obtained ${importDate}\n`;
     // #1332: the same Markdown fix steps as a file import or Convert to NCM.
-    const body = this.applyFixSteps(conversionResult.content + sourceCitation, conversionResult.warnings);
-    const finalContent = this.buildUrlFrontmatter(conversionResult, pageUuid) + '\n\n' + body;
+    conversionResult.content = this.applyFixSteps(conversionResult.content + sourceCitation, conversionResult.warnings);
+    conversionResult.metadata['importedFrom'] = 'url';
+    const finalContent = this.buildFrontmatter(conversionResult, pageUuid) + '\n\n' + conversionResult.content;
 
-    // Determine target path
+    // Where the provider keeps a new page, for the report.
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const defaultPagesDir = configManager?.getProperty('ngdpbase.page.provider.filesystem.storagedir', './data/pages') as string ?? './data/pages';
     const targetPath = path.join(path.resolve(defaultPagesDir), `${pageUuid}.md`);
 
-    // Write file (unless dry run)
+    // #1337: saved through PageManager, never a raw file write — so the page is
+    // validated, audited as the importer, versioned and indexed, exactly as a
+    // file import into the live pages directory (#880).
     const written = !options.dryRun;
     if (written) {
-      await fs.ensureDir(path.dirname(targetPath));
-      await fs.writeFile(targetPath, finalContent, 'utf-8');
-
-      // Refresh page index
-      try {
-        const pageManager = this.engine.getManager<PageManager>('PageManager');
-        await pageManager?.refreshPageList();
-        logger.info('[ImportManager] Page index refreshed after URL import');
-      } catch (refreshErr) {
-        logger.warn('[ImportManager] Failed to refresh page index after URL import:', refreshErr);
-      }
+      await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options.actorContext);
     }
 
     logger.info(`[ImportManager] URL import ${options.dryRun ? 'preview' : 'complete'}: "${pageTitle}" from ${url}`);
@@ -1135,77 +1130,13 @@ class ImportManager extends BaseManager {
     return fixed.content;
   }
 
-  /**
-   * Build YAML frontmatter for URL imports with schema.org namespace
-   */
-  private buildUrlFrontmatter(
-    result: ConversionResult,
-    pageUuid: string
-  ): string {
-    const lines = ['---'];
-
-    // Title
-    if (result.metadata['title']) {
-      lines.push(`title: ${this.yamlValue(result.metadata['title'] as string)}`);
-    }
-
-    // UUID
-    lines.push(`uuid: ${pageUuid}`);
-
-    // Source URL
-    if (result.metadata['sourceUrl']) {
-      lines.push(`sourceUrl: "${result.metadata['sourceUrl'] as string}"`);
-    }
-
-    // Import timestamp
-    if (result.metadata['importedAt']) {
-      lines.push(`importedAt: "${result.metadata['importedAt'] as string}"`);
-    }
-
-    // System category
-    lines.push(`system-category: ${(result.metadata['system-category'] as string) || 'general'}`);
-
-    // Schema.org metadata (nested under schema key)
-    const schema = result.metadata['schema'] as Record<string, unknown> | undefined;
-    if (schema && Object.keys(schema).length > 0) {
-      lines.push('schema:');
-      for (const [key, value] of Object.entries(schema)) {
-        if (value === undefined || value === null || value === '') continue;
-        if (Array.isArray(value)) {
-          lines.push(`  ${key}:`);
-          for (const item of value) {
-            lines.push(`    - ${this.yamlValue(String(item))}`);
-          }
-        } else {
-          const strValue = typeof value === 'string' ? value : JSON.stringify(value);
-          lines.push(`  ${key}: ${this.yamlValue(strValue)}`);
-        }
-      }
-    }
-
-    lines.push('---');
-    return lines.join('\n');
-  }
-
-  /**
-   * Quote a YAML string value if needed
-   */
-  private yamlValue(value: string): string {
-    if (
-      value.includes(':') ||
-      value.includes('#') ||
-      value.includes("'") ||
-      value.includes('"') ||
-      value.includes('\n') ||
-      value.startsWith(' ') ||
-      value.startsWith('[') ||
-      value.startsWith('{') ||
-      // Quote numeric-only strings to prevent YAML parsing as numbers
-      /^-?\d+(\.\d+)?$/.test(value)
-    ) {
-      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-    }
-    return value;
+  /** Style classes for up-converted tables (NCM §2.1), operator-configurable. */
+  private ncmTableClasses(): string[] {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    return configManager?.getProperty(
+      'ngdpbase.markdown.ncm.table.default-classes',
+      DEFAULT_TABLE_CLASSES
+    ) as string[] ?? DEFAULT_TABLE_CLASSES;
   }
 
   /**

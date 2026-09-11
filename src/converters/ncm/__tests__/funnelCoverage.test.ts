@@ -41,6 +41,13 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
     expect(importManager).toMatch(/normalizeToNcm\(content, formatId/);
   });
 
+  test('URL import normalizes and saves through PageManager, never a raw file write (#1337)', () => {
+    const url = region(importManager, 'async importFromUrl(', '\n  async ');
+    expect(url).toMatch(/normalizeToNcm\(html, 'html'/);
+    expect(url).toContain('this.createPageThroughPipeline(');
+    expect(url).not.toContain('fs.writeFile');
+  });
+
   test('both import paths run the fix steps through PageManager (#1332)', () => {
     const file = region(importManager, 'async importSinglePage(', '\n  async ');
     const url = region(importManager, 'async importFromUrl(', '\n  async ');

@@ -13230,7 +13230,9 @@ ${panes}
       }
 
       const importManager = this.engine.getManager('ImportManager');
+      // #1337: the importer's own context — the save is validated and audited as them.
       const result = await importManager.importFromUrl(url, {
+        actorContext: currentUser,
         title: title || undefined,
         dryRun: true
       });
@@ -13277,7 +13279,9 @@ ${panes}
       }
 
       const importManager = this.engine.getManager('ImportManager');
+      // #1337: the importer's own context — the save is validated and audited as them.
       const result = await importManager.importFromUrl(url, {
+        actorContext: currentUser,
         title: title || undefined,
         dryRun: false
       });
@@ -13288,6 +13292,16 @@ ${panes}
         skipped: !!result.skippedReason
       });
     } catch (err: unknown) {
+      // #1337: the import now saves through PageManager, so content the
+      // save-time rules refuse comes back as a 400 with the violations — the
+      // same shape the editor and the ingest API answer with.
+      if (err instanceof PageContentValidationError) {
+        return res.status(400).json({
+          success: false,
+          error: `The page was not imported: ${err.validationErrors.map((e) => e.message).join('; ')}`,
+          validationErrors: err.validationErrors
+        });
+      }
       logger.error('Error executing URL import:', err);
       return res.status(500).json({
         success: false,
