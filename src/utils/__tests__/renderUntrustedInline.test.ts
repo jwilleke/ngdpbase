@@ -71,8 +71,17 @@ describe('what a hostile commenter writes does not survive', () => {
   });
 
   test('javascript: hrefs are dropped', async () => {
+    // markdown-it (#1273) refuses to build a link to a javascript: URL at all
+    // (validateLink), so the markup stays inert text — nothing is clickable.
+    // showdown built the <a> and SecurityFilter stripped the href.
     const html = await renderUntrustedInline('[click](javascript:alert(1))', makeEngine());
-    expect(html).not.toContain('javascript:');
+    expect(html).not.toMatch(/<a\b/);
+    expect(html).not.toMatch(/href\s*=\s*["']?\s*javascript:/i);
+  });
+
+  test('a raw javascript: link in HTML is sanitized too', async () => {
+    const html = await renderUntrustedInline('<a href="javascript:alert(1)">x</a>', makeEngine());
+    expect(html).not.toMatch(/href\s*=\s*["']?\s*javascript:/i);
   });
 });
 

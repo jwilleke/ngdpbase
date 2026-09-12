@@ -9,8 +9,10 @@
  * trusted — so this profile composes the SAME components differently rather
  * than building a second renderer:
  *
- * - the same showdown core renders CommonMark (bold, code, lists,
- *   blockquotes, links, line breaks);
+ * - the same markdown-it core renders CommonMark (bold, code, lists,
+ *   blockquotes, links, line breaks) — the `untrusted` profile of
+ *   src/rendering/markdownConverter.ts (#1273): no heading ids, task lists
+ *   or sub/superscript;
  * - MarkupParser never runs, so plugin/variable/wikitag/wiki-link syntax is
  *   inert BY CONSTRUCTION — nothing to disable, nothing to forget;
  * - the same SecurityFilter sanitizes the output, with its config FORCED on
@@ -24,7 +26,7 @@
  * fully escaped text — the pre-#1123 behaviour — never unsanitized HTML.
  */
 
-import showdown from 'showdown';
+import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import SecurityFilter from '../parsers/filters/SecurityFilter.js';
 import { guardShowdownInput } from './showdownGuard.js';
 import logger from './logger.js';
@@ -34,7 +36,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 const PROFILE_FORBIDDEN_TAGS = ['iframe', 'img', 'figure', 'figcaption', 'details', 'summary'];
 
 interface ProfileRenderer {
-  converter: showdown.Converter;
+  converter: MarkdownConverter;
   filter: SecurityFilter;
 }
 
@@ -42,15 +44,7 @@ const renderers = new WeakMap<object, Promise<ProfileRenderer | null>>();
 
 async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null> {
   try {
-    const converter = new showdown.Converter({
-      tables: true,
-      strikethrough: true,
-      simpleLineBreaks: true,
-      ghCodeBlocks: true,
-      // Never these: the two showdown XSS advisories require them (#1032).
-      tablesHeaderId: false,
-      completeHTMLDocument: false
-    });
+    const converter = createMarkdownConverter('untrusted');
 
     const filter = new SecurityFilter();
     await filter.initialize({ engine });
@@ -100,9 +94,8 @@ export async function renderUntrustedInline(markdown: string, engine: WikiEngine
     const renderer = await pending;
     if (!renderer) return fallback();
 
-    // #1000/#599: showdown's link parser is ReDoS-vulnerable (CVE-2024-1899,
-    // no upstream patch) and a comment is arbitrary unauthenticated-shaped
-    // input — the guard is more important here than anywhere.
+    // #1000/#599: the showdown ReDoS guard stays on this input until #1274
+    // retires it; it is harmless on markdown-it input.
     const html = renderer.converter.makeHtml(guardShowdownInput(markdown));
     return await renderer.filter.process(html, { pageName: 'untrusted-inline' });
   } catch (err) {
