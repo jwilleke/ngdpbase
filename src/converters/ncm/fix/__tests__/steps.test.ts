@@ -28,7 +28,7 @@ describe('jspwiki-code-markers', () => {
   });
 
   it('leaves JSPWiki syntax inside the block as code, for the steps that run after it', () => {
-    const r = runFixes('{{{\n* One\n** One.One\n}}}\n** real bullet', { mode: 'save' });
+    const r = runFixes('{{{\n* One\n** One.One\n}}}\n** real bullet', { steps: ['jspwiki-code-markers', 'jspwiki-bullets'] });
     expect(r.content).toBe('```\n* One\n** One.One\n```\n  - real bullet');
   });
 
@@ -273,9 +273,8 @@ describe('tighten-lists', () => {
 });
 
 describe('registry', () => {
-  it('save mode runs only the steps safe on save', () => {
-    expect(selectFixSteps({ mode: 'save' }).map((s) => s.id)).toEqual(['jspwiki-code-markers', 'jspwiki-bullets']);
-    expect(selectFixSteps({ mode: 'convert' })).toEqual(FIX_STEPS);
+  it('selects every step by default', () => {
+    expect(selectFixSteps()).toEqual(FIX_STEPS);
   });
 
   it('picks steps by id, in registry order, and rejects an unknown id', () => {
@@ -288,11 +287,6 @@ describe('registry', () => {
     expect(r.content).toBe('- a\n  - b\n- c');
     expect(r.changes.map((c) => c.step)).toEqual(['jspwiki-bullets', 'bullet-markers', 'tighten-lists']);
     expect(runFixes(r.content).changes).toEqual([]);
-  });
-
-  it('save mode leaves valid Markdown alone', () => {
-    const md = '* a\n\n* b';
-    expect(runFixes(md, { mode: 'save' })).toEqual({ content: md, changes: [] });
   });
 
   it('every step is idempotent on a mixed page', () => {

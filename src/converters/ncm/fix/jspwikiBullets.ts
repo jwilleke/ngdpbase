@@ -1,5 +1,5 @@
 /**
- * JSPWiki nested bullets → Markdown nested bullets (#1325). Safe on save.
+ * JSPWiki nested bullets → Markdown nested bullets (#1325).
  *
  * JSPWiki writes a second-level bullet as `** item` and a third as `*** item`.
  * That is not Markdown: CommonMark reads `** item` as a paragraph starting
@@ -26,7 +26,6 @@ const JSPWIKI_BULLET = /^(\*{2,})[ \t]+([^ \t].*)$/;
 export const jspwikiBullets: FixStep = {
   id: 'jspwiki-bullets',
   summary: 'JSPWiki ** bullets became nested - bullets',
-  safeOnSave: true,
   apply(body) {
     if (!/^\*{2,}[ \t]/m.test(body)) return { content: body, lines: [] };
     const map = buildBlockMap(body);

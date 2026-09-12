@@ -21,7 +21,7 @@ import { pageToArticle } from '../utils/pageToArticle.js';
 import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
 import { buildPageMutationAuditEvent, recordAuditEvent, type PageMutationOp } from '../utils/auditEvents.js';
-import { FIX_STEPS, runFixes, type FixChange, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
+import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
 import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
@@ -74,12 +74,10 @@ export interface PageSaveOptions {
   };
 }
 
-/** What {@link PageManager.savePageWithContext} wrote (#1332). */
+/** What {@link PageManager.savePageWithContext} wrote. */
 export interface PageSaveResult {
-  /** The body as saved — the caller's text after the save-safe fix steps. */
+  /** The body as saved — always the caller's text: a save never rewrites it (#1332). */
   content: string;
-  /** The fix steps that changed the body; empty when it was saved as given. */
-  fixes: FixChange[];
 }
 
 /** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
@@ -982,21 +980,11 @@ class PageManager extends BaseManager implements CatalogSource {
 
     const pageName = wikiContext.pageName;
 
-    // #1332: the fix steps safe on any save — they rewrite only text that is
-    // not Markdown at all (JSPWiki `**` bullets), so the author loses nothing
-    // and the previous version keeps the original. Run at the door, like the
-    // audit record below, so no save path can skip them; the caller gets the
-    // list back to tell the author, and validation checks the text that is
-    // actually written.
-    let content = wikiContext.content;
-    let fixes: FixChange[] = [];
-    if (typeof content === 'string' && content) {
-      const fixed = this.normalizePageContent(content, { mode: 'save' });
-      if (fixed.changes.length) {
-        content = fixed.content;
-        fixes = fixed.changes;
-      }
-    }
+    // #1332: a save writes exactly what was typed. Converting page text —
+    // JSPWiki syntax included — happens only in the NCM funnel (import,
+    // ingest, Convert to NCM, migrations), never here: saves must stay fast
+    // (#1333) and conversion has one owner.
+    const content = wikiContext.content;
 
     await this.assertContentPasses(pageName, content, {
       userName: (wikiContext as unknown as { userContext?: { username?: string } }).userContext?.username,
@@ -1259,7 +1247,7 @@ class PageManager extends BaseManager implements CatalogSource {
       );
     }
 
-    return { content, fixes };
+    return { content };
   }
 
   /**
@@ -1280,7 +1268,7 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   convertPageToNcm(raw: string): PageConvertResult {
     const parsed = matter(raw);
-    const fixed = this.normalizePageContent(parsed.content, { mode: 'convert' });
+    const fixed = this.normalizePageContent(parsed.content);
     const source = fixed.changes.length ? matter.stringify(fixed.content, parsed.data) : raw;
     const ncm = normalizeExistingPageToNcm(source);
     return {
@@ -1294,34 +1282,22 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * The plain-language summary of each fix step id, for telling an author
-   * what a save changed. Unknown ids are skipped, so a hand-edited URL can
-   * only ever show a real summary.
-   *
-   * @param ids - Fix step ids, as in {@link PageSaveResult.fixes}
-   */
-  fixStepSummaries(ids: readonly string[]): string[] {
-    return FIX_STEPS.filter((s) => ids.includes(s.id)).map((s) => s.summary);
-  }
-
-  /**
    * Run the Markdown fix steps over a page body (#1332).
    *
-   * The one entry point for rewriting page text, so a save, Convert to NCM,
+   * The one entry point for rewriting page text, so Convert to NCM, ingest,
    * import and migrations cannot disagree about what a page should become.
-   * `save` runs only the steps that rewrite text that is not Markdown at all
-   * (JSPWiki `**` bullets); `convert` runs every step, including the house
-   * style changes to valid Markdown. `steps` picks steps by id instead.
+   * Every step runs, in registry order; `steps` picks steps by id instead.
+   * An ordinary save never calls this.
    *
    * Pure: nothing is saved. The result lists what each step changed, so the
-   * caller can tell the author.
+   * caller can report it.
    *
    * @param content - Page body, without frontmatter
-   * @param options - `mode` (default `convert`), or `steps` by id
+   * @param options - `steps` by id; default every step
    * @returns The fixed body and the changes, empty when nothing changed
    *
    * @example
-   * const { content, changes } = pageManager.normalizePageContent(body, { mode: 'save' });
+   * const { content, changes } = pageManager.normalizePageContent(body);
    */
   normalizePageContent(content: string, options: RunFixesOptions = {}): FixResult {
     return runFixes(content, options);

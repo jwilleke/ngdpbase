@@ -53,7 +53,7 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
     const url = region(importManager, 'async importFromUrl(', '\n  async ');
     expect(file).toContain('this.applyFixSteps(');
     expect(url).toContain('this.applyFixSteps(');
-    expect(region(importManager, 'private applyFixSteps(', '\n  }\n')).toContain("normalizePageContent(body, { mode: 'convert' })");
+    expect(region(importManager, 'private applyFixSteps(', '\n  }\n')).toContain('normalizePageContent(body)');
     expect(importManager).not.toContain('converters/ncm/fix');
   });
 
@@ -75,8 +75,17 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
 
   test('PageManager.convertPageToNcm runs the fix steps and the normalizer', () => {
     const convert = region(pageManager, '  convertPageToNcm(raw: string)', '\n  }\n');
-    expect(convert).toContain("mode: 'convert'");
+    expect(convert).toContain('this.normalizePageContent(parsed.content)');
     expect(convert).toContain('normalizeExistingPageToNcm(');
+  });
+
+  // 2026-09-12 decision: conversion lives in the NCM funnel only. An ordinary
+  // save writes what was typed — no fix steps, no normalizer (#1333: saves stay fast).
+  test('a save never converts page text (#1332)', () => {
+    const save = region(pageManager, '  async savePageWithContext(', '\n  }\n');
+    expect(save).not.toContain('normalizePageContent(');
+    expect(save).not.toContain('runFixes(');
+    expect(save).not.toContain('normalizeExistingPageToNcm(');
   });
 
   test('no route or MCP tool calls the normalizer or the fix module directly (#1332)', () => {

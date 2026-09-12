@@ -6,21 +6,21 @@
  * it must. Steps run in registry order, each on the previous step's output.
  *
  * In the app only managers call this — PageManager through
- * `normalizePageContent` — so an ordinary save, Convert to NCM and import all
- * apply the same rules. The offline migration (scripts/fix-page-markdown.ts)
+ * `normalizePageContent` — so Convert to NCM, ingest and import all apply the
+ * same rules. An ordinary save never runs them. The offline migration (scripts/fix-page-markdown.ts)
  * calls {@link runFixes} directly: the same steps, without booting the engine
  * for a dry run. It works on the page body; frontmatter is the caller's.
  *
  * @module converters/ncm/fix
  */
 
-import type { FixMode, FixResult, FixStep } from './types.js';
+import type { FixResult, FixStep } from './types.js';
 import { jspwikiCodeMarkers } from './jspwikiCodeMarkers.js';
 import { jspwikiBullets } from './jspwikiBullets.js';
 import { bulletMarkers } from './bulletMarkers.js';
 import { tightenLists } from './tightenLists.js';
 
-export type { FixMode, FixResult, FixStep, FixChange, FixStepResult } from './types.js';
+export type { FixResult, FixStep, FixChange, FixStepResult } from './types.js';
 export { buildBlockMap } from './blocks.js';
 export type { BlockMap, ListInfo, ListItem, ItemBlock } from './blocks.js';
 
@@ -33,21 +33,16 @@ export type { BlockMap, ListInfo, ListItem, ItemBlock } from './blocks.js';
 export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, jspwikiBullets, bulletMarkers, tightenLists];
 
 export interface RunFixesOptions {
-  /** Which steps: `save` runs the safe ones, `convert` all. Ignored when `steps` is given. */
-  mode?: FixMode;
-  /** Run exactly these step ids, in registry order. */
+  /** Run exactly these step ids, in registry order. Default: every step. */
   steps?: readonly string[];
 }
 
-/** The steps a mode or an explicit id list selects, in registry order. */
+/** The steps an id list selects (default every step), in registry order. */
 export function selectFixSteps(options: RunFixesOptions = {}): FixStep[] {
-  if (options.steps) {
-    const unknown = options.steps.filter((id) => !FIX_STEPS.some((s) => s.id === id));
-    if (unknown.length) throw new Error(`Unknown fix step: ${unknown.join(', ')}`);
-    return FIX_STEPS.filter((s) => options.steps?.includes(s.id));
-  }
-  const mode = options.mode ?? 'convert';
-  return FIX_STEPS.filter((s) => mode === 'convert' || s.safeOnSave);
+  if (!options.steps) return [...FIX_STEPS];
+  const unknown = options.steps.filter((id) => !FIX_STEPS.some((s) => s.id === id));
+  if (unknown.length) throw new Error(`Unknown fix step: ${unknown.join(', ')}`);
+  return FIX_STEPS.filter((s) => options.steps?.includes(s.id));
 }
 
 /** Run the selected steps over a page body. */

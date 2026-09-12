@@ -8,15 +8,6 @@
 </div>
 <% } %>
 
-<%# #1332: the save tidied text that was not Markdown. The previous version
-    keeps the author's original, so this informs rather than warns. %>
-<% if (typeof fixNotice !== 'undefined' && fixNotice && fixNotice.length) { %>
-<div class="alert alert-info alert-dismissible fade show mx-3 mt-3" role="status" data-testid="fix-notice">
-    <i class="fas fa-magic me-2"></i>Saving tidied this page: <%= fixNotice.join('; ') %>. The page history has the text as you wrote it.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-<% } %>
-
 <%# Slice 6a of #760 (#765) — JSON-LD structured-data block. Replaces the
     previous microdata (`itemscope itemtype=...`) used here per Decision 9 of
     #755 (2026-05-20): "Structured-data is JSON-LD only, not HTML microdata.

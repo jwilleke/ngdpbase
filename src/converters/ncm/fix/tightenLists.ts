@@ -1,6 +1,5 @@
 /**
  * Remove empty lines between list items, so the list renders "tight" (#1271).
- * Convert only.
  *
  * In CommonMark one empty line anywhere between the items of a list makes the
  * whole list "loose": every item's text is wrapped in a paragraph and the list
@@ -34,7 +33,6 @@ import { buildBlockMap, isBlank, joinLines, type BlockMap, type ListInfo } from 
 export const tightenLists: FixStep = {
   id: 'tighten-lists',
   summary: 'Empty lines between list items were removed',
-  safeOnSave: false,
   apply(body) {
     const map = buildBlockMap(body);
     const remove = new Set<number>();

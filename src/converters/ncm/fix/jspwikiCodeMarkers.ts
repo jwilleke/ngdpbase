@@ -1,5 +1,5 @@
 /**
- * JSPWiki `{{{ }}}` code markers → Markdown code (#1332). Safe on save.
+ * JSPWiki `{{{ }}}` code markers → Markdown code (#1332).
  *
  * JSPWiki marks preformatted text with `{{{` and `}}}`. That is not Markdown:
  * the renderer shows the braces and reads the text inside as page markup, so
@@ -92,7 +92,6 @@ function convertInline(line: string): string {
 export const jspwikiCodeMarkers: FixStep = {
   id: 'jspwiki-code-markers',
   summary: 'JSPWiki {{{ }}} code markers became Markdown code',
-  safeOnSave: true,
   apply(body) {
     if (!body.includes('{{{') && !body.includes('}}}')) return { content: body, lines: [] };
     const map = buildBlockMap(body);

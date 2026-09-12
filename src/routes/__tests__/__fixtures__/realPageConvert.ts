@@ -7,10 +7,9 @@ import PageManager from '../../../managers/PageManager';
 
 const real = new PageManager({ getManager: () => null });
 
-/** Add the real `convertPageToNcm` and `fixStepSummaries` to a PageManager mock, in place. */
+/** Add the real `convertPageToNcm` to a PageManager mock, in place. */
 export function withRealPageConvert<T extends Record<string, unknown>>(pageManager: T): T {
   return Object.assign(pageManager, {
-    convertPageToNcm: vi.fn((raw: string) => real.convertPageToNcm(raw)),
-    fixStepSummaries: vi.fn((ids: readonly string[]) => real.fixStepSummaries(ids))
+    convertPageToNcm: vi.fn((raw: string) => real.convertPageToNcm(raw))
   });
 }

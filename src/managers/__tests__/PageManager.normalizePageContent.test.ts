@@ -1,6 +1,6 @@
 /**
- * #1332 — PageManager owns the Markdown fix steps: `save` runs only the steps
- * safe on an ordinary save, `convert` runs them all. Pure — nothing is saved.
+ * #1332 — PageManager owns the Markdown fix steps, run by Convert to NCM,
+ * ingest and import. Pure — nothing is saved. An ordinary save never runs them.
  */
 import PageManager from '../PageManager';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -16,14 +16,7 @@ function makeEngine(): WikiEngine {
 describe('PageManager.normalizePageContent', () => {
   const page = '* Tests:\n** Skin\n\n* Other';
 
-  it('save mode fixes JSPWiki ** bullets and leaves valid Markdown alone', () => {
-    const pm = new PageManager(makeEngine());
-    const r = pm.normalizePageContent(page, { mode: 'save' });
-    expect(r.content).toBe('* Tests:\n  - Skin\n\n* Other');
-    expect(r.changes).toEqual([{ step: 'jspwiki-bullets', summary: expect.any(String), lines: [2] }]);
-  });
-
-  it('convert mode, the default, runs every step', () => {
+  it('runs every step by default', () => {
     const pm = new PageManager(makeEngine());
     const r = pm.normalizePageContent(page);
     expect(r.content).toBe('- Tests:\n  - Skin\n- Other');
@@ -42,7 +35,8 @@ describe('PageManager.normalizePageContent', () => {
   });
 });
 
-describe('PageManager.savePageWithContext runs the save-safe steps at the door (#1332)', () => {
+// 2026-09-12 decision: conversion lives in the NCM funnel only; saves stay fast (#1333).
+describe('PageManager.savePageWithContext writes the text as typed (#1332)', () => {
   function makeSaver() {
     const provider = {
       getPage: vi.fn(async () => null),
@@ -55,27 +49,19 @@ describe('PageManager.savePageWithContext runs the save-safe steps at the door (
     return { pm, provider, ctx };
   }
 
-  it('writes the fixed body and returns what changed', async () => {
+  it('saves JSPWiki syntax unchanged', async () => {
     const { pm, provider, ctx } = makeSaver();
-    const r = await pm.savePageWithContext(ctx('* Tests:\n** Skin\n\n* Other'), { title: 'P' });
-    expect(provider.savePage).toHaveBeenCalledWith('P', '* Tests:\n  - Skin\n\n* Other', expect.anything());
-    expect(r.content).toBe('* Tests:\n  - Skin\n\n* Other');
-    expect(r.fixes.map((f) => f.step)).toEqual(['jspwiki-bullets']);
-  });
-
-  it('never applies the convert-only steps on an ordinary save', async () => {
-    const { pm, provider, ctx } = makeSaver();
-    const md = '* a\n\n* b';
+    const md = '* Tests:\n** Skin\n\n{{{\ncode\n}}}\n\n* Other';
     const r = await pm.savePageWithContext(ctx(md), { title: 'P' });
     expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything());
-    expect(r.fixes).toEqual([]);
+    expect(r).toEqual({ content: md });
   });
 
   it('leaves a metadata-only save alone', async () => {
     const { pm, provider, ctx } = makeSaver();
     const r = await pm.savePageWithContext(ctx(null), { title: 'P' });
     expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything());
-    expect(r.fixes).toEqual([]);
+    expect(r).toEqual({ content: null });
   });
 });
 
@@ -97,10 +83,5 @@ describe('PageManager.convertPageToNcm (#1332)', () => {
     const twice = pm.convertPageToNcm(once);
     expect(twice.content).toBe(once);
     expect(twice.fixes).toEqual([]);
-  });
-
-  it('names fix steps for the after-save notice, skipping unknown ids', () => {
-    const pm = new PageManager(makeEngine());
-    expect(pm.fixStepSummaries(['jspwiki-bullets', '<script>'])).toEqual(['JSPWiki ** bullets became nested - bullets']);
   });
 });

@@ -2,21 +2,20 @@ import { test, expect } from '@playwright/test';
 import { TEST_PAGE_PREFIX, deletePage, waitForPageReady } from './fixtures/helpers';
 
 /**
- * #1332 — an ordinary save fixes JSPWiki `{{{ }}}` code and `**` bullets and
- * tells the author.
+ * #1332 — an ordinary save writes exactly what was typed.
  *
- * Neither is Markdown: `** item` renders as literal stars and `{{{` as literal
- * braces. The save rewrites them (the steps safe on any save), and the page
- * the author lands on says so. The `**` inside the code block stays as typed,
- * and valid Markdown on the same page is left as written.
+ * Converting page text, JSPWiki syntax included, happens only in the NCM
+ * funnel (import, ingest, Convert to NCM, migrations); a save never rewrites
+ * it and never adds a notice (decision 2026-09-12; saves must stay fast, #1333).
  */
-test.describe('Save-time Markdown fixes', () => {
+test.describe('Save keeps the text as typed', () => {
   test.use({ storageState: './tests/e2e/.auth/user.json' });
 
   // Page creation + edit + save + index update, as in location-plugin.spec.ts.
   test.setTimeout(60000);
 
-  const pageName = `${TEST_PAGE_PREFIX}-SaveFixes-${Date.now()}`;
+  const pageName = `${TEST_PAGE_PREFIX}-SaveAsTyped-${Date.now()}`;
+  const typed = '* Laboratory tests:\n** Skin testing\n\n{{{\n** Example.One\n}}}';
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(120000);
@@ -26,7 +25,7 @@ test.describe('Save-time Markdown fixes', () => {
     await context.close();
   });
 
-  test('JSPWiki ** bullets become a nested list, with a notice', async ({ page }) => {
+  test('JSPWiki ** bullets and {{{ }}} are saved unchanged, with no notice', async ({ page }) => {
     await page.goto('/create');
     await page.waitForLoadState('domcontentloaded');
 
@@ -57,26 +56,20 @@ test.describe('Save-time Markdown fixes', () => {
 
     const contentArea = page.locator('textarea#editorContent, textarea[name="content"], .CodeMirror textarea');
     await contentArea.first().waitFor({ state: 'visible', timeout: 10000 });
-    await contentArea.first().fill('* Laboratory tests:\n** Skin testing\n** Blood tests\n\n* Other\n\n{{{\n** Example.One\n}}}');
+    await contentArea.first().fill(typed);
 
     const saveButton = page.locator('button:has-text("Save"), button[type="submit"]:has-text("Save")');
     await Promise.all([
-      page.waitForURL(/\/view\/.*[?&]fixed=jspwiki-code-markers(?:,|%2C)jspwiki-bullets/, { timeout: 30000 }),
+      page.waitForURL(/\/view\//, { timeout: 30000 }),
       saveButton.first().click()
     ]);
     await waitForPageReady(page);
+    expect(page.url()).not.toContain('fixed=');
 
-    const notice = page.getByTestId('fix-notice');
-    await expect(notice).toBeVisible();
-    await expect(notice).toContainText('JSPWiki {{{ }}} code markers became Markdown code');
-    await expect(notice).toContainText('JSPWiki ** bullets became nested - bullets');
-
-    // Rendered as a list nested under "Laboratory tests", not literal stars.
-    await expect(page.locator('li li', { hasText: 'Skin testing' })).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('** Skin testing');
-
-    // The {{{ }}} block is a code block, and the ** inside it stays as typed.
-    await expect(page.locator('pre code', { hasText: '** Example.One' })).toBeVisible();
-    await expect(page.locator('article.markdown-body')).not.toContainText('{{{');
+    // The stored text is what was typed.
+    await page.goto(`/edit/${encodeURIComponent(pageName)}`);
+    const editor = page.locator('textarea#editorContent, textarea[name="content"]');
+    await editor.first().waitFor({ state: 'attached', timeout: 10000 });
+    expect((await editor.first().inputValue()).replace(/\r\n/g, '\n').trim()).toBe(typed);
   });
 });

@@ -171,7 +171,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     broken.provider = provider;
 
     await expect(broken.savePageWithContext(context('Still Saves'), { title: 'Still Saves' }))
-      .resolves.toEqual({ content: 'body', fixes: [] });
+      .resolves.toEqual({ content: 'body' });
     await settle();
     expect(provider.savePage).toHaveBeenCalled();
   });

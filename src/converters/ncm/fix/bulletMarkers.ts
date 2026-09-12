@@ -1,5 +1,5 @@
 /**
- * Bullet markers → the house style, `- ` (#1271 decision S1). Convert only.
+ * Bullet markers → the house style, `- ` (#1271 decision S1).
  *
  * CommonMark accepts `*`, `+` and `-` as bullet markers, and starts a NEW list
  * whenever the marker changes. Imported JSPWiki pages use `* item`; pages
@@ -29,7 +29,6 @@ function itemPlaces(map: BlockMap): string {
 export const bulletMarkers: FixStep = {
   id: 'bullet-markers',
   summary: 'Every bullet now starts with "-"',
-  safeOnSave: false,
   apply(body) {
     if (!/^[ \t>*+\-.)\d]*[*+](?:[ \t]|$)/m.test(body)) return { content: body, lines: [] };
     const map = buildBlockMap(body);

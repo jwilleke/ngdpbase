@@ -315,8 +315,6 @@ interface IPageManager {
   ): Promise<PageSaveResult>;
   /** #1332: NCM conversion with every fix step — Convert to NCM and ingest go through here. */
   convertPageToNcm(raw: string): PageConvertResult;
-  /** #1332: plain-language summaries of fix step ids, for the after-save notice. */
-  fixStepSummaries(ids: readonly string[]): string[];
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
@@ -2939,12 +2937,6 @@ ${panes}
         : _unknownTagsParam
           ? `This page contains unrecognised fenced code block language tag(s): ${_unknownTagsParam.replace(/,/g, ', ')}. Add them to <code>ngdpbase.markup.fenced-code-tags</code> in configuration if they are valid, or change the tag in the page content.`
           : null;
-      // #1332: the save that brought the author here fixed their text. Only
-      // step ids come from the URL; the words come from the step registry, so
-      // a hand-made link cannot put its own text on the page.
-      const fixNotice = typeof req.query.fixed === 'string' && req.query.fixed
-        ? pageManager.fixStepSummaries(req.query.fixed.split(','))
-        : [];
       const sectionEditingEnabled =
         canEdit && !!userContext?.preferences?.['display.sectionEditing'];
 
@@ -3104,7 +3096,6 @@ ${panes}
         lastModified: metadata?.lastModified,
         referringPages: [], // TODO: Implement backlink detection
         warningMessage,
-        fixNotice,
         extraPageMetaBar
       });
     } catch (error: unknown) {
@@ -4247,7 +4238,6 @@ ${panes}
       const warnParams = new URLSearchParams();
       if (saveWarning) warnParams.set('warning', 'github-page');
       if (unknownTagWarning) warnParams.set('unknown-tags', unknownTagWarning);
-      if (saved.fixes.length) warnParams.set('fixed', saved.fixes.map((f) => f.step).join(','));
       const warnParam = warnParams.size > 0 ? `?${warnParams.toString()}` : '';
       res.redirect(`/view/${encodeURIComponent(redirectName)}${warnParam}`);
     } catch (err: unknown) {

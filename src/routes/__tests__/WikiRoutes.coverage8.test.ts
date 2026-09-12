@@ -255,7 +255,7 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content, fixes: [] }));
+  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);

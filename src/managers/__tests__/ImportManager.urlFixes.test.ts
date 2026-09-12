@@ -38,7 +38,7 @@ describe('ImportManager.importFromUrl', () => {
 
     const result = await manager.importFromUrl('https://example.org/lists', { actorContext: IMPORTER, dryRun: true });
 
-    expect(normalize).toHaveBeenCalledWith(expect.stringContaining('- [#1] - [Lists|https://example.org/lists'), { mode: 'convert' });
+    expect(normalize).toHaveBeenCalledWith(expect.stringContaining('- [#1] - [Lists|https://example.org/lists'));
     const body = normalize.mock.results[0].value as { content: string };
     expect(body.content).not.toMatch(/^[*+] /m);
     expect(result.written).toBe(false);

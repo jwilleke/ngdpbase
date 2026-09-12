@@ -1125,7 +1125,7 @@ class ImportManager extends BaseManager {
   private applyFixSteps(body: string, warnings: ConversionWarning[]): string {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (typeof pageManager?.normalizePageContent !== 'function') return body;
-    const fixed = pageManager.normalizePageContent(body, { mode: 'convert' });
+    const fixed = pageManager.normalizePageContent(body);
     for (const c of fixed.changes) warnings.push({ kind: 'converter-note', detail: `${c.summary} (${c.step})` });
     return fixed.content;
   }

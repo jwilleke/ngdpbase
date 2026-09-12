@@ -4,9 +4,8 @@
  * of Convert to NCM.
  *
  * The steps are the ones PageManager.normalizePageContent runs
- * (src/converters/ncm/fix/): `--mode convert` (the default) runs every step,
- * `--mode save` only the ones safe on an ordinary save, and
- * `--steps id,id` exactly the named ones. The ids are listed by `--steps
+ * (src/converters/ncm/fix/): every step by default, or `--steps id,id`
+ * exactly the named ones. The ids are listed by `--steps
  * list`. Every step is idempotent, so pages already fixed are skipped.
  *
  * By default a DRY RUN: reads page files, never writes them, and produces a
@@ -108,7 +107,7 @@ async function main(): Promise<void> {
   const apply = argv.includes('--apply');
   const stepsArg = get('--steps');
   if (stepsArg === 'list') {
-    for (const s of FIX_STEPS) console.log(`${s.id}${s.safeOnSave ? ' (safe on save)' : ''}: ${s.summary}`);
+    for (const s of FIX_STEPS) console.log(`${s.id}: ${s.summary}`);
     return;
   }
   const dataDir = get('--data');
@@ -116,12 +115,7 @@ async function main(): Promise<void> {
     console.error('✗ --data <page store directory> is required and must exist');
     process.exit(1);
   }
-  const mode = get('--mode') ?? 'convert';
-  if (mode !== 'convert' && mode !== 'save') {
-    console.error('✗ --mode must be convert or save');
-    process.exit(1);
-  }
-  const options: RunFixesOptions = stepsArg ? { steps: stepsArg.split(',').map((s) => s.trim()) } : { mode };
+  const options: RunFixesOptions = stepsArg ? { steps: stepsArg.split(',').map((s) => s.trim()) } : {};
   let stepIds: string[];
   try {
     stepIds = selectFixSteps(options).map((s) => s.id);
