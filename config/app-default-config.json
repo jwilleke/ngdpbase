@@ -1178,6 +1178,12 @@
       "description": "Machine provenance: page created by the capture bookmarklet (#881/#893)",
       "category": "provenance",
       "enabled": true
+    },
+    "test-page": {
+      "label": "test-page",
+      "description": "Purpose: a test page — one content shape the unit tests render through the real pipeline; admin-only via audience (#1355)",
+      "category": "provenance",
+      "enabled": true
     }
   },
   "_comment_catalog_ai": "AI-based term suggestion (Phase 4 — requires an LLM addon to activate)",
