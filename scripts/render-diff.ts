@@ -41,14 +41,10 @@ import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
 import showdown from 'showdown';
-import MarkdownIt from 'markdown-it';
-import anchor from 'markdown-it-anchor';
-import sub from 'markdown-it-sub';
-import sup from 'markdown-it-sup';
-import taskLists from 'markdown-it-task-lists';
+import type MarkdownIt from 'markdown-it';
+import { buildMarkdownIt as buildPageMarkdownIt } from '../src/rendering/markdownConverter.js';
 import { parseHTML } from 'linkedom';
 import { guardShowdownInput } from '../src/utils/showdownGuard.js';
-import { headingSlug } from '../src/utils/SectionUtils.js';
 import showdownSubSuperscript from '../src/extensions/showdown-sub-superscript.js';
 import showdownHeadingIds from '../src/extensions/showdown-heading-ids.js';
 
@@ -80,65 +76,12 @@ export function buildShowdown(): showdown.Converter {
 }
 
 /**
- * The candidate, configured to match rather than to be idiomatic.
- *
- * `breaks: true` mirrors `simpleLineBreaks`. `html: true` is required because
- * the corpus contains inline HTML that showdown passes through. `linkify` stays
- * off because showdown does not autolink bare URLs and turning it on would
- * manufacture differences the corpus never asked for.
- *
- * The anchor slugify is `SectionUtils.headingSlug` itself, not a copy of it:
- * section links (#500) are a stored contract, and reimplementing the format
- * here would let the two drift silently.
+ * The candidate is production's own page converter (#1273): the harness
+ * measures exactly what `src/rendering/markdownConverter.ts` renders, so a
+ * change there shows up here. The options and their reasons live there.
  */
 export function buildMarkdownIt(): MarkdownIt {
-  const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
-  md.use(anchor, { slugify: headingSlug, tabIndex: false });
-  md.use(sub);
-  md.use(sup);
-  md.use(taskLists);
-
-  // Fenced code: showdown emits BOTH the bare language and the prefixed form —
-  // `class="js language-js"` — and markdown-it emits only `language-js`. The
-  // difference is one attribute and no text, which is precisely the kind that
-  // survives review and breaks a stylesheet: anything selecting `.js` (a
-  // highlighter, a theme rule) silently stops matching on the day of the swap.
-  //
-  // Reproduced here rather than recorded as an accepted difference, because
-  // #1271's whole constraint is that existing pages render unchanged.
-  md.renderer.rules.fence = (tokens, idx): string => {
-    const token = tokens[idx];
-    const lang = (token.info ?? '').trim().split(/\s+/)[0];
-    const body = md.utils.escapeHtml(token.content);
-    if (!lang) return `<pre><code>${body}</code></pre>\n`;
-    const cls = md.utils.escapeHtml(lang);
-    return `<pre><code class="${cls} language-${cls}">${body}</code></pre>\n`;
-  };
-
-  // Strikethrough: showdown emits `<del>`, markdown-it `<s>`. They render alike
-  // by default, but a stylesheet rule on either tag follows only one of them.
-  // Matched for the same reason as the fence class above.
-  md.renderer.rules.s_open = (): string => '<del>';
-  md.renderer.rules.s_close = (): string => '</del>';
-
-  // showdown's `ellipsis` option defaults to TRUE and nothing in
-  // RenderingManager turns it off, so production already rewrites `...` to `…`
-  // on every page. markdown-it does that only under `typographer`, which also
-  // brings smart quotes and dash replacement that showdown does not do — so
-  // enabling it wholesale would trade one difference for three.
-  //
-  // This replaces exactly what showdown replaces, in text tokens only, leaving
-  // code spans and fences untouched.
-  md.core.ruler.push('showdown_ellipsis', (state): void => {
-    for (const blockToken of state.tokens) {
-      if (blockToken.type !== 'inline' || !blockToken.children) continue;
-      for (const token of blockToken.children) {
-        if (token.type === 'text') token.content = token.content.replace(/\.{3}/g, '…');
-      }
-    }
-  });
-
-  return md;
+  return buildPageMarkdownIt('page');
 }
 
 // ---------------------------------------------------------------------------
