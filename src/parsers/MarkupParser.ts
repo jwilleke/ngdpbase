@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import showdown from 'showdown';
+import { createMarkdownConverter } from '../rendering/markdownConverter.js';
 import BaseManager from '../managers/BaseManager.js';
 import { HandlerRegistry } from './handlers/HandlerRegistry.js';
 import BaseSyntaxHandler from './handlers/BaseSyntaxHandler.js';
@@ -2721,32 +2721,24 @@ class MarkupParser extends BaseManager {
       }
     }
 
-    // Phase 3: Let Showdown parse the sanitized markdown.
+    // Phase 3: convert the sanitized markdown — markdown-it, via
+    // src/rendering/markdownConverter.ts (#1273).
     //
-    // #599: guard the input first. showdown 2.1.0 backtracks catastrophically on
-    // unclosed link openers — 12 KB of `[](` blocks the event loop for 16s — and
-    // no patched release exists or is coming. See src/utils/showdownGuard.ts.
+    // #599: the showdown ReDoS guard stays on the input until #1274 retires it;
+    // it is harmless on markdown-it input. See src/utils/showdownGuard.ts.
     const guarded = guardShowdownInput(preprocessed);
     const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
-    let showdownHtml: string;
+    let markdownHtml: string;
     if (renderingManager && renderingManager.converter) {
-      showdownHtml = renderingManager.converter.makeHtml(guarded);
+      markdownHtml = renderingManager.converter.makeHtml(guarded);
     } else {
-      // Fallback if RenderingManager not available (testing)
-      const converter = new showdown.Converter({
-        tables: true,
-        strikethrough: true,
-        tasklists: true,
-        simpleLineBreaks: false,
-        ghCodeBlocks: true,
-        ghHeaderIds: true
-      });
-      showdownHtml = converter.makeHtml(guarded);
+      // No RenderingManager (tests): the degraded-path profile (#1273).
+      markdownHtml = createMarkdownConverter('fallback').makeHtml(guarded);
     }
-    logger.debug('📝 Showdown processed markdown');
+    logger.debug('📝 Markdown converted');
 
     // Phase 4: Merge DOM nodes back into the HTML
-    const finalHtml = this.mergeDOMNodes(showdownHtml, nodes, uuid);
+    const finalHtml = this.mergeDOMNodes(markdownHtml, nodes, uuid);
     logger.debug('✅ Merge complete');
 
     // Phase 4.5: Run html-stage filters (#614). SecurityFilter (XSS prevention,

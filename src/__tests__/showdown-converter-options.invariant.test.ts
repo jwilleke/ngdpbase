@@ -113,15 +113,15 @@ describe('#1064 — showdown converter options keep the XSS advisories unreachab
   test('the scan actually finds converter constructions (guards against a broken matcher)', () => {
     // A regex that silently matched nothing would make every assertion below
     // pass vacuously — the near-miss the #1058 write-up documents.
-    expect(findConstructions().length).toBeGreaterThanOrEqual(4);
+    // #1273 moved the page path (RenderingManager, MarkupParser, WikiContext)
+    // to markdown-it; the remaining showdown converters go in #1274.
+    expect(findConstructions().length).toBeGreaterThanOrEqual(2);
   });
 
   test('the known construction sites are all present', () => {
     const files = new Set(findConstructions().map(c => c.file));
     for (const expected of [
-      'parsers/MarkupParser.ts',
-      'context/WikiContext.ts',
-      'managers/RenderingManager.ts',
+      'utils/renderUntrustedInline.ts',
       'extensions/showdown-footnotes-fixed.ts'
     ]) {
       expect(files, `expected a Converter construction in ${expected}`).toContain(expected);

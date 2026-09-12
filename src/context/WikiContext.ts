@@ -12,7 +12,7 @@ import type { ShareGrant } from '../types/Share.js';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
-import Showdown from 'showdown';
+import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import logger from '../utils/logger.js';
 import { guardShowdownInput } from '../utils/showdownGuard.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -199,7 +199,7 @@ export interface ContextTypes {
  * @property {PluginManager} pluginManager - Reference to PluginManager
  * @property {VariableManager} variableManager - Reference to VariableManager
  * @property {ACLManager} aclManager - Reference to ACLManager
- * @property {Showdown.Converter} _fallbackConverter - Fallback markdown converter
+ * @property {MarkdownConverter} _fallbackConverter - Fallback markdown converter (#1273)
  *
  * @see {@link WikiEngine} for the main engine
  * @see {@link RenderingManager} for rendering operations
@@ -279,7 +279,7 @@ class WikiContext {
   public readonly pageMetadata: PageFrontmatter | null;
 
   /** Fallback markdown converter */
-  private readonly _fallbackConverter: Showdown.Converter;
+  private readonly _fallbackConverter: MarkdownConverter;
 
   /**
    * Per-instance memoization for hasPermission(action) results (#636).
@@ -340,7 +340,8 @@ class WikiContext {
     this.variableManager = engine.getManager<VariableManager>('VariableManager')!;
     this.aclManager = engine.getManager<ACLManager>('ACLManager')!;
 
-    this._fallbackConverter = new Showdown.Converter();
+    // Degraded path, when RenderingManager has no parser (#1273).
+    this._fallbackConverter = createMarkdownConverter('fallback');
   }
 
   /**

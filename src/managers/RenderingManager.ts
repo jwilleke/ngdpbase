@@ -17,10 +17,8 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 import logger from '../utils/logger.js';
-import showdown from 'showdown';
-// Footnotes are now handled in the WikiDocument DOM pipeline (MarkupParser Steps 3.5/3.6/4)
-import showdownSubSuperscript from '../extensions/showdown-sub-superscript.js';
-import showdownHeadingIds from '../extensions/showdown-heading-ids.js';
+// Footnotes are handled in the WikiDocument DOM pipeline (MarkupParser Steps 3.5/3.6/4)
+import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import { LinkParser } from '../parsers/LinkParser.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -93,7 +91,7 @@ interface LinkGraph {
  * @class RenderingManager
  * @extends BaseManager
  *
- * @property {showdown.Converter|null} converter - Showdown markdown converter (legacy)
+ * @property {MarkdownConverter|null} converter - markdown-it page converter (#1273)
  * @property {Object} linkGraph - Graph of page links for backlink analysis
  * @property {LinkParser} linkParser - Parser for wiki-style links
  * @property {PageNameMatcher|null} pageNameMatcher - Matcher for page name resolution
@@ -107,7 +105,7 @@ interface LinkGraph {
  * const html = await renderingManager.renderPage('# Hello World', { pageName: 'Main' });
  */
 class RenderingManager extends BaseManager {
-  private converter: showdown.Converter | null;
+  private converter: MarkdownConverter | null;
   private linkGraph: LinkGraph;
   private linkParser: LinkParser;
   private pageNameMatcher: PageNameMatcher | null;
@@ -157,21 +155,10 @@ class RenderingManager extends BaseManager {
       this.pageNameMatcher = new PageNameMatcher(matchEnglishPlurals, matchCamelCase);
     }
 
-    // Initialize Showdown converter with table support and proper list handling
-
-    this.converter = new showdown.Converter({
-      tables: true,
-      strikethrough: true,
-      tasklists: true,
-      simpleLineBreaks: true,
-      openLinksInNewWindow: false,
-      backslashEscapesHTMLTags: true,
-      disableForced4SpacesIndentedSublists: true, // Allow 2-space indented sublists
-      literalMidWordUnderscores: true, // Better underscore handling
-      ghCodeBlocks: true, // GitHub-style code blocks
-      ghHeaderIds: true, // Generate id attributes on headings for section linking (#500)
-      extensions: [showdownSubSuperscript, showdownHeadingIds] // footnotes handled by MarkupParser DOM pipeline
-    });
+    // The page converter (#1273): markdown-it, configured once in
+    // src/rendering/markdownConverter.ts — breaks on, heading ids from
+    // SectionUtils.headingSlug (#500), sub/sup, task lists. Replaces showdown.
+    this.converter = createMarkdownConverter('page');
 
     // Build initial link graph
     await this.buildLinkGraph();
@@ -372,8 +359,8 @@ class RenderingManager extends BaseManager {
     if (!this.converter) {
       throw new Error('Markdown converter not initialized');
     }
-    // #599: same ReDoS guard as the MarkupParser path — this legacy route
-    // reaches the identical unpatched showdown converter.
+    // #599: the showdown ReDoS guard stays until #1274 retires it; it is
+    // harmless on markdown-it input.
     const html = this.converter.makeHtml(guardShowdownInput(expandedContent));
 
     // Step 5: Post-process tables with styling
