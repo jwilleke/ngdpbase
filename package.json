@@ -106,7 +106,7 @@
     "bcrypt": "^6.0.0",
     "body-parser": "^2.3.0",
     "cookie-parser": "^1.4.7",
-    "diff": "^8.0.3",
+    "diff": "^9.0.0",
     "diff2html": "^3.4.56",
     "dotenv": "^17.4.2",
     "ejs": "^6.0.1",
