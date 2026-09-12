@@ -14,7 +14,7 @@
   "type": "module",
   "dependencies": {
     "uuid": "^14.0.2",
-    "zod": "^3.23.0"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
