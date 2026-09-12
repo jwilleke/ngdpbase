@@ -128,4 +128,16 @@ describe('shipped InterWiki sites', () => {
       expect(hrefOf(parser, '[x|nosuchsite:Page]')).not.toContain('grokipedia');
     });
   });
+
+  describe('RFC: — IETF Request for Comments', () => {
+    // 376 jimstest pages link RFCs as [text|RFC:N], an import convention from
+    // JSPWiki; with no RFC site they all rendered as red internal links.
+    it('is shipped and points at the RFC Editor', () => {
+      expect(sites.RFC?.url).toBe('https://www.rfc-editor.org/rfc/rfc%s');
+    });
+
+    it('renders the RFC 2396 page\'s full-text link', () => {
+      expect(hrefOf(parser, "[refers you to the full text|RFC:2396|target='_blank']")).toBe('https://www.rfc-editor.org/rfc/rfc2396');
+    });
+  });
 });

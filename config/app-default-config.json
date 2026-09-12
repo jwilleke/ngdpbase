@@ -921,6 +921,12 @@
       "description": "Grokipedia",
       "enabled": true,
       "openInNewWindow": true
+    },
+    "RFC": {
+      "url": "https://www.rfc-editor.org/rfc/rfc%s",
+      "description": "IETF Request for Comments",
+      "enabled": true,
+      "openInNewWindow": true
     }
   },
   "_comment_features": "Feature toggle settings",
