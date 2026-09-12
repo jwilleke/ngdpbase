@@ -83,12 +83,31 @@ report and the operator has to work out which half is current.
 The bands, in this order (issues __and__ PRs share these bands):
 
 - `🔴 P0 — Security & Critical` (list `security` / vulnerability items first)
+- `🟣 Epics` (items labeled `epic`)
 - `🟠 P1`
 - `🟡 P2`
 - `🔵 In review` (items labeled `in-review` — work complete and pushed, awaiting the operator's
   decision to close; takes precedence over a priority label so it surfaces as "ready for your call")
 - `⏸ Deferred`
 - `❓ Needs triage` (issues and PRs with no resolvable placement)
+
+__An `epic` goes in the Epics band, whatever its priority label.__ An epic is a container for
+work that is tracked in its own issues, so ranking it beside them buries it: it reads as one more
+P0 while the issues that actually move it sit lower down. The `epic` label therefore outranks
+`P0` / `P1` / `P2` for band placement — but not `in-review`, which still wins, since a finished
+epic is a decision waiting on the operator.
+
+The priority label still means something after the move: it orders the Epics band. Within the
+band, list by priority (`P0` before `P1` before `P2`), then by descending number. And note that
+moving an epic out can leave `P0` reading `*None.*` while a `P0`-labeled epic is open just below
+it — that is the intended trade, not a bug. The epic is visible in its own band, which is the
+point.
+
+__Regenerate only what is above `<!-- KIT:END -->`.__ Where `TODO.md` carries the marker,
+everything below it is the repo's own — a local band, a note, a link table — and `/pstatus` must
+leave it byte-for-byte alone. The bands go above it. The TODO linter stops reading there too, so
+content below the marker is never judged against the band rules. A repo without the marker is
+linted and regenerated end to end, as before.
 
 __There is no separate `🔀 Open PRs` band.__ Every open PR appears exactly once under the same
 priority band as issues. A flat PR-only section hid deps work from the ranked backlog (Dependabot

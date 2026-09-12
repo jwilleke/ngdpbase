@@ -1,19 +1,19 @@
 {
   "schema": 1,
   "source": "https://github.com/jwilleke/mjs-project-template",
-  "installed": "v1.11.4",
-  "installed_ref": "v1.11.4-5-g17d7aa6",
-  "installed_at": "2026-08-18",
+  "installed": "v1.12.0",
+  "installed_ref": "v1.12.0-6-g29f60f0",
+  "installed_at": "2026-09-12",
   "files": {
-    ".claude/commands/pstatus.md": { "behavior": "overwrite", "sha256": "d01fc63bde87b183d8d544bedbbfb0d86a76882881d8927d71acf97cba11d0a7" },
-    ".claude/commands/session-commit.md": { "behavior": "overwrite", "sha256": "62c6d562b8ad9a57622d295c33a0847041fcaada87ad80c3e900292a86171068" },
-    ".claude/commands/context.md": { "behavior": "overwrite", "sha256": "e44ff50bc76c517afaef6f421145d4d3afb9d9886fb6562ee18e2e3eff9b4310" },
-    ".claude/commands/wrap.md": { "behavior": "overwrite", "sha256": "e2cb39682af3bd4923b64b851dba585c60eba8139f0272f8b630f62fbc622dea" },
+    ".claude/commands/pstatus.md": { "behavior": "overwrite", "sha256": "fc5697ac6552108994c92381fdb427b0551640b950f0153960307eafb3903ef8" },
+    ".claude/commands/session-commit.md": { "behavior": "overwrite", "sha256": "f6b8d194fbe9ce8bc7529b985338bba973ab2f6b1d1f4c144a687d0973c731cc" },
+    ".claude/commands/context.md": { "behavior": "overwrite", "sha256": "7961617d20b910cd380bc38e2cc21eb2d89e9b1bd2c35805706febbf11fd56d0" },
+    ".claude/commands/wrap.md": { "behavior": "overwrite", "sha256": "127301414e538dee5d3a04ac1114dc19e61b7d052f2b7cb841473cb7cc548c4a" },
     "utility/sync-labels.sh": { "behavior": "overwrite", "sha256": "33ef23780cbac7aef9f094bd32b128f311698e5e642395b2adf9d7984058caab" },
     ".claude/commands/update-agents.md": { "behavior": "overwrite", "sha256": "1f4c6433448658be783b09007be99fbcad1d1d7b75daab66624e7a45940ac4e6" },
     ".markdownlint-cli2.jsonc": { "behavior": "overwrite", "sha256": "a269ec1af759cd56af8dc9b6393148a587cfcb5d03af3d4c8999a95bbab1057d" },
     "utility/set-version.mjs": { "behavior": "overwrite", "sha256": "292730d5df9c923f57dde984bc132ebfd2ba92fb83c9494f5b6ac3d0f6dcbc6c" },
-    "utility/kit-sync.sh": { "behavior": "overwrite", "sha256": "dd2fa16d22a71222695941d9542996ee57193d4a80fad6a9baa9b9d2bb074fe7" },
-    ".claude/commands/semver-kit.md": { "behavior": "overwrite-or-suffix", "sha256": "0b94552c7a4447ab265c2761b1edcb76afb1ea99322221936b7a24b1b9749e3b" }
+    "utility/kit-sync.sh": { "behavior": "overwrite", "sha256": "7267a1fab44be30a04eb20180616a73e50d0891b79b182aa2866371406c362f4" },
+    ".claude/commands/semver-kit.md": { "behavior": "overwrite-or-suffix", "sha256": "2a7aec587f39ce2e5ce63d921cc8565f6855f5f7f7b5d2ba70a29d6dee20d3ce" }
   }
 }
