@@ -27,6 +27,12 @@ updates:
       # the engine moves.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # The client major must match the Elasticsearch server's. The cluster on
+      # deby is 8.15.0 (checked 2026-09-12), and client 9 also fails to
+      # typecheck (Sist2AssetProvider.ts:270). #1321 closed on this. Lift it
+      # when the cluster moves to 9.
+      - dependency-name: "@elastic/elasticsearch"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
 
@@ -146,6 +152,12 @@ updates:
       # 24 to 25/26 (#1280-#1282, #1286, #1290, #1296, closed). Lift this when
       # the engine moves.
       - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # The client major must match the Elasticsearch server's. The cluster on
+      # deby is 8.15.0 (checked 2026-09-12), and client 9 also fails to
+      # typecheck (Sist2AssetProvider.ts:270). #1321 closed on this. Lift it
+      # when the cluster moves to 9.
+      - dependency-name: "@elastic/elasticsearch"
         update-types: ["version-update:semver-major"]
     labels:
       - dependencies
