@@ -10,7 +10,14 @@
  *     the two. Both become ``` fences at the opener's indent; text after the
  *     `{{{`, and text before or after the `}}}` (`}}} /%`), moves onto a line
  *     of its own. Lines in between are code and are not changed;
- *   - `{{{text}}}` on one line becomes an inline code span.
+ *   - `{{{text}}}` on one line becomes an inline code span. A `[[{` inside
+ *     becomes `[{`: outside code that escape shows as `[{`, which is what the
+ *     reader saw between the braces, but inside a code span it would show;
+ *   - a ``` block opened right under a `%%` style line (`%%prettify`) and
+ *     ended by `}}}` with `/%` after it, on the same line or the next, is
+ *     closed there: `}}}` becomes ``` and the `/%` goes on its own line. An
+ *     old import turned the lone `{{{` into ``` but left `}}} /%`, so the
+ *     code ran on through the rest of the page.
  *
  * Deliberately narrow:
  *   - never a `{{{` inside code, an inline code span or an HTML block;
@@ -18,8 +25,7 @@
  *   - a `{{{` that opens mid-line and closes on a later line is left alone:
  *     it is inline text across a line break, and a fence there would split
  *     the sentence (or list item) it sits in;
- *   - a block opened by ``` and closed by `}}}` is left alone: those lines are
- *     code to the parser;
+ *   - any other `}}}` inside a ``` block is code, and is left alone;
  *   - if any `{{{` block is never closed, nothing is changed.
  *
  * Runs first, so the steps after it see the example text as code.
@@ -33,6 +39,10 @@ import { buildBlockMap, isBlank, joinLines } from './blocks.js';
 const BLOCK_OPEN = /^( {0,3})\{\{\{(.*)$/;
 // Fences as MarkupParser's Step 0 (backticks) and markdown-it (tildes) open them.
 const FENCE_OPEN = /^([ \t]*)(`{3,}|~{3,})/;
+// A style block's opening line: `%%prettify`, `%%(color:red)`.
+const STYLE_OPEN = /^[ \t]*%%[\w(]/;
+// A `}}}` that ends a style block's code: `}}}`, `}}} /%`, `}}} /%! heading`.
+const STYLE_CODE_CLOSE = /^[ \t]*\}\}\}[ \t]*(\/%.*)?$/;
 
 function fenceCloser(indent: string, run: string): RegExp {
   return new RegExp(`^[ \\t]{0,${Math.max(3, indent.length)}}${run[0] === '`' ? '`' : '~'}{${run.length},}\\s*$`);
@@ -70,7 +80,7 @@ function convertInline(line: string): string {
     brace.lastIndex = pos;
     const b = brace.exec(line);
     if (b?.[1].trim()) {
-      out += codeSpan(b[1].trim());
+      out += codeSpan(b[1].trim().replace(/\[\[\{/g, '[{'));
       pos += b[0].length;
       continue;
     }
@@ -84,7 +94,7 @@ export const jspwikiCodeMarkers: FixStep = {
   summary: 'JSPWiki {{{ }}} code markers became Markdown code',
   safeOnSave: true,
   apply(body) {
-    if (!body.includes('{{{')) return { content: body, lines: [] };
+    if (!body.includes('{{{') && !body.includes('}}}')) return { content: body, lines: [] };
     const map = buildBlockMap(body);
     const out: string[] = [];
     const eols: string[] = [];
@@ -94,18 +104,35 @@ export const jspwikiCodeMarkers: FixStep = {
     const push = (text: string, eol: string): void => { out.push(text); eols.push(eol); };
 
     let fence: RegExp | null = null;
+    // Set while inside a ``` block opened right under a `%%` style line.
+    let styleFence: { opener: string; start: number } | null = null;
     for (let i = 0; i < map.lines.length; i++) {
       const line = map.lines[i];
       const eol = map.eols[i];
 
       if (fence) {
-        if (fence.test(line)) fence = null;
+        const close = styleFence && STYLE_CODE_CLOSE.exec(line);
+        if (styleFence && close && (close[1] || map.lines[i + 1]?.trimStart().startsWith('/%'))) {
+          push(styleFence.opener, eol);
+          created.push([styleFence.start, out.length - 1]);
+          if (close[1]) {
+            push('/%', eol);
+            const after = close[1].slice(2).trim();
+            if (after) push(after, eol);
+          }
+          changed.push(i + 1);
+          fence = null;
+          styleFence = null;
+          continue;
+        }
+        if (fence.test(line)) { fence = null; styleFence = null; }
         push(line, eol);
         continue;
       }
       const f = FENCE_OPEN.exec(line);
       if (f && f[1].length <= 3) {
         fence = fenceCloser(f[1], f[2]);
+        if (f[2][0] === '`' && i > 0 && STYLE_OPEN.test(map.lines[i - 1])) styleFence = { opener: f[1] + f[2], start: out.length };
         push(line, eol);
         continue;
       }

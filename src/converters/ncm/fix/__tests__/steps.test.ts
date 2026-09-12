@@ -47,6 +47,13 @@ describe('jspwiki-code-markers', () => {
     expect(apply('|{{{ {PageName}.txt }}} ,`.properties` | {{{ {PageName}.txt}}}').content).toBe('|`{PageName}.txt` ,`.properties` | `{PageName}.txt`');
   });
 
+  // WikiFormsPlugin: outside code `[[{` shows as `[{`, so that is what the
+  // reader saw between the braces. Inside a code span it would show as `[[{`.
+  it('drops the [[{ plugin escape inside a new code span', () => {
+    expect(apply('|{{{[[{FormClose}]}}}|None').content).toBe('|`[{FormClose}]`|None');
+    expect(apply('see {{{a[[b]]}}}').content).toBe('see `a[[b]]`');
+  });
+
   it('uses a longer backtick run when the code holds a backtick', () => {
     expect(apply('see {{{a `b` c}}} here').content).toBe('see ``a `b` c`` here');
     expect(apply('see {{{`x}}} here').content).toBe('see `` `x `` here');
@@ -67,6 +74,25 @@ describe('jspwiki-code-markers', () => {
     expect(apply(md)).toEqual({ content: md, lines: [] });
   });
 
+  // Birthday Paradox, JSON Web Token: an old import turned the lone `{{{` of a
+  // %%prettify block into ``` but left `}}} /%`, so the code ran on through
+  // the rest of the page.
+  it('closes a ``` block under a %% style line at }}} with /%', () => {
+    const r = apply('%%prettify\n```\n22+21+...+1 = 253\n}}} /%\n\nSo comparing');
+    expect(r.content).toBe('%%prettify\n```\n22+21+...+1 = 253\n```\n/%\n\nSo comparing');
+    expect(r.lines).toEqual([4]);
+    expect(apply('%%prettify\n```\nx\n}}}\n/%').content).toBe('%%prettify\n```\nx\n```\n/%');
+    expect(apply('%%prettify\n```\nx\n}}} /%! [{$pagename}] Components\n* a').content)
+      .toBe('%%prettify\n```\nx\n```\n/%\n! [{$pagename}] Components\n* a');
+  });
+
+  it('leaves }}} inside a ``` block alone without both the %% line and the /%', () => {
+    const noStyle = '```\n{"a": {"b": {"c": 1}}}\n}}} /%\n```';
+    expect(apply(noStyle)).toEqual({ content: noStyle, lines: [] });
+    const noClose = '%%prettify\n```\nfunction f() {{{\n}}}\n```\n/%';
+    expect(apply(noClose)).toEqual({ content: noClose, lines: [] });
+  });
+
   it('changes nothing on a page with an unclosed {{{ block', () => {
     const md = '{{{a}}}\n\n{{{\ncode to the end';
     expect(apply(md)).toEqual({ content: md, lines: [] });
@@ -81,7 +107,7 @@ describe('jspwiki-code-markers', () => {
   });
 
   it('is idempotent', () => {
-    const once = apply('{{{x\ny}}} /%\n\nand {{{z}}}').content;
+    const once = apply('{{{x\ny}}} /%\n\nand {{{z}}}\n\n%%prettify\n```\nw\n}}} /%').content;
     expect(apply(once).lines).toEqual([]);
   });
 });
