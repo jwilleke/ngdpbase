@@ -165,7 +165,7 @@
     "@types/winston": "^2.4.4",
     "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.69.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "baseline-browser-mapping": "^2.11.21",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
@@ -183,7 +183,7 @@
     "typedoc-plugin-markdown": "^4.13.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.69.0",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "main": "dist/src/app.js",
   "keywords": [],
