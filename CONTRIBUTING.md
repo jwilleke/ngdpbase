@@ -302,7 +302,7 @@ __See also__:
 
 - [CHANGELOG.md](./CHANGELOG.md) ALL notable changes to are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) [CHANGELOG.md]
 - [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-- Markdownlint Configuration using (.markdownlint.json)
+- Markdownlint configuration: [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc) (CLI, CI, and the editor; there is no `.markdownlint.json`)
 - Use of Open Standards
   - [Schema.org](https://schema.org/) when possible.
 - 📖 __Read [ARCHITECTURE-PAGE-CLASSIFICATION.md](ARCHITECTURE-PAGE-CLASSIFICATION.md)__ for detailed architecture patterns.
@@ -862,37 +862,11 @@ See [Policies-Roles-Permissions](docs/architecture/Policies-Roles-Permissions.md
 
 ## 📋 Markdown Formatting Standards
 
-All markdown files are linted with `markdownlint`. Run `npm run lint:md` to check.
-
-### Table Formatting (MD060)
-
-Tables MUST use consistent spacing. Choose ONE style per table:
-
-__Padded style (recommended):__
-
-```markdown
-| Column 1 | Column 2 | Column 3 |
-| -------- | -------- | -------- |
-| Value 1  | Value 2  | Value 3  |
-```
-
-__Compact style:__
-
-```markdown
-|Column 1|Column 2|Column 3|
-|--------|--------|--------|
-|Value 1|Value 2|Value 3|
-```
-
-__DO NOT mix styles__ - this causes MD060 errors:
-
-```markdown
-| Column 1|Column 2 | Column 3|   ❌ WRONG
-```
+All committed markdown is linted against [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). Run `npm run lint:md` to check. Table pipe-spacing rules (MD055 / MD060) are off in that file — do not treat mixed table padding as a lint failure.
 
 ### Pre-commit Validation
 
-The pre-commit hook runs `markdownlint --fix` on staged `.md` files. Fix any errors before committing.
+The pre-commit hook runs `markdownlint-cli2 --fix` on staged `.md` files. Fix any errors before committing.
 
 ## 🧪 Testing
 

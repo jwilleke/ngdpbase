@@ -3,10 +3,7 @@
   "git.confirmSync": false,
   "chat.agentSessionsViewLocation": "view",
   "chat.edits2.enabled": true,
-  // Rules come from the canonical .markdownlint.jsonc (single source of truth);
-  // no inline markdownlint.config so editor, CLI, CI and hooks stay identical.
-  "markdownlint.ignore": ".markdownlintignore",
-  "files.associations": {
-    ".markdownlintignore": "ignore"
-  }
+  // Rules, globs and ignores are .markdownlint-cli2.jsonc — same file as
+  // npm run lint:md and the GitHub markdown-lint / CI lint jobs. Do not add
+  // a second markdownlint.config or a .markdownlint.json here.
 }

@@ -115,27 +115,11 @@ npm run lint:code:fix # ESLint only
 
 ### Markdownlint
 
-We use Markdownlint to ensure consistent and well-formatted documentation.
-
-Configuration: `.markdownlint.json`
-
-For resference see [Mardownlint Guid](https://github.com/DavidAnson/markdownlint/blob/main/README.md)
-
-Key rules:
-
-- Consistent heading style
-- 2-space indentation for lists
-- Line length limits (300 chars general, 80 for headings)
-- Blank lines around lists and code blocks
-- Consistent list marker style
-- __No bold text as headings (MD036)__ - Use proper heading syntax (`##`, `###`, etc.) instead of `**Bold:**`
-
-Run markdown linting:
+The control file is [`.markdownlint-cli2.jsonc`](./.markdownlint-cli2.jsonc). CLI (`npm run lint:md`), CI (`markdown-lint.yml` and the lint jobs in `ci.yml` / `ci-passing-tests.yml`), and the VS Code markdownlint extension all read that file. Do not restate its rules here — they drift.
 
 ```bash
-
-# Check all markdown files
-npm run lint:md:fix   # Auto-fix markdown issues (note: MD036 requires manual fix)
+npm run lint:md       # check
+npm run lint:md:fix   # auto-fix (MD036 still needs a real heading)
 ```
 
 #### Heading vs Bold Text
