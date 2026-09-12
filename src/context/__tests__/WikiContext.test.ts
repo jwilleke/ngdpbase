@@ -118,12 +118,12 @@ describe('WikiContext', () => {
       );
     });
 
-    test('should fallback to Showdown when parser not available', async () => {
+    test('should use the fallback converter when the parser is not available', async () => {
       mockRenderingManager.getParser.mockReturnValueOnce(null);
 
       const result = await context.renderMarkdown('# Fallback Test');
 
-      // Should use fallback converter (Showdown)
+      // Should use the fallback converter (markdown-it 'fallback' profile)
       expect(result).toContain('Fallback Test');
       expect(mockParser.parse).not.toHaveBeenCalled();
     });

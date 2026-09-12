@@ -2,8 +2,8 @@
 
 __Module:__ `src/managers/RenderingManager.js`
 __Quick Reference:__ [RenderingManager.md](RenderingManager.md)
-__Version:__ 1.3.2
-__Last Updated:__ 2025-12-20
+__Version:__ 1.4.0
+__Last Updated:__ 2026-09-12
 __Status:__ Production Ready
 
 ---
@@ -26,11 +26,11 @@ __Status:__ Production Ready
 
 ## Overview
 
-The __RenderingManager__ is the central coordinator for markdown rendering and wiki markup processing in ngdpbase. It orchestrates the conversion of markdown/wiki markup to HTML, supporting both a modern MarkupParser system and a legacy Showdown-based renderer.
+The __RenderingManager__ is the central coordinator for markdown rendering and wiki markup processing in ngdpbase. It orchestrates the conversion of markdown/wiki markup to HTML, supporting both a modern MarkupParser system and a legacy renderer that runs markdown-it directly.
 
 ### Key Responsibilities
 
-- __Markdown Rendering__: Convert markdown content to HTML using Showdown with GFM extensions
+- __Markdown Rendering__: Convert markdown content to HTML using markdown-it (the `page` profile of `src/rendering/markdownConverter.ts`)
 - __Parser Coordination__: Manage the advanced MarkupParser system and legacy fallback
 - __Wiki Link Processing__: Parse and render wiki-style links `[PageName]` and `[Text|Target]`
 - __Plugin Expansion__: Integrate with PluginManager for `[{Plugin}]` syntax
@@ -43,7 +43,7 @@ The __RenderingManager__ is the central coordinator for markdown rendering and w
 The RenderingManager implements a __dual-parser architecture__:
 
 1. __Advanced Parser (Primary)__: Uses MarkupParser with WikiDocument DOM extraction pipeline
-2. __Legacy Parser (Fallback)__: Direct Showdown conversion with basic JSPWiki syntax support
+2. __Legacy Parser (Fallback)__: Direct markdown-it conversion with basic JSPWiki syntax support
 
 This approach provides:
 
@@ -66,14 +66,14 @@ This approach provides:
 │  │                  RenderingManager                             │ │
 │  │                                                                │ │
 │  │  ┌─────────────────────────────────────────────────────────┐ │ │
-│  │  │  Showdown Converter (Core Markdown Engine)              │ │ │
+│  │  │  markdown-it Converter (page profile)                   │ │ │
 │  │  │  ┌───────────────────────────────────────────────────┐  │ │ │
-│  │  │  │  Extensions:                                       │  │ │ │
-│  │  │  │  • tables                    - GFM tables          │  │ │ │
-│  │  │  │  • strikethrough            - ~~text~~            │  │ │ │
-│  │  │  │  • tasklists                - [x] checkboxes      │  │ │ │
-│  │  │  │  • ghCodeBlocks             - ``` fenced blocks   │  │ │ │
-│  │  │  │  • showdown-footnotes       - [^1] footnotes      │  │ │ │
+│  │  │  │  src/rendering/markdownConverter.ts:              │  │ │ │
+│  │  │  │  • breaks: true           - newline = <br>        │  │ │ │
+│  │  │  │  • tables, fences, ~~x~~  - built in              │  │ │ │
+│  │  │  │  • markdown-it-task-lists - [x] checkboxes        │  │ │ │
+│  │  │  │  • markdown-it-sub / -sup - H~2~O, X^2^           │  │ │ │
+│  │  │  │  • markdown-it-anchor     - heading ids           │  │ │ │
 │  │  │  └───────────────────────────────────────────────────┘  │ │ │
 │  │  └─────────────────────────────────────────────────────────┘ │ │
 │  │                                                                │ │
@@ -105,7 +105,7 @@ This approach provides:
 │  │  • DOM Extraction   │              │  • Macro Expansion   │    │
 │  │  • Plugin Handling  │              │  • Table Processing  │    │
 │  │  • Variable Subst.  │              │  • Link Processing   │    │
-│  │  • Showdown Conv.   │              │  • Showdown Conv.    │    │
+│  │  • markdown-it      │              │  • markdown-it       │    │
 │  │  • DOM Merging      │              │  • Post-processing   │    │
 │  └─────────────────────┘              └──────────────────────┘    │
 │                                                                    │
@@ -135,17 +135,15 @@ User Request: GET /wiki/PageName
 │    - Extract [{$variables}]               │
 │    - Extract [{Plugins}]                  │
 │    - Extract [WikiLinks]                  │
-│    - Preserve [^footnotes] for Showdown   │
+│    - Extract [^footnotes]                 │
 │                                            │
 │  Phase 2: Create DOM Nodes                │
 │    - Build WikiDocument structure         │
-│    - Process variables, plugins, links    │
+│    - Process variables, plugins, links,   │
+│      footnotes                            │
 │                                            │
-│  Phase 3: Showdown Markdown Conversion    │
-│    - Process markdown syntax              │
-│    - Apply footnote extension             │
-│    - Generate footnote references         │
-│    - Create footnotes section             │
+│  Phase 3: markdown-it Conversion          │
+│    - Process markdown (page profile)      │
 │                                            │
 │  Phase 4: Merge DOM Nodes                 │
 │    - Replace placeholders with HTML       │
@@ -166,7 +164,7 @@ User Request: GET /wiki/PageName
 
 ```
 Content → Macro Expansion → Table Processing →
-Link Processing → Showdown Conversion →
+Link Processing → markdown-it Conversion →
 Post-processing → HTML Output
 ```
 
@@ -174,40 +172,48 @@ Post-processing → HTML Output
 
 ## Markdown Features
 
-The RenderingManager uses __Showdown 2.1.0__ with the following GitHub Flavored Markdown (GFM) features:
+The RenderingManager converts markdown with __markdown-it__, `page` profile. Every option is set in one place, `src/rendering/markdownConverter.ts`, and pinned by `src/rendering/__tests__/markdownConverter.test.ts`.
 
 ### Core Features
 
 | Feature | Syntax | Configuration | Status |
 | --------- | -------- | --------------- | -------- |
-| __Tables__ | `\| Header \| Header \|` | `tables: true` | ✅ Enabled |
-| __Strikethrough__ | `~~text~~` | `strikethrough: true` | ✅ Enabled |
-| __Task Lists__ | `- [x] Task` | `tasklists: true` | ✅ Enabled |
-| __Fenced Code__ | ` ``` code ``` ` | `ghCodeBlocks: true` | ✅ Enabled |
-| __Footnotes__ | `[^1]` reference | `extensions: [showdownFootnotes]` | ✅ Enabled |
-| __Line Breaks__ | Double space or `\n` | `simpleLineBreaks: true` | ✅ Enabled |
-| __Underscore__ | `literal_underscore_handling` | `literalMidWordUnderscores: true` | ✅ Enabled |
-| __HTML Escaping__ | `\<tag\>` | `backslashEscapesHTMLTags: true` | ✅ Enabled |
-| __Sublists__ | 2-space indentation | `disableForced4SpacesIndentedSublists: true` | ✅ Enabled |
+| __Tables__ | `\| Header \| Header \|` | markdown-it built in (GFM tables) | ✅ Enabled |
+| __Strikethrough__ | `~~text~~` | markdown-it built in; renders `<del>` | ✅ Enabled |
+| __Task Lists__ | `- [x] Task` | `markdown-it-task-lists` | ✅ Enabled |
+| __Fenced Code__ | ` ``` code ``` ` | markdown-it built in; keeps `class="js language-js"` | ✅ Enabled |
+| __Footnotes__ | `[^1]` reference | MarkupParser DOM pipeline, not the converter — see [Footnotes Support](#footnotes-support) | ✅ Enabled |
+| __Line Breaks__ | single newline | `breaks: true` (a single newline is a line break) | ✅ Enabled |
+| __Underscore__ | `foo_bar_baz` | CommonMark: mid-word underscores stay plain text | ✅ Enabled |
+| __HTML Escaping__ | `\<tag\>` | CommonMark backslash escape: `\<div>` shows the letters | ✅ Enabled |
+| __Sublists__ | 2-space indentation | CommonMark list nesting | ✅ Enabled |
+| __Heading IDs__ | `## Title` | `markdown-it-anchor`, slug from `SectionUtils.headingSlug` | ✅ Enabled |
+| __Sub/Superscript__ | `H~2~O`, `X^2^` | `markdown-it-sub` / `markdown-it-sup` (no spaces inside) | ✅ Enabled |
+| __Ellipsis__ | `...` | becomes `…` in text, never in code (`typographer: false`) | ✅ Enabled |
+| __Bare URLs__ | `https://example.com` | not auto-linked (`linkify: false`) | ❌ Off |
 
-### Showdown Configuration
+### markdown-it Configuration
 
-The Showdown converter is initialized with these settings in `RenderingManager.js:81-92`:
+RenderingManager asks for the page converter in `initialize()`:
 
 ```javascript
-this.converter = new showdown.Converter({
-  tables: true,                                // GFM tables support
-  strikethrough: true,                         // ~~strikethrough~~ text
-  tasklists: true,                             // [x] checkbox lists
-  simpleLineBreaks: true,                      // Single newline = <br>
-  openLinksInNewWindow: false,                 // Links open in same window
-  backslashEscapesHTMLTags: true,              // Escape HTML with backslash
-  disableForced4SpacesIndentedSublists: true,  // Allow 2-space sublists
-  literalMidWordUnderscores: true,             // Better underscore handling
-  ghCodeBlocks: true,                          // GitHub fenced code blocks
-  extensions: [showdownFootnotes]              // Footnote extension
-});
+this.converter = createMarkdownConverter('page');
 ```
+
+The `page` profile in `src/rendering/markdownConverter.ts`:
+
+```javascript
+const md = new MarkdownIt({ html: true, breaks: true, linkify: false, typographer: false });
+// renderer rules: fence classes "js language-js", <del> for ~~x~~, "..." → "…" in text
+md.use(anchor, { slugify: headingSlug, tabIndex: false }); // heading ids
+md.use(sub);                                              // H~2~O
+md.use(sup);                                              // X^2^
+md.use(taskLists);                                        // - [x]
+```
+
+The same file builds two more profiles: `untrusted` for comments (no heading ids, task lists or sub/superscript) and `fallback` for degraded paths (plain CommonMark, no single-newline breaks).
+
+markdown-it replaced showdown 2.1.0 in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273), and showdown was removed in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274). Each deliberate rendering difference is a decision (R1–R17) in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 
 ---
 
@@ -215,11 +221,10 @@ this.converter = new showdown.Converter({
 
 ### Overview
 
-Footnotes allow you to add notes and references at the bottom of your page without cluttering the main text. ngdpbase implements __GitHub Flavored Markdown (GFM) compatible footnote syntax__ using the `showdown-footnotes` extension.
+Footnotes allow you to add notes and references at the bottom of your page without cluttering the main text. ngdpbase implements __GitHub Flavored Markdown (GFM) compatible footnote syntax__ in MarkupParser's WikiDocument DOM pipeline, not in the markdown converter.
 
 __Added:__ Version 1.3.2 (2025-10-16)
-__Implementation:__ `src/managers/RenderingManager.js:5, 92`
-__Extension:__ `src/extensions/showdown-footnotes-fixed.js` (patched version with bug fixes)
+__Implementation:__ `src/parsers/MarkupParser.ts` — `extractJSPWikiSyntax()` extracts references and definitions, `createDOMNode()` renders them
 
 ### Syntax
 
@@ -239,7 +244,7 @@ __Definition at bottom:__
 
 __Rendered output:__
 
-- In text: `This is a sentence with a footnote<sup><a href="#footnote-1">[1]</a></sup>.`
+- In text: `This is a sentence with a footnote<a id="footnote-ref-1" href="#footnote-1" class="footnote-ref"><sup>[1]</sup></a>.`
 - At bottom: `<small class="footnote" id="footnote-1"><a href="#footnote-1"><sup>[1]</sup></a>: This is the footnote text.</small>`
 
 #### Multiple Footnotes
@@ -292,7 +297,7 @@ Footnotes generate clean, semantic HTML:
 __Footnote Reference:__
 
 ```html
-<a href="#footnote-1"><sup>[1]</sup></a>
+<a id="footnote-ref-1" href="#footnote-1" class="footnote-ref"><sup>[1]</sup></a>
 ```
 
 __Footnote Definition:__
@@ -315,42 +320,30 @@ __Footnote Definition:__
 
 ### Implementation Details
 
-#### Custom Extension Patch
+#### Retired: showdown-footnotes patch
 
-ngdpbase uses a __patched version__ of `showdown-footnotes` located at `src/extensions/showdown-footnotes-fixed.js` to fix two critical bugs in the original extension:
-
-Bug #1: Missing Global Flag
-
-- __Original:__ `/\[\^([\d\w]+)\]/m` - only matches first occurrence
-- __Fixed:__ `/\[\^([\d\w-]+)\]/mg` - matches all occurrences
-- __Impact:__ Without this fix, only the first footnote reference on the page would be converted
-
-Bug #2: Missing Hyphen Support
-
-- __Original:__ `[\d\w]+` - only matches digits and word characters
-- __Fixed:__ `[\d\w-]+` - also matches hyphens
-- __Impact:__ Without this fix, identifiers like `[^my-note]` and `[^long-note]` wouldn't work
-
-These fixes are applied to all three filter functions in the extension (multi-paragraph definitions, single-line definitions, and references).
+Footnotes were once rendered by a patched copy of the `showdown-footnotes` extension. The DOM pipeline below had already taken over, and the patch was removed with showdown in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274).
 
 #### Integration with MarkupParser
 
-Footnote syntax `[^id]` must be __excluded from wiki link processing__ to prevent interference:
+Footnote syntax is extracted before markdown conversion, so it never reaches the converter or the wiki-link handlers:
 
-__MarkupParser.js:1512__ - Wiki link extraction excludes footnotes:
+__`extractJSPWikiSyntax()` Steps 3.5 / 3.6__ — definitions (`[^id]: text`, and multi-line definitions with indented continuation lines) become `footnote-def` elements. They run before Step 4 so the `[^id]` on a definition line is not taken as a reference.
+
+__`extractJSPWikiSyntax()` Step 4__ — the bracket scanner classifies `[^id]` as a `footnote-ref`, not a wiki link:
 
 ```javascript
-// Does NOT match: [^id] - markdown footnote references
-sanitized = sanitized.replace(/\[([^\]\[\{\^][^\]]*)\](?!\()/g, (match, target) => {
-  // Extract wiki links but preserve footnotes for Showdown
-});
+} else if (inner.startsWith('^')) {
+  // [^id] → footnote reference
+  jspwikiElements.push({ type: 'footnote-ref', footnoteId: inner.slice(1), /* … */ });
+}
 ```
 
-__LinkParserHandler.js:27__ - Link handler pattern excludes footnotes:
+__LinkParserHandler__ — the link pattern excludes footnote syntax:
 
 ```javascript
 // Excludes markdown footnote syntax [^id] by using negative lookahead (?!\^)
-/\[(?!\^)([^\|\]]+)(?:\|([^\|\]]+))?(?:\|([^\]]+))?\](?!\()/g
+/\[(?!\^)([^|\]]+)(?:\|([^|\]]+))?(?:\|([^\]]+))?\](?!\()/g
 ```
 
 #### Processing Pipeline
@@ -358,16 +351,14 @@ __LinkParserHandler.js:27__ - Link handler pattern excludes footnotes:
 1. __Extraction Phase__ (MarkupParser)
    - Code blocks protected
    - Wiki syntax extracted: `[{$var}]`, `[{Plugin}]`, `[PageLink]`
-   - Footnotes preserved: `[^1]`, `[^my-note]` passed through
+   - Footnotes extracted: `[^1]`, `[^my-note]` become `footnote-ref` / `footnote-def` elements
+   - Each element becomes a WikiDocument DOM node (`createDOMNode()`)
 
-2. __Markdown Conversion__ (Showdown + showdown-footnotes)
-   - Footnote references converted to superscript links
-   - Footnote definitions collected and processed
-   - Footnotes section generated at end
+2. __Markdown Conversion__ (markdown-it, `page` profile)
+   - Footnote placeholders pass through untouched
 
 3. __DOM Merge Phase__
-   - Wiki syntax placeholders replaced with HTML
-   - Footnote HTML preserved and integrated
+   - Wiki syntax and footnote placeholders replaced with the rendered nodes
 
 ### Configuration
 
@@ -420,9 +411,8 @@ Journal of Documentation, 15(3), 234-256.
 ```markdown
 The implementation uses WikiDocument DOM extraction[^implementation].
 
-[^implementation]: The footnote feature is implemented using the
-`showdown-footnotes` extension, integrated into RenderingManager
-at initialization time. See `src/managers/RenderingManager.js:91`.
+[^implementation]: The footnote feature is implemented in the
+MarkupParser DOM pipeline. See `src/parsers/MarkupParser.ts`.
 ```
 
 #### Multiple References
@@ -446,7 +436,7 @@ Both sources agree[^1][^2] on this point.
 
 | Issue | Cause | Solution |
 | ------- | ------- | ---------- |
-| Footnotes render as red links | LinkParser treating `[^1]` as wiki link | Ensure MarkupParser.js:1512 excludes `^` character |
+| Footnotes render as red links | LinkParser treating `[^1]` as wiki link | Ensure the Step 4 bracket scanner in `extractJSPWikiSyntax()` classifies `^` as a footnote reference |
 | Definition shows as literal text | Missing colon `:` after identifier | Use `[^1]:` not `[^1]` |
 | Multi-paragraph not working | Insufficient indentation | Use exactly 4 spaces or 1 tab |
 | Backlink not working | Footnote defined but not referenced | Ensure reference `[^1]` appears in text |
@@ -520,7 +510,7 @@ The legacy parser provides backward compatibility:
 1. __Macro Expansion__ - Process `[{$variables}]` via VariableManager
 2. __Table Processing__ - Convert JSPWiki table syntax
 3. __Link Processing__ - Parse wiki links via LinkParser
-4. __Showdown Conversion__ - Apply markdown-to-HTML conversion
+4. __markdown-it Conversion__ - Apply markdown-to-HTML conversion (`page` profile)
 5. __Post-Processing__ - Add table styling and cleanup
 
 ---
@@ -545,7 +535,7 @@ __Parameters:__
 
 ##### `initialize(config)`
 
-Initializes the RenderingManager, loads configuration, and sets up Showdown converter.
+Initializes the RenderingManager, loads configuration, and sets up the markdown-it page converter (`createMarkdownConverter('page')`).
 
 __Parameters:__
 
@@ -693,7 +683,7 @@ const html = await renderingManager.renderMarkdown(
 );
 
 console.log(html);
-// Output includes <sup><a href="#footnote-1">[1]</a></sup>
+// Output includes <a id="footnote-ref-1" href="#footnote-1" class="footnote-ref"><sup>[1]</sup></a>
 ```
 
 ### Advanced Features
@@ -719,7 +709,7 @@ Journal of Documentation, 15(3), 234-256.
 Tech Review, 8(2), 112-134.
 
 [^implementation]: The system uses DOM extraction to preserve
-JSPWiki syntax while allowing Showdown to process markdown features.
+JSPWiki syntax while allowing markdown-it to process markdown features.
 
     This multi-paragraph footnote includes additional context and
     implementation details for developers.
@@ -761,7 +751,7 @@ if (parser) {
   console.log('Parse count:', metrics.parseCount);
   console.log('Cache hit ratio:', metrics.cacheHits / metrics.parseCount);
 } else {
-  console.log('Using legacy Showdown parser');
+  console.log('Using legacy parser (markdown-it only)');
 }
 ```
 
@@ -917,38 +907,19 @@ __Symptoms:__
 __Diagnosis:__
 
 ```bash
-# Check if showdown-footnotes is installed
-npm list showdown-footnotes
-
-# Check MarkupParser patterns
-grep "\\[\\^" src/parsers/MarkupParser.js
-grep "\\[\\^" src/parsers/handlers/LinkParserHandler.js
+# Check MarkupParser footnote extraction
+grep -n "footnote" src/parsers/MarkupParser.ts
+grep -n "\\[\\^" src/parsers/handlers/LinkParserHandler.ts
 ```
 
 __Solution:__
 
-1. Ensure `showdown-footnotes` is installed:
+1. Check `extractJSPWikiSyntax()` in `src/parsers/MarkupParser.ts`: Steps 3.5 / 3.6 extract `[^id]: text` definitions, and the Step 4 bracket scanner classifies `[^id]` as a footnote reference.
 
-   ```bash
-   npm install showdown-footnotes --save
-   ```
-
-2. Verify RenderingManager.js:4 imports extension:
+2. Check LinkParserHandler excludes `^`:
 
    ```javascript
-   const showdownFootnotes = require('showdown-footnotes');
-   ```
-
-3. Check MarkupParser.js:1512 excludes `^`:
-
-   ```javascript
-   /\[([^\]\[\{\^][^\]]*)\](?!\()/g
-   ```
-
-4. Check LinkParserHandler.js:27 excludes `^`:
-
-   ```javascript
-   /\[(?!\^)([^\|\]]+)(?:\|([^\|\]]+))?(?:\|([^\]]+))?\](?!\()/g
+   /\[(?!\^)([^|\]]+)(?:\|([^|\]]+))?(?:\|([^\]]+))?\](?!\()/g
    ```
 
 ### Parser Not Selected
@@ -1050,8 +1021,7 @@ __Solution:__
 - [MarkupParser Documentation](./MarkupParser.md)
 - [FootnoteExample Page](/wiki/FootnoteExample)
 - [LinkParser Documentation](../parsers/LinkParser.md)
-- [Showdown Documentation](https://github.com/showdownjs/showdown)
-- [showdown-footnotes Extension](https://github.com/Kriegslustig/showdown-footnotes)
+- [markdown-it Documentation](https://github.com/markdown-it/markdown-it)
 
 ---
 
@@ -1059,6 +1029,7 @@ __Solution:__
 
 | Version | Date | Changes |
 | --------- | ------ | --------- |
+| 1.4.0 | 2026-09-12 | markdown-it replaced showdown ([#1273](https://github.com/jwilleke/ngdpbase/issues/1273)); showdown removed ([#1274](https://github.com/jwilleke/ngdpbase/issues/1274)) |
 | 1.3.2 | 2025-10-16 | Added footnotes support via showdown-footnotes extension |
 | 1.3.1 | 2025-10-12 | Integrated MarkupParser with DOM extraction pipeline |
 | 1.3.0 | 2025-10-01 | Added dual-parser architecture with fallback |
@@ -1068,6 +1039,6 @@ __Solution:__
 
 ---
 
-__Last Updated:__ 2025-10-16
+__Last Updated:__ 2026-09-12
 __Maintained By:__ ngdpbase Development Team
 __Status:__ Production Ready ✅

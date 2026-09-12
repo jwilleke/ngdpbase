@@ -110,7 +110,7 @@ ngdpbase follows a __manager-based architecture__ inspired by JSPWiki:
 ngdpbase uses a __three-phase extraction pipeline__ that separates JSPWiki syntax processing from Markdown parsing:
 
 ```text
-Content → Extract JSPWiki → Create DOM Nodes → Showdown → Merge → HTML
+Content → Extract JSPWiki → Create DOM Nodes → markdown-it → Merge → HTML
 ```
 
 __Key Components:__

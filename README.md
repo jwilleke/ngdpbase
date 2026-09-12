@@ -248,7 +248,7 @@ ngdpbase uses a __WikiDocument DOM extraction pipeline__ that provides robust, c
 
 1. __Extract__ - JSPWiki syntax (`[{$var}]`, `[{Plugin}]`, `[Link]`) extracted before Markdown parsing
 2. __Create DOM Nodes__ - WikiDocument DOM nodes created for each JSPWiki element
-3. __Parse Markdown__ - Showdown processes ALL Markdown without JSPWiki interference
+3. __Parse Markdown__ - markdown-it processes ALL Markdown without JSPWiki interference
 4. __Merge__ - DOM nodes merged back into final HTML
 
 ### Benefits

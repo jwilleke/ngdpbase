@@ -24,7 +24,7 @@ import logger from '../../utils/logger.js';
  * The new pipeline:
  * 1. MarkupParser.extractJSPWikiSyntax() - Extract JSPWiki syntax
  * 2. MarkupParser.createDOMNode() - Create DOM nodes
- * 3. Showdown.makeHtml() - Process markdown
+ * 3. markdown-it makeHtml() - Process markdown
  * 4. MarkupParser.mergeDOMNodes() - Merge nodes into HTML
  *
  * WHY THIS DOMPARSER IS KEPT:

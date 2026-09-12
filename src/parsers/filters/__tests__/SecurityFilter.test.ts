@@ -66,7 +66,7 @@ describe('SecurityFilter', () => {
   });
 
   describe('process() — XSS prevention', () => {
-    // This filter declares phase: 'html', so process() receives Showdown's
+    // This filter declares phase: 'html', so process() receives markdown-it's
     // rendered output. It used to entity-encode every < > " ' — which turned
     // the whole page into visible HTML source and is why enabling the filter
     // broke rendering. The previous version of this test asserted that

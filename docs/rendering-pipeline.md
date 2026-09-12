@@ -159,15 +159,29 @@ __Purpose__: Convert remaining markdown to HTML
 
 __Sub-components__:
 
-- __Showdown.js__: Third-party markdown processor
-- __Markdown Extensions__: Custom extensions for wiki-specific syntax
-- __Configuration__: Uses `this.config.markdown` settings
+- __markdown-it__: Third-party markdown processor, `page` profile, reached through `RenderingManager.converter`
+- __markdown-it plugins__: `markdown-it-anchor` (heading ids), `markdown-it-sub` / `markdown-it-sup`, `markdown-it-task-lists`
+- __Configuration__: Fixed in code, in one place — `src/rendering/markdownConverter.ts`. No configuration property changes the converter options.
 
 __Processing__:
 
 - Converts standard markdown syntax (headers, lists, links, etc.)
 - Preserves HTMLTOKEN placeholders during conversion
-- Applies markdown extensions for enhanced functionality
+- Applies the `page` profile's plugins and renderer rules (below)
+
+#### Markdown converter profiles
+
+`src/rendering/markdownConverter.ts` builds three markdown-it profiles. Each call site asks for one by name through `createMarkdownConverter(profile)`; the options are pinned by `src/rendering/__tests__/markdownConverter.test.ts`.
+
+| Profile | Used by | What it does |
+| --- | --- | --- |
+| `page` | Page bodies: `RenderingManager.converter`, used by `MarkupParser` for the page body, for markdown inside `%%` style blocks, and when the parser is disabled; also the legacy renderer (`RenderingManager.renderWithLegacyParser()`) | `html: true`, `breaks: true` (a single newline is a line break), `linkify: false`, `typographer: false`; heading ids from `SectionUtils.headingSlug` via `markdown-it-anchor`; strict sub/superscript (`H~2~O`, `X^2^`, no spaces); task lists; fenced code keeps `class="js language-js"`; `~~x~~` renders `<del>`; `...` becomes `…` in text only, never in code |
+| `untrusted` | Comments (`src/utils/renderUntrustedInline.ts`) | Line breaks, tables, fenced code, `<del>` and the ellipsis rule; no heading ids, task lists or sub/superscript. SecurityFilter is always on for this profile, whatever the site configuration says. |
+| `fallback` | Degraded paths: `MarkupParser` with no RenderingManager, and `WikiContext.renderMarkdown()` when there is no parser | Plain CommonMark with `html: true`; no single-newline breaks, no heading ids |
+
+Footnotes (`[^id]`) are not a markdown-it plugin: `MarkupParser` extracts `[^id]` references and `[^id]: text` definitions into DOM nodes before conversion, and FootnoteManager stores the per-page footnotes that FootnotesPlugin lists.
+
+markdown-it replaced the `showdown` library in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273); showdown, its extensions and the `guardShowdownInput` ReDoS guard were removed in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274). Each deliberate rendering difference from showdown is recorded as a decision (R1–R17) in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 
 ### Phase 7: Post-processing
 
@@ -346,7 +360,7 @@ MarkupParser (Main Controller)
 │   ├── SecurityFilter (with HTMLTOKEN preservation)
 │   ├── SpamFilter
 │   └── ValidationFilter
-├── Phase 6: phaseMarkdownConversion() → Showdown.js
+├── Phase 6: phaseMarkdownConversion() → markdown-it (page profile)
 └── Phase 7: phasePostProcessing()
     ├── restoreProtectedHtml()
     └── cleanupGeneratedHtml()

@@ -329,12 +329,12 @@ Key handlers (from `src/parsers/handlers/`):
 | `WikiFormHandler` | — | wiki form syntax |
 | `InterWikiLinkHandler` | — | cross-wiki links |
 
-### Legacy Renderer (Showdown)
+### Legacy Renderer
 
-Preferred: __legacy renderer__ or __Showdown fallback__
-Avoid: "old parser", "markdown parser"
+Preferred: __legacy renderer__ or __markdown-it fallback__
+Avoid: "old parser", "markdown parser", "Showdown fallback" (showdown was removed in #1274)
 
-Fallback renderer used when `MarkupParser` is unavailable. Runs Showdown
+Fallback renderer used when `MarkupParser` is unavailable. Runs markdown-it, `fallback` profile of `src/rendering/markdownConverter.ts`
 (Markdown → HTML) + `VariableManager` variable expansion. No plugin support.
 Triggered when `RenderingManager.getParser()` returns null.
 

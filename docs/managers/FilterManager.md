@@ -36,7 +36,7 @@ const filterManager = engine.getManager('FilterManager');
 await filterManager.registerFilter(new HouseStyleFilter());
 ```
 
-The built-ins (`SecurityFilter`, `SpamFilter`, `ValidationFilter`) register through this same `registerFilter()` — the extension path is the path the built-ins use, so it is the path that stays tested. Ordering is the filter's `priority`; phases are `markup` (raw source, before Showdown) and `html` (rendered output).
+The built-ins (`SecurityFilter`, `SpamFilter`, `ValidationFilter`) register through this same `registerFilter()` — the extension path is the path the built-ins use, so it is the path that stays tested. Ordering is the filter's `priority`; phases are `markup` (raw source, before markdown-it) and `html` (rendered output).
 
 A failed contributed filter is logged and skipped (`registerFilter` returns `false`) — one broken addon filter must not take the pipeline down.
 

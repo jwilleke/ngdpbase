@@ -14,7 +14,6 @@ import type { Request, Response } from 'express';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import logger from '../utils/logger.js';
-import { guardShowdownInput } from '../utils/showdownGuard.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type PageManager from '../managers/PageManager.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -582,7 +581,7 @@ class WikiContext {
    * Renders the provided markdown content through the full rendering pipeline
    *
    * This method uses the MarkupParser for advanced parsing with plugin support,
-   * variable expansion, and multi-phase processing. Falls back to simple Showdown
+   * variable expansion, and multi-phase processing. Falls back to plain markdown-it
    * conversion if the parser is unavailable.
    *
    * @async
@@ -624,10 +623,9 @@ class WikiContext {
       logger.info(`[CTX] variables expanded len=${expanded.length}`);
     }
 
-    // Guarded (#1000). This fallback fires when RenderingManager has no parser,
-    // and POST /api/preview reaches it with an arbitrary request body — so it is
-    // exactly as exposed as the primary path, degraded or not.
-    const html: string = this._fallbackConverter.makeHtml(guardShowdownInput(expanded));
+    // This fallback fires when RenderingManager has no parser, and POST
+    // /api/preview reaches it with an arbitrary request body.
+    const html: string = this._fallbackConverter.makeHtml(expanded);
     logger.info(`[CTX] fallback converter resultLen=${html.length}`);
     return html;
   }

@@ -1,7 +1,7 @@
 /**
  * Markdown inside %%style blocks — issue #1039
  *
- * Style-block content is lifted out at Step 0.5, before Showdown runs on the
+ * Style-block content is lifted out at Step 0.5, before the markdown converter runs on the
  * document, and was then handed to appendWikiNodes — which resolves wiki syntax
  * and emits everything else as text nodes. So markdown inside a block reached
  * the reader as literal source: `## Introduction` showed its own hashes and
@@ -13,27 +13,17 @@
  * passes straight through. A plain block escapes the same tag. That accident is
  * how the one raw `<br>` #1038's migration could not convert came to exist.
  *
- * These tests use a REAL Showdown converter configured like RenderingManager's.
+ * These tests use the REAL page converter RenderingManager uses (#1273).
  * A stub `makeHtml: s => s` would let every assertion here pass or fail for the
  * wrong reason — it is exactly what made an earlier probe report the markdown
  * path as working when it was not running at all.
  */
 
-import showdown from 'showdown';
 import MarkupParser from '../MarkupParser';
+import { createMarkdownConverter } from '../../rendering/markdownConverter.js';
 
-const converter = new showdown.Converter({
-  tables: true,
-  strikethrough: true,
-  tasklists: true,
-  simpleLineBreaks: true,
-  openLinksInNewWindow: false,
-  backslashEscapesHTMLTags: true,
-  disableForced4SpacesIndentedSublists: true,
-  literalMidWordUnderscores: true,
-  ghCodeBlocks: true,
-  ghHeaderIds: true
-});
+// The production page converter itself (#1273), not a copy of its options.
+const converter = createMarkdownConverter('page');
 
 class MockEngine {
   managers: Map<string, unknown>;
@@ -140,7 +130,7 @@ describe('markdown inside %%style blocks (#1039)', () => {
   });
 
   test('raw HTML in a block is still inert', async () => {
-    // Text is escaped before Showdown sees it, so this grants markdown WITHOUT
+    // Text is escaped before markdown-it sees it, so this grants markdown WITHOUT
     // granting embedded HTML — which is the direction #1037 set.
     const result = await parser.parse('%%information\n<script>alert(1)</script>\n\ntail\n/%');
 
@@ -189,11 +179,11 @@ describe('markdown inside %%style blocks (#1039)', () => {
   // ── raw code blocks are exempt ────────────────────────────────────────────
 
   test('CSS in %%add-css is NOT run through markdown', async () => {
-    // Showdown reads `/*…*/` as emphasis, so this rendered
+    // markdown-it reads `/*…*/` as emphasis, so this rendered
     // `/<em>pagination.less</em>/` on nine CSS documentation pages — which exist
     // precisely to show the CSS accurately.
     // No spaces inside the comment markers — that is the form CSSThemeDark
-    // actually uses, and the form Showdown reads as emphasis. A spaced
+    // actually uses, and the form markdown-it reads as emphasis. A spaced
     // `/* like this */` does NOT reproduce it, so a test written that way
     // passes with the guard removed and proves nothing.
     const css = '%%add-css\n/*pagination.less*/\n.pagination { color: red; }\n/%';

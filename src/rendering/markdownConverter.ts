@@ -2,11 +2,11 @@
  * The one place that says how markdown becomes HTML (#1273, epic #1271).
  *
  * markdown-it replaces showdown, which has had no release since 2023 and whose
- * mitigations (#599, #1064) were ours to keep correct on a dead parser. Every
- * option here was measured on the real page corpus by the #1272 harness
- * (`scripts/render-diff.ts`, which builds its candidate from this file), and
- * each deliberate difference from showdown is a decision on the #1271 log
- * (R2–R15), pinned by `__tests__/markdownConverter.test.ts`.
+ * mitigations (#599, #1064) were ours to keep correct on a dead parser; it was
+ * removed in #1274. Every option here was measured on the real page corpus by
+ * the #1272 harness (since retired), and each deliberate difference from
+ * showdown is a decision on the #1271 log (R2–R17), pinned by
+ * `__tests__/markdownConverter.test.ts`.
  *
  * Three profiles, not one shared configuration (R3) — the call sites differed
  * under showdown, and merging them would silently change their HTML:
@@ -78,8 +78,8 @@ function ellipsisOnly(md: MarkdownIt): void {
 }
 
 /**
- * A markdown-it instance for one profile. Exported for the #1272 harness and
- * the option-invariant test; app code uses {@link createMarkdownConverter}.
+ * A markdown-it instance for one profile. Exported for the option tests; app
+ * code uses {@link createMarkdownConverter}.
  */
 export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
   if (profile === 'fallback') {

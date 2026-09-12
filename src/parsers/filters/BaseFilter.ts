@@ -23,8 +23,8 @@ import type { FilterValidationError } from './FilterChain.js';
  * Pipeline phase a filter operates in (#614).
  *
  * - `'markup'` (default) — runs on raw markdown/JSPWiki content before
- *   Showdown rendering. ValidationFilter, SpamFilter operate here.
- * - `'html'` — runs on rendered HTML after Showdown. SecurityFilter
+ *   markdown rendering. ValidationFilter, SpamFilter operate here.
+ * - `'html'` — runs on rendered HTML after markdown-it. SecurityFilter
  *   (XSS prevention, dangerous-tag stripping, attribute allow-listing)
  *   operates here, since its rules target HTML constructs that don't
  *   exist in raw markdown.

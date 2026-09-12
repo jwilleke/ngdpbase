@@ -28,7 +28,6 @@
 
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import SecurityFilter from '../parsers/filters/SecurityFilter.js';
-import { guardShowdownInput } from './showdownGuard.js';
 import logger from './logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
@@ -94,9 +93,7 @@ export async function renderUntrustedInline(markdown: string, engine: WikiEngine
     const renderer = await pending;
     if (!renderer) return fallback();
 
-    // #1000/#599: the showdown ReDoS guard stays on this input until #1274
-    // retires it; it is harmless on markdown-it input.
-    const html = renderer.converter.makeHtml(guardShowdownInput(markdown));
+    const html = renderer.converter.makeHtml(markdown);
     return await renderer.filter.process(html, { pageName: 'untrusted-inline' });
   } catch (err) {
     logger.warn('[renderUntrustedInline] render failed, falling back to escaped text:', err);

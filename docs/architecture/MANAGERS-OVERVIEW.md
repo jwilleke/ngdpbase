@@ -282,7 +282,7 @@ Phase 2.5  — JSPWikiPreprocessor (priority 95)
 Step 0.55  — Inline style conversion
              (%%sup/sub/strike%% → <sup>/<sub>/<del>)
 Phase 2.6  — Other registered handlers (plugins, wiki links, etc.)
-Phase 3    — Showdown markdown → HTML
+Phase 3    — markdown-it markdown → HTML (page profile, src/rendering/markdownConverter.ts)
 Phase 4    — DOM placeholder restoration
              (UUID spans replaced with rendered plugin/code/style HTML)
 FilterChain — ⚠️ Initialized but never called — see #596
@@ -296,7 +296,7 @@ __See also:__ [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
 
 ### RenderingManager
 
-Orchestrates content rendering. Supports the advanced MarkupParser pipeline and a legacy Showdown converter (configurable fallback).
+Orchestrates content rendering. Supports the advanced MarkupParser pipeline and a legacy path that runs the markdown-it page converter directly (configurable fallback).
 
 __Key API:__
 
@@ -304,7 +304,7 @@ __Key API:__
 |---|---|
 | `renderMarkdown(content, name, ctx, req)` | Main render entry point |
 | `renderWithAdvancedParser(...)` | MarkupParser pipeline |
-| `renderWithLegacyParser(...)` | Showdown fallback |
+| `renderWithLegacyParser(...)` | Legacy fallback (markdown-it only) |
 | `expandMacros(content, name, ctx, req)` | Expand `[{Plugin}]` tokens |
 | `processWikiLinks(content)` | Convert `[[Page]]` to HTML anchors |
 | `buildLinkGraph()` | Full scan of all pages |
@@ -557,7 +557,7 @@ WikiRoutes.viewPage()
           → Phase 2.5: JSPWikiPreprocessor (tables, style blocks)
           → Step 0.55: inline style conversion (%%sup/sub/strike%%)
           → Phase 2.6: handlers (plugins, wiki links, variables)
-          → Phase 3: Showdown markdown → HTML
+          → Phase 3: markdown-it markdown → HTML
           → Phase 4: DOM placeholder restoration
   → CacheManager.set(rendered-pages:<name>:<roleSet>, html, ttl)
   → MetricsManager.recordPageView(ms)

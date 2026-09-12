@@ -55,7 +55,7 @@ Instead of manipulating content as strings through multiple, sequential phases (
 
 1. JSPWiki-specific syntax is __extracted__ from the raw markup.
 2. These extracted elements are converted into __DOM nodes__ within a `WikiDocument` instance.
-3. The remaining "safe" markdown is processed by a standard markdown parser (Showdown).
+3. The remaining "safe" markdown is processed by a standard markdown parser (markdown-it, configured in `src/rendering/markdownConverter.ts`).
 4. The rendered DOM nodes are __merged__ back into the final HTML.
 
 This separation of concerns ensures that the markdown parser and the JSPWiki syntax handlers do not interfere with each other.
@@ -83,7 +83,7 @@ The `WikiDocument` class enables a modern, robust parsing architecture that sepa
 
 __ngdpbase now follows the same pattern:__
 
-- __Markdown Syntax__ (`##`, `*`, etc.) is handled exclusively by the __Showdown parser__.
+- __Markdown Syntax__ (`##`, `*`, etc.) is handled exclusively by the __markdown-it parser__.
 - __JSPWiki Syntax__ (`[{$var}]`, `[{Plugin}]`, `[Link]`) is handled by the __DOM Extraction Pipeline__, which uses `WikiDocument`.
 
 This architecture permanently fixes the escaping and order-dependency issues.
@@ -233,10 +233,10 @@ A static method that reconstructs a `WikiDocument` instance from a JSON object (
 └─────────────────────────────────────┘
               ↓
 ┌─────────────────────────────────────┐
-│   PHASE 3: Showdown + Merge         │
+│   PHASE 3: markdown-it + Merge      │
 │   MarkupParser.parseWithDOMExtraction()│
 │                                     │
-│   A: Showdown parses the sanitized  │
+│   A: markdown-it parses sanitized   │
 │      markdown into HTML.            │
 │      → "<h2>Welcome</h2><p>...</p>" │
 │                                     │
@@ -251,11 +251,11 @@ A static method that reconstructs a `WikiDocument` instance from a JSON object (
 └─────────────────────────────────────┘
 ```
 
-This architecture ensures that Showdown only ever sees "safe" markdown, and the JSPWiki handlers only operate on the specific syntax they are designed for, preventing conflicts.
+This architecture ensures that markdown-it only ever sees "safe" markdown, and the JSPWiki handlers only operate on the specific syntax they are designed for, preventing conflicts.
 
 ### Style syntax (`%%…/%`) is DOM-native too (#907)
 
-Every `%%…/%` style construct is a first-class citizen of Phase 1 — it extracts to a typed `ExtractedElement`, resolves to a real `WikiDocument` node in Phase 2, and merges back in Phase 3. There are __no post-Showdown string passes__ rewriting `%%` markup into HTML. Historically these were patched with regex string-replace steps (the removed "Step 0.55" and `convertInlineCssStyles()`); each new case meant another regex, and the passes fought each other and the markdown converter. The unified extraction replaces all of that.
+Every `%%…/%` style construct is a first-class citizen of Phase 1 — it extracts to a typed `ExtractedElement`, resolves to a real `WikiDocument` node in Phase 2, and merges back in Phase 3. There are __no post-conversion string passes__ rewriting `%%` markup into HTML. Historically these were patched with regex string-replace steps (the removed "Step 0.55" and `convertInlineCssStyles()`); each new case meant another regex, and the passes fought each other and the markdown converter. The unified extraction replaces all of that.
 
 Two families of style markup, both handled in the extraction phase:
 

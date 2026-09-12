@@ -6,7 +6,7 @@
  * SecurityFilter allow-list admits <iframe>/<img> because an author-written
  * one is refused at SAVE. Comments pass no save gate and their authors are
  * never trusted, so this profile composes the SAME engine differently:
- * the same showdown core, the same SecurityFilter sanitizer with its config
+ * the same markdown-it core (#1273), the same SecurityFilter sanitizer with its config
  * forced on, a tightened tag list, and no MarkupParser — so plugin and
  * variable syntax is inert by construction rather than by switch.
  */

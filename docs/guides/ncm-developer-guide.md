@@ -9,7 +9,7 @@ Status: Phase 1 + Phase 2 shipped (v3.18.0; [#728](https://github.com/jwilleke/n
 - A new ingestion path must go through the normalizer and be added to `converters/ncm/__tests__/funnelCoverage.test.ts`.
 - Footnote transfer has one implementation: `FootnoteManager.transferFromContent`. Convert, ingest, and import delegate to it.
 Code: `src/converters/ncm/` · `src/utils/ncmNotify.ts` · wired into `ImportManager`, the `/admin/convert` tool, and `mcp-server.ts`.
-Related: [#501](https://github.com/jwilleke/ngdpbase/issues/501) (JSON→NCM serializer — consumer) · [#685](https://github.com/jwilleke/ngdpbase/issues/685) (data-ingestion framework — consumer) · [#599](https://github.com/jwilleke/ngdpbase/issues/599) (showdown ReDoS — why no raw-HTML sink) · [#737](https://github.com/jwilleke/ngdpbase/issues/737) (Phase-2 image transcoding — open follow-up) · [#738](https://github.com/jwilleke/ngdpbase/issues/738) (conversion metrics — open follow-up).
+Related: [#501](https://github.com/jwilleke/ngdpbase/issues/501) (JSON→NCM serializer — consumer) · [#685](https://github.com/jwilleke/ngdpbase/issues/685) (data-ingestion framework — consumer) · [#599](https://github.com/jwilleke/ngdpbase/issues/599) (the showdown ReDoS, gone with showdown in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274) — why no raw-HTML sink) · [#737](https://github.com/jwilleke/ngdpbase/issues/737) (Phase-2 image transcoding — open follow-up) · [#738](https://github.com/jwilleke/ngdpbase/issues/738) (conversion metrics — open follow-up).
 
 ---
 
@@ -25,15 +25,15 @@ external feed (#685)   ─┘
 
 Why one format:
 
-- __Security/consistency__ — one renderer, one sanitizer; no parallel raw-HTML injection sink (directly relevant to the unpatched showdown ReDoS #599 and the XSS/CSRF posture).
+- __Security/consistency__ — one renderer, one sanitizer; no parallel raw-HTML injection sink (the lesson of the showdown ReDoS #599, which went away when showdown was removed in #1274, and the XSS/CSRF posture).
 - __Round-trippable__ — every page can be re-emitted as NCM: "convert existing page", deterministic re-serialization, clean versioned-page diffs.
 - __One consumer contract__ — plugin/import/ingestion authors target one format, not N.
 
-NCM is a *profile* + a *normalization pass* layered on the existing machinery (`src/converters/` `IContentConverter` registry, `turndown`/`showdown`, the `MarkupParser` 7-phase render pipeline, `gray-matter` frontmatter, `AttachmentManager`). The render pipeline is __unchanged__ by NCM — NCM is the write-side normalizer.
+NCM is a *profile* + a *normalization pass* layered on the existing machinery (`src/converters/` `IContentConverter` registry, `turndown`/`markdown-it`, the `MarkupParser` 7-phase render pipeline, `gray-matter` frontmatter, `AttachmentManager`). The render pipeline is __unchanged__ by NCM — NCM is the write-side normalizer.
 
 ## 2. What NCM is
 
-NCM = __CommonMark/GFM core__ (as rendered by the existing showdown config) __plus__ the ngdp wiki extensions supported by `MarkupParser`, constrained to a sanitizable, deterministic subset.
+NCM = __CommonMark/GFM core__ (as rendered by the markdown-it `page` profile, `src/rendering/markdownConverter.ts`) __plus__ the ngdp wiki extensions supported by `MarkupParser`, constrained to a sanitizable, deterministic subset.
 
 The author-facing summary of what renders, and the house style NCM output follows, is the shipped help page __Markdown as we use it__ ([`required-pages/960066eb-27b4-4fac-a016-a4e1d64b645c.md`](../../required-pages/960066eb-27b4-4fac-a016-a4e1d64b645c.md)). The reasons behind each rule are in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 
@@ -41,15 +41,15 @@ The author-facing summary of what renders, and the house style NCM output follow
 
 | Construct | NCM form | Backed by |
 |---|---|---|
-| Headings, emphasis, lists, code | CommonMark, written in the house style: `#` headings, `__bold__` / `*italic*`, hyphen bullets, 2-space nesting (3 under a numbered item), numbered steps as `- 1 words`, ```` ```lang ```` fences. Output does not follow it everywhere yet ([#1332](https://github.com/jwilleke/ngdpbase/issues/1332)) | showdown |
+| Headings, emphasis, lists, code | CommonMark, written in the house style: `#` headings, `__bold__` / `*italic*`, hyphen bullets, 2-space nesting (3 under a numbered item), numbered steps as `- 1 words`, ```` ```lang ```` fences. Output does not follow it everywhere yet ([#1332](https://github.com/jwilleke/ngdpbase/issues/1332)) | markdown-it (`page` profile) |
 | Line breaks | A single newline is a break; `\\` forces one mid-line, `\\\` also clears floats. Raw `<br>` is refused on save | `MarkupParser` (Step 0.6), `SecurityFilter` `no-raw-br` |
-| Strikethrough, sub/superscript | `~~text~~`; `H~2~O`, `X^2^` (no spaces inside), `%%sub … /%` / `%%sup … /%` for longer spans | showdown options / extension, `MarkupParser` inline styles |
+| Strikethrough, sub/superscript | `~~text~~`; `H~2~O`, `X^2^` (no spaces inside), `%%sub … /%` / `%%sup … /%` for longer spans | markdown-it (`~~`), `markdown-it-sub` / `markdown-it-sup`, `MarkupParser` inline styles |
 | Emoji | `:shortcode:` | `MarkupParser` (Step 0.7) |
 | Style blocks | `%%class … /%` blocks, `%%(css) … /%` inline | `MarkupParser`, `JSPWikiPreprocessor` |
 | Section links | `[Text\|Page#section=Heading Text]`; heading IDs come from the plain heading text (`SectionUtils.headingSlug`) | `LinkParser`, `DOMLinkHandler` |
 | __Tables__ | __Up-convert (NCM v2).__ GFM pipe tables are rewritten on normalization to the rich JSPWiki canonical form — `\|\|Header\|\|`/`\|cell\|` rows wrapped in the configured style blocks (default `%%table-fit`/`-bordered`/`-striped`/`-hover`/`sortable`), giving imported tables fit/border/zebra/hover + client-side sorting. Style classes are operator-configurable via `ngdpbase.markdown.ncm.table.default-classes` (set `[]` for no wrapper). Up-convert only — there is no down-convert. Idempotent: the styled form has no GFM separator row, so re-normalizing converts nothing. Existing JSPWiki tables in a body are never matched/re-wrapped. *(v1 left both forms as passthrough; the v1→v2 profile bump is applied to new normalizations only — existing pages migrate explicitly, never silently on read.)* | `converters/ncm/tables.ts`, `JSPWikiPreprocessor`, `public/js/tableSort.js` |
 | __Links__ | JSPWiki form (see §2.4): internal `[Display\|PageName]`, external `[Display\|https://url\|target="_blank"]`, InterWiki `[Display\|Site:Ref]` — __not__ CommonMark `[text](url)` | `LinkParserHandler` |
-| __Footnotes__ | `[^id]` reference + `[^id]: text` definition (single- and multi-paragraph). __Conversion transfers definitions to the sidecar footnote list__ ([#1125](https://github.com/jwilleke/ngdpbase/issues/1125)): the convert-existing path moves `[^id]: text` into `FootnoteManager` records (id preserved verbatim — refs must keep resolving), leaves the refs in the body, and appends `[{FootnotesPlugin}]` when absent. A colliding sidecar id keeps the body definition and warns. The extraction (`converters/ncm/footnotes.ts`) is pure; the sidecar write lives with the caller, mirroring the §2.2 image split. | `FootnoteManager`, `FootnotesPlugin`, `showdown-footnotes-fixed` |
+| __Footnotes__ | `[^id]` reference + `[^id]: text` definition (single- and multi-paragraph). __Conversion transfers definitions to the sidecar footnote list__ ([#1125](https://github.com/jwilleke/ngdpbase/issues/1125)): the convert-existing path moves `[^id]: text` into `FootnoteManager` records (id preserved verbatim — refs must keep resolving), leaves the refs in the body, and appends `[{FootnotesPlugin}]` when absent. A colliding sidecar id keeps the body definition and warns. The extraction (`converters/ncm/footnotes.ts`) is pure; the sidecar write lives with the caller, mirroring the §2.2 image split. | `FootnoteManager`, `FootnotesPlugin`, `MarkupParser` footnote extraction |
 | __Embedded images__ | `![alt](attachment-ref)` — image downloaded and stored as an attachment; the source URL / `data:` URI is replaced with the local attachment ref | `AttachmentManager`, `ImportManager.importPageAttachments()` |
 | Plugins / variables | `[{PluginName param='…'}]`, `[{$variable}]` | `PluginManager`, `VariableManager` |
 | Frontmatter | YAML via `gray-matter`, incl. the taxonomy fields (§3.2) | existing page contract |
@@ -141,8 +141,8 @@ The render pipeline was designed for __trusted page authors__: raw HTML survives
 
 | Profile | Used for | Composition |
 |---|---|---|
-| `trusted-page` | Page bodies | Full pipeline: MarkupParser (plugins, variables, wiki links), showdown, filter chain per site config |
-| `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same showdown core (CommonMark only — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); same SecurityFilter with its config __forced on__ (not site-configurable — an operator toggling render filtering must not change what commenters can inject) and a tightened tag list (no `iframe`, no `img`); the #1000 ReDoS guard on input; escape-everything fallback on any failure — degraded is safe, never open |
+| `trusted-page` | Page bodies | Full pipeline: MarkupParser (plugins, variables, wiki links), markdown-it (`page` profile), filter chain per site config |
+| `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same markdown-it core, `untrusted` profile of `src/rendering/markdownConverter.ts` (CommonMark plus breaks, tables, fences and `<del>`; no heading ids, task lists or sub/superscript — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); same SecurityFilter with its config __forced on__ (not site-configurable — an operator toggling render filtering must not change what commenters can inject) and a tightened tag list (no `iframe`, no `img`); escape-everything fallback on any failure — degraded is safe, never open |
 
 A future surface with untrusted authors adopts `untrusted-inline` rather than re-deciding; wiki-link support inside it (with viewer-context resolution, per the #1116 rule) is a possible extension, deliberately not in the first cut — a red-link in a comment is a page-creation lure and an existence probe.
 

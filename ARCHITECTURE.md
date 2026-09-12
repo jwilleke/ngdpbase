@@ -82,7 +82,7 @@ Three-phase extraction for parsing JSPWiki syntax:
 
 ### Content Processing
 
-- __Showdown__ for Markdown parsing
+- __markdown-it__ for Markdown parsing (configured in `src/rendering/markdownConverter.ts`)
 - __Custom JSPWiki handlers__ for compatibility
 - __WikiDocument DOM__ (linkedom-based) for content manipulation
 - __Delta-based versioning__ (80-95% space savings)

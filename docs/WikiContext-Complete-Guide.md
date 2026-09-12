@@ -367,7 +367,7 @@ const html = await wikiContext.renderMarkdown('# Custom Content [{$pagename}]');
 __Processing pipeline:__
 
 1. __MarkupParser__ (primary) — WikiDocument DOM, variables, plugins, links
-2. __Showdown fallback__ (if parser unavailable) — variables expanded, basic Markdown
+2. __markdown-it fallback__ (if parser unavailable) — variables expanded, basic Markdown via the `fallback` profile of `src/rendering/markdownConverter.ts` (plain CommonMark, no single-newline breaks)
 
 #### `toParseOptions(): ParseOptions`
 
@@ -445,7 +445,7 @@ src/
 │  MarkupParser.parse(content, options)                │
 │  • Phase 1: Extract JSPWiki syntax                  │
 │  • Phase 2: Create WikiDocument DOM nodes           │
-│  • Showdown markdown conversion                     │
+│  • markdown-it markdown conversion                  │
 │  • Phase 3: Merge DOM nodes → HTML                  │
 └─────────────────────────────────────────────────────┘
                       ↓

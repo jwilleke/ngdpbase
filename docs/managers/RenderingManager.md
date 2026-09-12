@@ -16,11 +16,11 @@ __Complete Guide:__ [RenderingManager-Complete-Guide.md](RenderingManager-Comple
 
 ## Overview
 
-RenderingManager orchestrates the conversion of markdown and wiki markup to HTML. It implements a dual-parser architecture with an advanced MarkupParser (with WikiDocument DOM extraction) and a legacy Showdown-based fallback for backward compatibility.
+RenderingManager orchestrates the conversion of markdown and wiki markup to HTML. It implements a dual-parser architecture with an advanced MarkupParser (with WikiDocument DOM extraction) and a legacy fallback that runs markdown-it directly, for backward compatibility. The markdown converter is markdown-it, `page` profile, configured in `src/rendering/markdownConverter.ts`.
 
 ## Key Features
 
-- __Dual Parser System__ - Advanced MarkupParser with DOM extraction or legacy Showdown
+- __Dual Parser System__ - Advanced MarkupParser with DOM extraction or legacy direct markdown-it
 - __Wiki Link Processing__ - Parse `[PageName]` and `[Text|Target]` wiki links
 - __Plugin Integration__ - Execute `[{Plugin}]` syntax via PluginManager
 - __Variable Expansion__ - Process `[{$variable}]` syntax with VariableManager
@@ -104,11 +104,13 @@ const total = renderingManager.getTotalPagesCount();
    - Filter chains for pre/post processing
 
 2. __Legacy Parser__ (fallback or if advanced disabled):
-   - Direct Showdown conversion
+   - Direct markdown-it conversion (`page` profile)
    - Basic JSPWiki syntax support
    - Reliable fallback for edge cases
 
 ## Supported Markdown Extensions
+
+Set in `src/rendering/markdownConverter.ts` (`page` profile); footnotes are handled by MarkupParser, not the converter.
 
 - __Tables__ - GitHub Flavored Markdown tables
 - __Strikethrough__ - `~~deleted text~~`

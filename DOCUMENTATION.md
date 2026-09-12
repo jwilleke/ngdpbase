@@ -137,7 +137,7 @@ For operations and deployment:
 
 - __Markdown__ - Content format
 - __YAML Frontmatter__ - Metadata
-- __Showdown__ - Markdown parser
+- __markdown-it__ - Markdown parser
 - __JSPWiki Syntax__ - Wiki syntax compatibility
 - __linkedom__ - DOM implementation
 

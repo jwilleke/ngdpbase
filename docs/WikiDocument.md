@@ -6,7 +6,7 @@
 
 The primary purpose of `WikiDocument` is to enable a robust parsing pipeline where different types of content (Markdown vs. JSPWiki syntax) can be handled by specialized tools without conflict.
 
-- __Markdown__ is processed by the __Showdown__ library.
+- __Markdown__ is processed by the __markdown-it__ library, configured in `src/rendering/markdownConverter.ts`.
 - __JSPWiki Syntax__ (variables, plugins, links) is parsed into a `WikiDocument` instance, which provides a structured, W3C-compliant DOM tree.
 
 This separation of concerns permanently fixes a class of bugs related to escaping and incorrect rendering order.
@@ -14,7 +14,7 @@ This separation of concerns permanently fixes a class of bugs related to escapin
 ## Key Features
 
 - __DOM Structure__: Uses the lightweight and performant `linkedom` library to provide a standard DOM API.
-- __Decoupling__: The parser extracts JSPWiki syntax and creates `WikiDocument` nodes, but the final HTML is rendered by merging these nodes into Showdown's output. This decouples the components.
+- __Decoupling__: The parser extracts JSPWiki syntax and creates `WikiDocument` nodes, but the final HTML is rendered by merging these nodes into markdown-it's output. This decouples the components.
 - __Cacheable__: `WikiDocument` instances can be serialized to and from JSON, allowing for efficient caching of parsed content.
 - __High Performance__: The entire pipeline is faster and more memory-efficient than the legacy string-based parser.
 

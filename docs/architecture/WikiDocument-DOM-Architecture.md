@@ -138,6 +138,8 @@ __Benefits__:
 
 ## ngdpbase's Current Architecture (String-Based)
 
+> Historical: this was the pipeline before the DOM work. The string pipeline was removed in #185, and showdown, its markdown converter, was replaced by markdown-it in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273).
+
 ### Current Pipeline
 
 ```text
@@ -246,12 +248,12 @@ __The solution was implemented using a pre-extraction strategy__ that separates 
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│         PHASE 3: Showdown + Merge                            │
+│         PHASE 3: markdown-it + Merge                         │
 │         MarkupParser.parseWithDOMExtraction()                │
 │         (Issue #117 - ✅ COMPLETE)                           │
 │                                                               │
-│  Step A: Let Showdown parse sanitized markdown              │
-│    • Showdown.makeHtml(sanitized)                           │
+│  Step A: Let markdown-it parse sanitized markdown           │
+│    • renderingManager.converter.makeHtml(sanitized)         │
 │    • Result: "<h2>Welcome</h2><p>User: <span ...></span></p>" │
 │                                                               │
 │  Step B: Merge DOM nodes back into HTML                     │
@@ -343,7 +345,7 @@ __Rationale:__
 
 __Previous Decision (Deprecated):__ HTML comments (`<!--JSPWIKI-uuid-id-->`)
 
-- __Issue Found:__ Showdown treats HTML comments at start of line as block-level elements
+- __Issue Found:__ Showdown (the converter at the time) treated HTML comments at start of line as block-level elements
 - __Problem:__ `[{$pagename}] text` rendered as two blocks instead of inline
 - __Fixed:__ Changed to inline span elements to maintain inline rendering
 
@@ -370,7 +372,7 @@ __Rationale:__
 
 1. __Markdown Heading Bug Fixed__ (#110, #93)
    - `## Heading` now correctly becomes `<h2>Heading</h2>`
-   - Showdown handles ALL markdown without JSPWiki interference
+   - markdown-it handles ALL markdown without JSPWiki interference
 
 2. __No Order Dependency__
    - JSPWiki syntax extracted before markdown parsing
@@ -555,7 +557,7 @@ __Test Coverage:__ 23 tests passing
 
 ### Phase 3: Merge Pipeline (Issue #117) - ✅ COMPLETE
 
-__Objective:__ Merge DOM nodes into Showdown HTML
+__Objective:__ Merge DOM nodes into Showdown HTML (the converter then; markdown-it since [#1273](https://github.com/jwilleke/ngdpbase/issues/1273))
 
 __Status:__ Complete - `parseWithDOMExtraction()` implemented
 __Test Coverage:__ 31 tests passing
@@ -691,7 +693,7 @@ class VariableHandler {
 
 ### Original Phase 4: Add Renderer - NOT IMPLEMENTED
 
-__Note:__ The actual implementation merges DOM nodes directly into Showdown's HTML output instead of using a separate renderer.
+__Note:__ The actual implementation merges DOM nodes directly into markdown-it's HTML output instead of using a separate renderer.
 
 ```javascript
 // New file: src/parsers/XHTMLRenderer.js
@@ -926,7 +928,7 @@ __The WikiDocument DOM architecture has been successfully implemented__ using a 
 
 ✅ __Phase 1 (Issue #115):__ Extract JSPWiki syntax before markdown parsing
 ✅ __Phase 2 (Issue #116):__ Create WikiDocument DOM nodes via handlers
-✅ __Phase 3 (Issue #117):__ Merge DOM nodes into Showdown HTML
+✅ __Phase 3 (Issue #117):__ Merge DOM nodes into Showdown HTML (markdown-it since #1273)
 ✅ __Phase 4 (Issue #118):__ Document reference code with architecture notes
 
 __Results:__

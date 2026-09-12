@@ -91,7 +91,7 @@ describe('FileSystemProvider', () => {
     //
     // #1065: under the OS tmpdir, NOT under src/. This suite used to park its
     // temp tree at src/temp-test-fsp-* — the source-scanning invariant tests
-    // (showdownGuardCoverage, showdown-converter-options) walk src/ from other
+    // (atomicWriteCoverage, funnelCoverage and their like) walk src/ from other
     // workers, and a directory vanishing between their readdir and stat threw
     // ENOENT mid-scan: the "fails in the full suite, passes in isolation"
     // flake. Tests must never create files under src/ outside __tests__/.

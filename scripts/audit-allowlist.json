@@ -1,23 +1,4 @@
 {
   "_comment": "Advisories the operator has decided to carry, for now (#1242). Every entry names the issue holding the decision and a review date; past that date the entry stops counting and the audit goes red again. A package fails unless EVERY advisory behind it is listed here.",
-  "entries": [
-    {
-      "advisory": "GHSA-rmmh-p597-ppvv",
-      "issue": "#1247",
-      "reason": "showdown ReDoS in link parsing; no fixed version (last release 2023-07). Mitigated: src/utils/showdownGuard.ts (#599) escapes the unclosed link opener that triggers it, on every converter input; covered by showdownGuardCoverage.test.ts. Carried until the converter decision on #1247.",
-      "reviewBy": "2026-10-06"
-    },
-    {
-      "advisory": "GHSA-cr32-g25g-vxjj",
-      "issue": "#1247",
-      "reason": "showdown XSS via metadata title; needs the metadata + completeHTMLDocument options, which no converter here enables. Pinned off by showdown-converter-options.invariant.test.ts (#1064). Carried until the converter decision on #1247.",
-      "reviewBy": "2026-10-06"
-    },
-    {
-      "advisory": "GHSA-22g5-r2x5-97cx",
-      "issue": "#1247",
-      "reason": "showdown stored XSS via table header id; needs tablesHeaderId, which no converter here enables (probed 2026-09-06: the payload renders as inert text). Pinned off by showdown-converter-options.invariant.test.ts (#1064). Carried until the converter decision on #1247.",
-      "reviewBy": "2026-10-06"
-    }
-  ]
+  "entries": []
 }

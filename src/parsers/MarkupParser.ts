@@ -9,7 +9,6 @@ import DOMVariableHandler from './dom/handlers/DOMVariableHandler.js';
 import DOMPluginHandler from './dom/handlers/DOMPluginHandler.js';
 import DOMLinkHandler from './dom/handlers/DOMLinkHandler.js';
 import logger from '../utils/logger.js';
-import { guardShowdownInput } from '../utils/showdownGuard.js';
 import JSPWikiPreprocessor from './handlers/JSPWikiPreprocessor.js';
 import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
@@ -305,7 +304,7 @@ export interface ExtendedMetrics extends ParserMetrics {
  * **WikiDocument DOM Extraction Pipeline** (Issues #115-#120):
  * 1. Extract JSPWiki syntax before markdown parsing (extractJSPWikiSyntax())
  * 2. Create WikiDocument DOM nodes (createDOMNode())
- * 3. Parse markdown with Showdown (makeHtml())
+ * 3. Parse markdown with markdown-it (makeHtml())
  * 4. Merge DOM nodes into HTML (mergeDOMNodes())
  *
  * This pipeline fixes the markdown heading bug (#110, #93) and provides
@@ -847,11 +846,7 @@ class MarkupParser extends BaseManager {
       // Fall back to basic markdown conversion
       const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
       if (renderingManager && renderingManager.converter) {
-        // Guarded like every other makeHtml entry point (#1000). A degraded
-        // path is still reachable with attacker-supplied content — POST
-        // /api/preview renders an arbitrary request body — so "this only runs
-        // when the parser is disabled" is not a reason to skip the guard.
-        return renderingManager.converter.makeHtml(guardShowdownInput(content));
+        return renderingManager.converter.makeHtml(content);
       }
       return content;
     }
@@ -1311,7 +1306,7 @@ class MarkupParser extends BaseManager {
    *
    * This method implements the pre-extraction strategy from Issue #114.
    * Instead of tokenizing both markdown and JSPWiki syntax (which causes conflicts),
-   * we extract ONLY JSPWiki syntax and let Showdown handle all markdown.
+   * we extract ONLY JSPWiki syntax and let markdown-it handle all markdown.
    *
    * Extraction order:
    * 1. Variables: [{$username}] → __JSPWIKI_uuid_0__
@@ -1904,9 +1899,9 @@ class MarkupParser extends BaseManager {
       await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000, false);
     } else if (isBlockContent) {
       // #1039: block content also gets the markdown pass. Style-block content is
-      // lifted out at Step 0.5, before Showdown runs on the document, so a
+      // lifted out at Step 0.5, before markdown-it runs on the document, so a
       // heading, list or **bold** inside `%%information … /%` reached the reader
-      // as literal source. Only inline (`span`) content skips this — Showdown
+      // as literal source. Only inline (`span`) content skips this — markdown-it
       // wraps output in <p>, which has no business inside a span.
       await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000);
     } else {
@@ -2092,7 +2087,7 @@ class MarkupParser extends BaseManager {
    * Is this style block a raw code/CSS dump rather than prose? (#1039)
    *
    * These must NOT go through the markdown pass. `%%add-css` is JSPWiki's
-   * convention for a stylesheet, and running Showdown over CSS corrupts it:
+   * convention for a stylesheet, and running markdown-it over CSS corrupts it:
    * a CSS comment's asterisks read as emphasis markers, so a comment around the
    * word `pagination.less` rendered as `/<em>pagination.less</em>/` on nine CSS
    * documentation pages. Those pages exist to show the CSS accurately, so that
@@ -2108,7 +2103,7 @@ class MarkupParser extends BaseManager {
     return /\/\*/.test(content) && /\*\//.test(content);
   }
 
-  /** `&`, `<`, `>` only — enough to keep source text inert through Showdown. */
+  /** `&`, `<`, `>` only — enough to keep source text inert through markdown-it. */
   private escapeForMarkdown(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -2117,7 +2112,7 @@ class MarkupParser extends BaseManager {
    * Resolve a style block's BLOCK content with both the wiki pass and the
    * markdown pass (#1039).
    *
-   * Style-block content is lifted out at Step 0.5, before Showdown runs on the
+   * Style-block content is lifted out at Step 0.5, before markdown-it runs on the
    * document, and was then handed to appendWikiNodes — which resolves wiki
    * syntax and emits everything else as text nodes. So markdown inside a block
    * reached the reader as literal source: `## Introduction` displayed its own
@@ -2136,13 +2131,13 @@ class MarkupParser extends BaseManager {
    * separately would cut block constructs in half — a list item containing a
    * link would become a one-item list, a stray fragment, and another list.
    *
-   * Instead every wiki match is replaced by an empty slot span, Showdown runs
+   * Instead every wiki match is replaced by an empty slot span, markdown-it runs
    * over the whole scaffold, and the resolved nodes are swapped back in
-   * afterwards. Block structure survives because Showdown sees the block whole.
+   * afterwards. Block structure survives because markdown-it sees the block whole.
    *
    * ## Why the text is escaped first
    *
-   * Text between matches is escaped before Showdown sees it, which keeps the
+   * Text between matches is escaped before markdown-it sees it, which keeps the
    * exact inertness the text-node path had: `<script>` in a block stays visible
    * text, as it does today. Markdown syntax is untouched by that escaping, so
    * this is strictly additive — it grants markdown without granting raw HTML.
@@ -2193,7 +2188,7 @@ class MarkupParser extends BaseManager {
       .replace(/\\{3}/g, '<br class="wiki-clearfix">')
       .replace(/\\{2}/g, '<br>');
 
-    const html = converter.makeHtml(guardShowdownInput(scaffold));
+    const html = converter.makeHtml(scaffold);
 
     const holder = wikiDocument.createElement('div', {});
     holder.innerHTML = html;
@@ -2559,15 +2554,15 @@ class MarkupParser extends BaseManager {
   }
 
   /**
-   * Merges DOM nodes back into Showdown-generated HTML (Phase 3)
+   * Merges DOM nodes back into markdown-it HTML (Phase 3)
    *
    * Replaces HTML comment placeholders (<!--JSPWIKI-uuid-id-->) in the HTML with
    * the rendered DOM nodes. Processes nodes in reverse ID order to
    * handle nested JSPWiki syntax correctly.
    *
-   * Uses HTML comments as placeholders to avoid Showdown interpreting them as markdown.
+   * Uses HTML comments as placeholders to avoid markdown-it interpreting them as markdown.
    *
-   * @param html - HTML from Showdown with placeholders
+   * @param html - HTML from markdown-it with placeholders
    * @param nodes - Array of DOM nodes with data-jspwiki-id
    * @param uuid - UUID from extraction phase
    * @returns Final HTML with nodes merged in
@@ -2629,10 +2624,10 @@ class MarkupParser extends BaseManager {
    * This is the new parsing method that implements the WikiDocument DOM solution:
    * 1. Extract JSPWiki syntax (variables, plugins, links, escaped)
    * 2. Create DOM nodes from extracted elements
-   * 3. Let Showdown parse the sanitized markdown
+   * 3. Let markdown-it parse the sanitized markdown
    * 4. Merge DOM nodes back into the HTML
    *
-   * This approach fixes the markdown heading bug by letting Showdown handle
+   * This approach fixes the markdown heading bug by letting markdown-it handle
    * ALL markdown parsing while WikiDocument handles ONLY JSPWiki syntax.
    *
    * @param content - Wiki markup content
@@ -2675,7 +2670,7 @@ class MarkupParser extends BaseManager {
     logger.debug(`🔨 Created ${nodes.length} DOM nodes`);
 
     // Phase 2.5: Run JSPWikiPreprocessor on sanitized content to convert
-    // bare JSPWiki table syntax (||/|) to HTML before Showdown runs.
+    // bare JSPWiki table syntax (||/|) to HTML before markdown-it runs.
     // Style-block tables are already handled by extractStyleBlocksWithStack,
     // but bare tables (not in %%.../%% blocks) need processing here.
     let preprocessed = sanitized;
@@ -2723,17 +2718,13 @@ class MarkupParser extends BaseManager {
 
     // Phase 3: convert the sanitized markdown — markdown-it, via
     // src/rendering/markdownConverter.ts (#1273).
-    //
-    // #599: the showdown ReDoS guard stays on the input until #1274 retires it;
-    // it is harmless on markdown-it input. See src/utils/showdownGuard.ts.
-    const guarded = guardShowdownInput(preprocessed);
     const renderingManager = this.engine.getManager<RenderingManagerInterface>('RenderingManager');
     let markdownHtml: string;
     if (renderingManager && renderingManager.converter) {
-      markdownHtml = renderingManager.converter.makeHtml(guarded);
+      markdownHtml = renderingManager.converter.makeHtml(preprocessed);
     } else {
       // No RenderingManager (tests): the degraded-path profile (#1273).
-      markdownHtml = createMarkdownConverter('fallback').makeHtml(guarded);
+      markdownHtml = createMarkdownConverter('fallback').makeHtml(preprocessed);
     }
     logger.debug('📝 Markdown converted');
 

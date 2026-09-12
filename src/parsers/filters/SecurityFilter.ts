@@ -275,7 +275,7 @@ class SecurityFilter extends BaseFilter {
     // without angle brackets, so scoping to tags removes the entire class
     // rather than patching each instance — including the ones not yet hit.
     //
-    // It also makes fenced code safe for free: by this phase Showdown has
+    // It also makes fenced code safe for free: by this phase markdown-it has
     // escaped text `<` to `&lt;`, so anything still bracketed IS a tag.
 
     if (this.securityConfig?.preventXSS) {
@@ -328,7 +328,7 @@ class SecurityFilter extends BaseFilter {
    *
    * Scanned against the page SOURCE at save time, which is a different input
    * from what `process()` sees. `process()` is `phase: 'html'` and operates on
-   * Showdown's rendered output; this runs before any rendering, on exactly the
+   * markdown-it's rendered output; this runs before any rendering, on exactly the
    * markdown the author typed. Reusing the render-time logic here is the
    * mistake that made `preventXSS()` entity-encode whole documents.
    *
@@ -474,14 +474,14 @@ class SecurityFilter extends BaseFilter {
     }
 
     // NOT preventXSS() here. This filter declares `phase: 'html'`, so `content`
-    // is Showdown's rendered output — real markup, not untrusted text. Blanket
+    // is markdown-it's rendered output — real markup, not untrusted text. Blanket
     // entity-encoding every < > " ' turned the whole page into visible HTML
     // source (`&lt;p&gt;Some &lt;strong&gt;bold&lt;/strong&gt;`), which is why
     // enabling this filter broke rendering outright and why it has shipped
     // disabled since #596. It also ran BEFORE sanitizeHTML, leaving no tags for
     // the allow-list to match — so the actual sanitiser was dead code.
     //
-    // At this stage Showdown has already entity-encoded `<` appearing in text,
+    // At this stage markdown-it has already entity-encoded `<` appearing in text,
     // so anything still shaped like a tag IS a tag. The allow-list is therefore
     // the right tool, and `prevent-xss` is honoured through it: enabling that
     // option activates the dangerous-pattern set (see initializeDangerousPatterns)

@@ -99,7 +99,7 @@ __Pipeline Steps:__
 
 1. Extract JSPWiki syntax (`extractJSPWikiSyntax()`)
 2. Create WikiDocument DOM nodes (`createDOMNode()`)
-3. Parse markdown with Showdown
+3. Parse markdown with markdown-it (`RenderingManager.converter`, the `page` profile of `src/rendering/markdownConverter.ts`)
 4. Merge DOM nodes into HTML (`mergeDOMNodes()`)
 
 __Example:__
@@ -179,7 +179,7 @@ __Features:__
 
 - __Code Block Protection__: JSPWiki syntax in `` ` `` or ``` blocks not extracted
 - __UUID-based Placeholders__: Prevents conflicts with user content
-- __HTML Comment Format__: `<!--JSPWIKI-uuid-id-->` preserved by Showdown
+- __Span Placeholders__: `<span data-jspwiki-placeholder="uuid-id"></span>` passed through by markdown-it as inline HTML
 - __Order-Independent__: Extraction order doesn't affect result
 
 ---
@@ -237,11 +237,11 @@ __Error Handling:__
 
 __New in:__ Phase 3 (Issue #117)
 
-Merges WikiDocument DOM nodes back into Showdown-generated HTML by replacing placeholders with rendered nodes.
+Merges WikiDocument DOM nodes back into markdown-it-generated HTML by replacing placeholders with rendered nodes.
 
 __Parameters:__
 
-- `html` (string): Showdown-generated HTML with placeholders
+- `html` (string): markdown-it-generated HTML with placeholders
 - `nodes` (`Array<Element>`): Array of WikiDocument DOM nodes
 - `uuid` (string): UUID from extraction (for placeholder matching)
 
@@ -269,7 +269,7 @@ __Features:__
 
 - __Descending ID Order__: Handles nested JSPWiki syntax correctly
 - __Safe Replacement__: Regex escaping prevents injection
-- __Preserves HTML__: Showdown-generated HTML structure maintained
+- __Preserves HTML__: markdown-it-generated HTML structure maintained
 
 ---
 
@@ -555,12 +555,12 @@ __Solution:__
 
 __Symptom:__ Markdown syntax (`##`, `**`, etc.) appears literally
 
-__Cause:__ Showdown not configured or extraction conflict
+__Cause:__ markdown converter not initialized or extraction conflict
 
 __Solution:__
 
-1. Verify RenderingManager has Showdown converter
-2. Check that JSPWiki syntax is extracted before Showdown runs
+1. Verify RenderingManager has its markdown-it converter (`createMarkdownConverter('page')` in `initialize()`)
+2. Check that JSPWiki syntax is extracted before markdown-it runs
 3. Verify `jspwiki.parser.useExtractionPipeline = true`
 
 ### Issue: Variables not expanding
@@ -643,7 +643,7 @@ See [Phase 5 Manual QA Plan](../testing/Phase5-Manual-QA-Plan.md) for comprehens
 
 ### External References
 
-- [Showdown Documentation](https://github.com/showdownjs/showdown)
+- [markdown-it Documentation](https://github.com/markdown-it/markdown-it)
 - [JSPWiki MarkupParser](https://github.com/apache/jspwiki)
 - [linkedom Documentation](https://github.com/WebReflection/linkedom)
 

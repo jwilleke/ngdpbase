@@ -5,7 +5,7 @@ __Related__: [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md) | 
 
 ## Overview
 
-`JSPWikiPreprocessor` is a registered markup handler that converts JSPWiki-specific table syntax and `%%class%%` style blocks to HTML __before__ Showdown markdown conversion. It runs as __Phase 2.5__ in the `parseWithDOMExtraction()` pipeline with registration priority 95 (highest among handlers).
+`JSPWikiPreprocessor` is a registered markup handler that converts JSPWiki-specific table syntax and `%%class%%` style blocks to HTML __before__ markdown-it markdown conversion. It runs as __Phase 2.5__ in the `parseWithDOMExtraction()` pipeline with registration priority 95 (highest among handlers).
 
 ## Position in the Rendering Pipeline
 
@@ -31,7 +31,7 @@ MarkupParser.parseWithDOMExtraction()
     │
     ├─ Phase 2.6: Other registered handlers
     │
-    ├─ Phase 3: Showdown markdown → HTML
+    ├─ Phase 3: markdown-it markdown → HTML
     │
     └─ Phase 4: DOM placeholder restoration
          (UUID spans → plugin/code/style block HTML)
@@ -41,9 +41,9 @@ MarkupParser.parseWithDOMExtraction()
 
 JSPWikiPreprocessor runs after `extractJSPWikiSyntax()` for a critical reason: Phase 1 extracts style blocks wrapped in `%%class … /%` into UUID placeholder spans. JSPWikiPreprocessor handles the __bare table rows__ (`|| header ||` / `| cell |`) and any remaining `%%class%%` blocks that were not captured as style blocks in Phase 1.
 
-__Why table syntax must run before Showdown (Phase 3):__
+__Why table syntax must run before markdown-it (Phase 3):__
 
-Without Phase 2.5, Showdown wraps `|| header ||` in `<p>` tags during Phase 3, which prevents the table from being parsed. Producing the `<table>` HTML in Phase 2.5 leaves it unchanged by Showdown. ✅
+Without Phase 2.5, markdown-it wraps `|| header ||` in `<p>` tags during Phase 3 (bare JSPWiki rows are not a GFM table), which prevents the table from being parsed. Producing the `<table>` HTML in Phase 2.5 leaves it unchanged by markdown-it. ✅
 
 __Inline styles (`%%(css)`, `%%sup/sub/strike`) no longer use a post-processing pass (#907):__
 
@@ -268,7 +268,7 @@ getContrastColor(hexColor) {
 
 ### WikiStyleHandler / WikiTableHandler
 
-Both were replaced by JSPWikiPreprocessor. They ran too late in the old 7-phase pipeline (after Showdown wrapped `||` rows in `<p>` tags), causing table headers to appear outside the table. JSPWikiPreprocessor solves this by running before Showdown in Phase 2.5.
+Both were replaced by JSPWikiPreprocessor. They ran too late in the old 7-phase pipeline (after Showdown wrapped `||` rows in `<p>` tags), causing table headers to appear outside the table. JSPWikiPreprocessor solves this by running before markdown conversion in Phase 2.5.
 
 ## Known Limitations
 

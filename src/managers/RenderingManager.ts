@@ -3,7 +3,6 @@
  */
 
 import BaseManager from './BaseManager.js';
-import { guardShowdownInput } from '../utils/showdownGuard.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
 import type PluginManager from './PluginManager.js';
@@ -78,11 +77,11 @@ interface LinkGraph {
  * RenderingManager - Handles markdown rendering and macro expansion
  *
  * Similar to JSPWiki's RenderingManager, this manager orchestrates the conversion
- * of markdown/wiki markup to HTML. It supports both legacy Showdown-based rendering
+ * of markdown/wiki markup to HTML. It supports both legacy direct markdown rendering
  * and the advanced MarkupParser with multi-phase processing.
  *
  * Key features:
- * - Pluggable parser system (Showdown vs MarkupParser)
+ * - Pluggable parser system (direct markdown-it vs MarkupParser)
  * - Wiki link parsing and resolution
  * - Link graph building for backlinks/orphaned pages
  * - Plugin and variable expansion integration
@@ -130,7 +129,7 @@ class RenderingManager extends BaseManager {
    * Initialize the RenderingManager
    *
    * Sets up the markdown converter, link parser, and rendering configuration.
-   * Determines whether to use the advanced MarkupParser or legacy Showdown converter.
+   * Determines whether to use the advanced MarkupParser or the legacy direct converter.
    *
    * @async
    * @param {Object} [config={}] - Configuration object (unused, reads from ConfigurationManager)
@@ -157,7 +156,7 @@ class RenderingManager extends BaseManager {
 
     // The page converter (#1273): markdown-it, configured once in
     // src/rendering/markdownConverter.ts — breaks on, heading ids from
-    // SectionUtils.headingSlug (#500), sub/sup, task lists. Replaces showdown.
+    // SectionUtils.headingSlug (#500), sub/sup, task lists.
     this.converter = createMarkdownConverter('page');
 
     // Build initial link graph
@@ -177,7 +176,7 @@ class RenderingManager extends BaseManager {
    * Get the MarkupParser instance (for WikiContext integration)
    *
    * Returns the advanced MarkupParser if enabled and initialized, or null
-   * if using legacy Showdown rendering.
+   * if using legacy direct markdown rendering.
    *
    * @returns {MarkupParser|null} MarkupParser instance if available and enabled
    *
@@ -359,9 +358,7 @@ class RenderingManager extends BaseManager {
     if (!this.converter) {
       throw new Error('Markdown converter not initialized');
     }
-    // #599: the showdown ReDoS guard stays until #1274 retires it; it is
-    // harmless on markdown-it input.
-    const html = this.converter.makeHtml(guardShowdownInput(expandedContent));
+    const html = this.converter.makeHtml(expandedContent);
 
     // Step 5: Post-process tables with styling
     const finalHtml = this.postProcessTables(html);

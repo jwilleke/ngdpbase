@@ -80,7 +80,7 @@ describe('MarkupParser FilterChain integration (#596)', () => {
 
     const spy = vi.spyOn(filterChain, 'process');
     await parser.parse('hello world');
-    // #614: one call per pipeline phase (markup before Showdown, html after).
+    // #614: one call per pipeline phase (markup before markdown-it, html after).
     expect(spy).toHaveBeenCalledTimes(2);
     const phases = spy.mock.calls.map(call => call[2]);
     expect(phases).toEqual(['markup', 'html']);

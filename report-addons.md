@@ -87,11 +87,11 @@ Unchanged from last report. Mix of feature work for the `fairways` addon (#15 / 
 | `package.json` / `package-lock.json` (root) | `uuid` | GHSA-w5hq-g745-h8pq | medium | Covered by __PR #769__ (open) |
 | `addons/forms/package-lock.json` | `uuid` | GHSA-w5hq-g745-h8pq | medium | Covered by __PR #769__ |
 | `addons/calendar/package-lock.json` | `uuid` | GHSA-w5hq-g745-h8pq | medium | Covered by __PR #769__ |
-| `package-lock.json` (root) | `showdown` | GHSA-rmmh-p597-ppvv | medium | No upstream patch (tracked in #599; mitigation only) |
+| `package-lock.json` (root) | `showdown` | GHSA-rmmh-p597-ppvv | medium | No upstream patch (tracked in #599; mitigation only). Since resolved: showdown was removed in #1274 |
 
 __Resolved earlier this session__ by Dependabot's PR #768 (merged): `addons/journal/package-lock.json` uuid alert closed.
 
-PR #769 closes 3 of the 4 remaining alerts on merge. The `showdown` mitigation-only alert is permanent until upstream patches.
+PR #769 closes 3 of the 4 remaining alerts on merge. The `showdown` mitigation-only alert was expected to stay until upstream patched; it went away when showdown was removed in #1274.
 
 ## 3. Workflow file freshness
 

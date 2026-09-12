@@ -10,7 +10,9 @@
  */
 
 /**
- * Convert heading text to the anchor slug that Showdown (ghHeaderIds) generates.
+ * Convert heading text to its anchor slug. This IS the heading-id format:
+ * the page converter uses it via markdown-it-anchor (#1273, decision R2), so
+ * section links (#500) and rendered ids cannot drift apart.
  *
  * Algorithm mirrors GitHub Flavored Markdown:
  *   1. Lowercase

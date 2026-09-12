@@ -28,7 +28,7 @@ MarkupParser.parseWithDOMExtraction()   ← primary path
     ├─ Phase 2.5: JSPWikiPreprocessor (tables, style blocks)
     ├─ Step 0.55: inline style conversion (%%sup/sub/strike%%)
     ├─ Phase 2.6: registered handlers
-    └─ Phase 3: Showdown markdown → HTML
+    └─ Phase 3: markdown-it (page profile) → HTML
     │
     ▼
 DOM placeholder restoration (UUID spans → rendered HTML)
@@ -131,28 +131,31 @@ All handlers except `JSPWikiPreprocessor` run here in priority order. Because JS
 
 ---
 
-### Phase 3 — Showdown Markdown Conversion
+### Phase 3 — markdown-it Markdown Conversion
 
-__Source__: `RenderingManager.converter.makeHtml(preprocessed)`
+__Source__: `RenderingManager.converter.makeHtml(preprocessed)` — the `page` profile of `src/rendering/markdownConverter.ts`
 
-Showdown converts the preprocessed string (which now contains table HTML, inline style HTML, and UUID placeholder spans) to final HTML. Showdown configuration:
+markdown-it converts the preprocessed string (which now contains table HTML, inline style HTML, and UUID placeholder spans) to final HTML. The options are set in code, in `src/rendering/markdownConverter.ts`, and pinned by `src/rendering/__tests__/markdownConverter.test.ts`:
 
-```javascript
-{
-  tables: true,
-  strikethrough: true,
-  tasklists: true,
-  simpleLineBreaks: false,
-  ghCodeBlocks: true,
-  ghHeaderIds: true
-}
-```
+| Setting | Value |
+|---|---|
+| `html` | `true` — inline HTML passes through; the save-time rules and the render filter decide what is allowed |
+| `breaks` | `true` — a single newline is a line break |
+| `linkify` | `false` — bare URLs are not auto-linked |
+| `typographer` | `false` — but `...` becomes `…` in text (never in code) |
+| Heading ids | `markdown-it-anchor`, slug from `SectionUtils.headingSlug` |
+| Sub/superscript | `markdown-it-sub` / `markdown-it-sup`, strict: `H~2~O`, `X^2^`, no spaces |
+| Task lists | `markdown-it-task-lists` |
+| Fenced code | keeps `class="js language-js"` |
+| Strikethrough | `~~x~~` renders `<del>` |
+
+With no RenderingManager, `MarkupParser` uses the plain-CommonMark `fallback` profile instead. markdown-it replaced showdown in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273); the deliberate differences are decisions R1–R17 in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 
 ---
 
 ### Phase 4 — DOM Placeholder Restoration
 
-After Showdown runs, UUID placeholder spans (`<span data-jspwiki-placeholder="uuid-N">`) are replaced with the rendered HTML from the WikiDocument DOM nodes created in Phase 2. This is where plugin output, variable values, code blocks, and style block HTML are injected into the final document.
+After markdown-it runs, UUID placeholder spans (`<span data-jspwiki-placeholder="uuid-N">`) are replaced with the rendered HTML from the WikiDocument DOM nodes created in Phase 2. This is where plugin output, variable values, code blocks, and style block HTML are injected into the final document.
 
 ---
 
@@ -200,7 +203,7 @@ Key config properties controlling the rendering pipeline:
 
 | Property | Default | Effect |
 |---|---|---|
-| `ngdpbase.markup.enabled` | `true` | Enable MarkupParser; falls back to basic Showdown if false |
+| `ngdpbase.markup.enabled` | `true` | Enable MarkupParser; falls back to markdown-it alone (the `page` profile, no wiki syntax) if false |
 | `ngdpbase.markup.caching` | `true` | Enable parse-result caching |
 | `ngdpbase.markup.cache-ttl` | `300` | Cache TTL in seconds |
 | `ngdpbase.filters.enabled` | `true` | Global filter switch (has no effect until #596 is fixed) |
@@ -219,7 +222,8 @@ Key config properties controlling the rendering pipeline:
 | `src/parsers/dom/WikiDocument.ts` | DOM node container for extracted elements |
 | `src/parsers/filters/ValidationFilter.ts` | Markup validation (wired but not called — #596) |
 | `src/parsers/filters/SecurityFilter.ts` | HTML sanitization (wired but not called — #596) |
-| `src/managers/RenderingManager.ts` | Entry point — calls `MarkupParser.parse()`, holds Showdown converter |
+| `src/managers/RenderingManager.ts` | Entry point — calls `MarkupParser.parse()`, holds the markdown-it page converter |
+| `src/rendering/markdownConverter.ts` | The markdown-it profiles (`page`, `untrusted`, `fallback`) — the one place converter options are set |
 | `src/routes/WikiRoutes.ts` | HTTP layer — `viewPage()` triggers rendering |
 
 ---

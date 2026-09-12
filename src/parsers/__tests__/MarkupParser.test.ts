@@ -62,10 +62,10 @@ class MockVariableManager {
   }
 }
 
-// Mock RenderingManager with Showdown converter
+// Mock RenderingManager with markdown-it converter
 class MockRenderingManager {
   constructor() {
-    // Mock Showdown converter
+    // Mock markdown-it converter
     this.converter = {
       makeHtml: (content) => {
         // Simple markdown conversion for testing

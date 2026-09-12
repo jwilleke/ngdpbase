@@ -98,7 +98,9 @@ describe('#1242 — the allowlist subtracts only what the operator decided, and 
   test('the real allowlist: every entry names an issue, a reason and a review date, and is not yet expired', () => {
     const live = loadAllowlist();
     const raw = fs.readJsonSync(path.join(__dirname, '..', '..', '..', 'scripts', 'audit-allowlist.json')) as { entries: AllowlistEntry[] };
-    expect(raw.entries.length).toBeGreaterThan(0);
+    // Empty is the healthy state: #1274 removed the last carried advisories
+    // (showdown). The file must still parse to an entries array.
+    expect(Array.isArray(raw.entries)).toBe(true);
     for (const e of raw.entries) {
       expect(e.issue).toMatch(/^#\d+$/);
       expect(e.reason.length).toBeGreaterThan(10);

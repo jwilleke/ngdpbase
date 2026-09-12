@@ -30,8 +30,8 @@
  *    - Uses DOMVariableHandler, DOMPluginHandler, DOMLinkHandler
  *    - Result: Array of DOM nodes with data-jspwiki-id
  *
- * 3. **Phase 3 - Showdown + Merge** (MarkupParser.parseWithDOMExtraction())
- *    - Showdown processes the sanitized markdown (handles ALL markdown)
+ * 3. **Phase 3 - markdown-it + Merge** (MarkupParser.parseWithDOMExtraction())
+ *    - markdown-it processes the sanitized markdown (handles ALL markdown)
  *    - mergeDOMNodes() replaces placeholders with rendered nodes
  *    - Result: Final HTML with both markdown and JSPWiki syntax
  *
@@ -49,7 +49,7 @@
  *
  * The extraction approach is faster and avoids markdown conflicts because:
  * 1. It extracts JSPWiki syntax BEFORE markdown parsing
- * 2. Showdown handles ALL markdown (no conflicts)
+ * 2. markdown-it handles ALL markdown (no conflicts)
  * 3. DOM nodes are merged back AFTER markdown conversion
  *
  * ============================================================================

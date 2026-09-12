@@ -4,7 +4,7 @@
  * Tests the complete DOM extraction pipeline (Phase 1-3):
  * 1. Extract JSPWiki syntax
  * 2. Create DOM nodes
- * 3. Let Showdown parse markdown
+ * 3. Let markdown-it parse markdown
  * 4. Merge nodes back into HTML
  *
  * This is the integration test for Issue #117.
@@ -356,7 +356,7 @@ Time: [{CurrentTimePlugin}]
 
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      // Headings (Showdown adds IDs)
+      // Headings (markdown-it adds IDs)
       expect(result).toContain('<h2');
       expect(result).toContain('Test Heading');
       expect(result).toContain('</h2>');

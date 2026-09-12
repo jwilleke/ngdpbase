@@ -26,7 +26,6 @@ __ngdpbase API v1.5.0__
 - [src/cache/RegionCache](src/cache/RegionCache/README.md)
 - [src/context/WikiContext](src/context/WikiContext/README.md)
 - [src/core/Engine](src/core/Engine/README.md)
-- [src/extensions/showdown-footnotes-fixed](src/extensions/showdown-footnotes-fixed/README.md)
 - [src/managers/ACLManager](src/managers/ACLManager/README.md)
 - [src/managers/AttachmentManager](src/managers/AttachmentManager/README.md)
 - [src/managers/AuditManager](src/managers/AuditManager/README.md)

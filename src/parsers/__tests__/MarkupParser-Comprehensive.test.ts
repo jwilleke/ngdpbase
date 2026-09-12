@@ -2,7 +2,7 @@
  * Comprehensive Integration Tests for WikiDocument DOM Pipeline
  *
  * Part of Phase 5 (Issue #119) - Complete pipeline validation
- * Tests: extraction → DOM → Showdown → merge
+ * Tests: extraction → DOM → markdown-it → merge
  *
  * Related Issues: #114, #115, #116, #117, #118
  */
@@ -583,7 +583,7 @@ You are on: [{$pagename}]`;
       const content = '## <script>alert("XSS")</script>\n\nUser: [{$username}]';
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      // Should be escaped by Showdown
+      // Should be escaped by markdown-it
       expect(result).toBeDefined();
       expect(result).toContain('JohnDoe');
     });
