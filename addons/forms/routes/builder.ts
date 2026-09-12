@@ -117,7 +117,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
             currentUser: req.userContext,
             form: payload,
             isNew: true,
-            errors: result.error.errors.map(e => `${e.path.join('.') || 'form'}: ${e.message}`)
+            errors: result.error.issues.map(e => `${e.path.join('.') || 'form'}: ${e.message}`)
           });
           return;
         }
@@ -164,7 +164,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
             currentUser: req.userContext,
             form: payload,
             isNew: false,
-            errors: result.error.errors.map(e => `${e.path.join('.') || 'form'}: ${e.message}`)
+            errors: result.error.issues.map(e => `${e.path.join('.') || 'form'}: ${e.message}`)
           });
           return;
         }
