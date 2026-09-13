@@ -22,6 +22,14 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 2. Mock file I/O. Do not point at the live `FAST_STORAGE` tree.
 3. For a security or audit door, sabotage once (skip the registration, rebuild the subject, catch-and-continue a `refuse` event) and watch the test go red.
 
+## Test pages (rendering shapes)
+
+A rendering or conversion fix adds its content shape to a test page (#1355). Test pages are required pages with `system-keywords: [test-page]`, `author: system`, `system-category: system` and `audience: [admin]`: they ship to every install, only admins can open them, and `src/parsers/__tests__/TestPages.test.ts` renders each through `MarkupParser` with the real `page` markdown profile.
+
+- Add a section to the page that fits (or a new `Test Page: …` page), then its expectations to `EXPECTATIONS` in the test. A test page with no expectations fails the suite.
+- A shape that is still broken gets `knownBug: <issue>`. It runs as `test.fails`: green today, red once the bug is fixed — remove the marker then.
+- Existing instances get a new or changed page through Admin → Required Pages Sync; `tests/e2e/test-pages.spec.ts` fails when the instance under test is missing one.
+
 ## How you know you are done
 
 - `npm test`
