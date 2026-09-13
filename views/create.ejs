@@ -4,8 +4,9 @@
     <div class="row">
         <div class="col-md-12">
             <h1>Create New Page</h1>
-            
-            <form action="/create" method="POST">
+            <div id="page-message"></div>
+
+            <form id="createForm" action="/create" method="POST">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <!-- Page Name and Template on same row -->
                 <div class="row mb-3">
@@ -14,7 +15,7 @@
                         <input type="text" id="pageName" name="pageName" class="form-control" 
                                value="<%= typeof pageName !== 'undefined' ? pageName : '' %>" 
                                placeholder="Enter page name..." required>
-                        <small class="form-text text-muted">Use spaces for readability. Special characters will be handled automatically.</small>
+                        <small class="form-text text-muted">Use spaces for readability. These characters are not allowed: / \ # ? % " &lt; &gt; | *</small>
                     </div>
                     <div class="col-md-6">
                         <label for="templateName" style="font-weight:bold;">Template:</label>
@@ -134,13 +135,24 @@
 </div>
 
 <script>
-    // Form submission validation for system-category and user-keywords
-    document.querySelector('form').addEventListener('submit', function(e) {
+    // Form submission validation for system-category and user-keywords.
+    // By id: the header's /search forms come first in the page (#1369).
+    document.getElementById('createForm').addEventListener('submit', function(e) {
+        // Same rule as the /create route; checked here so the message shows in
+        // the page instead of the route's plain-text 400 page (#1327).
+        const pageNameField = document.getElementById('pageName');
+        if (pageNameField && /[\/\\#?%"<>|*]/.test(pageNameField.value)) {
+            e.preventDefault();
+            showPageMessage('error', 'The page name contains characters that are not allowed: / \\ # ? % " < > | * — change the name and try again.');
+            pageNameField.focus();
+            return false;
+        }
+
         // Validate system-category (should always be present)
         const systemCategory = document.getElementById('systemCategory').value;
         if (!systemCategory) {
             e.preventDefault();
-            alert('System category is required');
+            showPageMessage('error', 'Choose a system category before creating the page.');
             return false;
         }
     });

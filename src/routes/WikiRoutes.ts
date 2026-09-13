@@ -3765,6 +3765,13 @@ ${panes}
    */
   async savePage(req: Request, res: Response) {
     const _metricsStart = Date.now();
+    // #1369: the editor saves with fetch and asks for JSON, so it can keep the
+    // text in place and show the outcome in the page. A plain form POST still
+    // gets the redirect and the error pages.
+    const wantsJson = (req.headers.accept ?? '').includes('application/json');
+    const fail = (status: number, title: string, message: string) => (wantsJson
+      ? res.status(status).json({ ok: false, error: message })
+      : this.renderError(req, res, status, title, message));
     try {
       const pageName = req.params.page;
       logger.debug(`💾 Save request received for page: ${pageName}`);
@@ -4044,13 +4051,7 @@ ${panes}
             'admin-system'
           ))
         ) {
-          return await this.renderError(
-            req,
-            res,
-            403,
-            'Access Denied',
-            'Only administrators can edit this page or assign a system category'
-          );
+          return await fail(403, 'Access Denied', 'Only administrators can edit this page or assign a system category');
         }
       } else {
         // For existing pages, check ACL edit permission
@@ -4062,13 +4063,7 @@ ${panes}
               'page-create'
             ))
           ) {
-            return await this.renderError(
-              req,
-              res,
-              403,
-              'Access Denied',
-              'You do not have permission to create pages'
-            );
+            return await fail(403, 'Access Denied', 'You do not have permission to create pages');
           }
         }
       }
@@ -4239,7 +4234,9 @@ ${panes}
       if (saveWarning) warnParams.set('warning', 'github-page');
       if (unknownTagWarning) warnParams.set('unknown-tags', unknownTagWarning);
       const warnParam = warnParams.size > 0 ? `?${warnParams.toString()}` : '';
-      res.redirect(`/view/${encodeURIComponent(redirectName)}${warnParam}`);
+      const target = `/view/${encodeURIComponent(redirectName)}${warnParam}`;
+      if (wantsJson) return res.json({ ok: true, redirect: target });
+      res.redirect(target);
     } catch (err: unknown) {
       this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -4247,22 +4244,10 @@ ${panes}
 
       // Return 409 for duplicate title/UUID conflicts
       if (errorMessage.includes('is already in use') || errorMessage.includes('is already assigned')) {
-        return await this.renderError(
-          req,
-          res,
-          409,
-          'Page Conflict',
-          errorMessage
-        );
+        return await fail(409, 'Page Conflict', errorMessage);
       }
 
-      return await this.renderError(
-        req,
-        res,
-        500,
-        'Error Saving Page',
-        `Failed to save page: ${errorMessage}`
-      );
+      return await fail(500, 'Error Saving Page', `Failed to save page: ${errorMessage}`);
     }
   }
 

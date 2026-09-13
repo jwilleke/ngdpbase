@@ -696,6 +696,48 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
         expect(response.status).toBe(409);
       });
+
+      // #1369: the editor saves with fetch and asks for JSON, so it can show
+      // the outcome in the page instead of a raw response.
+      describe('when the editor asks for JSON (#1369)', () => {
+        test('a save answers { ok, redirect } instead of a 302', async () => {
+          mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+          mockUserManager.hasPermission.mockReturnValue(true);
+          mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+          mockPageManager.getPage.mockResolvedValue({
+            content: '# Test Page',
+            metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }
+          });
+
+          const response = await request(app)
+            .post('/save/TestPage')
+            .set('Accept', 'application/json')
+            .send({ content: '# Updated Content', 'system-category': 'general', _csrf: 'test-csrf-token' });
+
+          expect(response.status).toBe(200);
+          expect(response.body).toEqual({ ok: true, redirect: '/view/TestPage' });
+        });
+
+        test('a failed save answers { ok: false, error } with its status, not an error page', async () => {
+          mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+          mockUserManager.hasPermission.mockReturnValue(true);
+          mockPageManager.getPage.mockResolvedValue({
+            content: '# Old Title',
+            metadata: { title: 'OldTitle', 'system-category': 'general', uuid: 'uuid-old' }
+          });
+          mockPageManager.savePageWithContext.mockRejectedValueOnce(
+            new Error('Title "Existing Title" is already in use by page uuid-other')
+          );
+
+          const response = await request(app)
+            .post('/save/OldTitle')
+            .set('Accept', 'application/json')
+            .send({ content: '# Existing Title', title: 'Existing Title', 'system-category': 'general', _csrf: 'test-csrf-token' });
+
+          expect(response.status).toBe(409);
+          expect(response.body).toEqual({ ok: false, error: 'Title "Existing Title" is already in use by page uuid-other' });
+        });
+      });
     });
 
     describe('GET /create', () => {

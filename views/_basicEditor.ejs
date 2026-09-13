@@ -16,17 +16,16 @@
         <div class="col-md-12">
             <h1>Edit <%= pageName %></h1>
 
-            <!-- Save-time validation errors land here (#596). Hidden until populated by the submit handler. -->
-            <div id="validation-errors-banner" class="alert alert-danger d-none" role="alert">
-                <h5 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>Save blocked — validation errors</h5>
-                <ul id="validation-errors-list" class="mb-0"></ul>
-            </div>
+            <%# Save progress and save errors land here — showPageMessage()
+                (/js/page-message.js): validation errors with their lines (#596),
+                an invalid title, a failed save (#1369, #1327), "Saving changes…" (#1333). %>
+            <div id="page-message"></div>
 
             <%# #1083: draft recovery. Pure client-side — nothing is sent to the
                 server and the save path is untouched. %>
             <script src="/js/editor-draft.js"></script>
             <div id="draft-restore-banner" class="alert d-none align-items-start mb-3" role="status"></div>
-            <form id="editForm" action="/save/<%= pageName %>" method="POST">
+            <form id="editForm" action="/save/<%= encodeURIComponent(pageName) %>" method="POST">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <%# #1061: the version this edit is based on. The server compares it
                     against the page as it stands at save time and refuses a save built
@@ -391,93 +390,119 @@
     // Update preview on input
     document.getElementById('content').addEventListener('input', updatePreview);
     updatePreview();
-    // Form submission validation for system-category and user-keywords.
-    // Intercepts the submit, runs client-side checks, then POSTs via fetch
-    // so we can handle the structured 400 response from save-time validation
-    // (#596) without losing the user's unsaved content.
-    document.querySelector('form').addEventListener('submit', async function(e) {
+    // Save through fetch so the outcome shows in the page and the text stays
+    // in the editor: validation errors with their lines (#596), a refused
+    // title or a failed save (#1369, #1327), and "Saving changes…" while it
+    // runs (#1333). Messages go through showPageMessage (/js/page-message.js).
+    // Bound by id — the header's two /search forms come first in the page, so
+    // querySelector('form') bound this to search and every save was a plain
+    // browser POST whose errors showed as raw pages.
+    const editForm = document.getElementById('editForm');
+    let saveInFlight = false;
+    function warnWhileSaving(e) {
         e.preventDefault();
-        console.log('Form submit triggered');
+        e.returnValue = '';
+    }
+    function setSaving(on) {
+        saveInFlight = on;
+        editForm.querySelectorAll('button[type="submit"]').forEach(function(b) {
+            b.disabled = on;
+            // The button is at the foot of a long form, far from the message
+            // at the top, so it says so itself.
+            if (on) { b.dataset.label = b.textContent; b.textContent = 'Saving…'; }
+            else if (b.dataset.label) { b.textContent = b.dataset.label; }
+        });
+        if (on) window.addEventListener('beforeunload', warnWhileSaving);
+        else window.removeEventListener('beforeunload', warnWhileSaving);
+    }
+    function saveFailed(message, details) {
+        setSaving(false);
+        showPageMessage('error', message, details);
+    }
+
+    editForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        if (saveInFlight) return;
 
         // ── Client-side checks ────────────────────────────────────────────
         const systemCategoryElement = document.getElementById('systemCategory');
-        if (systemCategoryElement) {
-            const systemCategory = systemCategoryElement.value;
-            if (!systemCategory) {
-                alert('System category is required');
-                return;
-            }
-        }
-
-        const titleField = document.getElementById('title');
-        if (titleField) {
-            const titleVal = titleField.value;
-            if (/[\/\\#?%"'<>|*]/.test(titleVal)) {
-                alert('Page title contains invalid characters.\nThe following are not allowed: / \\ # ? % " \' < > | *');
-                titleField.focus();
-                return;
-            }
-        }
-
-        // ── Submit via fetch so structured 400 errors can be surfaced ─────
-        const banner = document.getElementById('validation-errors-banner');
-        const list = document.getElementById('validation-errors-list');
-        banner.classList.add('d-none');
-        list.innerHTML = '';
-
-        const form = e.target;
-        const formData = new FormData(form);
-        let response;
-        try {
-            response = await csrfFetch(form.action, {
-                method: 'POST',
-                body: formData,
-                redirect: 'manual', // we want to inspect 302s instead of auto-following
-                headers: { 'Accept': 'application/json, text/html' }
-            });
-        } catch (err) {
-            alert('Network error while saving: ' + (err.message || err));
+        if (systemCategoryElement && !systemCategoryElement.value) {
+            showPageMessage('error', 'Choose a system category before saving.');
+            systemCategoryElement.focus();
             return;
         }
 
-        // 200 OK or 302 redirect (fetch reports 0/opaque-redirect on manual): success path.
-        if (response.ok || response.status === 0 || response.type === 'opaqueredirect') {
+        const titleField = document.getElementById('title');
+        if (titleField && /[\/\\#?%"'<>|*]/.test(titleField.value)) {
+            showPageMessage('error', 'The page title contains characters that are not allowed: / \\ # ? % " \' < > | * — change the title and save again.');
+            titleField.focus();
+            return;
+        }
+
+        // ── Save ──────────────────────────────────────────────────────────
+        // URL-encoded, like the plain form POST: the server does not parse
+        // multipart bodies. The clicked button rides along so an addon's
+        // extra submit action (#794) still arrives with its name and value.
+        const body = new URLSearchParams(new FormData(editForm, e.submitter || undefined));
+        setSaving(true);
+        showPageMessage('info', 'Saving changes…', null, { dismissible: false, scroll: false });
+
+        let response;
+        try {
+            response = await csrfFetch(editForm.action, {
+                method: 'POST',
+                body: body,
+                headers: { 'Accept': 'application/json' }
+            });
+        } catch (err) {
+            saveFailed('The save did not reach the server (' + (err.message || err) + '). Your text is still here — try again.');
+            return;
+        }
+
+        const ct = response.headers.get('content-type') || '';
+        let json = null;
+        if (ct.includes('application/json')) {
+            try { json = await response.json(); } catch { json = null; }
+        }
+
+        if (response.ok && json && json.ok) {
             // #1083: the work is safely on the server, so the local draft has
             // served its purpose. Left behind, it would be offered back on the
             // next edit as though it were unsaved.
             if (window.__clearEditorDraft) window.__clearEditorDraft();
-            // Server normally redirects to /view/<page>; navigate there.
-            window.location.href = '/view/<%= encodeURIComponent(pageName) %>';
+            setSaving(false);
+            window.location.href = json.redirect || '/view/<%= encodeURIComponent(pageName) %>';
             return;
         }
 
-        // 400 with structured validation errors — show banner and keep content.
-        if (response.status === 400) {
-            const ct = response.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
-                let body;
-                try { body = await response.json(); } catch { body = null; }
-                if (body && Array.isArray(body.validationErrors) && body.validationErrors.length > 0) {
-                    body.validationErrors.forEach(function(err) {
-                        const li = document.createElement('li');
-                        const where = (err.line) ? ' (line ' + err.line + ')' : '';
-                        li.textContent = '[' + (err.rule || 'unknown') + '] ' + (err.message || 'Validation failed') + where;
-                        list.appendChild(li);
-                    });
-                    banner.classList.remove('d-none');
-                    banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    return;
-                }
-            }
-            // Fall through if 400 without structured errors — show plain text.
-            const text = await response.text();
-            alert('Save failed: ' + text);
+        // #1061: someone else saved first. The server's conflict page re-posts
+        // every field for merging; nothing was written, so submit natively and
+        // let it take over the page.
+        if (response.status === 409 && !json) {
+            setSaving(false);
+            HTMLFormElement.prototype.submit.call(editForm);
             return;
         }
 
-        // Other status codes — show whatever the server returned.
-        const text = await response.text();
-        alert('Save failed (HTTP ' + response.status + '): ' + text);
+        if (json && Array.isArray(json.validationErrors) && json.validationErrors.length > 0) {
+            saveFailed('Not saved — fix these and save again:', json.validationErrors.map(function(err) {
+                const where = err.line ? ' (line ' + err.line + ')' : '';
+                return '[' + (err.rule || 'unknown') + '] ' + (err.message || 'Validation failed') + where;
+            }));
+            return;
+        }
+        if (json && json.error) {
+            saveFailed('Not saved: ' + json.error);
+            return;
+        }
+        if (response.status === 413) {
+            saveFailed('Not saved: the page is too large for the server to accept. Your text is still here.');
+            return;
+        }
+        // A plain-text refusal (400) is a sentence meant for the reader; an
+        // HTML page is not, so only its status is shown.
+        const text = ct.includes('text/html') ? '' : (await response.text()).trim().slice(0, 500);
+        saveFailed('Not saved (HTTP ' + response.status + ')' + (text ? ': ' + text : '.') + ' Your text is still here.');
     });
     function updateSelectedAudienceText() {
         const checked = Array.from(document.querySelectorAll('.audience-checkbox:checked')).map(cb => cb.dataset.label || cb.value);
