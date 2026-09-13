@@ -321,108 +321,35 @@ function hello() {
     });
   });
 
-  describe('inline styles conversion', () => {
-    it('should convert %%sup text /% to <sup>text</sup>', () => {
-      const result = converter.convert('H%%sup 2 /%O');
-      expect(result.content).toBe('H<sup>2</sup>O');
-    });
-
-    it('should convert %%sup text%% (alternate closing) to <sup>text</sup>', () => {
-      const result = converter.convert('H%%sup 2%%O');
-      expect(result.content).toBe('H<sup>2</sup>O');
-    });
-
-    it('should convert %%sub text /% to <sub>text</sub>', () => {
-      const result = converter.convert('CO%%sub 2 /%');
-      expect(result.content).toBe('CO<sub>2</sub>');
-    });
-
-    it('should convert %%sub text%% (alternate closing) to <sub>text</sub>', () => {
-      const result = converter.convert('CO%%sub 2%%');
-      expect(result.content).toBe('CO<sub>2</sub>');
-    });
-
-    it('should convert %%strike text /% to ~~text~~', () => {
-      const result = converter.convert('This is %%strike removed /%.');
-      expect(result.content).toBe('This is ~~removed~~.');
-    });
-
-    it('should convert %%strike text%% (alternate closing) to ~~text~~', () => {
-      const result = converter.convert('This is %%strike removed%%.');
-      expect(result.content).toBe('This is ~~removed~~.');
-    });
-
-    it('should handle multiple inline styles in one line', () => {
-      const result = converter.convert('%%sup a /% and %%sub b /%');
-      expect(result.content).toBe('<sup>a</sup> and <sub>b</sub>');
-    });
-
-    it('should be case insensitive for style names', () => {
-      const result = converter.convert('%%SUP text%% and %%Sub text2/%');
-      expect(result.content).toBe('<sup>text</sup> and <sub>text2</sub>');
-    });
-  });
-
-  describe('status boxes conversion', () => {
-    it('should convert %%information text /% to alert-info div', () => {
-      const result = converter.convert('%%information Important note /%');
-      expect(result.content).toBe('<div class="alert alert-info" role="alert">Important note</div>');
-    });
-
-    it('should convert %%information text%% (alternate closing) to alert-info div', () => {
-      const result = converter.convert('%%information Important note%%');
-      expect(result.content).toBe('<div class="alert alert-info" role="alert">Important note</div>');
-    });
-
-    it('should convert multi-line %%information block with %% closing', () => {
-      const input = `%%information
-This is an informational message!
-%%`;
+  // #1367: `%%` style runs and blocks are NCM — the renderer owns them. The
+  // import used to rewrite six of them into HTML with a regex that ran over code
+  // and took a `%%` inside code as the closer, which is how Haddock Styles got
+  // `<div class="alert alert-info" role="alert">`</div>information`.
+  describe('%% style runs and blocks pass through unchanged (#1367)', () => {
+    it.each([
+      ['inline %%sup', 'H%%sup 2 /%O'],
+      ['inline %%sub', 'CO%%sub 2 /%'],
+      ['inline %%strike', 'This is %%strike removed /%.'],
+      ['bare %% closer', 'H%%sup 2%%O'],
+      ['inline status box', 'Don’t bother %%warning reading/% it.'],
+      ['block status box', '%%information\nImportant note\n/%'],
+      ['block status box, bare %% closer', '%%warning\nThis is a warning message.\nPlease read carefully.\n%%'],
+      ['several status boxes', '%%information Info here /%\n\n%%warning Warning here /%\n\n%%error Error here /%'],
+      ['class run', '%%btn.btn-info.btn-xs Button/%']
+    ])('%s', (_label, input) => {
       const result = converter.convert(input);
-      expect(result.content).toContain('alert-info');
-      expect(result.content).toContain('This is an informational message!');
+      expect(result.content).toBe(input);
+      expect(result.content).not.toMatch(/<div class="alert|<sup>|<sub>|~~/);
     });
 
-    it('should convert %%warning text /% to alert-warning div', () => {
-      const result = converter.convert('%%warning Be careful! /%');
-      expect(result.content).toBe('<div class="alert alert-warning" role="alert">Be careful!</div>');
+    it('leaves a %% run shown inside {{{ }}} code as code', () => {
+      const result = converter.convert('Use {{{%%sup x/%}}} for superscript.');
+      expect(result.content).toBe('Use `%%sup x/%` for superscript.');
     });
 
-    it('should convert multi-line %%warning block', () => {
-      const input = `%%warning
-This is a warning message.
-Please read carefully.
-%%`;
-      const result = converter.convert(input);
-      expect(result.content).toContain('alert-warning');
-      expect(result.content).toContain('This is a warning message.');
-    });
-
-    it('should convert %%error text /% to alert-danger div', () => {
-      const result = converter.convert('%%error Critical failure! /%');
-      expect(result.content).toBe('<div class="alert alert-danger" role="alert">Critical failure!</div>');
-    });
-
-    it('should convert %%error text%% (alternate closing) to alert-danger div', () => {
-      const result = converter.convert('%%error Critical failure%%');
-      expect(result.content).toBe('<div class="alert alert-danger" role="alert">Critical failure</div>');
-    });
-
-    it('should be case insensitive for status box names', () => {
-      const result = converter.convert('%%INFORMATION upper case%%');
-      expect(result.content).toContain('alert-info');
-    });
-
-    it('should handle multiple status boxes in one document', () => {
-      const input = `%%information Info here /%
-
-%%warning Warning here /%
-
-%%error Error here /%`;
-      const result = converter.convert(input);
-      expect(result.content).toContain('alert-info');
-      expect(result.content).toContain('alert-warning');
-      expect(result.content).toContain('alert-danger');
+    it('keeps a status box whose content shows its own markup in code (Haddock Styles)', () => {
+      const result = converter.convert('%%information\n  {{{%%information}}}\n/%');
+      expect(result.content).toBe('%%information\n  `%%information`\n/%');
     });
   });
 

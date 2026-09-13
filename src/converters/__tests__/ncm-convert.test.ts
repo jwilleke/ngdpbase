@@ -104,4 +104,18 @@ describe('NCM JSPWiki→NCM (delegates to JSPWikiConverter)', () => {
     expect(r.warnings.some(x => x.kind === 'link-externalized')).toBe(true);
     expect(normalizeToNcm(r.content, 'ncm').content).toBe(r.content);
   });
+
+  // #1367: the Haddock Styles contextual-sections block, from Apache's source.
+  // The import turned it into `<div class="alert alert-info" role="alert">`</div>information`.
+  test('%% style blocks, and their markup shown in code, come through the import unchanged', () => {
+    const haddock =
+      '%%information\n  {{{%%information}}}\n/%\n\n' +
+      '%%warning\n  {{{%%warning}}}\n/%\n\n' +
+      'Don’t %%info even/% bother %%warning reading/% it; you will just %%error waste/% your time.\n';
+    const body = matter(normalizeToNcm(haddock, 'jspwiki').content).content;
+    expect(body).toContain('%%information\n  `%%information`\n/%');
+    expect(body).toContain('%%warning\n  `%%warning`\n/%');
+    expect(body).toContain('bother %%warning reading/% it; you will just %%error waste/% your time.');
+    expect(body).not.toContain('alert');
+  });
 });
