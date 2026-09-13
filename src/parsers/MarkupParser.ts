@@ -1839,6 +1839,23 @@ class MarkupParser extends BaseManager {
   }
 
   /**
+   * #1368: when `node`'s only content is one `<p>`, replace the `<p>` with its
+   * children. Leaves anything else — several paragraphs, a list, text beside
+   * the paragraph — as it is.
+   */
+  private static unwrapSoleParagraph(node: ReturnType<typeof WikiDocument.prototype.createElement>): void {
+    const children = Array.from(node.childNodes as ArrayLike<LinkedomNode>)
+      .filter((c) => !(c.nodeType === 3 && !(c.textContent ?? '').trim()));
+    const only = children[0] as LinkedomElement | undefined;
+    if (children.length !== 1 || only?.nodeType !== 1 || only.tagName?.toLowerCase() !== 'p') return;
+    while (only.firstChild) node.insertBefore(only.firstChild, only);
+    only.remove();
+    for (const c of Array.from(node.childNodes as ArrayLike<LinkedomNode>)) {
+      if (c.nodeType === 3 && !(c.textContent ?? '').trim()) node.removeChild(c);
+    }
+  }
+
+  /**
    * Creates a DOM node from a JSPWiki style block (%%class-name ... /%)
    *
    * This handles table-related style classes (table-striped, sortable, etc.)
@@ -1870,14 +1887,17 @@ class MarkupParser extends BaseManager {
       return await this.createTableNode(content, classString, element.id, wikiDocument, context);
     }
 
-    // JSPWiki Rule: Determine element type based on content
-    // Block content (newlines, lists, placeholders for nested blocks) → <div>, inline → <span>
+    // #1368: JSPWiki's rule is about the opener, not the content — a class
+    // alone on its line opens a <div> (JSPWikiMarkupParser.handleDiv). Step 0.5
+    // extracts only that form, so every style element here is a block. Picking
+    // span or div from the content made a one-line block a <span>, and styles
+    // selected as div.x (commentbox, collapse, columns, text-center …) lost it.
     const hasPlaceholder = content.includes('data-jspwiki-placeholder');
-    const isBlockContent = content.includes('\n') ||
-                           /^\s*[-*#]/m.test(content) ||  // List syntax
-                           hasPlaceholder;  // Nested block placeholder
+    const isMultiLine = content.includes('\n') ||
+                        /^\s*[-*#]+\s/m.test(content) ||  // List syntax (`**Bold**` is not one)
+                        hasPlaceholder;  // Nested block placeholder
 
-    const tagName = isBlockContent ? 'div' : 'span';
+    const tagName = 'div';
     const nodeAttrs: Record<string, string> = { 'data-jspwiki-id': element.id.toString() };
     if (classString) nodeAttrs['class'] = classString;
     // #907: block-form inline CSS (%%(css) … /%) — sanitised style attribute.
@@ -1901,15 +1921,15 @@ class MarkupParser extends BaseManager {
       // is simply added. (Escaping here instead would have rendered `m<sup>2</sup>`
       // as visible tags on those pages.)
       await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000, false);
-    } else if (isBlockContent) {
+    } else {
       // #1039: block content also gets the markdown pass. Style-block content is
       // lifted out at Step 0.5, before markdown-it runs on the document, so a
       // heading, list or **bold** inside `%%information … /%` reached the reader
-      // as literal source. Only inline (`span`) content skips this — markdown-it
-      // wraps output in <p>, which has no business inside a span.
+      // as literal source.
       await this.appendMarkdownBlockNodes(content, node, context, wikiDocument, element.id * 1000);
-    } else {
-      await this.appendWikiNodes(content, node, context, wikiDocument, element.id * 1000);
+      // #1368: one line of text is the block's content, not a paragraph in it —
+      // `%%warning` / `Block text.` / `/%` is <div class="warning">Block text.</div>.
+      if (!isMultiLine) MarkupParser.unwrapSoleParagraph(node);
     }
     return node;
   }
@@ -2627,14 +2647,48 @@ class MarkupParser extends BaseManager {
       // Strip internal routing attribute — never expose it in final HTML
       rendered = rendered.replace(/ data-jspwiki-id="[^"]*"/g, '');
 
-      // Replace placeholder with rendered HTML
-      // Use regex with 'g' flag to replace all occurrences
-      const placeholderRegex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-      result = result.replace(placeholderRegex, rendered);
+      const ph = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // #1368: a block element cannot sit inside a <p>. A placeholder alone on
+      // its line comes out of markdown-it as a paragraph — or as a line of one,
+      // joined to its neighbours by <br> — so dropping the block in there gave
+      // <p><div>…</div></p>, which browsers split into stray empty paragraphs.
+      // Where the placeholder starts or ends its paragraph, the block goes
+      // outside it. A placeholder mid-sentence, or in a list item or table
+      // cell, is left where it is.
+      if (MarkupParser.BLOCK_START.test(rendered)) {
+        result = result
+          .replace(new RegExp(`<p>\\s*${ph}\\s*</p>`, 'g'), () => rendered)
+          .replace(new RegExp(`<p>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), () => `${rendered}<p>`)
+          .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*</p>`, 'g'), () => `</p>${rendered}`)
+          // Between two lines of one paragraph: split the paragraph around it —
+          // only when the placeholder really is in a <p>, never a list item or cell.
+          .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), (m: string, offset: number, whole: string) =>
+            (MarkupParser.insideParagraph(whole, offset) ? `</p>${rendered}<p>` : m));
+      }
+
+      // Replace placeholder with rendered HTML. A function replacer, so a `$&`
+      // or `$1` in the page's own text is not read as a replacement pattern.
+      result = result.replace(new RegExp(ph, 'g'), () => rendered);
     }
 
     return result;
   }
+
+  /**
+   * #1368: is `offset` inside an open <p>? The nearest tag before it that opens
+   * or closes a container decides: `<p>` says yes; `</p>`, a list item, a cell,
+   * a quote or a div says no.
+   */
+  private static insideParagraph(html: string, offset: number): boolean {
+    const before = html.slice(0, offset);
+    const openP = before.lastIndexOf('<p>');
+    if (openP < 0) return false;
+    return !/<\/p>|<(?:li|td|th|blockquote|div)\b|<\/(?:li|td|th|blockquote|div)>/i.test(before.slice(openP));
+  }
+
+  /** #1368: rendered HTML that starts with a block element. */
+  private static readonly BLOCK_START = /^\s*<(?:div|table|pre|ul|ol|dl|blockquote|h[1-6]|hr|figure|section|details|nav|form)\b/i;
 
   /**
    * Parses wiki markup using DOM extraction strategy (Phase 1-3)

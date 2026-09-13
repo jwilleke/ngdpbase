@@ -119,9 +119,9 @@ describe('MarkupParser inline class styles (#938)', () => {
 
   // ── block form must not regress (the swallow risk) ─────────────────────────
 
-  test('block form on its own lines still renders a classed span', async () => {
+  test('block form on its own lines still renders, as a classed div (#1368)', async () => {
     const result = await parser.parse('%%feed-badge\nGREEN\n/%');
-    expect(result).toContain('<span class="feed-badge">GREEN</span>');
+    expect(result).toContain('<div class="feed-badge">GREEN</div>');
   });
 
   test('block opener is not swallowed by the inline extractor', async () => {

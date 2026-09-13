@@ -261,7 +261,7 @@ Two families of style markup, both handled in the extraction phase:
 
 | Form | Example | Extracted as | Resolves to |
 |---|---|---|---|
-| Block class | `%%information … /%` | `type: 'style-block'` | `<div class="information">` (or `<span>` when inline) |
+| Block class | `%%information` alone on its line … `/%` | `type: 'style-block'` | `<div class="information">`, whatever the content (#1368); never inside a `<p>`. The inline form `%%information text /%` is a `<span>` |
 | Block inline-CSS | `%%(font-size:.9;) … /%` | `type: 'style-block'` + `cssRaw` | `<div style="…">` |
 | Inline CSS | `%%(color:red) X /%` | `type: 'inline-style'`, `inlineVariant:'css'` | `<span style="color: red">` |
 | Superscript | `%%sup 2 /%` | `type: 'inline-style'`, `inlineVariant:'sup'` | `<sup>2</sup>` |
