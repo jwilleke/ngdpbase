@@ -1032,6 +1032,14 @@ class PageManager extends BaseManager implements CatalogSource {
       author: originalAuthor || wikiContext.userContext?.username || metadata.author || defaultAuthor
     };
 
+    // #1354: `editor` is who made THIS version — the provider records it in the
+    // version history and the page shows it as the last editor. It comes from
+    // the save's context. Callers carry the page's stored frontmatter forward
+    // (the save route's #803 step), and a stored `editor: system` from one
+    // migration was stamped on every later human edit. A caller's own value is
+    // used only when the context has no user (a system job).
+    rawMetadata.editor = wikiContext.userContext?.username || metadata.editor || rawMetadata.author;
+
     // Strip caller-supplied provenance before stamping our own.
     delete (rawMetadata as Record<string, unknown>)['via-token'];
     delete (rawMetadata as Record<string, unknown>)['created-via-token'];

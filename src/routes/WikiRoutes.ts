@@ -3984,7 +3984,9 @@ ${panes}
       const _803_managedFields = new Set<string>([
         'title', 'slug', 'uuid', 'lastModified', 'created',
         'system-category', 'system-keywords', 'user-keywords',
-        'audience', 'author-lock', 'private', 'author', 'content', 'status'
+        'audience', 'author-lock', 'private', 'author', 'content', 'status',
+        // #1354: set from the signed-in user by PageManager, never by the form.
+        'editor'
       ]);
       const _803_formInternal = new Set<string>([
         '_csrf', 'section', 'private-present', 'author-lock-present',

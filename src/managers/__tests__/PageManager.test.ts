@@ -202,7 +202,8 @@ describe('PageManager', () => {
         '# Test Content',
         {
           category: 'General',
-          author: 'testuser'
+          author: 'testuser',
+          editor: 'testuser'
         }
       );
     });
@@ -220,8 +221,34 @@ describe('PageManager', () => {
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Test Page',
         '# Test Content',
-        { author: 'anonymous' }
+        { author: 'anonymous', editor: 'anonymous' }
       );
+    });
+
+    // #1354: `editor` is who made this version, from the save's context.
+    test('savePageWithContext() records the signed-in user as editor, not the stored editor (#1354)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({
+        content: 'old', metadata: { title: 'Cell', author: 'jim', editor: 'system' }
+      });
+
+      // The save route carries the stored frontmatter forward, editor included.
+      await pageManager.savePageWithContext(
+        { pageName: 'Cell', content: 'new', userContext: { username: 'alice' } },
+        { title: 'Cell', editor: 'system' }
+      );
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved.editor).toBe('alice');
+      expect(saved.author).toBe('jim');
+    });
+
+    test('savePageWithContext() keeps the caller\'s editor when the context has no user (#1354)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+
+      await pageManager.savePageWithContext({ pageName: 'Migrated', content: 'x' }, { editor: 'system' });
+
+      expect(pageManager.provider.savePage.mock.calls[0][2].editor).toBe('system');
     });
 
     // ---------------------------------------------------------------------
