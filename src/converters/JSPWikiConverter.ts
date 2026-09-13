@@ -47,11 +47,11 @@ class JSPWikiConverter implements IContentConverter {
     result = this.convertMonospace(result);
     result = this.convertDefinitionLists(result);
     result = this.convertHorizontalRules(result);
-    result = this.convertLineBreaks(result);
     result = this.convertLinks(result, warnings);
     result = this.convertFootnotes(result, warnings);
-    // `%%` style runs and blocks (%%sup, %%information, %%class …) are NCM and
-    // pass through unchanged: the renderer owns them (#1367, scope of #1339).
+    // `%%` style runs and blocks (%%sup, %%information, %%class …) and the `\\`
+    // line break are NCM and pass through unchanged: the renderer owns them
+    // (#1367, #1370, scope of #1339).
     result = this.convertImagePaths(result);
 
     // Tables are NOT converted during import — JSPWikiPreprocessor handles
@@ -357,18 +357,6 @@ class JSPWikiConverter implements IContentConverter {
     }
 
     return result.join('\n');
-  }
-
-  /**
-   * Convert JSPWiki line breaks to Markdown
-   * \\ -> backslash + newline (CommonMark hard line break)
-   */
-  private convertLineBreaks(content: string): string {
-    // Handle \\ at end of line (before newline) - replace with backslash
-    let result = content.replace(/\\\\(\r?\n)/g, '\\\n');
-    // Handle \\ mid-line - replace with backslash + newline
-    result = result.replace(/\\\\/g, '\\\n');
-    return result;
   }
 
   /**

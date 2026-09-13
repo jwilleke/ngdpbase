@@ -1133,7 +1133,7 @@ class MarkupParser extends BaseManager {
       if (style) attrs['style'] = style;
     }
     const el = wikiDocument.createElement(tag, attrs);
-    await this.appendWikiNodes(inner, el, context, wikiDocument, idStart);
+    await this.appendWikiNodes(inner, el, context, wikiDocument, idStart, true);
     return el;
   }
 
@@ -1665,6 +1665,10 @@ class MarkupParser extends BaseManager {
     // Must happen after code blocks are protected so we don't break code
     // Three backslashes (\\\ ) forces a flush after images (also converts to <br>)
     sanitized = sanitized.replace(/\\\\\\/g, '<br class="wiki-clearfix">'); // \\\ = flush/clearfix
+    // #1370: `\\` ending a line is one break in JSPWiki. As `<br>` it made two —
+    // the page profile's `breaks: true` turns the newline into a second one.
+    // A lone `\` before the newline is CommonMark's hard break: exactly one.
+    sanitized = sanitized.replace(/\\\\[ \t]*(?=\r?\n)/g, '\\');
     sanitized = sanitized.replace(/\\\\/g, '<br>'); // \\ = line break
 
     // Step 0.7: Convert emoji shortcodes (:name:) to Unicode characters.
@@ -1974,8 +1978,24 @@ class MarkupParser extends BaseManager {
     node: ReturnType<typeof WikiDocument.prototype.createElement>,
     context: ParseContext | undefined,
     wikiDocument: WikiDocument,
-    idStart: number
+    idStart: number,
+    lineBreaks = false
   ): Promise<void> {
+    // #1370: `lineBreaks` turns NCM's `\\` / `\\\` in the text into <br>. Inline
+    // style runs are lifted out before the document-level rewrite (Step 0.6)
+    // sees them, so they ask for it here. Off by default: raw code dumps come
+    // through this method too, and a `\\` there is code.
+    const appendText = (raw: string): void => {
+      if (!lineBreaks) {
+        node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(raw)));
+        return;
+      }
+      for (const part of raw.split(/(\\{2,3})/)) {
+        if (part === '\\\\\\') node.appendChild(wikiDocument.createElement('br', { class: 'wiki-clearfix' }));
+        else if (part === '\\\\') node.appendChild(wikiDocument.createElement('br', {}));
+        else if (part) node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(part)));
+      }
+    };
     // Combined pattern — mirrors Steps 0–4 of extractJSPWikiSyntax:
     //   Group 1: `code`            inline code span → <code>
     //   Group 2: [[{inner}]        escaped plugin literal → text [{inner}]
@@ -1989,7 +2009,8 @@ class MarkupParser extends BaseManager {
     const wikiPattern = /`([^`\n]+)`|\[\[\{([^}]*)\}\]|\[\{\$(\w+)\}\]|\[\{([A-Za-z]\w*[^}]*)\}\]|\[([^\]]*)\](?!\()|<span data-jspwiki-placeholder="([^"]*)"><\/span>/g;
 
     if (!wikiPattern.test(content)) {
-      node.textContent = this.decodeTextEntities(content);
+      if (lineBreaks) appendText(content);
+      else node.textContent = this.decodeTextEntities(content);
       return;
     }
 
@@ -2000,9 +2021,7 @@ class MarkupParser extends BaseManager {
     let match: RegExpExecArray | null;
 
     while ((match = wikiPattern.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex, match.index))));
-      }
+      if (match.index > lastIndex) appendText(content.substring(lastIndex, match.index));
 
       node.appendChild(
         await this.createWikiNodeFromMatch(match, idCounter++, handlerContext, wikiDocument)
@@ -2011,9 +2030,7 @@ class MarkupParser extends BaseManager {
       lastIndex = match.index + match[0].length;
     }
 
-    if (lastIndex < content.length) {
-      node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(content.substring(lastIndex))));
-    }
+    if (lastIndex < content.length) appendText(content.substring(lastIndex));
   }
 
   /**
@@ -2186,6 +2203,7 @@ class MarkupParser extends BaseManager {
     // `\\` / `\\\` handling around MarkupParser:1777).
     scaffold = scaffold
       .replace(/\\{3}/g, '<br class="wiki-clearfix">')
+      .replace(/\\{2}[ \t]*(?=\r?\n)/g, '\\') // #1370: one break at a line end, as above
       .replace(/\\{2}/g, '<br>');
 
     const html = converter.makeHtml(scaffold);

@@ -42,7 +42,7 @@ The author-facing summary of what renders, and the house style NCM output follow
 | Construct | NCM form | Backed by |
 |---|---|---|
 | Headings, emphasis, lists, code | CommonMark, written in the house style: `#` headings, `__bold__` / `*italic*`, hyphen bullets, 2-space nesting (3 under a numbered item), numbered steps as `- 1 words`, ```` ```lang ```` fences. Output does not follow it everywhere yet ([#1332](https://github.com/jwilleke/ngdpbase/issues/1332)) | markdown-it (`page` profile) |
-| Line breaks | A single newline is a break; `\\` forces one mid-line, `\\\` also clears floats. Raw `<br>` is refused on save | `MarkupParser` (Step 0.6), `SecurityFilter` `no-raw-br` |
+| Line breaks | A single newline is a break; `\\` forces one mid-line and is one break at a line end (not two), `\\\` also clears floats. Inside a one-line `%%` run `\\` breaks too. The JSPWiki import leaves all of them as typed. Raw `<br>` is refused on save | `MarkupParser` (Step 0.6), `SecurityFilter` `no-raw-br` |
 | Strikethrough, sub/superscript | `~~text~~`; `H~2~O`, `X^2^` (no spaces inside), `%%sub … /%` / `%%sup … /%` for longer spans | markdown-it (`~~`), `markdown-it-sub` / `markdown-it-sup`, `MarkupParser` inline styles |
 | Emoji | `:shortcode:` | `MarkupParser` (Step 0.7) |
 | Style blocks | `%%class … /%` blocks, `%%(css) … /%` inline | `MarkupParser`, `JSPWikiPreprocessor` |

@@ -72,7 +72,7 @@ Extracts structured elements from raw wiki markup and replaces them with UUID pl
 | 0.5 | `%%class … /%` style blocks via `extractStyleBlocksWithStack()` |
 | 0.5 (inline) | Inline code spans (`` `…` ``) |
 | 0.56 | JSPWiki status boxes (`%%information`, `%%warning`, `%%error`) → Bootstrap alerts |
-| 0.6 | JSPWiki line breaks (`\\` → `<br>`, `\\\` → `<br class="wiki-clearfix">`) |
+| 0.6 | JSPWiki line breaks (`\\` → `<br>`; `\\` ending a line → a single hard break, since `breaks: true` would make the newline a second one; `\\\` → `<br class="wiki-clearfix">`) |
 | 0.7 | Emoji shortcodes (`:name:` → Unicode) |
 
 > __Note__: Inline style conversion (`%%sup/sub/strike%%`) was previously Step 0.55 here.

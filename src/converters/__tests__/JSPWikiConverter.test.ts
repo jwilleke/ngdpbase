@@ -205,21 +205,22 @@ function hello() {
     });
   });
 
-  describe('line breaks conversion', () => {
-    it('should convert \\\\ at end of line to backslash (trailing newline trimmed)', () => {
-      const result = converter.convert('Line 1\\\\');
-      // Final output is trimmed, so trailing newline is removed
-      expect(result.content).toBe('Line 1\\');
+  // #1370: `\\` and `\\\` are NCM — the renderer turns them into <br>. The import
+  // used to rewrite them to a backslash + newline, which split one-line `%%`
+  // runs and table rows in two and changed code.
+  describe('line breaks pass through unchanged (#1370)', () => {
+    it.each([
+      ['at the end of a line', 'Line 1\\\\\nLine 2'],
+      ['mid-line', 'First\\\\Second'],
+      ['several mid-line', 'A\\\\B\\\\C'],
+      ['break and clear floats', 'Line one \\\\\\ after flush'],
+      ['inside a one-line %% run', 'use %%tip-x Use the markup. \\\\These are classes /% :']
+    ])('%s', (_label, input) => {
+      expect(converter.convert(input).content).toBe(input);
     });
 
-    it('should convert \\\\ mid-line to backslash line break', () => {
-      const result = converter.convert('First\\\\Second');
-      expect(result.content).toBe('First\\\nSecond');
-    });
-
-    it('should convert multiple mid-line \\\\ occurrences', () => {
-      const result = converter.convert('A\\\\B\\\\C');
-      expect(result.content).toBe('A\\\nB\\\nC');
+    it('leaves a \\\\ inside {{{ }}} code as code', () => {
+      expect(converter.convert('Use {{{a\\\\b}}} here').content).toBe('Use `a\\\\b` here');
     });
   });
 
@@ -306,11 +307,11 @@ function hello() {
       expect(result.content).toContain('| [June] | 30 |');
     });
 
-    it('should convert \\\\ to backslash line break inside table cells', () => {
+    it('keeps a \\\\ line break inside a table cell on its row (#1370)', () => {
       const input = `|| Header ||
 | Line1\\\\Line2 |`;
       const result = converter.convert(input);
-      expect(result.content).toContain('| Line1\\\nLine2 |');
+      expect(result.content).toContain('| Line1\\\\Line2 |');
     });
 
     it('should convert emphasis inside table cells', () => {
