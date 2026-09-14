@@ -325,6 +325,7 @@ interface IPageManager {
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
   provider?: IVersioningProvider | null;
   refreshPageList(): Promise<void>;
+  rebuildPageIndex(): Promise<{ pages: number; changed: number; removed: string[]; keptUnscanned: number; historyInRequiredPages: number } | null>;
   /**
    * Evict one page from the provider content cache, the rendered-pages region
    * and the rendering handler cache. Needed by any path that writes page files
@@ -18532,6 +18533,10 @@ ${description}
 
         reportProgress('Refreshing page list…');
         await pageManager.refreshPageList();
+        // #1374: the persistent page index too — otherwise the next restart's
+        // fast init read the old one and every stale entry came back.
+        reportProgress('Rewriting the page index from disk…');
+        const indexResult = await pageManager.rebuildPageIndex();
         reportProgress('Rebuilding search index from disk (clears stale entries)…');
         await searchManager.rebuildFromDisk();
         const pageCount = (await pageManager.getAllPages()).length;
@@ -18540,7 +18545,10 @@ ${description}
         await cacheManager.clear(undefined, 'rendered-pages:*');
 
         const docs = searchStats.totalDocuments || 0;
-        return { success: true, summary: `Rebuilt from disk — ${pageCount} pages, ${docs} search documents (stale entries dropped)` };
+        const indexNote = indexResult
+          ? `; page index: ${indexResult.changed} corrected, ${indexResult.removed.length} removed${indexResult.removed.length ? ` (${indexResult.removed.slice(0, 10).join(', ')}${indexResult.removed.length > 10 ? ', …' : ''})` : ''}`
+          : '';
+        return { success: true, summary: `Rebuilt from disk — ${pageCount} pages, ${docs} search documents (stale entries dropped)${indexNote}` };
       }
     });
 

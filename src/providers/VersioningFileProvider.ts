@@ -465,11 +465,13 @@ class VersioningFileProvider extends FileSystemProvider {
       } else {
         filePath = path.join(baseDir, basename);
       }
-      // #1371: an entry saved before the fix says 'required-pages' because of
-      // its category, while the file is in the pages directory (every save
-      // writes there). Load the live file rather than 404. Only these entries
-      // pay for an existence check; the rest of fast init reads no files.
-      if (entry.location === 'required-pages' && this.pagesDirectory && !(await fs.pathExists(filePath))) {
+      // #1371: a 'required-pages' entry is a page whose history is still in the
+      // required-pages folder (the #1375 repair moves it) — its live file is in
+      // the pages directory, where every save writes. The live copy always wins
+      // over the source copy; the source copy is used only when the instance has
+      // no live copy at all. Only these entries pay for an existence check; the
+      // rest of fast init reads no files.
+      if (entry.location === 'required-pages' && this.pagesDirectory) {
         const live = path.join(this.pagesDirectory, basename);
         if (await fs.pathExists(live)) filePath = live;
       }
@@ -1089,6 +1091,120 @@ class VersioningFileProvider extends FileSystemProvider {
       entries.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
     }
     return entries.slice(0, limit);
+  }
+
+  /**
+   * Rewrite `page-index.json` from the pages on disk (#1374).
+   *
+   * The index is otherwise only updated one entry at a time (save, delete,
+   * restore, UUID rename) and rebuilt wholesale only when it is empty, so a
+   * wrong entry — a stale location, a page whose file is gone — survived every
+   * Reindex and Rebuild: both refresh the in-memory page list, and the next
+   * restart's fast init read the old index again.
+   *
+   * Call after `refreshPageList()`, whose disk scan this reads. Each scanned page
+   * gets an entry whose location is where its file actually is: `private` (with
+   * the owner from `private/<owner>/`) or `pages`. One exception, until the #1375
+   * repair moves them: a page whose history is still only in the required-pages
+   * folder keeps `required-pages`, so its history stays reachable (fast init
+   * loads the live file regardless, #1371).
+   *
+   * An entry is dropped only when its file is gone from disk; one whose file
+   * exists but the scan skipped (a duplicate title or UUID) is kept as it was.
+   * Deleted-page tombstones are untouched.
+   */
+  async rebuildPageIndexFromDisk(): Promise<{ pages: number; changed: number; removed: string[]; keptUnscanned: number; historyInRequiredPages: number }> {
+    if (!this.pageIndex || !this.pagesDirectory) {
+      throw new Error('Page index not initialized');
+    }
+    const pagesDirectory = this.pagesDirectory;
+    const previous = this.pageIndex.pages;
+    const next: Record<string, PageIndexEntry> = {};
+    let changed = 0;
+    let historyInRequiredPages = 0;
+
+    for (const info of this.pageCache.values()) {
+      const uuid = info.uuid;
+      if (!uuid) continue;
+      const parts = path.relative(pagesDirectory, info.filePath).split(path.sep);
+      let location: 'pages' | 'required-pages' | 'private' = 'pages';
+      let creator: string | undefined;
+      if (parts[0] === 'private' && parts.length === 3) {
+        location = 'private';
+        creator = parts[1];
+      } else if (parts[0] === '..') {
+        location = 'required-pages'; // install mode: the scan also reads the source folder
+      }
+      if (location === 'pages'
+        && !(await fs.pathExists(this.getVersionDirectory(uuid, 'pages')))
+        && await fs.pathExists(this.getVersionDirectory(uuid, 'required-pages'))) {
+        location = 'required-pages';
+        historyInRequiredPages++;
+      }
+
+      const prev = previous[uuid];
+      const md = info.metadata as Record<string, unknown>;
+      // Frontmatter values as text: YAML turns an unquoted date into a Date.
+      const text = (v: unknown): string | undefined =>
+        typeof v === 'string' && v ? v
+          : v instanceof Date ? v.toISOString()
+            : typeof v === 'number' ? String(v)
+              : undefined;
+      const currentVersion = await this.getCurrentVersion(uuid, location);
+      const audience = (md.access as Record<string, unknown> | undefined)?.['view'] ?? md.audience;
+      const entry: PageIndexEntry = {
+        ...prev,
+        title: info.title,
+        uuid,
+        slug: text(md.slug) ?? prev?.slug,
+        filename: path.basename(info.filePath),
+        currentVersion,
+        location,
+        creator: location === 'private' ? creator : prev?.creator,
+        lastModified: text(md.lastModified) ?? prev?.lastModified ?? new Date().toISOString(),
+        created: text(md.created) ?? prev?.created,
+        editor: text(md.editor) ?? prev?.editor ?? text(md.author) ?? 'unknown',
+        author: text(md.author) ?? prev?.author,
+        hasVersions: currentVersion > 0,
+        audienceRoles: Array.isArray(audience) && audience.length ? (audience as string[]) : undefined,
+        isPrivate: md.private === true
+      };
+      for (const key of Object.keys(entry) as Array<keyof PageIndexEntry>) {
+        if (entry[key] === undefined) delete entry[key];
+      }
+      if (!prev || prev.location !== entry.location || prev.filename !== entry.filename || prev.title !== entry.title) {
+        changed++;
+      }
+      next[uuid] = entry;
+    }
+
+    const removed: string[] = [];
+    let keptUnscanned = 0;
+    for (const [uuid, prev] of Object.entries(previous)) {
+      if (next[uuid]) continue;
+      const basename = prev.filename ?? `${uuid}.md`;
+      const candidates = [
+        path.join(pagesDirectory, basename),
+        ...(prev.creator ? [path.join(pagesDirectory, 'private', prev.creator, basename)] : []),
+        ...(this.requiredPagesDirectory ? [path.join(this.requiredPagesDirectory, basename)] : [])
+      ];
+      let onDisk = false;
+      for (const c of candidates) {
+        if (await fs.pathExists(c)) { onDisk = true; break; }
+      }
+      if (onDisk) {
+        next[uuid] = prev;
+        keptUnscanned++;
+      } else {
+        removed.push(prev.title);
+      }
+    }
+
+    this.pageIndex.pages = next;
+    this.pageIndex.pageCount = Object.keys(next).length;
+    await this.savePageIndex();
+    logger.info(`[VersioningFileProvider] Page index rewritten from disk: ${this.pageIndex.pageCount} pages, ${changed} changed, ${removed.length} removed, ${keptUnscanned} kept (on disk, not scanned), ${historyInRequiredPages} with history still in required-pages`);
+    return { pages: this.pageIndex.pageCount, changed, removed, keptUnscanned, historyInRequiredPages };
   }
 
   /**

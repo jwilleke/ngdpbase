@@ -1708,6 +1708,19 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * #1374: rewrite the provider's persistent page index from its last disk scan
+   * (run {@link refreshPageList} first). Null when the provider keeps no such
+   * index.
+   */
+  async rebuildPageIndex(): Promise<{ pages: number; changed: number; removed: string[]; keptUnscanned: number; historyInRequiredPages: number } | null> {
+    const provider = this.provider as unknown as {
+      rebuildPageIndexFromDisk?: () => Promise<{ pages: number; changed: number; removed: string[]; keptUnscanned: number; historyInRequiredPages: number }>;
+    } | null;
+    if (!provider || typeof provider.rebuildPageIndexFromDisk !== 'function') return null;
+    return provider.rebuildPageIndexFromDisk();
+  }
+
+  /**
    * Flush any pending write queues in the provider (e.g. page-index writes).
    * Call before process exit to prevent data loss on unclean shutdown.
    */

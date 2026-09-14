@@ -152,6 +152,18 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     expect(page?.content).toContain('Created by a delegated token.');
   });
 
+  test('for a required-pages entry, the live copy wins over the source copy when both exist', async () => {
+    const provider = await newProvider();
+    await provider.savePage('Recent Changes', 'the live copy', { uuid: UUID_A, 'system-category': 'system' });
+    await writePage(requiredDir, UUID_A, 'Recent Changes', 'the source copy', 'system');
+    const index = await readIndex();
+    index.pages[UUID_A].location = 'required-pages';
+    await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
+
+    const restarted = await newProvider();
+    expect((await restarted.getPage('Recent Changes'))?.content).toContain('the live copy');
+  });
+
   test('a live copy in the pages directory wins over an unindexed copy in the required-pages folder', async () => {
     const provider = await newProvider();
     await provider.savePage('Other Page', 'x', { uuid: UUID_A, 'system-category': 'general' });
@@ -162,5 +174,74 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     const page = await restarted.getPage('Test Page: Tables');
 
     expect(page?.content).toContain('the live copy');
+  });
+
+  // #1374: Rebuild Pages rewrites page-index.json from the disk scan.
+  describe('rebuildPageIndexFromDisk (#1374)', () => {
+    const UUID_C = '33333333-3333-4333-8333-333333333333';
+    const PROBE = 'aa11bb22-cc33-dd44-ee55-ff6677889900';
+
+    test('corrects stale locations, drops entries with no file, adds unindexed pages, and survives a restart', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Agent Token Check', 'token text', { uuid: UUID_A, 'system-category': 'documentation' });
+      await provider.savePage('Diary', 'secret', { uuid: UUID_B, private: true, author: 'molly' });
+      // A stale location, an index-only probe, and a page on disk the index never heard of.
+      const index = await readIndex();
+      index.pages[UUID_A].location = 'required-pages';
+      index.pages[PROBE] = { title: 'Reseed Probe', uuid: PROBE, filename: `${PROBE}.md`, location: 'pages', currentVersion: 1, lastModified: '2026-07-22T00:00:00.000Z', editor: 'x', hasVersions: true };
+      index.pageCount = Object.keys(index.pages).length;
+      await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
+      await writePage(pagesDir, UUID_C, 'Synced Page', 'written around the provider', 'system');
+
+      const restarted = await newProvider();
+      await restarted.refreshPageList();
+      const result = await restarted.rebuildPageIndexFromDisk();
+
+      const rebuilt = await readIndex();
+      expect(rebuilt.pages[UUID_A].location).toBe('pages');
+      expect(rebuilt.pages[UUID_B]).toMatchObject({ location: 'private', creator: 'molly' });
+      expect(rebuilt.pages[UUID_C]).toMatchObject({ title: 'Synced Page', location: 'pages', filename: `${UUID_C}.md` });
+      expect(rebuilt.pages[PROBE]).toBeUndefined();
+      expect(result.removed).toEqual(['Reseed Probe']);
+      expect(rebuilt.pageCount).toBe(3);
+
+      const again = await newProvider();
+      expect((await again.getPage('Agent Token Check'))?.content).toContain('token text');
+      expect(await again.getPage('Reseed Probe')).toBeNull();
+    });
+
+    test('a page whose history is still only in the required-pages folder keeps that location, so its history stays reachable', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' });
+      await provider.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' });
+      await fs.move(path.join(pagesDir, 'versions', UUID_A), path.join(requiredDir, 'versions', UUID_A));
+
+      const restarted = await newProvider();
+      await restarted.refreshPageList();
+      const result = await restarted.rebuildPageIndexFromDisk();
+
+      const entry = (await readIndex()).pages[UUID_A];
+      expect(entry.location).toBe('required-pages');
+      expect(entry.currentVersion).toBe(2);
+      expect(result.historyInRequiredPages).toBe(1);
+    });
+
+    test('an entry whose file is on disk but was not scanned (duplicate title) is kept', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Speed', 'first', { uuid: UUID_A });
+      const index = await readIndex();
+      await writePage(pagesDir, UUID_B, 'Speed', 'the duplicate', 'general');
+      // Newer than UUID_A, so the boot-time duplicate check (#587) keeps this entry
+      // and drops A's; the disk scan then loads A's file (first wins) and skips B's.
+      index.pages[UUID_B] = { title: 'Speed', uuid: UUID_B, filename: `${UUID_B}.md`, location: 'pages', currentVersion: 0, lastModified: '2099-01-01T00:00:00.000Z', editor: 'x', hasVersions: false };
+      await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
+
+      const restarted = await newProvider();
+      await restarted.refreshPageList();
+      const result = await restarted.rebuildPageIndexFromDisk();
+
+      expect(result.removed).toEqual([]);
+      expect(Object.keys((await readIndex()).pages)).toEqual(expect.arrayContaining([UUID_A, UUID_B]));
+    });
   });
 });
