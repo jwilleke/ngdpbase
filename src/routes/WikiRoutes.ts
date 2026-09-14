@@ -11787,10 +11787,19 @@ ${panes}
       const protected_: string[] = [];
 
       /**
-       * Write source content to dest, stripping user-modified so a synced page
-       * immediately shows as 'current' on the next Required Pages Sync load.
+       * Save a source page as the live page, through PageManager (#1376), so the
+       * page index, version history (a version by `system`) and audit record are
+       * current — a plain file write updated none of them. `skipValidation`:
+       * this is content the instance ships, not user input, and may contain
+       * markup a user's save would refuse (#1037). `user-modified` is stripped so
+       * the page shows as 'current' on the next Required Pages Sync load.
+       *
+       * When the live page has the same UUID under another title, it is saved
+       * under that title with the source title in the metadata — a rename —
+       * rather than as a second page with the same UUID.
        */
-      const syncFile = async (srcPath: string, dstPath: string, addonName?: string): Promise<void> => {
+      const syncPageManager = this.engine.getManager('PageManager');
+      const syncFile = async (srcPath: string, uuid: string, addonName?: string): Promise<void> => {
         const raw: string = await fse.readFile(srcPath, 'utf8');
         const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
         delete parsed.data['user-modified'];
@@ -11802,8 +11811,16 @@ ${panes}
           parsed.data['addon-source-hash'] = pageSourceHash(parsed.content);
           if (!parsed.data['system-category']) parsed.data['system-category'] = 'addon';
         }
-        const cleaned: string = matter.stringify(parsed.content, parsed.data);
-        await fse.writeFile(dstPath, cleaned, 'utf8');
+        const title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';
+        if (!title) throw new Error(`source page ${uuid} has no title`);
+        const live = await syncPageManager.getPage(uuid);
+        const liveTitle = typeof live?.metadata?.title === 'string' ? live.metadata.title : '';
+        await syncPageManager.savePage(
+          liveTitle || title,
+          parsed.content,
+          { ...parsed.data, uuid, title, editor: 'system' },
+          { skipValidation: true }
+        );
       };
 
       // Normal sync: copy source UUID file to pages dir (stripping user-modified).
@@ -11839,7 +11856,7 @@ ${panes}
               continue;
             }
           }
-          await syncFile(sourcePath, destPath, addonName);
+          await syncFile(sourcePath, uuid, addonName);
           synced.push(uuid);
         }
       }
@@ -11847,14 +11864,18 @@ ${panes}
       // Reconcile uuid-mismatch: create canonical UUID file from source, remove the old UUID file
       for (const { sourceUuid, liveUuid } of reconcileItems) {
         const sourcePath = path.join(requiredDirResolved, `${sourceUuid}.md`);
-        const canonicalPath = path.join(pagesDirResolved, `${sourceUuid}.md`);
-        const oldPath = path.join(pagesDirResolved, `${liveUuid}.md`);
 
         if (await fse.pathExists(sourcePath)) {
-          await syncFile(sourcePath, canonicalPath);
-          if (liveUuid !== sourceUuid && (await fse.pathExists(oldPath))) {
-            await fse.remove(oldPath);
+          // #1376: the page under the old UUID goes first, through PageManager
+          // (a soft delete — recoverable from the trash — audited like any
+          // delete). It carries the same title, so saving the canonical page
+          // first would be refused as a duplicate title.
+          if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid)) {
+            const oldContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName: liveUuid });
+            await this.auditPageDelete(req, oldContext, liveUuid, liveUuid);
+            await syncPageManager.deletePageWithContext(oldContext);
           }
+          await syncFile(sourcePath, sourceUuid);
           synced.push(sourceUuid);
         }
       }
@@ -11993,14 +12014,12 @@ ${panes}
 
       // #1040: evict every page this sync touched.
       //
-      // The writes above go straight to disk through fse.writeFile rather than
-      // PageManager.savePage. That bypass is deliberate — seeding must not run
-      // the save-time content gate (see PageManager.ts:35, kept that way by
-      // #1037) — but savePage is also what invalidates the caches, so nothing
-      // did. The endpoint returned "N pages synced" while every reader kept
-      // getting the pre-sync render until the next restart, with nothing in the
-      // UI to suggest one was needed. Worst on exactly the page an operator is
-      // trying to correct.
+      // The sync and reconcile writes above go through PageManager (#1376); the
+      // adopt path still writes files directly, and removed orphans are gone.
+      // Before #1376 every write went straight to disk, and nothing invalidated
+      // the caches: the endpoint returned "N pages synced" while every reader
+      // kept getting the pre-sync render until the next restart. Evicting every
+      // touched page here keeps that fixed whichever path wrote it.
       //
       // refreshPageList() above rebuilds the page LIST; it does not touch the
       // per-page content cache or the rendered-pages region. invalidatePageCache

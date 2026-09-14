@@ -1,10 +1,10 @@
 /**
  * Required Pages Sync must invalidate what it rewrites — issue #1040.
  *
- * The sync writes page files straight to disk with `fse.writeFile` rather than
- * going through `PageManager.savePage`. That bypass is deliberate: seeding must
- * not run the save-time content gate (`PageManager.ts:35`, kept that way by
- * #1037). But `savePage` is also what invalidates the caches, so nothing did.
+ * The sync used to write page files straight to disk with `fse.writeFile`,
+ * which invalidated nothing. Since #1376 it saves through `PageManager.savePage`
+ * with `skipValidation` (shipped content skips the #1037 content gate), and the
+ * route still evicts every page it touched.
  *
  * The endpoint returned `"N pages synced"` while every reader kept getting the
  * pre-sync render until the next restart, with nothing in the UI to suggest one
@@ -69,8 +69,21 @@ async function makeDirs() {
 
 function makeRoutes(dirs: { requiredDir: string; pagesDir: string }, overrides: {
   invalidatePageCache?: (id: string) => void;
+  getPage?: (id: string) => Promise<unknown>;
 } = {}) {
   const invalidatePageCache = vi.fn(overrides.invalidatePageCache ?? (() => {}));
+  // #1376: the sync saves through PageManager. This stand-in writes the file the
+  // way the provider would, so the on-disk assertions below still mean something.
+  const savePage = vi.fn(async (_name: string, content: string, meta: Record<string, unknown>) => {
+    await fs.writeFile(path.join(dirs.pagesDir, `${String(meta.uuid)}.md`), `---\ntitle: ${String(meta.title)}\nuuid: ${String(meta.uuid)}\n---\n${content}\n`, 'utf8');
+  });
+  const getPage = vi.fn(overrides.getPage ?? (async () => null));
+  const order: string[] = [];
+  const deletePageWithContext = vi.fn(async (ctx: { pageName: string }) => { order.push(`delete ${ctx.pageName}`); return true; });
+  savePage.mockImplementation(async (_name: string, content: string, meta: Record<string, unknown>) => {
+    order.push(`save ${String(meta.uuid)}`);
+    await fs.writeFile(path.join(dirs.pagesDir, `${String(meta.uuid)}.md`), `---\ntitle: ${String(meta.title)}\nuuid: ${String(meta.uuid)}\n---\n${content}\n`, 'utf8');
+  });
   const refreshPageList = vi.fn().mockResolvedValue(undefined);
   const rebuildIndex = vi.fn().mockResolvedValue(undefined);
 
@@ -88,7 +101,7 @@ function makeRoutes(dirs: { requiredDir: string; pagesDir: string }, overrides: 
         };
       }
       if (name === 'PageManager') {
-        return { refreshPageList, invalidatePageCache, provider: {} };
+        return { refreshPageList, invalidatePageCache, savePage, getPage, deletePageWithContext, provider: {} };
       }
       if (name === 'SearchManager') return { rebuildIndex };
       if (name === 'AddonsManager') return null;
@@ -99,7 +112,7 @@ function makeRoutes(dirs: { requiredDir: string; pagesDir: string }, overrides: 
   const routes = new WikiRoutes(engine) as unknown as {
     adminSyncRequiredPages(req: unknown, res: unknown): Promise<void>;
   };
-  return { routes, invalidatePageCache, refreshPageList };
+  return { routes, invalidatePageCache, refreshPageList, savePage, deletePageWithContext, order };
 }
 
 /** The identifiers passed to invalidatePageCache, in call order. */
@@ -210,5 +223,45 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
 
     expect(res.status).not.toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  test('the sync saves through PageManager with skipValidation, as a version by system (#1376)', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body', 'user-modified: true\n'), 'utf8');
+
+    const { routes, savePage } = makeRoutes(dirs);
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], force: true }), createMockRes());
+
+    expect(savePage).toHaveBeenCalledTimes(1);
+    const [name, content, meta, options] = savePage.mock.calls[0];
+    expect(name).toBe('Using Current Time Plugin');
+    expect(content).toContain('new body');
+    expect(meta).toMatchObject({ uuid: UUID, title: 'Using Current Time Plugin', editor: 'system' });
+    expect(meta).not.toHaveProperty('user-modified');
+    expect(options).toEqual({ skipValidation: true });
+  });
+
+  test('a page renamed at the source is saved under its live title, as a rename (#1376)', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+
+    const { routes, savePage } = makeRoutes(dirs, {
+      getPage: async () => ({ metadata: { title: 'Current Time Plugin (old name)', uuid: UUID } })
+    });
+    await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], force: true }), createMockRes());
+
+    const [name, , meta] = savePage.mock.calls[0];
+    expect(name).toBe('Current Time Plugin (old name)');
+    expect(meta.title).toBe('Using Current Time Plugin');
+  });
+
+  test('reconcile deletes the old-UUID page through PageManager before saving the canonical one (#1376)', async () => {
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('canonical body'), 'utf8');
+
+    const { routes, order, deletePageWithContext } = makeRoutes(dirs, {
+      getPage: async (id: string) => (id === OTHER_UUID ? { metadata: { title: 'Using Current Time Plugin', uuid: OTHER_UUID } } : null)
+    });
+    await routes.adminSyncRequiredPages(createMockReq({ reconcile: [{ sourceUuid: UUID, liveUuid: OTHER_UUID }] }), createMockRes());
+
+    expect(deletePageWithContext).toHaveBeenCalledWith(expect.objectContaining({ pageName: OTHER_UUID }));
+    expect(order).toEqual([`delete ${OTHER_UUID}`, `save ${UUID}`]);
   });
 });
