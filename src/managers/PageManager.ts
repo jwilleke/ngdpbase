@@ -1027,10 +1027,16 @@ class PageManager extends BaseManager implements CatalogSource {
     const viaToken = (wikiContext.userContext as { viaToken?: { name: string } } | undefined)?.viaToken;
     const existingCreatedVia = (existingPage?.metadata as Record<string, unknown> | undefined)?.['created-via-token'];
 
+    // #1354: the author is the page's creator. An edit keeps it, and never
+    // fills it in — the person editing a page that has no author did not create
+    // it. Only a new page takes its author from the save.
     const rawMetadata: Partial<PageFrontmatter> = {
       ...metadata,
-      author: originalAuthor || wikiContext.userContext?.username || metadata.author || defaultAuthor
+      author: existingPage
+        ? originalAuthor
+        : (wikiContext.userContext?.username || metadata.author || defaultAuthor)
     };
+    if (!rawMetadata.author) delete rawMetadata.author;
 
     // #1354: `editor` is who made THIS version — the provider records it in the
     // version history and the page shows it as the last editor. It comes from

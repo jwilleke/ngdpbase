@@ -3921,7 +3921,9 @@ ${panes}
         : existingPrivate;
 
       // Preserve existing author on edits — never overwrite with the editor's username
-      const pageAuthor = existingPage?.metadata?.author || currentUser?.username || 'anonymous';
+      // #1354: the author is the creator — kept on an edit, never filled in by
+      // one. Only a new page takes the saving user as its author.
+      const pageAuthor = existingPage ? existingPage.metadata?.author : (currentUser?.username || 'anonymous');
 
       // #1017: system-keywords is the automation/provenance bucket (#893) — no
       // editor posts it, so an edit must PRESERVE what is on disk. Without this,

@@ -243,6 +243,22 @@ describe('PageManager', () => {
       expect(saved.author).toBe('jim');
     });
 
+    test('savePageWithContext() never makes the editor the author of a page that has none (#1354)', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.getPage = vi.fn().mockResolvedValue({
+        content: 'old', metadata: { title: 'Year 1925' }
+      });
+
+      await pageManager.savePageWithContext(
+        { pageName: 'Year 1925', content: 'new', userContext: { username: 'alice' } },
+        { title: 'Year 1925', author: 'alice' }
+      );
+
+      const saved = pageManager.provider.savePage.mock.calls[0][2];
+      expect(saved).not.toHaveProperty('author');
+      expect(saved.editor).toBe('alice');
+    });
+
     test('savePageWithContext() keeps the caller\'s editor when the context has no user (#1354)', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
 
