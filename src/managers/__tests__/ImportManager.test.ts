@@ -3,6 +3,7 @@
  */
 
 import path from 'path';
+import matter from 'gray-matter';
 import fs from 'fs-extra';
 import ImportManager from '../ImportManager';
 import { jobContextFromSystem } from '../../context/JobContext';
@@ -566,6 +567,27 @@ See [OtherPage] for more.`;
 
       expect(normalize).not.toHaveBeenCalled();
       await manager.shutdown();
+    });
+  });
+
+  describe('page names YAML would read as another type (#1381)', () => {
+    it.each(['2024-11-21', 'true', '2024'])('a page named %s is written with its name as text', async (name) => {
+      const sourceFile = path.join(testDir, `${name}.txt`);
+      await fs.writeFile(sourceFile, `First snow on ${name}`);
+      const targetDir = path.join(testDir, `output-${name}`);
+      await fs.ensureDir(targetDir);
+
+      const result = await importManager.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
+        sourceDir: testDir,
+        targetDir,
+        format: 'jspwiki',
+        dryRun: false
+      });
+
+      const { data } = matter(await fs.readFile(result.targetPath, 'utf-8'));
+      expect(data.title).toBe(name);
+      expect(typeof data.slug).toBe('string');
     });
   });
 

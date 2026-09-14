@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { parsePageFrontmatter, namesAsText } from '../utils/pageFrontmatter.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
@@ -224,9 +225,9 @@ class FileSystemProvider extends BasePageProvider {
     for (const filePath of mdFiles) {
       try {
         const fileContent = await fs.readFile(filePath, this.encoding);
-        const { data, content } = matter(fileContent);
-        const metadata = data as PageFrontmatter;
-        // Ensure title is always a string (YAML may parse numeric titles as numbers)
+        // #1381: names come back as the text written (`title: true` is 'true')
+        const { data, content } = parsePageFrontmatter(fileContent);
+        const metadata = data as unknown as PageFrontmatter;
         const title = metadata.title != null ? String(metadata.title).trim() : '';
         const uuid = (metadata.uuid) || path.basename(filePath, '.md');
 
@@ -389,7 +390,7 @@ class FileSystemProvider extends BasePageProvider {
     // Fallback to disk read (for pages added after initialization)
     try {
       const fullContent = await fs.readFile(info.filePath, this.encoding);
-      const { content, data: metadata } = matter(fullContent);
+      const { content, data: metadata } = parsePageFrontmatter(fullContent);
 
       // Update caches for future requests — store full metadata so subsequent
       // getPage() calls (e.g. AJAX metadata requests) return complete frontmatter
@@ -564,6 +565,9 @@ class FileSystemProvider extends BasePageProvider {
     metadata: Partial<PageFrontmatter> = {},
     options?: PageSaveOptions
   ): Promise<void> {
+    // #1381: a caller may hand over metadata parsed with YAML's own types — a
+    // boolean or Date title would reach toLowerCase() below and throw.
+    metadata = namesAsText({ ...metadata });
     const uuid = metadata.uuid || this.resolvePageInfo(pageName)?.uuid || uuidv4();
 
     if (!this.pagesDirectory || !this.requiredPagesDirectory) {

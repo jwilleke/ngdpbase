@@ -30,6 +30,7 @@
 import path from 'path';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import fs from 'fs-extra';
+import yaml from 'js-yaml';
 import { v4 as uuidv4 } from 'uuid';
 import BaseManager, { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -1430,28 +1431,11 @@ class ImportManager extends BaseManager {
   ): string {
     const frontmatter = this.buildImportMetadata(result, pageUuid);
 
-    // Build YAML
-    const lines = ['---'];
-    for (const [key, value] of Object.entries(frontmatter)) {
-      if (typeof value === 'string') {
-        // Quote strings that might cause YAML issues
-        if (value.includes(':') || value.includes('#') || value.includes("'")) {
-          lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
-        } else {
-          lines.push(`${key}: ${value}`);
-        }
-      } else if (Array.isArray(value)) {
-        lines.push(`${key}:`);
-        for (const item of value) {
-          lines.push(`  - ${item}`);
-        }
-      } else {
-        lines.push(`${key}: ${JSON.stringify(value)}`);
-      }
-    }
-    lines.push('---');
-
-    return lines.join('\n');
+    // #1381: through the YAML library, which quotes any string YAML would
+    // otherwise read as something else. The hand-written YAML this replaces
+    // quoted only strings with `:`, `#` or `'`, so the page name 2024-11-21
+    // came back as a date and `true` as a boolean.
+    return `---\n${yaml.dump(frontmatter, { lineWidth: -1, skipInvalid: true })}---`;
   }
 
   /**

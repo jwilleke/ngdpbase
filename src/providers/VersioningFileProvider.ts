@@ -4,7 +4,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
 import fs from 'fs-extra';
 import path from 'path';
-import matter from 'gray-matter';
+import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
@@ -555,13 +555,13 @@ class VersioningFileProvider extends FileSystemProvider {
 
         try {
           const fileContent = await fs.readFile(filePath, this.encoding || 'utf-8');
-          const parsed = matter(fileContent);
-          const title = parsed.data?.title ? String(parsed.data.title) : '';
+          const parsed = parsePageFrontmatter(fileContent);
+          const title = typeof parsed.data.title === 'string' ? parsed.data.title : ''; // #1381: already text
           if (!title) continue;
 
           if (this.titleIndex.has(title.toLowerCase())) continue; // duplicate title
 
-          const slug = parsed.data?.slug ? String(parsed.data.slug) : undefined;
+          const slug = typeof parsed.data.slug === 'string' && parsed.data.slug ? parsed.data.slug : undefined;
           const pageInfo: PageCacheInfo = {
             title,
             uuid,
@@ -603,12 +603,12 @@ class VersioningFileProvider extends FileSystemProvider {
             const filePath = path.join(this.pagesDirectory, filename);
             try {
               const fileContent = await fs.readFile(filePath, this.encoding || 'utf-8');
-              const parsed = matter(fileContent);
-              const title = parsed.data?.title ? String(parsed.data.title) : '';
+              const parsed = parsePageFrontmatter(fileContent);
+              const title = typeof parsed.data.title === 'string' ? parsed.data.title : ''; // #1381: already text
               if (!title) continue;
               if (this.titleIndex.has(title.toLowerCase())) continue;
               const uuid = path.basename(filename, '.md');
-              const slug = parsed.data?.slug ? String(parsed.data.slug) : undefined;
+              const slug = typeof parsed.data.slug === 'string' && parsed.data.slug ? parsed.data.slug : undefined;
               const pageInfo: PageCacheInfo = {
                 title,
                 uuid,
@@ -1306,7 +1306,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
         if (await fs.pathExists(pagePath)) {
           const fileContent = await fs.readFile(pagePath, 'utf8');
-          const parsed = matter(fileContent);
+          const parsed = parsePageFrontmatter(fileContent);
           content = parsed.content;
           metadata = parsed.data;
         } else {
@@ -1330,7 +1330,7 @@ class VersioningFileProvider extends FileSystemProvider {
               pagePath = pagesPath;
             }
             const fileContent = await fs.readFile(actualFilePath, 'utf8');
-            const parsed = matter(fileContent);
+            const parsed = parsePageFrontmatter(fileContent);
             content = parsed.content;
             metadata = parsed.data;
             // Rename the slug-named file to its proper UUID filename — but
@@ -2185,7 +2185,7 @@ class VersioningFileProvider extends FileSystemProvider {
       // Re-register in the live caches so the page resolves immediately,
       // without waiting for a provider reload.
       const raw = await fs.readFile(entry.deletedFrom, this.encoding);
-      const parsed = matter(raw);
+      const parsed = parsePageFrontmatter(raw);
       this.addToCaches(
         {
           title: entry.title,

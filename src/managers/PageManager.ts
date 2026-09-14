@@ -3,6 +3,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
+import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -437,7 +438,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
         // Same logic as adminSyncRequiredPages syncFile(): strip user-modified on copy
         const raw: string = await fse.readFile(srcPath, 'utf8');
-        const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
+        const parsed = parsePageFrontmatter(raw);
 
         // Skip pages whose system-category is github-only (e.g. 'developer')
         const pageCategory = parsed.data['system-category'] as string | undefined;
@@ -539,7 +540,7 @@ class PageManager extends BaseManager implements CatalogSource {
         if (await fse.pathExists(path.join(pagesDirResolved, file))) continue;
 
         const raw: string = await fse.readFile(path.join(requiredDir, file), 'utf8');
-        const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
+        const parsed = parsePageFrontmatter(raw);
         const category = parsed.data['system-category'] as string | undefined;
         if (category && githubOnlyCategories.has(category)) continue;
 
@@ -842,7 +843,7 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   async saveRawPageWithAdminOverride(pageName: string, rawFileContent: string): Promise<void> {
     if (!this.provider) throw new Error('PageManager: Provider not initialized');
-    const parsed = matter(rawFileContent);
+    const parsed = parsePageFrontmatter(rawFileContent);
     const metadata = parsed.data as Partial<PageFrontmatter>;
     const content = parsed.content;
     return this.provider.savePage(pageName, content, metadata);
@@ -1281,7 +1282,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * @returns The NCM result and the fix steps that changed the body
    */
   convertPageToNcm(raw: string): PageConvertResult {
-    const parsed = matter(raw);
+    const parsed = parsePageFrontmatter(raw);
     const fixed = this.normalizePageContent(parsed.content);
     const source = fixed.changes.length ? matter.stringify(fixed.content, parsed.data) : raw;
     const ncm = normalizeExistingPageToNcm(source);
