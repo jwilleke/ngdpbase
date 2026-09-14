@@ -68,6 +68,10 @@ There can be more than one PageManager (or page provider / engine) in a process.
 
 This is not client-side zero-knowledge: the server holds those bytes only while that session is unlocked.
 
+This epic does __not__ add a RecordManager that talks to all providers. Architecture ([ARCHITECTURE.md](../../ARCHITECTURE.md), [MANAGERS-OVERVIEW.md](../architecture/MANAGERS-OVERVIEW.md)): one concern → one manager → its provider. Pages write through PageManager; files through AttachmentManager. Keys stay on the store, the user KEK, and the process session bag (`src/utils`). RecordManager is a later YourPHR/shared-DB idea, not [#1382](https://github.com/jwilleke/ngdpbase/issues/1382).
+
+We still want __one__ implementation of key unwrap and encrypt-on-write: `src/utils/privateStoreCrypto.ts` + `privateStoreUnlock.ts` (session bag). PageManager (pages) and AttachmentManager (files) are the HTTP/work doors; they call those helpers. Providers encrypt bytes when given a DEK; they do not invent a second policy. Routes and scripts must not unwrap keys or write sealed stores around the managers ([#1389](https://github.com/jwilleke/ngdpbase/issues/1389)). Duplicating wrap/assert in WikiRoutes, VersioningFileProvider, and AttachmentManager independently is the defect we are avoiding — not solved by a manager that talks to search, users, or audit.
+
 ## Files in the store
 
 The store is the container. PDFs, images, FHIR JSON/XML, and other imports land in `private/{user}/{store}/`, not `attachments/private/{user}/`. NCM still applies only to markdown that is a page. Existing import/upload doors stay; the __destination__ is the store.
@@ -82,7 +86,7 @@ Global `attachment-metadata.json` must not list names of files in a __sealed__ s
 
 ## Audit
 
-Use the existing audit system. Do not add a second logger.
+Use the existing audit system. Do not add a second logger. Standing rules for write doors, secrets in records, manager versus provider, and bypasses: [audit-posture.md](../audit-posture.md) and [security-posture.md](../security-posture.md).
 
 `page-read` already has an emitter (`auditPageView` on the view route) and ships `enabled: false` because it is volume ([#1203](https://github.com/jwilleke/ngdpbase/issues/1203)). `PageManager.getPage` is the wrong door (internal reads). Store pages viewed in the wiki use that route; an instance that wants view records turns the __configuration__ switch on.
 
@@ -116,5 +120,9 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1387](https://github.com/jwilleke/ngdpbase/issues/1387) | Admin backup as-on-disk; user download | [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) |
 | [#1388](https://github.com/jwilleke/ngdpbase/issues/1388) | Token-share + per-store share flag | [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) |
 | [#1389](https://github.com/jwilleke/ngdpbase/issues/1389) | Save/import/upload through managers | [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) |
+| [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) | Unlock user KEK into the process session bag on password login | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
+| [#1392](https://github.com/jwilleke/ngdpbase/issues/1392) | Drop the session bag on logout | [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) |
+| [#1393](https://github.com/jwilleke/ngdpbase/issues/1393) | Password change re-wraps the KEK envelope; mnemonic wrap unchanged | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
+| [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK (PageManager + AttachmentManager doors; relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
 
-Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first.
+Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.

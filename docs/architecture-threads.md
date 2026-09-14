@@ -350,7 +350,7 @@ Every step of that chain works today __except auto-enable__: the operator must s
 
 ### 8. Private stores (epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382))
 
-__Status:__ design ratified 2026-09-14. Path ([#1383](https://github.com/jwilleke/ngdpbase/issues/1383)) on `feat/1382-private-stores`. Keys ([#1384](https://github.com/jwilleke/ngdpbase/issues/1384)) next — not on PageManager; see the Keys section in the driver.
+__Status:__ design ratified 2026-09-14. Path ([#1383](https://github.com/jwilleke/ngdpbase/issues/1383)) and key helpers ([#1384](https://github.com/jwilleke/ngdpbase/issues/1384)) on `feat/1382-private-stores`. Login/logout/password/refuse-write are separate children ([#1391](https://github.com/jwilleke/ngdpbase/issues/1391)–[#1394](https://github.com/jwilleke/ngdpbase/issues/1394)), not phases of [#1384](https://github.com/jwilleke/ngdpbase/issues/1384). Keys live in `src/utils`, not on PageManager; no RecordManager.
 
 __Driver:__ [docs/planning/private-stores.md](./planning/private-stores.md) — a per-user __store__ under `pages/private/{user}/{store}/` (encrypt and share per store). Not field-level encryption of `page-index.json`. YourPHR is a later collection of addons, not this epic.
 
@@ -366,8 +366,12 @@ __Composing issues:__
 | [#1387](https://github.com/jwilleke/ngdpbase/issues/1387) | Backups (admin as-on-disk; user download) |
 | [#1388](https://github.com/jwilleke/ngdpbase/issues/1388) | Token-share + store share flag |
 | [#1389](https://github.com/jwilleke/ngdpbase/issues/1389) | Write/import/upload doors |
+| [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) | Unlock user KEK into the process session bag on login |
+| [#1392](https://github.com/jwilleke/ngdpbase/issues/1392) | Drop the session bag on logout |
+| [#1393](https://github.com/jwilleke/ngdpbase/issues/1393) | Password change re-wraps the KEK envelope |
+| [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK |
 
-__Dependency graph:__ [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first; the others are blocked by it. [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) is also blocked by [#1384](https://github.com/jwilleke/ngdpbase/issues/1384).
+__Dependency graph:__ [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first; [#1384](https://github.com/jwilleke/ngdpbase/issues/1384)–[#1389](https://github.com/jwilleke/ngdpbase/issues/1389) are blocked by it. [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) is also blocked by [#1384](https://github.com/jwilleke/ngdpbase/issues/1384). [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) / [#1393](https://github.com/jwilleke/ngdpbase/issues/1393) / [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) are blocked by [#1384](https://github.com/jwilleke/ngdpbase/issues/1384). [#1392](https://github.com/jwilleke/ngdpbase/issues/1392) is blocked by [#1391](https://github.com/jwilleke/ngdpbase/issues/1391). [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391).
 
 __Drift risks:__ Hanging KEK/DEK on a PageManager instance (there can be more than one). Global `page-index.json` and `attachment-metadata.json` must not grow plaintext titles/names for sealed stores. `savePage` without context ([#1135](https://github.com/jwilleke/ngdpbase/issues/1135)) and import-around-PageManager ([#874](https://github.com/jwilleke/ngdpbase/issues/874)) are the leak if [#1389](https://github.com/jwilleke/ngdpbase/issues/1389) is skipped.
 
