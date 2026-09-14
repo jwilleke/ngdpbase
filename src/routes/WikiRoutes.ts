@@ -87,7 +87,10 @@ import {
 } from '../utils/buildSitemap.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
-import { unlockPrivateStoresWithPassword } from '../utils/privateStoreUnlock.js';
+import {
+  lockPrivateStores,
+  unlockPrivateStoresWithPassword
+} from '../utils/privateStoreUnlock.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -6844,9 +6847,9 @@ ${panes}
           const pagesDirectory =
             typeof configManager.getResolvedDataPath === 'function'
               ? configManager.getResolvedDataPath(
-                  'ngdpbase.page.provider.filesystem.storagedir',
-                  './data/pages'
-                )
+                'ngdpbase.page.provider.filesystem.storagedir',
+                './data/pages'
+              )
               : undefined;
           if (pagesDirectory) {
             await unlockPrivateStoresWithPassword({
@@ -7176,7 +7179,13 @@ ${panes}
    */
   processLogout(req: Request, res: Response) {
     try {
-      // Destroy express-session
+      // #1392: drop KEK/DEK before express-session JSON is gone — never store
+      // keys on the session object.
+      const sessionId =
+        (typeof req.session?.id === 'string' && req.session.id) ||
+        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
+      if (sessionId) lockPrivateStores(sessionId);
+
       req.session.destroy((err) => {
         if (err) {
           logger.error('Error destroying session:', err);

@@ -1,8 +1,9 @@
 /**
  * Password login unwraps the user KEK into the process bag (#1391).
+ * Logout drops that bag for the session id (#1392).
  *
- * A helper that exists but is not wired on the login door protects nothing.
- * Logout drop is a separate child. Keys are not express-session JSON.
+ * A helper that exists but is not wired on the login/logout door protects nothing.
+ * Keys are not express-session JSON.
  */
 
 import { format } from 'util';
@@ -21,7 +22,8 @@ import { privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath
 import {
   clearUnlockedPrivateStores,
   getUnlockedDek,
-  getUnlockedKek
+  getUnlockedKek,
+  unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
 
 const kdf = TEST_PRIVATE_STORE_KDF;
@@ -43,7 +45,8 @@ function createMockSession(id = 'attacker-planted-id') {
       session.id = 'regenerated-id';
       cb();
     }),
-    save: vi.fn((cb: (err?: unknown) => void) => cb())
+    save: vi.fn((cb: (err?: unknown) => void) => cb()),
+    destroy: vi.fn((cb: (err?: unknown) => void) => cb())
   };
   return session;
 }
@@ -104,10 +107,11 @@ function makeRoutes(opts: {
   };
   return new WikiRoutes(engine) as unknown as {
     processLogin(req: unknown, res: unknown): Promise<void>;
+    processLogout(req: unknown, res: unknown): void;
   };
 }
 
-describe('private store login unlock (#1391)', () => {
+describe('private store session bag (#1391, #1392)', () => {
   let pagesDir: string;
   let tmp: string;
   const logs: string[] = [];
@@ -150,10 +154,8 @@ describe('private store login unlock (#1391)', () => {
     );
 
     expect(session.id).toBe('regenerated-id');
-    expect(Buffer.compare(getUnlockedKek('regenerated-id')!, created.kek)).toBe(0);
-    expect(
-      Buffer.compare(getUnlockedDek('regenerated-id', 'yourphr')!, unwrapDek(created.kek, store))
-    ).toBe(0);
+    expect(getUnlockedKek('regenerated-id')).toEqual(created.kek);
+    expect(getUnlockedDek('regenerated-id', 'yourphr')).toEqual(unwrapDek(created.kek, store));
     expect(getUnlockedKek('attacker-planted-id')).toBeUndefined();
 
     const json = JSON.stringify(session);
@@ -182,5 +184,46 @@ describe('private store login unlock (#1391)', () => {
 
     expect(getUnlockedKek(session.id as string)).toBeUndefined();
     expect(getUnlockedKek('regenerated-id')).toBeUndefined();
+  });
+
+  test('logout drops KEK and DEK for that session and leaves other sessions unlocked', async () => {
+    const created = createUserKeys('correct-horse', { kdf });
+    const store = createEncryptedStore(created.kek);
+    await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
+    await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), store);
+
+    const other = createUserKeys('other-pw', { kdf });
+    unlockPrivateStores('other-sid', 'bob', other.kek);
+
+    const session = createMockSession();
+    const routes = makeRoutes({ pagesDir });
+    await routes.processLogin(
+      createMockReq({ username: 'molly', password: 'correct-horse' }, session),
+      createMockRes()
+    );
+    expect(getUnlockedKek('regenerated-id')).toBeDefined();
+
+    routes.processLogout(
+      createMockReq({}, session),
+      createMockRes()
+    );
+
+    expect(getUnlockedKek('regenerated-id')).toBeUndefined();
+    expect(getUnlockedDek('regenerated-id', 'yourphr')).toBeUndefined();
+    expect(getUnlockedKek('other-sid')).toEqual(other.kek);
+
+    const json = JSON.stringify(session);
+    expect(json).not.toContain(created.kek.toString('base64'));
+    expect(json).not.toContain(created.kek.toString('hex'));
+    expect(json).not.toContain('correct-horse');
+
+    const combined = logs.join('\n');
+    expect(combined).not.toContain('correct-horse');
+    expect(combined).not.toContain(created.kek.toString('base64'));
+    expect(combined).not.toContain(created.kek.toString('hex'));
+    expect(combined).not.toContain(created.mnemonic);
+    expect(session.destroy).toHaveBeenCalled();
   });
 });
