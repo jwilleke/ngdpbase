@@ -350,7 +350,7 @@ Every step of that chain works today __except auto-enable__: the operator must s
 
 ### 8. Private stores (epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382))
 
-__Status:__ design ratified 2026-09-14. Path ([#1383](https://github.com/jwilleke/ngdpbase/issues/1383)) and key helpers ([#1384](https://github.com/jwilleke/ngdpbase/issues/1384)) on `feat/1382-private-stores`. Login/logout/password/refuse-write are separate children ([#1391](https://github.com/jwilleke/ngdpbase/issues/1391)–[#1394](https://github.com/jwilleke/ngdpbase/issues/1394)), not phases of [#1384](https://github.com/jwilleke/ngdpbase/issues/1384). Keys live in `src/utils`, not on PageManager; no RecordManager.
+__Status:__ design ratified 2026-09-14. Path ([#1383](https://github.com/jwilleke/ngdpbase/issues/1383)) and key helpers ([#1384](https://github.com/jwilleke/ngdpbase/issues/1384)) on `feat/1382-private-stores`. Login ([#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) / logout ([#1392](https://github.com/jwilleke/ngdpbase/issues/1392)) / password rewrap ([#1393](https://github.com/jwilleke/ngdpbase/issues/1393)) / encrypt-on write ([#1394](https://github.com/jwilleke/ngdpbase/issues/1394)) call `privateStoreUnlock` / `privateStoreCrypto` — not PageManager, no RecordManager.
 
 __Driver:__ [docs/planning/private-stores.md](./planning/private-stores.md) — a per-user __store__ under `pages/private/{user}/{store}/` (encrypt and share per store). Not field-level encryption of `page-index.json`. YourPHR is a later collection of addons, not this epic.
 

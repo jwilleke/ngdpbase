@@ -8308,7 +8308,13 @@ ${panes}
         newPassword,
         confirmPassword
       } = req.body;
-      const updates: { displayName?: string; email?: string; password?: string; profilePage?: string } = {};
+      const updates: {
+        displayName?: string;
+        email?: string;
+        password?: string;
+        profilePage?: string;
+        currentPassword?: string;
+      } = {};
 
       // #1029: a shared account whose credentials are published must not let
       // its holder edit its identity — doing so hands the account away.
@@ -8373,6 +8379,7 @@ ${panes}
         }
 
         updates.password = newPassword;
+        updates.currentPassword = currentPassword;
       } else if (newPassword && currentUser.isExternal) {
         return res.redirect(
           '/profile?error=Cannot change password for OAuth accounts'

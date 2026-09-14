@@ -1,5 +1,6 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import { DEFAULT_PRIVATE_STORE, privatePageFilePath } from '../utils/privateStorePath.js';
+import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -596,6 +597,17 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
+
+    // #1384: encrypt-on write uses the session DEK from the process bag.
+    // Not a PageManager field — both providers call this helper.
+    if (isPrivate && pageCreator) {
+      await assertCurrentSessionCanWriteStore({
+        pagesDirectory: this.pagesDirectory,
+        creator: pageCreator,
+        store: DEFAULT_PRIVATE_STORE
+      });
+    }
+
     const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
     await fs.ensureDir(path.dirname(filePath));
 

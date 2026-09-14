@@ -11,7 +11,14 @@ import VersioningFileProvider from '../VersioningFileProvider';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { DEFAULT_PRIVATE_STORE } from '../../utils/privateStorePath';
+import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePath';
+import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek } from '../../utils/privateStoreCrypto';
+import {
+  clearUnlockedPrivateStores,
+  runWithPrivateStoreSession,
+  setUnlockedDek,
+  unlockPrivateStores
+} from '../../utils/privateStoreUnlock';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
@@ -63,6 +70,7 @@ describe('private store default/ (#1383)', () => {
   });
 
   afterEach(async () => {
+    clearUnlockedPrivateStores();
     await fs.remove(testDir);
   });
 
@@ -142,5 +150,35 @@ describe('private store default/ (#1383)', () => {
     await newProvider();
     expect(await fs.pathExists(legacyVer)).toBe(false);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
+  });
+
+  test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {
+    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const record = createEncryptedStore(kek);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);
+
+    const provider = await newProvider();
+    await expect(
+      provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' })
+    ).rejects.toThrow(/locked|DEK/i);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+  });
+
+  test('encrypt-on save proceeds when the session bag has the DEK (#1394)', async () => {
+    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const record = createEncryptedStore(kek);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);
+
+    unlockPrivateStores('sid', 'molly', kek);
+    setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(kek, record));
+
+    const provider = await newProvider();
+    await runWithPrivateStoreSession('sid', () =>
+      provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' })
+    );
+
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
   });
 });

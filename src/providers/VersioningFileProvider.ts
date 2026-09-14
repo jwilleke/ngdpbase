@@ -24,6 +24,7 @@ import type MetricsManager from '../managers/MetricsManager.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { DEFAULT_PRIVATE_STORE, parsePrivatePageRel, privatePageFilePath, privateVersionDirectory } from '../utils/privateStorePath.js';
+import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
 
 /**
@@ -1862,6 +1863,14 @@ class VersioningFileProvider extends FileSystemProvider {
     const store = isPrivate
       ? (currentEntry?.store ?? DEFAULT_PRIVATE_STORE)
       : undefined;
+
+    if (isPrivate && this.pagesDirectory) {
+      await assertCurrentSessionCanWriteStore({
+        pagesDirectory: this.pagesDirectory,
+        creator: newCreator,
+        store: store ?? DEFAULT_PRIVATE_STORE
+      });
+    }
 
     // Detect location change (e.g. private → public or public → private) and move files
     if (currentEntry && currentEntry.location !== location) {
