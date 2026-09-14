@@ -465,6 +465,14 @@ class VersioningFileProvider extends FileSystemProvider {
       } else {
         filePath = path.join(baseDir, basename);
       }
+      // #1371: an entry saved before the fix says 'required-pages' because of
+      // its category, while the file is in the pages directory (every save
+      // writes there). Load the live file rather than 404. Only these entries
+      // pay for an existence check; the rest of fast init reads no files.
+      if (entry.location === 'required-pages' && this.pagesDirectory && !(await fs.pathExists(filePath))) {
+        const live = path.join(this.pagesDirectory, basename);
+        if (await fs.pathExists(live)) filePath = live;
+      }
       const title = entry.title;
 
       // Duplicate-title detection (#587) — keep the newer entry
@@ -538,6 +546,10 @@ class VersioningFileProvider extends FileSystemProvider {
       for (const filePath of reqFiles) {
         const uuid = path.basename(filePath, '.md');
         if (this.uuidIndex.has(uuid)) continue; // already loaded from index
+        // #1371: a live copy in the pages directory wins — the recovery scan
+        // below loads it. The source copy is only the safety net for a page
+        // the instance does not have at all.
+        if (this.pagesDirectory && await fs.pathExists(path.join(this.pagesDirectory, `${uuid}.md`))) continue;
 
         try {
           const fileContent = await fs.readFile(filePath, this.encoding || 'utf-8');
@@ -1668,32 +1680,17 @@ class VersioningFileProvider extends FileSystemProvider {
     // Determine UUID (existing or new)
     const uuid = pageInfo?.uuid || metadata.uuid || uuidv4();
 
-    // Determine location:
-    // 1. If page is private (`private:true` canonical signal — #802 Slice 4
-    //    retired the legacy `system-location:'private'` fallback), use 'private'
-    // 2. Otherwise fall back to system-category → storageLocation mapping
-    const metadataRecord = metadata as Record<string, unknown>;
+    // Determine location — where the live file actually is (#1371). Every live
+    // page, required pages included, is stored in the instance's pages directory
+    // (`private/<creator>/` for private pages); `storageLocation: required` on a
+    // category says the page's SOURCE is the GitHub required-pages set, not that
+    // the live copy, its history or its deleted record belong in that folder.
+    // Deriving 'required-pages' from the category put history and deleted
+    // records into the required-pages folder (the git working tree on a dev
+    // install, the image on Docker) and made pages 404 after a restart.
     const isPrivate = metadata.private === true;
     const newCreator = metadata.author || 'anonymous';
-
-    let location: 'pages' | 'required-pages' | 'private' = 'pages';
-
-    if (isPrivate) {
-      location = 'private';
-    } else {
-      const systemCategory = (metadataRecord['system-category'] || metadataRecord.systemCategory || 'General') as string;
-      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      const systemCategoriesConfig = configManager?.getProperty('ngdpbase.system-category', null) as Record<string, { label?: string; storageLocation?: string }> | null;
-
-      if (systemCategoriesConfig) {
-        for (const config of Object.values(systemCategoriesConfig)) {
-          if (config.label?.toLowerCase() === systemCategory.toLowerCase()) {
-            location = config.storageLocation === 'required' ? 'required-pages' : 'pages';
-            break;
-          }
-        }
-      }
-    }
+    const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';
 
     // Detect location change (e.g. private → public or public → private) and move files
     const currentEntry = this.pageIndex?.pages[uuid];
@@ -1831,8 +1828,14 @@ class VersioningFileProvider extends FileSystemProvider {
     if (fromDir === toDir) return;
 
     if (await fs.pathExists(fromDir)) {
+      // Never replace a history that is already there — two histories for one
+      // page need a person to reconcile (#1371, #1375), not an overwrite.
+      if (await fs.pathExists(toDir)) {
+        logger.error(`[VersioningFileProvider] Not moving version directory ${fromDir}: ${toDir} already exists — reconcile by hand (#1375)`);
+        return;
+      }
       await fs.ensureDir(path.dirname(toDir));
-      await fs.move(fromDir, toDir, { overwrite: true });
+      await fs.move(fromDir, toDir);
       logger.info(`[VersioningFileProvider] Moved version directory: ${fromDir} → ${toDir}`);
     }
   }
@@ -1871,10 +1874,11 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const uuid = pageData.uuid;
-    // Use page index entry for accurate location (handles 'private' pages too)
-    const location: 'pages' | 'required-pages' | 'private' =
-      this.pageIndex?.pages[uuid]?.location ||
-      (pageData.metadata?.['system-category']?.toLowerCase() === 'system' ? 'required-pages' : 'pages');
+    // #1371: the deleted record goes beside the live file — private pages to the
+    // private trash, everything else to the pages trash. Never the required-pages
+    // folder, whatever a stale index entry or the category says.
+    const location: 'pages' | 'private' =
+      this.pageIndex?.pages[uuid]?.location === 'private' ? 'private' : 'pages';
 
     try {
       const info = this.resolvePageInfo(identifier);

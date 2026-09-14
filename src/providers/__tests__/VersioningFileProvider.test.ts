@@ -727,7 +727,10 @@ describe('VersioningFileProvider', () => {
   });
 
   describe('Required Pages', () => {
-    test('should store required pages in correct location', async () => {
+    // #1371: a `required` category names where the page's SOURCE lives (the
+    // GitHub required-pages set). The live copy and its history are stored in
+    // the pages directory like any other page.
+    test('stores a required-category page, and its history, in the pages directory', async () => {
       // Mock system categories config
       configManager.getProperty = vi.fn((key, defaultValue) => {
         if (key === 'ngdpbase.system-category') {
@@ -754,13 +757,13 @@ describe('VersioningFileProvider', () => {
 
       await providerWithCategories.savePage('LeftMenu', 'Menu content', metadata);
 
-      // Should be in required-pages versions
-      const versionDir = path.join(providerWithCategories.requiredPagesVersionsDir, 'test-uuid-18', 'v1');
-      expect(await fs.pathExists(versionDir)).toBe(true);
+      // History in the pages directory, nothing in the required-pages folder
+      expect(await fs.pathExists(path.join(providerWithCategories.pagesVersionsDir, 'test-uuid-18', 'v1'))).toBe(true);
+      expect(await fs.pathExists(path.join(providerWithCategories.requiredPagesVersionsDir, 'test-uuid-18'))).toBe(false);
 
       // Check page index location
       const index = JSON.parse(await fs.readFile(providerWithCategories.pageIndexPath, 'utf8'));
-      expect(index.pages['test-uuid-18'].location).toBe('required-pages');
+      expect(index.pages['test-uuid-18'].location).toBe('pages');
     });
   });
 
