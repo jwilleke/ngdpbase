@@ -22,6 +22,7 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
     await fs.ensureDir(path.dirname(legacy));
     await fs.writeFile(legacy, '---\ntitle: Secret\n---\nbody\n');
     await fs.writeFile(path.join(pagesDir, 'private', 'jim', 'user-index.json'), '{}');
+    await fs.writeFile(path.join(pagesDir, 'private', 'jim', 'user-keys.json'), '{}');
     await fs.ensureDir(path.join(pagesDir, 'private', 'jim', 'yourphr'));
 
     const result = await migrateLegacyPrivatePages(pagesDir);
@@ -30,6 +31,7 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
     expect(await fs.pathExists(legacy)).toBe(false);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, `${uuid}.md`))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'user-index.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'user-keys.json'))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'yourphr'))).toBe(true);
   });
 

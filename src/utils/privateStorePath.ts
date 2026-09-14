@@ -11,6 +11,7 @@ export const DEFAULT_PRIVATE_STORE = 'default';
 
 /** User-level catalogs — files, not store directories. */
 export const PRIVATE_USER_CATALOG_FILES = new Set([
+  'user-keys.json',
   'user-index.json',
   'user-versions.json',
   'user-trash.json'

@@ -18,10 +18,12 @@ Predecessor: [plan-private-folder.md](./plan-private-folder.md) (shipped the `pr
 ## Layout
 
 ```text
+pages/private/{user}/user-keys.json        # wrapped user KEK (password + recovery)
 pages/private/{user}/user-index.json       # catalog of encrypted-store pages (user KEK)
 pages/private/{user}/user-versions.json    # history catalog (user KEK)
 pages/private/{user}/user-trash.json       # trash catalog (user KEK)
 pages/private/{user}/{store}/              # live pages, files, version blobs, trash blobs
+pages/private/{user}/{store}/store.json    # encrypt on/off; wrapped DEK if encrypt on
 ```
 
 - Today's private pages migrate to store id `default`.
@@ -56,7 +58,15 @@ Twelve-word recovery is the user's property: copy, download, print, paste into e
 
 Admin wiki role does __not__ unwrap a sealed store. Lost password __and__ lost words → backup __restores__ the files and they stay __unreadable__.
 
-The server holds the DEK only while that session has the store unlocked. This is not client-side zero-knowledge.
+### Not on PageManager
+
+There can be more than one PageManager (or page provider / engine) in a process. Encryption and keys are never fields on PageManager, never express-session JSON, and never field-level in `page-index.json`. They live only on:
+
+1. __The store__ — encrypt on/off is a property of `pages/private/{user}/{store}/`. Ciphertext lives in that directory. Whole store or not.
+2. __The user__ — the KEK is the user's (password wrap + 12-word recovery). It wraps each encrypted store's DEK.
+3. __The unlocked session bag__ — DEK/KEK bytes exist in server memory keyed by session id (a process-level Map), so every PageManager/provider in the process uses the same unlock. Logout drops the bag entry.
+
+This is not client-side zero-knowledge: the server holds those bytes only while that session is unlocked.
 
 ## Files in the store
 

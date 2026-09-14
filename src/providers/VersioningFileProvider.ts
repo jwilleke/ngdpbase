@@ -428,6 +428,9 @@ class VersioningFileProvider extends FileSystemProvider {
     this.installationComplete = await fs.pathExists(installCompleteFile);
 
     // Ensure directories exist
+    if (!this.pagesDirectory) {
+      throw new Error('FileSystemProvider not initialized - directories not set');
+    }
     await fs.ensureDir(this.pagesDirectory);
 
     // Use already-cached index from canUseFastInitialization (avoid double file read)
@@ -1905,14 +1908,15 @@ class VersioningFileProvider extends FileSystemProvider {
     if (location === 'private' && this.pageIndex) {
       const prev = this.pageIndex.pages[uuid];
       this.pageIndex.pages[uuid] = {
-        title: (metadata.title as string) || pageName,
-        uuid,
-        currentVersion: prev?.currentVersion ?? 0,
-        location: 'private',
-        lastModified: prev?.lastModified ?? new Date().toISOString(),
-        editor: prev?.editor ?? 'unknown',
-        hasVersions: prev?.hasVersions ?? false,
-        ...prev,
+        ...(prev ?? {
+          title: (metadata.title as string) || pageName,
+          uuid,
+          currentVersion: 0,
+          location: 'private' as const,
+          lastModified: new Date().toISOString(),
+          editor: 'unknown',
+          hasVersions: false
+        }),
         creator: newCreator || prev?.creator || 'anonymous',
         store: store ?? DEFAULT_PRIVATE_STORE
       };

@@ -350,7 +350,7 @@ Every step of that chain works today __except auto-enable__: the operator must s
 
 ### 8. Private stores (epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382))
 
-__Status:__ design ratified 2026-09-14. No implementation yet.
+__Status:__ design ratified 2026-09-14. Path ([#1383](https://github.com/jwilleke/ngdpbase/issues/1383)) on `feat/1382-private-stores`. Keys ([#1384](https://github.com/jwilleke/ngdpbase/issues/1384)) next — not on PageManager; see the Keys section in the driver.
 
 __Driver:__ [docs/planning/private-stores.md](./planning/private-stores.md) — a per-user __store__ under `pages/private/{user}/{store}/` (encrypt and share per store). Not field-level encryption of `page-index.json`. YourPHR is a later collection of addons, not this epic.
 
@@ -369,7 +369,7 @@ __Composing issues:__
 
 __Dependency graph:__ [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first; the others are blocked by it. [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) is also blocked by [#1384](https://github.com/jwilleke/ngdpbase/issues/1384).
 
-__Drift risks:__ Global `page-index.json` and `attachment-metadata.json` must not grow plaintext titles/names for sealed stores. `savePage` without context ([#1135](https://github.com/jwilleke/ngdpbase/issues/1135)) and import-around-PageManager ([#874](https://github.com/jwilleke/ngdpbase/issues/874)) are the leak if [#1389](https://github.com/jwilleke/ngdpbase/issues/1389) is skipped.
+__Drift risks:__ Hanging KEK/DEK on a PageManager instance (there can be more than one). Global `page-index.json` and `attachment-metadata.json` must not grow plaintext titles/names for sealed stores. `savePage` without context ([#1135](https://github.com/jwilleke/ngdpbase/issues/1135)) and import-around-PageManager ([#874](https://github.com/jwilleke/ngdpbase/issues/874)) are the leak if [#1389](https://github.com/jwilleke/ngdpbase/issues/1389) is skipped.
 
 __What "done" looks like:__ Existing private pages live in `private/{user}/default/`. A named store (addon slug) can encrypt as a whole, list only after login merge, hold files in-tree, backup as ciphertext, share only via user-minted tokens. No FHIR or sqlite provider required.
 
