@@ -58,8 +58,8 @@ function makeManager(pagesDir: string, stored: unknown[]) {
       }
       return null;
     }
-  };
-  const m = new AttachmentManager(engine as never);
+  } as never;
+  const m = new AttachmentManager(engine);
   (m as unknown as { attachmentProvider: unknown }).attachmentProvider = {
     storeAttachment: (...args: unknown[]) => {
       stored.push(args);
