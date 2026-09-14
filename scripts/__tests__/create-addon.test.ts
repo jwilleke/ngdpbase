@@ -209,8 +209,9 @@ describe('generated addon', () => {
     const { data } = matter(await fs.readFile(pagePath, 'utf8'));
     expect(data.title).toBe('Using Volcano Watch');
     expect(data.slug).toBe('using-volcano-watch');
-    // Addon help pages are documentation per addons.md §9 — addon-owned.
-    expect(data['system-category']).toBe('documentation');
+    // Every addon page is category addon and names its addon (addons.md §9, #1378).
+    expect(data['system-category']).toBe('addon');
+    expect(data.addon).toBe('volcano-watch');
     expect(data.author).toBe('system');
     expect(String(data.lastModified)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
