@@ -10,6 +10,17 @@ import path from 'path';
 import os from 'os';
 import DeltaStorage from '../../utils/DeltaStorage';
 
+// The repo's own required-pages/versions must be left exactly as found. A test
+// whose config fell back to the default requiredpagesdir (./required-pages)
+// ran auto-migration over the repo's shipped pages and wrote a version history
+// for each into the working tree (#1376).
+const repoRequiredVersions = path.join(process.cwd(), 'required-pages', 'versions');
+const listRepoRequiredVersions = async (): Promise<string[]> =>
+  (await fs.pathExists(repoRequiredVersions)) ? (await fs.readdir(repoRequiredVersions)).sort() : [];
+let repoRequiredVersionsBefore: string[] = [];
+beforeAll(async () => { repoRequiredVersionsBefore = await listRepoRequiredVersions(); });
+afterAll(async () => { expect(await listRepoRequiredVersions()).toEqual(repoRequiredVersionsBefore); });
+
 describe('VersioningFileProvider', () => {
   let testDir;
   let engine;
@@ -150,10 +161,13 @@ describe('VersioningFileProvider', () => {
     });
 
     test('should validate configuration values', async () => {
+      const baseGetProperty = configManager.getProperty;
+      // Fall back to the test config, not the key's default: the default for
+      // requiredpagesdir is ./required-pages — the repo's own folder.
       configManager.getProperty = vi.fn((key, defaultValue) => {
         if (key === 'ngdpbase.page.provider.versioning.maxversions') return -5;
         if (key === 'ngdpbase.page.provider.versioning.retentiondays') return 0;
-        return defaultValue;
+        return baseGetProperty(key, defaultValue);
       });
 
       await provider.initialize();
@@ -304,9 +318,12 @@ describe('VersioningFileProvider', () => {
     });
 
     test('should handle compression setting', async () => {
+      const baseGetProperty = configManager.getProperty;
+      // Fall back to the test config, not the key's default: the default for
+      // requiredpagesdir is ./required-pages — the repo's own folder.
       configManager.getProperty = vi.fn((key, defaultValue) => {
         if (key === 'ngdpbase.page.provider.versioning.compression') return 'none';
-        return defaultValue;
+        return baseGetProperty(key, defaultValue);
       });
 
       await provider.initialize();
@@ -315,9 +332,12 @@ describe('VersioningFileProvider', () => {
     });
 
     test('should handle delta storage disabled', async () => {
+      const baseGetProperty = configManager.getProperty;
+      // Fall back to the test config, not the key's default: the default for
+      // requiredpagesdir is ./required-pages — the repo's own folder.
       configManager.getProperty = vi.fn((key, defaultValue) => {
         if (key === 'ngdpbase.page.provider.versioning.deltastorage') return false;
-        return defaultValue;
+        return baseGetProperty(key, defaultValue);
       });
 
       await provider.initialize();
