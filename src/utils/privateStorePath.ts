@@ -27,12 +27,30 @@ export function privatePageFilePath(
   return path.join(pagesDirectory, 'private', creator, store, basename);
 }
 
+export const STORE_META_FILENAME = 'store.json';
+
+export function privateUserDir(pagesDirectory: string, username: string): string {
+  return path.join(pagesDirectory, 'private', username);
+}
+
+export function privateUserKeysPath(pagesDirectory: string, username: string): string {
+  return path.join(privateUserDir(pagesDirectory, username), 'user-keys.json');
+}
+
 export function privateStoreRoot(
   pagesDirectory: string,
   creator: string,
   store: string = DEFAULT_PRIVATE_STORE
 ): string {
   return path.join(pagesDirectory, 'private', creator, store);
+}
+
+export function storeMetaPath(
+  pagesDirectory: string,
+  creator: string,
+  store: string = DEFAULT_PRIVATE_STORE
+): string {
+  return path.join(privateStoreRoot(pagesDirectory, creator, store), STORE_META_FILENAME);
 }
 
 export function privateVersionDirectory(

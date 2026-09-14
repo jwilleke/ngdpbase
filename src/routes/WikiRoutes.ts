@@ -87,6 +87,7 @@ import {
 } from '../utils/buildSitemap.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
+import { unlockPrivateStoresWithPassword } from '../utils/privateStoreUnlock.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -6832,6 +6833,33 @@ ${panes}
       // Store username in express-session
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
+
+      // #1391: KEK/DEK live in the process bag keyed by session id — never in
+      // express-session JSON, never on PageManager.
+      const sessionId =
+        (typeof req.session?.id === 'string' && req.session.id) ||
+        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
+      if (sessionId && typeof password === 'string' && password) {
+        try {
+          const pagesDirectory =
+            typeof configManager.getResolvedDataPath === 'function'
+              ? configManager.getResolvedDataPath(
+                  'ngdpbase.page.provider.filesystem.storagedir',
+                  './data/pages'
+                )
+              : undefined;
+          if (pagesDirectory) {
+            await unlockPrivateStoresWithPassword({
+              sessionId,
+              username: result.username || username,
+              password,
+              pagesDirectory
+            });
+          }
+        } catch {
+          logger.warn('[private-store] could not unlock stores after login');
+        }
+      }
 
       logger.info(`👤 User logged in: ${result.username || username}`);
 
