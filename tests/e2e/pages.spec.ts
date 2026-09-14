@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, deletePage } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, markTestArtifact } from './fixtures/helpers';
 
 /**
  * Page Operations E2E Tests
@@ -79,6 +79,7 @@ test.describe('Page Operations', () => {
         page.waitForURL(/\/(edit|view)\//, { timeout: 15000 }),
         createButton.first().click()
       ]);
+      await markTestArtifact(page, testPageTitle);
 
       // Verify page was created - should redirect to edit page for the new page or view page
       const currentUrl = page.url();

@@ -740,6 +740,65 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
     });
 
+    // #1355: tests mark the pages they create; system keywords are server-owned,
+    // so this admin-only call is the only way to stamp `test-artifact`.
+    describe('POST /api/page/:identifier/test-artifact', () => {
+      const post = (id: string) => request(app)
+        .post(`/api/page/${encodeURIComponent(id)}/test-artifact`)
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({});
+
+      test('an admin marks a page: system keyword added, saved through PageManager', async () => {
+        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPageManager.getPage.mockResolvedValue({
+          content: 'body', metadata: { title: 'NGDPBASE-test-X', uuid: 'u1', 'system-keywords': ['general'] }
+        });
+
+        const res = await post('NGDPBASE-test-X');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ success: true, pageName: 'NGDPBASE-test-X', changed: true, systemKeywords: ['general', 'test-artifact'] });
+        const [, metadata] = mockPageManager.savePageWithContext.mock.calls.at(-1);
+        expect(metadata['system-keywords']).toEqual(['general', 'test-artifact']);
+        expect(metadata.title).toBe('NGDPBASE-test-X');
+      });
+
+      test('a page already marked is left alone', async () => {
+        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPageManager.getPage.mockResolvedValue({
+          content: 'body', metadata: { title: 'NGDPBASE-test-Y', 'system-keywords': ['test-artifact'] }
+        });
+        mockPageManager.savePageWithContext.mockClear();
+
+        const res = await post('NGDPBASE-test-Y');
+
+        expect(res.status).toBe(200);
+        expect(res.body.changed).toBe(false);
+        expect(mockPageManager.savePageWithContext).not.toHaveBeenCalled();
+      });
+
+      test('a non-admin is refused before the page is even looked up', async () => {
+        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockUserManager.hasPermission.mockReturnValue(false);
+        mockPageManager.getPage.mockClear();
+
+        const res = await post('Some Page');
+
+        expect(res.status).toBe(403);
+        expect(mockPageManager.getPage).not.toHaveBeenCalled();
+      });
+
+      test('a missing page is a 404', async () => {
+        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPageManager.getPage.mockResolvedValue(null);
+
+        expect((await post('No Such Page')).status).toBe(404);
+      });
+    });
+
     describe('GET /create', () => {
       test('should return 200 for authenticated user', async () => {
         mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());

@@ -4618,6 +4618,61 @@ ${panes}
   }
 
   /**
+   * POST /api/page/:identifier/test-artifact — mark a page as made by a test (#1355).
+   *
+   * Adds the `test-artifact` system keyword, which says "created by an
+   * automated test, probe or script run; not content, safe to delete". System
+   * keywords are provenance the server stamps — no form or ingest body can set
+   * them — so tests that create pages the way a user does (the create form,
+   * /save, ingest) mark them through this call right afterwards. Admin only:
+   * the marker invites deletion, so it is not something any author may put on
+   * a page. Idempotent. Saves through PageManager, so the change is versioned,
+   * audited and indexed like any other.
+   */
+  async apiMarkTestArtifact(req: Request, res: Response) {
+    try {
+      const identifier = req.params.identifier;
+
+      // Permission first, so a non-admin cannot learn whether a page exists.
+      const gate = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, response: res });
+      if (!(await gate.hasPermission('admin-system'))) {
+        return res.status(403).json({ error: 'Access denied', message: 'Only administrators can mark test artifacts' });
+      }
+
+      const pageManager = this.engine.getManager('PageManager');
+      const pageData = await pageManager?.getPage(identifier);
+      if (!pageData) {
+        return res.status(404).json({ error: 'Page not found', identifier });
+      }
+      const pageName = (pageData.metadata?.title) || identifier;
+
+      const raw: unknown = pageData.metadata?.['system-keywords'];
+      const existing = (Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []))
+        .filter((k): k is string => typeof k === 'string');
+      if (existing.includes('test-artifact')) {
+        return res.json({ success: true, pageName, changed: false, systemKeywords: existing });
+      }
+      const systemKeywords = [...existing, 'test-artifact'];
+      const metadata = { ...(pageData.metadata ?? {}), 'system-keywords': systemKeywords };
+
+      const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName, response: res });
+      (wikiContext as { content: string | null }).content = pageData.content;
+      await pageManager.savePageWithContext(wikiContext, metadata, { audit: { ipAddress: req.ip } });
+
+      await this.engine.getManager('SearchManager')?.updatePageInIndex(pageName, {
+        name: pageName,
+        content: pageData.content,
+        metadata
+      });
+
+      return res.json({ success: true, pageName, changed: true, systemKeywords });
+    } catch (error) {
+      logger.error('[apiMarkTestArtifact] failed:', error);
+      return res.status(500).json({ error: 'Internal server error', details: getErrorMessage(error) });
+    }
+  }
+
+  /**
    * POST /api/page/:identifier/rename — rename a page (#946 slice 2).
    *
    * Body: `{ "newTitle": "..." }`
@@ -14222,6 +14277,10 @@ ${panes}
     );
     app.post('/api/page/:identifier/rename', (req: Request, res: Response) =>
       this.apiRenamePage(req, res)
+    );
+    // #1355: admin-only — stamp the `test-artifact` provenance keyword
+    app.post('/api/page/:identifier/test-artifact', (req: Request, res: Response) =>
+      void this.apiMarkTestArtifact(req, res)
     );
 
     // #947 trash API — admin-only, enforced inside each handler

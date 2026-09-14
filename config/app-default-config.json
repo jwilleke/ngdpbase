@@ -1184,6 +1184,12 @@
       "description": "Purpose: a test page — one content shape the unit tests render through the real pipeline; admin-only via audience (#1355)",
       "category": "provenance",
       "enabled": true
+    },
+    "test-artifact": {
+      "label": "test-artifact",
+      "description": "Provenance: created by an automated test, probe or script run — not content, safe to delete. Stamped by the system, never typed by users",
+      "category": "provenance",
+      "enabled": true
     }
   },
   "_comment_catalog_ai": "AI-based term suggestion (Phase 4 — requires an LLM addon to activate)",

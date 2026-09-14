@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, deletePage } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, markTestArtifact } from './fixtures/helpers';
 
 /**
  * #1369 / #1327 / #1333 — the editor saves in the page: its outcome shows in
@@ -80,6 +80,7 @@ test.describe('Editor and create forms keep the outcome in the page', () => {
     release();
     await page.waitForURL(new RegExp(`/view/${encodeURIComponent(savedPage)}`), { timeout: 30000 });
     await page.unroute('**/save/**');
+    await markTestArtifact(page, savedPage);
 
     // A save built on an old version still gets the #1061 conflict page,
     // with the text carried over for merging — the editor hands the 409 back

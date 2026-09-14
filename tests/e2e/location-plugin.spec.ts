@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, waitForPageReady, deletePages } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, waitForPageReady, deletePages, markTestArtifact } from './fixtures/helpers';
 
 /**
  * LocationPlugin E2E Tests
@@ -78,6 +78,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-name`);
       }
 
       // Verify rendered output
@@ -130,6 +131,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-coords`);
       }
 
       await waitForPageReady(page);
@@ -183,6 +185,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-google`);
       }
 
       await waitForPageReady(page);
@@ -230,6 +233,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-geo`);
       }
 
       await waitForPageReady(page);
@@ -279,6 +283,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-embed`);
       }
 
       await waitForPageReady(page);
@@ -330,6 +335,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-noembed`);
       }
 
       await waitForPageReady(page);
@@ -383,6 +389,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-error`);
       }
 
       await waitForPageReady(page);
@@ -434,6 +441,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-invalid`);
       }
 
       await waitForPageReady(page);
@@ -486,6 +494,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-attrs`);
       }
 
       await waitForPageReady(page);
@@ -534,6 +543,7 @@ test.describe('LocationPlugin', () => {
           page.waitForURL(/\/view\//, { timeout: 30000 }),
           saveButton.first().click()
         ]);
+        await markTestArtifact(page, `${testPageName}-icon`);
       }
 
       await waitForPageReady(page);

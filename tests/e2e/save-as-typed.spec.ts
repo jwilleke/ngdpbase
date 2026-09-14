@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_PAGE_PREFIX, deletePage, waitForPageReady } from './fixtures/helpers';
+import { TEST_PAGE_PREFIX, deletePage, waitForPageReady, markTestArtifact } from './fixtures/helpers';
 
 /**
  * #1332 — an ordinary save writes exactly what was typed.
@@ -63,6 +63,7 @@ test.describe('Save keeps the text as typed', () => {
       page.waitForURL(/\/view\//, { timeout: 30000 }),
       saveButton.first().click()
     ]);
+    await markTestArtifact(page, pageName);
     await waitForPageReady(page);
     expect(page.url()).not.toContain('fixed=');
 

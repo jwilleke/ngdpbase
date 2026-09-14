@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { waitForServerReady, deletePage, TEST_PAGE_PREFIX } from './fixtures/helpers';
+import { waitForServerReady, deletePage, TEST_PAGE_PREFIX, markTestArtifact } from './fixtures/helpers';
 
 /**
  * #1301 — plugin surfaces render the canonical pagination control.
@@ -48,6 +48,7 @@ async function createPluginPage(page, name: string, content: string): Promise<vo
   await save.click();
   await page.waitForLoadState('domcontentloaded');
   await page.goto(`/view/${encodeURIComponent(name)}`);
+  await markTestArtifact(page, name);
 }
 
 const PAGE_NAME = `${TEST_PAGE_PREFIX}-PluginPagination`;

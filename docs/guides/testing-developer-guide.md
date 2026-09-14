@@ -22,6 +22,16 @@ Rules for tests. TDD: write the failing test first, then the code. Unit tests ar
 2. Mock file I/O. Do not point at the live `FAST_STORAGE` tree.
 3. For a security or audit door, sabotage once (skip the registration, rebuild the subject, catch-and-continue a `refuse` event) and watch the test go red.
 
+## Pages a test creates are marked `test-artifact`
+
+Every page an E2E test, probe or script creates on a real instance carries the system keyword `test-artifact` ("made by a test, safe to delete"), so a leftover from a failed teardown can be found by keyword instead of looking like content (#1355).
+
+- E2E: call `markTestArtifact(page | request, title)` from `tests/e2e/fixtures/helpers.ts` right after the page is created — after the test's own save, not between create and save (the mark is a save, and the open editor would then hit the stale-edit conflict). `createPage()` does it for you.
+- System keywords are server-owned, so the mark goes through the admin-only `POST /api/page/:identifier/test-artifact`; no form or ingest body can set it.
+- Scripts and probes that save through `PageManager` or the provider put `system-keywords: ['test-artifact']` in the metadata they save.
+- Unit tests never write to a live instance (see Standing rules), so they have nothing to mark.
+- `test-artifact` is not `test-page`: `test-page` marks the permanent, shipped test pages below.
+
 ## Test pages (rendering shapes)
 
 A rendering or conversion fix adds its content shape to a test page (#1355). Test pages are required pages with `system-keywords: [test-page]`, `author: system`, `system-category: system` and `audience: [admin]`: they ship to every install, only admins can open them, and `src/parsers/__tests__/TestPages.test.ts` renders each through `MarkupParser` with the real `page` markdown profile.

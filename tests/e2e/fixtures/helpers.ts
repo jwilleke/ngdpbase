@@ -177,6 +177,34 @@ async function createPage(page, title, content) {
   await page.fill('textarea[name="content"], #content, .editor-content', content);
   await page.click('button[type="submit"], button:has-text("Save")');
   await waitForPageReady(page);
+  await markTestArtifact(page, title);
+}
+
+/**
+ * #1355: mark a page this test created as `test-artifact` — "made by a test,
+ * safe to delete". System keywords are server-owned (no form or ingest body can
+ * set them), so tests stamp the marker through the admin-only
+ * POST /api/page/:identifier/test-artifact right after creating a page. A
+ * leftover from a failed teardown can then be found and cleared by keyword.
+ *
+ * Accepts a Page or an APIRequestContext signed in as an admin. Throws on
+ * anything but success: an unmarked test page is the thing this prevents.
+ * @param {import('@playwright/test').Page | import('@playwright/test').APIRequestContext} target
+ * @param {string} pageName - Title, uuid or slug
+ */
+async function markTestArtifact(target, pageName) {
+  const request = 'request' in target ? target.request : target;
+  const html = await (await request.get('/login')).text();
+  const csrfToken = (html.match(/<meta name="csrf-token" content="([^"]+)"/) ?? [])[1];
+  if (!csrfToken) {
+    throw new Error(`[helpers] markTestArtifact("${pageName}"): could not obtain CSRF token from /login`);
+  }
+  const res = await request.post(`/api/page/${encodeURIComponent(pageName)}/test-artifact`, {
+    headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken }
+  });
+  if (res.status() !== 200) {
+    throw new Error(`[helpers] markTestArtifact("${pageName}"): status ${res.status()} ${await res.text()}`);
+  }
 }
 
 /**
@@ -238,6 +266,7 @@ export {
   waitForPageReady,
   createPage,
   deletePage,
+  markTestArtifact,
   purgeDeletedPage,
   deletePages,
   navigateToPage,

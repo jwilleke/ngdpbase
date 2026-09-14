@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
+import { markTestArtifact } from './fixtures/helpers';
 
 /**
  * Bearer requests go to the instance's canonical origin, never through a
@@ -164,6 +165,7 @@ async function makePage(request, title, content = 'seed content') {
     form: { pageName: title, content, 'system-category': 'General' }
   });
   expect([200, 302]).toContain(res.status());
+  await markTestArtifact(request, title);
 }
 
 /** Create a page and register it for cleanup. */
