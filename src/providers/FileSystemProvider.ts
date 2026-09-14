@@ -1,4 +1,6 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
+import { DEFAULT_PRIVATE_STORE, privatePageFilePath } from '../utils/privateStorePath.js';
+import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
@@ -182,6 +184,8 @@ class FileSystemProvider extends BasePageProvider {
       await fs.ensureDir(this.requiredPagesDirectory);
       logger.info(`[FileSystemProvider] Required-pages directory (install mode): ${this.requiredPagesDirectory}`);
     }
+
+    await migrateLegacyPrivatePages(this.pagesDirectory);
 
     // Load all pages into cache
     await this.refreshPageList();
@@ -498,17 +502,18 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * Resolve the on-disk file path for a page given its uuid, location, and optional creator.
-   * Private pages are stored at: {pagesDirectory}/private/{creator}/{uuid}.md
+   * Private pages are stored at: {pagesDirectory}/private/{creator}/{store}/{uuid}.md
    * All other pages are stored at: {pagesDirectory}/{uuid}.md
    *
    * @param {string} uuid - Page UUID
    * @param {string} location - Storage location ('pages', 'required-pages', or 'private')
    * @param {string} [creator] - Username of the page creator (required when location === 'private')
+   * @param {string} [store] - Private store id; defaults to `default` (#1383)
    * @returns {string} Absolute path to the page file
    */
-  private resolvePageFilePath(uuid: string, location: string, creator?: string): string {
+  private resolvePageFilePath(uuid: string, location: string, creator?: string, store?: string): string {
     if (location === 'private' && creator && this.pagesDirectory) {
-      return path.join(this.pagesDirectory, 'private', creator, `${uuid}.md`);
+      return privatePageFilePath(this.pagesDirectory, creator, uuid, store ?? DEFAULT_PRIVATE_STORE);
     }
     return path.join(this.pagesDirectory || '', `${uuid}.md`);
   }
@@ -539,8 +544,8 @@ class FileSystemProvider extends BasePageProvider {
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     if (!this.pagesDirectory || oldCreator === newCreator) return;
-    const fromPath = path.join(this.pagesDirectory, 'private', oldCreator, `${uuid}.md`);
-    const toPath   = path.join(this.pagesDirectory, 'private', newCreator, `${uuid}.md`);
+    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid);
+    const toPath   = privatePageFilePath(this.pagesDirectory, newCreator, uuid);
     if (await fs.pathExists(fromPath)) {
       await fs.ensureDir(path.dirname(toPath));
       await fs.move(fromPath, toPath, { overwrite: true });
@@ -583,7 +588,7 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error(`Cannot save page with system-category '${systemCategory}' - pages with storageLocation 'github' are not stored in the wiki (docs/ folder only)`);
     }
 
-    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{uuid}.md
+    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{store}/{uuid}.md
     //
     // #802 Slice 4: `private:true` is the sole routing signal. The legacy
     // `system-location:'private'` storage hint was retired after the second
