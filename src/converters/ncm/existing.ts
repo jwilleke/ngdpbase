@@ -16,6 +16,7 @@
  */
 
 import matter from 'gray-matter';
+import { parsePageFrontmatter } from '../../utils/pageFrontmatter.js';
 import type { NcmResult, NcmWarning } from './types.js';
 import { normalizeLinks } from './links.js';
 import { normalizeToNcm } from './normalize.js';
@@ -28,7 +29,7 @@ import { normalizeToNcm } from './normalize.js';
 export function normalizeExistingPageToNcm(raw: string): NcmResult {
   const warnings: NcmWarning[] = [];
   // #1125: LF-only before anything touches the body — see normalizeToNcm.
-  const parsed = matter(raw.replace(/\r\n?/g, '\n'));
+  const parsed = parsePageFrontmatter(raw.replace(/\r\n?/g, '\n')); // #1381
   const body = normalizeLinks(parsed.content, warnings);
   const reassembled = matter.stringify(body, parsed.data);
   const fixed = normalizeToNcm(reassembled, 'markdown');

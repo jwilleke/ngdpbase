@@ -281,6 +281,62 @@
         </div>
     </div>
 
+    <!-- Not in GitHub yet (#1377): live pages whose category belongs in the
+         required-pages set but whose UUID is not in it. -->
+    <% if (typeof notInSource !== 'undefined' && notInSource.length > 0) { %>
+    <div class="row mt-2">
+        <div class="col-12">
+            <div class="card mb-4 border-warning" id="notInSourceCard">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-code-branch me-2 text-warning"></i>Not in GitHub Yet (<%= notInSource.length %>)</h5>
+                    <small class="text-muted">These pages have a <strong>system</strong> or <strong>documentation</strong> category, so they belong in the
+                        required-pages set every install gets — but they are not in it. For each: push it to the source folder (a person then commits it),
+                        change its category if it is not meant to ship, or delete it.</small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="notInSourceTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Category</th>
+                                    <th>Author</th>
+                                    <th>Last modified</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% notInSource.forEach(page => { %>
+                                <tr data-uuid="<%= page.uuid %>">
+                                    <td>
+                                        <a href="/view/<%= encodeURIComponent(page.title) %>" target="_blank"><strong><%= page.title %></strong></a>
+                                        <br><small class="text-muted font-monospace"><%= page.uuid %></small>
+                                    </td>
+                                    <td><span class="badge bg-info text-dark"><%= page.category %></span></td>
+                                    <td><%= page.author || '—' %></td>
+                                    <td><small><%= page.lastModified ? page.lastModified.slice(0, 10) : '—' %></small></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                onclick="pushToSourceOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                title="Copy the live page into the required-pages source folder (not committed)">
+                                            <i class="fas fa-upload"></i> Push to source
+                                        </button>
+                                        <a href="/edit/<%= encodeURIComponent(page.title) %>" class="btn btn-sm btn-outline-secondary"
+                                           title="Change the category, or delete the page">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </a>
+                                    </td>
+                                </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <% } %>
+
     <!-- Addon Pages Section -->
     <% if (typeof addonComparison !== 'undefined' && addonComparison.length > 0) { %>
     <div class="row mt-2">

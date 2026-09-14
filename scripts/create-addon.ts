@@ -309,16 +309,17 @@ export default ${toPascalCase(o.id)}Addon;
  * package ValidationManager uses — a hand-typed placeholder UUID is the
  * footgun #675 cites from geohazardwatch's history.
  *
- * `system-category: documentation` is deliberate: per addons.md §9 an addon's
- * own help page is documentation, and that category is addon-owned. Domain
- * content would be `general` and instance-owned.
+ * Every addon page is `system-category: addon` with `addon: <addonId>`
+ * (addons.md §9, #1378). `documentation` would make it a required page, one
+ * the Required Pages admin expects to find in the GitHub set.
  */
 function seedPage(o: ScaffoldOptions, uuid: string): string {
   return `---
 title: Using ${toTitleCase(o.id)}
 uuid: ${uuid}
 slug: using-${o.id}
-system-category: documentation
+addon: ${o.id}
+system-category: addon
 user-keywords:
   - ${toTitleCase(o.id)}
   - Addon

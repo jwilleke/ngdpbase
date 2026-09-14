@@ -11719,6 +11719,17 @@ ${panes}
         }
       }
 
+      // #1377: live pages whose category says they belong in the required-pages
+      // set (`storageLocation: required` — system, documentation) but whose UUID
+      // is not in it yet. The comparison above is built from the source files,
+      // so these were invisible. Addon pages belong to their addon's own set;
+      // private pages are nobody's shipped content.
+      const notInSource = await this.findRequiredCategoryPagesNotInSource(
+        configManager,
+        [...mdFiles.map((f: string) => path.basename(f, '.md')), ...addonComparison.map((a) => a.uuid)],
+        req.userContext
+      );
+
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-required-pages', {
         ...commonData,
@@ -11728,6 +11739,7 @@ ${panes}
         addonComparison,
         addonCounts,
         orphanedAddonPages,
+        notInSource,
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null
@@ -11736,6 +11748,46 @@ ${panes}
       logger.error('Error loading required pages sync:', err);
       return res.status(500).send('Error loading required pages sync');
     }
+  }
+
+  /**
+   * #1377: live pages in a `storageLocation: required` category (system,
+   * documentation) whose UUID is in none of the source sets given — pages that
+   * belong in the GitHub required-pages set but were never added to it. Addon
+   * and private pages are left out. Sorted by title.
+   */
+  private async findRequiredCategoryPagesNotInSource(
+    configManager: { getProperty: (key: string, def: unknown) => unknown },
+    sourceUuids: string[],
+    reader: unknown
+  ): Promise<Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }>> {
+    const categories = (configManager.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; storageLocation?: string }>;
+    const requiredCategories = new Set(
+      Object.entries(categories)
+        .filter(([, c]) => c?.storageLocation === 'required')
+        .map(([key, c]) => (c.label || key).toLowerCase())
+    );
+    const inSource = new Set(sourceUuids.map((u) => u.toLowerCase()));
+    const pageManager = this.engine.getManager('PageManager');
+    const found: Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }> = [];
+    // Through the listing door (#1219): an admin surface still has a reader,
+    // and it lists only pages that reader may view.
+    for (const title of await pageManager.listPagesFor(reader, 'view')) {
+      const md = (await pageManager.getPageMetadata(title)) as Record<string, unknown> | null;
+      if (!md || md.private === true || md.addon) continue;
+      const category = typeof md['system-category'] === 'string' ? md['system-category'].toLowerCase() : '';
+      if (!requiredCategories.has(category)) continue;
+      const uuid = typeof md.uuid === 'string' ? md.uuid : '';
+      if (!uuid || inSource.has(uuid.toLowerCase())) continue;
+      found.push({
+        uuid,
+        title,
+        category,
+        author: typeof md.author === 'string' ? md.author : '',
+        lastModified: typeof md.lastModified === 'string' ? md.lastModified : ''
+      });
+    }
+    return found.sort((a, b) => a.title.localeCompare(b.title));
   }
 
   /**

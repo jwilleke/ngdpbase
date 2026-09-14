@@ -21,6 +21,7 @@
  */
 
 import matter from 'gray-matter';
+import { parsePageFrontmatter } from '../../utils/pageFrontmatter.js';
 import HtmlConverter from '../HtmlConverter.js';
 import JSPWikiConverter from '../JSPWikiConverter.js';
 import { NCM_VERSION, NcmResult, NcmSourceFormat, NcmWarning } from './types.js';
@@ -102,8 +103,9 @@ export function normalizeToNcm(
   }
 
   // 'ncm' | 'markdown' — the idempotent fixed point.
-  const parsed = matter(input);
-  const data: Record<string, unknown> = { ...(parsed.data as Record<string, unknown>) };
+  // #1381: page names stay the text written, so the reassembled YAML quotes them
+  const parsed = parsePageFrontmatter(input);
+  const data: Record<string, unknown> = { ...(parsed.data) };
 
   // Stamp if absent; preserve an existing value verbatim (no silent migration).
   if (data.ncmVersion === undefined || data.ncmVersion === null) {

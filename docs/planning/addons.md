@@ -77,14 +77,7 @@ addon: addonName,
 
 `addon` is set __unconditionally__ and is a declared first-class field in `src/types/Page.ts:82` — *"Name of the add-on that originally seeded this page, if any"*. That is the reliable discriminator.
 
-__`system-category` is NOT reliable.__ It only defaults to `'addon'` when the source doesn't declare one, and a shipped page already overrides it:
-
-| Page source | `system-category` |
-|---|---|
-| `addons/forms/pages/af15d030-….md` | `documentation` |
-| calendar ×4, journal ×2, elasticsearch ×2 | `addon` |
-
-Keying an ACL on `system-category` would silently leave that forms page unprotected.
+__`system-category` was not reliable.__ It only defaults to `'addon'` when the source doesn't declare one, and shipped pages overrode it (the forms page and the demo addon's pages said `documentation`). Since 2026-09-14 every addon page ships `system-category: addon` with `addon: <addonId>`, enforced by `src/managers/__tests__/AddonsManager-pageFrontmatter.test.ts` ([#1378](https://github.com/jwilleke/ngdpbase/issues/1378)); `addon` stays the discriminator, because a live page's category can still be changed by an operator.
 
 ### Open question: is `addon` server-owned?
 
@@ -240,10 +233,7 @@ Live list. Tick as they settle. Recommendations are mine; override freely.
 
 ### Seeded-page classification (§9)
 
-- [x] __19. Feature UI pages are `system`__ — infrastructure, not content.
-- [x] __20. Domain content is `general`, instance-owned from day one__ — "purely seeded"; the addon provides a starting corpus then lets go.
-- [x] __21. Help/docs pages are `documentation`.__
-- [x] __22. Demo/showcase treated as content__ — `general`, instance-owned.
+- [x] __19–22. Superseded 2026-09-14 ([#1378](https://github.com/jwilleke/ngdpbase/issues/1378)): every addon page is `system-category: addon` with `addon: <addonId>`__ — help, feature UI, demo and domain pages alike. The earlier split (feature UI `system`, domain content `general`, help `documentation`, demo `general`) stopped working once `system`/`documentation` came to mean "belongs in the GitHub required-pages set" ([#1373](https://github.com/jwilleke/ngdpbase/issues/1373)): an addon page in those categories was treated as a missing required page. An addon page's source set is the addon's own `pages/` folder. Whether a seeded page becomes instance-owned is a separate question from its category.
 - [ ] __23. Legal__ — `documentation` or `system`. Narrowed to two; identical `storageLocation: required` either way, so labelling only.
 - [x] __24. Site chrome is `system`__ — RESOLVED: already a core concept. Core ships `leftmenu`/`footer` as required pages categorised `system`; the addon pages are a slug-convention *override*. No new category needed.
 - [x] __26. Chrome override should be explicit config, not slug convention__ — filed as __#952__ (bug/P1). `ngdpbase.chrome.left-menu-page` / `.footer-page`, set by a domain addon via `domainDefaults`. Filed as a bug rather than an enhancement because the current behaviour actively misleads: an operator edits `LeftMenu`, the save succeeds, and nothing changes because `left-menu-content` silently wins. Unlike #950 it needs __no trigger__ — it is live today wherever an addon ships chrome pages.

@@ -17,6 +17,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
+import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import {
   splitAddonsPath,
   findNodeModulesDir,
@@ -827,7 +828,7 @@ class AddonsManager extends BaseManager {
       const src = path.join(addonPagesDir, file);
       try {
         const raw = await fs.promises.readFile(src, 'utf8');
-        const parsed = matter(raw);
+        const parsed = parsePageFrontmatter(raw);
         const uuid = parsed.data.uuid as string | undefined;
         const slug = parsed.data.slug as string | undefined;
 
@@ -912,7 +913,7 @@ class AddonsManager extends BaseManager {
           // choice, and the addon only speaks again when ITS value changes.
           // Without that marker this would revert an operator's category on
           // every restart.
-          const sourceCategoryRaw = (parsed.data as Record<string, unknown>)['system-category'];
+          const sourceCategoryRaw = (parsed.data)['system-category'];
           const sourceCategory = typeof sourceCategoryRaw === 'string' ? sourceCategoryRaw : undefined;
           const liveCategory = existingMeta['system-category'];
           const appliedCategory = existingMeta['addon-source-category'];
@@ -976,7 +977,7 @@ class AddonsManager extends BaseManager {
             const staleDefault = this.defaultAddonPageAccess(
               typeof liveCategory === 'string' ? liveCategory : 'addon'
             );
-            const sourceDeclaresAccess = (parsed.data as Record<string, unknown>)['access'] !== undefined;
+            const sourceDeclaresAccess = (parsed.data)['access'] !== undefined;
             const looksMachineStamped = staleDefault !== undefined
               && JSON.stringify(existingMeta.access) === JSON.stringify(staleDefault);
 
@@ -1048,19 +1049,19 @@ class AddonsManager extends BaseManager {
             // fields, adopt the source body, keep the UUID, stamp the hash. Goes
             // through savePage so the versioning provider records a revertable
             // version.
-            const reseedCategory = (parsed.data as Record<string, unknown>)['system-category']
+            const reseedCategory = (parsed.data)['system-category']
               ?? existingMeta['system-category'] ?? 'addon';
             // #971: source first, then whatever the page already carries — an
             // operator who deliberately opened a page up must not have that
             // reverted by a routine reseed. Only a page with no `access` at all
             // (seeded before this existed) picks up the default.
-            const reseedAccess = (parsed.data as Record<string, unknown>)['access']
+            const reseedAccess = (parsed.data)['access']
               ?? existingMeta['access']
               ?? this.defaultAddonPageAccess(reseedCategory);
 
             const reseedMetadata: Record<string, unknown> = {
               ...existingMeta,
-              ...(parsed.data as Record<string, unknown>),
+              ...(parsed.data),
               addon: addonName,
               'system-category': reseedCategory,
               // #1003: keep the marker truthful — it must always name the source
@@ -1101,14 +1102,14 @@ class AddonsManager extends BaseManager {
         // Seed through PageManager so all page providers (including VersioningFileProvider)
         // update their index correctly. `addon-source-hash` stamps the seeded
         // content so a later reseed can tell an unmodified page from an edited one.
-        const seedCategory = (parsed.data as Record<string, unknown>)['system-category'] ?? 'addon';
+        const seedCategory = (parsed.data)['system-category'] ?? 'addon';
         // #971: stamp `access` only when the source is silent, so an addon can
         // ship a deliberately community-editable page.
-        const seedAccess = (parsed.data as Record<string, unknown>)['access']
+        const seedAccess = (parsed.data)['access']
           ?? this.defaultAddonPageAccess(seedCategory);
 
         const metadata: Record<string, unknown> = {
-          ...(parsed.data as Record<string, unknown>),
+          ...(parsed.data),
           addon: addonName,
           'system-category': seedCategory,
           // #1003: record the source category applied at seed time. Without
