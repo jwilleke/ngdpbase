@@ -45,7 +45,7 @@ Decided 2026-09-15. `pages/private/{user}/` and every store below it is a __secu
 - Operator filesystem access (instance backups, disk) is outside the wiki and is not a delegation. Only encryption protects against it.
 - The user does not grant access; the user __delegates permissions__. A delegate acts with a subset of the owner's own permissions on the container, and only while the owner still holds them — the existing token-share model (the issuer must still hold the action). Nothing is delegated by role.
 - A delegate only reaches a store whose Share switch is on ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). Until that switch exists every store is Share Off, so only the owner acts in it. An encrypted store also needs its DEK, which a delegate carries only once a share can wrap one.
-- One check for this: `mayActInPrivateContainer` (`src/utils/privateStoreAccess.ts`). Uploads onto a private page use it today; page reads, lists and search still carry an admin bypass to be removed.
+- Allow and deny go through the one door ([security-posture.md](../security-posture.md) P2): `canAccess` on the page, decided at ACLManager's private-page check (Tier 0), with the capability from `hasPermission`. A refusal is recorded as `authorization-deny` like every other. Today uploads use `mayActInPrivateContainer` (`src/utils/privateStoreAccess.ts`, 0e7fca54) and page reads, lists and search still carry a role-name admin bypass (`hasRole('admin')` in `PageManager.checkPrivatePageAccess`); both move into Tier 0.
 
 ## Per-store switches
 
@@ -81,13 +81,49 @@ There can be more than one PageManager (or page provider / engine) in a process.
 
 1. __The store__ — encrypt on/off is a property of `pages/private/{user}/{store}/`. Ciphertext lives in that directory. Whole store or not.
 2. __The user__ — the KEK is the user's (password wrap + 12-word recovery). It wraps each encrypted store's DEK.
-3. __The unlocked session bag__ — DEK/KEK bytes exist in server memory keyed by session id (a process-level Map), so every PageManager/provider in the process uses the same unlock. Logout drops the bag entry.
+3. __The unlocked session bag__ — DEK/KEK bytes exist in server memory keyed by session id (a process-level Map), so every PageManager/provider in the process uses the same unlock. Logout drops the bag entry. The bag is reached from the caller's context, never ambiently (see Context, below).
 
 This is not client-side zero-knowledge: the server holds those bytes only while that session is unlocked.
 
 This epic does __not__ add a RecordManager that talks to all providers. Architecture ([ARCHITECTURE.md](../../ARCHITECTURE.md), [MANAGERS-OVERVIEW.md](../architecture/MANAGERS-OVERVIEW.md)): one concern → one manager → its provider. Pages write through PageManager; files through AttachmentManager. Keys stay on the store, the user KEK, and the process session bag (`src/utils`). RecordManager is a later YourPHR/shared-DB idea, not [#1382](https://github.com/jwilleke/ngdpbase/issues/1382).
 
 We still want __one__ implementation of key unwrap and encrypt-on-write: `src/utils/privateStoreCrypto.ts` + `privateStoreUnlock.ts` (session bag). PageManager (pages) and AttachmentManager (files) are the HTTP/work doors; they call those helpers. Providers encrypt bytes when given a DEK; they do not invent a second policy. Routes and scripts must not unwrap keys or write sealed stores around the managers ([#1389](https://github.com/jwilleke/ngdpbase/issues/1389)). Duplicating wrap/assert in WikiRoutes, VersioningFileProvider, and AttachmentManager independently is the defect we are avoiding — not solved by a manager that talks to search, users, or audit.
+
+### Context, not ambient session
+
+Decided 2026-09-15, under [security-posture.md](../security-posture.md) P1 (every call that decides, records, or acts takes a context, mandatory and positional; `AsyncLocalStorage` is refused) and [audit-posture.md](../audit-posture.md).
+
+| Step | Decides, records, or acts? | Takes |
+|---|---|---|
+| Unlock at login, lock at logout, re-wrap on password change | Acts | the context |
+| Look up which store keys this caller holds | Decides — holding the DEK is what lets an encrypted read or write proceed | the context |
+| Read or write an encrypted page or file | Acts | the context |
+| Encrypt or decrypt bytes with a given key (`privateStoreCrypto.ts`) | Neither — pure computation | data (key and bytes) |
+
+- The request context carries an opaque __session handle__, set only where the request subject is built. It is provenance — which session this came from — like `ipAddress` or `viaToken`, resolved live at use: after logout the bag is gone, the lookup finds nothing, and the action is refused. It is not a snapshot of authority.
+- The context never carries key bytes. Keys stay in the process bag, reached by handle, so a forwarded or spread context cannot leak them.
+- The handle never goes into an audit record; `actorOf()` names its fields and must not gain this one.
+- A `JobContext` has no handle, so a background job cannot read or write an encrypted store — the server holds those bytes only while a session is unlocked.
+- The key lookup takes the context (`dekFor(ctx, owner, store)`) and requires the bag to belong to the store's owner. `AsyncLocalStorage` (`privateStoreUnlock.ts`, from #1391) and `runWithPrivateStoreSession` are removed; the compiler finds every call site to thread.
+- Page operations on a private page — read, save, delete — take the context positionally at PageManager and at the page provider. The optional `options.actorContext` on `PageManager.savePage` (c521a3e2) is the weak path P1 names and goes. The provider decides from the context it is handed, not from the page's `author` metadata.
+
+### Store placement is on BasePageProvider
+
+Decided 2026-09-15. `BasePageProvider` is the base of every page provider (`FileSystemProvider`, `VersioningFileProvider`, a later database provider), so what every page provider needs is written once there — not per subclass, and not on `BaseProvider`, which carries only what every provider shares.
+
+| Piece | Home |
+|---|---|
+| Folder names and root (`storagedir`, `privateroot`, `defaultstoreid`, `versionsdir`, `deleteddir`, `attachmentsdir`) | `ConfigurationManager` — the only source, for pages and attachments alike |
+| Joining them into paths, with store-id validation inside the join (a plain slug, never a path) | `src/utils/privateStorePath.ts`, used by both sides |
+| Which store a page belongs to — one rule per save (the store named in the save if valid, else the store in the index, else `defaultstoreid`) — and the encrypted-store write check, taking the `ActorContext` | `BasePageProvider` |
+| Pages as files inside the store (`{uuid}.md`, `versions/`, `deleted/`) | `FileSystemProvider`, inherited by `VersioningFileProvider` |
+| Which store an attachment goes to | `AttachmentManager`: the page owner's store, or the uploader's for a page-less private upload |
+| Writing the attachment's bytes to `{store}/attachments/` | `BasicAttachmentProvider`, path from configuration and the same helpers |
+| Who may act in a container | ACLManager Tier 0 via `canAccess` (Access, above) |
+
+A save decides its store once: `VersioningFileProvider` resolves it and hands it to `FileSystemProvider`, so the page file, its history, and the encryption check can never name different stores.
+
+A save that names a different store for a page that already exists is __refused__ (decided 2026-09-15). Moving a page and its history between stores is a feature of its own — for an encrypted store it means re-encrypting under another DEK — and is not part of this epic.
 
 ## Files in the store
 
