@@ -1,5 +1,10 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
-import { DEFAULT_PRIVATE_STORE, privatePageFilePath } from '../utils/privateStorePath.js';
+import {
+  DEFAULT_PRIVATE_STORE_LAYOUT,
+  privatePageFilePath,
+  privateStoreLayoutFromConfig,
+  type PrivateStoreLayout
+} from '../utils/privateStorePath.js';
 import {
   assertCurrentSessionCanWriteStore,
   currentPrivateStoreSessionId,
@@ -72,8 +77,9 @@ interface BackupData {
  * - Configurable encoding support
  *
  * Configuration keys (all lowercase):
- * - ngdpbase.page.provider.filesystem.storagedir - Main pages directory
+ * - ngdpbase.page.provider.filesystem.storagedir - Main pages directory (getResolvedDataPath)
  * - ngdpbase.page.provider.filesystem.requiredpagesdir - Required pages directory
+ * - ngdpbase.page.provider.filesystem.privateroot - Private-store folder under storagedir
  * - ngdpbase.page.provider.filesystem.encoding - File encoding (default: utf-8)
  * - ngdpbase.translator-reader.match-english-plurals - Enable plural matching
  *
@@ -89,6 +95,9 @@ class FileSystemProvider extends BasePageProvider {
 
   /** Path to required pages directory */
   protected requiredPagesDirectory: string | null;
+
+  /** Private-store path segments from config (defaults match app-default-config.json) */
+  protected privateStoreLayout: PrivateStoreLayout;
 
   /** File encoding */
   protected encoding: BufferEncoding;
@@ -124,6 +133,7 @@ class FileSystemProvider extends BasePageProvider {
     super(engine);
     this.pagesDirectory = null;
     this.requiredPagesDirectory = null;
+    this.privateStoreLayout = DEFAULT_PRIVATE_STORE_LAYOUT;
     this.installationComplete = false; // Will be set during initialize()
     this.encoding = 'utf-8';
     this.pageCache = new Map();
@@ -170,6 +180,8 @@ class FileSystemProvider extends BasePageProvider {
       'utf-8'
     ) as BufferEncoding;
 
+    this.applyPrivateStoreLayout(configManager);
+
     // Initialize PageNameMatcher with plural matching and CamelCase config
     const matchEnglishPlurals = configManager.getProperty('ngdpbase.translator-reader.match-english-plurals', true) as boolean;
     const matchCamelCase = configManager.getProperty('ngdpbase.translator-reader.camel-case-links', false) as boolean;
@@ -194,13 +206,23 @@ class FileSystemProvider extends BasePageProvider {
       logger.info(`[FileSystemProvider] Required-pages directory (install mode): ${this.requiredPagesDirectory}`);
     }
 
-    await migrateLegacyPrivatePages(this.pagesDirectory);
+    await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
 
     // Load all pages into cache
     await this.refreshPageList();
 
     this.initialized = true;
     logger.info(`[FileSystemProvider] Initialized with ${this.pageCache.size} pages.`);
+  }
+
+  /**
+   * Private-store folder names via getProperty only (not getResolvedDataPath).
+   * Join happens in helpers: resolved pages dir + privateroot + userid + storeid.
+   */
+  protected applyPrivateStoreLayout(configManager: ConfigurationManager): void {
+    this.privateStoreLayout = privateStoreLayoutFromConfig((key, fallback) =>
+      configManager.getProperty(key, fallback)
+    );
   }
 
   /**
@@ -309,14 +331,14 @@ class FileSystemProvider extends BasePageProvider {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           if (entry.name.startsWith('.')) continue; // Skip hidden dirs
-          if (entry.name === 'versions') continue; // Skip version snapshot dirs
+          if (entry.name === this.privateStoreLayout.versionsDir) continue; // Skip version snapshot dirs
           // #947: soft-deleted pages are relocated here. They MUST stay out of
           // the scan — this walk is what rebuilds the caches on every boot, so
           // a tombstoned file left in place would silently resurrect itself on
           // the next restart, index flag or not.
-          if (entry.name === 'deleted') continue;
+          if (entry.name === this.privateStoreLayout.deletedDir) continue;
           // #1385: sealed store trees stay out of the process cache and global index.
-          if (await storeDirectoryIsEncrypted(full)) continue;
+          if (await storeDirectoryIsEncrypted(full, this.privateStoreLayout.files.storemeta)) continue;
           out.push(...(await this.walkDir(full)));
         } else if (entry.isFile()) {
           out.push(full);
@@ -401,7 +423,8 @@ class FileSystemProvider extends BasePageProvider {
         this.pagesDirectory,
         page.creator,
         page.filename ?? page.uuid,
-        page.store
+        page.store,
+        this.privateStoreLayout
       ),
       metadata: {
         title: page.title,
@@ -551,7 +574,7 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * Resolve the on-disk file path for a page given its uuid, location, and optional creator.
-   * Private pages are stored at: {pagesDirectory}/private/{creator}/{store}/{uuid}.md
+   * Private pages are stored at: {pagesDirectory}/{privateroot}/{creator}/{store}/{uuid}.md
    * All other pages are stored at: {pagesDirectory}/{uuid}.md
    *
    * @param {string} uuid - Page UUID
@@ -562,7 +585,13 @@ class FileSystemProvider extends BasePageProvider {
    */
   private resolvePageFilePath(uuid: string, location: string, creator?: string, store?: string): string {
     if (location === 'private' && creator && this.pagesDirectory) {
-      return privatePageFilePath(this.pagesDirectory, creator, uuid, store ?? DEFAULT_PRIVATE_STORE);
+      return privatePageFilePath(
+        this.pagesDirectory,
+        creator,
+        uuid,
+        store ?? this.privateStoreLayout.defaultStoreId,
+        this.privateStoreLayout
+      );
     }
     return path.join(this.pagesDirectory || '', `${uuid}.md`);
   }
@@ -593,8 +622,20 @@ class FileSystemProvider extends BasePageProvider {
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     if (!this.pagesDirectory || oldCreator === newCreator) return;
-    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid);
-    const toPath   = privatePageFilePath(this.pagesDirectory, newCreator, uuid);
+    const fromPath = privatePageFilePath(
+      this.pagesDirectory,
+      oldCreator,
+      uuid,
+      this.privateStoreLayout.defaultStoreId,
+      this.privateStoreLayout
+    );
+    const toPath = privatePageFilePath(
+      this.pagesDirectory,
+      newCreator,
+      uuid,
+      this.privateStoreLayout.defaultStoreId,
+      this.privateStoreLayout
+    );
     if (await fs.pathExists(fromPath)) {
       await fs.ensureDir(path.dirname(toPath));
       await fs.move(fromPath, toPath, { overwrite: true });
@@ -640,7 +681,7 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error(`Cannot save page with system-category '${systemCategory}' - pages with storageLocation 'github' are not stored in the wiki (docs/ folder only)`);
     }
 
-    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{store}/{uuid}.md
+    // Resolve file path — private pages go under storagedir/{privateroot}/{creator}/{store}/{uuid}.md
     //
     // #802 Slice 4: `private:true` is the sole routing signal. The legacy
     // `system-location:'private'` storage hint was retired after the second
@@ -648,9 +689,9 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
-    const pageStore = DEFAULT_PRIVATE_STORE;
+    const pageStore = this.privateStoreLayout.defaultStoreId;
     const sealed = isPrivate && pageCreator
-      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore)).encrypt === true
+      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore, this.privateStoreLayout)).encrypt === true
       : false;
 
     // #1384: encrypt-on write uses the session DEK from the process bag.
@@ -659,7 +700,8 @@ class FileSystemProvider extends BasePageProvider {
       await assertCurrentSessionCanWriteStore({
         pagesDirectory: this.pagesDirectory,
         creator: pageCreator,
-        store: pageStore
+        store: pageStore,
+        layout: this.privateStoreLayout
       });
     }
 

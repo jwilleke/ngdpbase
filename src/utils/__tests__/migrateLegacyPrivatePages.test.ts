@@ -58,4 +58,21 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
     expect(await fs.readFile(dest, 'utf8')).toBe('new');
     expect(await fs.pathExists(legacy)).toBe(true);
   });
+
+  test('injected privateroot sealed looks under sealed/, not private/', async () => {
+    const uuid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const layout = { privateRoot: 'sealed' };
+    const legacy = path.join(pagesDir, 'sealed', 'jim', `${uuid}.md`);
+    await fs.ensureDir(path.dirname(legacy));
+    await fs.writeFile(legacy, '---\ntitle: Secret\n---\nbody\n');
+    await fs.ensureDir(path.join(pagesDir, 'private', 'jim'));
+    await fs.writeFile(path.join(pagesDir, 'private', 'jim', `${uuid}.md`), 'leave-me');
+
+    const result = await migrateLegacyPrivatePages(pagesDir, layout);
+
+    expect(result.moved).toBe(1);
+    expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'jim', DEFAULT_PRIVATE_STORE, `${uuid}.md`))).toBe(true);
+    expect(await fs.pathExists(legacy)).toBe(false);
+    expect(await fs.readFile(path.join(pagesDir, 'private', 'jim', `${uuid}.md`), 'utf8')).toBe('leave-me');
+  });
 });

@@ -26,6 +26,8 @@ pages/private/{user}/{store}/              # live pages, files, version blobs, t
 pages/private/{user}/{store}/store.json    # encrypt on/off; wrapped DEK if encrypt on
 ```
 
+This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). Folder names and catalog filenames are `ngdpbase.page.provider.filesystem.*` keys in [app-default-config.json](../../config/app-default-config.json). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
+
 - Today's private pages migrate to store id `default`.
 - Named stores use the __addon slug__ (`yourphr` → `private/{user}/yourphr/`). `default` is core, not an addon.
 - Nothing except store directories and the user-level catalogs lives directly in `private/{user}/`.

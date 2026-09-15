@@ -1,20 +1,26 @@
 /**
- * Move `private/{user}/{uuid}.md` into `private/{user}/default/` (#1383).
+ * Move `{privateroot}/{user}/{uuid}.md` into `{privateroot}/{user}/{defaultstoreid}/` (#1383).
  */
 
 import fs from 'fs-extra';
 import path from 'path';
 import logger from './logger.js';
 import {
-  DEFAULT_PRIVATE_STORE,
-  PRIVATE_USER_CATALOG_FILES,
   parsePrivatePageRel,
   privatePageFilePath,
-  privateVersionDirectory
+  privateUserCatalogFiles,
+  privateVersionDirectory,
+  resolvePrivateStoreLayout,
+  type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
 
-export async function migrateLegacyPrivatePages(pagesDirectory: string): Promise<{ moved: number }> {
-  const privateRoot = path.join(pagesDirectory, 'private');
+export async function migrateLegacyPrivatePages(
+  pagesDirectory: string,
+  layout?: PrivateStoreLayoutOverrides
+): Promise<{ moved: number }> {
+  const L = resolvePrivateStoreLayout(layout);
+  const catalogFiles = privateUserCatalogFiles(L);
+  const privateRoot = path.join(pagesDirectory, L.privateRoot);
   if (!await fs.pathExists(privateRoot)) return { moved: 0 };
 
   let moved = 0;
@@ -25,11 +31,11 @@ export async function migrateLegacyPrivatePages(pagesDirectory: string): Promise
     const entries = await fs.readdir(userDir, { withFileTypes: true });
     for (const ent of entries) {
       if (ent.isDirectory()) continue;
-      if (PRIVATE_USER_CATALOG_FILES.has(ent.name)) continue;
+      if (catalogFiles.has(ent.name)) continue;
       if (!ent.name.toLowerCase().endsWith('.md')) continue;
 
       const from = path.join(userDir, ent.name);
-      const to = privatePageFilePath(pagesDirectory, userEnt.name, ent.name, DEFAULT_PRIVATE_STORE);
+      const to = privatePageFilePath(pagesDirectory, userEnt.name, ent.name, L.defaultStoreId, L);
       if (path.resolve(from) === path.resolve(to)) continue;
       if (await fs.pathExists(to)) {
         logger.warn(`[private-store] not moving ${from}: ${to} already exists`);
@@ -41,19 +47,23 @@ export async function migrateLegacyPrivatePages(pagesDirectory: string): Promise
     }
   }
   if (moved > 0) {
-    logger.info(`[private-store] migrated ${moved} page(s) into ${DEFAULT_PRIVATE_STORE}/`);
+    logger.info(`[private-store] migrated ${moved} page(s) into ${L.defaultStoreId}/`);
   }
   return { moved };
 }
 
 /**
- * Move `pages/versions/private/{uuid}/` into
- * `private/{user}/{store}/versions/{uuid}/` (#1383).
+ * Move `{pages}/{versionsdir}/{privateroot}/{uuid}/` into
+ * `{privateroot}/{user}/{store}/{versionsdir}/{uuid}/` (#1383).
  *
  * Creator/store come from the live page file after {@link migrateLegacyPrivatePages}.
  */
-export async function migrateLegacyPrivateVersionBlobs(pagesDirectory: string): Promise<{ moved: number }> {
-  const legacyRoot = path.join(pagesDirectory, 'versions', 'private');
+export async function migrateLegacyPrivateVersionBlobs(
+  pagesDirectory: string,
+  layout?: PrivateStoreLayoutOverrides
+): Promise<{ moved: number }> {
+  const L = resolvePrivateStoreLayout(layout);
+  const legacyRoot = path.join(pagesDirectory, L.versionsDir, L.privateRoot);
   if (!await fs.pathExists(legacyRoot)) return { moved: 0 };
 
   let moved = 0;
@@ -62,12 +72,12 @@ export async function migrateLegacyPrivateVersionBlobs(pagesDirectory: string): 
     if (!ent.isDirectory()) continue;
     const uuid = ent.name;
     const from = path.join(legacyRoot, uuid);
-    const located = await findPrivatePageRel(pagesDirectory, uuid);
+    const located = await findPrivatePageRel(pagesDirectory, uuid, L);
     if (!located) {
       logger.warn(`[private-store] leaving version dir ${from}: no live private page for ${uuid}`);
       continue;
     }
-    const to = privateVersionDirectory(pagesDirectory, located.creator, uuid, located.store);
+    const to = privateVersionDirectory(pagesDirectory, located.creator, uuid, located.store, L);
     if (path.resolve(from) === path.resolve(to)) continue;
     if (await fs.pathExists(to)) {
       logger.warn(`[private-store] not moving ${from}: ${to} already exists`);
@@ -85,9 +95,11 @@ export async function migrateLegacyPrivateVersionBlobs(pagesDirectory: string): 
 
 async function findPrivatePageRel(
   pagesDirectory: string,
-  uuid: string
+  uuid: string,
+  layout?: PrivateStoreLayoutOverrides
 ): Promise<{ creator: string; store: string } | null> {
-  const privateRoot = path.join(pagesDirectory, 'private');
+  const L = resolvePrivateStoreLayout(layout);
+  const privateRoot = path.join(pagesDirectory, L.privateRoot);
   if (!await fs.pathExists(privateRoot)) return null;
   const users = await fs.readdir(privateRoot, { withFileTypes: true });
   for (const userEnt of users) {
@@ -97,7 +109,7 @@ async function findPrivatePageRel(
       if (!storeEnt.isDirectory()) continue;
       const candidate = path.join(privateRoot, userEnt.name, storeEnt.name, `${uuid}.md`);
       if (await fs.pathExists(candidate)) {
-        return parsePrivatePageRel(path.relative(pagesDirectory, candidate).split(path.sep));
+        return parsePrivatePageRel(path.relative(pagesDirectory, candidate).split(path.sep), L);
       }
     }
   }

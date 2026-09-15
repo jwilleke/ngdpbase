@@ -20,13 +20,14 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
   let pagesDir: string;
   let requiredDir: string;
 
-  const newProvider = async (): Promise<FileSystemProvider> => {
+  const newProvider = async (extra: Record<string, unknown> = {}): Promise<FileSystemProvider> => {
     const configManager = {
       getProperty: vi.fn((key: string, def: unknown) => {
         const config: Record<string, unknown> = {
           'ngdpbase.page.provider.filesystem.storagedir': pagesDir,
           'ngdpbase.page.provider.filesystem.requiredpagesdir': requiredDir,
-          'ngdpbase.page.provider.filesystem.encoding': 'utf-8'
+          'ngdpbase.page.provider.filesystem.encoding': 'utf-8',
+          ...extra
         };
         return config[key] !== undefined ? config[key] : def;
       }),
@@ -70,6 +71,15 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     await expect(
       provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' })
     ).rejects.toThrow(/locked|DEK/i);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+  });
+
+  test('config privateroot sealed writes under sealed/, not private/', async () => {
+    const provider = await newProvider({
+      'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
+    });
+    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' });
+    expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
 });

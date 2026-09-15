@@ -8,7 +8,12 @@
 import fs from 'fs-extra';
 import path from 'path';
 import type { StoreKeyRecord, WrappedBlob } from './privateStoreCrypto.js';
-import { STORE_META_FILENAME, storeMetaPath, privateStoreRoot } from './privateStorePath.js';
+import {
+  STORE_META_FILENAME,
+  storeMetaPath,
+  privateStoreRoot,
+  type PrivateStoreLayoutOverrides
+} from './privateStorePath.js';
 
 function looksLikeWrap(value: unknown): value is WrappedBlob {
   if (!value || typeof value !== 'object') return false;
@@ -19,9 +24,10 @@ function looksLikeWrap(value: unknown): value is WrappedBlob {
 export async function readStoreMeta(
   pagesDirectory: string,
   creator: string,
-  store: string
+  store: string,
+  layout?: PrivateStoreLayoutOverrides
 ): Promise<StoreKeyRecord> {
-  const file = storeMetaPath(pagesDirectory, creator, store);
+  const file = storeMetaPath(pagesDirectory, creator, store, layout);
   if (!await fs.pathExists(file)) return { encrypt: false };
   const raw = await fs.readJson(file) as unknown;
   if (!raw || typeof raw !== 'object') return { encrypt: false };
@@ -36,8 +42,11 @@ export async function readStoreMeta(
 }
 
 /** True when `dir` is a store directory with encrypt on (`store.json`). */
-export async function storeDirectoryIsEncrypted(dir: string): Promise<boolean> {
-  const file = path.join(dir, STORE_META_FILENAME);
+export async function storeDirectoryIsEncrypted(
+  dir: string,
+  metaFilename: string = STORE_META_FILENAME
+): Promise<boolean> {
+  const file = path.join(dir, metaFilename);
   if (!await fs.pathExists(file)) return false;
   try {
     const raw = await fs.readJson(file) as { encrypt?: unknown };
@@ -51,8 +60,9 @@ export async function writeStoreMeta(
   pagesDirectory: string,
   creator: string,
   store: string,
-  record: StoreKeyRecord
+  record: StoreKeyRecord,
+  layout?: PrivateStoreLayoutOverrides
 ): Promise<void> {
-  await fs.ensureDir(privateStoreRoot(pagesDirectory, creator, store));
-  await fs.writeJson(storeMetaPath(pagesDirectory, creator, store), record);
+  await fs.ensureDir(privateStoreRoot(pagesDirectory, creator, store, layout));
+  await fs.writeJson(storeMetaPath(pagesDirectory, creator, store, layout), record);
 }

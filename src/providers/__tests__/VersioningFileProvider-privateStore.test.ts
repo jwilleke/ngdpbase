@@ -181,4 +181,32 @@ describe('private store default/ (#1383)', () => {
 
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
   });
+
+  test('config privateroot sealed joins versions as versions/sealed and writes under sealed/', async () => {
+    const configManager = {
+      getProperty: vi.fn((key: string, def: unknown) => {
+        const cfg = {
+          ...config(),
+          'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
+        };
+        return cfg[key] !== undefined ? cfg[key] : def;
+      }),
+      getResolvedDataPath: vi.fn((key: string, def: unknown) => {
+        if (key === 'ngdpbase.page.provider.versioning.indexfile') return indexPath;
+        if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;
+        if (key === 'ngdpbase.page.provider.filesystem.requiredpagesdir') return requiredDir;
+        return def;
+      }),
+      getInstanceDataFolder: vi.fn(() => testDir)
+    };
+    engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+
+    const provider = await newProvider();
+    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' });
+
+    expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'sealed'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'private'))).toBe(false);
+  });
 });

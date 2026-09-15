@@ -24,6 +24,7 @@ import {
   PRIVATE_USER_CATALOG_FILES,
   privateUserDir,
   privateUserKeysPath,
+  type PrivateStoreLayoutOverrides,
   type UserCatalogKind
 } from './privateStorePath.js';
 import {
@@ -203,8 +204,9 @@ export async function assertCurrentSessionCanWriteStore(args: {
   creator: string;
   store: string;
   sessionId?: string;
+  layout?: PrivateStoreLayoutOverrides;
 }): Promise<void> {
-  const meta = await readStoreMeta(args.pagesDirectory, args.creator, args.store);
+  const meta = await readStoreMeta(args.pagesDirectory, args.creator, args.store, args.layout);
   assertEncryptedStoreWritable({
     encrypt: meta.encrypt,
     dek: sessionDekForStore(args.store, args.sessionId)

@@ -196,6 +196,33 @@ export interface WikiConfig {
   /** Required pages directory */
   'ngdpbase.page.provider.filesystem.requiredpagesdir': string;
 
+  /** Private-store folder name under the pages storagedir */
+  'ngdpbase.page.provider.filesystem.privateroot': string;
+
+  /** Default private store id */
+  'ngdpbase.page.provider.filesystem.defaultstoreid': string;
+
+  /** Version snapshot folder name */
+  'ngdpbase.page.provider.filesystem.versionsdir': string;
+
+  /** Soft-deleted page folder name */
+  'ngdpbase.page.provider.filesystem.deleteddir': string;
+
+  /** User KEK envelope filename under the private user dir */
+  'ngdpbase.page.provider.filesystem.private.files.userkeys': string;
+
+  /** Encrypted user page catalog filename */
+  'ngdpbase.page.provider.filesystem.private.files.userindex': string;
+
+  /** Encrypted user version catalog filename */
+  'ngdpbase.page.provider.filesystem.private.files.userversions': string;
+
+  /** Encrypted user trash catalog filename */
+  'ngdpbase.page.provider.filesystem.private.files.usertrash': string;
+
+  /** Per-store metadata filename (encrypt flag / wrapped DEK) */
+  'ngdpbase.page.provider.filesystem.private.files.storemeta': string;
+
   /** File encoding for pages */
   'ngdpbase.page.provider.filesystem.encoding': string;
 
