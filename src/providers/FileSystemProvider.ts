@@ -689,7 +689,8 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
-    const pageStore = this.privateStoreLayout.defaultStoreId;
+    const pageStore = (typeof md.store === 'string' && md.store)
+      || this.privateStoreLayout.defaultStoreId;
     const sealed = isPrivate && pageCreator
       ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore, this.privateStoreLayout)).encrypt === true
       : false;
@@ -705,7 +706,12 @@ class FileSystemProvider extends BasePageProvider {
       });
     }
 
-    const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
+    const filePath = this.resolvePageFilePath(
+      uuid,
+      isPrivate ? 'private' : 'pages',
+      pageCreator,
+      isPrivate ? pageStore : undefined
+    );
     await fs.ensureDir(path.dirname(filePath));
 
     const oldPageInfo = this.resolvePageInfo(pageName);

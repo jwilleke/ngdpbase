@@ -26,6 +26,7 @@ import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '
 import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * A save refused because the content broke a filter rule (#1037).
@@ -73,6 +74,11 @@ export interface PageSaveOptions {
      */
     skip?: boolean;
   };
+  /**
+   * Identity for a store write (#1389). `savePage` without this must not
+   * write `private: true`. HTTP saves use {@link savePageWithContext} instead.
+   */
+  actorContext?: ActorContext;
 }
 
 /** What {@link PageManager.savePageWithContext} wrote. */
@@ -1345,6 +1351,11 @@ class PageManager extends BaseManager implements CatalogSource {
   ): Promise<void> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
+    }
+    if (metadata.private === true && !options.actorContext) {
+      throw new Error(
+        'PageManager.savePage cannot write a private store without ActorContext'
+      );
     }
     await this.assertContentPasses(pageName, content, options);
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');

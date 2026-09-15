@@ -749,4 +749,31 @@ describe('PageManager', () => {
       await manager.shutdown();
     });
   });
+
+  describe('savePage() private store requires ActorContext (#1389)', () => {
+    test('refuses a store write when savePage has no actorContext', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+
+      await expect(
+        pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' })
+      ).rejects.toThrow(/ActorContext/);
+
+      expect(pageManager.provider.savePage).not.toHaveBeenCalled();
+    });
+
+    test('writes a store page when actorContext is on options', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.getPage = vi.fn().mockResolvedValue(null);
+
+      await pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, {
+        actorContext: { username: 'molly', isAuthenticated: true, roles: ['editor'] }
+      });
+
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith(
+        'Diary',
+        '# secret',
+        { private: true, author: 'molly' }
+      );
+    });
+  });
 });

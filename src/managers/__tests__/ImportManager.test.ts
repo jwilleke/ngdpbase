@@ -1123,4 +1123,111 @@ See [OtherPage] for more.`;
     });
   });
 
+  describe('private store destination (#1389)', () => {
+    let mockSavePage: ReturnType<typeof vi.fn>;
+    let storeEngine: { getManager: ReturnType<typeof vi.fn> };
+
+    beforeEach(() => {
+      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockUploadAttachment.mockClear();
+      mockUploadAttachment.mockResolvedValue({ identifier: 'store-file-1', url: '/attachments/store-file-1' });
+      storeEngine = {
+        getManager: vi.fn((name) => {
+          if (name === 'PageManager') {
+            return {
+              getPageMetadata: vi.fn().mockResolvedValue(null),
+              getPage: vi.fn().mockResolvedValue({
+                name: 'Diary',
+                content: 'body',
+                metadata: { title: 'Diary', uuid: 'u1' }
+              }),
+              savePage: mockSavePage
+            };
+          }
+          if (name === 'AttachmentManager') {
+            return { uploadAttachment: mockUploadAttachment };
+          }
+          if (name === 'RenderingManager') {
+            return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
+          }
+          if (name === 'SearchManager') {
+            return { updatePageInIndex: vi.fn() };
+          }
+          if (name === 'CacheManager') {
+            return { isInitialized: () => false };
+          }
+          return { getProperty: vi.fn((_k: string, d: unknown) => d) };
+        })
+      };
+    });
+
+    it('imports markdown through PageManager with private and ActorContext', async () => {
+      const mgr = new ImportManager(storeEngine);
+      await mgr.initialize();
+      mgr.registerConverter(new MockConverter());
+      const sourceFile = path.join(testDir, 'diary.mock');
+      await fs.writeFile(sourceFile, 'secret body');
+
+      await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
+        sourceDir: testDir,
+        format: 'mock',
+        dryRun: false,
+        private: true
+      });
+
+      expect(mockSavePage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ private: true }),
+        expect.objectContaining({ actorContext: IMPORTER })
+      );
+      expect(mockUploadAttachment).not.toHaveBeenCalled();
+    });
+
+    it('imports JSON as a store file, not a page', async () => {
+      const mgr = new ImportManager(storeEngine);
+      await mgr.initialize();
+      const sourceFile = path.join(testDir, 'labs.json');
+      await fs.writeFile(sourceFile, '{"resourceType":"Patient"}');
+
+      const result = await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
+        sourceDir: testDir,
+        private: true
+      });
+
+      expect(mockSavePage).not.toHaveBeenCalled();
+      expect(mockUploadAttachment).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ originalName: 'labs.json' }),
+        IMPORTER,
+        expect.objectContaining({ private: true })
+      );
+      expect(result?.written).toBe(true);
+      expect(result?.format).toBe('json');
+    });
+
+    it('imports XML as a store file, not a page', async () => {
+      const mgr = new ImportManager(storeEngine);
+      await mgr.initialize();
+      const sourceFile = path.join(testDir, 'labs.xml');
+      await fs.writeFile(sourceFile, '<Patient/>');
+
+      await mgr.importSinglePage(sourceFile, {
+        actorContext: IMPORTER,
+        sourceDir: testDir,
+        private: true
+      });
+
+      expect(mockSavePage).not.toHaveBeenCalled();
+      expect(mockUploadAttachment).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.objectContaining({ originalName: 'labs.xml' }),
+        IMPORTER,
+        expect.objectContaining({ private: true })
+      );
+    });
+  });
+
 });
