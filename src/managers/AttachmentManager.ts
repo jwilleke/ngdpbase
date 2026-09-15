@@ -26,7 +26,7 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
-import { DEFAULT_PRIVATE_STORE } from '../utils/privateStorePath.js';
+import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
 
 /**
@@ -76,6 +76,14 @@ export interface UploadOptions {
   description?: string;
   /** WikiContext for the current request — used to resolve page privacy */
   wikiContext?: import('../context/WikiContext.js').default;
+}
+
+/**
+ * Private-store upload options (#1396). Same fields as {@link UploadOptions}
+ * plus an optional store id. Page is a link only — not a destination hint.
+ */
+export interface PrivateUploadOptions extends UploadOptions {
+  store?: string;
 }
 
 // #1179: the acting methods below take an `ActorContext` — the request's
@@ -561,6 +569,99 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in
     // WikiRoutes. on-failure: continue, so a failed record is logged, not fatal.
+    await this.recordAttachmentEvent('upload', ctx, {
+      attachmentId: String(attachmentMetadata.identifier ?? ''),
+      filename: fileInfo.originalName,
+      pageName: pageName ?? null,
+      sizeBytes: fileInfo.size ?? null
+    }, options.wikiContext);
+
+    return attachmentMetadata;
+  }
+
+  /**
+   * Upload a file into the caller's private store (#1396).
+   *
+   * Page is optional and only creates an attach-to-page link — destination is
+   * never inferred from a page. Public `uploadAttachment` is unchanged.
+   *
+   * @param {Buffer} fileBuffer - File data
+   * @param {FileInfo} fileInfo - { originalName, mimeType, size }
+   * @param ctx - Who is uploading (#1179): the request's subject, or a JobContext for an in-engine caller. Mandatory and positional.
+   * @param {PrivateUploadOptions} options - Upload options
+   * @param {string} options.store - Store id; default from ConfigurationManager defaultstoreid
+   * @param {string} options.pageName - Page to attach to (optional link only)
+   * @param {string} options.description - File description
+   * @returns {Promise<AttachmentMetadata>} Attachment metadata
+   */
+  async uploadPrivateAttachment(fileBuffer: Buffer, fileInfo: FileInfo, ctx: ActorContext, options: PrivateUploadOptions = {}): Promise<AttachmentMetadata> {
+    if (!this.attachmentProvider) {
+      throw new Error('Attachment provider not initialized');
+    }
+
+    // Check permission
+    const allowed = await this.checkPermission('asset-upload', ctx);
+    if (!allowed) {
+      throw new Error('Permission denied: You do not have permission to upload attachments');
+    }
+
+    // The uploader, from the context. A request subject built from a session
+    // carries the account's fields; a JobContext carries a name only.
+    const user = {
+      name: ctx.username,
+      email: (ctx as { email?: string }).email || undefined
+    };
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      throw new Error('AttachmentManager requires ConfigurationManager');
+    }
+
+    const layout = privateStoreLayoutFromConfig((key, fallback) =>
+      configManager.getProperty(key, fallback)
+    );
+    const storeId = options.store ?? layout.defaultStoreId;
+    const pageCreator = ctx.username;
+    const pageName = options.pageName;
+
+    // #1394: sealed-store writes need the session DEK. Not a PageManager field.
+    const pagesDirectory = configManager.getResolvedDataPath?.(
+      'ngdpbase.page.provider.filesystem.storagedir',
+      './data/pages'
+    );
+    if (pagesDirectory) {
+      await assertCurrentSessionCanWriteStore({
+        pagesDirectory,
+        creator: pageCreator,
+        store: storeId,
+        layout
+      });
+    }
+
+    // Create metadata (include privacy flags for provider). Destination is the
+    // page store (#1386); ciphertext of those bytes is later.
+    const metadata: AttachmentMetadataInput & {
+      isPrivatePage?: boolean;
+      pageCreator?: string;
+      store?: string;
+    } = {
+      description: options.description || '',
+      isFamilyFriendly: true,
+      isPrivatePage: true,
+      pageCreator,
+      store: storeId
+    };
+
+    // Store attachment via provider
+    const attachmentMetadata = await this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user);
+
+    logger.info(`📎 Uploaded private attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier}) [creator: ${pageCreator}, store: ${storeId}]`);
+
+    if (pageName) {
+      await this.attachToPage(String(attachmentMetadata.identifier), pageName);
+    }
+
+    // #1183 — at the door. on-failure: continue, so a failed record is logged, not fatal.
     await this.recordAttachmentEvent('upload', ctx, {
       attachmentId: String(attachmentMetadata.identifier ?? ''),
       filename: fileInfo.originalName,
