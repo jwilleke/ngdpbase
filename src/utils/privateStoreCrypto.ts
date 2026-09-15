@@ -73,7 +73,7 @@ function wrap(key: Buffer, plaintext: Buffer): WrappedBlob {
   };
 }
 
-function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 'DEK'): Buffer {
+function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 'DEK' | 'catalog'): Buffer {
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(blob.iv, 'base64'));
     decipher.setAuthTag(Buffer.from(blob.tag, 'base64'));
@@ -84,6 +84,7 @@ function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 
   } catch {
     if (kind === 'password') throw new Error('password does not unwrap the user KEK');
     if (kind === 'recovery') throw new Error('recovery phrase does not unwrap the user KEK');
+    if (kind === 'catalog') throw new Error('cannot decrypt catalog');
     throw new Error('cannot unwrap store DEK');
   }
 }
@@ -174,6 +175,21 @@ export function createEncryptedStore(kek: Buffer): EncryptedStoreRecord {
 
 export function unwrapDek(kek: Buffer, store: EncryptedStoreRecord): Buffer {
   return unwrap(kek, store.dekWrap, 'DEK');
+}
+
+/** Encrypt a JSON value with the user KEK (user-index / versions / trash). */
+export function encryptJson(key: Buffer, value: unknown): WrappedBlob {
+  return wrap(key, Buffer.from(JSON.stringify(value), 'utf8'));
+}
+
+/** Decrypt a JSON value wrapped by {@link encryptJson}. */
+export function decryptJson<T>(key: Buffer, blob: WrappedBlob): T {
+  const buf = unwrap(key, blob, 'catalog');
+  try {
+    return JSON.parse(buf.toString('utf8')) as T;
+  } catch {
+    throw new Error('cannot decrypt catalog');
+  }
 }
 
 /**

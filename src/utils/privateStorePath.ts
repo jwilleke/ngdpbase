@@ -37,6 +37,30 @@ export function privateUserKeysPath(pagesDirectory: string, username: string): s
   return path.join(privateUserDir(pagesDirectory, username), 'user-keys.json');
 }
 
+export function privateUserIndexPath(pagesDirectory: string, username: string): string {
+  return path.join(privateUserDir(pagesDirectory, username), 'user-index.json');
+}
+
+export function privateUserVersionsPath(pagesDirectory: string, username: string): string {
+  return path.join(privateUserDir(pagesDirectory, username), 'user-versions.json');
+}
+
+export function privateUserTrashPath(pagesDirectory: string, username: string): string {
+  return path.join(privateUserDir(pagesDirectory, username), 'user-trash.json');
+}
+
+export type UserCatalogKind = 'index' | 'versions' | 'trash';
+
+export function privateUserCatalogPath(
+  pagesDirectory: string,
+  username: string,
+  kind: UserCatalogKind
+): string {
+  if (kind === 'versions') return privateUserVersionsPath(pagesDirectory, username);
+  if (kind === 'trash') return privateUserTrashPath(pagesDirectory, username);
+  return privateUserIndexPath(pagesDirectory, username);
+}
+
 export function privateStoreRoot(
   pagesDirectory: string,
   creator: string,

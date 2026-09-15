@@ -23,13 +23,33 @@ import { readStoreMeta } from './privateStoreMeta.js';
 import {
   PRIVATE_USER_CATALOG_FILES,
   privateUserDir,
-  privateUserKeysPath
+  privateUserKeysPath,
+  type UserCatalogKind
 } from './privateStorePath.js';
+import {
+  emptyUserCatalog,
+  readUserCatalog,
+  type UserCatalog,
+  type UserCatalogPage
+} from './privateStoreCatalogs.js';
 
 interface UnlockedBag {
   username: string;
   kek: Buffer;
   deks: Map<string, Buffer>;
+  catalogs: {
+    index: UserCatalog;
+    versions: UserCatalog;
+    trash: UserCatalog;
+  };
+}
+
+function emptySessionCatalogs(): UnlockedBag['catalogs'] {
+  return {
+    index: emptyUserCatalog(),
+    versions: emptyUserCatalog(),
+    trash: emptyUserCatalog()
+  };
 }
 
 const bags = new Map<string, UnlockedBag>();
@@ -44,7 +64,34 @@ export function currentPrivateStoreSessionId(): string | undefined {
 }
 
 export function unlockPrivateStores(sessionId: string, username: string, kek: Buffer): void {
-  bags.set(sessionId, { username, kek: Buffer.from(kek), deks: new Map() });
+  bags.set(sessionId, {
+    username,
+    kek: Buffer.from(kek),
+    deks: new Map(),
+    catalogs: emptySessionCatalogs()
+  });
+}
+
+export function getSessionUserIndex(sessionId: string): UserCatalog | undefined {
+  return bags.get(sessionId)?.catalogs.index;
+}
+
+export function replaceSessionUserCatalog(
+  sessionId: string,
+  kind: UserCatalogKind,
+  catalog: UserCatalog
+): void {
+  const bag = bags.get(sessionId);
+  if (!bag) return;
+  bag.catalogs[kind] = catalog;
+}
+
+export function putSessionUserIndexPage(page: UserCatalogPage): void {
+  const sid = currentPrivateStoreSessionId();
+  if (!sid) return;
+  const bag = bags.get(sid);
+  if (!bag) return;
+  bag.catalogs.index.pages[page.uuid] = page;
 }
 
 export function lockPrivateStores(sessionId: string): void {
@@ -114,6 +161,17 @@ export async function unlockPrivateStoresWithPassword(args: {
       setUnlockedDek(args.sessionId, ent.name, unwrapDek(kek, meta as EncryptedStoreRecord));
     } catch {
       logger.warn('[private-store] encrypted store stayed locked after login');
+    }
+  }
+
+  const bag = bags.get(args.sessionId);
+  if (bag) {
+    try {
+      bag.catalogs.index = await readUserCatalog(args.pagesDirectory, args.username, kek, 'index');
+      bag.catalogs.versions = await readUserCatalog(args.pagesDirectory, args.username, kek, 'versions');
+      bag.catalogs.trash = await readUserCatalog(args.pagesDirectory, args.username, kek, 'trash');
+    } catch {
+      logger.warn('[private-store] user catalogs stayed sealed after login');
     }
   }
 }

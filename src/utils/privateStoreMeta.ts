@@ -6,8 +6,9 @@
  */
 
 import fs from 'fs-extra';
+import path from 'path';
 import type { StoreKeyRecord, WrappedBlob } from './privateStoreCrypto.js';
-import { storeMetaPath, privateStoreRoot } from './privateStorePath.js';
+import { STORE_META_FILENAME, storeMetaPath, privateStoreRoot } from './privateStorePath.js';
 
 function looksLikeWrap(value: unknown): value is WrappedBlob {
   if (!value || typeof value !== 'object') return false;
@@ -32,6 +33,18 @@ export async function readStoreMeta(
     };
   }
   return { encrypt: false };
+}
+
+/** True when `dir` is a store directory with encrypt on (`store.json`). */
+export async function storeDirectoryIsEncrypted(dir: string): Promise<boolean> {
+  const file = path.join(dir, STORE_META_FILENAME);
+  if (!await fs.pathExists(file)) return false;
+  try {
+    const raw = await fs.readJson(file) as { encrypt?: unknown };
+    return raw?.encrypt === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function writeStoreMeta(
