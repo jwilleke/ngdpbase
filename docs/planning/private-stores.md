@@ -100,11 +100,11 @@ Decided 2026-09-15 ([#1398](https://github.com/jwilleke/ngdpbase/issues/1398)). 
 
 | Case | Result |
 |---|---|
-| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. |
+| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. Lands in the __page author's__ store, the page's own store, whoever uploads it. |
 | Existing non-private asset attached or linked to a private page | Stays public. Linking never moves or re-flags an existing attachment. |
 | Upload with no page, or onto a public page | The upload dialog's Private checkbox decides. Ticked: the uploader's store. Unticked: public attachments pool. |
 
-Open: which store a forced-private upload lands in — the page creator's store (beside the page) or the uploader's `default`.
+__The author owns the page and every attachment uploaded onto it__ (decided 2026-09-15). An admin or editor uploading onto someone's private page adds to that author's store, never their own. A page-less private upload belongs to the uploader. Owner is the page-index `creator` (the page's `author`), not the last editor.
 
 ## Backups
 

@@ -27,6 +27,8 @@ import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/in
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { currentPrivateStoreSessionId, getSessionUserIndex } from '../utils/privateStoreUnlock.js';
 
 /**
  * A save refused because the content broke a filter rule (#1037).
@@ -1710,6 +1712,51 @@ class PageManager extends BaseManager implements CatalogSource {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Owner and store of a private page, or `null` when the page is not private
+   * or does not exist (#1398). The author owns the page and every attachment
+   * uploaded onto it, so AttachmentManager uses this to route a new upload into
+   * that author's store.
+   *
+   * Owner is the page-index `creator` (sticky), not frontmatter `author`.
+   * Unlocked sealed-store pages are not in the global index; they come from the
+   * current session's user catalog (#1385). Frontmatter is the last resort for
+   * a provider without a page index.
+   */
+  async getPrivatePageOwner(pageNameOrUuid: string): Promise<{ creator: string; store: string } | null> {
+    if (!this.provider) return null;
+    const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
+    if (!pageMetadata?.uuid) return null;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const defaultStoreId = configManager
+      ? privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)).defaultStoreId
+      : DEFAULT_PRIVATE_STORE;
+
+    const provider = this.provider as unknown as {
+      pageIndex?: { pages: Record<string, { location?: string; creator?: string; store?: string }> }
+    };
+    const entry = provider.pageIndex?.pages[pageMetadata.uuid];
+    if (entry?.location === 'private' && entry.creator) {
+      return { creator: entry.creator, store: entry.store ?? defaultStoreId };
+    }
+
+    const sid = currentPrivateStoreSessionId();
+    const sealed = sid ? getSessionUserIndex(sid)?.pages[pageMetadata.uuid] : undefined;
+    if (sealed) {
+      return { creator: sealed.creator, store: sealed.store };
+    }
+
+    const md = pageMetadata as Record<string, unknown>;
+    if (!entry && md.private === true && typeof md.author === 'string' && md.author) {
+      return {
+        creator: md.author,
+        store: typeof md.store === 'string' && md.store ? md.store : defaultStoreId
+      };
+    }
+    return null;
   }
 
   async refreshPageList(): Promise<void> {

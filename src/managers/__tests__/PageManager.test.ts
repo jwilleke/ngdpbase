@@ -8,6 +8,12 @@
 
 import PageManager from '../PageManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import {
+  clearUnlockedPrivateStores,
+  putSessionUserIndexPage,
+  runWithPrivateStoreSession,
+  unlockPrivateStores
+} from '../../utils/privateStoreUnlock';
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -775,5 +781,61 @@ describe('PageManager', () => {
         { private: true, author: 'molly' }
       );
     });
+  });
+});
+
+describe('PageManager.getPrivatePageOwner (#1398)', () => {
+  const withProvider = (provider: Record<string, unknown>): PageManager => {
+    const pm = new PageManager(mockEngine);
+    (pm as unknown as { provider: unknown }).provider = provider;
+    return pm;
+  };
+
+  afterEach(() => {
+    clearUnlockedPrivateStores();
+  });
+
+  test('private page: owner is the page-index creator and store, not frontmatter author', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'yourphr' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Diary')).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+  });
+
+  test('private entry without a store id uses the configured default store', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Diary')).resolves.toEqual({ creator: 'alice', store: 'default' });
+  });
+
+  test('public or missing page: null', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn()
+        .mockResolvedValueOnce({ uuid: 'u2' })
+        .mockResolvedValueOnce(null),
+      pageIndex: { pages: { u2: { location: 'pages', creator: 'alice' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Main')).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('Nope')).resolves.toBeNull();
+  });
+
+  test('unlocked sealed-store page comes from the session user catalog', async () => {
+    unlockPrivateStores('sid-1', 'alice', Buffer.alloc(32, 1));
+    runWithPrivateStoreSession('sid-1', () => putSessionUserIndexPage({
+      title: 'Labs', uuid: 'u3', currentVersion: 1, location: 'private', creator: 'alice',
+      store: 'yourphr', lastModified: '2026-09-15T00:00:00Z', editor: 'alice', hasVersions: false
+    }));
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u3' }),
+      pageIndex: { pages: {} }
+    });
+    await expect(
+      runWithPrivateStoreSession('sid-1', () => pm.getPrivatePageOwner('Labs'))
+    ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+    // Outside that session the sealed page is not visible.
+    await expect(pm.getPrivatePageOwner('Labs')).resolves.toBeNull();
   });
 });

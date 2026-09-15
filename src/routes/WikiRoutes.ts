@@ -5663,7 +5663,9 @@ ${panes}
       };
 
       // The subject goes to the door positionally (#1179); options carry the rest.
-      // `private` is an explicit body flag (#1398); never inferred from the page.
+      // `private` is the dialog's checkbox. It decides only when pageName is not
+      // a private page: AttachmentManager forces an upload onto a private page
+      // private, into that page's author's store (#1398).
       const wantsPrivate = req.body.private === 'true' || req.body.private === 'on' || req.body.private === true;
       const options = {
         pageName: pageName,

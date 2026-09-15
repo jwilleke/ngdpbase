@@ -15,6 +15,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { buildAttachmentAuditEvent } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type PageManager from './PageManager.js';
 import type CatalogManager from './CatalogManager.js';
 import type {
   CatalogSource,
@@ -76,11 +77,13 @@ export interface UploadOptions {
   /** WikiContext for the current request — audit IP fallback */
   wikiContext?: import('../context/WikiContext.js').default;
   /**
-   * Explicit private-store destination (#1396). Absent or false keeps the
-   * public attachments pool. Never inferred from a page.
+   * Private-store destination (#1396): the upload dialog's checkbox. Decides
+   * only when `pageName` is not a private page — an upload onto a private page
+   * is always private, in that page's author's store (#1398). Absent or false
+   * otherwise keeps the public attachments pool.
    */
   private?: boolean;
-  /** Store id when private; default from ConfigurationManager defaultstoreid */
+  /** Store id when private with no private page; default from ConfigurationManager defaultstoreid */
   store?: string;
 }
 
@@ -478,10 +481,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {Buffer} fileBuffer - File data
    * @param {FileInfo} fileInfo - { originalName, mimeType, size }
    * @param {UploadOptions} options - Upload options
-   * @param {string} options.pageName - Page to attach to (optional; does not choose storage)
+   * @param {string} options.pageName - Page uploaded onto (optional). A private page forces the upload private, into its author's store (#1398)
    * @param {string} options.description - File description
-   * @param {boolean} options.private - Explicit private-store destination (#1396)
-   * @param {string} options.store - Store id when private; else ConfigurationManager defaultstoreid
+   * @param {boolean} options.private - Private-store destination for an upload with no private page (#1396)
+   * @param {string} options.store - Store id when private with no private page; else ConfigurationManager defaultstoreid
    * @param ctx - Who is uploading (#1179): the request's subject, or a JobContext for an in-engine caller. Mandatory and positional.
    * @returns {Promise<AttachmentMetadata>} Attachment metadata
    */
@@ -503,13 +506,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       email: (ctx as { email?: string }).email || undefined
     };
 
-    // Destination is explicit: options.private === true → the caller's store.
-    // Absent/false stays the public attachments pool. Never inferred from a page.
+    // Destination (#1398): a new upload onto a private page is always private
+    // and belongs to that page's author — the author owns the page and every
+    // attachment uploaded onto it, whoever uploads. With no private page,
+    // options.private === true → the uploader's store; otherwise the public pool.
     const pageName = options.pageName;
     let isPrivatePage = false;
     let pageCreator: string | undefined;
     let pageStore: string | undefined;
-    if (options.private === true) {
+    const pageOwner = pageName
+      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName) ?? null
+      : null;
+    if (pageOwner || options.private === true) {
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
       if (!configManager) {
         throw new Error('AttachmentManager requires ConfigurationManager');
@@ -518,8 +526,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         configManager.getProperty(key, fallback)
       );
       isPrivatePage = true;
-      pageCreator = ctx.username;
-      pageStore = options.store ?? layout.defaultStoreId;
+      pageCreator = pageOwner ? pageOwner.creator : ctx.username;
+      pageStore = pageOwner ? pageOwner.store : (options.store ?? layout.defaultStoreId);
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(

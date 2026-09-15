@@ -16,7 +16,6 @@ import {
   rewrapPassword,
   unwrapDek,
   unwrapKekWithPassword,
-  type EncryptedStoreRecord,
   type UserKeyEnvelope
 } from './privateStoreCrypto.js';
 import { readStoreMeta } from './privateStoreMeta.js';
@@ -159,7 +158,7 @@ export async function unlockPrivateStoresWithPassword(args: {
     const meta = await readStoreMeta(args.pagesDirectory, args.username, ent.name);
     if (meta.encrypt !== true) continue;
     try {
-      setUnlockedDek(args.sessionId, ent.name, unwrapDek(kek, meta as EncryptedStoreRecord));
+      setUnlockedDek(args.sessionId, ent.name, unwrapDek(kek, meta));
     } catch {
       logger.warn('[private-store] encrypted store stayed locked after login');
     }
@@ -207,9 +206,14 @@ export async function assertCurrentSessionCanWriteStore(args: {
   layout?: PrivateStoreLayoutOverrides;
 }): Promise<void> {
   const meta = await readStoreMeta(args.pagesDirectory, args.creator, args.store, args.layout);
+  const sid = args.sessionId ?? currentPrivateStoreSessionId();
+  // DEKs in a bag are keyed by store id and belong to the bag's user. Another
+  // user's unlocked store with the same id (every user has a `default`) is not
+  // this one — an admin uploading onto someone's sealed page must be refused.
+  const ownBag = sid !== undefined && bags.get(sid)?.username === args.creator;
   assertEncryptedStoreWritable({
     encrypt: meta.encrypt,
-    dek: sessionDekForStore(args.store, args.sessionId)
+    dek: ownBag ? sessionDekForStore(args.store, sid) : undefined
   });
 }
 
