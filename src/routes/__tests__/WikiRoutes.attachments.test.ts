@@ -173,6 +173,51 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     });
 
+    test('#1398: body private=true is passed to uploadAttachment', async () => {
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        {},
+        { private: 'true', description: 'lab' },
+        { buffer: Buffer.from('x'), originalname: 'lab.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockResolvedValue({
+        identifier: 'id',
+        filename: 'lab.pdf',
+        url: '/attachments/id'
+      });
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockAttachmentManager.uploadAttachment).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.any(Object),
+        expect.objectContaining({ username: 'testuser' }),
+        expect.objectContaining({ private: true })
+      );
+    });
+
+    test('#1398: omitted private does not infer from pageName', async () => {
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        { page: 'Diary' },
+        { description: 'note' },
+        { buffer: Buffer.from('x'), originalname: 'note.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockResolvedValue({
+        identifier: 'id',
+        filename: 'note.pdf',
+        url: '/attachments/id'
+      });
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      const opts = mockAttachmentManager.uploadAttachment.mock.calls[0][3];
+      expect(opts.private).toBeUndefined();
+      expect(opts.pageName).toBe('Diary');
+    });
+
     test('should handle upload errors gracefully', async () => {
       // Setup - authenticated user with file but upload fails
       const mockReq = createMockReq(

@@ -5663,10 +5663,12 @@ ${panes}
       };
 
       // The subject goes to the door positionally (#1179); options carry the rest.
-      // pageName is for private-page storage detection only — not for linkage.
+      // `private` is an explicit body flag (#1398); never inferred from the page.
+      const wantsPrivate = req.body.private === 'true' || req.body.private === 'on' || req.body.private === true;
       const options = {
         pageName: pageName,
-        description: req.body.description || req.file.originalname
+        description: req.body.description || req.file.originalname,
+        ...(wantsPrivate ? { private: true as const } : {})
       };
 
       // Upload via AttachmentManager (handles permission checks)

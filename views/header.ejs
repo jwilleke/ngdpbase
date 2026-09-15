@@ -1866,6 +1866,12 @@ function showUploadAttachment(pageName) {
                             <label for="attachmentDescription" class="form-label">Description:</label>
                             <input type="text" class="form-control" id="attachmentDescription" placeholder="Brief description of the file">
                         </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="uploadPrivateCheck">
+                            <label class="form-check-label" for="uploadPrivateCheck">
+                                Private (store with this user, not the shared attachments pool)
+                            </label>
+                        </div>
                         ${pageName ? `
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="attachToPageCheck" checked>
@@ -1926,6 +1932,10 @@ async function uploadAttachmentFile(uploadUrl) {
     const attachCheck = document.getElementById('attachToPageCheck');
     if (attachCheck) {
         formData.append('attachToPage', attachCheck.checked ? 'true' : 'false');
+    }
+    const privateCheck = document.getElementById('uploadPrivateCheck');
+    if (privateCheck && privateCheck.checked) {
+        formData.append('private', 'true');
     }
 
     statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';
