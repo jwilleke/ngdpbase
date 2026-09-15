@@ -1,13 +1,11 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import {
-  DEFAULT_PRIVATE_STORE_LAYOUT,
   isPrivateStoreAttachmentsRel,
-  privatePageFilePath,
-  privateStoreLayoutFromConfig,
-  type PrivateStoreLayout
+  isUnderPrivateRoot,
+  parsePrivatePageRel,
+  privatePageFilePath
 } from '../utils/privateStorePath.js';
 import {
-  assertCurrentSessionCanWriteStore,
   currentPrivateStoreSessionId,
   getSessionUserIndex
 } from '../utils/privateStoreUnlock.js';
@@ -97,9 +95,6 @@ class FileSystemProvider extends BasePageProvider {
   /** Path to required pages directory */
   protected requiredPagesDirectory: string | null;
 
-  /** Private-store path segments from config (defaults match app-default-config.json) */
-  protected privateStoreLayout: PrivateStoreLayout;
-
   /** File encoding */
   protected encoding: BufferEncoding;
 
@@ -134,7 +129,6 @@ class FileSystemProvider extends BasePageProvider {
     super(engine);
     this.pagesDirectory = null;
     this.requiredPagesDirectory = null;
-    this.privateStoreLayout = DEFAULT_PRIVATE_STORE_LAYOUT;
     this.installationComplete = false; // Will be set during initialize()
     this.encoding = 'utf-8';
     this.pageCache = new Map();
@@ -217,14 +211,33 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
-   * Private-store folder names via getProperty only (not getResolvedDataPath).
-   * Join happens in helpers: resolved pages dir + privateroot + userid + storeid.
+   * A `.md` under the private root is a page only at a store layout the
+   * helpers recognise (`{privateroot}/{user}/{store}/{uuid}.md`, or the legacy
+   * `{privateroot}/{user}/{uuid}.md`, with valid names). Anything else there —
+   * a subfolder, a store folder that is not a valid store id — is skipped.
+   * It must never fall through to being indexed as a public page.
    */
-  protected applyPrivateStoreLayout(configManager: ConfigurationManager): void {
-    this.privateStoreLayout = privateStoreLayoutFromConfig((key, fallback) =>
-      configManager.getProperty(key, fallback)
-    );
+  /**
+   * The store a page file sits in, read from its path; `undefined` when the
+   * path is not a private store page.
+   */
+  protected privateStoreOf(filePath: string | undefined): string | undefined {
+    if (!filePath || !this.pagesDirectory) return undefined;
+    return parsePrivatePageRel(
+      path.relative(this.pagesDirectory, filePath).split(path.sep),
+      this.privateStoreLayout
+    )?.store;
   }
+
+  private isScannablePageFile(filePath: string): boolean {
+    if (!this.pagesDirectory) return true;
+    const rel = path.relative(this.pagesDirectory, filePath).split(path.sep);
+    if (!isUnderPrivateRoot(rel, this.privateStoreLayout)) return true;
+    if (parsePrivatePageRel(rel, this.privateStoreLayout)) return true;
+    logger.warn(`[FileSystemProvider] Skipping ${filePath}: under the private root but not at a store page path`);
+    return false;
+  }
+
 
   /**
    * Reads all .md files from the pages directory (and required-pages during installation)
@@ -255,7 +268,8 @@ class FileSystemProvider extends BasePageProvider {
       logger.info(`[FileSystemProvider] Install mode: including ${requiredFiles.length} files from required-pages`);
     }
 
-    const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'));
+    const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'))
+      .filter(f => this.isScannablePageFile(f));
 
     for (const filePath of mdFiles) {
       try {
@@ -629,20 +643,11 @@ class FileSystemProvider extends BasePageProvider {
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     if (!this.pagesDirectory || oldCreator === newCreator) return;
-    const fromPath = privatePageFilePath(
-      this.pagesDirectory,
-      oldCreator,
-      uuid,
-      this.privateStoreLayout.defaultStoreId,
-      this.privateStoreLayout
-    );
-    const toPath = privatePageFilePath(
-      this.pagesDirectory,
-      newCreator,
-      uuid,
-      this.privateStoreLayout.defaultStoreId,
-      this.privateStoreLayout
-    );
+    // The page keeps its store; only the owner folder changes.
+    const store = this.privateStoreOf(this.resolvePageInfo(uuid)?.filePath)
+      ?? this.privateStoreLayout.defaultStoreId;
+    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid, store, this.privateStoreLayout);
+    const toPath = privatePageFilePath(this.pagesDirectory, newCreator, uuid, store, this.privateStoreLayout);
     if (await fs.pathExists(fromPath)) {
       await fs.ensureDir(path.dirname(toPath));
       await fs.move(fromPath, toPath, { overwrite: true });
@@ -696,32 +701,29 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
-    const pageStore = (typeof md.store === 'string' && md.store)
-      || this.privateStoreLayout.defaultStoreId;
-    const sealed = isPrivate && pageCreator
+    const oldPageInfo = this.resolvePageInfo(pageName);
+    // One store rule for every page provider (BasePageProvider): the store the
+    // save names, else the store the page is in now, else the default. A save
+    // that names a different store for an existing page is refused.
+    const pageStore = isPrivate
+      ? this.resolvePrivatePageStore(md.store, this.privateStoreOf(oldPageInfo?.filePath))
+      : undefined;
+    const sealed = isPrivate && pageCreator && pageStore
       ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore, this.privateStoreLayout)).encrypt === true
       : false;
 
     // #1384: encrypt-on write uses the session DEK from the process bag.
-    // Not a PageManager field — both providers call this helper.
-    if (isPrivate && pageCreator) {
-      await assertCurrentSessionCanWriteStore({
-        pagesDirectory: this.pagesDirectory,
-        creator: pageCreator,
-        store: pageStore,
-        layout: this.privateStoreLayout
-      });
+    if (isPrivate && pageCreator && pageStore) {
+      await this.assertPrivateStoreWritable(this.pagesDirectory, pageCreator, pageStore);
     }
 
     const filePath = this.resolvePageFilePath(
       uuid,
       isPrivate ? 'private' : 'pages',
       pageCreator,
-      isPrivate ? pageStore : undefined
+      pageStore
     );
     await fs.ensureDir(path.dirname(filePath));
-
-    const oldPageInfo = this.resolvePageInfo(pageName);
 
     const now = (options?.preserveLastModified && metadata.lastModified)
       ? metadata.lastModified
@@ -751,8 +753,11 @@ class FileSystemProvider extends BasePageProvider {
     const existingCreated = oldPageInfo?.metadata?.created;
     const created = metadata.created ?? existingCreated ?? now;
 
+    // The store is placement, and the path records it. A copy in frontmatter
+    // could disagree with where the file is, so it is never written there.
+    const { store: _placement, ...frontmatter } = metadata as Partial<PageFrontmatter> & { store?: unknown };
     const updatedMetadata: Partial<PageFrontmatter> = {
-      ...metadata,
+      ...frontmatter,
       title: finalTitle, // Ensure title is set after spread
       uuid: uuid,
       lastModified: now,

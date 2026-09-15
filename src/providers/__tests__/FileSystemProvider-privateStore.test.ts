@@ -101,6 +101,26 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     expect(titles).not.toContain('Uploaded Notes');
   });
 
+  test('a page file under private/ that is not at a store page path is skipped, never listed as a page', async () => {
+    const storeDir = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    await fs.ensureDir(path.join(storeDir, 'notes'));
+    await fs.writeFile(
+      path.join(storeDir, 'notes', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd.md'),
+      '---\ntitle: Stray Note\nuuid: dddddddd-dddd-4ddd-8ddd-dddddddddddd\n---\nx'
+    );
+    const badStore = path.join(pagesDir, 'private', 'molly', 'Bad Store');
+    await fs.ensureDir(badStore);
+    await fs.writeFile(
+      path.join(badStore, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.md'),
+      '---\ntitle: Bad Store Page\nuuid: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee\n---\nx'
+    );
+
+    const provider = await newProvider();
+    const titles = await provider.getAllPages();
+    expect(titles).not.toContain('Stray Note');
+    expect(titles).not.toContain('Bad Store Page');
+  });
+
   test('config privateroot sealed writes under sealed/, not private/', async () => {
     const provider = await newProvider({
       'ngdpbase.page.provider.filesystem.privateroot': 'sealed'

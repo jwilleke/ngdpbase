@@ -209,4 +209,69 @@ describe('private store default/ (#1383)', () => {
     expect(await fs.pathExists(path.join(pagesDir, 'versions', 'sealed'))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'versions', 'private'))).toBe(false);
   });
+
+  describe('one store per save (#1383, Store placement on BasePageProvider)', () => {
+    const storeFile = (store: string) => path.join(pagesDir, 'private', 'molly', store, `${UUID}.md`);
+    const storeHistory = (store: string) => path.join(pagesDir, 'private', 'molly', store, 'versions', UUID);
+
+    test('a save naming a store puts the page and its history in that store, and history survives a restart', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+      await provider.savePage('Labs', 'v2', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+
+      expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
+      expect(await fs.pathExists(storeHistory('yourphr'))).toBe(true);
+      expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default'))).toBe(false);
+      expect((await readIndex()).pages[UUID].store).toBe('yourphr');
+
+      const restarted = await newProvider();
+      expect(await restarted.getVersionHistory('Labs')).toHaveLength(2);
+      expect((await readIndex()).pages[UUID].store).toBe('yourphr');
+    });
+
+    test('a later save that names no store keeps the page in its store', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+      await provider.savePage('Labs', 'v2', { uuid: UUID, private: true, author: 'molly' });
+      expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
+      expect(await fs.pathExists(storeFile('default'))).toBe(false);
+    });
+
+    test('the store is placement: it is not written into the page frontmatter', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Labs', 'body', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+      const raw = await fs.readFile(storeFile('yourphr'), 'utf8');
+      expect(raw).not.toMatch(/^store:/m);
+    });
+
+    test('a save naming a different store for an existing page is refused', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+      await expect(
+        provider.savePage('Labs', 'v2', { uuid: UUID, private: true, author: 'molly', store: 'default' })
+      ).rejects.toThrow(/moving between stores is not supported/);
+      expect(await fs.readFile(storeFile('yourphr'), 'utf8')).toContain('v1');
+    });
+
+    test('a store id that is not a plain slug is refused before anything is written', async () => {
+      const provider = await newProvider();
+      for (const bad of ['../../escape', 'Your PHR', 'a/b']) {
+        await expect(
+          provider.savePage('Labs', 'x', { uuid: UUID, private: true, author: 'molly', store: bad })
+        ).rejects.toThrow(/Invalid private store id/);
+      }
+      expect(await fs.pathExists(path.join(pagesDir, 'private'))).toBe(false);
+      expect(await fs.pathExists(path.join(testDir, 'escape'))).toBe(false);
+    });
+
+    test('making a named-store page public moves it out of its own store — no stale private copy', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' });
+      await provider.savePage('Labs', 'v2', { uuid: UUID, private: false, author: 'molly' });
+      expect(await fs.pathExists(storeFile('yourphr'))).toBe(false);
+      expect(await fs.pathExists(path.join(pagesDir, `${UUID}.md`))).toBe(true);
+      expect(await fs.pathExists(storeHistory('yourphr'))).toBe(false);
+      expect(await fs.pathExists(path.join(pagesDir, 'versions', UUID))).toBe(true);
+    });
+  });
 });

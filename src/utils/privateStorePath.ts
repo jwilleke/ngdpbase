@@ -104,8 +104,42 @@ export function privateStoreLayoutFromConfig(
   };
 }
 
+/** A store id is a plain slug — an addon slug or `default` — never a path (#1383). */
+const STORE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isValidStoreId(store: string): boolean {
+  return STORE_ID_PATTERN.test(store);
+}
+
+/** Refuse a store id that is not a plain slug. Every join below runs it. */
+export function assertStoreId(store: string): string {
+  if (!isValidStoreId(store)) {
+    throw new Error(`Invalid private store id ${JSON.stringify(store)}: must be a lowercase slug`);
+  }
+  return store;
+}
+
+/**
+ * A user folder or file name is exactly one path segment. Usernames have no
+ * enforced shape, so this refuses only what could leave the folder: empty,
+ * `.`, `..`, a separator, or NUL.
+ */
+export function isSafePathSegment(segment: string): boolean {
+  return segment.length > 0 && segment !== '.' && segment !== '..' && !/[/\\\0]/.test(segment);
+}
+
+export function assertPathSegment(segment: string, what: string): string {
+  if (!isSafePathSegment(segment)) {
+    throw new Error(`Invalid private store ${what} ${JSON.stringify(segment)}: must be one path segment`);
+  }
+  return segment;
+}
+
 function pageBasename(uuidOrBasename: string): string {
-  return uuidOrBasename.endsWith('.md') ? uuidOrBasename : `${uuidOrBasename}.md`;
+  return assertPathSegment(
+    uuidOrBasename.endsWith('.md') ? uuidOrBasename : `${uuidOrBasename}.md`,
+    'file name'
+  );
 }
 
 export function privatePageFilePath(
@@ -117,7 +151,13 @@ export function privatePageFilePath(
 ): string {
   const L = resolvePrivateStoreLayout(layout);
   const storeId = store ?? L.defaultStoreId;
-  return path.join(pagesDirectory, L.privateRoot, creator, storeId, pageBasename(uuidOrBasename));
+  return path.join(
+    pagesDirectory,
+    L.privateRoot,
+    assertPathSegment(creator, 'user'),
+    assertStoreId(storeId),
+    pageBasename(uuidOrBasename)
+  );
 }
 
 export function privateUserDir(
@@ -125,7 +165,11 @@ export function privateUserDir(
   username: string,
   layout?: PrivateStoreLayoutOverrides
 ): string {
-  return path.join(pagesDirectory, resolvePrivateStoreLayout(layout).privateRoot, username);
+  return path.join(
+    pagesDirectory,
+    resolvePrivateStoreLayout(layout).privateRoot,
+    assertPathSegment(username, 'user')
+  );
 }
 
 export function privateUserKeysPath(
@@ -184,7 +228,7 @@ export function privateStoreRoot(
   layout?: PrivateStoreLayoutOverrides
 ): string {
   const L = resolvePrivateStoreLayout(layout);
-  return path.join(pagesDirectory, L.privateRoot, creator, store ?? L.defaultStoreId);
+  return path.join(privateUserDir(pagesDirectory, creator, L), assertStoreId(store ?? L.defaultStoreId));
 }
 
 /**
@@ -209,7 +253,10 @@ export function privateStoreFilePath(
   store?: string,
   layout?: PrivateStoreLayoutOverrides
 ): string {
-  return path.join(privateStoreAttachmentsDir(pagesDirectory, creator, store, layout), fileName);
+  return path.join(
+    privateStoreAttachmentsDir(pagesDirectory, creator, store, layout),
+    assertPathSegment(fileName, 'file name')
+  );
 }
 
 /**
@@ -244,12 +291,9 @@ export function privateVersionDirectory(
 ): string {
   const L = resolvePrivateStoreLayout(layout);
   return path.join(
-    pagesDirectory,
-    L.privateRoot,
-    creator,
-    store ?? L.defaultStoreId,
+    privateStoreRoot(pagesDirectory, creator, store, L),
     L.versionsDir,
-    uuid
+    assertPathSegment(uuid, 'page id')
   );
 }
 
@@ -260,13 +304,7 @@ export function privateDeletedDirectory(
   layout?: PrivateStoreLayoutOverrides
 ): string {
   const L = resolvePrivateStoreLayout(layout);
-  return path.join(
-    pagesDirectory,
-    L.privateRoot,
-    creator,
-    store ?? L.defaultStoreId,
-    L.deletedDir
-  );
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.deletedDir);
 }
 
 /** Pre-#1383 live file: `{pages}/{privateroot}/{user}/{file}.md`. */
@@ -303,6 +341,10 @@ export function pathContainsPrivateRoot(
  * Relative path from the pages directory, split on the platform separator.
  * `{privateroot}/{user}/{store}/{file}.md` → store layout.
  * `{privateroot}/{user}/{file}.md` → legacy layout (pre-#1383).
+ *
+ * `null` for anything else, including a store folder whose name is not a valid
+ * store id. A caller that finds `null` for a path under the private root must
+ * skip the file, never treat it as a public page ({@link isUnderPrivateRoot}).
  */
 export function parsePrivatePageRel(
   relParts: string[],
@@ -312,11 +354,20 @@ export function parsePrivatePageRel(
   if (relParts[0] !== L.privateRoot) return null;
   const last = relParts[relParts.length - 1];
   if (!last || !last.toLowerCase().endsWith('.md')) return null;
+  if (!isSafePathSegment(relParts[1] ?? '')) return null;
   if (relParts.length === 4) {
-    return { creator: relParts[1], store: relParts[2] };
+    return isValidStoreId(relParts[2]) ? { creator: relParts[1], store: relParts[2] } : null;
   }
   if (relParts.length === 3) {
     return { creator: relParts[1], store: L.defaultStoreId };
   }
   return null;
+}
+
+/** True when a path relative to the pages directory is inside the private root. */
+export function isUnderPrivateRoot(
+  relParts: string[],
+  layout?: PrivateStoreLayoutOverrides
+): boolean {
+  return relParts[0] === resolvePrivateStoreLayout(layout).privateRoot;
 }

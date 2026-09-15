@@ -9,7 +9,11 @@ import {
   parsePrivatePageRel,
   privateDeletedDirectory,
   privatePageFilePath,
+  assertStoreId,
   isPrivateStoreAttachmentsRel,
+  isSafePathSegment,
+  isUnderPrivateRoot,
+  isValidStoreId,
   privateStoreAttachmentsDir,
   privateStoreFilePath,
   privateStoreLayoutFromConfig,
@@ -237,5 +241,48 @@ describe('privateStorePath (#1383)', () => {
     expect(privatePageFilePath(pages, 'jim', 'u.md', undefined, layout)).toBe(
       path.join(pages, 'sealed', 'jim', 'default', 'u.md')
     );
+  });
+});
+
+describe('store ids and path segments are validated inside every join (#1383)', () => {
+  const pages = path.join('/data', 'pages');
+
+  test('a store id is a plain lowercase slug', () => {
+    for (const ok of ['default', 'yourphr', 'my-store', 'store2']) {
+      expect(isValidStoreId(ok)).toBe(true);
+    }
+    for (const bad of ['', '..', '../x', 'a/b', 'Your', 'your phr', '-x', 'x-', 'a--b', 'a_b']) {
+      expect(isValidStoreId(bad)).toBe(false);
+      expect(() => assertStoreId(bad)).toThrow(/Invalid private store id/);
+    }
+  });
+
+  test('a user or file segment may be any single segment, never a way out', () => {
+    for (const ok of ['jim', 'jim.willeke', 'a@b.com', 'Molly']) {
+      expect(isSafePathSegment(ok)).toBe(true);
+    }
+    for (const bad of ['', '.', '..', 'a/b', 'a\\b', 'a\0b']) {
+      expect(isSafePathSegment(bad)).toBe(false);
+    }
+  });
+
+  test('every helper refuses a bad store, user or file name before joining', () => {
+    expect(() => privatePageFilePath(pages, 'molly', 'u.md', '../../etc')).toThrow(/store id/);
+    expect(() => privatePageFilePath(pages, '..', 'u.md')).toThrow(/user/);
+    expect(() => privatePageFilePath(pages, 'molly', '../u.md')).toThrow(/file name/);
+    expect(() => privateStoreRoot(pages, 'molly', 'A')).toThrow(/store id/);
+    expect(() => privateStoreFilePath(pages, 'molly', '../x.pdf')).toThrow(/file name/);
+    expect(() => privateVersionDirectory(pages, 'molly', '../u')).toThrow(/page id/);
+    expect(() => privateDeletedDirectory(pages, 'molly', 'x/y')).toThrow(/store id/);
+    expect(() => storeMetaPath(pages, '../molly')).toThrow(/user/);
+    expect(() => privateUserDir(pages, '')).toThrow(/user/);
+  });
+
+  test('parsePrivatePageRel rejects a store folder that is not a store id; isUnderPrivateRoot still sees it', () => {
+    const rel = ['private', 'molly', 'Not A Store', 'u.md'];
+    expect(parsePrivatePageRel(rel)).toBeNull();
+    expect(isUnderPrivateRoot(rel)).toBe(true);
+    expect(parsePrivatePageRel(['private', '..', 'default', 'u.md'])).toBeNull();
+    expect(isUnderPrivateRoot(['u.md'])).toBe(false);
   });
 });

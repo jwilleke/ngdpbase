@@ -3,6 +3,13 @@ import type { ProviderInfo } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import { VersionHistoryEntry, VersionContent, VersionDiff } from '../types/index.js';
 import BaseProvider from './BaseProvider.js';
+import {
+  DEFAULT_PRIVATE_STORE_LAYOUT,
+  assertStoreId,
+  privateStoreLayoutFromConfig,
+  type PrivateStoreLayout
+} from '../utils/privateStorePath.js';
+import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
 
 /**
  * WikiEngine interface (simplified)
@@ -49,6 +56,13 @@ abstract class BasePageProvider extends BaseProvider {
   protected initialized: boolean;
 
   /**
+   * Private-store folder names (#1382). ConfigurationManager is the only
+   * source; {@link applyPrivateStoreLayout} reads them in `initialize()`.
+   * Defaults match `config/app-default-config.json`.
+   */
+  protected privateStoreLayout: PrivateStoreLayout;
+
+  /**
    * Create a new page provider
    *
    * @constructor
@@ -62,6 +76,53 @@ abstract class BasePageProvider extends BaseProvider {
     }
     this.engine = engine;
     this.initialized = false;
+    this.privateStoreLayout = DEFAULT_PRIVATE_STORE_LAYOUT;
+  }
+
+  /**
+   * Read the private-store folder names from ConfigurationManager (via
+   * getProperty, not getResolvedDataPath — they are segments under the pages
+   * storagedir, joined by the helpers in `src/utils/privateStorePath.ts`).
+   */
+  protected applyPrivateStoreLayout(configManager: { getProperty(key: string, defaultValue: unknown): unknown }): void {
+    this.privateStoreLayout = privateStoreLayoutFromConfig((key, fallback) =>
+      configManager.getProperty(key, fallback)
+    );
+  }
+
+  /**
+   * Which store a private page is saved into — one rule for every page
+   * provider (docs/planning/private-stores.md, Store placement): the store the
+   * save names, else the store the page is already in, else the configured
+   * default. A store id is a plain slug.
+   *
+   * A save that names a different store for a page that already exists is
+   * refused: moving a page and its history between stores is not supported.
+   *
+   * @param requested - `metadata.store` from the save, if any
+   * @param existing - the store the page is in now, when it is an existing private page
+   */
+  protected resolvePrivatePageStore(requested: unknown, existing: string | undefined): string {
+    const named = typeof requested === 'string' && requested.length > 0 ? assertStoreId(requested) : undefined;
+    if (named !== undefined && existing !== undefined && named !== existing) {
+      throw new Error(
+        `Cannot save this page into private store '${named}': it is in store '${existing}', and moving between stores is not supported`
+      );
+    }
+    return named ?? existing ?? assertStoreId(this.privateStoreLayout.defaultStoreId);
+  }
+
+  /**
+   * Refuse a write into an encrypted store this session cannot write (#1394).
+   * The one check every page provider calls before writing private bytes.
+   */
+  protected async assertPrivateStoreWritable(pagesDirectory: string, creator: string, store: string): Promise<void> {
+    await assertCurrentSessionCanWriteStore({
+      pagesDirectory,
+      creator,
+      store,
+      layout: this.privateStoreLayout
+    });
   }
 
   /**
