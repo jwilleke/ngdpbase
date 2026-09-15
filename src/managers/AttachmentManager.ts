@@ -28,6 +28,7 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -517,6 +518,16 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const pageOwner = pageName
       ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName) ?? null
       : null;
+    // A private container is its owner's: nobody else writes into it unless the
+    // owner delegated (a share, once the store's Share switch exists — #1388).
+    // No role reaches in, admin included. Refused before any bytes are stored.
+    if (pageOwner && !mayActInPrivateContainer(ctx, pageOwner.creator)) {
+      throw new Error('Permission denied: you cannot upload to this page');
+    }
+    // A share visitor has no container of their own to put a private file in.
+    if (!pageOwner && options.private === true && ctx.viaShare) {
+      throw new Error('Permission denied: a shared link cannot store private files');
+    }
     if (pageOwner || options.private === true) {
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
       if (!configManager) {

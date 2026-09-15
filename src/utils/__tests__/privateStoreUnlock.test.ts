@@ -15,9 +15,12 @@ import {
 } from '../privateStoreCrypto';
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
 import {
+  assertCurrentSessionCanWriteStore,
   clearUnlockedPrivateStores,
   getUnlockedDek,
   getUnlockedKek,
+  setUnlockedDek,
+  unlockPrivateStores,
   unlockPrivateStoresWithPassword
 } from '../privateStoreUnlock';
 
@@ -54,9 +57,9 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
       pagesDirectory: pagesDir
     });
 
-    expect(Buffer.compare(getUnlockedKek('sid-1')!, created.kek)).toBe(0);
+    expect(Buffer.compare(getUnlockedKek('sid-1'), created.kek)).toBe(0);
     expect(
-      Buffer.compare(getUnlockedDek('sid-1', 'yourphr')!, unwrapDek(created.kek, store))
+      Buffer.compare(getUnlockedDek('sid-1', 'yourphr'), unwrapDek(created.kek, store))
     ).toBe(0);
     const json = JSON.stringify({ sessionId: 'sid-1', username: 'molly' });
     expect(json).not.toContain(created.kek.toString('base64'));
@@ -88,5 +91,36 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
       pagesDirectory: pagesDir
     });
     expect(getUnlockedKek('sid-1')).toBeUndefined();
+  });
+});
+
+describe('assertCurrentSessionCanWriteStore owner check (#1394, #1398)', () => {
+  let tmp: string;
+  let pagesDir: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'priv-owner-'));
+    pagesDir = path.join(tmp, 'pages');
+    clearUnlockedPrivateStores();
+    const alice = createUserKeys('pw-a', { kdf });
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'alice', 'default')));
+    await fs.writeJson(storeMetaPath(pagesDir, 'alice', 'default'), createEncryptedStore(alice.kek));
+  });
+
+  afterEach(async () => {
+    clearUnlockedPrivateStores();
+    await fs.remove(tmp);
+  });
+
+  test('another user\'s unlocked store of the same id does not unlock the owner\'s', async () => {
+    // The admin's own sealed `default` is unlocked in the admin's session.
+    const adminKeys = createUserKeys('pw-b', { kdf });
+    const adminStore = createEncryptedStore(adminKeys.kek);
+    unlockPrivateStores('admin-sid', 'admin', adminKeys.kek);
+    setUnlockedDek('admin-sid', 'default', unwrapDek(adminKeys.kek, adminStore));
+
+    await expect(assertCurrentSessionCanWriteStore({
+      pagesDirectory: pagesDir, creator: 'alice', store: 'default', sessionId: 'admin-sid'
+    })).rejects.toThrow(/locked|DEK/i);
   });
 });

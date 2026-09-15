@@ -36,6 +36,17 @@ This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in
 - Named stores use the __addon slug__ (`yourphr` → `private/{user}/yourphr/`). `default` is core, not an addon.
 - Nothing except store directories and the user-level catalogs lives directly in `private/{user}/`.
 
+## Access
+
+Decided 2026-09-15. `pages/private/{user}/` and every store below it is a __security container owned by that user__. Nobody else has access to anything in it — pages, titles, files, history, trash — __unless the user delegates permissions__. This holds whether or not the store is encrypted.
+
+- __No admin bypass.__ The admin wiki role gets no read, list, search, edit, or upload access to another user's private folder. This supersedes the admin read in [plan-private-folder.md](./plan-private-folder.md) (1.5, 1.12).
+- Encryption is extra protection on top, not the access rule. An unencrypted store is exactly as closed to other users as an encrypted one.
+- Operator filesystem access (instance backups, disk) is outside the wiki and is not a delegation. Only encryption protects against it.
+- The user does not grant access; the user __delegates permissions__. A delegate acts with a subset of the owner's own permissions on the container, and only while the owner still holds them — the existing token-share model (the issuer must still hold the action). Nothing is delegated by role.
+- A delegate only reaches a store whose Share switch is on ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). Until that switch exists every store is Share Off, so only the owner acts in it. An encrypted store also needs its DEK, which a delegate carries only once a share can wrap one.
+- One check for this: `mayActInPrivateContainer` (`src/utils/privateStoreAccess.ts`). Uploads onto a private page use it today; page reads, lists and search still carry an admin bypass to be removed.
+
 ## Per-store switches
 
 | Switch | Meaning |
@@ -62,7 +73,7 @@ Unencrypted `default/` stays in global `page-index.json` as today.
 
 Twelve-word recovery is the user's property: copy, download, print, paste into email (including to a lawyer). Warn __at least once__ whenever the words are shown; __do not obstruct__. The app never emails the words itself. Never log password, words, DEK, or KEK.
 
-Admin wiki role does __not__ unwrap a sealed store. Lost password __and__ lost words → backup __restores__ the files and they stay __unreadable__.
+Admin wiki role does __not__ unwrap a sealed store (and has no access to an unsealed one either — see Access). Lost password __and__ lost words → backup __restores__ the files and they stay __unreadable__.
 
 ### Not on PageManager
 
@@ -100,11 +111,11 @@ Decided 2026-09-15 ([#1398](https://github.com/jwilleke/ngdpbase/issues/1398)). 
 
 | Case | Result |
 |---|---|
-| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. Lands in the __page author's__ store, the page's own store, whoever uploads it. |
+| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. Lands in the __page author's__ store, the page's own store. Only the owner, or a delegate of the owner, can upload onto it. |
 | Existing non-private asset attached or linked to a private page | Stays public. Linking never moves or re-flags an existing attachment. |
 | Upload with no page, or onto a public page | The upload dialog's Private checkbox decides. Ticked: the uploader's store. Unticked: public attachments pool. |
 
-__The author owns the page and every attachment uploaded onto it__ (decided 2026-09-15). An admin or editor uploading onto someone's private page adds to that author's store, never their own. A page-less private upload belongs to the uploader. Owner is the page-index `creator` (the page's `author`), not the last editor.
+__The author owns the page and every attachment uploaded onto it__ (decided 2026-09-15). A delegate who uploads onto the owner's private page adds to the owner's store, never their own; anyone else is refused (see Access). A page-less private upload belongs to the uploader. Owner is the page-index `creator` (the page's `author`), not the last editor.
 
 ## Backups
 

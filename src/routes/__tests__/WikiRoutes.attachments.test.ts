@@ -197,7 +197,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       );
     });
 
-    test('#1398: omitted private does not infer from pageName', async () => {
+    test('#1398: the route passes the checkbox as-is; AttachmentManager decides a private page', async () => {
       const mockReq = createMockReq(
         { username: 'testuser', isAuthenticated: true },
         { page: 'Diary' },
@@ -238,6 +238,27 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
         error: 'Upload failed'
+      });
+    });
+
+    test('a refusal at the door (another user\'s private page) is a 403, not a 500', async () => {
+      const mockReq = createMockReq(
+        { username: 'bob', isAuthenticated: true },
+        { page: 'AlicesDiary' },
+        {},
+        { buffer: Buffer.from('x'), originalname: 'x.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockRejectedValue(
+        new Error('Permission denied: you cannot upload to this page')
+      );
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Permission denied: you cannot upload to this page'
       });
     });
   });

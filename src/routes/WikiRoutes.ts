@@ -5713,9 +5713,11 @@ ${panes}
       });
     } catch (err: unknown) {
       logger.error('Error uploading attachment:', err);
-      return res.status(500).json({
+      const message = getErrorMessage(err) || 'Error uploading file';
+      // A refusal from the door (permission, private container) is a 403, not a failure.
+      return res.status(message.startsWith('Permission denied') ? 403 : 500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error uploading file'
+        error: message
       });
     }
   }
