@@ -27,6 +27,7 @@ import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.
 import { UserCreateError } from '../utils/userCreateError.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -1236,13 +1237,33 @@ class UserManager extends BaseManager {
       throw new Error('User not found');
     }
 
+    const currentPasswordPlain =
+      typeof updates.currentPassword === 'string' ? updates.currentPassword : undefined;
+    delete updates.currentPassword;
+
     if (updates.password) {
       // Use the incoming isExternal value if being changed in the same request
       const willBeExternal = updates.isExternal !== undefined ? updates.isExternal : user.isExternal;
       if (willBeExternal) {
         throw new Error('Cannot set a password for an external OAuth user. Change the account type to Local first.');
       }
-      updates.password = this.hashPassword(updates.password);
+      const newPasswordPlain = updates.password;
+      if (currentPasswordPlain) {
+        const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+        const pagesDirectory = configManager?.getResolvedDataPath?.(
+          'ngdpbase.page.provider.filesystem.storagedir',
+          './data/pages'
+        );
+        if (pagesDirectory) {
+          await rewrapUserKeysOnPasswordChange({
+            pagesDirectory,
+            username,
+            oldPassword: currentPasswordPlain,
+            newPassword: newPasswordPlain
+          });
+        }
+      }
+      updates.password = this.hashPassword(newPasswordPlain);
     }
 
     // #617 iteration 3b: the `roles` field on User is deprecated; role

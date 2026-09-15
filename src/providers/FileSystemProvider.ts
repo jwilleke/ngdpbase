@@ -1,4 +1,12 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
+import { DEFAULT_PRIVATE_STORE, privatePageFilePath } from '../utils/privateStorePath.js';
+import {
+  assertCurrentSessionCanWriteStore,
+  currentPrivateStoreSessionId,
+  getSessionUserIndex
+} from '../utils/privateStoreUnlock.js';
+import { readStoreMeta, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
@@ -19,6 +27,8 @@ interface PageCacheInfo {
   uuid: string;
   filePath: string;
   metadata: PageFrontmatter;
+  /** Overlay from the session user-index; never write into process caches. #1385 */
+  fromSessionCatalog?: boolean;
 }
 
 /**
@@ -184,6 +194,8 @@ class FileSystemProvider extends BasePageProvider {
       logger.info(`[FileSystemProvider] Required-pages directory (install mode): ${this.requiredPagesDirectory}`);
     }
 
+    await migrateLegacyPrivatePages(this.pagesDirectory);
+
     // Load all pages into cache
     await this.refreshPageList();
 
@@ -303,6 +315,8 @@ class FileSystemProvider extends BasePageProvider {
           // a tombstoned file left in place would silently resurrect itself on
           // the next restart, index flag or not.
           if (entry.name === 'deleted') continue;
+          // #1385: sealed store trees stay out of the process cache and global index.
+          if (await storeDirectoryIsEncrypted(full)) continue;
           out.push(...(await this.walkDir(full)));
         } else if (entry.isFile()) {
           out.push(full);
@@ -361,7 +375,42 @@ class FileSystemProvider extends BasePageProvider {
       }
     }
 
-    return null; // Not found
+    return this.resolveSessionCatalogPage(identifier);
+  }
+
+  /**
+   * Unlocked sealed-store titles live in the session bag, not pageCache. #1385
+   */
+  private resolveSessionCatalogPage(identifier: string): PageCacheInfo | null {
+    const sid = currentPrivateStoreSessionId();
+    if (!sid || !this.pagesDirectory) return null;
+    const catalog = getSessionUserIndex(sid);
+    if (!catalog) return null;
+    const idLower = identifier.toLowerCase();
+    const page = catalog.pages[identifier]
+      ?? Object.values(catalog.pages).find((p) =>
+        p.uuid === identifier
+        || p.title.toLowerCase() === idLower
+        || (p.slug != null && p.slug.toLowerCase() === idLower)
+      );
+    if (!page) return null;
+    return {
+      title: page.title,
+      uuid: page.uuid,
+      filePath: privatePageFilePath(
+        this.pagesDirectory,
+        page.creator,
+        page.filename ?? page.uuid,
+        page.store
+      ),
+      metadata: {
+        title: page.title,
+        uuid: page.uuid,
+        private: true,
+        author: page.creator
+      } as PageFrontmatter,
+      fromSessionCatalog: true
+    };
   }
 
   /**
@@ -392,11 +441,13 @@ class FileSystemProvider extends BasePageProvider {
       const fullContent = await fs.readFile(info.filePath, this.encoding);
       const { content, data: metadata } = parsePageFrontmatter(fullContent);
 
-      // Update caches for future requests — store full metadata so subsequent
-      // getPage() calls (e.g. AJAX metadata requests) return complete frontmatter
-      // instead of the stub { title, uuid } populated during fast-init.
-      this.contentCache.set(info.title, content);
-      this.pageCache.set(info.title, { ...info, metadata: metadata as PageFrontmatter });
+      if (!info.fromSessionCatalog) {
+        // Update caches for future requests — store full metadata so subsequent
+        // getPage() calls (e.g. AJAX metadata requests) return complete frontmatter
+        // instead of the stub { title, uuid } populated during fast-init.
+        this.contentCache.set(info.title, content);
+        this.pageCache.set(info.title, { ...info, metadata: metadata as PageFrontmatter });
+      }
 
       return {
         content,
@@ -470,8 +521,9 @@ class FileSystemProvider extends BasePageProvider {
       const fullContent = await fs.readFile(info.filePath, this.encoding);
       const { content } = matter(fullContent);
 
-      // Update cache
-      this.contentCache.set(info.title, content);
+      if (!info.fromSessionCatalog) {
+        this.contentCache.set(info.title, content);
+      }
 
       logger.info(`[FileSystemProvider] Loaded ${info.title} from ${path.basename(info.filePath)} (${content.length} bytes)`);
       return content;
@@ -499,17 +551,18 @@ class FileSystemProvider extends BasePageProvider {
 
   /**
    * Resolve the on-disk file path for a page given its uuid, location, and optional creator.
-   * Private pages are stored at: {pagesDirectory}/private/{creator}/{uuid}.md
+   * Private pages are stored at: {pagesDirectory}/private/{creator}/{store}/{uuid}.md
    * All other pages are stored at: {pagesDirectory}/{uuid}.md
    *
    * @param {string} uuid - Page UUID
    * @param {string} location - Storage location ('pages', 'required-pages', or 'private')
    * @param {string} [creator] - Username of the page creator (required when location === 'private')
+   * @param {string} [store] - Private store id; defaults to `default` (#1383)
    * @returns {string} Absolute path to the page file
    */
-  private resolvePageFilePath(uuid: string, location: string, creator?: string): string {
+  private resolvePageFilePath(uuid: string, location: string, creator?: string, store?: string): string {
     if (location === 'private' && creator && this.pagesDirectory) {
-      return path.join(this.pagesDirectory, 'private', creator, `${uuid}.md`);
+      return privatePageFilePath(this.pagesDirectory, creator, uuid, store ?? DEFAULT_PRIVATE_STORE);
     }
     return path.join(this.pagesDirectory || '', `${uuid}.md`);
   }
@@ -540,8 +593,8 @@ class FileSystemProvider extends BasePageProvider {
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     if (!this.pagesDirectory || oldCreator === newCreator) return;
-    const fromPath = path.join(this.pagesDirectory, 'private', oldCreator, `${uuid}.md`);
-    const toPath   = path.join(this.pagesDirectory, 'private', newCreator, `${uuid}.md`);
+    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid);
+    const toPath   = privatePageFilePath(this.pagesDirectory, newCreator, uuid);
     if (await fs.pathExists(fromPath)) {
       await fs.ensureDir(path.dirname(toPath));
       await fs.move(fromPath, toPath, { overwrite: true });
@@ -587,7 +640,7 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error(`Cannot save page with system-category '${systemCategory}' - pages with storageLocation 'github' are not stored in the wiki (docs/ folder only)`);
     }
 
-    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{uuid}.md
+    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{store}/{uuid}.md
     //
     // #802 Slice 4: `private:true` is the sole routing signal. The legacy
     // `system-location:'private'` storage hint was retired after the second
@@ -595,6 +648,21 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
+    const pageStore = DEFAULT_PRIVATE_STORE;
+    const sealed = isPrivate && pageCreator
+      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore)).encrypt === true
+      : false;
+
+    // #1384: encrypt-on write uses the session DEK from the process bag.
+    // Not a PageManager field — both providers call this helper.
+    if (isPrivate && pageCreator) {
+      await assertCurrentSessionCanWriteStore({
+        pagesDirectory: this.pagesDirectory,
+        creator: pageCreator,
+        store: pageStore
+      });
+    }
+
     const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
     await fs.ensureDir(path.dirname(filePath));
 
@@ -641,6 +709,12 @@ class FileSystemProvider extends BasePageProvider {
     // so a kill mid-write left the page neither old nor new. Containers are
     // killed on deploy, OOM and eviction, so this is routine rather than rare.
     await writeFileAtomic(filePath, fileContent, this.encoding);
+
+    // #1385: sealed titles stay in the session overlay, not the process cache.
+    if (sealed) {
+      logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to sealed store (not cached).`);
+      return;
+    }
 
     // Handle title change: remove old cache entries
     const titleChanged = oldPageInfo && oldPageInfo.title !== finalTitle;

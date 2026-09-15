@@ -26,6 +26,8 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
+import { DEFAULT_PRIVATE_STORE } from '../utils/privateStorePath.js';
+import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -500,18 +502,40 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const pageName = options.pageName;
     let isPrivatePage = false;
     let pageCreator: string | undefined;
+    let pageStore: string | undefined;
     if (pageName) {
       try {
         const pageManager = this.engine.getManager<PageManager>('PageManager');
         const page = pageManager ? await pageManager.getPage(pageName) : null;
         // page metadata is dynamic
-        const indexEntry = page?.metadata?.['index-entry'] as { location?: string; creator?: string } | undefined;
+        const indexEntry = page?.metadata?.['index-entry'] as {
+          location?: string;
+          creator?: string;
+          store?: string;
+        } | undefined;
         if (indexEntry?.location === 'private') {
           isPrivatePage = true;
           pageCreator = indexEntry.creator;
+          pageStore = indexEntry.store;
         }
       } catch (err) {
         logger.warn(`📎 Could not resolve page privacy for "${pageName}": ${String(err)}`);
+      }
+    }
+
+    // #1394: sealed-store writes need the session DEK. Not a PageManager field.
+    if (isPrivatePage && pageCreator) {
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const pagesDirectory = configManager?.getResolvedDataPath?.(
+        'ngdpbase.page.provider.filesystem.storagedir',
+        './data/pages'
+      );
+      if (pagesDirectory) {
+        await assertCurrentSessionCanWriteStore({
+          pagesDirectory,
+          creator: pageCreator,
+          store: pageStore ?? DEFAULT_PRIVATE_STORE
+        });
       }
     }
 

@@ -44,6 +44,7 @@ import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
 import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
+import { runWithPrivateStoreSession } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -636,6 +637,19 @@ void (async (): Promise<void> => {
       maxAge: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000)
     }
   }));
+
+  // #1384: bind this request's session id so every provider/manager in the
+  // process reads the same unlock bag. Keys are not on PageManager.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const sid = req.sessionID;
+    if (!sid) {
+      next();
+      return;
+    }
+    runWithPrivateStoreSession(sid, () => {
+      next();
+    });
+  });
 
   // #776/#777 follow-up: capture req.ip into the session on first write so the
   // admin Session Manager can display it. Only writes when the session exists

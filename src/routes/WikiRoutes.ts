@@ -87,6 +87,10 @@ import {
 } from '../utils/buildSitemap.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
+import {
+  lockPrivateStores,
+  unlockPrivateStoresWithPassword
+} from '../utils/privateStoreUnlock.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -6833,6 +6837,33 @@ ${panes}
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
 
+      // #1391: KEK/DEK live in the process bag keyed by session id — never in
+      // express-session JSON, never on PageManager.
+      const sessionId =
+        (typeof req.session?.id === 'string' && req.session.id) ||
+        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
+      if (sessionId && typeof password === 'string' && password) {
+        try {
+          const pagesDirectory =
+            typeof configManager.getResolvedDataPath === 'function'
+              ? configManager.getResolvedDataPath(
+                'ngdpbase.page.provider.filesystem.storagedir',
+                './data/pages'
+              )
+              : undefined;
+          if (pagesDirectory) {
+            await unlockPrivateStoresWithPassword({
+              sessionId,
+              username: result.username || username,
+              password,
+              pagesDirectory
+            });
+          }
+        } catch {
+          logger.warn('[private-store] could not unlock stores after login');
+        }
+      }
+
       logger.info(`👤 User logged in: ${result.username || username}`);
 
       if (debugLogin) {
@@ -7148,7 +7179,13 @@ ${panes}
    */
   processLogout(req: Request, res: Response) {
     try {
-      // Destroy express-session
+      // #1392: drop KEK/DEK before express-session JSON is gone — never store
+      // keys on the session object.
+      const sessionId =
+        (typeof req.session?.id === 'string' && req.session.id) ||
+        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
+      if (sessionId) lockPrivateStores(sessionId);
+
       req.session.destroy((err) => {
         if (err) {
           logger.error('Error destroying session:', err);
@@ -8271,7 +8308,13 @@ ${panes}
         newPassword,
         confirmPassword
       } = req.body;
-      const updates: { displayName?: string; email?: string; password?: string; profilePage?: string } = {};
+      const updates: {
+        displayName?: string;
+        email?: string;
+        password?: string;
+        profilePage?: string;
+        currentPassword?: string;
+      } = {};
 
       // #1029: a shared account whose credentials are published must not let
       // its holder edit its identity — doing so hands the account away.
@@ -8336,6 +8379,7 @@ ${panes}
         }
 
         updates.password = newPassword;
+        updates.currentPassword = currentPassword;
       } else if (newPassword && currentUser.isExternal) {
         return res.redirect(
           '/profile?error=Cannot change password for OAuth accounts'

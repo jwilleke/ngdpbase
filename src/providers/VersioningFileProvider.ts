@@ -23,6 +23,18 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { DEFAULT_PRIVATE_STORE, parsePrivatePageRel, privatePageFilePath, privateVersionDirectory } from '../utils/privateStorePath.js';
+import {
+  assertCurrentSessionCanWriteStore,
+  currentPrivateStoreSessionId,
+  getSessionUserIndex,
+  getUnlockedKek,
+  putSessionUserIndexPage,
+  replaceSessionUserCatalog
+} from '../utils/privateStoreUnlock.js';
+import { upsertUserIndexPage, upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
+import { readStoreMeta } from '../utils/privateStoreMeta.js';
+import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
 
 /**
  * Page index entry structure
@@ -39,6 +51,8 @@ interface PageIndexEntry {
   location: 'pages' | 'required-pages' | 'private';
   /** Username that created the page; required when location === 'private' */
   creator?: string;
+  /** Private store id (`default` for ordinary private pages). #1383 */
+  store?: string;
   lastModified: string;
   /**
    * Creation timestamp (ISO 8601). Mirrors `PageFrontmatter.created` for fast
@@ -282,6 +296,11 @@ class VersioningFileProvider extends FileSystemProvider {
     // Load versioning configuration FIRST (to get page index path)
     await this.loadVersioningConfig(configManager);
 
+    this.bindPageDirectories(configManager);
+    if (this.pagesDirectory) {
+      await migrateLegacyPrivatePages(this.pagesDirectory);
+    }
+
     // Check if we can use fast index-based initialization
     const canUseFastInit = await this.canUseFastInitialization();
 
@@ -302,6 +321,10 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // Create version directories
     await this.createVersionDirectories();
+
+    if (this.pagesDirectory) {
+      await migrateLegacyPrivateVersionBlobs(this.pagesDirectory);
+    }
 
     // Load or create page index (if not already loaded via fast init)
     if (!this.pageIndex) {
@@ -368,13 +391,10 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
-   * Initialize from page index (fast path - avoids directory scanning)
-   * Populates caches directly from index entries by reading page files
+   * Pages and required-pages directories from config. Called before migrate
+   * and before either init path (#1383).
    */
-  private async initializeFromIndex(configManager: ConfigurationManager): Promise<void> {
-    const startTime = Date.now();
-
-    // Set up directories (same as parent, but without calling refreshPageList)
+  private bindPageDirectories(configManager: ConfigurationManager): void {
     this.pagesDirectory = configManager.getResolvedDataPath(
       'ngdpbase.page.provider.filesystem.storagedir',
       './data/pages'
@@ -387,6 +407,16 @@ class VersioningFileProvider extends FileSystemProvider {
     this.requiredPagesDirectory = path.isAbsolute(reqCfgPath)
       ? reqCfgPath
       : path.join(process.cwd(), reqCfgPath);
+  }
+
+  /**
+   * Initialize from page index (fast path - avoids directory scanning)
+   * Populates caches directly from index entries by reading page files
+   */
+  private async initializeFromIndex(configManager: ConfigurationManager): Promise<void> {
+    const startTime = Date.now();
+
+    this.bindPageDirectories(configManager);
 
     this.encoding = configManager.getProperty(
       'ngdpbase.page.provider.filesystem.encoding',
@@ -408,6 +438,9 @@ class VersioningFileProvider extends FileSystemProvider {
     this.installationComplete = await fs.pathExists(installCompleteFile);
 
     // Ensure directories exist
+    if (!this.pagesDirectory) {
+      throw new Error('FileSystemProvider not initialized - directories not set');
+    }
     await fs.ensureDir(this.pagesDirectory);
 
     // Use already-cached index from canUseFastInitialization (avoid double file read)
@@ -458,10 +491,25 @@ class VersioningFileProvider extends FileSystemProvider {
         continue;
       }
 
-      // Private pages are stored under pagesDirectory/private/{creator}/
+      // Private pages live under pagesDirectory/private/{creator}/{store}/ (#1383)
       let filePath: string;
       if (entry.location === 'private' && entry.creator) {
-        filePath = path.join(baseDir, 'private', entry.creator, basename);
+        const meta = await readStoreMeta(
+          baseDir,
+          entry.creator,
+          entry.store ?? DEFAULT_PRIVATE_STORE
+        );
+        if (meta.encrypt) {
+          staleUuids.push(entry.uuid);
+          skippedCount++;
+          continue;
+        }
+        filePath = privatePageFilePath(
+          baseDir,
+          entry.creator,
+          basename,
+          entry.store ?? DEFAULT_PRIVATE_STORE
+        );
       } else {
         filePath = path.join(baseDir, basename);
       }
@@ -1129,9 +1177,12 @@ class VersioningFileProvider extends FileSystemProvider {
       const parts = path.relative(pagesDirectory, info.filePath).split(path.sep);
       let location: 'pages' | 'required-pages' | 'private' = 'pages';
       let creator: string | undefined;
-      if (parts[0] === 'private' && parts.length === 3) {
+      let store: string | undefined;
+      const privateRel = parsePrivatePageRel(parts);
+      if (privateRel) {
         location = 'private';
-        creator = parts[1];
+        creator = privateRel.creator;
+        store = privateRel.store;
       } else if (parts[0] === '..') {
         location = 'required-pages'; // install mode: the scan also reads the source folder
       }
@@ -1161,6 +1212,7 @@ class VersioningFileProvider extends FileSystemProvider {
         currentVersion,
         location,
         creator: location === 'private' ? creator : prev?.creator,
+        store: location === 'private' ? (store ?? DEFAULT_PRIVATE_STORE) : prev?.store,
         lastModified: text(md.lastModified) ?? prev?.lastModified ?? new Date().toISOString(),
         created: text(md.created) ?? prev?.created,
         editor: text(md.editor) ?? prev?.editor ?? text(md.author) ?? 'unknown',
@@ -1182,10 +1234,24 @@ class VersioningFileProvider extends FileSystemProvider {
     let keptUnscanned = 0;
     for (const [uuid, prev] of Object.entries(previous)) {
       if (next[uuid]) continue;
+      if (prev.location === 'private' && prev.creator) {
+        const meta = await readStoreMeta(
+          pagesDirectory,
+          prev.creator,
+          prev.store ?? DEFAULT_PRIVATE_STORE
+        );
+        if (meta.encrypt) {
+          removed.push(prev.title);
+          continue;
+        }
+      }
       const basename = prev.filename ?? `${uuid}.md`;
       const candidates = [
         path.join(pagesDirectory, basename),
-        ...(prev.creator ? [path.join(pagesDirectory, 'private', prev.creator, basename)] : []),
+        ...(prev.creator ? [
+          path.join(pagesDirectory, 'private', prev.creator, basename),
+          privatePageFilePath(pagesDirectory, prev.creator, basename, prev.store ?? DEFAULT_PRIVATE_STORE)
+        ] : []),
         ...(this.requiredPagesDirectory ? [path.join(this.requiredPagesDirectory, basename)] : [])
       ];
       let onDisk = false;
@@ -1272,12 +1338,13 @@ class VersioningFileProvider extends FileSystemProvider {
         const requiredPath = path.join(this.requiredPagesDirectory, `${uuid}.md`);
         const author = ((pageData).metadata as Record<string, unknown> | undefined)?.['author'] as string | undefined;
         const privatePath = author
-          ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`)
+          ? privatePageFilePath(this.pagesDirectory, author, `${uuid}.md`)
           : null;
 
         let location: 'pages' | 'required-pages' | 'private' = 'pages';
         let pagePath = pagesPath;
         let creator: string | undefined;
+        let store: string | undefined;
 
         if (await fs.pathExists(requiredPath)) {
           location = 'required-pages';
@@ -1286,12 +1353,13 @@ class VersioningFileProvider extends FileSystemProvider {
           location = 'private';
           pagePath = privatePath;
           creator = author;
+          store = DEFAULT_PRIVATE_STORE;
         }
 
         // Now check if THIS LOCATION's version tree has a manifest. Pages
         // whose manifest lives in the correct tree are indexed without
         // re-creating v1.
-        const versionDir = this.getVersionDirectory(uuid, location);
+        const versionDir = this.getVersionDirectory(uuid, location, creator, store);
         const manifestPath = path.join(versionDir, 'manifest.json');
 
         if (await fs.pathExists(manifestPath)) {
@@ -1323,7 +1391,9 @@ class VersioningFileProvider extends FileSystemProvider {
               pagePath = requiredPath;
             } else if (actualFilePath.includes(`${path.sep}private${path.sep}`)) {
               location = 'private';
-              creator = author;
+              const parsed = parsePrivatePageRel(path.relative(this.pagesDirectory, actualFilePath).split(path.sep));
+              creator = parsed?.creator ?? author;
+              store = parsed?.store ?? DEFAULT_PRIVATE_STORE;
               pagePath = actualFilePath; // already correctly placed; don't rename
             } else {
               location = 'pages';
@@ -1374,7 +1444,8 @@ class VersioningFileProvider extends FileSystemProvider {
           hasVersions: true,
           slug:     slugFromMeta,
           filename,
-          ...(creator ? { creator } : {})
+          ...(creator ? { creator } : {}),
+          ...(location === 'private' ? { store: DEFAULT_PRIVATE_STORE } : {})
         });
 
         migratedCount++;
@@ -1417,22 +1488,23 @@ class VersioningFileProvider extends FileSystemProvider {
 
     let location: 'pages' | 'required-pages' | 'private';
     let creator: string | undefined;
+    let store: string | undefined;
 
     if (filePathFromCache.startsWith(this.requiredPagesDirectory + path.sep)) {
       location = 'required-pages';
-    } else if (filePathFromCache.includes(`${path.sep}private${path.sep}`)) {
+    } else if (this.pagesDirectory && filePathFromCache.includes(`${path.sep}private${path.sep}`)) {
       location = 'private';
-      const segments = filePathFromCache.split(path.sep);
-      const privateIdx = segments.lastIndexOf('private');
-      if (privateIdx >= 0 && privateIdx + 1 < segments.length - 1) {
-        creator = segments[privateIdx + 1];
-      }
+      const parsed = parsePrivatePageRel(path.relative(this.pagesDirectory, filePathFromCache).split(path.sep));
+      creator = parsed?.creator;
+      store = parsed?.store;
     } else if (filePathFromCache.startsWith(this.pagesDirectory + path.sep)) {
       location = 'pages';
     } else {
       // Probe candidate locations on disk as a fallback.
       const requiredProbe = path.join(this.requiredPagesDirectory, `${uuid}.md`);
-      const privateProbe = author ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`) : null;
+      const privateProbe = author && this.pagesDirectory
+        ? privatePageFilePath(this.pagesDirectory, author, `${uuid}.md`)
+        : null;
       if (await fs.pathExists(requiredProbe)) {
         location = 'required-pages';
       } else if (privateProbe && await fs.pathExists(privateProbe)) {
@@ -1459,7 +1531,8 @@ class VersioningFileProvider extends FileSystemProvider {
       hasVersions: true,
       slug:     slugFromMeta,
       filename,
-      ...(creator ? { creator } : {})
+      ...(creator ? { creator } : {}),
+      ...(location === 'private' ? { store: store ?? DEFAULT_PRIVATE_STORE } : {})
     });
   }
 
@@ -1491,6 +1564,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
         let location: 'pages' | 'required-pages' | 'private';
         let creator: string | undefined;
+        let store: string | undefined;
         const md = (info.metadata ?? {}) as PageFrontmatter & Record<string, unknown>;
         const filePathFromCache = info.filePath ?? '';
 
@@ -1504,24 +1578,23 @@ class VersioningFileProvider extends FileSystemProvider {
           location = 'required-pages';
         } else if (filePathFromCache.includes(`${path.sep}private${path.sep}`)) {
           location = 'private';
-          const segments = filePathFromCache.split(path.sep);
-          const privateIdx = segments.lastIndexOf('private');
-          if (privateIdx >= 0 && privateIdx + 1 < segments.length - 1) {
-            creator = segments[privateIdx + 1];
-          }
+          const parsed = parsePrivatePageRel(path.relative(this.pagesDirectory, filePathFromCache).split(path.sep));
+          creator = parsed?.creator;
+          store = parsed?.store;
         } else if (filePathFromCache.startsWith(this.pagesDirectory + path.sep)) {
           location = 'pages';
         } else {
           // No useful filePath — probe candidates on disk.
           const requiredProbe = path.join(this.requiredPagesDirectory, `${uuid}.md`);
           const privateProbe = author
-            ? path.join(this.pagesDirectory, 'private', author, `${uuid}.md`)
+            ? privatePageFilePath(this.pagesDirectory, author, `${uuid}.md`)
             : null;
           if (await fs.pathExists(requiredProbe)) {
             location = 'required-pages';
           } else if (privateProbe && await fs.pathExists(privateProbe)) {
             location = 'private';
             creator = author;
+            store = DEFAULT_PRIVATE_STORE;
           } else {
             location = 'pages';
           }
@@ -1537,7 +1610,7 @@ class VersioningFileProvider extends FileSystemProvider {
         // pre-versioning entry so the page is still discoverable. Before #806
         // the manifest check was a hard gate that silently dropped every
         // pre-versioning page (~17K → 138 entries on jimstest).
-        const versionDir = this.getVersionDirectory(uuid, location);
+        const versionDir = this.getVersionDirectory(uuid, location, creator, store);
         const manifestPath = path.join(versionDir, 'manifest.json');
         const hasManifest = await fs.pathExists(manifestPath);
 
@@ -1567,7 +1640,8 @@ class VersioningFileProvider extends FileSystemProvider {
           hasVersions,
           slug:     slugFromMeta,
           filename,
-          ...(creator ? { creator } : {})
+          ...(creator ? { creator } : {}),
+          ...(location === 'private' ? { store: store ?? DEFAULT_PRIVATE_STORE } : {})
         });
 
         rebuiltCount++;
@@ -1659,12 +1733,25 @@ class VersioningFileProvider extends FileSystemProvider {
     return this.resolveIdentifier(identifier);
   }
 
-  private getVersionDirectory(uuid: string, location: 'pages' | 'required-pages' | 'private' = 'pages'): string {
+  private getVersionDirectory(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private' = 'pages',
+    creator?: string,
+    store?: string
+  ): string {
     if (location === 'private') {
-      if (!this.privateVersionsDir) {
-        throw new Error('Version directories not initialized');
+      if (!this.pagesDirectory) {
+        throw new Error('FileSystemProvider not initialized - directories not set');
       }
-      return path.join(this.privateVersionsDir, uuid);
+      const entry = this.pageIndex?.pages[uuid];
+      const overlay = (() => {
+        const sid = currentPrivateStoreSessionId();
+        if (!sid) return undefined;
+        return getSessionUserIndex(sid)?.pages[uuid];
+      })();
+      const who = creator ?? entry?.creator ?? overlay?.creator ?? 'anonymous';
+      const bag = store ?? entry?.store ?? overlay?.store ?? DEFAULT_PRIVATE_STORE;
+      return privateVersionDirectory(this.pagesDirectory, who, uuid, bag);
     }
 
     const baseDir = location === 'required-pages'
@@ -1807,14 +1894,35 @@ class VersioningFileProvider extends FileSystemProvider {
     const isPrivate = metadata.private === true;
     const newCreator = metadata.author || 'anonymous';
     const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';
+    const currentEntry = this.pageIndex?.pages[uuid];
+    const store = isPrivate
+      ? (currentEntry?.store ?? DEFAULT_PRIVATE_STORE)
+      : undefined;
+    const storeId = store ?? DEFAULT_PRIVATE_STORE;
+    const sealed = isPrivate && this.pagesDirectory
+      ? (await readStoreMeta(this.pagesDirectory, newCreator, storeId)).encrypt === true
+      : false;
+
+    if (isPrivate && this.pagesDirectory) {
+      await assertCurrentSessionCanWriteStore({
+        pagesDirectory: this.pagesDirectory,
+        creator: newCreator,
+        store: storeId
+      });
+    }
 
     // Detect location change (e.g. private → public or public → private) and move files
-    const currentEntry = this.pageIndex?.pages[uuid];
     if (currentEntry && currentEntry.location !== location) {
       const currentCreator = currentEntry.creator;
       try {
         await this.movePageFile(uuid, currentEntry.location, currentCreator, location, location === 'private' ? newCreator : undefined);
-        await this.moveVersionDirectory(uuid, currentEntry.location, location);
+        await this.moveVersionDirectory(
+          uuid,
+          currentEntry.location,
+          location,
+          currentEntry.creator,
+          location === 'private' ? newCreator : undefined
+        );
         logger.info(`[VersioningFileProvider] Moved page '${pageName}' (${uuid}) from '${currentEntry.location}' to '${location}'`);
       } catch (moveError) {
         const errorMessage = moveError instanceof Error ? moveError.message : String(moveError);
@@ -1843,6 +1951,56 @@ class VersioningFileProvider extends FileSystemProvider {
     // a migration could not keep a page's date.
     await super.savePage(pageName, content, { ...metadata, uuid, created }, options);
 
+    // #1383: getVersionDirectory for a new private page reads creator/store
+    // from the index. Stamp them before the first version is written.
+    // #1385: sealed titles go to the session user-index, never page-index.json.
+    const kek = currentPrivateStoreSessionId()
+      ? getUnlockedKek(currentPrivateStoreSessionId() as string)
+      : undefined;
+    const catalogPage: UserCatalogPage | undefined = sealed && this.pagesDirectory
+      ? {
+        title: (metadata.title as string) || pageName,
+        uuid,
+        slug: metadata.slug ? String(metadata.slug) : undefined,
+        filename: `${uuid}.md`,
+        currentVersion: 0,
+        location: 'private',
+        creator: newCreator || 'anonymous',
+        store: storeId,
+        lastModified: options?.preserveLastModified && metadata.lastModified
+          ? String(metadata.lastModified)
+          : new Date().toISOString(),
+        created,
+        editor: metadata.editor || metadata.author || 'unknown',
+        author: metadata.author ? String(metadata.author) : undefined,
+        hasVersions: false,
+        isPrivate: true
+      }
+      : undefined;
+    if (catalogPage && kek && this.pagesDirectory) {
+      const indexCatalog = await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, catalogPage);
+      const sid = currentPrivateStoreSessionId();
+      if (sid) {
+        replaceSessionUserCatalog(sid, 'index', indexCatalog);
+        putSessionUserIndexPage(catalogPage);
+      }
+    } else if (location === 'private' && this.pageIndex) {
+      const prev = this.pageIndex.pages[uuid];
+      this.pageIndex.pages[uuid] = {
+        ...(prev ?? {
+          title: (metadata.title as string) || pageName,
+          uuid,
+          currentVersion: 0,
+          location: 'private' as const,
+          lastModified: new Date().toISOString(),
+          editor: 'unknown',
+          hasVersions: false
+        }),
+        creator: newCreator || prev?.creator || 'anonymous',
+        store: store ?? DEFAULT_PRIVATE_STORE
+      };
+    }
+
     try {
       if (pageInfo) {
         // Existing page: create new version with diff
@@ -1865,7 +2023,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // #639 Slice E: read top-level `private: true` only; user-keywords
     // back-compat fallback dropped post-migration (Slices A–D, v3.7.0).
     const isPrivateFlag = (metadata as Record<string, unknown>).private === true;
-    await this.updatePageInIndex(uuid, {
+    const indexPayload = {
       title: (metadata.title as string) || pageName,
       uuid: uuid,
       slug: metadata.slug ? String(metadata.slug) : undefined,
@@ -1873,8 +2031,6 @@ class VersioningFileProvider extends FileSystemProvider {
       currentVersion: await this.getCurrentVersion(uuid, location),
       location: location,
       creator: creator,
-      // The index must agree with the page file: keep the page's own date
-      // when the caller asked to (a migration), otherwise stamp now.
       lastModified: options?.preserveLastModified && metadata.lastModified
         ? String(metadata.lastModified)
         : new Date().toISOString(),
@@ -1886,8 +2042,34 @@ class VersioningFileProvider extends FileSystemProvider {
       isPrivate: isPrivateFlag,
       addon: typeof (metadata as Record<string, unknown>).addon === 'string'
         ? ((metadata as Record<string, unknown>).addon as string)
-        : undefined
-    });
+        : undefined,
+      ...(location === 'private' ? { store: store ?? DEFAULT_PRIVATE_STORE } : {})
+    };
+    if (sealed && kek && this.pagesDirectory && catalogPage) {
+      const versionsPage: UserCatalogPage = {
+        ...catalogPage,
+        ...indexPayload,
+        location: 'private',
+        creator: catalogPage.creator,
+        store: storeId,
+        isPrivate: true,
+        hasVersions: true
+      };
+      const versionsCatalog = await upsertUserVersionsPage(
+        this.pagesDirectory,
+        catalogPage.creator,
+        kek,
+        versionsPage
+      );
+      const sid = currentPrivateStoreSessionId();
+      if (sid) {
+        replaceSessionUserCatalog(sid, 'versions', versionsCatalog);
+        await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, versionsPage);
+        putSessionUserIndexPage(versionsPage);
+      }
+    } else {
+      await this.updatePageInIndex(uuid, indexPayload);
+    }
 
     logger.info(`[VersioningFileProvider] Saved page '${pageName}' with versioning`);
   }
@@ -1898,8 +2080,12 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     await super.movePrivatePage(uuid, oldCreator, newCreator); // moves the .md file
-    // Also move the version directory (private versions share a flat dir keyed by UUID,
-    // so no creator path to move — nothing extra needed here).
+    const store = this.pageIndex?.pages[uuid]?.store ?? DEFAULT_PRIVATE_STORE;
+    await this.moveVersionDirectory(uuid, 'private', 'private', oldCreator, newCreator);
+    if (this.pageIndex?.pages[uuid]) {
+      this.pageIndex.pages[uuid].creator = newCreator;
+      this.pageIndex.pages[uuid].store = store;
+    }
     logger.info(`[VersioningFileProvider] movePrivatePage complete: ${uuid} ${oldCreator} → ${newCreator}`);
   }
 
@@ -1913,11 +2099,11 @@ class VersioningFileProvider extends FileSystemProvider {
     if (!this.pagesDirectory) return;
 
     const fromPath = fromLocation === 'private' && fromCreator
-      ? path.join(this.pagesDirectory, 'private', fromCreator, `${uuid}.md`)
+      ? privatePageFilePath(this.pagesDirectory, fromCreator, uuid)
       : path.join(this.pagesDirectory, `${uuid}.md`);
 
     const toPath = toLocation === 'private' && toCreator
-      ? path.join(this.pagesDirectory, 'private', toCreator, `${uuid}.md`)
+      ? privatePageFilePath(this.pagesDirectory, toCreator, uuid)
       : path.join(this.pagesDirectory, `${uuid}.md`);
 
     if (fromPath === toPath) return;
@@ -1936,10 +2122,12 @@ class VersioningFileProvider extends FileSystemProvider {
   private async moveVersionDirectory(
     uuid: string,
     fromLocation: 'pages' | 'required-pages' | 'private',
-    toLocation: 'pages' | 'required-pages' | 'private'
+    toLocation: 'pages' | 'required-pages' | 'private',
+    fromCreator?: string,
+    toCreator?: string
   ): Promise<void> {
-    const fromDir = this.getVersionDirectory(uuid, fromLocation);
-    const toDir = this.getVersionDirectory(uuid, toLocation);
+    const fromDir = this.getVersionDirectory(uuid, fromLocation, fromCreator);
+    const toDir = this.getVersionDirectory(uuid, toLocation, toCreator);
 
     if (fromDir === toDir) return;
 

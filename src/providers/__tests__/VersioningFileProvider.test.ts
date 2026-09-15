@@ -190,7 +190,7 @@ describe('VersioningFileProvider', () => {
       const baseDir = location === 'required-pages'
         ? provider.requiredPagesDirectory
         : location === 'private' && frontmatter.author
-          ? path.join(provider.pagesDirectory, 'private', frontmatter.author)
+          ? path.join(provider.pagesDirectory, 'private', frontmatter.author, 'default')
           : provider.pagesDirectory;
       await fs.ensureDir(baseDir);
       const filePath = path.join(baseDir, `${uuid}.md`);
@@ -277,13 +277,14 @@ describe('VersioningFileProvider', () => {
       expect(entry).toBeDefined();
       expect(entry.location).toBe('private');
       expect(entry.creator).toBe('bob');
+      expect(entry.store).toBe('default');
     });
 
     test('private pages on disk are NOT renamed/moved into the regular pile by auto-migration (#806)', async () => {
-      // Slice 2's earlier slip moved 14 private files out of pages/private/{author}/
-      // because the auto-migration's location detection only knew about
-      // pages/{uuid}.md and required-pages/{uuid}.md. Lock in that the file
-      // stays where it was placed.
+      // Slice 2's earlier slip moved 14 private files out of
+      // pages/private/{author}/{store}/ because auto-migration only knew about
+      // pages/{uuid}.md and required-pages/{uuid}.md. The file stays in the
+      // private store tree, not the regular pile.
       await provider.initialize();
 
       const beforePath = await writeRawPage(provider, 'private', '33333333-3333-3333-3333-333333333333',
