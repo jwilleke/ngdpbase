@@ -43,19 +43,6 @@ function makeManager(pagesDir: string, stored: unknown[]) {
             k === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : d
         };
       }
-      if (name === 'PageManager') {
-        return {
-          getPage: async () => ({
-            metadata: {
-              'index-entry': {
-                location: 'private',
-                creator: 'molly',
-                store: DEFAULT_PRIVATE_STORE
-              }
-            }
-          })
-        };
-      }
       return null;
     }
   } as never;
@@ -89,7 +76,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
     const metadata = (stored[0] as unknown[])[2] as { store?: string; pageCreator?: string };
@@ -106,7 +93,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/locked|DEK/i);
     expect(stored).toHaveLength(0);
   });
@@ -124,7 +111,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const m = makeManager(pagesDir, stored);
     await expect(
       runWithPrivateStoreSession('sid', () =>
-        m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
+        m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
       )
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
