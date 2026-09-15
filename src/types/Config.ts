@@ -208,6 +208,9 @@ export interface WikiConfig {
   /** Soft-deleted page folder name */
   'ngdpbase.page.provider.filesystem.deleteddir': string;
 
+  /** Folder for a private store's non-page files: {store}/{attachmentsdir}/ */
+  'ngdpbase.page.provider.filesystem.attachmentsdir': string;
+
   /** User KEK envelope filename under the private user dir */
   'ngdpbase.page.provider.filesystem.private.files.userkeys': string;
 

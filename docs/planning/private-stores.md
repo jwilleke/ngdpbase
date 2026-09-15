@@ -1,7 +1,7 @@
 ---
 title: Private stores
 status: design ratified
-lastModified: 2026-09-14
+lastModified: 2026-09-15
 epic: 1382
 ---
 
@@ -22,8 +22,12 @@ pages/private/{user}/user-keys.json        # wrapped user KEK (password + recove
 pages/private/{user}/user-index.json       # catalog of encrypted-store pages (user KEK)
 pages/private/{user}/user-versions.json    # history catalog (user KEK)
 pages/private/{user}/user-trash.json       # trash catalog (user KEK)
-pages/private/{user}/{store}/              # live pages, files, version blobs, trash blobs
+pages/private/{user}/{store}/              # one store
 pages/private/{user}/{store}/store.json    # encrypt on/off; wrapped DEK if encrypt on
+pages/private/{user}/{store}/{uuid}.md     # live pages
+pages/private/{user}/{store}/versions/     # page version blobs
+pages/private/{user}/{store}/deleted/      # trash blobs
+pages/private/{user}/{store}/attachments/  # every non-page file: {sha256}.ext
 ```
 
 This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). Folder names and catalog filenames are `ngdpbase.page.provider.filesystem.*` keys in [app-default-config.json](../../config/app-default-config.json). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
@@ -76,9 +80,31 @@ We still want __one__ implementation of key unwrap and encrypt-on-write: `src/ut
 
 ## Files in the store
 
-The store is the container. PDFs, images, FHIR JSON/XML, and other imports land in `private/{user}/{store}/`, not `attachments/private/{user}/`. NCM still applies only to markdown that is a page. Existing import/upload doors stay; the __destination__ is the store.
+The store is the container. PDFs, images, DICOM, FHIR JSON/XML, and other imports land in `private/{user}/{store}/attachments/`, not `attachments/private/{user}/`. NCM still applies only to markdown that is a page. Existing import/upload doors stay; the __destination__ is the store.
+
+Decided 2026-09-15 ([#1386](https://github.com/jwilleke/ngdpbase/issues/1386)):
+
+- Files live in `{store}/attachments/`, never loose in the store root beside `{uuid}.md`. An uploaded `.md` file in the root would be scanned as a page.
+- The page scan skips `attachments/` as it skips `versions/` and `deleted/`.
+- Flat and content-addressed (`{sha256}.ext`), same as the public pool. No per-type folders (`images/`, `dicom/`, `json/`); type is attachment metadata (`encodingFormat`).
+- The name is `attachments/`, not `blobs/` — it matches `AttachmentManager` and the public pool, and "blobs" already means version/trash content here.
+- Anything an addon owns that is not an attachment (e.g. a later database file) gets its own sibling folder through that addon's provider.
+
+- The folder name is config key `ngdpbase.page.provider.filesystem.attachmentsdir` (default `attachments`), beside `versionsdir` / `deleteddir` (approved 2026-09-15).
 
 Global `attachment-metadata.json` must not list names of files in a __sealed__ store.
+
+### When an attachment is private
+
+Decided 2026-09-15 ([#1398](https://github.com/jwilleke/ngdpbase/issues/1398)). The rule lives at one door, `AttachmentManager.uploadAttachment`, so the upload dialog, the page-import image fetch, and import sidecar files all follow it.
+
+| Case | Result |
+|---|---|
+| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. |
+| Existing non-private asset attached or linked to a private page | Stays public. Linking never moves or re-flags an existing attachment. |
+| Upload with no page, or onto a public page | The upload dialog's Private checkbox decides. Ticked: the uploader's store. Unticked: public attachments pool. |
+
+Open: which store a forced-private upload lands in — the page creator's store (beside the page) or the uploader's `default`.
 
 ## Backups
 
@@ -126,5 +152,7 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1392](https://github.com/jwilleke/ngdpbase/issues/1392) | Drop the session bag on logout | [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) |
 | [#1393](https://github.com/jwilleke/ngdpbase/issues/1393) | Password change re-wraps the KEK envelope; mnemonic wrap unchanged | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
 | [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK (PageManager + AttachmentManager doors; relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
+| [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) | Explicit `private` / `store` on `uploadAttachment` | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
+| [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) | Upload dialog Private checkbox; new upload onto a private page is forced private | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) |
 
 Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.

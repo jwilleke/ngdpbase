@@ -74,6 +74,33 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
 
+  test('a markdown file in {store}/attachments/ is an attachment, never scanned as a page (#1386)', async () => {
+    const storeDir = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    await fs.ensureDir(path.join(storeDir, 'attachments'));
+    await fs.writeFile(
+      path.join(storeDir, `${UUID}.md`),
+      `---\ntitle: Diary\nuuid: ${UUID}\nprivate: true\nauthor: molly\n---\nreal page`
+    );
+    // An uploaded .md is stored content-addressed; frontmatter makes it look like a page.
+    await fs.writeFile(
+      path.join(storeDir, 'attachments', `${'a'.repeat(64)}.md`),
+      '---\ntitle: Uploaded Notes\n---\nnot a page'
+    );
+    // A user literally named "attachments" still has its pages scanned.
+    const oddUserStore = path.join(pagesDir, 'private', 'attachments', DEFAULT_PRIVATE_STORE);
+    await fs.ensureDir(oddUserStore);
+    await fs.writeFile(
+      path.join(oddUserStore, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc.md'),
+      '---\ntitle: Odd User Page\nuuid: cccccccc-cccc-4ccc-8ccc-cccccccccccc\nprivate: true\nauthor: attachments\n---\nx'
+    );
+
+    const provider = await newProvider();
+    const titles = await provider.getAllPages();
+    expect(titles).toContain('Diary');
+    expect(titles).toContain('Odd User Page');
+    expect(titles).not.toContain('Uploaded Notes');
+  });
+
   test('config privateroot sealed writes under sealed/, not private/', async () => {
     const provider = await newProvider({
       'ngdpbase.page.provider.filesystem.privateroot': 'sealed'

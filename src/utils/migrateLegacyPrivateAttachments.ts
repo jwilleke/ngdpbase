@@ -1,6 +1,6 @@
 /**
  * Move `{attachmentStoragedir}/{legacyprivateroot}/{user}/hash.ext` into
- * `{pages}/{privateroot}/{user}/{defaultstoreid}/` (#1386).
+ * `{pages}/{privateroot}/{user}/{defaultstoreid}/{attachmentsdir}/` (#1386).
  *
  * Destination is the page store. Leave sealed stores' leftover files alone.
  * `legacyprivateroot` is migrate-FROM only — not a live write target.

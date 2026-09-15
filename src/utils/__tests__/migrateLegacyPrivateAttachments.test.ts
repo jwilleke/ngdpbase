@@ -1,5 +1,5 @@
 /**
- * Move attachments/private/{user}/ files into private/{user}/default/ (#1386).
+ * Move attachments/private/{user}/ files into private/{user}/default/attachments/ (#1386).
  */
 
 import fs from 'fs-extra';
@@ -51,14 +51,14 @@ describe('migrateLegacyPrivateAttachments (#1386)', () => {
     expect(result.moved).toBe(1);
     expect(await fs.pathExists(legacy)).toBe(false);
     expect(await fs.pathExists(
-      path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, `${hash}.pdf`)
+      path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, 'attachments', `${hash}.pdf`)
     )).toBe(true);
     expect(await fs.pathExists(sealedLegacy)).toBe(true);
   });
 
   test('is a no-op when the file is already in default/', async () => {
     const hash = 'bb'.repeat(32);
-    const dest = path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, `${hash}.pdf`);
+    const dest = path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, 'attachments', `${hash}.pdf`);
     await fs.ensureDir(path.dirname(dest));
     await fs.writeFile(dest, 'x');
     const legacy = path.join(attachmentsPrivateDir, 'jim', `${hash}.pdf`);

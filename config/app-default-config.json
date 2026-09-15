@@ -92,6 +92,7 @@
   "ngdpbase.page.provider.filesystem.defaultstoreid": "default",
   "ngdpbase.page.provider.filesystem.versionsdir": "versions",
   "ngdpbase.page.provider.filesystem.deleteddir": "deleted",
+  "ngdpbase.page.provider.filesystem.attachmentsdir": "attachments",
   "ngdpbase.page.provider.filesystem.private.files.userkeys": "user-keys.json",
   "ngdpbase.page.provider.filesystem.private.files.userindex": "user-index.json",
   "ngdpbase.page.provider.filesystem.private.files.userversions": "user-versions.json",

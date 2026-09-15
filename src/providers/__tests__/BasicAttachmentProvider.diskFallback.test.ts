@@ -193,7 +193,7 @@ describe('BasicAttachmentProvider — getAttachment() stale storageLocation fall
     const attachmentId = 'priv1234deadbeef'.padEnd(64, '0');
     const creator = 'alice';
     const filename = `${attachmentId}.pdf`;
-    const storeDir = path.join(pagesDir, 'private', creator, 'default');
+    const storeDir = path.join(pagesDir, 'private', creator, 'default', 'attachments');
     await fs.ensureDir(storeDir);
     const localFilePath = path.join(storeDir, filename);
     await fs.writeFile(localFilePath, Buffer.from('pdf-content'));

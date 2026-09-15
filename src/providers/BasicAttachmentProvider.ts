@@ -17,8 +17,8 @@ import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
   privateStoreFilePath,
+  privateStoreAttachmentsDir,
   privateStoreLayoutFromConfig,
-  privateStoreRoot,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
 
@@ -574,13 +574,13 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       throw new Error('Storage directory not initialized');
     }
 
-    // Private files live in the page store, not attachments/private (#1386).
+    // Private files live in the store's attachments folder, not attachments/private (#1386).
     const isPrivatePage = options.isPrivatePage ?? false;
     const pageCreator = options.pageCreator;
     const storeId = options.store ?? this.privateStoreLayout.defaultStoreId;
     const targetDir =
       isPrivatePage && pageCreator && this.pagesDirectory
-        ? privateStoreRoot(this.pagesDirectory, pageCreator, storeId, this.privateStoreLayout)
+        ? privateStoreAttachmentsDir(this.pagesDirectory, pageCreator, storeId, this.privateStoreLayout)
         : this.storageDirectory;
 
     // Ensure target directory exists (store dir may not yet exist)

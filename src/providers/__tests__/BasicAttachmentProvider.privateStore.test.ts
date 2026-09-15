@@ -61,7 +61,7 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
     pagesDir = path.join(tmp, 'pages');
     await fs.ensureDir(storageDir);
     await fs.ensureDir(pagesDir);
-    provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir) as never);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir));
     await provider.initialize();
   });
 
@@ -84,6 +84,7 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
       'private',
       'molly',
       DEFAULT_PRIVATE_STORE,
+      'attachments',
       hashName(buf, '.pdf')
     );
     expect(await fs.pathExists(dest)).toBe(true);
@@ -105,7 +106,7 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
     );
 
     expect(await fs.pathExists(
-      path.join(pagesDir, 'private', 'molly', 'yourphr', hashName(buf, '.json'))
+      path.join(pagesDir, 'private', 'molly', 'yourphr', 'attachments', hashName(buf, '.json'))
     )).toBe(true);
   });
 
@@ -129,6 +130,7 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
       'private',
       'molly',
       DEFAULT_PRIVATE_STORE,
+      'attachments',
       hashName(buf, '.pdf')
     );
     expect(await fs.pathExists(dest)).toBe(true);
@@ -149,7 +151,7 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
 
     expect(await fs.pathExists(path.join(storageDir, hashName(buf, '.pdf')))).toBe(true);
     expect(await fs.pathExists(
-      path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, hashName(buf, '.pdf'))
+      path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, 'attachments', hashName(buf, '.pdf'))
     )).toBe(false);
   });
 });

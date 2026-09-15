@@ -25,6 +25,8 @@ export type PrivateStoreLayout = {
   defaultStoreId: string;
   versionsDir: string;
   deletedDir: string;
+  /** Non-page files inside a store: `{store}/{attachmentsDir}/{sha256}.ext` */
+  attachmentsDir: string;
   files: PrivateStoreLayoutFiles;
 };
 
@@ -37,6 +39,7 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
   defaultStoreId: 'default',
   versionsDir: 'versions',
   deletedDir: 'deleted',
+  attachmentsDir: 'attachments',
   files: {
     userkeys: 'user-keys.json',
     userindex: 'user-index.json',
@@ -58,6 +61,7 @@ export function resolvePrivateStoreLayout(
     defaultStoreId: overrides.defaultStoreId ?? DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId,
     versionsDir: overrides.versionsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.versionsDir,
     deletedDir: overrides.deletedDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.deletedDir,
+    attachmentsDir: overrides.attachmentsDir ?? DEFAULT_PRIVATE_STORE_LAYOUT.attachmentsDir,
     files: {
       ...DEFAULT_PRIVATE_STORE_LAYOUT.files,
       ...overrides.files
@@ -86,6 +90,7 @@ export function privateStoreLayoutFromConfig(
     defaultStoreId: str('ngdpbase.page.provider.filesystem.defaultstoreid', d.defaultStoreId),
     versionsDir: str('ngdpbase.page.provider.filesystem.versionsdir', d.versionsDir),
     deletedDir: str('ngdpbase.page.provider.filesystem.deleteddir', d.deletedDir),
+    attachmentsDir: str('ngdpbase.page.provider.filesystem.attachmentsdir', d.attachmentsDir),
     files: {
       userkeys: str('ngdpbase.page.provider.filesystem.private.files.userkeys', d.files.userkeys),
       userindex: str('ngdpbase.page.provider.filesystem.private.files.userindex', d.files.userindex),
@@ -182,7 +187,21 @@ export function privateStoreRoot(
   return path.join(pagesDirectory, L.privateRoot, creator, store ?? L.defaultStoreId);
 }
 
-/** Non-page file beside pages in `{privateroot}/{user}/{store}/{file}` (#1386). */
+/**
+ * Folder for a store's non-page files: `{privateroot}/{user}/{store}/{attachmentsdir}` (#1386).
+ * Never the store root — an uploaded `.md` there would scan as a page.
+ */
+export function privateStoreAttachmentsDir(
+  pagesDirectory: string,
+  creator: string,
+  store?: string,
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.attachmentsDir);
+}
+
+/** Non-page file in `{privateroot}/{user}/{store}/{attachmentsdir}/{file}` (#1386). */
 export function privateStoreFilePath(
   pagesDirectory: string,
   creator: string,
@@ -190,7 +209,20 @@ export function privateStoreFilePath(
   store?: string,
   layout?: PrivateStoreLayoutOverrides
 ): string {
-  return path.join(privateStoreRoot(pagesDirectory, creator, store, layout), fileName);
+  return path.join(privateStoreAttachmentsDir(pagesDirectory, creator, store, layout), fileName);
+}
+
+/**
+ * True when `relParts` (path relative to the pages directory, split) names a
+ * store's attachments folder: `{privateroot}/{user}/{store}/{attachmentsdir}`.
+ * Depth-checked so a user or store that happens to be called `attachments` is not skipped.
+ */
+export function isPrivateStoreAttachmentsRel(
+  relParts: string[],
+  layout?: PrivateStoreLayoutOverrides
+): boolean {
+  const L = resolvePrivateStoreLayout(layout);
+  return relParts.length === 4 && relParts[0] === L.privateRoot && relParts[3] === L.attachmentsDir;
 }
 
 export function storeMetaPath(

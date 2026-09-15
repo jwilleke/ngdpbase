@@ -9,6 +9,8 @@ import {
   parsePrivatePageRel,
   privateDeletedDirectory,
   privatePageFilePath,
+  isPrivateStoreAttachmentsRel,
+  privateStoreAttachmentsDir,
   privateStoreFilePath,
   privateStoreLayoutFromConfig,
   privateStoreRoot,
@@ -30,6 +32,7 @@ describe('private-store filesystem config keys', () => {
     expect(shipped['ngdpbase.page.provider.filesystem.defaultstoreid']).toBe('default');
     expect(shipped['ngdpbase.page.provider.filesystem.versionsdir']).toBe('versions');
     expect(shipped['ngdpbase.page.provider.filesystem.deleteddir']).toBe('deleted');
+    expect(shipped['ngdpbase.page.provider.filesystem.attachmentsdir']).toBe('attachments');
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userkeys']).toBe('user-keys.json');
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userindex']).toBe('user-index.json');
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userversions']).toBe(
@@ -54,6 +57,9 @@ describe('private-store filesystem config keys', () => {
     );
     expect(DEFAULT_PRIVATE_STORE_LAYOUT.deletedDir).toBe(
       shipped['ngdpbase.page.provider.filesystem.deleteddir']
+    );
+    expect(DEFAULT_PRIVATE_STORE_LAYOUT.attachmentsDir).toBe(
+      shipped['ngdpbase.page.provider.filesystem.attachmentsdir']
     );
     expect(DEFAULT_PRIVATE_STORE_LAYOUT.files.userkeys).toBe(
       shipped['ngdpbase.page.provider.filesystem.private.files.userkeys']
@@ -103,13 +109,32 @@ describe('privateStorePath (#1383)', () => {
     expect(privateStoreRoot(pages, 'molly')).toBe(path.join(pages, 'private', 'molly', 'default'));
   });
 
-  test('store files sit beside pages in private/{user}/{store}/ (#1386)', () => {
+  test('store files live in private/{user}/{store}/attachments/, not the store root (#1386)', () => {
+    expect(privateStoreAttachmentsDir(pages, 'molly')).toBe(
+      path.join(pages, 'private', 'molly', 'default', 'attachments')
+    );
     expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf')).toBe(
-      path.join(pages, 'private', 'molly', 'default', 'aabb.pdf')
+      path.join(pages, 'private', 'molly', 'default', 'attachments', 'aabb.pdf')
     );
     expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf', 'yourphr')).toBe(
-      path.join(pages, 'private', 'molly', 'yourphr', 'aabb.pdf')
+      path.join(pages, 'private', 'molly', 'yourphr', 'attachments', 'aabb.pdf')
     );
+    // An uploaded markdown file in the store is an attachment, never a page path.
+    const mdRel = path.relative(pages, privateStoreFilePath(pages, 'molly', 'aabb.md')).split(path.sep);
+    expect(parsePrivatePageRel(mdRel)).toBeNull();
+  });
+
+  test('isPrivateStoreAttachmentsRel matches only the store-level attachments folder', () => {
+    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'default', 'attachments'])).toBe(true);
+    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'yourphr', 'attachments'])).toBe(true);
+    // A user or store literally named "attachments" is not the files folder.
+    expect(isPrivateStoreAttachmentsRel(['private', 'attachments'])).toBe(false);
+    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'attachments'])).toBe(false);
+    expect(isPrivateStoreAttachmentsRel(['attachments'])).toBe(false);
+    expect(isPrivateStoreAttachmentsRel(['vault', 'molly', 'home', 'files'], {
+      privateRoot: 'vault',
+      attachmentsDir: 'files'
+    })).toBe(true);
   });
 
   test('version and deleted dirs sit inside the store (walkDir already skips those names)', () => {
@@ -141,13 +166,14 @@ describe('privateStorePath (#1383)', () => {
       defaultStoreId: 'home',
       versionsDir: 'history',
       deletedDir: 'trash',
+      attachmentsDir: 'files',
       files: { storemeta: 'meta.json', userkeys: 'keys.json' }
     };
     expect(privatePageFilePath(pages, 'jim', 'x.md', undefined, layout)).toBe(
       path.join(pages, 'vault', 'jim', 'home', 'x.md')
     );
     expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf', undefined, layout)).toBe(
-      path.join(pages, 'vault', 'molly', 'home', 'aabb.pdf')
+      path.join(pages, 'vault', 'molly', 'home', 'files', 'aabb.pdf')
     );
     expect(privateStoreRoot(pages, 'molly', 'yourphr', layout)).toBe(
       path.join(pages, 'vault', 'molly', 'yourphr')
@@ -205,6 +231,8 @@ describe('privateStorePath (#1383)', () => {
     expect(layout.files.userkeys).toBe('user-keys.json');
     expect(seen).toContain('ngdpbase.page.provider.filesystem.privateroot');
     expect(seen).toContain('ngdpbase.page.provider.filesystem.defaultstoreid');
+    expect(seen).toContain('ngdpbase.page.provider.filesystem.attachmentsdir');
+    expect(layout.attachmentsDir).toBe('attachments');
     expect(seen).not.toContain('ngdpbase.page.provider.filesystem.storagedir');
     expect(privatePageFilePath(pages, 'jim', 'u.md', undefined, layout)).toBe(
       path.join(pages, 'sealed', 'jim', 'default', 'u.md')

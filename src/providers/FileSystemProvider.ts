@@ -1,6 +1,7 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
+  isPrivateStoreAttachmentsRel,
   privatePageFilePath,
   privateStoreLayoutFromConfig,
   type PrivateStoreLayout
@@ -337,6 +338,12 @@ class FileSystemProvider extends BasePageProvider {
           // a tombstoned file left in place would silently resurrect itself on
           // the next restart, index flag or not.
           if (entry.name === this.privateStoreLayout.deletedDir) continue;
+          // #1386: a store's files are attachments, never pages — an uploaded
+          // `{sha256}.md` there must not scan as a page.
+          if (this.pagesDirectory && isPrivateStoreAttachmentsRel(
+            path.relative(this.pagesDirectory, full).split(path.sep),
+            this.privateStoreLayout
+          )) continue;
           // #1385: sealed store trees stay out of the process cache and global index.
           if (await storeDirectoryIsEncrypted(full, this.privateStoreLayout.files.storemeta)) continue;
           out.push(...(await this.walkDir(full)));
