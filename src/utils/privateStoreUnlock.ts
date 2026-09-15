@@ -1,14 +1,20 @@
 /**
  * Process-level unlock bag for private-store keys (#1384, #1391).
  *
- * Keyed by session id so every PageManager/provider in the process sees the
- * same unlock. Not express-session JSON. Not fields on PageManager.
+ * Keyed by an opaque random handle — never the session id — created at
+ * password login ({@link newPrivateStoreHandle}), stored on the session as
+ * `privateStoreHandle`, and carried on the request subject so a caller reaches
+ * its keys through the context it was given ({@link dekFor}; security-posture
+ * P1). Key bytes never go into express-session JSON, a context, or a record.
  * Logout calls {@link lockPrivateStores}.
  *
- * Any manager or provider calls these helpers. There is no RecordManager.
+ * The `AsyncLocalStorage` slot below is what page providers still read until
+ * page operations take the context (#1382 step 4); P1 refuses it, and it goes
+ * then. New callers use the context functions.
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import fs from 'fs-extra';
 import logger from './logger.js';
 import {
@@ -21,6 +27,7 @@ import {
 import { readStoreMeta } from './privateStoreMeta.js';
 import {
   PRIVATE_USER_CATALOG_FILES,
+  isValidStoreId,
   privateUserDir,
   privateUserKeysPath,
   type PrivateStoreLayoutOverrides,
@@ -32,6 +39,8 @@ import {
   type UserCatalog,
   type UserCatalogPage
 } from './privateStoreCatalogs.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type { PermissionSubject } from '../managers/UserManager.js';
 
 interface UnlockedBag {
   username: string;
@@ -138,7 +147,8 @@ function isUserKeyEnvelope(value: unknown): value is UserKeyEnvelope {
  * No-ops when the user has no envelope yet. Never writes key bytes to session JSON.
  */
 export async function unlockPrivateStoresWithPassword(args: {
-  sessionId: string;
+  /** The session's private-store handle ({@link newPrivateStoreHandle}), not its session id. */
+  handle: string;
   username: string;
   password: string;
   pagesDirectory: string;
@@ -148,23 +158,26 @@ export async function unlockPrivateStoresWithPassword(args: {
   const raw = await fs.readJson(keysPath) as unknown;
   if (!isUserKeyEnvelope(raw)) return;
   const kek = unwrapKekWithPassword(raw, args.password);
-  unlockPrivateStores(args.sessionId, args.username, kek);
+  unlockPrivateStores(args.handle, args.username, kek);
 
   const userDir = privateUserDir(args.pagesDirectory, args.username);
   const entries = await fs.readdir(userDir, { withFileTypes: true });
   for (const ent of entries) {
     if (!ent.isDirectory()) continue;
     if (PRIVATE_USER_CATALOG_FILES.has(ent.name)) continue;
+    // Only store folders: a folder whose name is not a store id is not a store,
+    // and must not abort the unlock of the stores that are.
+    if (!isValidStoreId(ent.name)) continue;
     const meta = await readStoreMeta(args.pagesDirectory, args.username, ent.name);
     if (meta.encrypt !== true) continue;
     try {
-      setUnlockedDek(args.sessionId, ent.name, unwrapDek(kek, meta));
+      setUnlockedDek(args.handle, ent.name, unwrapDek(kek, meta));
     } catch {
       logger.warn('[private-store] encrypted store stayed locked after login');
     }
   }
 
-  const bag = bags.get(args.sessionId);
+  const bag = bags.get(args.handle);
   if (bag) {
     try {
       bag.catalogs.index = await readUserCatalog(args.pagesDirectory, args.username, kek, 'index');
@@ -214,6 +227,53 @@ export async function assertCurrentSessionCanWriteStore(args: {
   assertEncryptedStoreWritable({
     encrypt: meta.encrypt,
     dek: ownBag ? sessionDekForStore(args.store, sid) : undefined
+  });
+}
+
+/** A fresh handle for a session's key bag: random, never the session id. */
+export function newPrivateStoreHandle(): string {
+  return randomUUID();
+}
+
+/**
+ * The handle a context carries to its session's key bag. Only a password
+ * session's request subject has one; a `JobContext`, a bearer-token request
+ * and a share visitor carry none, so they reach no keys.
+ */
+function handleOf(ctx: ActorContext): string | undefined {
+  return (ctx as Partial<PermissionSubject>).privateStoreHandle;
+}
+
+/**
+ * The DEK for `owner`'s `store` that this context holds, if any. Only from the
+ * owner's own bag: DEKs are keyed by store id, and every user has a `default`.
+ */
+export function dekFor(ctx: ActorContext, owner: string, store: string): Buffer | undefined {
+  const handle = handleOf(ctx);
+  if (!handle || bags.get(handle)?.username !== owner) return undefined;
+  return getUnlockedDek(handle, store);
+}
+
+/** The unlocked sealed-store page catalog this context's session holds, if any (#1385). */
+export function userIndexFor(ctx: ActorContext): UserCatalog | undefined {
+  const handle = handleOf(ctx);
+  return handle ? getSessionUserIndex(handle) : undefined;
+}
+
+/**
+ * Refuse a write into an encrypted store unless this context holds its DEK
+ * (#1394). The context-carrying form of {@link assertCurrentSessionCanWriteStore}.
+ */
+export async function assertContextCanWriteStore(ctx: ActorContext, args: {
+  pagesDirectory: string;
+  owner: string;
+  store: string;
+  layout?: PrivateStoreLayoutOverrides;
+}): Promise<void> {
+  const meta = await readStoreMeta(args.pagesDirectory, args.owner, args.store, args.layout);
+  assertEncryptedStoreWritable({
+    encrypt: meta.encrypt,
+    dek: meta.encrypt ? dekFor(ctx, args.owner, args.store) : undefined
   });
 }
 

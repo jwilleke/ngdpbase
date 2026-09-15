@@ -15,10 +15,15 @@ import {
 } from '../privateStoreCrypto';
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
 import {
+  assertContextCanWriteStore,
   assertCurrentSessionCanWriteStore,
+  dekFor,
+  newPrivateStoreHandle,
+  userIndexFor,
   clearUnlockedPrivateStores,
   getUnlockedDek,
   getUnlockedKek,
+  lockPrivateStores,
   setUnlockedDek,
   unlockPrivateStores,
   unlockPrivateStoresWithPassword
@@ -51,7 +56,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), store);
 
     await unlockPrivateStoresWithPassword({
-      sessionId: 'sid-1',
+      handle: 'sid-1',
       username: 'molly',
       password: 'correct-horse',
       pagesDirectory: pagesDir
@@ -73,7 +78,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
 
     await expect(
       unlockPrivateStoresWithPassword({
-        sessionId: 'sid-1',
+        handle: 'sid-1',
         username: 'molly',
         password: 'wrong',
         pagesDirectory: pagesDir
@@ -85,7 +90,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
 
   test('missing envelope is a no-op so password login still works', async () => {
     await unlockPrivateStoresWithPassword({
-      sessionId: 'sid-1',
+      handle: 'sid-1',
       username: 'molly',
       password: 'any',
       pagesDirectory: pagesDir
@@ -120,7 +125,81 @@ describe('assertCurrentSessionCanWriteStore owner check (#1394, #1398)', () => {
     setUnlockedDek('admin-sid', 'default', unwrapDek(adminKeys.kek, adminStore));
 
     await expect(assertCurrentSessionCanWriteStore({
-      pagesDirectory: pagesDir, creator: 'alice', store: 'default', sessionId: 'admin-sid'
+      pagesDirectory: pagesDir, creator: 'alice', store: 'default', handle: 'admin-sid'
     })).rejects.toThrow(/locked|DEK/i);
+  });
+});
+
+describe('keys through the context handle (#1382, security-posture P1)', () => {
+  let tmp: string;
+  let pagesDir: string;
+  const molly = (handle?: string) => ({
+    username: 'molly', roles: ['editor'], isAuthenticated: true, ...(handle ? { privateStoreHandle: handle } : {})
+  });
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'priv-ctx-'));
+    pagesDir = path.join(tmp, 'pages');
+    clearUnlockedPrivateStores();
+  });
+
+  afterEach(async () => {
+    clearUnlockedPrivateStores();
+    await fs.remove(tmp);
+  });
+
+  test('a handle is random and fresh each time', () => {
+    const a = newPrivateStoreHandle();
+    const b = newPrivateStoreHandle();
+    expect(a).toMatch(/^[0-9a-f-]{36}$/);
+    expect(a).not.toBe(b);
+  });
+
+  test('dekFor returns the DEK only from the owner\'s own bag, reached by the context\'s handle', async () => {
+    const { kek } = createUserKeys('pw', { kdf });
+    const store = createEncryptedStore(kek);
+    const dek = unwrapDek(kek, store);
+    unlockPrivateStores('h-molly', 'molly', kek);
+    setUnlockedDek('h-molly', 'default', dek);
+
+    expect(dekFor(molly('h-molly'), 'molly', 'default')).toEqual(dek);
+    // No handle: nothing, even though a bag exists.
+    expect(dekFor(molly(), 'molly', 'default')).toBeUndefined();
+    // Someone else's store id match is not ownership.
+    expect(dekFor(molly('h-molly'), 'alice', 'default')).toBeUndefined();
+    // A job carries no handle, so it reaches no keys.
+    const job = { username: 'molly', origin: 'schedule', requestedAt: '2026-09-15T00:00:00Z' } as never;
+    expect(dekFor(job, 'molly', 'default')).toBeUndefined();
+    // After logout the handle reaches nothing.
+    lockPrivateStores('h-molly');
+    expect(dekFor(molly('h-molly'), 'molly', 'default')).toBeUndefined();
+  });
+
+  test('assertContextCanWriteStore refuses an encrypted store without the owner\'s DEK, allows it with', async () => {
+    const { kek } = createUserKeys('pw', { kdf });
+    const record = createEncryptedStore(kek);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'default')));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'default'), record);
+
+    await expect(assertContextCanWriteStore(molly('h-molly'), {
+      pagesDirectory: pagesDir, owner: 'molly', store: 'default'
+    })).rejects.toThrow(/locked|DEK/i);
+
+    unlockPrivateStores('h-molly', 'molly', kek);
+    setUnlockedDek('h-molly', 'default', unwrapDek(kek, record));
+    await expect(assertContextCanWriteStore(molly('h-molly'), {
+      pagesDirectory: pagesDir, owner: 'molly', store: 'default'
+    })).resolves.toBeUndefined();
+    // An unencrypted store needs no key.
+    await expect(assertContextCanWriteStore(molly(), {
+      pagesDirectory: pagesDir, owner: 'molly', store: 'plain'
+    })).resolves.toBeUndefined();
+  });
+
+  test('userIndexFor reads only the handle\'s own catalog', () => {
+    unlockPrivateStores('h-molly', 'molly', Buffer.alloc(32, 1));
+    expect(userIndexFor(molly('h-molly'))).toBeDefined();
+    expect(userIndexFor(molly())).toBeUndefined();
+    expect(userIndexFor(molly('h-other'))).toBeUndefined();
   });
 });

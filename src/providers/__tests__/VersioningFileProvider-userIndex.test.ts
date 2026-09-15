@@ -163,7 +163,7 @@ describe('encrypted user-index (#1385)', () => {
     lockPrivateStores('sid');
 
     await unlockPrivateStoresWithPassword({
-      sessionId: 'sid-2',
+      handle: 'sid-2',
       username: 'molly',
       password: 'pw',
       pagesDirectory: pagesDir

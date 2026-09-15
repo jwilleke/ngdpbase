@@ -101,6 +101,7 @@ Decided 2026-09-15, under [security-posture.md](../security-posture.md) P1 (ever
 | Encrypt or decrypt bytes with a given key (`privateStoreCrypto.ts`) | Neither — pure computation | data (key and bytes) |
 
 - The request context carries an opaque __session handle__, set only where the request subject is built. It is provenance — which session this came from — like `ipAddress` or `viaToken`, resolved live at use: after logout the bag is gone, the lookup finds nothing, and the action is refused. It is not a snapshot of authority.
+- The handle is __random, not the session id__ (decided 2026-09-15): created at password login, stored on the session as `privateStoreHandle`, the key the process bag is looked up by, and dropped at logout. The subject reaches views, addon hooks and logs; the session id is what the session store and session revocation key on, while the handle opens only the key lookup, and it does not change when the session id is regenerated. A bearer-token or share request carries no handle.
 - The context never carries key bytes. Keys stay in the process bag, reached by handle, so a forwarded or spread context cannot leak them.
 - The handle never goes into an audit record; `actorOf()` names its fields and must not gain this one.
 - A `JobContext` has no handle, so a background job cannot read or write an encrypted store — the server holds those bytes only while a session is unlocked.

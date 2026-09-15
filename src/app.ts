@@ -638,15 +638,17 @@ void (async (): Promise<void> => {
     }
   }));
 
-  // #1384: bind this request's session id so every provider/manager in the
-  // process reads the same unlock bag. Keys are not on PageManager.
+  // #1384: bind this session's private-store handle for the page providers,
+  // which do not yet receive the request context. P1 refuses this ambient slot;
+  // it goes when page operations take the context (#1382 step 4). Everything
+  // else reaches the keys through `req.userContext.privateStoreHandle`.
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    const sid = req.sessionID;
-    if (!sid) {
+    const handle = req.session?.privateStoreHandle;
+    if (typeof handle !== 'string' || !handle) {
       next();
       return;
     }
-    runWithPrivateStoreSession(sid, () => {
+    runWithPrivateStoreSession(handle, () => {
       next();
     });
   });
@@ -733,7 +735,13 @@ void (async (): Promise<void> => {
             authenticated: true
           };
           // #1179: the address travels on the subject, so a manager records it from the context it is handed.
-          req.userContext = { ...sessionContext, ipAddress: req.ip };
+          // #1382: so does the handle to this session's private-store keys — never the session id.
+          const privateStoreHandle = req.session.privateStoreHandle;
+          req.userContext = {
+            ...sessionContext,
+            ipAddress: req.ip,
+            ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {})
+          };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {
           req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };

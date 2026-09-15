@@ -89,6 +89,7 @@ import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSugges
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
   lockPrivateStores,
+  newPrivateStoreHandle,
   unlockPrivateStoresWithPassword
 } from '../utils/privateStoreUnlock.js';
 import type { Article } from '../types/Schema.js';
@@ -6843,12 +6844,12 @@ ${panes}
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
 
-      // #1391: KEK/DEK live in the process bag keyed by session id — never in
-      // express-session JSON, never on PageManager.
-      const sessionId =
-        (typeof req.session?.id === 'string' && req.session.id) ||
-        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
-      if (sessionId && typeof password === 'string' && password) {
+      // #1391: KEK/DEK live in the process bag, keyed by a random handle — never
+      // the session id, never express-session JSON, never on PageManager. The
+      // handle rides on the session and on the request subject (#1382).
+      if (typeof password === 'string' && password) {
+        const privateStoreHandle = newPrivateStoreHandle();
+        req.session.privateStoreHandle = privateStoreHandle;
         try {
           const pagesDirectory =
             typeof configManager.getResolvedDataPath === 'function'
@@ -6859,7 +6860,7 @@ ${panes}
               : undefined;
           if (pagesDirectory) {
             await unlockPrivateStoresWithPassword({
-              sessionId,
+              handle: privateStoreHandle,
               username: result.username || username,
               password,
               pagesDirectory
@@ -7185,12 +7186,10 @@ ${panes}
    */
   processLogout(req: Request, res: Response) {
     try {
-      // #1392: drop KEK/DEK before express-session JSON is gone — never store
-      // keys on the session object.
-      const sessionId =
-        (typeof req.session?.id === 'string' && req.session.id) ||
-        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
-      if (sessionId) lockPrivateStores(sessionId);
+      // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
+      // keyed by the session's private-store handle, never the session id.
+      const privateStoreHandle = req.session?.privateStoreHandle;
+      if (typeof privateStoreHandle === 'string' && privateStoreHandle) lockPrivateStores(privateStoreHandle);
 
       req.session.destroy((err) => {
         if (err) {

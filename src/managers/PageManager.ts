@@ -28,7 +28,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { currentPrivateStoreSessionId, getSessionUserIndex } from '../utils/privateStoreUnlock.js';
+import { userIndexFor } from '../utils/privateStoreUnlock.js';
 
 /**
  * A save refused because the content broke a filter rule (#1037).
@@ -1722,10 +1722,13 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * Owner is the page-index `creator` (sticky), not frontmatter `author`.
    * Unlocked sealed-store pages are not in the global index; they come from the
-   * current session's user catalog (#1385). Frontmatter is the last resort for
-   * a provider without a page index.
+   * caller's session catalog, through `ctx` (#1385). Frontmatter is the last
+   * resort for a provider without a page index.
    */
-  async getPrivatePageOwner(pageNameOrUuid: string): Promise<{ creator: string; store: string } | null> {
+  async getPrivatePageOwner(
+    pageNameOrUuid: string,
+    ctx: ActorContext
+  ): Promise<{ creator: string; store: string } | null> {
     if (!this.provider) return null;
     const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
     if (!pageMetadata?.uuid) return null;
@@ -1743,8 +1746,9 @@ class PageManager extends BaseManager implements CatalogSource {
       return { creator: entry.creator, store: entry.store ?? defaultStoreId };
     }
 
-    const sid = currentPrivateStoreSessionId();
-    const sealed = sid ? getSessionUserIndex(sid)?.pages[pageMetadata.uuid] : undefined;
+    // An unlocked sealed page is in the caller's own session catalog, reached
+    // through the context it was given — never an ambient session (P1).
+    const sealed = userIndexFor(ctx)?.pages[pageMetadata.uuid];
     if (sealed) {
       return { creator: sealed.creator, store: sealed.store };
     }

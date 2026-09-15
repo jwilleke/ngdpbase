@@ -14,6 +14,7 @@ import {
   isSafePathSegment,
   isUnderPrivateRoot,
   isValidStoreId,
+  pathContainsPrivateRoot,
   privateStoreAttachmentsDir,
   privateStoreFilePath,
   privateStoreLayoutFromConfig,
@@ -284,5 +285,14 @@ describe('store ids and path segments are validated inside every join (#1383)', 
     expect(isUnderPrivateRoot(rel)).toBe(true);
     expect(parsePrivatePageRel(['private', '..', 'default', 'u.md'])).toBeNull();
     expect(isUnderPrivateRoot(['u.md'])).toBe(false);
+  });
+});
+
+describe('pathContainsPrivateRoot is measured from the pages directory', () => {
+  test('a host path that itself contains /private/ does not make every page private (macOS /private/var)', () => {
+    const pages = path.join(path.sep, 'private', 'var', 'data', 'pages');
+    expect(pathContainsPrivateRoot(pages, path.join(pages, 'u.md'))).toBe(false);
+    expect(pathContainsPrivateRoot(pages, path.join(pages, 'private', 'jim', 'default', 'u.md'))).toBe(true);
+    expect(pathContainsPrivateRoot(pages, path.join(path.sep, 'elsewhere', 'private', 'x.md'))).toBe(false);
   });
 });

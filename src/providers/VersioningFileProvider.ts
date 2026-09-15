@@ -1439,7 +1439,7 @@ class VersioningFileProvider extends FileSystemProvider {
             if (actualFilePath.startsWith(this.requiredPagesDirectory + path.sep)) {
               location = 'required-pages';
               pagePath = requiredPath;
-            } else if (pathContainsPrivateRoot(actualFilePath, this.privateStoreLayout)) {
+            } else if (pathContainsPrivateRoot(this.pagesDirectory, actualFilePath, this.privateStoreLayout)) {
               location = 'private';
               const parsed = parsePrivatePageRel(
                 path.relative(this.pagesDirectory, actualFilePath).split(path.sep),
@@ -1545,7 +1545,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     if (filePathFromCache.startsWith(this.requiredPagesDirectory + path.sep)) {
       location = 'required-pages';
-    } else if (this.pagesDirectory && pathContainsPrivateRoot(filePathFromCache, this.privateStoreLayout)) {
+    } else if (this.pagesDirectory && pathContainsPrivateRoot(this.pagesDirectory, filePathFromCache, this.privateStoreLayout)) {
       location = 'private';
       const parsed = parsePrivatePageRel(
         path.relative(this.pagesDirectory, filePathFromCache).split(path.sep),
@@ -1638,7 +1638,7 @@ class VersioningFileProvider extends FileSystemProvider {
         if (filePathFromCache.startsWith(this.requiredPagesDirectory + path.sep)
           || filePathFromCache === this.requiredPagesDirectory + path.sep + `${uuid}.md`) {
           location = 'required-pages';
-        } else if (pathContainsPrivateRoot(filePathFromCache, this.privateStoreLayout)) {
+        } else if (pathContainsPrivateRoot(this.pagesDirectory, filePathFromCache, this.privateStoreLayout)) {
           location = 'private';
           const parsed = parsePrivatePageRel(
             path.relative(this.pagesDirectory, filePathFromCache).split(path.sep),

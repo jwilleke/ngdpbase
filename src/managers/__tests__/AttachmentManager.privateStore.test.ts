@@ -18,7 +18,6 @@ import {
 import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePath';
 import {
   clearUnlockedPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
@@ -110,9 +109,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      runWithPrivateStoreSession('sid', () =>
-        m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
-      )
+      m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
   });

@@ -27,7 +27,7 @@ import type {
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 
 /**
@@ -516,7 +516,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     let pageCreator: string | undefined;
     let pageStore: string | undefined;
     const pageOwner = pageName
-      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName) ?? null
+      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
       : null;
     // A private container is its owner's: nobody else writes into it unless the
     // owner delegated (a share, once the store's Share switch exists — #1388).
@@ -546,9 +546,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         './data/pages'
       );
       if (pagesDirectory) {
-        await assertCurrentSessionCanWriteStore({
+        await assertContextCanWriteStore(ctx, {
           pagesDirectory,
-          creator: pageCreator,
+          owner: pageCreator,
           store: pageStore,
           layout
         });

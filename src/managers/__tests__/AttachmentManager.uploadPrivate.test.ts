@@ -135,7 +135,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true, pageName: 'Main' });
 
-    expect(pageOwner).toHaveBeenCalledWith('Main');
+    expect(pageOwner).toHaveBeenCalledWith('Main', CTX);
     expect(storedMeta(stored)).toEqual({
       description: '',
       isFamilyFriendly: true,
@@ -164,7 +164,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Main' });
 
-    expect(pageOwner).toHaveBeenCalledWith('Main');
+    expect(pageOwner).toHaveBeenCalledWith('Main', CTX);
     const meta = storedMeta(stored);
     expect(meta.isPrivatePage).toBe(false);
     expect(meta.store).toBeUndefined();
@@ -313,11 +313,33 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
     });
+    // The key is reached through the context's handle, not an ambient session (P1).
+    await expect(
+      m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
+    ).resolves.toMatchObject({ identifier: 'att-priv-1' });
+    expect(stored).toHaveLength(1);
+  });
+
+  test('encrypt-on: an ambient session no longer unlocks an upload — only the context\'s handle does', async () => {
+    const { kek } = createUserKeys('pw', { kdf });
+    const record = createEncryptedStore(kek);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'vault')));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'vault'), record);
+    unlockPrivateStores('sid', 'molly', kek);
+    setUnlockedDek('sid', 'vault', unwrapDek(kek, record));
+
+    const stored: StoredCall[] = [];
+    const m = makeManager({
+      pagesDir,
+      stored,
+      getProperty: (key, fallback) =>
+        key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? 'vault' : fallback
+    });
     await expect(
       runWithPrivateStoreSession('sid', () =>
         m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
       )
-    ).resolves.toMatchObject({ identifier: 'att-priv-1' });
-    expect(stored).toHaveLength(1);
+    ).rejects.toThrow(/locked|DEK/i);
+    expect(stored).toHaveLength(0);
   });
 });

@@ -32,6 +32,12 @@ describe('#1179 actorOf', () => {
     expect(op).toMatchObject({ user: 'jim', metadata: { origin: 'operator', reason: 'operator command: restart the chain' } });
   });
 
+  test('#1382: the private-store handle never reaches the record', () => {
+    const who = actorOf({ username: 'jim', roles: [], isAuthenticated: true, privateStoreHandle: 'h-secret-1' });
+    expect(JSON.stringify(who)).not.toContain('h-secret-1');
+    expect(who).toEqual({ user: 'jim', ipAddress: undefined, metadata: { origin: 'request' } });
+  });
+
   test('isJobContext tells the two apart', () => {
     expect(isJobContext(jobContextFromSystem('System', 'x'))).toBe(true);
     expect(isJobContext({ username: 'jim', roles: [], isAuthenticated: true })).toBe(false);

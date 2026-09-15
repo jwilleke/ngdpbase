@@ -148,6 +148,13 @@ export interface PermissionSubject {
   viaShare?: ShareGrant;
   /** The address the request came from (#1179) — provenance for the record, set where the request subject is built. */
   ipAddress?: string;
+  /**
+   * Opaque handle to this session's unlocked private-store keys (#1382).
+   * Random — not the session id — created at password login and dropped at
+   * logout; resolved live, so after logout it reaches nothing. Set only where
+   * the request subject is built; never recorded (`actorOf` must not gain it).
+   */
+  privateStoreHandle?: string;
 }
 
 /**

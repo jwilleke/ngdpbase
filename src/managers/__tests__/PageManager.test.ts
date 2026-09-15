@@ -785,6 +785,7 @@ describe('PageManager', () => {
 });
 
 describe('PageManager.getPrivatePageOwner (#1398)', () => {
+  const OWNER_CTX = { username: 'alice', roles: ['editor'], isAuthenticated: true };
   const withProvider = (provider: Record<string, unknown>): PageManager => {
     const pm = new PageManager(mockEngine);
     (pm as unknown as { provider: unknown }).provider = provider;
@@ -800,7 +801,7 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
       getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed' }),
       pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'yourphr' } } }
     });
-    await expect(pm.getPrivatePageOwner('Diary')).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
   });
 
   test('private entry without a store id uses the configured default store', async () => {
@@ -808,7 +809,7 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
       getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1' }),
       pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
     });
-    await expect(pm.getPrivatePageOwner('Diary')).resolves.toEqual({ creator: 'alice', store: 'default' });
+    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'default' });
   });
 
   test('public or missing page: null', async () => {
@@ -818,8 +819,8 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
         .mockResolvedValueOnce(null),
       pageIndex: { pages: { u2: { location: 'pages', creator: 'alice' } } }
     });
-    await expect(pm.getPrivatePageOwner('Main')).resolves.toBeNull();
-    await expect(pm.getPrivatePageOwner('Nope')).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('Main', OWNER_CTX)).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('Nope', OWNER_CTX)).resolves.toBeNull();
   });
 
   test('unlocked sealed-store page comes from the session user catalog', async () => {
@@ -832,10 +833,14 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
       getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u3' }),
       pageIndex: { pages: {} }
     });
+    // Reached through the context's handle — not an ambient session (P1).
     await expect(
-      runWithPrivateStoreSession('sid-1', () => pm.getPrivatePageOwner('Labs'))
+      pm.getPrivatePageOwner('Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
     ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-    // Outside that session the sealed page is not visible.
-    await expect(pm.getPrivatePageOwner('Labs')).resolves.toBeNull();
+    // A context without the handle does not see the sealed page, ambient session or not.
+    await expect(pm.getPrivatePageOwner('Labs', OWNER_CTX)).resolves.toBeNull();
+    await expect(
+      runWithPrivateStoreSession('sid-1', () => pm.getPrivatePageOwner('Labs', OWNER_CTX))
+    ).resolves.toBeNull();
   });
 });

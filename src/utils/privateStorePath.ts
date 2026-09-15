@@ -329,12 +329,18 @@ export function legacyPrivateVersionsRoot(
   return path.join(pagesDirectory, L.versionsDir, L.privateRoot);
 }
 
+/**
+ * True when `filePath` is inside the private root of `pagesDirectory`. Measured
+ * from the pages directory, not by searching the absolute path for `/private/`
+ * — which matched every page on a host whose data sits under `/private/var`
+ * or `/private/tmp` (macOS).
+ */
 export function pathContainsPrivateRoot(
+  pagesDirectory: string,
   filePath: string,
   layout?: PrivateStoreLayoutOverrides
 ): boolean {
-  const root = resolvePrivateStoreLayout(layout).privateRoot;
-  return filePath.includes(`${path.sep}${root}${path.sep}`);
+  return isUnderPrivateRoot(path.relative(pagesDirectory, filePath).split(path.sep), layout);
 }
 
 /**

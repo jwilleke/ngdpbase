@@ -154,8 +154,14 @@ describe('private store session bag (#1391, #1392)', () => {
     );
 
     expect(session.id).toBe('regenerated-id');
-    expect(getUnlockedKek('regenerated-id')).toEqual(created.kek);
-    expect(getUnlockedDek('regenerated-id', 'yourphr')).toEqual(unwrapDek(created.kek, store));
+    // The bag is keyed by a random handle on the session — never the session id (#1382).
+    const handle = session.privateStoreHandle as string;
+    expect(typeof handle).toBe('string');
+    expect(handle).not.toBe('regenerated-id');
+    expect(handle).not.toBe('attacker-planted-id');
+    expect(getUnlockedKek(handle)).toEqual(created.kek);
+    expect(getUnlockedDek(handle, 'yourphr')).toEqual(unwrapDek(created.kek, store));
+    expect(getUnlockedKek('regenerated-id')).toBeUndefined();
     expect(getUnlockedKek('attacker-planted-id')).toBeUndefined();
 
     const json = JSON.stringify(session);
@@ -184,6 +190,7 @@ describe('private store session bag (#1391, #1392)', () => {
 
     expect(getUnlockedKek(session.id as string)).toBeUndefined();
     expect(getUnlockedKek('regenerated-id')).toBeUndefined();
+    expect(session.privateStoreHandle).toBeUndefined();
   });
 
   test('logout drops KEK and DEK for that session and leaves other sessions unlocked', async () => {
@@ -203,15 +210,16 @@ describe('private store session bag (#1391, #1392)', () => {
       createMockReq({ username: 'molly', password: 'correct-horse' }, session),
       createMockRes()
     );
-    expect(getUnlockedKek('regenerated-id')).toBeDefined();
+    const handle = session.privateStoreHandle as string;
+    expect(getUnlockedKek(handle)).toBeDefined();
 
     routes.processLogout(
       createMockReq({}, session),
       createMockRes()
     );
 
-    expect(getUnlockedKek('regenerated-id')).toBeUndefined();
-    expect(getUnlockedDek('regenerated-id', 'yourphr')).toBeUndefined();
+    expect(getUnlockedKek(handle)).toBeUndefined();
+    expect(getUnlockedDek(handle, 'yourphr')).toBeUndefined();
     expect(getUnlockedKek('other-sid')).toEqual(other.kek);
 
     const json = JSON.stringify(session);
