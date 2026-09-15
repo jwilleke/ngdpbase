@@ -298,6 +298,8 @@
   "ngdpbase.attachment.provider.basic.storagedir": "${SLOW_STORAGE}/attachments",
   "ngdpbase.attachment.provider.basic.hashcontent": true,
   "ngdpbase.attachment.provider.basic.hashmethod": "sha256",
+  "_comment_attachment_legacy_private": "Migrate-FROM folder under attachment storagedir (pre-#1386 attachments/private/{user}/). Not a live write target. Destination is the page store under pages storagedir.",
+  "ngdpbase.attachment.provider.basic.legacyprivateroot": "private",
   "ngdpbase.directories.templates": "./templates",
   "ngdpbase.directories.resources": "./resources",
   "ngdpbase.directories.data": "${FAST_STORAGE}",

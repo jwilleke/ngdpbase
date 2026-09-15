@@ -2,7 +2,7 @@
  * Encrypt-on attachment writes refuse a missing session DEK. #1394
  *
  * The manager door calls the shared helper; keys are not on PageManager.
- * Files still land in attachments/ until #1386; the sealed-store gate is here.
+ * Destination is the store (#1386); ciphertext of those bytes is later.
  */
 
 import fs from 'fs-extra';
@@ -92,6 +92,9 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
+    const metadata = (stored[0] as unknown[])[2] as { store?: string; pageCreator?: string };
+    expect(metadata.store).toBe(DEFAULT_PRIVATE_STORE);
+    expect(metadata.pageCreator).toBe('molly');
   });
 
   test('encrypt-on upload refuses without a session DEK', async () => {

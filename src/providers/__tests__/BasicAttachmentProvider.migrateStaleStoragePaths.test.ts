@@ -23,7 +23,7 @@ import os from 'os';
 import BasicAttachmentProvider from '../BasicAttachmentProvider';
 import type { WikiEngine } from '../../types/WikiEngine';
 
-function makeEngine(storageDir: string) {
+function makeEngine(storageDir: string, pagesDir: string) {
   const configManager = {
     getProperty: vi.fn().mockImplementation((key: string, defaultValue: unknown) => {
       if (key === 'ngdpbase.attachment.maxsize') return 10485760;
@@ -34,6 +34,7 @@ function makeEngine(storageDir: string) {
     getResolvedDataPath: vi.fn().mockImplementation((key: string, defaultValue: unknown) => {
       if (key === 'ngdpbase.attachment.provider.basic.storagedir') return storageDir;
       if (key === 'ngdpbase.attachment.metadatafile') return path.join(storageDir, 'attachment-metadata.json');
+      if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;
       return defaultValue;
     })
   };
@@ -69,13 +70,19 @@ function makeSchema(id: string, storageLocation: string, extra: Record<string, u
 }
 
 describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
+  let tmp: string;
   let storageDir: string;
+  let pagesDir: string;
   let provider: BasicAttachmentProvider;
   let saveMetadataSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
-    storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-migrate-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir));
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-migrate-test-'));
+    storageDir = path.join(tmp, 'attachments');
+    pagesDir = path.join(tmp, 'pages');
+    await fs.ensureDir(storageDir);
+    await fs.ensureDir(pagesDir);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir));
     await provider.initialize();
     // Initialize ran migrate once over an empty map — reset metadata for each test.
     (provider as any).attachmentMetadata.clear();
@@ -84,7 +91,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
   afterEach(async () => {
     saveMetadataSpy.mockRestore();
-    await fs.remove(storageDir);
+    await fs.remove(tmp);
   });
 
   it('rewrites stale absolute paths preserving the hash filename', async () => {
@@ -100,7 +107,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
     expect(saveMetadataSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('routes private attachments to <storageDirectory>/private/<creator>/', async () => {
+  it('routes private attachments to the page store, not attachments/private', async () => {
     const id = 'priv1234deadbeef'.padEnd(64, '0');
     const creator = 'alice';
     const stale = `/Volumes/old-nas/attachments/private/${creator}/${id}.pdf`;
@@ -114,7 +121,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
     const entry = (provider as any).attachmentMetadata.get(id);
     expect(entry.storageLocation).toBe(
-      path.join(storageDir, 'private', creator, `${id}.pdf`)
+      path.join(pagesDir, 'private', creator, 'default', `${id}.pdf`)
     );
     expect(saveMetadataSpy).toHaveBeenCalledTimes(1);
   });
@@ -193,7 +200,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
   it('skips silently when storageDirectory is not yet set', async () => {
     const orphanProvider = new BasicAttachmentProvider(
-      makeEngine(storageDir)
+      makeEngine(storageDir, pagesDir)
     );
     // Don't initialize — storageDirectory stays null per the constructor.
     const orphanSave = vi.spyOn(orphanProvider as any, 'saveMetadata').mockResolvedValue(undefined);

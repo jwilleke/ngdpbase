@@ -12,6 +12,15 @@ import * as crypto from 'crypto';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
+import { readStoreMeta } from '../utils/privateStoreMeta.js';
+import {
+  DEFAULT_PRIVATE_STORE_LAYOUT,
+  privateStoreFilePath,
+  privateStoreLayoutFromConfig,
+  privateStoreRoot,
+  type PrivateStoreLayout
+} from '../utils/privateStorePath.js';
 
 /**
  * Schema.org Person metadata
@@ -55,6 +64,8 @@ interface SchemaCreativeWork {
   isPrivate?: boolean;
   /** Username of the page creator; set when isPrivate is true */
   creator?: string;
+  /** Private-store id when the file lives in the page store (#1386) */
+  store?: string;
   /** Structured metadata extracted at upload time (EXIF via sharp) — Phase 5 #405 */
   assetMetadata?: AssetMetadata;
   // --- PDF / docx embedded document metadata (Slice 5 of #755 / #759) ---
@@ -82,6 +93,8 @@ interface StoreAttachmentOptions {
   isPrivatePage?: boolean;
   /** Username of the private page creator */
   pageCreator?: string;
+  /** Private-store id; destination is `{pages}/{privateroot}/{user}/{store}/` */
+  store?: string;
 }
 
 /**
@@ -150,7 +163,10 @@ const EXTENSION_MIME_MAP: Record<string, string> = {
  */
 class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetProvider {
   private storageDirectory: string | null;
-  private privateStorageDir: string | null;
+  /** Pre-#1386 attachments/{legacyprivateroot}/{user}/ — migrate-FROM and read fallback only. */
+  private legacyPrivateDir: string | null;
+  private pagesDirectory: string | null;
+  private privateStoreLayout: PrivateStoreLayout;
   private thumbDir: string | null;
   private metadataFile: string | null;
   private attachmentMetadata: Map<string, SchemaCreativeWork>;
@@ -186,7 +202,9 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   constructor(engine: WikiEngine) {
     super(engine);
     this.storageDirectory = null;
-    this.privateStorageDir = null;
+    this.legacyPrivateDir = null;
+    this.pagesDirectory = null;
+    this.privateStoreLayout = DEFAULT_PRIVATE_STORE_LAYOUT;
     this.thumbDir = null;
     this.metadataFile = null;
     this.attachmentMetadata = new Map();
@@ -211,6 +229,9 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'ngdpbase.attachment.provider.basic.storagedir',
       './data/attachments'
     );
+    if (!this.storageDirectory) {
+      throw new Error('Storage directory not initialized');
+    }
 
     // Get metadata file location (ALL LOWERCASE)
     // Uses getResolvedDataPath to support INSTANCE_DATA_FOLDER
@@ -240,11 +261,25 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'sha256'
     ) as string;
 
-    // Derive private storage and thumbnail subdirectories
-    this.privateStorageDir = path.join(this.storageDirectory, 'private');
+    this.pagesDirectory = configManager.getResolvedDataPath(
+      'ngdpbase.page.provider.filesystem.storagedir',
+      './data/pages'
+    );
+    this.privateStoreLayout = privateStoreLayoutFromConfig((key, fallback) =>
+      configManager.getProperty(key, fallback)
+    );
+    const legacyRootRaw = configManager.getProperty(
+      'ngdpbase.attachment.provider.basic.legacyprivateroot',
+      'private'
+    );
+    const legacyRoot = typeof legacyRootRaw === 'string' && legacyRootRaw.length > 0
+      ? legacyRootRaw
+      : 'private';
+    this.legacyPrivateDir = path.join(this.storageDirectory, legacyRoot);
     this.thumbDir = path.join(this.storageDirectory, '.thumbs');
 
-    // Ensure directories exist
+    // Ensure directories exist. Do not create attachments/private — that is
+    // migrate-FROM only; live private writes go to the page store (#1386).
     await fs.ensureDir(this.storageDirectory);
     await fs.ensureDir(path.dirname(this.metadataFile));
 
@@ -255,6 +290,14 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
     // Load metadata
     await this.loadMetadata();
+
+    if (this.pagesDirectory && this.legacyPrivateDir) {
+      await migrateLegacyPrivateAttachments({
+        attachmentsPrivateDir: this.legacyPrivateDir,
+        pagesDirectory: this.pagesDirectory,
+        layout: this.privateStoreLayout
+      });
+    }
 
     // Auto-correct stale storageLocation paths after a data migration.
     // If any entry's directory no longer matches the configured storageDirectory,
@@ -307,7 +350,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
    * Compares each entry's directory against the current storageDirectory.
    * If they differ, the absolute path is replaced with the correct one
    * (preserving the basename/hash filename) and metadata is saved once.
-   * Private attachments are corrected to their per-creator subdirectory.
+   * Private attachments are corrected to the page store (legacy leftovers
+   * stay at attachments/{legacyprivateroot} until the file itself moves).
    */
   private async migrateStaleStoragePaths(): Promise<void> {
     if (!this.storageDirectory) return;
@@ -315,10 +359,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     let migrated = 0;
     for (const [, entry] of this.attachmentMetadata) {
       const basename = path.basename(entry.storageLocation);
-      const expectedDir = (entry.isPrivate && entry.creator && this.privateStorageDir)
-        ? path.join(this.privateStorageDir, entry.creator)
-        : this.storageDirectory;
-      const expectedPath = path.join(expectedDir, basename);
+      const expectedPath = await this.resolveAttachmentFilePath(entry, basename, { preferCanonical: true });
 
       if (entry.storageLocation !== expectedPath) {
         entry.storageLocation = expectedPath;
@@ -330,6 +371,43 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       logger.warn(`[BasicAttachmentProvider] Migrated ${migrated} stale attachment path(s) to ${this.storageDirectory}`);
       await this.saveMetadata();
     }
+  }
+
+  /**
+   * On-disk path for an attachment. Private files live in the page store;
+   * a leftover under attachments/{legacyprivateroot} is read fallback only.
+   */
+  private async resolveAttachmentFilePath(
+    entry: Pick<SchemaCreativeWork, 'isPrivate' | 'creator' | 'store' | 'storageLocation'>,
+    basename: string,
+    opts: { preferCanonical?: boolean } = {}
+  ): Promise<string> {
+    if (entry.isPrivate && entry.creator && this.pagesDirectory) {
+      const storeId = entry.store ?? this.privateStoreLayout.defaultStoreId;
+      const storePath = privateStoreFilePath(
+        this.pagesDirectory,
+        entry.creator,
+        basename,
+        storeId,
+        this.privateStoreLayout
+      );
+      const legacyPath = this.legacyPrivateDir
+        ? path.join(this.legacyPrivateDir, entry.creator, basename)
+        : null;
+      if (opts.preferCanonical) {
+        if (legacyPath && await fs.pathExists(legacyPath) && !await fs.pathExists(storePath)) {
+          return legacyPath;
+        }
+        return storePath;
+      }
+      if (await fs.pathExists(storePath)) return storePath;
+      if (legacyPath && await fs.pathExists(legacyPath)) return legacyPath;
+      return storePath;
+    }
+    if (!this.storageDirectory) {
+      return entry.storageLocation;
+    }
+    return path.join(this.storageDirectory, basename);
   }
 
   /**
@@ -496,15 +574,16 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       throw new Error('Storage directory not initialized');
     }
 
-    // Determine target directory: private pages get per-creator subdirectory
+    // Private files live in the page store, not attachments/private (#1386).
     const isPrivatePage = options.isPrivatePage ?? false;
     const pageCreator = options.pageCreator;
+    const storeId = options.store ?? this.privateStoreLayout.defaultStoreId;
     const targetDir =
-      isPrivatePage && pageCreator && this.privateStorageDir
-        ? path.join(this.privateStorageDir, pageCreator)
+      isPrivatePage && pageCreator && this.pagesDirectory
+        ? privateStoreRoot(this.pagesDirectory, pageCreator, storeId, this.privateStoreLayout)
         : this.storageDirectory;
 
-    // Ensure target directory exists (private dir may not yet exist)
+    // Ensure target directory exists (store dir may not yet exist)
     await fs.ensureDir(targetDir);
 
     // Determine file extension from original name
@@ -546,6 +625,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'mentions': [], // Array of pages using this attachment
       'isPrivate': isPrivatePage,
       'creator': isPrivatePage && pageCreator ? pageCreator : undefined,
+      'store': isPrivatePage ? storeId : undefined,
       'assetMetadata': (metadata).assetMetadata,
       // Slice 5 of #755 (#759) — embedded document metadata, spread only when present.
       ...(docMetadata?.title ? { documentTitle: docMetadata.title } : {}),
@@ -557,9 +637,22 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       ...(docMetadata?.inLanguage ? { inLanguage: docMetadata.inLanguage } : {})
     };
 
-    // Store metadata
-    this.attachmentMetadata.set(attachmentId, attachmentMetadata);
-    await this.saveMetadata();
+    const sealed = isPrivatePage && pageCreator && this.pagesDirectory
+      ? (await readStoreMeta(
+        this.pagesDirectory,
+        pageCreator,
+        storeId,
+        this.privateStoreLayout
+      )).encrypt === true
+      : false;
+
+    // Sealed-store original names must not appear in global attachment-metadata.json.
+    if (!sealed) {
+      this.attachmentMetadata.set(attachmentId, attachmentMetadata);
+      await this.saveMetadata();
+    } else if (this.metadataFile && !await fs.pathExists(this.metadataFile)) {
+      await this.saveMetadata();
+    }
 
     logger.info(`[BasicAttachmentProvider] Stored attachment: ${fileInfo.originalName} (${attachmentId})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}]` : ''}`);
     return attachmentMetadata;
@@ -582,7 +675,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     // Extract privacy options from metadata (passed by AttachmentManager)
     const storeOptions: StoreAttachmentOptions = {
       isPrivatePage: metadata.isPrivatePage as boolean | undefined,
-      pageCreator: metadata.pageCreator as string | undefined
+      pageCreator: metadata.pageCreator as string | undefined,
+      store: metadata.store as string | undefined
     };
 
     const schemaMetadata = await this.storeAttachmentInternal(
@@ -709,20 +803,8 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       return this.getOrphanedAttachment(attachmentId);
     }
 
-    // Derive the file path from the configured storage directory (via ConfigurationManager)
-    // rather than trusting metadata.storageLocation, which may point to a stale path
-    // (e.g. an old NAS mount after data migration).
     const basename = path.basename(metadata.storageLocation);
-    let filePath: string;
-    if (this.storageDirectory) {
-      if (metadata.isPrivate && metadata.creator && this.privateStorageDir) {
-        filePath = path.join(this.privateStorageDir, metadata.creator, basename);
-      } else {
-        filePath = path.join(this.storageDirectory, basename);
-      }
-    } else {
-      filePath = metadata.storageLocation;
-    }
+    const filePath = await this.resolveAttachmentFilePath(metadata, basename);
 
     try {
       const buffer = await fs.readFile(filePath);

@@ -182,6 +182,17 @@ export function privateStoreRoot(
   return path.join(pagesDirectory, L.privateRoot, creator, store ?? L.defaultStoreId);
 }
 
+/** Non-page file beside pages in `{privateroot}/{user}/{store}/{file}` (#1386). */
+export function privateStoreFilePath(
+  pagesDirectory: string,
+  creator: string,
+  fileName: string,
+  store?: string,
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, layout), fileName);
+}
+
 export function storeMetaPath(
   pagesDirectory: string,
   creator: string,

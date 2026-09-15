@@ -539,12 +539,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       }
     }
 
-    // Create metadata (include privacy flags for provider)
-    const metadata: AttachmentMetadataInput & { isPrivatePage?: boolean; pageCreator?: string } = {
+    // Create metadata (include privacy flags for provider). Destination is the
+    // page store (#1386); ciphertext of those bytes is later.
+    const metadata: AttachmentMetadataInput & {
+      isPrivatePage?: boolean;
+      pageCreator?: string;
+      store?: string;
+    } = {
       description: options.description || '',
       isFamilyFriendly: true,
       isPrivatePage,
-      pageCreator
+      pageCreator,
+      store: isPrivatePage ? (pageStore ?? DEFAULT_PRIVATE_STORE) : undefined
     };
 
     // Store attachment via provider

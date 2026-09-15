@@ -9,6 +9,7 @@ import {
   parsePrivatePageRel,
   privateDeletedDirectory,
   privatePageFilePath,
+  privateStoreFilePath,
   privateStoreLayoutFromConfig,
   privateStoreRoot,
   privateUserCatalogFiles,
@@ -102,6 +103,15 @@ describe('privateStorePath (#1383)', () => {
     expect(privateStoreRoot(pages, 'molly')).toBe(path.join(pages, 'private', 'molly', 'default'));
   });
 
+  test('store files sit beside pages in private/{user}/{store}/ (#1386)', () => {
+    expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf')).toBe(
+      path.join(pages, 'private', 'molly', 'default', 'aabb.pdf')
+    );
+    expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf', 'yourphr')).toBe(
+      path.join(pages, 'private', 'molly', 'yourphr', 'aabb.pdf')
+    );
+  });
+
   test('version and deleted dirs sit inside the store (walkDir already skips those names)', () => {
     expect(privateVersionDirectory(pages, 'jim', 'uuid-1')).toBe(
       path.join(pages, 'private', 'jim', 'default', 'versions', 'uuid-1')
@@ -135,6 +145,9 @@ describe('privateStorePath (#1383)', () => {
     };
     expect(privatePageFilePath(pages, 'jim', 'x.md', undefined, layout)).toBe(
       path.join(pages, 'vault', 'jim', 'home', 'x.md')
+    );
+    expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf', undefined, layout)).toBe(
+      path.join(pages, 'vault', 'molly', 'home', 'aabb.pdf')
     );
     expect(privateStoreRoot(pages, 'molly', 'yourphr', layout)).toBe(
       path.join(pages, 'vault', 'molly', 'yourphr')

@@ -250,6 +250,12 @@ export interface WikiConfig {
   /** Attachment metadata file */
   'ngdpbase.attachment.metadatafile': string;
 
+  /**
+   * Pre-#1386 private-attachment folder name under the attachment storagedir.
+   * Migrate-FROM only. Live writes go to the page store.
+   */
+  'ngdpbase.attachment.provider.basic.legacyprivateroot': string;
+
   /** Search enabled */
   'ngdpbase.search.enabled': boolean;
 
