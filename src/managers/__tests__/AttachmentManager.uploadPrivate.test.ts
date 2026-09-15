@@ -11,6 +11,8 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import AttachmentManager from '../AttachmentManager';
+import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
+import type { ActorContext } from '../../context/ActorContext';
 import {
   TEST_PRIVATE_STORE_KDF,
   createEncryptedStore,
@@ -59,6 +61,15 @@ function makeManager(opts: {
       }
       if (name === 'PageManager') {
         return { getPrivatePageOwner: pageOwner };
+      }
+      if (name === 'ACLManager') {
+        // ACL Tier 0 on the real container rule, for the page the harness names.
+        return {
+          canUserAccessPage: vi.fn(async (subject: ActorContext, pageName: string) => {
+            const owner = await pageOwner(pageName, subject);
+            return owner ? mayActInPrivateContainer(subject, owner.creator) : true;
+          })
+        };
       }
       return null;
     }

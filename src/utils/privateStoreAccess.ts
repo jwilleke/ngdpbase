@@ -15,7 +15,7 @@
  * (`assertCurrentSessionCanWriteStore`); a delegate carries none until a share
  * can wrap a store DEK.
  */
-import type { ActorContext } from '../context/ActorContext.js';
+import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 
 export function mayActInPrivateContainer(
   ctx: ActorContext,
@@ -26,5 +26,9 @@ export function mayActInPrivateContainer(
   if (ctx.viaShare) {
     return opts.storeShared === true && ctx.viaShare.issuer === owner;
   }
+  // A request must be an authenticated session of the owner: an anonymous
+  // visitor never matches, even a page whose recorded owner is `Anonymous`.
+  // A job carries who asked for it.
+  if (!isJobContext(ctx) && ctx.isAuthenticated !== true) return false;
   return ctx.username === owner;
 }

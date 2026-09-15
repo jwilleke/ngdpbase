@@ -29,6 +29,8 @@ import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { userIndexFor } from '../utils/privateStoreUnlock.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
 /**
  * A save refused because the content broke a filter rule (#1037).
@@ -117,8 +119,6 @@ interface WikiContext {
   userContext?: {
     username?: string;
   };
-  /** Used by checkPrivatePageAccess (#711) for the admin bypass. */
-  hasRole?(...roles: string[]): boolean;
 }
 
 /**
@@ -1659,58 +1659,42 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Private-page access check using the page-index `creator` as the
-   * authoritative identity (#711).
+   * The private-container decision for a page (docs/planning/private-stores.md,
+   * Access). ACLManager's Tier 0 asks this, so every `canAccess` on a page —
+   * view, edit, lists, the attachment door — reaches the same rule.
    *
-   * The Page Audience required-pages doc states: "access uses the page's
-   * **creator** as recorded in the page index, not the `author` frontmatter
-   * field. If the `author` field differs from the actual creator, the
-   * `author` field is ignored for access control purposes."
+   * `pages/private/{user}/` and every store below it is owned by that user.
+   * Nobody else acts in it unless the owner delegated (a share the owner
+   * issued, once the store's Share switch exists — #1388). No role reaches in,
+   * admin included (security-posture P2: no `hasRole` as an allow).
    *
-   * Page-index `creator` is sticky (`VersioningFileProvider:1394–1396`
-   * preserves it across saves); frontmatter `author` is mutable. Reading
-   * the sticky source prevents an admin reassigning `author` from
-   * silently shifting private-page ownership.
+   * Owner is the page-index `creator` (sticky), not frontmatter `author`, so
+   * reassigning `author` cannot move ownership (#711).
    *
    * Returns:
-   *   - `null`  — page is not private; caller should fall through to the
-   *               next access tier
-   *   - `true`  — page is private AND user is admin OR the page-index creator
-   *   - `false` — page is private AND user is neither admin nor creator
-   *
-   * Used by ACLManager Tier 0 as the single source of truth for the
-   * private-access decision. Existing per-route checks (
-   * `WikiRoutes.checkPrivatePageAccess`, `MediaManager.checkPrivatePageAccess`
-   * ) are unaffected by this commit — they continue to use their own
-   * implementations until the broader access-control refactor lands as a
-   * separate epic.
+   *   - `null`  — the page is not private (or does not exist); the caller
+   *               falls through to its next tier
+   *   - `true`  — private, and the caller is the owner or the owner's delegate
+   *   - `false` — private, and the caller is neither; also when privacy
+   *               cannot be established (conservative, the #714 convention)
    */
   async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
     try {
       if (!this.provider) return null;
-
       const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
       if (!pageMetadata?.uuid) return null;
 
-      const provider = this.provider as unknown as {
-        pageIndex?: { pages: Record<string, { location?: string; creator?: string }> }
-      };
-      const pageIndex = provider.pageIndex;
-      const entry = pageIndex?.pages[pageMetadata.uuid];
-
-      // Defensive: treat the page as private if EITHER signal says so.
-      const md = pageMetadata as Record<string, unknown>;
-      const isPrivate = (entry?.location === 'private') || (md.private === true);
-      if (!isPrivate) return null;
-
-      const username = wikiContext.userContext?.username;
-      if (!username) return false;
-      if (wikiContext.hasRole?.('admin')) return true;
-
-      // Page-index creator (sticky) — not frontmatter `author` (mutable).
-      return username === entry?.creator;
-    } catch {
-      return null;
+      const subject = wikiContext.userContext as ActorContext | undefined;
+      const owner = subject
+        ? await this.getPrivatePageOwner(pageNameOrUuid, subject)
+        : await this.getPrivatePageOwner(pageNameOrUuid, ANONYMOUS_SUBJECT);
+      // Defensive: frontmatter says private but no owner is known — refuse.
+      if (!owner) return (pageMetadata as Record<string, unknown>).private === true ? false : null;
+      if (!subject) return false;
+      return mayActInPrivateContainer(subject, owner.creator);
+    } catch (err) {
+      logger.warn(`[PageManager] private-access check failed for '${pageNameOrUuid}' — refusing: ${String(err)}`);
+      return false;
     }
   }
 

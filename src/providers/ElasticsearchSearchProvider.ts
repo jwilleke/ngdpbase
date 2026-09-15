@@ -239,7 +239,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
     if (!this.client) return [];
 
     const maxResults = options.maxResults ?? this.maxResults;
-    const { isPrivate: privateFilter, audience: audienceFilter } = this._buildPrivacyFilter(options.wikiContext);
+    const { owner } = this._buildPrivacyFilter(options.wikiContext);
 
     const mustClause: QueryDslQueryContainer = query.trim()
       ? {
@@ -252,7 +252,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       }
       : { match_all: {} };
 
-    const esQuery = this._wrapWithPrivacy(mustClause, privateFilter, audienceFilter);
+    const esQuery = this._wrapWithPrivacy(mustClause, owner);
 
     const resp = await this.client.search<EsPageDocument>({
       index: this.indexName,
@@ -289,7 +289,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
     } = criteria as SearchCriteria & { systemKeywords?: string[]; dateField?: 'modified' | 'created' };
 
     const maxResults = (maxR) ?? this.maxResults;
-    const { isPrivate: privateFilter, audience: audienceFilter } = this._buildPrivacyFilter(
+    const { owner } = this._buildPrivacyFilter(
       (criteria.wikiContext as SearchOptions['wikiContext']) ?? undefined
     );
 
@@ -345,7 +345,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       filter.push({ range: { [field]: range } });
     }
 
-    const esQuery = this._wrapWithPrivacy(must, privateFilter, audienceFilter, filter);
+    const esQuery = this._wrapWithPrivacy(must, owner, filter);
 
     const resp = await this.client.search<EsPageDocument>({
       index: this.indexName,
@@ -711,23 +711,27 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
   }
 
   /**
-   * Build the private-page visibility predicate from the current WikiContext.
-   * Returns the two clauses needed by _wrapWithPrivacy.
+   * Build the private-page visibility predicate from the current WikiContext
+   * (#1382). A private page is found only by its owner — no role and no
+   * frontmatter audience reaches into a private container
+   * (docs/planning/private-stores.md, Access). `owner` is the caller's username
+   * when there is one; a share visitor (anonymous) finds no private page.
    */
   private _buildPrivacyFilter(wikiContext?: SearchOptions['wikiContext']): {
-    isPrivate: boolean;
-    audience: string[];
+    owner: string | undefined;
   } {
-    const principals = wikiContext?.getPrincipals?.() ?? [];
-    return { isPrivate: principals.length > 0, audience: principals };
+    const subject = wikiContext?.userContext;
+    const username = subject && !subject.viaShare && subject.isAuthenticated ? subject.username : undefined;
+    return { owner: typeof username === 'string' && username ? username : undefined };
   }
 
   /**
    * Wrap a must clause with a boolean that enforces private-page visibility.
    *
-   * Visibility rule (mirrors LunrSearchProvider):
+   * Visibility rule (mirrors LunrSearchProvider, #1382):
    *   - Show if isPrivate === false, OR
-   *   - Show if audience contains any of the current user's principals
+   *   - Show if the page is private and the caller is its owner (author).
+   *     No role and no frontmatter audience reaches a private page.
    *
    * #628: AuthorLocked is intentionally NOT part of this filter. It is an *edit*
    * constraint (parallel to git branch protection) — locked pages remain freely
@@ -736,16 +740,16 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
    */
   private _wrapWithPrivacy(
     must: QueryDslQueryContainer,
-    hasUser: boolean,
-    principals: string[],
+    owner: string | undefined,
     extraFilter: QueryDslQueryContainer[] = []
   ): QueryDslQueryContainer {
-    const privacyFilter: QueryDslQueryContainer = hasUser && principals.length > 0
+    // Public pages, plus the caller's own private pages (author = owner).
+    const privacyFilter: QueryDslQueryContainer = owner
       ? {
         bool: {
           should: [
             { term: { isPrivate: false } },
-            { terms: { audience: principals } }
+            { bool: { filter: [{ term: { isPrivate: true } }, { term: { author: owner } }] } }
           ],
           minimum_should_match: 1
         }

@@ -30,6 +30,11 @@ describe('mayActInPrivateContainer', () => {
     expect(mayActInPrivateContainer(share('bob'), 'alice', { storeShared: true })).toBe(false);
   });
 
+  test('an unauthenticated subject never matches, even an owner recorded as Anonymous', () => {
+    expect(mayActInPrivateContainer({ username: 'Anonymous', isAuthenticated: false, roles: ['anonymous'] }, 'Anonymous')).toBe(false);
+    expect(mayActInPrivateContainer({ username: 'alice', isAuthenticated: false, roles: [] }, 'alice')).toBe(false);
+  });
+
   test('no owner, no access', () => {
     expect(mayActInPrivateContainer({ username: '', isAuthenticated: false, roles: [] }, '')).toBe(false);
   });

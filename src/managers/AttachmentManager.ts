@@ -28,7 +28,6 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
-import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -519,10 +518,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
       : null;
     // A private container is its owner's: nobody else writes into it unless the
-    // owner delegated (a share, once the store's Share switch exists — #1388).
-    // No role reaches in, admin included. Refused before any bytes are stored.
-    if (pageOwner && !mayActInPrivateContainer(ctx, pageOwner.creator)) {
-      throw new Error('Permission denied: you cannot upload to this page');
+    // owner delegated. The decision is the page's own — ACLManager Tier 0 via
+    // the cross-page check — so the rule has one home and a refusal is recorded
+    // (authorization-deny). Refused before any bytes are stored.
+    if (pageOwner && pageName) {
+      const acl = this.engine.getManager<{
+        canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
+          }>('ACLManager');
+      const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+      if (!acl || !(await acl.canUserAccessPage(subject, pageName, 'edit'))) {
+        throw new Error('Permission denied: you cannot upload to this page');
+      }
     }
     // A share visitor has no container of their own to put a private file in.
     if (!pageOwner && options.private === true && ctx.viaShare) {

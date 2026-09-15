@@ -1,21 +1,22 @@
 /**
  * Unit tests for WikiRoutes — private attachment access control (#122)
  *
- * Tests that serveAttachment() enforces a 403 guard when an attachment
- * belongs to a private page, allowing access only to the page creator
- * and admins.
+ * Tests that serveAttachment() serves a private file only under the private
+ * container rule (#1382, docs/planning/private-stores.md, Access): the file's
+ * owner (its `creator`), or a delegate of the owner — never by role, and not
+ * to whoever may view a page that links it.
  *
  * Covers:
  * - Anonymous user → 403
- * - Authenticated non-creator non-admin → 403
- * - Page creator → 200 (attachment served)
- * - Admin user → 200 (attachment served)
+ * - Authenticated other user → 403
+ * - Owner → 200 (attachment served)
+ * - Admin user → 403 (no role reaches a private container)
  * - Public attachment (isPrivate not set) → 200 without access check
- * - pageName derived from meta.mentions when present
- * - pageName derived from meta.pageName fallback
+ * - The decision is the file owner's, through ACLManager (recorded)
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
 import type { Request } from 'express';
 import type { WikiEngine } from '../../types/WikiEngine';
 
@@ -69,7 +70,7 @@ function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {})
   return {
     getAttachmentMetadata: vi.fn().mockResolvedValue(
       isPrivate
-        ? { isPrivate: true, mentions: [{ name: pageName }] }
+        ? { isPrivate: true, creator: PAGE_CREATOR, mentions: [{ name: pageName }] }
         : null
     ),
     getAttachment: vi.fn().mockResolvedValue({
@@ -96,24 +97,13 @@ function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {})
  *   - else → deny
  * For a non-private page (location !== 'private'), allow.
  */
-function makeACLManagerStub({ creator = PAGE_CREATOR, isPrivatePage = true } = {}) {
+function makeACLManagerStub() {
   return {
-    canUserAccessPage: vi.fn(async (userContext, pageName, _action) => {
-      // Mimic canUserAccessPage's "no page name → deny" rule from
-      // Slice B (the conservative-on-security default).
-      if (!pageName) return false;
-      if (!isPrivatePage) return true;
-
-      const username = userContext?.username;
-      const roles    = userContext?.roles ?? [];
-      if (!username) return false;
-      if (roles.includes('admin')) return true;
-      if (username === creator) return true;
-      return false;
-    }),
-    // Same-page fast path — not exercised by serveAttachment (which is
-    // always a cross-page check) but defined so WikiContext.canAccess
-    // doesn't trip when it constructs the cache key shape.
+    // The private-container decision for a file, on the real rule (#1382) —
+    // the stub only stands in for ACLManager's recording of a refusal.
+    canAccessPrivateContainer: vi.fn((userContext, owner, _resource, _action) =>
+      Boolean(userContext && owner) && mayActInPrivateContainer(userContext, owner)),
+    canUserAccessPage: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
   };
 }
@@ -181,9 +171,9 @@ describe('WikiRoutes — private attachment access (#122)', () => {
     expect(res.render).toHaveBeenCalledWith('error', expect.objectContaining({ code: 403 }));
   });
 
-  test('non-creator non-admin user receives 403 for private attachment', async () => {
+  test('another authenticated user receives 403 for private attachment', async () => {
     const req = createReq(
-      { username: 'bob', roles: ['user'], authenticated: true },
+      { username: 'bob', roles: ['user'], isAuthenticated: true },
       { attachmentId: 'att-001' }
     );
     const res = createRes();
@@ -193,9 +183,9 @@ describe('WikiRoutes — private attachment access (#122)', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test('page creator receives the attachment', async () => {
+  test('the file\'s owner receives the attachment', async () => {
     const req = createReq(
-      { username: PAGE_CREATOR, roles: ['user'], authenticated: true },
+      { username: PAGE_CREATOR, roles: ['user'], isAuthenticated: true },
       { attachmentId: 'att-001' }
     );
     const res = createRes();
@@ -206,17 +196,17 @@ describe('WikiRoutes — private attachment access (#122)', () => {
     expect(res.send).toHaveBeenCalled();
   });
 
-  test('admin user receives the attachment regardless of creator', async () => {
+  test('admin receives 403 — no role reaches a private container', async () => {
     const req = createReq(
-      { username: 'admin', roles: ['admin'], authenticated: true },
+      { username: 'admin', roles: ['admin'], isAuthenticated: true },
       { attachmentId: 'att-001' }
     );
     const res = createRes();
 
     await wikiRoutes.serveAttachment(req, res);
 
-    expect(res.status).not.toHaveBeenCalledWith(403);
-    expect(res.send).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.send).not.toHaveBeenCalled();
   });
 });
 
@@ -247,66 +237,42 @@ describe('WikiRoutes — public attachment access (#122)', () => {
 // pageName fallback from meta.pageName
 // ---------------------------------------------------------------------------
 
-describe('WikiRoutes — private attachment — pageName resolution (#122)', () => {
-  test('uses meta.pageName when mentions array is absent', async () => {
+describe('WikiRoutes — private attachment — the file owner decides (#1382)', () => {
+  test('the decision is the file owner\'s, through ACLManager — not view access to a linked page', async () => {
     const attachmentManager = makeAttachmentManager({ isPrivate: false });
+    // Linked from a public page that anyone may view; the file itself is carol's.
     attachmentManager.getAttachmentMetadata.mockResolvedValue({
-      isPrivate: true,
-      pageName: PAGE_NAME
-      // no mentions field
+      isPrivate: true, creator: 'carol', mentions: [{ name: 'PublicPage' }]
     });
-    const pageManager = makePageManager();
+    const pageManager = makePageManager(PAGE_UUID, 'pages');
     const aclManager = makeACLManagerStub();
-    const engine = makeEngine(pageManager, attachmentManager, aclManager);
-    const wikiRoutes = new WikiRoutes(engine);
+    const wikiRoutes = new WikiRoutes(makeEngine(pageManager, attachmentManager, aclManager));
 
-    // Anonymous — should be denied
-    const req = createReq(null, { attachmentId: 'att-002' });
     const res = createRes();
-
-    await wikiRoutes.serveAttachment(req, res);
+    await wikiRoutes.serveAttachment(
+      createReq({ username: PAGE_CREATOR, roles: ['user'], isAuthenticated: true }, { attachmentId: 'att-002' }),
+      res
+    );
 
     expect(res.status).toHaveBeenCalledWith(403);
-    // #714 Slice C: the route now delegates the cross-page check to
-    // `ACLManager.canUserAccessPage`. Verify the right `pageName`
-    // (from `meta.pageName` fallback) reached the gate. Previously this
-    // asserted on `pageManager.getPageMetadata` because the legacy
-    // `WikiRoutes.checkPrivatePageAccess` invoked it directly; under the
-    // new wiring `pageManager.getPageMetadata` is called inside
-    // `ACLManager.canUserAccessPage` (in production code, not in the
-    // ACL-manager stub used here).
-    // Anonymous request → userContext is null. `expect.anything()` does NOT
-    // match null/undefined, so check the args positionally.
-    expect(aclManager.canUserAccessPage).toHaveBeenCalled();
-    const [_userContext, pageName, action] = aclManager.canUserAccessPage.mock.calls[0];
-    expect(pageName).toBe(PAGE_NAME);
+    expect(aclManager.canUserAccessPage).not.toHaveBeenCalled();
+    const [, owner, resource, action] = aclManager.canAccessPrivateContainer.mock.calls[0];
+    expect(owner).toBe('carol');
+    expect(resource).toBe('attachment:att-002');
     expect(action).toBe('view');
   });
 
-  test('empty string pageName denies (#714 — deny-on-empty replaces legacy allow-on-empty)', async () => {
-    // #714 Slice C: the legacy `WikiRoutes.checkPrivatePageAccess` returned
-    // **allow** when `pageName` couldn't be resolved (`if (!pageMetadata?.uuid) return true`).
-    // Under the new cross-page facade `wikiContext.canAccess('view', '')`,
-    // the empty page name returns **deny** at the first guard in
-    // `ACLManager.canUserAccessPage` (`if (!pageName) return false`).
-    // This is the EPIC's explicit "Behavior decision point" — some
-    // private attachments whose owning-page name was unresolvable now 403.
+  test('a private file with no recorded owner is refused', async () => {
     const attachmentManager = makeAttachmentManager({ isPrivate: false });
-    attachmentManager.getAttachmentMetadata.mockResolvedValue({
-      isPrivate: true
-      // no mentions, no pageName
-    });
-    const pageManager = makePageManager();
-    pageManager.getPageMetadata.mockResolvedValue(null);
-    const engine = makeEngine(pageManager, attachmentManager);
-    const wikiRoutes = new WikiRoutes(engine);
+    attachmentManager.getAttachmentMetadata.mockResolvedValue({ isPrivate: true });
+    const wikiRoutes = new WikiRoutes(makeEngine(makePageManager(), attachmentManager));
 
-    const req = createReq(null, { attachmentId: 'att-003' });
     const res = createRes();
+    await wikiRoutes.serveAttachment(
+      createReq({ username: PAGE_CREATOR, roles: ['user'], isAuthenticated: true }, { attachmentId: 'att-003' }),
+      res
+    );
 
-    await wikiRoutes.serveAttachment(req, res);
-
-    // Empty linkedPageName → canUserAccessPage returns false → 403.
     expect(res.status).toHaveBeenCalledWith(403);
   });
 });

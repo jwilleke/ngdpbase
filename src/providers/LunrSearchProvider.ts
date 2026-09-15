@@ -22,6 +22,8 @@
 import BaseSearchProvider, { SearchResult, SearchOptions, SearchCriteria, SearchStatistics, BackupData, WikiEngine } from './BaseSearchProvider.js';
 import { WikiPage } from '../types/index.js';
 import lunr from 'lunr';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -497,28 +499,16 @@ class LunrSearchProvider extends BaseSearchProvider {
       const effectiveQuery = options.prefixLastTerm ? applyPrefixToLastTerm(query) : query;
       const results: LunrSearchResult[] = this.searchIndex.search(effectiveQuery);
 
-      // Extract user context for private-page filtering
+      // Private-page filtering uses the caller's context (isDocVisible).
       const wikiContext = options.wikiContext;
-      const isAdmin = wikiContext?.hasRole?.('admin') ?? false;
-      const username = wikiContext?.userContext?.username;
-      // #626: principals from WikiContext.getPrincipals() — same source ES uses
-      // for its audience filter. Mirrors ElasticsearchSearchProvider semantics.
-      const principals = wikiContext?.getPrincipals?.() ?? [];
 
       const searchResults = results
         .map(result => {
           const doc = this.documents[result.ref];
           if (!doc) return null;
 
-          // Filter out private pages the current user cannot access
-          if (doc.isPrivate) {
-            const isCreator = username !== undefined && username === doc.creator;
-            // #626: honor frontmatter audience — the user can see a private
-            // page if any of their principals appears in the page's audience.
-            const inAudience = Array.isArray(doc.audience)
-              && principals.some(p => doc.audience!.includes(p));
-            if (!isAdmin && !isCreator && !inAudience) return null;
-          }
+          // A private page is found only by its owner (isDocVisible).
+          if (!this.isDocVisible(doc, wikiContext)) return null;
 
           // #627: AuthorLocked is intentionally NOT a search-visibility filter.
           // It is an *edit* constraint (parallel to git branch protection) —
@@ -560,19 +550,18 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
-   * Private-page visibility check (#731/#716). Mirrors the inline filter in
-   * search() (the text path). Used by the no-text advancedSearch branch,
-   * which would otherwise return private pages to any caller. A page is
-   * visible if it is not private, or the caller is admin / its creator /
-   * in its frontmatter audience.
+   * Private-page visibility (#731/#716, #1382). Used by both the text path in
+   * search() and the no-text advancedSearch branch. A private page lives in its
+   * owner's private container: it is found only by its owner — no role, and no
+   * frontmatter audience, reaches in (docs/planning/private-stores.md, Access;
+   * the same rule ACLManager applies at Tier 0).
    */
   private isDocVisible(doc: LunrDocument, wikiContext?: SearchOptions['wikiContext']): boolean {
     if (!doc.isPrivate) return true;
-    if (wikiContext?.hasRole?.('admin')) return true;
-    const username = wikiContext?.userContext?.username;
-    if (username !== undefined && username === doc.creator) return true;
-    const principals = wikiContext?.getPrincipals?.() ?? [];
-    return Array.isArray(doc.audience) && principals.some(p => doc.audience!.includes(p));
+    // The forwarded request subject; SearchOptions declares its own loose shape
+    // for it (one of the duplicated identity types #1399 consolidates).
+    const subject = wikiContext?.userContext as unknown as ActorContext | undefined;
+    return Boolean(subject && doc.creator) && mayActInPrivateContainer(subject as ActorContext, doc.creator as string);
   }
 
   /**

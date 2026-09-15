@@ -346,6 +346,8 @@ interface IACLManager {
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
   removeACLMarkup(content: string): string;
+  /** The private-container decision for a file in a store: owner or delegate, never a role (#1382). */
+  canAccessPrivateContainer(userContext: WikiContext['userContext'], owner: string, resource: string, action: string): boolean;
 }
 
 interface ISchemaManager {
@@ -2526,6 +2528,31 @@ class WikiRoutes {
     );
     if (readers.some((p) => p.effect === 'deny')) return false;
     return readers.some((p) => p.effect === 'allow');
+  }
+
+  /**
+   * Re-save a page for an admin bulk keyword change. A private page is changed
+   * only when this request may edit it — decided by `canAccess` (ACLManager
+   * Tier 0: the owner or a delegate, never a role), which also records a
+   * refusal. Another user's private page is left alone; the admin's own is
+   * saved with the admin's context, which a store write requires.
+   *
+   * @returns false when the page was left unchanged
+   */
+  private async resaveForKeywordChange(
+    wikiContext: WikiContext,
+    pageName: string,
+    page: { content: string; metadata?: Record<string, unknown> },
+    metadata: Record<string, unknown>
+  ): Promise<boolean> {
+    const pageManager = this.engine.getManager('PageManager');
+    if (page.metadata?.private === true) {
+      if (!wikiContext.userContext || !(await wikiContext.canAccess('edit', pageName))) return false;
+      await pageManager.savePage(pageName, page.content, metadata, { actorContext: wikiContext.userContext });
+      return true;
+    }
+    await pageManager.savePage(pageName, page.content, metadata);
+    return true;
   }
 
   private async _isPagePrivate(pageName: string): Promise<boolean> {
@@ -6073,38 +6100,18 @@ ${panes}
         });
       }
 
-      // 🔒 PRIVACY: Check if this attachment belongs to a private page before serving
+      // 🔒 PRIVACY: a private file lives in its owner's private container
+      // (docs/planning/private-stores.md, Access). It is served to the owner, or
+      // a delegate of the owner — never by role, and not to whoever may view a
+      // page that links it. The decision and its record are ACLManager's.
       const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
       if (meta?.isPrivate) {
-        // Determine linked page name from mentions (first mention) or pageName field
-        const linkedPageName: string =
-          (Array.isArray(meta.mentions) && meta.mentions.length > 0
-            ? (meta.mentions[0] as { name?: string }).name
-            : undefined) ??
-          (meta.pageName as string | undefined) ??
-          '';
-        // #714 Slice C: was `this.checkPrivatePageAccess(wikiContext, linkedPageName)`.
-        // Migrated to the unified cross-page facade `wikiContext.canAccess('view', linkedPageName)`
-        // (Slice B added the override parameter); under the hood this
-        // routes through `ACLManager.canUserAccessPage`, which loads the
-        // owning page's metadata and runs the full evaluator.
-        //
-        // Important: the WikiContext is constructed WITHOUT pageName so
-        // that the canAccess call follows the cross-page path
-        // (`canUserAccessPage`) rather than the same-page fast path
-        // (`checkPagePermissionWithContext`). The route doesn't need a
-        // "current page" — it's serving an attachment, not rendering
-        // a page.
-        //
-        // **Behavior shift** (per #714 issue body's "Behavior decision
-        // point" — explicit operator decision was to proceed):
-        // when `linkedPageName` is empty or the owning page's metadata
-        // can't be loaded, the new code returns deny; the legacy helper
-        // returned allow (`if (!pageMetadata?.uuid) return true`). Some
-        // private attachments whose owning-page name was unresolvable
-        // will now 403 where they previously served. This is the
-        // conservative-on-security default the EPIC adopts.
-        if (!(await wikiContext.canAccess('view', linkedPageName))) {
+        const aclManager = this.engine.getManager('ACLManager');
+        const owner = typeof meta.creator === 'string' ? meta.creator : '';
+        const allowed = aclManager
+          ? aclManager.canAccessPrivateContainer(wikiContext.userContext, owner, `attachment:${attachmentId}`, 'view')
+          : false;
+        if (!allowed) {
           return res.status(403).render('error', {
             code: 403,
             message: 'You do not have permission to access this attachment',
@@ -17125,6 +17132,8 @@ ${description}
       // Get pages using this keyword
       const allPages = pageManager ? await pageManager.getAllPages() : [];
       let pagesUpdated = 0;
+      // Another user's private page is not the admin's to change (#1382).
+      let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
         const page = await pageManager.getPage(pageName);
@@ -17147,10 +17156,11 @@ ${description}
           }
 
           if (page) {
-            await pageManager.savePage(pageName, page.content, {
+            const saved = await this.resaveForKeywordChange(wikiContext, pageName, page, {
               ...page.metadata,
               'user-keywords': newKeywords
             });
+            if (!saved) { privatePagesSkipped++; continue; }
           }
           pagesUpdated++;
         }
@@ -17162,8 +17172,10 @@ ${description}
 
       res.json({
         success: true,
-        message: `Keyword deleted successfully. ${pagesUpdated} page(s) updated.`,
-        pagesUpdated
+        message: `Keyword deleted successfully. ${pagesUpdated} page(s) updated.`
+          + (privatePagesSkipped ? ` ${privatePagesSkipped} private page(s) left unchanged — they belong to their owners.` : ''),
+        pagesUpdated,
+        privatePagesSkipped
       });
     } catch (err: unknown) {
       logger.error('Error deleting keyword:', err);
@@ -17221,6 +17233,8 @@ ${description}
       // Update all pages: replace source with target
       const allPages = pageManager ? await pageManager.getAllPages() : [];
       let pagesUpdated = 0;
+      // Another user's private page is not the admin's to change (#1382).
+      let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
         const page = await pageManager.getPage(pageName);
@@ -17233,10 +17247,11 @@ ${description}
             .filter((k, i, arr) => arr.indexOf(k) === i);
 
           if (page) {
-            await pageManager.savePage(pageName, page.content, {
+            const saved = await this.resaveForKeywordChange(wikiContext, pageName, page, {
               ...page.metadata,
               'user-keywords': newKeywords
             });
+            if (!saved) { privatePagesSkipped++; continue; }
           }
           pagesUpdated++;
         }
@@ -17250,8 +17265,10 @@ ${description}
 
       res.json({
         success: true,
-        message: `Keywords consolidated successfully. ${pagesUpdated} page(s) updated.${deleteSource ? ' Source keyword deleted.' : ''}`,
+        message: `Keywords consolidated successfully. ${pagesUpdated} page(s) updated.${deleteSource ? ' Source keyword deleted.' : ''}`
+          + (privatePagesSkipped ? ` ${privatePagesSkipped} private page(s) left unchanged — they belong to their owners.` : ''),
         pagesUpdated,
+        privatePagesSkipped,
         sourceDeleted: !!deleteSource
       });
     } catch (err: unknown) {

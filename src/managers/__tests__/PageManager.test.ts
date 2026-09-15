@@ -844,3 +844,58 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
     ).resolves.toBeNull();
   });
 });
+
+describe('PageManager.checkPrivatePageAccess — the private container rule (#1382)', () => {
+  const withProvider = (provider: Record<string, unknown>): PageManager => {
+    const pm = new PageManager(mockEngine);
+    (pm as unknown as { provider: unknown }).provider = provider;
+    return pm;
+  };
+  const privatePage = () => withProvider({
+    getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'alice' }),
+    pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'default' } } }
+  });
+  const ctx = (userContext: Record<string, unknown> | undefined) => ({ pageName: 'Diary', content: '', userContext });
+
+  test('the owner is allowed', async () => {
+    await expect(privatePage().checkPrivatePageAccess(
+      ctx({ username: 'alice', roles: ['editor'], isAuthenticated: true }), 'Diary'
+    )).resolves.toBe(true);
+  });
+
+  test('admin, another user and anonymous are refused — no role reaches in', async () => {
+    const pm = privatePage();
+    for (const who of [
+      { username: 'root', roles: ['admin'], isAuthenticated: true },
+      { username: 'bob', roles: ['editor'], isAuthenticated: true },
+      undefined
+    ]) {
+      await expect(pm.checkPrivatePageAccess(ctx(who), 'Diary')).resolves.toBe(false);
+    }
+  });
+
+  test('ownership is the page-index creator, not frontmatter author', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'mallory' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
+    });
+    await expect(pm.checkPrivatePageAccess(ctx({ username: 'mallory', roles: [], isAuthenticated: true }), 'Diary')).resolves.toBe(false);
+  });
+
+  test('a public or missing page is not decided here (null)', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValueOnce({ uuid: 'u2' }).mockResolvedValueOnce(null),
+      pageIndex: { pages: { u2: { location: 'pages' } } }
+    });
+    const who = ctx({ username: 'bob', roles: [], isAuthenticated: true });
+    await expect(pm.checkPrivatePageAccess(who, 'Main')).resolves.toBeNull();
+    await expect(pm.checkPrivatePageAccess(who, 'Nope')).resolves.toBeNull();
+  });
+
+  test('when privacy cannot be established it refuses (fails closed)', async () => {
+    const throwing = withProvider({ getPageMetadata: vi.fn().mockRejectedValue(new Error('disk')) });
+    await expect(throwing.checkPrivatePageAccess(
+      ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'Diary'
+    )).resolves.toBe(false);
+  });
+});
