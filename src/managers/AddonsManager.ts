@@ -858,6 +858,15 @@ class AddonsManager extends BaseManager {
         }
         seenUuids.set(uuid.toLowerCase(), file);
 
+        // #1403: a page in the trash was deleted on purpose. It is not missing,
+        // so it is never seeded again — that brought it back live beside its
+        // own trash entry, sharing one version folder that a purge then deleted.
+        // It returns only through an explicit restore.
+        if (pageManager.isPageDeleted(uuid, seedContext)) {
+          logger.info(`[AddonsManager] Skipping ${addonName}/pages/${file} — page ${uuid} is in the trash (#1403)`);
+          continue;
+        }
+
         if (!slug) {
           reportSkip(
             `[AddonsManager] Skipping ${addonName}/pages/${file} — missing slug in frontmatter`

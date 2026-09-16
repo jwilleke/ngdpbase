@@ -42,8 +42,13 @@ On restart, comparing the addon's current `pages/` against an already-seeded ins
 | __Updated__ content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on __and__ the page is unmodified (or a legacy no-hash page) — see [Content-aware reseed](#content-aware-reseed-920) |
 | __Deleted__ source page | ❌ No | There is no removal logic; the instance copy persists indefinitely ([#920](https://github.com/jwilleke/ngdpbase/issues/920) discusses a gated policy) |
 | __Renamed slug__ (same UUID) | ❌ No (skipped) | The UUID guard matches — the page keeps its old slug |
+| Instance page __deleted by an operator__ (in the trash) | ❌ No (skipped) | A uuid in the trash was removed on purpose, so the seed skips it and logs *"is in the trash"* ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403)). It comes back only through a restore from the trash |
 
 So __additions always flow; updates flow only with reseed enabled on an unmodified page; deletions and renames do not.__
+
+With `filesystemprovider` a delete removes the file outright and there is no trash, so a deleted addon page is seeded again as new at the next restart.
+
+Purging a trash entry whose uuid is also a live page removes only the trash file and entry; the version folder belongs to the live page and is kept ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403)).
 
 ### Content-aware reseed (#920)
 

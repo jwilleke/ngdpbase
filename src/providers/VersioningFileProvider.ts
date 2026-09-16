@@ -2446,6 +2446,16 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param uuid - UUID of the deleted page
    * @returns Result describing success, or why the restore was refused
    */
+  /**
+   * Whether a page uuid is in the trash (#1403).
+   *
+   * @param uuid - Page UUID
+   * @returns True if the uuid has a trash entry
+   */
+  isPageDeleted(uuid: string): boolean {
+    return Boolean(this.pageIndex?.deletedPages?.[uuid]);
+  }
+
   async restoreDeletedPage(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: 'not-found' | 'title-conflict' | 'slug-conflict' | 'file-missing' | 'error'; detail?: string }> {
     const entry = this.pageIndex?.deletedPages?.[uuid];
     if (!entry || !this.pageIndex) {
@@ -2510,6 +2520,9 @@ class VersioningFileProvider extends FileSystemProvider {
    * never reached by a normal delete — only by an explicit purge or by
    * retention expiry.
    *
+   * When the uuid is also a live page, the version directory is that page's
+   * history and is kept: only the trash file and the tombstone go (#1403).
+   *
    * @param uuid - UUID of the deleted page
    * @returns True when something was purged
    */
@@ -2520,7 +2533,14 @@ class VersioningFileProvider extends FileSystemProvider {
     try {
       const trashPath = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
       await fs.remove(trashPath);
-      await fs.remove(this.getVersionDirectory(uuid, entry.location));
+      if (this.pageIndex.pages[uuid]) {
+        logger.warn(
+          `[VersioningFileProvider] Purging trash entry '${entry.title}' (${uuid}) whose uuid is also a live page; ` +
+          'its version history belongs to the live page and is kept (#1403)'
+        );
+      } else {
+        await fs.remove(this.getVersionDirectory(uuid, entry.location));
+      }
       delete this.pageIndex.deletedPages?.[uuid];
       await this.savePageIndex();
       logger.info(`[VersioningFileProvider] Purged deleted page '${entry.title}' (${uuid}) and its versions`);

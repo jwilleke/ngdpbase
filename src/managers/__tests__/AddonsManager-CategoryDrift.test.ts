@@ -51,6 +51,7 @@ describe('#1003 system-category drift', () => {
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
+            isPageDeleted: () => false,
             getPageByUUID: vi.fn().mockResolvedValue({ metadata: meta, content }),
             pageExists: vi.fn().mockReturnValue(true),
             getPage: vi.fn().mockResolvedValue({ metadata: meta, content }),
@@ -167,6 +168,7 @@ describe('#1003 system-category drift', () => {
         getManager: (n: string) => {
           if (n === 'PageManager') {
             return {
+              isPageDeleted: () => false,
               getPageByUUID: vi.fn().mockResolvedValue(null),
               pageExists: vi.fn().mockReturnValue(false),
               getPage: vi.fn().mockResolvedValue(null),

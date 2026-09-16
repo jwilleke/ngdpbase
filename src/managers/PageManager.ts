@@ -1486,6 +1486,24 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Whether a page uuid is in the trash (#1403).
+   *
+   * A seed of shipped pages must treat a trashed uuid as deliberately removed,
+   * not missing. `pageExists` sees live pages only. A provider without soft
+   * delete has no trash, so this is false there.
+   *
+   * @param uuid - Page UUID
+   * @param _ctx - Who is asking
+   * @returns True if the uuid has a trash entry
+   */
+  isPageDeleted(uuid: string, _ctx: ActorContext): boolean {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    return this.provider.isPageDeleted?.(uuid) ?? false;
+  }
+
+  /**
    * Get all page titles
    *
    * Returns a sorted list of all page titles in the wiki.

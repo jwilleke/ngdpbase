@@ -54,6 +54,7 @@ describe('#951 addon page seed failures', () => {
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
+            isPageDeleted: () => false,
             getPageByUUID: vi.fn().mockResolvedValue(null),
             pageExists: vi.fn().mockReturnValue(false),
             getPage: vi.fn().mockResolvedValue(null),

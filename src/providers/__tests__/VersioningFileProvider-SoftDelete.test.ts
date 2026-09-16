@@ -255,6 +255,35 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect(await provider.restoreDeletedPage(uuid)).toEqual({ ok: false, reason: 'not-found' });
   });
 
+  test('#1403 isPageDeleted is true for a trashed uuid only', async () => {
+    const { uuid, title } = await seedPage();
+    expect(provider.isPageDeleted(uuid)).toBe(false);
+
+    await provider.deletePage(title, actor('jim'));
+
+    expect(provider.isPageDeleted(uuid)).toBe(true);
+    expect(provider.isPageDeleted('00000000-0000-0000-0000-000000000000')).toBe(false);
+  });
+
+  test('#1403 purging a trash entry whose uuid is live keeps the live page and its history', async () => {
+    // The state #1403 produced: a boot seed brought the deleted page back live
+    // under the same uuid, beside its own trash entry, sharing one version folder.
+    const { uuid, title } = await seedPage();
+    const versionDir = provider._getVersionDirectory(uuid, 'pages');
+    await provider.deletePage(title, actor('jim'));
+    await provider.savePage(title, 'seeded again', { author: 'jim', uuid }, TEST_ACTOR);
+    expect(provider['pageIndex'].pages[uuid]).toBeDefined();
+    expect(provider['pageIndex'].deletedPages[uuid]).toBeDefined();
+
+    expect(await provider.purgeDeletedPage(uuid)).toBe(true);
+
+    expect(await fs.pathExists(versionDir)).toBe(true);
+    expect(await fs.pathExists(path.join(testDir, 'pages', 'deleted', `${uuid}.md`))).toBe(false);
+    expect(provider['pageIndex'].deletedPages[uuid]).toBeUndefined();
+    expect(provider['pageIndex'].pages[uuid]).toBeDefined();
+    expect((await provider.getPage(uuid)).content).toContain('seeded again');
+  });
+
   test('retention purge removes tombstones past the window and keeps fresh ones', async () => {
     await provider.initialize();
     await provider.savePage('Old', 'a', { author: 'jim' }, TEST_ACTOR);

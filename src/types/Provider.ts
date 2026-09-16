@@ -249,6 +249,15 @@ export interface PageProvider extends BaseProvider {
   pageExists(identifier: string, ctx: ActorContext): boolean;
 
   /**
+   * Whether a page uuid is in the trash (#1403). Optional: a provider without
+   * soft delete has no trash, and callers treat its absence as false.
+   *
+   * @param uuid - Page UUID
+   * @returns True if the uuid has a trash entry
+   */
+  isPageDeleted?(uuid: string): boolean;
+
+  /**
    * Get all page titles
    * @returns Sorted array of page titles
    */

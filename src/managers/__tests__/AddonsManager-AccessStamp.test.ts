@@ -41,6 +41,7 @@ describe('#971 addon page access stamping', () => {
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
+            isPageDeleted: () => false,
             getPageByUUID: vi.fn().mockResolvedValue(null),
             pageExists: vi.fn().mockReturnValue(false),
             getPage: vi.fn().mockResolvedValue(null),
@@ -117,6 +118,7 @@ describe('#971 addon page access stamping', () => {
         getManager: (n: string) => {
           if (n === 'PageManager') {
             return {
+              isPageDeleted: () => false,
               getPageByUUID: vi.fn().mockResolvedValue({ metadata: meta, content }),
               pageExists: vi.fn().mockReturnValue(true),
               getPage: vi.fn().mockResolvedValue({ metadata: meta, content }),

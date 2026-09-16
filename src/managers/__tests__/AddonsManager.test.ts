@@ -999,6 +999,7 @@ describe('AddonsManager', () => {
       pageExists: vi.fn((slug) => existingSlugs.includes(slug)),
       savePage: vi.fn().mockResolvedValue(undefined),
       getPage: vi.fn((slug) => Promise.resolve(existingPages[slug] ?? null)),
+      isPageDeleted: () => false,
       // #908 B1: UUID-based idempotency lookup. existingUuids maps uuid → page.
       getPageByUUID: vi.fn((uuid) => Promise.resolve(existingUuids[uuid] ?? null))
     });
@@ -1570,6 +1571,7 @@ describe('AddonsManager', () => {
             getAddonSeededIndexEntries: () => indexEntries,
             setIndexAddon: async () => false,
             // seedAddonPages needs these during initialize(); no-op so seeding is quiet.
+            isPageDeleted: () => false,
             getPageByUUID: async () => null,
             pageExists: () => false,
             savePage: async () => {}
