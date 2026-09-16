@@ -5,6 +5,8 @@ import { pendingBootActions, resetBootActions } from '../../context/bootActions'
 import os from 'os';
 import { promises as fs } from 'fs';
 import fse from 'fs-extra';
+import matter from 'gray-matter';
+import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 
 // Access the private seedRequiredPages method via initialize() side-effects.
 // We set up a temp required-pages dir and a temp pages dir, then call initialize()
@@ -95,6 +97,16 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
     await new PageManager(engine).initialize();
 
     expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000001.md');
+  });
+
+  test('#1395: a seeded page carries required-source-hash of its body', async () => {
+    const file = 'aaaaaaaa-0000-0000-0000-000000000001.md';
+    await fse.writeFile(path.join(requiredDir, file), makeFrontmatter('Normal Page', 'general'));
+
+    await new PageManager(makeEngine()).initialize();
+
+    const seeded = matter(await fs.readFile(path.join(pagesDir, file), 'utf8'));
+    expect(seeded.data[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash(seeded.content));
   });
 
   test('#1197: each seeded page is recorded as page-create under the system principal, origin boot, held in the ledger', async () => {

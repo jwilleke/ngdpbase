@@ -10,7 +10,8 @@
  *     read `addon-source-hash` at all.
  *
  * Both now call `evaluateSeededAddonPage()` so their status and behavior can
- * no longer drift. The hash is content-derived (the stronger signal); the
+ * no longer drift. Required pages use it too (#1395), stamped under
+ * `REQUIRED_SOURCE_HASH_KEY`. The hash is content-derived (the stronger signal); the
  * `user-modified` flag remains a secondary manual override at the call sites
  * that want it.
  */
@@ -25,6 +26,13 @@ import { createHash } from 'node:crypto';
 export function pageSourceHash(content: string): string {
   return createHash('sha256').update(String(content).trim()).digest('hex');
 }
+
+/**
+ * Frontmatter key a required page's live copy carries: `pageSourceHash` of the
+ * body it was seeded or synced with (#1395). The required-pages analogue of
+ * `addon-source-hash`, read by the same `evaluateSeededAddonPage()`.
+ */
+export const REQUIRED_SOURCE_HASH_KEY = 'required-source-hash';
 
 /** Reseed status of an addon page that ALREADY exists in the instance. */
 export type SeededAddonPageStatus = 'current' | 'outdated' | 'locally-modified';

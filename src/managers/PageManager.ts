@@ -4,6 +4,7 @@ import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
+import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -454,6 +455,9 @@ class PageManager extends BaseManager implements CatalogSource {
         }
 
         delete parsed.data['user-modified'];
+        // #1395: stamp the seeded body so Required Pages Sync can tell a later
+        // source change from a local edit.
+        parsed.data[REQUIRED_SOURCE_HASH_KEY] = pageSourceHash(parsed.content);
         const cleaned: string = matter.stringify(parsed.content, parsed.data);
         await fse.writeFile(dstPath, cleaned, 'utf8');
         seeded++;

@@ -33,7 +33,12 @@ import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
-import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
+import {
+  pageSourceHash,
+  evaluateSeededAddonPage,
+  REQUIRED_SOURCE_HASH_KEY,
+  type SeededAddonPageStatus
+} from '../utils/addonPageSync.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
@@ -4474,6 +4479,28 @@ ${panes}
     } catch {
       return '';
     }
+  }
+
+  /**
+   * Sync status of a required page whose live copy exists (#1395): the source
+   * body, the live body and the live copy's `required-source-hash` stamp, by the
+   * same rule as addon pages (#931). Frontmatter is not compared.
+   *
+   * @param sourceContent - Raw source file contents
+   * @param liveBody - Body of the live copy
+   * @param liveData - Frontmatter of the live copy
+   */
+  static requiredPageStatus(
+    sourceContent: string,
+    liveBody: string,
+    liveData: Record<string, unknown>
+  ): SeededAddonPageStatus {
+    const storedHash = liveData[REQUIRED_SOURCE_HASH_KEY];
+    return evaluateSeededAddonPage({
+      sourceContent: matter(sourceContent).content,
+      liveContent: liveBody,
+      storedHash: typeof storedHash === 'string' ? storedHash : undefined
+    });
   }
 
   /**
@@ -9482,13 +9509,6 @@ ${panes}
         );
 
 
-        const volatileFields = ['lastModified', 'user-modified', 'editor'];
-        const normalize = (raw: string): string => {
-          const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
-          const stable = { ...parsed.data };
-          for (const f of volatileFields) delete stable[f];
-          return matter.stringify(parsed.content, stable);
-        };
         const allFiles: string[] = await fse.readdir(requiredDirResolved);
         for (const file of allFiles.filter((f: string) => f.endsWith('.md'))) {
           const destPath = path.join(pagesDirResolved, file);
@@ -9499,8 +9519,9 @@ ${panes}
               path.join(requiredDirResolved, file),
               'utf8'
             );
-            const dst: string = await fse.readFile(destPath, 'utf8');
-            if (normalize(src) !== normalize(dst)) requiredPagesSyncNeeded++;
+            const dst = matter(await fse.readFile(destPath, 'utf8')) as { data: Record<string, unknown>; content: string };
+            // #1395: the same status the Required Pages Sync page shows.
+            if (WikiRoutes.requiredPageStatus(src, dst.content, dst.data) !== 'current') requiredPagesSyncNeeded++;
           }
         }
       } catch {
@@ -11502,16 +11523,6 @@ ${panes}
 
       const validationManager = this.engine.getManager('ValidationManager');
 
-      // Fields that legitimately diverge between source and live (set by the wiki on
-      // save/sync) — strip before comparing so cosmetic differences don't inflate counts.
-      const VOLATILE_FRONTMATTER = ['lastModified', 'user-modified', 'editor'];
-      const normalizeForCompare = (raw: string): string => {
-        const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
-        const stable = { ...parsed.data };
-        for (const f of VOLATILE_FRONTMATTER) delete stable[f];
-        return matter.stringify(parsed.content, stable);
-      };
-
       const comparison: Array<{
         uuid: string;
         title: string;
@@ -11578,8 +11589,9 @@ ${panes}
         } else {
           const destContent: string = await fse.readFile(destPath, 'utf8');
           let destData: Record<string, unknown> = {};
+          let destBody = '';
           try {
-            ({ data: destData } = matter(destContent));
+            ({ data: destData, content: destBody } = matter(destContent));
           } catch (yamlErr) {
             // Live copy has malformed YAML frontmatter (e.g. missing closing ---).
             // Treat as modified so the admin can re-sync to heal it.
@@ -11595,13 +11607,13 @@ ${panes}
             await fse.writeFile(destPath, healed, 'utf8');
             logger.info(`auto-healed system-category System/Admin → system for ${uuid}`);
           }
-          // Track whether a human has edited the live copy (separate from modified/current status).
-          userModified = destData['user-modified'] === true;
-          // Compare normalized content — strip volatile frontmatter fields so cosmetic
-          // divergence (lastModified, user-modified, editor) doesn't inflate the count.
-          status = normalizeForCompare(sourceContent) !== normalizeForCompare(destContent)
-            ? 'modified'
-            : 'current';
+          // #1395: bodies and the stamp decide, as for addon pages (#931). The
+          // frontmatter is not compared — a save adds fields the source never
+          // has (`created`), and a whole-file compare kept a synced page
+          // 'modified' forever.
+          const seedStatus = WikiRoutes.requiredPageStatus(sourceContent, destBody, destData);
+          userModified = destData['user-modified'] === true || seedStatus === 'locally-modified';
+          status = seedStatus === 'current' ? 'current' : 'modified';
 
           // Detect title drift: source title vs live title
           const liveTitleRaw = (destData.title as string | undefined) || '';
@@ -11920,6 +11932,9 @@ ${panes}
           parsed.data['addon'] = addonName;
           parsed.data['addon-source-hash'] = pageSourceHash(parsed.content);
           if (!parsed.data['system-category']) parsed.data['system-category'] = 'addon';
+        } else {
+          // #1395: a required page carries the same kind of stamp.
+          parsed.data[REQUIRED_SOURCE_HASH_KEY] = pageSourceHash(parsed.content);
         }
         const title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';
         if (!title) throw new Error(`source page ${uuid} has no title`);
@@ -11950,16 +11965,19 @@ ${panes}
             let isProtected = liveParsed.data['user-modified'] === true;
             // #931: addon pages are also protected when the live body diverges
             // from the seed stamp (hash-based, same signal the boot pass + UI use)
-            // — not only when the explicit user-modified flag is set.
-            if (!isProtected && addonName) {
-              const srcParsed = matter(await fse.readFile(sourcePath, 'utf8')) as { data: Record<string, unknown>; content: string };
-              const st = evaluateSeededAddonPage({
-                sourceContent: srcParsed.content,
-                liveContent: liveParsed.content,
-                storedHash: typeof liveParsed.data['addon-source-hash'] === 'string'
-                  ? (liveParsed.data['addon-source-hash'])
-                  : undefined
-              });
+            // — not only when the explicit user-modified flag is set. #1395:
+            // required pages the same way, under their own stamp.
+            if (!isProtected) {
+              const sourceRaw = await fse.readFile(sourcePath, 'utf8');
+              const st = addonName
+                ? evaluateSeededAddonPage({
+                  sourceContent: matter(sourceRaw).content,
+                  liveContent: liveParsed.content,
+                  storedHash: typeof liveParsed.data['addon-source-hash'] === 'string'
+                    ? (liveParsed.data['addon-source-hash'])
+                    : undefined
+                })
+                : WikiRoutes.requiredPageStatus(sourceRaw, liveParsed.content, liveParsed.data);
               isProtected = st === 'locally-modified';
             }
             if (isProtected) {
@@ -12090,6 +12108,8 @@ ${panes}
           const raw: string = await fse.readFile(livePath, 'utf8');
           const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
           delete parsed.data['user-modified'];
+          // #1395: the stamp describes this instance's live copy, not the source.
+          delete parsed.data[REQUIRED_SOURCE_HASH_KEY];
           const cleaned: string = matter.stringify(parsed.content, parsed.data);
           await fse.writeFile(sourcePath, cleaned, 'utf8');
           synced.push(uuid);
