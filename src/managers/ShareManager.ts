@@ -323,7 +323,7 @@ export default class ShareManager extends BaseManager {
       if (pageMetaCache.has(nameOrUuid)) return pageMetaCache.get(nameOrUuid) ?? null;
       const pageManager = this.engine.getManager<PageManager>('PageManager');
       const meta = pageManager
-        ? await pageManager.getPageMetadata(nameOrUuid).catch(() => null)
+        ? await pageManager.getPageMetadata(nameOrUuid, ANONYMOUS_SUBJECT).catch(() => null)
         : null;
       pageMetaCache.set(nameOrUuid, meta);
       return meta;

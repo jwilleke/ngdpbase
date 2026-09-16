@@ -6,6 +6,7 @@
  * The VariableManager is accessible via WikiEngine.getManager('VariableManager') after initialization.
  */
 
+import type { ActorContext } from '../context/ActorContext.js';
 import BaseManager from './BaseManager.js';
 import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
@@ -896,13 +897,13 @@ class ValidationManager extends BaseManager {
    * @param {string} slug - The page slug
    * @returns {Promise<ConflictCheckResult>} Conflict result
    */
-  async checkConflicts(uuid: string, title: string, slug: string): Promise<ConflictCheckResult> {
+  async checkConflicts(uuid: string, title: string, slug: string, ctx: ActorContext): Promise<ConflictCheckResult> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
 
     // Check slug conflict first — most specific identifier
     if (slug && pageManager) {
       try {
-        const existing = await pageManager.getPage(slug);
+        const existing = await pageManager.getPage(slug, ctx);
         if (existing && existing.uuid && existing.uuid !== uuid) {
           return {
             hasConflict: true,
@@ -919,7 +920,7 @@ class ValidationManager extends BaseManager {
     // Check title conflict
     if (title && pageManager) {
       try {
-        const existing = await pageManager.getPage(title);
+        const existing = await pageManager.getPage(title, ctx);
         if (existing && existing.uuid && existing.uuid !== uuid) {
           return {
             hasConflict: true,

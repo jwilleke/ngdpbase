@@ -89,6 +89,8 @@ vi.mock('./src/providers/FileUserProvider', () => ({ default: MockUserProvider }
 // Page Providers
 const MockPageProvider = createMockProvider('MockPageProvider', {
   async getPage() { return null; },
+  // Abstract on BasePageProvider; the private-page check (ACL Tier 0) reads it.
+  async getPageMetadata() { return null; },
   async savePage() { return true; },
   async deletePage() { return true; },
   async getAllPages() { return []; },

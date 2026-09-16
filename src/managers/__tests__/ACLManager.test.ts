@@ -159,12 +159,14 @@ describe('ACLManager', () => {
   // verified by the "Tier 0 — top-level `private: true` (#639)" block below.
 
   describe('Tier 0 — top-level `private: true` (#639)', () => {
-    test('private: true + admin role → allow (no user-keyword required)', async () => {
+    // #1382: a private page lives in its owner's private container — no role,
+    // admin included, reaches in (docs/planning/private-stores.md, Access).
+    test('private: true + admin role (not the owner) → deny', async () => {
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('private: true + page-creator → allow', async () => {
@@ -223,6 +225,34 @@ describe('ACLManager', () => {
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+    });
+  });
+
+  describe('canAccessPrivateContainer — a file in a private store (#1382)', () => {
+    test('the owner passes; admin, another user and anonymous are refused and recorded', () => {
+      const logSpy = vi.spyOn(aclManager, 'logAccessDecision');
+      expect(aclManager.canAccessPrivateContainer(
+        { username: 'alice', roles: ['editor'], isAuthenticated: true }, 'alice', 'attachment:a1', 'view'
+      )).toBe(true);
+      expect(logSpy).not.toHaveBeenCalled();
+
+      for (const who of [
+        { username: 'root', roles: ['admin'], isAuthenticated: true },
+        { username: 'bob', roles: ['editor'], isAuthenticated: true },
+        null
+      ]) {
+        expect(aclManager.canAccessPrivateContainer(who, 'alice', 'attachment:a1', 'view')).toBe(false);
+      }
+      expect(logSpy).toHaveBeenCalledTimes(3);
+      expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({
+        pageName: 'attachment:a1', action: 'view', allowed: false, reason: 'private_deny'
+      }));
+    });
+
+    test('a file with no recorded owner is refused', () => {
+      expect(aclManager.canAccessPrivateContainer(
+        { username: 'alice', roles: [], isAuthenticated: true }, '', 'attachment:a2', 'view'
+      )).toBe(false);
     });
   });
 

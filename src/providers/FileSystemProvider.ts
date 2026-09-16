@@ -1,10 +1,12 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
-import { DEFAULT_PRIVATE_STORE, privatePageFilePath } from '../utils/privateStorePath.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import {
-  assertCurrentSessionCanWriteStore,
-  currentPrivateStoreSessionId,
-  getSessionUserIndex
-} from '../utils/privateStoreUnlock.js';
+  isPrivateStoreAttachmentsRel,
+  isUnderPrivateRoot,
+  parsePrivatePageRel,
+  privatePageFilePath
+} from '../utils/privateStorePath.js';
+import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import { readStoreMeta, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
@@ -72,8 +74,9 @@ interface BackupData {
  * - Configurable encoding support
  *
  * Configuration keys (all lowercase):
- * - ngdpbase.page.provider.filesystem.storagedir - Main pages directory
+ * - ngdpbase.page.provider.filesystem.storagedir - Main pages directory (getResolvedDataPath)
  * - ngdpbase.page.provider.filesystem.requiredpagesdir - Required pages directory
+ * - ngdpbase.page.provider.filesystem.privateroot - Private-store folder under storagedir
  * - ngdpbase.page.provider.filesystem.encoding - File encoding (default: utf-8)
  * - ngdpbase.translator-reader.match-english-plurals - Enable plural matching
  *
@@ -170,6 +173,8 @@ class FileSystemProvider extends BasePageProvider {
       'utf-8'
     ) as BufferEncoding;
 
+    this.applyPrivateStoreLayout(configManager);
+
     // Initialize PageNameMatcher with plural matching and CamelCase config
     const matchEnglishPlurals = configManager.getProperty('ngdpbase.translator-reader.match-english-plurals', true) as boolean;
     const matchCamelCase = configManager.getProperty('ngdpbase.translator-reader.camel-case-links', false) as boolean;
@@ -194,7 +199,7 @@ class FileSystemProvider extends BasePageProvider {
       logger.info(`[FileSystemProvider] Required-pages directory (install mode): ${this.requiredPagesDirectory}`);
     }
 
-    await migrateLegacyPrivatePages(this.pagesDirectory);
+    await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
 
     // Load all pages into cache
     await this.refreshPageList();
@@ -202,6 +207,35 @@ class FileSystemProvider extends BasePageProvider {
     this.initialized = true;
     logger.info(`[FileSystemProvider] Initialized with ${this.pageCache.size} pages.`);
   }
+
+  /**
+   * A `.md` under the private root is a page only at a store layout the
+   * helpers recognise (`{privateroot}/{user}/{store}/{uuid}.md`, or the legacy
+   * `{privateroot}/{user}/{uuid}.md`, with valid names). Anything else there —
+   * a subfolder, a store folder that is not a valid store id — is skipped.
+   * It must never fall through to being indexed as a public page.
+   */
+  /**
+   * The store a page file sits in, read from its path; `undefined` when the
+   * path is not a private store page.
+   */
+  protected privateStoreOf(filePath: string | undefined): string | undefined {
+    if (!filePath || !this.pagesDirectory) return undefined;
+    return parsePrivatePageRel(
+      path.relative(this.pagesDirectory, filePath).split(path.sep),
+      this.privateStoreLayout
+    )?.store;
+  }
+
+  private isScannablePageFile(filePath: string): boolean {
+    if (!this.pagesDirectory) return true;
+    const rel = path.relative(this.pagesDirectory, filePath).split(path.sep);
+    if (!isUnderPrivateRoot(rel, this.privateStoreLayout)) return true;
+    if (parsePrivatePageRel(rel, this.privateStoreLayout)) return true;
+    logger.warn(`[FileSystemProvider] Skipping ${filePath}: under the private root but not at a store page path`);
+    return false;
+  }
+
 
   /**
    * Reads all .md files from the pages directory (and required-pages during installation)
@@ -232,7 +266,8 @@ class FileSystemProvider extends BasePageProvider {
       logger.info(`[FileSystemProvider] Install mode: including ${requiredFiles.length} files from required-pages`);
     }
 
-    const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'));
+    const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'))
+      .filter(f => this.isScannablePageFile(f));
 
     for (const filePath of mdFiles) {
       try {
@@ -309,14 +344,20 @@ class FileSystemProvider extends BasePageProvider {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           if (entry.name.startsWith('.')) continue; // Skip hidden dirs
-          if (entry.name === 'versions') continue; // Skip version snapshot dirs
+          if (entry.name === this.privateStoreLayout.versionsDir) continue; // Skip version snapshot dirs
           // #947: soft-deleted pages are relocated here. They MUST stay out of
           // the scan — this walk is what rebuilds the caches on every boot, so
           // a tombstoned file left in place would silently resurrect itself on
           // the next restart, index flag or not.
-          if (entry.name === 'deleted') continue;
+          if (entry.name === this.privateStoreLayout.deletedDir) continue;
+          // #1386: a store's files are attachments, never pages — an uploaded
+          // `{sha256}.md` there must not scan as a page.
+          if (this.pagesDirectory && isPrivateStoreAttachmentsRel(
+            path.relative(this.pagesDirectory, full).split(path.sep),
+            this.privateStoreLayout
+          )) continue;
           // #1385: sealed store trees stay out of the process cache and global index.
-          if (await storeDirectoryIsEncrypted(full)) continue;
+          if (await storeDirectoryIsEncrypted(full, this.privateStoreLayout.files.storemeta)) continue;
           out.push(...(await this.walkDir(full)));
         } else if (entry.isFile()) {
           out.push(full);
@@ -341,7 +382,7 @@ class FileSystemProvider extends BasePageProvider {
    * @returns {PageCacheInfo|null} Page info or null if not found
    * @private
    */
-  protected resolvePageInfo(identifier: string): PageCacheInfo | null {
+  protected resolvePageInfo(identifier: string, ctx?: ActorContext): PageCacheInfo | null {
     if (!identifier || typeof identifier !== 'string') return null;
 
     // 1. Try UUID index first
@@ -375,16 +416,15 @@ class FileSystemProvider extends BasePageProvider {
       }
     }
 
-    return this.resolveSessionCatalogPage(identifier);
+    return ctx ? this.resolveSessionCatalogPage(identifier, ctx) : null;
   }
 
   /**
    * Unlocked sealed-store titles live in the session bag, not pageCache. #1385
    */
-  private resolveSessionCatalogPage(identifier: string): PageCacheInfo | null {
-    const sid = currentPrivateStoreSessionId();
-    if (!sid || !this.pagesDirectory) return null;
-    const catalog = getSessionUserIndex(sid);
+  private resolveSessionCatalogPage(identifier: string, ctx: ActorContext): PageCacheInfo | null {
+    if (!this.pagesDirectory) return null;
+    const catalog = userIndexFor(ctx);
     if (!catalog) return null;
     const idLower = identifier.toLowerCase();
     const page = catalog.pages[identifier]
@@ -401,7 +441,8 @@ class FileSystemProvider extends BasePageProvider {
         this.pagesDirectory,
         page.creator,
         page.filename ?? page.uuid,
-        page.store
+        page.store,
+        this.privateStoreLayout
       ),
       metadata: {
         title: page.title,
@@ -418,8 +459,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<WikiPage|null>}
    */
-  async getPage(identifier: string): Promise<WikiPage | null> {
-    const info = this.resolvePageInfo(identifier);
+  async getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) {
       return null;
     }
@@ -466,15 +507,15 @@ class FileSystemProvider extends BasePageProvider {
   /**
    * Get a page by its UUID (delegates to getPage — resolvePageInfo checks uuidIndex first)
    */
-  async getPageByUUID(uuid: string): Promise<WikiPage | null> {
-    return this.getPage(uuid);
+  async getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null> {
+    return this.getPage(uuid, ctx);
   }
 
   /**
    * Get a page by its slug (delegates to getPage — resolvePageInfo checks slugIndex)
    */
-  async getPageBySlug(slug: string): Promise<WikiPage | null> {
-    return this.getPage(slug);
+  async getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null> {
+    return this.getPage(slug, ctx);
   }
 
   /**
@@ -484,8 +525,8 @@ class FileSystemProvider extends BasePageProvider {
    * in ways that the normal getPage() path sanitises or normalises away.
    * Returns null when the page is unknown (no page-index entry).
    */
-  async getRawFile(identifier: string): Promise<{ filePath: string; content: string } | null> {
-    const info = this.resolvePageInfo(identifier);
+  async getRawFile(identifier: string, ctx: ActorContext): Promise<{ filePath: string; content: string } | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) return null;
     try {
       const content = await fs.readFile(info.filePath, this.encoding);
@@ -502,8 +543,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<string>} The raw markdown content without frontmatter
    */
-  async getPageContent(identifier: string): Promise<string> {
-    const info = this.resolvePageInfo(identifier);
+  async getPageContent(identifier: string, ctx: ActorContext): Promise<string> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) {
       logger.warn(`[FileSystemProvider] Not found: ${identifier}`);
       throw new Error(`Page '${identifier}' not found.`);
@@ -544,14 +585,14 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<PageFrontmatter|null>} The page metadata, or null if not found
    */
-  getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
-    const info = this.resolvePageInfo(identifier);
+  getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     return Promise.resolve(info ? info.metadata : null);
   }
 
   /**
    * Resolve the on-disk file path for a page given its uuid, location, and optional creator.
-   * Private pages are stored at: {pagesDirectory}/private/{creator}/{store}/{uuid}.md
+   * Private pages are stored at: {pagesDirectory}/{privateroot}/{creator}/{store}/{uuid}.md
    * All other pages are stored at: {pagesDirectory}/{uuid}.md
    *
    * @param {string} uuid - Page UUID
@@ -562,7 +603,13 @@ class FileSystemProvider extends BasePageProvider {
    */
   private resolvePageFilePath(uuid: string, location: string, creator?: string, store?: string): string {
     if (location === 'private' && creator && this.pagesDirectory) {
-      return privatePageFilePath(this.pagesDirectory, creator, uuid, store ?? DEFAULT_PRIVATE_STORE);
+      return privatePageFilePath(
+        this.pagesDirectory,
+        creator,
+        uuid,
+        store ?? this.privateStoreLayout.defaultStoreId,
+        this.privateStoreLayout
+      );
     }
     return path.join(this.pagesDirectory || '', `${uuid}.md`);
   }
@@ -593,8 +640,11 @@ class FileSystemProvider extends BasePageProvider {
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
     if (!this.pagesDirectory || oldCreator === newCreator) return;
-    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid);
-    const toPath   = privatePageFilePath(this.pagesDirectory, newCreator, uuid);
+    // The page keeps its store; only the owner folder changes.
+    const store = this.privateStoreOf(this.resolvePageInfo(uuid)?.filePath)
+      ?? this.privateStoreLayout.defaultStoreId;
+    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid, store, this.privateStoreLayout);
+    const toPath = privatePageFilePath(this.pagesDirectory, newCreator, uuid, store, this.privateStoreLayout);
     if (await fs.pathExists(fromPath)) {
       await fs.ensureDir(path.dirname(toPath));
       await fs.move(fromPath, toPath, { overwrite: true });
@@ -609,6 +659,7 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} pageName - The name of the page
    * @param {string} content - The new markdown content
    * @param {Partial<PageFrontmatter>} metadata - The metadata to save in the frontmatter
+   * @param ctx - Who is writing (#1179/#1382): a private store's keys are reached through it
    * @param {PageSaveOptions} options - Save options
    * @returns {Promise<void>}
    */
@@ -616,6 +667,7 @@ class FileSystemProvider extends BasePageProvider {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void> {
     // #1381: a caller may hand over metadata parsed with YAML's own types — a
@@ -640,7 +692,7 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error(`Cannot save page with system-category '${systemCategory}' - pages with storageLocation 'github' are not stored in the wiki (docs/ folder only)`);
     }
 
-    // Resolve file path — private pages go to pagesDirectory/private/{creator}/{store}/{uuid}.md
+    // Resolve file path — private pages go under storagedir/{privateroot}/{creator}/{store}/{uuid}.md
     //
     // #802 Slice 4: `private:true` is the sole routing signal. The legacy
     // `system-location:'private'` storage hint was retired after the second
@@ -648,25 +700,29 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
-    const pageStore = DEFAULT_PRIVATE_STORE;
-    const sealed = isPrivate && pageCreator
-      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore)).encrypt === true
+    const oldPageInfo = this.resolvePageInfo(pageName);
+    // One store rule for every page provider (BasePageProvider): the store the
+    // save names, else the store the page is in now, else the default. A save
+    // that names a different store for an existing page is refused.
+    const pageStore = isPrivate
+      ? this.resolvePrivatePageStore(md.store, this.privateStoreOf(oldPageInfo?.filePath))
+      : undefined;
+    const sealed = isPrivate && pageCreator && pageStore
+      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore, this.privateStoreLayout)).encrypt === true
       : false;
 
     // #1384: encrypt-on write uses the session DEK from the process bag.
-    // Not a PageManager field — both providers call this helper.
-    if (isPrivate && pageCreator) {
-      await assertCurrentSessionCanWriteStore({
-        pagesDirectory: this.pagesDirectory,
-        creator: pageCreator,
-        store: pageStore
-      });
+    if (isPrivate && pageCreator && pageStore) {
+      await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, pageCreator, pageStore);
     }
 
-    const filePath = this.resolvePageFilePath(uuid, isPrivate ? 'private' : 'pages', pageCreator);
+    const filePath = this.resolvePageFilePath(
+      uuid,
+      isPrivate ? 'private' : 'pages',
+      pageCreator,
+      pageStore
+    );
     await fs.ensureDir(path.dirname(filePath));
-
-    const oldPageInfo = this.resolvePageInfo(pageName);
 
     const now = (options?.preserveLastModified && metadata.lastModified)
       ? metadata.lastModified
@@ -696,8 +752,11 @@ class FileSystemProvider extends BasePageProvider {
     const existingCreated = oldPageInfo?.metadata?.created;
     const created = metadata.created ?? existingCreated ?? now;
 
+    // The store is placement, and the path records it. A copy in frontmatter
+    // could disagree with where the file is, so it is never written there.
+    const { store: _placement, ...frontmatter } = metadata as Partial<PageFrontmatter> & { store?: unknown };
     const updatedMetadata: Partial<PageFrontmatter> = {
-      ...metadata,
+      ...frontmatter,
       title: finalTitle, // Ensure title is set after spread
       uuid: uuid,
       lastModified: now,
@@ -761,7 +820,7 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  async deletePage(identifier: string): Promise<boolean> {
+  async deletePage(identifier: string, _ctx: ActorContext): Promise<boolean> {
     const info = this.resolvePageInfo(identifier);
     if (!info) {
       logger.warn(`[FileSystemProvider] Cannot delete - page not found: ${identifier}`);
@@ -863,8 +922,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {boolean}
    */
-  pageExists(identifier: string): boolean {
-    return !!this.resolvePageInfo(identifier);
+  pageExists(identifier: string, ctx?: ActorContext): boolean {
+    return !!this.resolvePageInfo(identifier, ctx);
   }
 
   /**

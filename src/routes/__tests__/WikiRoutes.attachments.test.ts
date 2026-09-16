@@ -173,6 +173,51 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     });
 
+    test('#1398: body private=true is passed to uploadAttachment', async () => {
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        {},
+        { private: 'true', description: 'lab' },
+        { buffer: Buffer.from('x'), originalname: 'lab.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockResolvedValue({
+        identifier: 'id',
+        filename: 'lab.pdf',
+        url: '/attachments/id'
+      });
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockAttachmentManager.uploadAttachment).toHaveBeenCalledWith(
+        expect.any(Buffer),
+        expect.any(Object),
+        expect.objectContaining({ username: 'testuser' }),
+        expect.objectContaining({ private: true })
+      );
+    });
+
+    test('#1398: the route passes the checkbox as-is; AttachmentManager decides a private page', async () => {
+      const mockReq = createMockReq(
+        { username: 'testuser', isAuthenticated: true },
+        { page: 'Diary' },
+        { description: 'note' },
+        { buffer: Buffer.from('x'), originalname: 'note.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockResolvedValue({
+        identifier: 'id',
+        filename: 'note.pdf',
+        url: '/attachments/id'
+      });
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      const opts = mockAttachmentManager.uploadAttachment.mock.calls[0][3];
+      expect(opts.private).toBeUndefined();
+      expect(opts.pageName).toBe('Diary');
+    });
+
     test('should handle upload errors gracefully', async () => {
       // Setup - authenticated user with file but upload fails
       const mockReq = createMockReq(
@@ -193,6 +238,27 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
         error: 'Upload failed'
+      });
+    });
+
+    test('a refusal at the door (another user\'s private page) is a 403, not a 500', async () => {
+      const mockReq = createMockReq(
+        { username: 'bob', isAuthenticated: true },
+        { page: 'AlicesDiary' },
+        {},
+        { buffer: Buffer.from('x'), originalname: 'x.pdf', mimetype: 'application/pdf', size: 1 }
+      );
+      const mockRes = createMockRes();
+      mockAttachmentManager.uploadAttachment.mockRejectedValue(
+        new Error('Permission denied: you cannot upload to this page')
+      );
+
+      await wikiRoutes.uploadAttachment(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'Permission denied: you cannot upload to this page'
       });
     });
   });

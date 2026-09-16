@@ -14,6 +14,7 @@
  */
 
 import type { PluginContext, PluginParams } from '../../../dist/src/managers/PluginManager.js';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import type SearchManager from '../../../dist/src/managers/SearchManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 
@@ -156,7 +157,9 @@ const JournalPlugin = {
       const results = await sm.searchByCategory('journal');
 
       // 2. Load full page data (frontmatter + content) for author filtering
-      const pages = await Promise.all(results.map(r => pm.getPage(r.name)));
+      // The plugin lists from the public page index; the viewer's own sealed
+      // pages are not in it, and the plugin has no full subject to read them with.
+      const pages = await Promise.all(results.map(r => pm.getPage(r.name, ANONYMOUS_SUBJECT)));
 
       // 3. Filter to this user's entries only, sort newest first
       const entries: JournalEntry[] = pages

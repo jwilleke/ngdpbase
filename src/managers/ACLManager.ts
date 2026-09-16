@@ -1,5 +1,7 @@
 import BaseManager from './BaseManager.js';
 import { promises as fs } from 'fs';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -461,10 +463,9 @@ class ACLManager extends BaseManager {
       // Fallback for legacy callers without a PageManager: use frontmatter
       // `author` as the creator identity (the pre-#711 behaviour). This
       // path only fires in tests; production always has a PageManager.
+      // Owner only — no role reaches into a private container (P2; private-stores.md, Access).
       const creator = (wikiContext.pageMetadata?.author) ?? '';
-      const userRoles = userContext?.roles ?? [];
-      const username  = userContext?.username ?? '';
-      const allowed   = userRoles.includes('admin') || username === creator;
+      const allowed   = userContext ? mayActInPrivateContainer(userContext, creator) : false;
       const reason    = allowed ? 'private_match' : 'private_deny';
       this.logAccessDecision({
         user: userContext, pageName, action, allowed, reason,
@@ -631,6 +632,33 @@ class ACLManager extends BaseManager {
   }
 
   /**
+   * The private-container decision for something that is not a page — a file
+   * in a store (docs/planning/private-stores.md, Access). The same rule a
+   * private page gets at Tier 0: the owner, or a delegate of the owner; never
+   * a role. A refusal is recorded like any page refusal (`authorization-deny`).
+   *
+   * @param userContext - the request's subject, as given (null = anonymous)
+   * @param owner - the container's owner (a private file's `creator`)
+   * @param resource - what is being reached, for the record (e.g. `attachment:<id>`)
+   * @param action - the action asked for (e.g. `view`)
+   */
+  canAccessPrivateContainer(
+    userContext: UserContext | null | undefined,
+    owner: string,
+    resource: string,
+    action: string
+  ): boolean {
+    const allowed = Boolean(userContext && owner) && mayActInPrivateContainer(userContext as ActorContext, owner);
+    if (!allowed) {
+      this.logAccessDecision({
+        user: userContext ?? undefined, pageName: resource, action, allowed: false, reason: 'private_deny',
+        context: {}
+      });
+    }
+    return allowed;
+  }
+
+  /**
    * Check whether a user can access a given page — for cross-page checks where
    * the current WikiContext describes a DIFFERENT page than the one being
    * checked (#714 Slice B).
@@ -772,14 +800,15 @@ class ACLManager extends BaseManager {
       if (viaShare && !shareCoversResource(viaShare.resources, 'page', metadata['user-keywords'] ?? [])) continue;
 
       // Tier 0: private — through the same helper the decider uses (index
-      // creator, admin bypass); the frontmatter flag is the fallback where the
-      // helper is absent (fixtures without a PageManager).
+      // creator; owner or delegate, never a role); the frontmatter flag is the
+      // fallback where the helper is absent (fixtures without a PageManager).
       if (pageManager?.checkPrivatePageAccess) {
         const decision = await pageManager.checkPrivatePageAccess(privateCtx, title);
         if (decision === false) continue;
         if (decision === true) { out.push(title); continue; }
       } else if (metadata.private === true) {
-        if (!(isAdmin || (username && username === (metadata.author ?? '')))) continue;
+        // Owner only — no role reaches into a private container.
+        if (!(userContext && mayActInPrivateContainer(userContext, metadata.author ?? ''))) continue;
         out.push(title); continue;
       }
 

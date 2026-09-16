@@ -326,6 +326,8 @@ describe('WikiRoutes - Version Management API', () => {
       expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
         'TestPage',
         2,
+        // #1179: the restore acts as the request's subject.
+        expect.objectContaining({ username: 'testuser' }),
         expect.objectContaining({
           author: 'testuser',
           comment: 'Restoring to version 2'
@@ -344,6 +346,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
         'TestPage',
         2,
+        expect.objectContaining({ username: expect.any(String) }),
         expect.objectContaining({
           comment: 'Restored from v2'
         })
@@ -532,6 +535,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
         'TestPage',
         2,
+        expect.objectContaining({ username: 'testuser' }),
         expect.objectContaining({
           author: 'testuser'
         })

@@ -7,7 +7,13 @@
  */
 
 import PageManager from '../PageManager';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import type { WikiEngine } from '../../types/WikiEngine';
+import {
+  clearUnlockedPrivateStores,
+  putUserIndexPageFor,
+  unlockPrivateStores
+} from '../../utils/privateStoreUnlock';
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -110,18 +116,18 @@ describe('PageManager', () => {
       const mockPage = { title: 'Test', content: '# Test' };
       pageManager.provider.getPage = vi.fn().mockResolvedValue(mockPage);
 
-      const result = await pageManager.getPage('Test');
+      const result = await pageManager.getPage('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPage).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPage).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(mockPage);
     });
 
     test('getPageContent() should delegate to provider', async () => {
       pageManager.provider.getPageContent = vi.fn().mockResolvedValue('# Content');
 
-      const result = await pageManager.getPageContent('Test');
+      const result = await pageManager.getPageContent('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageContent).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPageContent).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe('# Content');
     });
 
@@ -129,34 +135,34 @@ describe('PageManager', () => {
       const mockMetadata = { title: 'Test', uuid: '123' };
       pageManager.provider.getPageMetadata = vi.fn().mockResolvedValue(mockMetadata);
 
-      const result = await pageManager.getPageMetadata('Test');
+      const result = await pageManager.getPageMetadata('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageMetadata).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPageMetadata).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(mockMetadata);
     });
 
     test('savePage() should delegate to provider', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
 
-      await pageManager.savePage('Test', '# Content', { category: 'General' });
+      await pageManager.savePage('Test', '# Content', { category: 'General' }, TEST_ACTOR);
 
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('Test', '# Content', { category: 'General' });
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith('Test', '# Content', { category: 'General' }, TEST_ACTOR);
     });
 
     test('deletePage() should delegate to provider', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(undefined);
 
-      await pageManager.deletePage('Test');
+      await pageManager.deletePage('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test', TEST_ACTOR);
     });
 
     test('pageExists() should delegate to provider', () => {
       pageManager.provider.pageExists = vi.fn().mockReturnValue(true);
 
-      const result = pageManager.pageExists('Test');
+      const result = pageManager.pageExists('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.pageExists).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.pageExists).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(true);
     });
 
@@ -204,7 +210,9 @@ describe('PageManager', () => {
           category: 'General',
           author: 'testuser',
           editor: 'testuser'
-        }
+        },
+        // #1179: the save acts as the request's subject.
+        expect.objectContaining({ username: 'testuser' })
       );
     });
 
@@ -221,7 +229,9 @@ describe('PageManager', () => {
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Test Page',
         '# Test Content',
-        { author: 'anonymous', editor: 'anonymous' }
+        { author: 'anonymous', editor: 'anonymous' },
+        // No subject on the context: the save acts as the anonymous subject.
+        expect.objectContaining({ username: expect.any(String) })
       );
     });
 
@@ -508,7 +518,11 @@ describe('PageManager', () => {
       await pageManager.deletePageWithContext(wikiContext);
 
       // #947: the acting user is passed through so the tombstone records who deleted it
-      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test Page', 'testuser');
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith(
+        'Test Page',
+        // #1179: the context names the deleter on the tombstone.
+        expect.objectContaining({ username: 'testuser' })
+      );
     });
   });
 
@@ -640,10 +654,10 @@ describe('PageManager', () => {
       });
 
       await expect(
-        pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' })
+        pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR)
       ).rejects.toThrow("A page with title 'Speed' already exists");
 
-      expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '');
+      expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '', TEST_ACTOR);
     });
 
     test('should proceed normally when no conflict', async () => {
@@ -655,10 +669,10 @@ describe('PageManager', () => {
         return null;
       });
 
-      await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' });
+      await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
 
       expect(mockCheckConflicts).toHaveBeenCalled();
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('New Page', '# Hello', { uuid: 'new-uuid' });
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
     });
   });
 
@@ -748,5 +762,148 @@ describe('PageManager', () => {
       expect(manager.providerClass).toBe('VersioningFileProvider');
       await manager.shutdown();
     });
+  });
+
+  describe('savePage() private store requires ActorContext (#1389)', () => {
+    // #1179/#1382: the context is mandatory and positional — not an option bag
+    // a caller can leave out — and the provider is handed the one it was given.
+    test('savePage refuses without a context', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+
+      await expect(
+        pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, undefined)
+      ).rejects.toThrow(/ActorContext/);
+
+      expect(pageManager.provider.savePage).not.toHaveBeenCalled();
+    });
+
+    test('a store write forwards the caller\'s context to the provider', async () => {
+      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.getPage = vi.fn().mockResolvedValue(null);
+      const molly = actor('molly');
+
+      await pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, molly);
+
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith(
+        'Diary',
+        '# secret',
+        { private: true, author: 'molly' },
+        molly
+      );
+    });
+  });
+});
+
+describe('PageManager.getPrivatePageOwner (#1398)', () => {
+  const OWNER_CTX = { username: 'alice', roles: ['editor'], isAuthenticated: true };
+  const withProvider = (provider: Record<string, unknown>): PageManager => {
+    const pm = new PageManager(mockEngine);
+    (pm as unknown as { provider: unknown }).provider = provider;
+    return pm;
+  };
+
+  afterEach(() => {
+    clearUnlockedPrivateStores();
+  });
+
+  test('private page: owner is the page-index creator and store, not frontmatter author', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'yourphr' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+  });
+
+  test('private entry without a store id uses the configured default store', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'default' });
+  });
+
+  test('public or missing page: null', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn()
+        .mockResolvedValueOnce({ uuid: 'u2' })
+        .mockResolvedValueOnce(null),
+      pageIndex: { pages: { u2: { location: 'pages', creator: 'alice' } } }
+    });
+    await expect(pm.getPrivatePageOwner('Main', OWNER_CTX)).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('Nope', OWNER_CTX)).resolves.toBeNull();
+  });
+
+  test('unlocked sealed-store page comes from the session user catalog', async () => {
+    unlockPrivateStores('sid-1', 'alice', Buffer.alloc(32, 1));
+    putUserIndexPageFor({ ...OWNER_CTX, privateStoreHandle: 'sid-1' }, {
+      title: 'Labs', uuid: 'u3', currentVersion: 1, location: 'private', creator: 'alice',
+      store: 'yourphr', lastModified: '2026-09-15T00:00:00Z', editor: 'alice', hasVersions: false
+    });
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u3' }),
+      pageIndex: { pages: {} }
+    });
+    // Reached through the context's handle — not an ambient session (P1).
+    await expect(
+      pm.getPrivatePageOwner('Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
+    ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+    // A context without the handle does not see the sealed page. There is no
+    // ambient session to fall back on any more (#1382 step 4b).
+    await expect(pm.getPrivatePageOwner('Labs', OWNER_CTX)).resolves.toBeNull();
+  });
+});
+
+describe('PageManager.checkPrivatePageAccess — the private container rule (#1382)', () => {
+  const withProvider = (provider: Record<string, unknown>): PageManager => {
+    const pm = new PageManager(mockEngine);
+    (pm as unknown as { provider: unknown }).provider = provider;
+    return pm;
+  };
+  const privatePage = () => withProvider({
+    getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'alice' }),
+    pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'default' } } }
+  });
+  const ctx = (userContext: Record<string, unknown> | undefined) => ({ pageName: 'Diary', content: '', userContext });
+
+  test('the owner is allowed', async () => {
+    await expect(privatePage().checkPrivatePageAccess(
+      ctx({ username: 'alice', roles: ['editor'], isAuthenticated: true }), 'Diary'
+    )).resolves.toBe(true);
+  });
+
+  test('admin, another user and anonymous are refused — no role reaches in', async () => {
+    const pm = privatePage();
+    for (const who of [
+      { username: 'root', roles: ['admin'], isAuthenticated: true },
+      { username: 'bob', roles: ['editor'], isAuthenticated: true },
+      undefined
+    ]) {
+      await expect(pm.checkPrivatePageAccess(ctx(who), 'Diary')).resolves.toBe(false);
+    }
+  });
+
+  test('ownership is the page-index creator, not frontmatter author', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'mallory' }),
+      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
+    });
+    await expect(pm.checkPrivatePageAccess(ctx({ username: 'mallory', roles: [], isAuthenticated: true }), 'Diary')).resolves.toBe(false);
+  });
+
+  test('a public or missing page is not decided here (null)', async () => {
+    const pm = withProvider({
+      getPageMetadata: vi.fn().mockResolvedValueOnce({ uuid: 'u2' }).mockResolvedValueOnce(null),
+      pageIndex: { pages: { u2: { location: 'pages' } } }
+    });
+    const who = ctx({ username: 'bob', roles: [], isAuthenticated: true });
+    await expect(pm.checkPrivatePageAccess(who, 'Main')).resolves.toBeNull();
+    await expect(pm.checkPrivatePageAccess(who, 'Nope')).resolves.toBeNull();
+  });
+
+  test('when privacy cannot be established it refuses (fails closed)', async () => {
+    const throwing = withProvider({ getPageMetadata: vi.fn().mockRejectedValue(new Error('disk')) });
+    await expect(throwing.checkPrivatePageAccess(
+      ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'Diary'
+    )).resolves.toBe(false);
   });
 });

@@ -11,6 +11,8 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/158}
  */
 
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
+import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -777,6 +779,9 @@ class AddonsManager extends BaseManager {
   }
 
   private async seedAddonPages(addonName: string, addonPath: string): Promise<void> {
+    // Seeding runs at boot with no request behind it: a job that states who
+    // asked and why (#1179, security-posture P1).
+    const seedContext = systemContext(this.engine, `seed pages for addon '${addonName}'`);
     const addonPagesDir = path.join(addonPath, 'pages');
 
     try {
@@ -865,8 +870,8 @@ class AddonsManager extends BaseManager {
         // a slug rename — #908 B1), else fall back to slug. A match means the
         // page is already seeded; by default it is left untouched (operator edits
         // are never clobbered), with an optional edit-preserving reseed (#920).
-        const existing = (await pageManager.getPageByUUID(uuid))
-          ?? (pageManager.pageExists(slug) ? await pageManager.getPage(slug) : null);
+        const existing = (await pageManager.getPageByUUID(uuid, seedContext))
+          ?? (pageManager.pageExists(slug, seedContext) ? await pageManager.getPage(slug, seedContext) : null);
 
         if (existing) {
           const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
@@ -1015,7 +1020,7 @@ class AddonsManager extends BaseManager {
             const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
             if (clearAccess) delete reconciled.access;
 
-            await pageManager.savePage(existingSlug, existing.content, reconciled, { skipValidation: true });
+            await pageManager.savePage(existingSlug, existing.content, reconciled, seedContext, { skipValidation: true });
             // Keep the in-memory copy consistent — the reseed branch below reads
             // existingMeta again, and would otherwise re-apply a stale category
             // or resurrect the access we just cleared.
@@ -1073,7 +1078,7 @@ class AddonsManager extends BaseManager {
             // #1197: savePage records page-edit under `metadata.editor`; the
             // system principal, not a literal, is who reseeded it.
             reseedMetadata.editor = systemPrincipalOf(this.engine);
-            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, { skipValidation: true });
+            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true });
             reseeded++;
             logger.info(legacy
               ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
@@ -1087,7 +1092,7 @@ class AddonsManager extends BaseManager {
           // Keep the search index fresh regardless (page may predate a rebuild).
           const searchManager = this.engine.getManager<SearchManager>('SearchManager');
           if (searchManager) {
-            const refreshed = await pageManager.getPage(existingSlug);
+            const refreshed = await pageManager.getPage(existingSlug, seedContext);
             if (refreshed) {
               await searchManager.updatePageInIndex(existingSlug, {
                 name: existingSlug,
@@ -1128,7 +1133,7 @@ class AddonsManager extends BaseManager {
         // #1197: savePage records page-create under `metadata.editor`; the
         // system principal, not a literal, is who seeded it.
         (metadata).editor = systemPrincipalOf(this.engine);
-        await pageManager.savePage(slug, parsed.content, metadata, { skipValidation: true });
+        await pageManager.savePage(slug, parsed.content, metadata, seedContext, { skipValidation: true });
 
         // Update search index so the page is discoverable via category search
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');
@@ -1726,7 +1731,8 @@ class AddonsManager extends BaseManager {
       // `user-modified` — the index does not carry it.
       let userModified = false;
       try {
-        const page = await pageManager.getPage(entry.slug || entry.title);
+        // Scanning the public index for orphans: no caller behind it.
+        const page = await pageManager.getPage(entry.slug || entry.title, ANONYMOUS_SUBJECT);
         const meta = (page?.metadata as Record<string, unknown> | undefined) ?? {};
         userModified = meta['user-modified'] === true;
       } catch { /* page unreadable — still report it as orphaned */ }

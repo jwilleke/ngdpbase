@@ -3,6 +3,14 @@ import type { ProviderInfo } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import { VersionHistoryEntry, VersionContent, VersionDiff } from '../types/index.js';
 import BaseProvider from './BaseProvider.js';
+import {
+  DEFAULT_PRIVATE_STORE_LAYOUT,
+  assertStoreId,
+  privateStoreLayoutFromConfig,
+  type PrivateStoreLayout
+} from '../utils/privateStorePath.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * WikiEngine interface (simplified)
@@ -49,6 +57,13 @@ abstract class BasePageProvider extends BaseProvider {
   protected initialized: boolean;
 
   /**
+   * Private-store folder names (#1382). ConfigurationManager is the only
+   * source; {@link applyPrivateStoreLayout} reads them in `initialize()`.
+   * Defaults match `config/app-default-config.json`.
+   */
+  protected privateStoreLayout: PrivateStoreLayout;
+
+  /**
    * Create a new page provider
    *
    * @constructor
@@ -62,6 +77,59 @@ abstract class BasePageProvider extends BaseProvider {
     }
     this.engine = engine;
     this.initialized = false;
+    this.privateStoreLayout = DEFAULT_PRIVATE_STORE_LAYOUT;
+  }
+
+  /**
+   * Read the private-store folder names from ConfigurationManager (via
+   * getProperty, not getResolvedDataPath — they are segments under the pages
+   * storagedir, joined by the helpers in `src/utils/privateStorePath.ts`).
+   */
+  protected applyPrivateStoreLayout(configManager: { getProperty(key: string, defaultValue: unknown): unknown }): void {
+    this.privateStoreLayout = privateStoreLayoutFromConfig((key, fallback) =>
+      configManager.getProperty(key, fallback)
+    );
+  }
+
+  /**
+   * Which store a private page is saved into — one rule for every page
+   * provider (docs/planning/private-stores.md, Store placement): the store the
+   * save names, else the store the page is already in, else the configured
+   * default. A store id is a plain slug.
+   *
+   * A save that names a different store for a page that already exists is
+   * refused: moving a page and its history between stores is not supported.
+   *
+   * @param requested - `metadata.store` from the save, if any
+   * @param existing - the store the page is in now, when it is an existing private page
+   */
+  protected resolvePrivatePageStore(requested: unknown, existing: string | undefined): string {
+    const named = typeof requested === 'string' && requested.length > 0 ? assertStoreId(requested) : undefined;
+    if (named !== undefined && existing !== undefined && named !== existing) {
+      throw new Error(
+        `Cannot save this page into private store '${named}': it is in store '${existing}', and moving between stores is not supported`
+      );
+    }
+    return named ?? existing ?? assertStoreId(this.privateStoreLayout.defaultStoreId);
+  }
+
+  /**
+   * Refuse a write into an encrypted store this caller cannot write (#1394).
+   * The one check every page provider calls before writing private bytes; the
+   * keys are reached through the caller's context, never ambiently (P1).
+   */
+  protected async assertPrivateStoreWritable(
+    ctx: ActorContext,
+    pagesDirectory: string,
+    owner: string,
+    store: string
+  ): Promise<void> {
+    await assertContextCanWriteStore(ctx, {
+      pagesDirectory,
+      owner,
+      store,
+      layout: this.privateStoreLayout
+    });
   }
 
   /**
@@ -89,7 +157,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<WikiPage|null>} Page object or null if not found
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPage(identifier: string): Promise<WikiPage | null>;
+  abstract getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get only page content (without metadata)
@@ -100,7 +168,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<string>} Markdown content
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPageContent(identifier: string): Promise<string>;
+  abstract getPageContent(identifier: string, ctx: ActorContext): Promise<string>;
 
   /**
    * Get only page metadata (without content)
@@ -111,7 +179,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<PageFrontmatter|null>} Metadata object or null if not found
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPageMetadata(identifier: string): Promise<PageFrontmatter | null>;
+  abstract getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
 
   /**
    * Save page content and metadata
@@ -121,6 +189,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} pageName - Page title
    * @param {string} content - Markdown content
    * @param {Partial<PageFrontmatter>} metadata - Frontmatter metadata
+   * @param ctx - Who is writing (#1179): the request's subject, or a JobContext. Mandatory and positional — a store write reaches this caller's keys through it (#1382)
    * @param {PageSaveOptions} options - Save options
    * @returns {Promise<void>}
    * @throws {Error} Always throws - must be implemented by subclass
@@ -128,16 +197,18 @@ abstract class BasePageProvider extends BaseProvider {
   abstract savePage(
     pageName: string,
     content: string,
-    metadata?: Partial<PageFrontmatter>,
+    metadata: Partial<PageFrontmatter> | undefined,
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void>;
 
   /**
    * Delete a page
    * @param {string} identifier - Page UUID or title
+   * @param ctx - Who is deleting (#1179). Names the deleter on the record and reaches a private store's keys (#1382)
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  abstract deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
+  abstract deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.
@@ -162,7 +233,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {boolean}
    */
-  abstract pageExists(identifier: string): boolean;
+  abstract pageExists(identifier: string, ctx: ActorContext): boolean;
 
   /**
    * Get all page titles
@@ -199,14 +270,14 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} uuid - Page UUID
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  abstract getPageByUUID(uuid: string): Promise<WikiPage | null>;
+  abstract getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get a page by its slug
    * @param {string} slug - URL-friendly slug
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  abstract getPageBySlug(slug: string): Promise<WikiPage | null>;
+  abstract getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Refresh internal cache/index
@@ -281,7 +352,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<void>}
    * @throws {Error} If version does not exist or restoration fails
    */
-  restoreVersion(_identifier: string, _version: number): Promise<void> {
+  restoreVersion(_identifier: string, _version: number, _ctx: ActorContext): Promise<void> {
     throw new Error('restoreVersion() must be implemented by versioning providers');
   }
 

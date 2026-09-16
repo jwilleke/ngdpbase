@@ -26,6 +26,11 @@ import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '
 import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { userIndexFor } from '../utils/privateStoreUnlock.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
 /**
  * A save refused because the content broke a filter rule (#1037).
@@ -109,8 +114,6 @@ interface WikiContext {
   userContext?: {
     username?: string;
   };
-  /** Used by checkPrivatePageAccess (#711) for the admin bypass. */
-  hasRole?(...roles: string[]): boolean;
 }
 
 /**
@@ -293,7 +296,8 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   async get(identifier: string): Promise<CreativeWork | null> {
     if (!this.provider) return null;
-    const page = await this.provider.getPageByUUID(identifier);
+    // A catalog read has no caller behind it: public pages only, never a sealed one.
+    const page = await this.provider.getPageByUUID(identifier, ANONYMOUS_SUBJECT);
     if (!page) return null;
     return pageToArticle(page.title, page.metadata);
   }
@@ -681,11 +685,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * const page = await pageManager.getPage('Main');
    * console.log(page.title, page.metadata.author);
    */
-  async getPage(identifier: string): Promise<WikiPage | null> {
+  async getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPage(identifier);
+    return this.provider.getPage(identifier, ctx);
   }
 
   /**
@@ -701,11 +705,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * const content = await pageManager.getPageContent('Main');
    * console.log(content);
    */
-  async getPageContent(identifier: string): Promise<string> {
+  async getPageContent(identifier: string, ctx: ActorContext): Promise<string> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageContent(identifier);
+    return this.provider.getPageContent(identifier, ctx);
   }
 
   /**
@@ -788,7 +792,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const titles = await this.getAllPages();
       for (const title of titles) {
         try {
-          const metadata = await this.provider?.getPageMetadata(title);
+          const metadata = await this.provider?.getPageMetadata(title, ANONYMOUS_SUBJECT);
           sources.push({
             title: (metadata?.title) ?? title,
             formerTitles: (metadata as Record<string, unknown> | null | undefined)?.formerTitles
@@ -806,11 +810,11 @@ class PageManager extends BaseManager implements CatalogSource {
     return index;
   }
 
-  async getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
+  async getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageMetadata(identifier);
+    return this.provider.getPageMetadata(identifier, ctx);
   }
 
   /**
@@ -841,12 +845,16 @@ class PageManager extends BaseManager implements CatalogSource {
    * Versioning, indexing, and cache invalidation still fire via
    * provider.savePage. Throws if the textarea content isn't parseable YAML.
    */
-  async saveRawPageWithAdminOverride(pageName: string, rawFileContent: string): Promise<void> {
+  async saveRawPageWithAdminOverride(
+    pageName: string,
+    rawFileContent: string,
+    ctx: ActorContext
+  ): Promise<void> {
     if (!this.provider) throw new Error('PageManager: Provider not initialized');
     const parsed = parsePageFrontmatter(rawFileContent);
     const metadata = parsed.data as Partial<PageFrontmatter>;
     const content = parsed.content;
-    return this.provider.savePage(pageName, content, metadata);
+    return this.provider.savePage(pageName, content, metadata, ctx);
   }
 
   /**
@@ -979,6 +987,10 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager: Provider not initialized');
     }
 
+    // The save acts as the request's subject (#1179); a store write reaches
+    // this session's keys through it (#1382).
+    const saveContext = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
+
     const pageName = wikiContext.pageName;
 
     // #1332: a save writes exactly what was typed. Converting page text —
@@ -1004,7 +1016,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // Used for both attribution display and private-page ACL ownership (see ACLManager).
     // Preserve from the existing page — must never be overwritten on edit.
     // For documentation/system category pages, default to 'system' if no user is present.
-    const existingPage = pageName ? await this.provider.getPage(pageName) : null;
+    const existingPage = pageName ? await this.provider.getPage(pageName, saveContext) : null;
     const originalAuthor = existingPage?.metadata?.author;
 
     const incomingCategory = ((metadata as Record<string, unknown>)['system-category'] as string | undefined)
@@ -1208,7 +1220,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (validationManager) {
       const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug);
+      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, saveContext);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
@@ -1223,7 +1235,7 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
 
-    await this.provider.savePage(pageName, content, enrichedMetadata);
+    await this.provider.savePage(pageName, content, enrichedMetadata, saveContext);
 
     // #1121 gap C: audit at the DOOR, not at the caller.
     //
@@ -1341,17 +1353,21 @@ class PageManager extends BaseManager implements CatalogSource {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options: PageSaveOptions = {}
   ): Promise<void> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
+    }
+    if (!ctx) {
+      throw new Error('PageManager.savePage requires an ActorContext');
     }
     await this.assertContentPasses(pageName, content, options);
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
     if (validationManager) {
       const uuid = (metadata as Record<string, unknown>).uuid as string ?? '';
       const slug = (metadata as Record<string, unknown>).slug as string ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug);
+      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
@@ -1361,10 +1377,10 @@ class PageManager extends BaseManager implements CatalogSource {
     // fails, must not break the save — the distinction is a nicety and the
     // record is worth more than the accuracy of one field.
     const existed = typeof this.provider.getPage === 'function'
-      ? Boolean(await this.provider.getPage(pageName).catch(() => null))
+      ? Boolean(await this.provider.getPage(pageName, ctx).catch(() => null))
       : true;
 
-    await this.provider.savePage(pageName, content, metadata);
+    await this.provider.savePage(pageName, content, metadata, ctx);
 
     // #1121 gap C: this path produces NO audit event from the route layer,
     // because it has no request to audit from. Five callers use it —
@@ -1416,9 +1432,9 @@ class PageManager extends BaseManager implements CatalogSource {
 
     logger.info(`[PageManager] Deleting page: ${identifier} by user: ${deletedBy}`);
 
-    // #947: pass the acting user through so the tombstone records who deleted
-    // the page. Providers that predate soft delete ignore the extra argument.
-    return this.provider.deletePage(identifier, deletedBy);
+    // #947: the context names who deleted the page on the tombstone (#1179).
+    const ctx = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
+    return this.provider.deletePage(identifier, ctx);
   }
 
   /**
@@ -1435,11 +1451,14 @@ class PageManager extends BaseManager implements CatalogSource {
    * const deleted = await pageManager.deletePage('Old Page');
    * if (deleted) console.log('Page removed');
    */
-  async deletePage(identifier: string): Promise<boolean> {
+  async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.deletePage(identifier);
+    if (!ctx) {
+      throw new Error('PageManager.deletePage requires an ActorContext');
+    }
+    return this.provider.deletePage(identifier, ctx);
   }
 
   /**
@@ -1455,11 +1474,11 @@ class PageManager extends BaseManager implements CatalogSource {
    *   console.log('Main page exists');
    * }
    */
-  pageExists(identifier: string): boolean {
+  pageExists(identifier: string, ctx: ActorContext): boolean {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.pageExists(identifier);
+    return this.provider.pageExists(identifier, ctx);
   }
 
   /**
@@ -1537,11 +1556,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param {string} uuid - Page UUID
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  async getPageByUUID(uuid: string): Promise<WikiPage | null> {
+  async getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageByUUID(uuid);
+    return this.provider.getPageByUUID(uuid, ctx);
   }
 
   /**
@@ -1549,11 +1568,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param {string} slug - URL-friendly slug
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  async getPageBySlug(slug: string): Promise<WikiPage | null> {
+  async getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageBySlug(slug);
+    return this.provider.getPageBySlug(slug, ctx);
   }
 
   /**
@@ -1646,59 +1665,92 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Private-page access check using the page-index `creator` as the
-   * authoritative identity (#711).
+   * The private-container decision for a page (docs/planning/private-stores.md,
+   * Access). ACLManager's Tier 0 asks this, so every `canAccess` on a page —
+   * view, edit, lists, the attachment door — reaches the same rule.
    *
-   * The Page Audience required-pages doc states: "access uses the page's
-   * **creator** as recorded in the page index, not the `author` frontmatter
-   * field. If the `author` field differs from the actual creator, the
-   * `author` field is ignored for access control purposes."
+   * `pages/private/{user}/` and every store below it is owned by that user.
+   * Nobody else acts in it unless the owner delegated (a share the owner
+   * issued, once the store's Share switch exists — #1388). No role reaches in,
+   * admin included (security-posture P2: no `hasRole` as an allow).
    *
-   * Page-index `creator` is sticky (`VersioningFileProvider:1394–1396`
-   * preserves it across saves); frontmatter `author` is mutable. Reading
-   * the sticky source prevents an admin reassigning `author` from
-   * silently shifting private-page ownership.
+   * Owner is the page-index `creator` (sticky), not frontmatter `author`, so
+   * reassigning `author` cannot move ownership (#711).
    *
    * Returns:
-   *   - `null`  — page is not private; caller should fall through to the
-   *               next access tier
-   *   - `true`  — page is private AND user is admin OR the page-index creator
-   *   - `false` — page is private AND user is neither admin nor creator
-   *
-   * Used by ACLManager Tier 0 as the single source of truth for the
-   * private-access decision. Existing per-route checks (
-   * `WikiRoutes.checkPrivatePageAccess`, `MediaManager.checkPrivatePageAccess`
-   * ) are unaffected by this commit — they continue to use their own
-   * implementations until the broader access-control refactor lands as a
-   * separate epic.
+   *   - `null`  — the page is not private (or does not exist); the caller
+   *               falls through to its next tier
+   *   - `true`  — private, and the caller is the owner or the owner's delegate
+   *   - `false` — private, and the caller is neither; also when privacy
+   *               cannot be established (conservative, the #714 convention)
    */
   async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
     try {
       if (!this.provider) return null;
-
-      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
+      const subject = wikiContext.userContext as ActorContext | undefined;
+      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, subject ?? ANONYMOUS_SUBJECT);
       if (!pageMetadata?.uuid) return null;
 
-      const provider = this.provider as unknown as {
-        pageIndex?: { pages: Record<string, { location?: string; creator?: string }> }
-      };
-      const pageIndex = provider.pageIndex;
-      const entry = pageIndex?.pages[pageMetadata.uuid];
-
-      // Defensive: treat the page as private if EITHER signal says so.
-      const md = pageMetadata as Record<string, unknown>;
-      const isPrivate = (entry?.location === 'private') || (md.private === true);
-      if (!isPrivate) return null;
-
-      const username = wikiContext.userContext?.username;
-      if (!username) return false;
-      if (wikiContext.hasRole?.('admin')) return true;
-
-      // Page-index creator (sticky) — not frontmatter `author` (mutable).
-      return username === entry?.creator;
-    } catch {
-      return null;
+      const owner = subject
+        ? await this.getPrivatePageOwner(pageNameOrUuid, subject)
+        : await this.getPrivatePageOwner(pageNameOrUuid, ANONYMOUS_SUBJECT);
+      // Defensive: frontmatter says private but no owner is known — refuse.
+      if (!owner) return (pageMetadata as Record<string, unknown>).private === true ? false : null;
+      if (!subject) return false;
+      return mayActInPrivateContainer(subject, owner.creator);
+    } catch (err) {
+      logger.warn(`[PageManager] private-access check failed for '${pageNameOrUuid}' — refusing: ${String(err)}`);
+      return false;
     }
+  }
+
+  /**
+   * Owner and store of a private page, or `null` when the page is not private
+   * or does not exist (#1398). The author owns the page and every attachment
+   * uploaded onto it, so AttachmentManager uses this to route a new upload into
+   * that author's store.
+   *
+   * Owner is the page-index `creator` (sticky), not frontmatter `author`.
+   * Unlocked sealed-store pages are not in the global index; they come from the
+   * caller's session catalog, through `ctx` (#1385). Frontmatter is the last
+   * resort for a provider without a page index.
+   */
+  async getPrivatePageOwner(
+    pageNameOrUuid: string,
+    ctx: ActorContext
+  ): Promise<{ creator: string; store: string } | null> {
+    if (!this.provider) return null;
+    const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, ctx);
+    if (!pageMetadata?.uuid) return null;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const defaultStoreId = configManager
+      ? privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)).defaultStoreId
+      : DEFAULT_PRIVATE_STORE;
+
+    const provider = this.provider as unknown as {
+      pageIndex?: { pages: Record<string, { location?: string; creator?: string; store?: string }> }
+    };
+    const entry = provider.pageIndex?.pages[pageMetadata.uuid];
+    if (entry?.location === 'private' && entry.creator) {
+      return { creator: entry.creator, store: entry.store ?? defaultStoreId };
+    }
+
+    // An unlocked sealed page is in the caller's own session catalog, reached
+    // through the context it was given — never an ambient session (P1).
+    const sealed = userIndexFor(ctx)?.pages[pageMetadata.uuid];
+    if (sealed) {
+      return { creator: sealed.creator, store: sealed.store };
+    }
+
+    const md = pageMetadata as Record<string, unknown>;
+    if (!entry && md.private === true && typeof md.author === 'string' && md.author) {
+      return {
+        creator: md.author,
+        store: typeof md.store === 'string' && md.store ? md.store : defaultStoreId
+      };
+    }
+    return null;
   }
 
   async refreshPageList(): Promise<void> {

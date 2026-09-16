@@ -9,6 +9,10 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { actor } from '../../test-support/actors';
+
+// The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
+const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -17,7 +21,6 @@ import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek
 import {
   clearUnlockedPrivateStores,
   lockPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores,
   unlockPrivateStoresWithPassword
@@ -83,7 +86,7 @@ describe('encrypted user-index (#1385)', () => {
 
   test('unencrypted default/ still lands in global page-index.json', async () => {
     const provider = await newProvider();
-    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' });
+    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' }, MOLLY);
     const index = await readIndex();
     expect(index.pages[OPEN]).toMatchObject({ title: 'Open Diary', store: DEFAULT_PRIVATE_STORE });
   });
@@ -100,23 +103,21 @@ describe('encrypted user-index (#1385)', () => {
     setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(created.kek, record));
 
     const provider = await newProvider();
-    await runWithPrivateStoreSession('sid', async () => {
-      await provider.savePage('Sealed Diary', 'secret', {
-        uuid: SEALED,
-        private: true,
-        author: 'molly'
-      });
-    });
+    await provider.savePage('Sealed Diary', 'secret', {
+      uuid: SEALED,
+      private: true,
+      author: 'molly'
+    }, MOLLY);
 
     const index = await readIndex();
     expect(index.pages[SEALED]).toBeUndefined();
     expect(JSON.stringify(index)).not.toContain('Sealed Diary');
 
-    const found = await runWithPrivateStoreSession('sid', () => provider.getPage('Sealed Diary'));
+    const found = await provider.getPage('Sealed Diary', MOLLY);
     expect(found?.content).toContain('secret');
 
     lockPrivateStores('sid');
-    expect(await provider.getPage('Sealed Diary')).toBeNull();
+    expect(await provider.getPage('Sealed Diary', MOLLY)).toBeNull();
   });
 
   test('rebuild does not scan a sealed store tree into the global index', async () => {
@@ -131,7 +132,7 @@ describe('encrypted user-index (#1385)', () => {
     );
 
     const provider = await newProvider();
-    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' });
+    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' }, MOLLY);
     await provider.refreshPageList();
     await provider.rebuildPageIndexFromDisk();
 
@@ -153,28 +154,26 @@ describe('encrypted user-index (#1385)', () => {
     setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(created.kek, record));
 
     const provider = await newProvider();
-    await runWithPrivateStoreSession('sid', async () => {
-      await provider.savePage('Sealed Diary', 'secret', {
-        uuid: SEALED,
-        private: true,
-        author: 'molly'
-      });
-    });
+    await provider.savePage('Sealed Diary', 'secret', {
+      uuid: SEALED,
+      private: true,
+      author: 'molly'
+    }, MOLLY);
     lockPrivateStores('sid');
 
     await unlockPrivateStoresWithPassword({
-      sessionId: 'sid-2',
+      handle: 'sid-2',
       username: 'molly',
       password: 'pw',
       pagesDirectory: pagesDir
     });
 
     expect(
-      (await runWithPrivateStoreSession('sid-2', () => provider.getPage('Sealed Diary')))?.content
+      (await provider.getPage('Sealed Diary', { ...MOLLY, privateStoreHandle: 'sid-2' }))?.content
     ).toContain('secret');
 
     lockPrivateStores('sid-2');
-    expect(await provider.getPage('Sealed Diary')).toBeNull();
+    expect(await provider.getPage('Sealed Diary', MOLLY)).toBeNull();
     expect((await readIndex()).pages[SEALED]).toBeUndefined();
   });
 });

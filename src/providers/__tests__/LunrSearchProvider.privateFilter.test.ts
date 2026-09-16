@@ -1,15 +1,15 @@
 /**
  * Unit tests for LunrSearchProvider — private page filtering (#122)
  *
- * Tests that search() filters out private pages for users who are not the
- * creator or an admin, while allowing creators and admins to see their own
- * private pages in results.
+ * Tests that search() returns a private page only to its owner (#1382: a
+ * private page lives in its owner's private container; no role, admin
+ * included, and no frontmatter audience reaches in).
  *
  * Covers:
  * - Anonymous search: private pages excluded
  * - Non-creator authenticated user: private pages excluded
  * - Page creator: private pages included
- * - Admin user: all private pages included regardless of creator
+ * - Admin user: other users' private pages excluded
  * - Public pages: always included
  * - Mixed results: correct filtering applied per document
  */
@@ -140,7 +140,8 @@ describe('LunrSearchProvider.search — private filtering — no wikiContext', (
 // (#625 — exposes hasRole / getPrincipals as the real WikiContext does)
 function makeWikiContext(username, roles = ['user']) {
   return {
-    userContext: { username, roles },
+    // #1212: a request subject always states isAuthenticated.
+    userContext: { username, roles, isAuthenticated: Boolean(username) },
     hasRole: (...names: string[]) => names.some((n) => roles.includes(n)),
     getPrincipals: () => (username ? [...roles, username] : [...roles])
   };
@@ -180,21 +181,23 @@ describe('LunrSearchProvider.search — private filtering — non-creator user',
 // ---------------------------------------------------------------------------
 
 describe('LunrSearchProvider.search — private filtering — admin user', () => {
-  test('admin sees all private pages from all creators', async () => {
+  // #1382: a private page lives in its owner's private container. No role —
+  // admin included — reaches in (docs/planning/private-stores.md, Access).
+  test('admin does not see other users\' private pages', async () => {
     const wikiContext = makeWikiContext('admin', ['admin']);
     const results = await provider.search('content', { wikiContext });
     const names = results.map(r => r.name);
-    expect(names).toContain('AlicePrivatePage');
-    expect(names).toContain('BobPrivatePage');
+    expect(names).not.toContain('AlicePrivatePage');
+    expect(names).not.toContain('BobPrivatePage');
     expect(names).toContain('PublicPage');
   });
 
-  test('user with both user and admin roles is treated as admin', async () => {
+  test('holding the admin role alongside others still grants nothing private', async () => {
     const wikiContext = makeWikiContext('jim', ['user', 'admin']);
     const results = await provider.search('content', { wikiContext });
     const names = results.map(r => r.name);
-    expect(names).toContain('AlicePrivatePage');
-    expect(names).toContain('BobPrivatePage');
+    expect(names).not.toContain('AlicePrivatePage');
+    expect(names).not.toContain('BobPrivatePage');
   });
 });
 
@@ -233,22 +236,24 @@ describe('LunrSearchProvider.search — private filtering — frontmatter audien
     };
   });
 
-  test('user listed in audience by username sees the private page', async () => {
+  // #1382: frontmatter audience does not reach into a private container —
+  // only the owner delegating permissions (a share) would.
+  test('a username in a private page\'s audience grants nothing', async () => {
     const wikiContext = makeWikiContext('bob');
     const results = await provider.search('content', { wikiContext });
     const names = results.map(r => r.name);
-    expect(names).toContain('AliceShared');         // bob is in audience
-    expect(names).not.toContain('AliceRoleShared'); // bob not 'editor'
-    expect(names).not.toContain('AliceUnshared');   // no audience match, not creator, not admin
+    expect(names).not.toContain('AliceShared');
+    expect(names).not.toContain('AliceRoleShared');
+    expect(names).not.toContain('AliceUnshared');
   });
 
-  test('user matching audience by role sees the role-audience page', async () => {
+  test('a role in a private page\'s audience grants nothing', async () => {
     const wikiContext = makeWikiContext('dave', ['editor']);
     const results = await provider.search('content', { wikiContext });
     const names = results.map(r => r.name);
-    expect(names).not.toContain('AliceShared');     // dave not listed by username
-    expect(names).toContain('AliceRoleShared');     // dave has 'editor' role
-    expect(names).not.toContain('AliceUnshared');   // no audience
+    expect(names).not.toContain('AliceShared');
+    expect(names).not.toContain('AliceRoleShared');
+    expect(names).not.toContain('AliceUnshared');
   });
 
   test('user not in audience and not creator/admin sees nothing private', async () => {
@@ -260,13 +265,13 @@ describe('LunrSearchProvider.search — private filtering — frontmatter audien
     expect(names).not.toContain('AliceUnshared');
   });
 
-  test('admin still bypasses audience — sees all private pages regardless', async () => {
+  test('admin sees none of another user\'s private pages, audience or not', async () => {
     const wikiContext = makeWikiContext('root', ['admin']);
     const results = await provider.search('content', { wikiContext });
     const names = results.map(r => r.name);
-    expect(names).toContain('AliceShared');
-    expect(names).toContain('AliceRoleShared');
-    expect(names).toContain('AliceUnshared');
+    expect(names).not.toContain('AliceShared');
+    expect(names).not.toContain('AliceRoleShared');
+    expect(names).not.toContain('AliceUnshared');
   });
 
   test('creator still sees their own private page even when not in audience', async () => {
@@ -392,16 +397,15 @@ describe('LunrSearchProvider.advancedSearch — no-query branch — private filt
     expect(names).toEqual(['AlicePriv', 'Public']);
   });
 
-  test('admin sees all', async () => {
+  test('admin sees only public pages (no role reaches a private page)', async () => {
     const names = (await p.advancedSearch({ wikiContext: makeWikiContext('root', ['admin']) })).map(r => r.name).sort();
-    expect(names).toEqual(['AlicePriv', 'BobPriv', 'Public']);
+    expect(names).toEqual(['Public']);
   });
 
-  test('audience principal grants visibility of a private page', async () => {
-    // carol is not the creator but is in AlicePriv's audience via principals
+  test('an audience principal does not grant a private page', async () => {
     const wc = makeWikiContext('carol', ['user', 'team-x']);
     const names = (await p.advancedSearch({ wikiContext: wc })).map(r => r.name).sort();
-    expect(names).toContain('AlicePriv');
+    expect(names).not.toContain('AlicePriv');
     expect(names).not.toContain('BobPriv');
   });
 });

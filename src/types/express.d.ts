@@ -31,6 +31,8 @@ declare module 'express-session' {
     user?: unknown;
     isAuthenticated?: boolean;
     roles?: string[];
+    /** Opaque handle to this session's private-store key bag (#1382). Random, never the session id; never key bytes. */
+    privateStoreHandle?: string;
     [key: string]: unknown;
   }
 }

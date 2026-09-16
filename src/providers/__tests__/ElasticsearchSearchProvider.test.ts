@@ -356,22 +356,44 @@ describe('advancedSearch()', () => {
     expect(createdFilter).toBeUndefined();
   });
 
-  test('private page filter allows audience members', async () => {
+  // #1382: a private page is found only by its owner — no role and no
+  // frontmatter audience reaches a private container.
+  test('private page filter: public pages plus the caller\'s own private pages, no audience grant', async () => {
     const engine = makeEngine();
     const provider = new ElasticsearchSearchProvider(engine);
     await provider.initialize();
 
     await provider.advancedSearch({
       wikiContext: {
-        userContext: { roles: ['editor'], username: 'jim' },
-        getPrincipals: () => ['editor', 'jim']
+        userContext: { roles: ['editor', 'admin'], username: 'jim', isAuthenticated: true },
+        getPrincipals: () => ['editor', 'admin', 'jim']
       }
     });
 
     const { query } = mockClientInstance.search.mock.calls[0][0];
     const privacyFilter = query.bool.filter.find(f => f.bool?.should);
     expect(privacyFilter.bool.should).toContainEqual({ term: { isPrivate: false } });
-    expect(privacyFilter.bool.should).toContainEqual({ terms: { audience: ['editor', 'jim'] } });
+    expect(privacyFilter.bool.should).toContainEqual({
+      bool: { filter: [{ term: { isPrivate: true } }, { term: { author: 'jim' } }] }
+    });
+    expect(JSON.stringify(privacyFilter)).not.toContain('audience');
+  });
+
+  test('a share visitor (anonymous, carrying a share) finds no private page', async () => {
+    const provider = new ElasticsearchSearchProvider(makeEngine());
+    await provider.initialize();
+    await provider.advancedSearch({
+      wikiContext: {
+        userContext: {
+          roles: ['anonymous'], username: 'Anonymous', isAuthenticated: false,
+          viaShare: { id: 's1', issuer: 'jim', actions: ['page-read'], resources: [] }
+        },
+        getPrincipals: () => ['anonymous', 'Anonymous']
+      }
+    });
+    const { query } = mockClientInstance.search.mock.calls[0][0];
+    expect(query.bool.filter).toContainEqual({ term: { isPrivate: false } });
+    expect(query.bool.filter.find(f => f.bool?.should)).toBeUndefined();
   });
 });
 
@@ -402,12 +424,12 @@ describe('advancedSearch() — no-query/browse-all ACL parity (#731/#732)', () =
     expect(JSON.stringify(query)).not.toContain('audience');
   });
 
-  test('no query + authed: match_all wrapped public-OR-audience, minimum_should_match:1', async () => {
+  test('no query + authed: match_all wrapped public-OR-own-private, minimum_should_match:1', async () => {
     const provider = new ElasticsearchSearchProvider(makeEngine());
     await provider.initialize();
 
     await provider.advancedSearch({
-      wikiContext: { userContext: { roles: ['editor'], username: 'jim' }, getPrincipals: () => ['editor', 'jim'] }
+      wikiContext: { userContext: { roles: ['editor'], username: 'jim', isAuthenticated: true }, getPrincipals: () => ['editor', 'jim'] }
     });
 
     const { query } = mockClientInstance.search.mock.calls[0][0];
@@ -415,7 +437,9 @@ describe('advancedSearch() — no-query/browse-all ACL parity (#731/#732)', () =
     const priv = query.bool.filter.find(f => f.bool?.should);
     expect(priv.bool.minimum_should_match).toBe(1);
     expect(priv.bool.should).toContainEqual({ term: { isPrivate: false } });
-    expect(priv.bool.should).toContainEqual({ terms: { audience: ['editor', 'jim'] } });
+    expect(priv.bool.should).toContainEqual({
+      bool: { filter: [{ term: { isPrivate: true } }, { term: { author: 'jim' } }] }
+    });
   });
 
   test('category-only (no text query) is STILL privacy-filtered — the #731 broader-leak class', async () => {

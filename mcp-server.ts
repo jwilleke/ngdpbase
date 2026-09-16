@@ -16,6 +16,8 @@
 // './data' and the MCP server operates on the wrong instance entirely — it is launched
 // by an MCP client that has no reason to export FAST_STORAGE.
 // See src/bootstrap-env.ts and docs/bootstrap-methodology.md.
+import { jobContextFromOperator, type JobContext } from './src/context/JobContext.js';
+import { systemPrincipalOf } from './src/context/bootActions.js';
 import './src/bootstrap-env.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -263,12 +265,12 @@ interface ConfigurationManagerType {
 }
 
 interface PageManagerType {
-  pageExists(identifier: string): boolean;
-  getPage(identifier: string): Promise<WikiPage>;
-  getPageMetadata(identifier: string): Promise<PageMetadata>;
+  pageExists(identifier: string, ctx: unknown): boolean;
+  getPage(identifier: string, ctx: unknown): Promise<WikiPage>;
+  getPageMetadata(identifier: string, ctx: unknown): Promise<PageMetadata>;
   getAllPages(): Promise<string[]>;
-  savePage(pageName: string, content: string, metadata: Record<string, unknown>): Promise<void>;
-  deletePage(identifier: string): Promise<boolean>;
+  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown): Promise<void>;
+  deletePage(identifier: string, ctx: unknown): Promise<boolean>;
   /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
   convertPageToNcm(raw: string): NcmResult;
 }
@@ -303,6 +305,16 @@ class NgdpbaseMCPServer {
     );
 
     this.setupHandlers();
+  }
+
+  /**
+   * The context an MCP write acts under (#1179, security-posture P1). There is
+   * no request behind a stdio tool call: this is the operator running the
+   * server, so the job states who asked and which tool asked.
+   */
+  private mcpContext(tool: string): JobContext {
+    const principal = systemPrincipalOf(this.wikiEngine);
+    return jobContextFromOperator(principal, `MCP tool: ${tool}`);
   }
 
   /**
@@ -730,11 +742,11 @@ class NgdpbaseMCPServer {
     const { identifier, include_content = true } = args;
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
 
-    if (!pageManager.pageExists(identifier)) {
+    if (!pageManager.pageExists(identifier, this.mcpContext('read page'))) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
-    const page: WikiPage = await pageManager.getPage(identifier);
+    const page: WikiPage = await pageManager.getPage(identifier, this.mcpContext('read page'));
 
     const result: Record<string, unknown> = {
       title: page.metadata.title,
@@ -773,7 +785,7 @@ class NgdpbaseMCPServer {
     const pagesWithMetadata: Array<{ title: string; metadata: PageMetadata }> = [];
     for (const title of pageTitles) {
       try {
-        const metadata = await pageManager.getPageMetadata(title);
+        const metadata = await pageManager.getPageMetadata(title, this.mcpContext('read page metadata'));
         if (metadata) {
           pagesWithMetadata.push({ title, metadata });
         }
@@ -882,11 +894,11 @@ class NgdpbaseMCPServer {
     const { identifier } = args;
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
 
-    if (!pageManager.pageExists(identifier)) {
+    if (!pageManager.pageExists(identifier, this.mcpContext('read page'))) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
-    const metadata = await pageManager.getPageMetadata(identifier);
+    const metadata = await pageManager.getPageMetadata(identifier, this.mcpContext('read page metadata'));
 
     return {
       content: [
@@ -1259,7 +1271,7 @@ class NgdpbaseMCPServer {
     const validationManager = this.wikiEngine!.getManager('ValidationManager') as ValidationManagerType;
     const searchManager = this.wikiEngine!.getManager('SearchManager') as SearchManagerType;
 
-    if (pageManager.pageExists(title)) {
+    if (pageManager.pageExists(title, this.mcpContext('read page'))) {
       throw new Error(`Page already exists: ${title}`);
     }
 
@@ -1280,10 +1292,10 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data);
+    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data, this.mcpContext('create page'));
     notifyNcmConversion(this.wikiEngine!, 'MCP create_page', title, ncmWarnings);
 
-    const savedPage = await pageManager.getPage(title);
+    const savedPage = await pageManager.getPage(title, this.mcpContext('read page'));
     await searchManager.updatePageInIndex(title, {
       name: title,
       title: savedPage.metadata.title,
@@ -1321,7 +1333,7 @@ class NgdpbaseMCPServer {
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
     const searchManager = this.wikiEngine!.getManager('SearchManager') as SearchManagerType;
 
-    if (!pageManager.pageExists(identifier)) {
+    if (!pageManager.pageExists(identifier, this.mcpContext('read page'))) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
@@ -1329,7 +1341,7 @@ class NgdpbaseMCPServer {
       throw new Error('At least one of content, category, or keywords must be provided');
     }
 
-    const existing = await pageManager.getPage(identifier);
+    const existing = await pageManager.getPage(identifier, this.mcpContext('read page'));
     const pageName = existing.metadata.title;
 
     // #1081: refuse an edit built on a version someone else has already
@@ -1369,10 +1381,10 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data);
+    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data, this.mcpContext('update page'));
     notifyNcmConversion(this.wikiEngine!, 'MCP update_page', pageName, ncmWarnings);
 
-    const savedPage = await pageManager.getPage(pageName);
+    const savedPage = await pageManager.getPage(pageName, this.mcpContext('read page'));
     await searchManager.updatePageInIndex(pageName, {
       name: pageName,
       title: savedPage.metadata.title,
@@ -1415,14 +1427,14 @@ class NgdpbaseMCPServer {
       throw new Error('confirm must be true to delete a page');
     }
 
-    if (!pageManager.pageExists(identifier)) {
+    if (!pageManager.pageExists(identifier, this.mcpContext('read page'))) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
-    const metadata = await pageManager.getPageMetadata(identifier);
+    const metadata = await pageManager.getPageMetadata(identifier, this.mcpContext('read page metadata'));
     const pageName = metadata.title;
 
-    const deleted = await pageManager.deletePage(identifier);
+    const deleted = await pageManager.deletePage(identifier, this.mcpContext('delete page'));
 
     if (deleted) {
       await searchManager.removeFromIndex(pageName);

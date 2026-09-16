@@ -26,8 +26,8 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
-import { DEFAULT_PRIVATE_STORE } from '../utils/privateStorePath.js';
-import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -74,8 +74,17 @@ export interface FileInfo {
 export interface UploadOptions {
   pageName?: string;
   description?: string;
-  /** WikiContext for the current request — used to resolve page privacy */
+  /** WikiContext for the current request — audit IP fallback */
   wikiContext?: import('../context/WikiContext.js').default;
+  /**
+   * Private-store destination (#1396): the upload dialog's checkbox. Decides
+   * only when `pageName` is not a private page — an upload onto a private page
+   * is always private, in that page's author's store (#1398). Absent or false
+   * otherwise keeps the public attachments pool.
+   */
+  private?: boolean;
+  /** Store id when private with no private page; default from ConfigurationManager defaultstoreid */
+  store?: string;
 }
 
 // #1179: the acting methods below take an `ActorContext` — the request's
@@ -472,8 +481,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {Buffer} fileBuffer - File data
    * @param {FileInfo} fileInfo - { originalName, mimeType, size }
    * @param {UploadOptions} options - Upload options
-   * @param {string} options.pageName - Page to attach to (optional)
+   * @param {string} options.pageName - Page uploaded onto (optional). A private page forces the upload private, into its author's store (#1398)
    * @param {string} options.description - File description
+   * @param {boolean} options.private - Private-store destination for an upload with no private page (#1396)
+   * @param {string} options.store - Store id when private with no private page; else ConfigurationManager defaultstoreid
    * @param ctx - Who is uploading (#1179): the request's subject, or a JobContext for an in-engine caller. Mandatory and positional.
    * @returns {Promise<AttachmentMetadata>} Attachment metadata
    */
@@ -495,62 +506,79 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       email: (ctx as { email?: string }).email || undefined
     };
 
-    // Resolve page privacy from the page context entry.
-    // pageName is used for storage-location decisions (private/ dir) only —
-    // it does NOT create a mention. Page-asset linkage is driven by content
-    // scanning on page save (Phase 4 / #403).
+    // Destination (#1398): a new upload onto a private page is always private
+    // and belongs to that page's author — the author owns the page and every
+    // attachment uploaded onto it, whoever uploads. With no private page,
+    // options.private === true → the uploader's store; otherwise the public pool.
     const pageName = options.pageName;
     let isPrivatePage = false;
     let pageCreator: string | undefined;
     let pageStore: string | undefined;
-    if (pageName) {
-      try {
-        const pageManager = this.engine.getManager<PageManager>('PageManager');
-        const page = pageManager ? await pageManager.getPage(pageName) : null;
-        // page metadata is dynamic
-        const indexEntry = page?.metadata?.['index-entry'] as {
-          location?: string;
-          creator?: string;
-          store?: string;
-        } | undefined;
-        if (indexEntry?.location === 'private') {
-          isPrivatePage = true;
-          pageCreator = indexEntry.creator;
-          pageStore = indexEntry.store;
-        }
-      } catch (err) {
-        logger.warn(`📎 Could not resolve page privacy for "${pageName}": ${String(err)}`);
+    const pageOwner = pageName
+      ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
+      : null;
+    // A private container is its owner's: nobody else writes into it unless the
+    // owner delegated. The decision is the page's own — ACLManager Tier 0 via
+    // the cross-page check — so the rule has one home and a refusal is recorded
+    // (authorization-deny). Refused before any bytes are stored.
+    if (pageOwner && pageName) {
+      const acl = this.engine.getManager<{
+        canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
+          }>('ACLManager');
+      const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+      if (!acl || !(await acl.canUserAccessPage(subject, pageName, 'edit'))) {
+        throw new Error('Permission denied: you cannot upload to this page');
       }
     }
-
-    // #1394: sealed-store writes need the session DEK. Not a PageManager field.
-    if (isPrivatePage && pageCreator) {
+    // A share visitor has no container of their own to put a private file in.
+    if (!pageOwner && options.private === true && ctx.viaShare) {
+      throw new Error('Permission denied: a shared link cannot store private files');
+    }
+    if (pageOwner || options.private === true) {
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      const pagesDirectory = configManager?.getResolvedDataPath?.(
+      if (!configManager) {
+        throw new Error('AttachmentManager requires ConfigurationManager');
+      }
+      const layout = privateStoreLayoutFromConfig((key, fallback) =>
+        configManager.getProperty(key, fallback)
+      );
+      isPrivatePage = true;
+      pageCreator = pageOwner ? pageOwner.creator : ctx.username;
+      pageStore = pageOwner ? pageOwner.store : (options.store ?? layout.defaultStoreId);
+
+      // #1394: sealed-store writes need the session DEK. Not a PageManager field.
+      const pagesDirectory = configManager.getResolvedDataPath?.(
         'ngdpbase.page.provider.filesystem.storagedir',
         './data/pages'
       );
       if (pagesDirectory) {
-        await assertCurrentSessionCanWriteStore({
+        await assertContextCanWriteStore(ctx, {
           pagesDirectory,
-          creator: pageCreator,
-          store: pageStore ?? DEFAULT_PRIVATE_STORE
+          owner: pageCreator,
+          store: pageStore,
+          layout
         });
       }
     }
 
-    // Create metadata (include privacy flags for provider)
-    const metadata: AttachmentMetadataInput & { isPrivatePage?: boolean; pageCreator?: string } = {
+    // Create metadata (include privacy flags for provider). Destination is the
+    // page store (#1386); ciphertext of those bytes is later.
+    const metadata: AttachmentMetadataInput & {
+      isPrivatePage?: boolean;
+      pageCreator?: string;
+      store?: string;
+    } = {
       description: options.description || '',
       isFamilyFriendly: true,
       isPrivatePage,
-      pageCreator
+      pageCreator,
+      store: isPrivatePage ? pageStore : undefined
     };
 
     // Store attachment via provider
     const attachmentMetadata = await this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user);
 
-    logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private page: ${pageName ?? ''}, creator: ${pageCreator ?? 'unknown'}]` : ''}`);
+    logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}, store: ${pageStore ?? ''}]` : ''}`);
 
     // #1183 — at the door. Four write paths (NCM localization, bulk import,
     // thumbnail render, media browser) produced no record while this lived in

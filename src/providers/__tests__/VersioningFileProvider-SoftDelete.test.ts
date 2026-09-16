@@ -15,6 +15,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import { pendingBootActions, resetBootActions, scheduleContext, systemContext } from '../../context/bootActions';
 import fs from 'fs-extra';
 import path from 'path';
@@ -91,9 +92,9 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   const seedPage = async (title = 'Doomed Page') => {
     await provider.initialize();
-    await provider.savePage(title, 'v1 content', { author: 'jim' });
-    await provider.savePage(title, 'v2 content', { author: 'jim' });
-    await provider.savePage(title, 'v3 content', { author: 'jim' });
+    await provider.savePage(title, 'v1 content', { author: 'jim' }, TEST_ACTOR);
+    await provider.savePage(title, 'v2 content', { author: 'jim' }, TEST_ACTOR);
+    await provider.savePage(title, 'v3 content', { author: 'jim' }, TEST_ACTOR);
     const page = await provider.getPage(title);
     return { uuid: page.uuid, title };
   };
@@ -104,7 +105,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
     expect(await provider.getVersionHistory(title)).toHaveLength(3);
 
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     // The old implementation did fs.remove(versionDir) right here.
     expect(await fs.pathExists(versionDir)).toBe(true);
@@ -113,7 +114,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('the deleted page is invisible to every live lookup', async () => {
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     expect(await provider.getPage(title)).toBeNull();
     expect(await provider.getPage(uuid)).toBeNull();
@@ -126,7 +127,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     const originalPath = path.join(testDir, 'pages', `${uuid}.md`);
     expect(await fs.pathExists(originalPath)).toBe(true);
 
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     expect(await fs.pathExists(originalPath)).toBe(false);
     expect(await fs.pathExists(path.join(testDir, 'pages', 'deleted', `${uuid}.md`))).toBe(true);
@@ -135,7 +136,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
   test('a tombstoned page does NOT come back after a provider reload', async () => {
     // The reason the file has to move: initialize() rebuilds caches from disk.
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     const reloaded = new VersioningFileProvider(engine);
     await reloaded.initialize();
@@ -148,7 +149,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
   test('the tombstone records who deleted it and when', async () => {
     const { uuid, title } = await seedPage();
     const before = Date.now();
-    await provider.deletePage(title, 'alice');
+    await provider.deletePage(title, actor('alice'));
 
     const tomb = provider['pageIndex'].deletedPages[uuid];
     expect(tomb.deletedBy).toBe('alice');
@@ -157,19 +158,21 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect(tomb.deletedFrom).toContain(`${uuid}.md`);
   });
 
-  test('deletedBy defaults to unknown when no user is supplied', async () => {
+  // #1179: a delete takes a context, so the tombstone names whoever deleted the
+  // page. There is no "no user supplied" case any more — the door requires one.
+  test('the tombstone names the deleter from the context', async () => {
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title);
-    expect(provider['pageIndex'].deletedPages[uuid].deletedBy).toBe('unknown');
+    await provider.deletePage(title, actor('molly'));
+    expect(provider['pageIndex'].deletedPages[uuid].deletedBy).toBe('molly');
   });
 
   test('getDeletedPages lists tombstones newest first', async () => {
     await provider.initialize();
-    await provider.savePage('First', 'a', { author: 'jim' });
-    await provider.savePage('Second', 'b', { author: 'jim' });
+    await provider.savePage('First', 'a', { author: 'jim' }, TEST_ACTOR);
+    await provider.savePage('Second', 'b', { author: 'jim' }, TEST_ACTOR);
     const firstUuid = (await provider.getPage('First')).uuid;
-    await provider.deletePage('First', 'jim');
-    await provider.deletePage('Second', 'jim');
+    await provider.deletePage('First', actor('jim'));
+    await provider.deletePage('Second', actor('jim'));
 
     // Backdate explicitly. Both deletes land in the same millisecond often
     // enough that asserting on wall-clock order alone is a flake — it passed
@@ -182,10 +185,10 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('same-millisecond deletions sort deterministically by title', async () => {
     await provider.initialize();
-    await provider.savePage('Bravo', 'a', { author: 'jim' });
-    await provider.savePage('Alpha', 'b', { author: 'jim' });
-    await provider.deletePage('Bravo', 'jim');
-    await provider.deletePage('Alpha', 'jim');
+    await provider.savePage('Bravo', 'a', { author: 'jim' }, TEST_ACTOR);
+    await provider.savePage('Alpha', 'b', { author: 'jim' }, TEST_ACTOR);
+    await provider.deletePage('Bravo', actor('jim'));
+    await provider.deletePage('Alpha', actor('jim'));
 
     const stamp = new Date().toISOString();
     for (const entry of Object.values(provider['pageIndex'].deletedPages)) {
@@ -197,7 +200,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('restore brings back the page AND its history', async () => {
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     const result = await provider.restoreDeletedPage(uuid);
     expect(result).toEqual({ ok: true, title });
@@ -212,7 +215,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('a restored page is resolvable by uuid without a reload', async () => {
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
     await provider.restoreDeletedPage(uuid);
 
     expect(await provider.getPage(uuid)).not.toBeNull();
@@ -223,8 +226,8 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     // The edge that makes silent restore dangerous: nothing stops a new page
     // taking the title while the old one sits in the trash.
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
-    await provider.savePage(title, 'a different page now', { author: 'bob' });
+    await provider.deletePage(title, actor('jim'));
+    await provider.savePage(title, 'a different page now', { author: 'bob' }, TEST_ACTOR);
 
     const result = await provider.restoreDeletedPage(uuid);
     expect(result).toEqual({ ok: false, reason: 'title-conflict', detail: title });
@@ -242,7 +245,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
   test('purge is the ONLY path that destroys versions', async () => {
     const { uuid, title } = await seedPage();
     const versionDir = provider._getVersionDirectory(uuid, 'pages');
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
 
     expect(await provider.purgeDeletedPage(uuid)).toBe(true);
 
@@ -254,13 +257,13 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('retention purge removes tombstones past the window and keeps fresh ones', async () => {
     await provider.initialize();
-    await provider.savePage('Old', 'a', { author: 'jim' });
-    await provider.savePage('Fresh', 'b', { author: 'jim' });
+    await provider.savePage('Old', 'a', { author: 'jim' }, TEST_ACTOR);
+    await provider.savePage('Fresh', 'b', { author: 'jim' }, TEST_ACTOR);
     const oldUuid = (await provider.getPage('Old')).uuid;
     const freshUuid = (await provider.getPage('Fresh')).uuid;
 
-    await provider.deletePage('Old', 'jim');
-    await provider.deletePage('Fresh', 'jim');
+    await provider.deletePage('Old', actor('jim'));
+    await provider.deletePage('Fresh', actor('jim'));
 
     // Backdate one tombstone past the 30-day default.
     provider['pageIndex'].deletedPages[oldUuid].deletedAt =
@@ -287,8 +290,8 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     // the caller gave, and this goes red.
     await provider.initialize();
     for (const title of ['One', 'Two']) {
-      await provider.savePage(title, 'x', { author: 'jim' });
-      await provider.deletePage(title, 'jim');
+      await provider.savePage(title, 'x', { author: 'jim' }, TEST_ACTOR);
+      await provider.deletePage(title, actor('jim'));
     }
     for (const t of Object.values(provider['pageIndex'].deletedPages)) {
       t.deletedAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
@@ -305,8 +308,8 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     }
 
     // And the scheduled shape, with a reason of the caller's choosing.
-    await provider.savePage('Three', 'x', { author: 'jim' });
-    await provider.deletePage('Three', 'jim');
+    await provider.savePage('Three', 'x', { author: 'jim' }, TEST_ACTOR);
+    await provider.deletePage('Three', actor('jim'));
     for (const t of Object.values(provider['pageIndex'].deletedPages)) {
       t.deletedAt = new Date(0).toISOString();
     }
@@ -321,7 +324,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     vi.useFakeTimers();
     try {
       const { uuid, title } = await seedPage();
-      await provider.deletePage(title, 'jim');
+      await provider.deletePage(title, actor('jim'));
 
       // Backdate past the 30-day window, then let the hourly tick fire.
       provider['pageIndex'].deletedPages[uuid].deletedAt =
@@ -370,7 +373,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
 
   test('retention of 0 keeps tombstones forever', async () => {
     const { uuid, title } = await seedPage();
-    await provider.deletePage(title, 'jim');
+    await provider.deletePage(title, actor('jim'));
     provider['deleteRetentionDays'] = 0;
     provider['pageIndex'].deletedPages[uuid].deletedAt = new Date(0).toISOString();
 

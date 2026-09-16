@@ -139,6 +139,14 @@ export interface ImportOptions {
    * Folder import only — URL import keeps hard-skip.
    */
   conflictPolicy?: 'skip' | 'overwrite';
+
+  /**
+   * Explicit private-store destination (#1389). Markdown still goes through
+   * PageManager. JSON/XML become files in the store via AttachmentManager.
+   * Never inferred from a page. Store id from ConfigurationManager when omitted.
+   */
+  private?: boolean;
+  store?: string;
 }
 
 /**
@@ -610,9 +618,14 @@ class ImportManager extends BaseManager {
     filePath: string,
     options: ImportOptions
   ): Promise<ImportedFile | null> {
+    const filename = path.basename(filePath);
+    const ext = path.extname(filename).toLowerCase();
+    if (options.private === true && (ext === '.json' || ext === '.xml')) {
+      return this.importPrivateStoreFile(filePath, options);
+    }
+
     // Read source file
     const content = await fs.readFile(filePath, 'utf-8');
-    const filename = path.basename(filePath);
 
     // Detect or use specified format
     let formatId: string | undefined = options.format;
@@ -703,7 +716,7 @@ class ImportManager extends BaseManager {
     let overwriteExistingUuid: string | undefined;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const existingMetadata = await pageManager?.getPageMetadata(pageTitle);
+      const existingMetadata = await pageManager?.getPageMetadata(pageTitle, options.actorContext);
       if (existingMetadata) {
         const existingUuid = existingMetadata.uuid || '';
         if (options.conflictPolicy === 'overwrite') {
@@ -815,8 +828,8 @@ class ImportManager extends BaseManager {
     if (written) {
       if (overwriteExistingUuid !== undefined) {
         await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
-      } else if (isLivePagesTarget) {
-        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options.actorContext);
+      } else if (isLivePagesTarget || options.private === true) {
+        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
       } else {
         await fs.ensureDir(path.dirname(targetPath));
         await fs.writeFile(targetPath, finalContent, 'utf-8');
@@ -867,7 +880,7 @@ class ImportManager extends BaseManager {
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot overwrite existing page');
     }
-    const existingPage = await pageManager.getPage(pageTitle);
+    const existingPage = await pageManager.getPage(pageTitle, options.actorContext);
     if (!existingPage) {
       throw new Error(`Existing page "${pageTitle}" disappeared during import`);
     }
@@ -891,8 +904,12 @@ class ImportManager extends BaseManager {
     for (const key of Object.keys(merged)) {
       if (merged[key] === undefined) delete merged[key];
     }
-    await pageManager.savePage(pageTitle, content, merged);
-    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle);
+    if (options.private === true) {
+      merged.private = true;
+      if (options.store) merged.store = options.store;
+    }
+    await pageManager.savePage(pageTitle, content, merged, options.actorContext);
+    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle, options.actorContext);
   }
 
   /**
@@ -907,21 +924,26 @@ class ImportManager extends BaseManager {
     pageTitle: string,
     conversionResult: ConversionResult,
     pageUuid: string | undefined,
-    actorContext: ActorContext
+    options: Pick<ImportOptions, 'actorContext' | 'private' | 'store'>
   ): Promise<void> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot import page');
     }
+    const actorContext = options.actorContext;
     const metadata = this.buildImportMetadata(conversionResult, pageUuid);
     metadata.author = (metadata.author) || actorContext.username;
     metadata.editor = actorContext.username;
+    if (options.private === true) {
+      metadata.private = true;
+      if (options.store) metadata.store = options.store;
+    }
     // See overwriteExistingPage: undefined values fail the YAML dump.
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];
     }
-    await pageManager.savePage(pageTitle, conversionResult.content, metadata);
-    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle);
+    await pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext);
+    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle, actorContext);
   }
 
   /**
@@ -929,10 +951,10 @@ class ImportManager extends BaseManager {
    * same contract as the ingest API. Failures are logged, not fatal: the
    * page is saved; a manual reindex can recover the index.
    */
-  private async indexImportedPage(pageTitle: string, uuid: string): Promise<void> {
+  private async indexImportedPage(pageTitle: string, uuid: string, ctx: ActorContext): Promise<void> {
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const saved = await pageManager?.getPage(pageTitle);
+      const saved = await pageManager?.getPage(pageTitle, ctx);
       if (saved) {
         const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');
@@ -1058,7 +1080,7 @@ class ImportManager extends BaseManager {
     const pageTitle = conversionResult.metadata['title'] as string;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const existingMetadata = await pageManager?.getPageMetadata(pageTitle);
+      const existingMetadata = await pageManager?.getPageMetadata(pageTitle, options.actorContext);
       if (existingMetadata) {
         const existingUuid = existingMetadata.uuid || '';
         return {
@@ -1095,7 +1117,7 @@ class ImportManager extends BaseManager {
     // file import into the live pages directory (#880).
     const written = !options.dryRun;
     if (written) {
-      await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options.actorContext);
+      await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
     }
 
     logger.info(`[ImportManager] URL import ${options.dryRun ? 'preview' : 'complete'}: "${pageTitle}" from ${url}`);
@@ -1138,6 +1160,61 @@ class ImportManager extends BaseManager {
       'ngdpbase.markdown.ncm.table.default-classes',
       DEFAULT_TABLE_CLASSES
     ) as string[] ?? DEFAULT_TABLE_CLASSES;
+  }
+
+  /**
+   * JSON/XML into a private store are files, not pages (#1389).
+   */
+  private async importPrivateStoreFile(
+    filePath: string,
+    options: ImportOptions
+  ): Promise<ImportedFile> {
+    const filename = path.basename(filePath);
+    const ext = path.extname(filename).toLowerCase();
+    const format = ext === '.xml' ? 'xml' : 'json';
+    const fileBuffer = await fs.readFile(filePath);
+    const fileInfo = {
+      originalName: filename,
+      mimeType: this.getMimeType(filename),
+      size: fileBuffer.length
+    };
+    if (options.dryRun) {
+      return {
+        sourcePath: filePath,
+        targetPath: filename,
+        format,
+        size: fileBuffer.length,
+        metadata: { private: true },
+        warnings: [],
+        written: false
+      };
+    }
+    const attachmentManager = this.engine.getManager('AttachmentManager') as {
+      uploadAttachment: (
+        buf: Buffer,
+        info: typeof fileInfo,
+        ctx: ActorContext,
+        opts: { private: boolean; store?: string }
+      ) => Promise<{ identifier?: string; url?: string }>;
+    } | null;
+    if (!attachmentManager) {
+      throw new Error('AttachmentManager unavailable — cannot import a store file');
+    }
+    const uploaded = await attachmentManager.uploadAttachment(
+      fileBuffer,
+      fileInfo,
+      options.actorContext,
+      { private: true, store: options.store }
+    );
+    return {
+      sourcePath: filePath,
+      targetPath: uploaded.url || uploaded.identifier || filename,
+      format,
+      size: fileBuffer.length,
+      metadata: { identifier: uploaded.identifier, private: true },
+      warnings: [],
+      written: true
+    };
   }
 
   /**
@@ -1238,7 +1315,8 @@ class ImportManager extends BaseManager {
         // trusting it was trusting the input.
         const uploaded = await attachmentManager?.uploadAttachment(fileBuffer, fileInfo, options.actorContext, {
           pageName,
-          description: originalFilename
+          description: originalFilename,
+          ...(options.private === true ? { private: true, store: options.store } : {})
         });
         stats.imported++;
         if (uploaded?.identifier) {

@@ -1,3 +1,4 @@
+import type { ActorContext } from '../context/ActorContext.js';
 /**
  * Provider type definitions for ngdpbase
  *
@@ -160,21 +161,21 @@ export interface PageProvider extends BaseProvider {
    * @param identifier - Page UUID, title, or slug
    * @returns Page object or null if not found
    */
-  getPage(identifier: string): Promise<WikiPage | null>;
+  getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get only page content (without metadata)
    * @param identifier - Page UUID, title, or slug
    * @returns Markdown content
    */
-  getPageContent(identifier: string): Promise<string>;
+  getPageContent(identifier: string, ctx: ActorContext): Promise<string>;
 
   /**
    * Get only page metadata (without content)
    * @param identifier - Page UUID, title, or slug
    * @returns Metadata object or null if not found
    */
-  getPageMetadata(identifier: string): Promise<PageFrontmatter | null>;
+  getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
 
   /**
    * Save page content and metadata
@@ -184,17 +185,23 @@ export interface PageProvider extends BaseProvider {
    * @param options - Save options
    * @returns Promise that resolves when save is complete
    */
-  savePage(pageName: string, content: string, metadata?: Partial<PageFrontmatter>, options?: PageSaveOptions): Promise<void>;
+  savePage(
+    pageName: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> | undefined,
+    ctx: ActorContext,
+    options?: PageSaveOptions
+  ): Promise<void>;
 
   /**
    * Delete a page
    * @param identifier - Page UUID or title
-   * @param deletedBy - Username performing the delete; recorded on the tombstone
-   *                    by providers that support soft delete (#947). Optional so
+   * @param ctx - Who is deleting (#1179): names the deleter on the tombstone
+   *              (#947) and reaches a private store's keys (#1382). Was
    *                    providers written before soft delete stay compatible.
    * @returns True if deleted, false if not found
    */
-  deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
+  deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.
@@ -239,7 +246,7 @@ export interface PageProvider extends BaseProvider {
    * @param identifier - Page UUID or title
    * @returns True if page exists
    */
-  pageExists(identifier: string): boolean;
+  pageExists(identifier: string, ctx: ActorContext): boolean;
 
   /**
    * Get all page titles
@@ -273,14 +280,14 @@ export interface PageProvider extends BaseProvider {
    * @param uuid - Page UUID
    * @returns Page or null if not found
    */
-  getPageByUUID(uuid: string): Promise<WikiPage | null>;
+  getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get a page by its slug
    * @param slug - URL-friendly slug
    * @returns Page or null if not found
    */
-  getPageBySlug(slug: string): Promise<WikiPage | null>;
+  getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Refresh page cache

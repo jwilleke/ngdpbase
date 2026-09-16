@@ -148,6 +148,13 @@ export interface PermissionSubject {
   viaShare?: ShareGrant;
   /** The address the request came from (#1179) — provenance for the record, set where the request subject is built. */
   ipAddress?: string;
+  /**
+   * Opaque handle to this session's unlocked private-store keys (#1382).
+   * Random — not the session id — created at password login and dropped at
+   * logout; resolved live, so after logout it reaches nothing. Set only where
+   * the request subject is built; never recorded (`actorOf` must not gain it).
+   */
+  privateStoreHandle?: string;
 }
 
 /**
@@ -1035,7 +1042,7 @@ class UserManager extends BaseManager {
       }
 
       // Check if page exists with this name (as title, slug, or exact match)
-      return pageManager.pageExists(displayName);
+      return pageManager.pageExists(displayName, ANONYMOUS_SUBJECT);
     } catch (error) {
       logger.error('Error checking display name page conflict:', error);
       return false; // On error, assume no conflict to avoid blocking registration
@@ -1047,7 +1054,7 @@ class UserManager extends BaseManager {
    * @param {User} user - User object
    * @returns {Promise<boolean>} True if user page was created successfully
    */
-  async createUserPage(user: User): Promise<boolean> {
+  async createUserPage(user: User, ctx: ActorContext): Promise<boolean> {
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
       if (!pageManager) {
@@ -1062,7 +1069,7 @@ class UserManager extends BaseManager {
       }
 
       // Check if user page already exists
-      if (pageManager.pageExists(user.displayName)) {
+      if (pageManager.pageExists(user.displayName, ANONYMOUS_SUBJECT)) {
         logger.info(`User page already exists for ${user.displayName}`);
         return true;
       }
@@ -1096,7 +1103,7 @@ class UserManager extends BaseManager {
       });
 
       // Save the user page
-      await pageManager.savePage(profileTitle, populatedContent, metadata, { skipValidation: true });
+      await pageManager.savePage(profileTitle, populatedContent, metadata, ctx, { skipValidation: true });
       logger.info(`✅ Created user page for ${user.displayName}`);
       return true;
     } catch (error) {
@@ -1211,7 +1218,7 @@ class UserManager extends BaseManager {
     }
 
     try {
-      const pageCreated = await this.createUserPage(user);
+      const pageCreated = await this.createUserPage(user, ctx);
       if (pageCreated) {
         user.profilePage = user.displayName;
         await this.provider.updateUser(username, user);

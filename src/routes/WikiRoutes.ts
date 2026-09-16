@@ -89,6 +89,7 @@ import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSugges
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
   lockPrivateStores,
+  newPrivateStoreHandle,
   unlockPrivateStoresWithPassword
 } from '../utils/privateStoreUnlock.js';
 import type { Article } from '../types/Schema.js';
@@ -291,7 +292,7 @@ interface IVersioningProvider {
   purgeDeletedPage?(uuid: string): Promise<boolean>;
   getVersionHistory?(name: string, limit?: number): Promise<IVersionEntry[]>;
   compareVersions?(name: string, v1: number, v2: number): Promise<IComparisonResult | null>;
-  restoreVersion?(name: string, version: number, options?: { author?: string; comment?: string }): Promise<number>;
+  restoreVersion?(name: string, version: number, ctx: ActorContext, options?: { author?: string; comment?: string }): Promise<number>;
   getPageVersion?(name: string, version: number): Promise<{ content: string; metadata: unknown }>;
   pageIndex?: { pages: Record<string, { location?: string; creator?: string }> } | null;
   invalidatePageCache?(identifier: string): string | null;
@@ -307,7 +308,7 @@ interface IPageManager {
   getPageNames?(): Promise<string[]>;
   getPageMetadata(name: string): Promise<PageFrontmatter | null>;
   pageExists(name: string): boolean;
-  savePage(name: string, content: string, metadata?: Partial<PageFrontmatter>, options?: unknown): Promise<void>;
+  savePage(name: string, content: string, metadata: Partial<PageFrontmatter> | undefined, ctx: ActorContext, options?: unknown): Promise<void>;
   // #1121: the options argument is NOT `unknown` on purpose. This local
   // interface is a claim about code this file does not own, and a claim loose
   // enough to accept anything would have let the audit enrichment below be
@@ -322,7 +323,7 @@ interface IPageManager {
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
-  deletePage(name: string, options?: unknown): Promise<boolean>;
+  deletePage(name: string, ctx: ActorContext): Promise<boolean>;
   deletePageWithContext(wikiContext: unknown): Promise<boolean>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string): string | null;
@@ -345,6 +346,8 @@ interface IACLManager {
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
   removeACLMarkup(content: string): string;
+  /** The private-container decision for a file in a store: owner or delegate, never a role (#1382). */
+  canAccessPrivateContainer(userContext: WikiContext['userContext'], owner: string, resource: string, action: string): boolean;
 }
 
 interface ISchemaManager {
@@ -781,7 +784,7 @@ class WikiRoutes {
     const configured = typeof raw === 'string' ? raw.trim() : '';
 
     if (configured) {
-      const page = await pageManager.getPage(configured);
+      const page = await pageManager.getPage(configured, ANONYMOUS_SUBJECT);
       if (!page) {
         // ERROR, not warn: this is the operator's OWN configuration naming a
         // page that does not exist — unambiguous misconfiguration, nobody
@@ -804,7 +807,7 @@ class WikiRoutes {
 
     // Legacy slug-convention chain (deprecated).
     for (const slug of legacySlugs) {
-      const page = await pageManager.getPage(slug);
+      const page = await pageManager.getPage(slug, ANONYMOUS_SUBJECT);
       if (!page) continue;
       if (slug !== legacySlugs[legacySlugs.length - 1]) {
         logger.info(
@@ -2525,6 +2528,33 @@ class WikiRoutes {
     );
     if (readers.some((p) => p.effect === 'deny')) return false;
     return readers.some((p) => p.effect === 'allow');
+  }
+
+  /**
+   * Re-save a page for an admin bulk keyword change. A private page is changed
+   * only when this request may edit it — decided by `canAccess` (ACLManager
+   * Tier 0: the owner or a delegate, never a role), which also records a
+   * refusal. Another user's private page is left alone; the admin's own is
+   * saved with the admin's context, which a store write requires.
+   *
+   * @returns false when the page was left unchanged
+   */
+  private async resaveForKeywordChange(
+    wikiContext: WikiContext,
+    pageName: string,
+    page: { content: string; metadata?: Record<string, unknown> },
+    metadata: Record<string, unknown>
+  ): Promise<boolean> {
+    const pageManager = this.engine.getManager('PageManager');
+    const ctx = wikiContext.userContext;
+    if (!ctx) return false;
+    if (page.metadata?.private === true) {
+      if (!(await wikiContext.canAccess('edit', pageName))) return false;
+      await pageManager.savePage(pageName, page.content, metadata, ctx);
+      return true;
+    }
+    await pageManager.savePage(pageName, page.content, metadata, ctx);
+    return true;
   }
 
   private async _isPagePrivate(pageName: string): Promise<boolean> {
@@ -4340,14 +4370,14 @@ ${panes}
         return;
       }
       const pageManager = this.engine.getManager('PageManager') as {
-        saveRawPageWithAdminOverride?: (name: string, raw: string) => Promise<void>;
+        saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<void>;
         getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
       } | null;
       if (!pageManager?.saveRawPageWithAdminOverride) {
         await this.renderError(req, res, 500, 'Unavailable', 'PageManager does not support raw save on this deployment.');
         return;
       }
-      await pageManager.saveRawPageWithAdminOverride(pageName, rawContent);
+      await pageManager.saveRawPageWithAdminOverride(pageName, rawContent, wikiContext.userContext);
 
       // Audit log — best-effort; don't fail the save if audit is down.
       // #1205: through recordAuditEvent (see clear-anonymous above).
@@ -5663,10 +5693,14 @@ ${panes}
       };
 
       // The subject goes to the door positionally (#1179); options carry the rest.
-      // pageName is for private-page storage detection only — not for linkage.
+      // `private` is the dialog's checkbox. It decides only when pageName is not
+      // a private page: AttachmentManager forces an upload onto a private page
+      // private, into that page's author's store (#1398).
+      const wantsPrivate = req.body.private === 'true' || req.body.private === 'on' || req.body.private === true;
       const options = {
         pageName: pageName,
-        description: req.body.description || req.file.originalname
+        description: req.body.description || req.file.originalname,
+        ...(wantsPrivate ? { private: true as const } : {})
       };
 
       // Upload via AttachmentManager (handles permission checks)
@@ -5709,9 +5743,11 @@ ${panes}
       });
     } catch (err: unknown) {
       logger.error('Error uploading attachment:', err);
-      return res.status(500).json({
+      const message = getErrorMessage(err) || 'Error uploading file';
+      // A refusal from the door (permission, private container) is a 403, not a failure.
+      return res.status(message.startsWith('Permission denied') ? 403 : 500).json({
         success: false,
-        error: getErrorMessage(err) || 'Error uploading file'
+        error: message
       });
     }
   }
@@ -6066,38 +6102,18 @@ ${panes}
         });
       }
 
-      // 🔒 PRIVACY: Check if this attachment belongs to a private page before serving
+      // 🔒 PRIVACY: a private file lives in its owner's private container
+      // (docs/planning/private-stores.md, Access). It is served to the owner, or
+      // a delegate of the owner — never by role, and not to whoever may view a
+      // page that links it. The decision and its record are ACLManager's.
       const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
       if (meta?.isPrivate) {
-        // Determine linked page name from mentions (first mention) or pageName field
-        const linkedPageName: string =
-          (Array.isArray(meta.mentions) && meta.mentions.length > 0
-            ? (meta.mentions[0] as { name?: string }).name
-            : undefined) ??
-          (meta.pageName as string | undefined) ??
-          '';
-        // #714 Slice C: was `this.checkPrivatePageAccess(wikiContext, linkedPageName)`.
-        // Migrated to the unified cross-page facade `wikiContext.canAccess('view', linkedPageName)`
-        // (Slice B added the override parameter); under the hood this
-        // routes through `ACLManager.canUserAccessPage`, which loads the
-        // owning page's metadata and runs the full evaluator.
-        //
-        // Important: the WikiContext is constructed WITHOUT pageName so
-        // that the canAccess call follows the cross-page path
-        // (`canUserAccessPage`) rather than the same-page fast path
-        // (`checkPagePermissionWithContext`). The route doesn't need a
-        // "current page" — it's serving an attachment, not rendering
-        // a page.
-        //
-        // **Behavior shift** (per #714 issue body's "Behavior decision
-        // point" — explicit operator decision was to proceed):
-        // when `linkedPageName` is empty or the owning page's metadata
-        // can't be loaded, the new code returns deny; the legacy helper
-        // returned allow (`if (!pageMetadata?.uuid) return true`). Some
-        // private attachments whose owning-page name was unresolvable
-        // will now 403 where they previously served. This is the
-        // conservative-on-security default the EPIC adopts.
-        if (!(await wikiContext.canAccess('view', linkedPageName))) {
+        const aclManager = this.engine.getManager('ACLManager');
+        const owner = typeof meta.creator === 'string' ? meta.creator : '';
+        const allowed = aclManager
+          ? aclManager.canAccessPrivateContainer(wikiContext.userContext, owner, `attachment:${attachmentId}`, 'view')
+          : false;
+        if (!allowed) {
           return res.status(403).render('error', {
             code: 403,
             message: 'You do not have permission to access this attachment',
@@ -6385,7 +6401,7 @@ ${panes}
       if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
-      const html = await exportManager.exportPageToHtml(pageName);
+      const html = await exportManager.exportPageToHtml(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       const filePath = await exportManager.saveExport(html, pageName, 'html');
 
       // #1204: page-export is bulk extraction, gated on read until a bulk
@@ -6429,7 +6445,7 @@ ${panes}
       if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
-      const markdown = await exportManager.exportToMarkdown(pageName);
+      const markdown = await exportManager.exportToMarkdown(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       const filePath = await exportManager.saveExport(markdown, pageName, 'md');
 
       // #1204: page-export is bulk extraction, gated on read until a bulk
@@ -6837,12 +6853,12 @@ ${panes}
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
 
-      // #1391: KEK/DEK live in the process bag keyed by session id — never in
-      // express-session JSON, never on PageManager.
-      const sessionId =
-        (typeof req.session?.id === 'string' && req.session.id) ||
-        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
-      if (sessionId && typeof password === 'string' && password) {
+      // #1391: KEK/DEK live in the process bag, keyed by a random handle — never
+      // the session id, never express-session JSON, never on PageManager. The
+      // handle rides on the session and on the request subject (#1382).
+      if (typeof password === 'string' && password) {
+        const privateStoreHandle = newPrivateStoreHandle();
+        req.session.privateStoreHandle = privateStoreHandle;
         try {
           const pagesDirectory =
             typeof configManager.getResolvedDataPath === 'function'
@@ -6853,7 +6869,7 @@ ${panes}
               : undefined;
           if (pagesDirectory) {
             await unlockPrivateStoresWithPassword({
-              sessionId,
+              handle: privateStoreHandle,
               username: result.username || username,
               password,
               pagesDirectory
@@ -7179,12 +7195,10 @@ ${panes}
    */
   processLogout(req: Request, res: Response) {
     try {
-      // #1392: drop KEK/DEK before express-session JSON is gone — never store
-      // keys on the session object.
-      const sessionId =
-        (typeof req.session?.id === 'string' && req.session.id) ||
-        (typeof req.sessionID === 'string' ? req.sessionID : undefined);
-      if (sessionId) lockPrivateStores(sessionId);
+      // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
+      // keyed by the session's private-store handle, never the session id.
+      const privateStoreHandle = req.session?.privateStoreHandle;
+      if (typeof privateStoreHandle === 'string' && privateStoreHandle) lockPrivateStores(privateStoreHandle);
 
       req.session.destroy((err) => {
         if (err) {
@@ -8418,7 +8432,7 @@ ${panes}
                 'author-lock': true,
                 description: `${displayName}'s profile page`,
                 badge: `Profile ${displayName}`
-              });
+              }, currentUser);
               // #662: demote the old profile page to system-category 'general'
               // instead of hard-deleting it. Preserves the user's prior
               // content as a regular page they can later edit or delete
@@ -8429,7 +8443,7 @@ ${panes}
               await pageManager.savePage(oldPageName, content, {
                 ...metaForOld,
                 'system-category': 'general'
-              });
+              }, currentUser);
             }
           } catch (renameErr: unknown) {
             logger.error('Error renaming profile page:', renameErr);
@@ -11556,7 +11570,7 @@ ${panes}
         if (!(await fse.pathExists(destPath))) {
           status = 'new';
           // Check for slug/title conflict: page exists under a different UUID
-          const conflict = await validationManager.checkConflicts(uuid, title, slug);
+          const conflict = await validationManager.checkConflicts(uuid, title, slug, currentUser);
           if (conflict.hasConflict && conflict.conflictingUuid) {
             status = 'uuid-mismatch';
             liveUuid = conflict.conflictingUuid;
@@ -11915,6 +11929,7 @@ ${panes}
           liveTitle || title,
           parsed.content,
           { ...parsed.data, uuid, title, editor: 'system' },
+          currentUser,
           { skipValidation: true }
         );
       };
@@ -12098,7 +12113,7 @@ ${panes}
             logger.warn(`[adminSyncRequiredPages] refused orphan removal for ${uuid} — not currently a source-removed addon page`);
             continue;
           }
-          if (await pm.deletePage(uuid)) {
+          if (await pm.deletePage(uuid, currentUser)) {
             removedOrphans.push(uuid);
             logger.info(`[adminSyncRequiredPages] removed orphaned addon page ${uuid} by ${currentUser.username}`);
           }
@@ -13555,7 +13570,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
@@ -13607,7 +13622,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
@@ -16020,7 +16035,10 @@ ${panes}
       }
 
       // #1198: restoring a version writes the page — page-edit is the door.
-      if (!(await this.permitted(this.createWikiContext(req), 'page-edit', req, res, 'json'))) return;
+      const restoreContext = this.createWikiContext(req);
+      if (!(await this.permitted(restoreContext, 'page-edit', req, res, 'json'))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through.
+      if (!restoreContext.userContext) return this.refuse(restoreContext, req, res, 'json', 'page-edit');
 
       const pageManager = this.engine.getManager('PageManager');
 
@@ -16043,7 +16061,7 @@ ${panes}
 
       // Restore version
       const restoredBy = req.userContext?.username || 'unknown';
-      const newVersion = await provider.restoreVersion(identifier, versionNum, {
+      const newVersion = await provider.restoreVersion(identifier, versionNum, restoreContext.userContext, {
         author: restoredBy,
         comment: comment || `Restored from v${versionNum}`
       });
@@ -16608,7 +16626,7 @@ ${trimmedDescription}
             author: currentUser.username
           };
 
-          await pageManager.savePage(pageName, pageContent, pageMetadata);
+          await pageManager.savePage(pageName, pageContent, pageMetadata, currentUser);
           logger.info(`[WikiRoutes] Created definition page for user-keyword: ${pageName}`);
         }
       }
@@ -16681,7 +16699,7 @@ ${description}
         author: currentUser.username
       };
 
-      await pageManager.savePage(label, pageContent, pageMetadata);
+      await pageManager.savePage(label, pageContent, pageMetadata, currentUser);
       logger.info(`[WikiRoutes] User ${currentUser.username} created page for keyword: ${label}`);
 
       // Redirect to edit so user can add more content
@@ -17120,6 +17138,8 @@ ${description}
       // Get pages using this keyword
       const allPages = pageManager ? await pageManager.getAllPages() : [];
       let pagesUpdated = 0;
+      // Another user's private page is not the admin's to change (#1382).
+      let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
         const page = await pageManager.getPage(pageName);
@@ -17142,10 +17162,11 @@ ${description}
           }
 
           if (page) {
-            await pageManager.savePage(pageName, page.content, {
+            const saved = await this.resaveForKeywordChange(wikiContext, pageName, page, {
               ...page.metadata,
               'user-keywords': newKeywords
             });
+            if (!saved) { privatePagesSkipped++; continue; }
           }
           pagesUpdated++;
         }
@@ -17157,8 +17178,10 @@ ${description}
 
       res.json({
         success: true,
-        message: `Keyword deleted successfully. ${pagesUpdated} page(s) updated.`,
-        pagesUpdated
+        message: `Keyword deleted successfully. ${pagesUpdated} page(s) updated.`
+          + (privatePagesSkipped ? ` ${privatePagesSkipped} private page(s) left unchanged — they belong to their owners.` : ''),
+        pagesUpdated,
+        privatePagesSkipped
       });
     } catch (err: unknown) {
       logger.error('Error deleting keyword:', err);
@@ -17216,6 +17239,8 @@ ${description}
       // Update all pages: replace source with target
       const allPages = pageManager ? await pageManager.getAllPages() : [];
       let pagesUpdated = 0;
+      // Another user's private page is not the admin's to change (#1382).
+      let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
         const page = await pageManager.getPage(pageName);
@@ -17228,10 +17253,11 @@ ${description}
             .filter((k, i, arr) => arr.indexOf(k) === i);
 
           if (page) {
-            await pageManager.savePage(pageName, page.content, {
+            const saved = await this.resaveForKeywordChange(wikiContext, pageName, page, {
               ...page.metadata,
               'user-keywords': newKeywords
             });
+            if (!saved) { privatePagesSkipped++; continue; }
           }
           pagesUpdated++;
         }
@@ -17245,8 +17271,10 @@ ${description}
 
       res.json({
         success: true,
-        message: `Keywords consolidated successfully. ${pagesUpdated} page(s) updated.${deleteSource ? ' Source keyword deleted.' : ''}`,
+        message: `Keywords consolidated successfully. ${pagesUpdated} page(s) updated.${deleteSource ? ' Source keyword deleted.' : ''}`
+          + (privatePagesSkipped ? ` ${privatePagesSkipped} private page(s) left unchanged — they belong to their owners.` : ''),
         pagesUpdated,
+        privatePagesSkipped,
         sourceDeleted: !!deleteSource
       });
     } catch (err: unknown) {

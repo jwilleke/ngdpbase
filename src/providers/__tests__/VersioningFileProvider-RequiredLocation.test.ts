@@ -16,6 +16,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -86,7 +87,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('a documentation page saves with location pages and its history in the pages directory', async () => {
     const provider = await newProvider();
-    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' });
+    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
 
     expect((await readIndex()).pages[UUID_A].location).toBe('pages');
     expect(await fs.pathExists(path.join(pagesDir, 'versions', UUID_A, 'manifest.json'))).toBe(true);
@@ -96,7 +97,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('saving a page recorded as required-pages moves its history into the pages directory, continuing it', async () => {
     const provider = await newProvider();
-    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' });
+    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
     // Reproduce a pre-fix page: history in the required-pages folder, entry says so.
     await fs.move(path.join(pagesDir, 'versions', UUID_A), path.join(requiredDir, 'versions', UUID_A));
     const index = await readIndex();
@@ -104,7 +105,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
 
     const restarted = await newProvider();
-    await restarted.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' });
+    await restarted.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
 
     expect((await readIndex()).pages[UUID_A].location).toBe('pages');
     expect(await fs.pathExists(path.join(requiredDir, 'versions', UUID_A))).toBe(false);
@@ -114,7 +115,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('a history already in the pages directory is never overwritten by one from the required-pages folder', async () => {
     const provider = await newProvider();
-    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' });
+    await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
     await fs.copy(path.join(pagesDir, 'versions', UUID_A), path.join(requiredDir, 'versions', UUID_A));
     await fs.writeFile(path.join(requiredDir, 'versions', UUID_A, 'marker.txt'), 'the other history');
     const index = await readIndex();
@@ -122,7 +123,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
 
     const restarted = await newProvider();
-    await restarted.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' });
+    await restarted.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
 
     expect(await fs.pathExists(path.join(requiredDir, 'versions', UUID_A, 'marker.txt'))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'versions', UUID_A, 'marker.txt'))).toBe(false);
@@ -130,9 +131,9 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('deleting a system page puts its record in the pages trash, not the required-pages folder', async () => {
     const provider = await newProvider();
-    await provider.savePage('Site Configuration', 'text', { uuid: UUID_A, 'system-category': 'system' });
+    await provider.savePage('Site Configuration', 'text', { uuid: UUID_A, 'system-category': 'system' }, TEST_ACTOR);
 
-    expect(await provider.deletePage('Site Configuration', 'admin')).toBe(true);
+    expect(await provider.deletePage('Site Configuration', actor('admin'))).toBe(true);
 
     expect(await fs.pathExists(path.join(requiredDir, 'deleted'))).toBe(false);
     const trashed = (await fs.readdir(pagesDir, { recursive: true }) as string[]).filter((f) => f.endsWith(`${UUID_A}.md`));
@@ -141,7 +142,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('after a restart, a stale required-pages entry whose file is in the pages directory still opens', async () => {
     const provider = await newProvider();
-    await provider.savePage('Agent Token Check', 'Created by a delegated token.', { uuid: UUID_A, 'system-category': 'documentation' });
+    await provider.savePage('Agent Token Check', 'Created by a delegated token.', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
     const index = await readIndex();
     index.pages[UUID_A].location = 'required-pages';
     await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
@@ -154,7 +155,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('for a required-pages entry, the live copy wins over the source copy when both exist', async () => {
     const provider = await newProvider();
-    await provider.savePage('Recent Changes', 'the live copy', { uuid: UUID_A, 'system-category': 'system' });
+    await provider.savePage('Recent Changes', 'the live copy', { uuid: UUID_A, 'system-category': 'system' }, TEST_ACTOR);
     await writePage(requiredDir, UUID_A, 'Recent Changes', 'the source copy', 'system');
     const index = await readIndex();
     index.pages[UUID_A].location = 'required-pages';
@@ -166,7 +167,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
   test('a live copy in the pages directory wins over an unindexed copy in the required-pages folder', async () => {
     const provider = await newProvider();
-    await provider.savePage('Other Page', 'x', { uuid: UUID_A, 'system-category': 'general' });
+    await provider.savePage('Other Page', 'x', { uuid: UUID_A, 'system-category': 'general' }, TEST_ACTOR);
     await writePage(requiredDir, UUID_B, 'Test Page: Tables', 'the source copy', 'system');
     await writePage(pagesDir, UUID_B, 'Test Page: Tables', 'the live copy', 'system');
 
@@ -183,8 +184,8 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
     test('corrects stale locations, drops entries with no file, adds unindexed pages, and survives a restart', async () => {
       const provider = await newProvider();
-      await provider.savePage('Agent Token Check', 'token text', { uuid: UUID_A, 'system-category': 'documentation' });
-      await provider.savePage('Diary', 'secret', { uuid: UUID_B, private: true, author: 'molly' });
+      await provider.savePage('Agent Token Check', 'token text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
+      await provider.savePage('Diary', 'secret', { uuid: UUID_B, private: true, author: 'molly' }, TEST_ACTOR);
       // A stale location, an index-only probe, and a page on disk the index never heard of.
       const index = await readIndex();
       index.pages[UUID_A].location = 'required-pages';
@@ -212,8 +213,8 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
     test('a page whose history is still only in the required-pages folder keeps that location, so its history stays reachable', async () => {
       const provider = await newProvider();
-      await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' });
-      await provider.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' });
+      await provider.savePage('Metrics', 'v1 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
+      await provider.savePage('Metrics', 'v2 text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
       await fs.move(path.join(pagesDir, 'versions', UUID_A), path.join(requiredDir, 'versions', UUID_A));
 
       const restarted = await newProvider();
@@ -228,7 +229,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
     test('an entry whose file is on disk but was not scanned (duplicate title) is kept', async () => {
       const provider = await newProvider();
-      await provider.savePage('Speed', 'first', { uuid: UUID_A });
+      await provider.savePage('Speed', 'first', { uuid: UUID_A }, TEST_ACTOR);
       const index = await readIndex();
       await writePage(pagesDir, UUID_B, 'Speed', 'the duplicate', 'general');
       // Newer than UUID_A, so the boot-time duplicate check (#587) keeps this entry

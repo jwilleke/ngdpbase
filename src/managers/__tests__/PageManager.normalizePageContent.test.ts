@@ -53,14 +53,14 @@ describe('PageManager.savePageWithContext writes the text as typed (#1332)', () 
     const { pm, provider, ctx } = makeSaver();
     const md = '* Tests:\n** Skin\n\n{{{\ncode\n}}}\n\n* Other';
     const r = await pm.savePageWithContext(ctx(md), { title: 'P' });
-    expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything());
+    expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything(), expect.anything());
     expect(r).toEqual({ content: md });
   });
 
   it('leaves a metadata-only save alone', async () => {
     const { pm, provider, ctx } = makeSaver();
     const r = await pm.savePageWithContext(ctx(null), { title: 'P' });
-    expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything());
+    expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything(), expect.anything());
     expect(r).toEqual({ content: null });
   });
 });

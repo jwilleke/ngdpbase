@@ -105,7 +105,7 @@ describe('private store catalogs (#1385)', () => {
     });
 
     await unlockPrivateStoresWithPassword({
-      sessionId: 'sid-1',
+      handle: 'sid-1',
       username: 'molly',
       password: 'correct-horse',
       pagesDirectory: pagesDir

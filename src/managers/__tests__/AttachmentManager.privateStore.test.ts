@@ -2,7 +2,7 @@
  * Encrypt-on attachment writes refuse a missing session DEK. #1394
  *
  * The manager door calls the shared helper; keys are not on PageManager.
- * Files still land in attachments/ until #1386; the sealed-store gate is here.
+ * Destination is the store (#1386); ciphertext of those bytes is later.
  */
 
 import fs from 'fs-extra';
@@ -18,7 +18,6 @@ import {
 import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePath';
 import {
   clearUnlockedPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
@@ -41,19 +40,6 @@ function makeManager(pagesDir: string, stored: unknown[]) {
           getProperty: (_k: string, d: unknown) => d,
           getResolvedDataPath: (k: string, d: string) =>
             k === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : d
-        };
-      }
-      if (name === 'PageManager') {
-        return {
-          getPage: async () => ({
-            metadata: {
-              'index-entry': {
-                location: 'private',
-                creator: 'molly',
-                store: DEFAULT_PRIVATE_STORE
-              }
-            }
-          })
         };
       }
       return null;
@@ -89,9 +75,12 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
+    const metadata = (stored[0] as unknown[])[2] as { store?: string; pageCreator?: string };
+    expect(metadata.store).toBe(DEFAULT_PRIVATE_STORE);
+    expect(metadata.pageCreator).toBe('molly');
   });
 
   test('encrypt-on upload refuses without a session DEK', async () => {
@@ -103,7 +92,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/locked|DEK/i);
     expect(stored).toHaveLength(0);
   });
@@ -120,9 +109,7 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
-      runWithPrivateStoreSession('sid', () =>
-        m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
-      )
+      m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
     ).resolves.toMatchObject({ identifier: 'att-1' });
     expect(stored).toHaveLength(1);
   });

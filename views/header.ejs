@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+    <meta name="ngdp-page-private" content="<%= (typeof pageIsPrivate !== 'undefined' && pageIsPrivate) ? 'true' : 'false' %>" data-page-name="<%= (typeof pageName !== 'undefined' && pageName) ? pageName : '' %>">
     <title><% if (typeof pageName !== 'undefined' && pageName) { %><%= pageName %> | <% } %><%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></title>
     <%# #886 — OpenGraph / Twitter card tags. Built by
         src/utils/buildSocialMeta.ts and populated by viewPage(); absent on
@@ -1835,12 +1836,18 @@ function ngdpNcmConvertOpen() {
 
 function showUploadAttachment(pageName) {
     // pageName may be passed directly (from asset picker) or inferred from URL
+    const inferredFromUrl = !pageName;
     if (!pageName) {
         const viewPart = window.location.pathname.split('/view/')[1];
         const editPart = window.location.pathname.split('/edit/')[1];
         const raw = viewPart || editPart;
         pageName = raw ? decodeURIComponent(raw) : null;
     }
+    // #1398: an upload onto a private page is always private and belongs to the
+    // page's author. The server enforces it; the box only shows it.
+    const privMeta = document.querySelector('meta[name="ngdp-page-private"]');
+    const pageForcesPrivate = !!(pageName && privMeta && privMeta.content === 'true'
+        && (inferredFromUrl || privMeta.dataset.pageName === pageName));
 
     const titleText = pageName
         ? 'Upload Attachment \u2014 ' + pageName
@@ -1865,6 +1872,14 @@ function showUploadAttachment(pageName) {
                         <div class="mb-3">
                             <label for="attachmentDescription" class="form-label">Description:</label>
                             <input type="text" class="form-control" id="attachmentDescription" placeholder="Brief description of the file">
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="uploadPrivateCheck" ${pageForcesPrivate ? 'checked disabled' : ''}>
+                            <label class="form-check-label" for="uploadPrivateCheck">
+                                ${pageForcesPrivate
+                                    ? 'Private (this page is private, so the file goes in its author\'s private store)'
+                                    : 'Private (store with this user, not the shared attachments pool)'}
+                            </label>
                         </div>
                         ${pageName ? `
                         <div class="mb-3 form-check">
@@ -1926,6 +1941,10 @@ async function uploadAttachmentFile(uploadUrl) {
     const attachCheck = document.getElementById('attachToPageCheck');
     if (attachCheck) {
         formData.append('attachToPage', attachCheck.checked ? 'true' : 'false');
+    }
+    const privateCheck = document.getElementById('uploadPrivateCheck');
+    if (privateCheck && privateCheck.checked) {
+        formData.append('private', 'true');
     }
 
     statusDiv.innerHTML = '<div class="alert alert-info">Uploading...</div>';

@@ -1,7 +1,7 @@
 ---
 title: Private stores
 status: design ratified
-lastModified: 2026-09-14
+lastModified: 2026-09-15
 epic: 1382
 ---
 
@@ -22,13 +22,31 @@ pages/private/{user}/user-keys.json        # wrapped user KEK (password + recove
 pages/private/{user}/user-index.json       # catalog of encrypted-store pages (user KEK)
 pages/private/{user}/user-versions.json    # history catalog (user KEK)
 pages/private/{user}/user-trash.json       # trash catalog (user KEK)
-pages/private/{user}/{store}/              # live pages, files, version blobs, trash blobs
+pages/private/{user}/{store}/              # one store
 pages/private/{user}/{store}/store.json    # encrypt on/off; wrapped DEK if encrypt on
+pages/private/{user}/{store}/{uuid}.md     # live pages
+pages/private/{user}/{store}/versions/     # page version blobs
+pages/private/{user}/{store}/deleted/      # trash blobs
+pages/private/{user}/{store}/attachments/  # every non-page file: {sha256}.ext
 ```
+
+This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). Folder names and catalog filenames are `ngdpbase.page.provider.filesystem.*` keys in [app-default-config.json](../../config/app-default-config.json). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
 
 - Today's private pages migrate to store id `default`.
 - Named stores use the __addon slug__ (`yourphr` → `private/{user}/yourphr/`). `default` is core, not an addon.
 - Nothing except store directories and the user-level catalogs lives directly in `private/{user}/`.
+
+## Access
+
+Decided 2026-09-15. `pages/private/{user}/` and every store below it is a __security container owned by that user__. Nobody else has access to anything in it — pages, titles, files, history, trash — __unless the user delegates permissions__. This holds whether or not the store is encrypted.
+
+- __No admin bypass.__ The admin wiki role gets no read, list, search, edit, or upload access to another user's private folder. This supersedes the admin read in [plan-private-folder.md](./plan-private-folder.md) (1.5, 1.12).
+- Encryption is extra protection on top, not the access rule. An unencrypted store is exactly as closed to other users as an encrypted one.
+- Operator filesystem access (instance backups, disk) is outside the wiki and is not a delegation. Only encryption protects against it.
+- The user does not grant access; the user __delegates permissions__. A delegate acts with a subset of the owner's own permissions on the container, and only while the owner still holds them — the existing token-share model (the issuer must still hold the action). Nothing is delegated by role.
+- A delegate only reaches a store whose Share switch is on ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). Until that switch exists every store is Share Off, so only the owner acts in it. An encrypted store also needs its DEK, which a delegate carries only once a share can wrap one.
+- Allow and deny go through the one door ([security-posture.md](../security-posture.md) P2): `canAccess` on the page, decided at ACLManager's private-page check (Tier 0, `PageManager.checkPrivatePageAccess`), with the capability from `hasPermission`. A refusal is recorded as `authorization-deny` like every other. A file in a store, which is not a page, gets the same rule through `ACLManager.canAccessPrivateContainer`. The rule itself is one function, `mayActInPrivateContainer` (`src/utils/privateStoreAccess.ts`): an authenticated session of the owner, a job acting for the owner, or a share the owner issued once the store's Share switch is on.
+- Where it applies: page views and edits, page lists, both search providers (a private page's frontmatter `audience` grants nothing), uploads onto a private page, private-file serving (the file's `creator`, not whoever may view a linked page), and admin bulk keyword changes (another user's private page is left unchanged). When privacy cannot be established, the check refuses.
 
 ## Per-store switches
 
@@ -56,7 +74,7 @@ Unencrypted `default/` stays in global `page-index.json` as today.
 
 Twelve-word recovery is the user's property: copy, download, print, paste into email (including to a lawyer). Warn __at least once__ whenever the words are shown; __do not obstruct__. The app never emails the words itself. Never log password, words, DEK, or KEK.
 
-Admin wiki role does __not__ unwrap a sealed store. Lost password __and__ lost words → backup __restores__ the files and they stay __unreadable__.
+Admin wiki role does __not__ unwrap a sealed store (and has no access to an unsealed one either — see Access). Lost password __and__ lost words → backup __restores__ the files and they stay __unreadable__.
 
 ### Not on PageManager
 
@@ -64,7 +82,7 @@ There can be more than one PageManager (or page provider / engine) in a process.
 
 1. __The store__ — encrypt on/off is a property of `pages/private/{user}/{store}/`. Ciphertext lives in that directory. Whole store or not.
 2. __The user__ — the KEK is the user's (password wrap + 12-word recovery). It wraps each encrypted store's DEK.
-3. __The unlocked session bag__ — DEK/KEK bytes exist in server memory keyed by session id (a process-level Map), so every PageManager/provider in the process uses the same unlock. Logout drops the bag entry.
+3. __The unlocked session bag__ — DEK/KEK bytes exist in server memory keyed by session id (a process-level Map), so every PageManager/provider in the process uses the same unlock. Logout drops the bag entry. The bag is reached from the caller's context, never ambiently (see Context, below).
 
 This is not client-side zero-knowledge: the server holds those bytes only while that session is unlocked.
 
@@ -72,11 +90,71 @@ This epic does __not__ add a RecordManager that talks to all providers. Architec
 
 We still want __one__ implementation of key unwrap and encrypt-on-write: `src/utils/privateStoreCrypto.ts` + `privateStoreUnlock.ts` (session bag). PageManager (pages) and AttachmentManager (files) are the HTTP/work doors; they call those helpers. Providers encrypt bytes when given a DEK; they do not invent a second policy. Routes and scripts must not unwrap keys or write sealed stores around the managers ([#1389](https://github.com/jwilleke/ngdpbase/issues/1389)). Duplicating wrap/assert in WikiRoutes, VersioningFileProvider, and AttachmentManager independently is the defect we are avoiding — not solved by a manager that talks to search, users, or audit.
 
+### Context, not ambient session
+
+Decided 2026-09-15, under [security-posture.md](../security-posture.md) P1 (every call that decides, records, or acts takes a context, mandatory and positional; `AsyncLocalStorage` is refused) and [audit-posture.md](../audit-posture.md).
+
+| Step | Decides, records, or acts? | Takes |
+|---|---|---|
+| Unlock at login, lock at logout, re-wrap on password change | Acts | the context |
+| Look up which store keys this caller holds | Decides — holding the DEK is what lets an encrypted read or write proceed | the context |
+| Read or write an encrypted page or file | Acts | the context |
+| Encrypt or decrypt bytes with a given key (`privateStoreCrypto.ts`) | Neither — pure computation | data (key and bytes) |
+
+- The request context carries an opaque __session handle__, set only where the request subject is built. It is provenance — which session this came from — like `ipAddress` or `viaToken`, resolved live at use: after logout the bag is gone, the lookup finds nothing, and the action is refused. It is not a snapshot of authority.
+- The handle is __random, not the session id__ (decided 2026-09-15): created at password login, stored on the session as `privateStoreHandle`, the key the process bag is looked up by, and dropped at logout. The subject reaches views, addon hooks and logs; the session id is what the session store and session revocation key on, while the handle opens only the key lookup, and it does not change when the session id is regenerated. A bearer-token or share request carries no handle.
+- The context never carries key bytes. Keys stay in the process bag, reached by handle, so a forwarded or spread context cannot leak them.
+- The handle never goes into an audit record; `actorOf()` names its fields and must not gain this one.
+- A `JobContext` has no handle, so a background job cannot read or write an encrypted store — the server holds those bytes only while a session is unlocked.
+- The key lookup takes the context (`dekFor(ctx, owner, store)`) and requires the bag to belong to the store's owner. `AsyncLocalStorage` and `runWithPrivateStoreSession` are gone (removed 2026-09-16): there is no ambient slot to fall back on, so a caller with no context reaches no keys.
+- Page operations — `getPage`, `getPageContent`, `getPageMetadata`, `getPageByUUID`, `getPageBySlug`, `pageExists`, `savePage`, `deletePage`, `restoreVersion` — take the context positionally at PageManager and at the page provider. The optional `options.actorContext` is gone. The provider decides from the context it is handed, not from the page's `author` metadata.
+- A caller with no person behind it says so rather than borrowing one: boot and seeding pass a `JobContext`, index and catalog builds pass the anonymous subject (public pages only), and `ApiContext` carries the request's subject for addons to forward (`ctx.subject`) instead of rebuilding one from its fields.
+
+### Store placement is on BasePageProvider
+
+Decided 2026-09-15. `BasePageProvider` is the base of every page provider (`FileSystemProvider`, `VersioningFileProvider`, a later database provider), so what every page provider needs is written once there — not per subclass, and not on `BaseProvider`, which carries only what every provider shares.
+
+| Piece | Home |
+|---|---|
+| Folder names and root (`storagedir`, `privateroot`, `defaultstoreid`, `versionsdir`, `deleteddir`, `attachmentsdir`) | `ConfigurationManager` — the only source, for pages and attachments alike |
+| Joining them into paths, with store-id validation inside the join (a plain slug, never a path) | `src/utils/privateStorePath.ts`, used by both sides |
+| Which store a page belongs to — one rule per save (the store named in the save if valid, else the store in the index, else `defaultstoreid`) — and the encrypted-store write check, taking the `ActorContext` | `BasePageProvider` |
+| Pages as files inside the store (`{uuid}.md`, `versions/`, `deleted/`) | `FileSystemProvider`, inherited by `VersioningFileProvider` |
+| Which store an attachment goes to | `AttachmentManager`: the page owner's store, or the uploader's for a page-less private upload |
+| Writing the attachment's bytes to `{store}/attachments/` | `BasicAttachmentProvider`, path from configuration and the same helpers |
+| Who may act in a container | ACLManager Tier 0 via `canAccess` (Access, above) |
+
+A save decides its store once: `VersioningFileProvider` resolves it and hands it to `FileSystemProvider`, so the page file, its history, and the encryption check can never name different stores.
+
+A save that names a different store for a page that already exists is __refused__ (decided 2026-09-15). Moving a page and its history between stores is a feature of its own — for an encrypted store it means re-encrypting under another DEK — and is not part of this epic.
+
 ## Files in the store
 
-The store is the container. PDFs, images, FHIR JSON/XML, and other imports land in `private/{user}/{store}/`, not `attachments/private/{user}/`. NCM still applies only to markdown that is a page. Existing import/upload doors stay; the __destination__ is the store.
+The store is the container. PDFs, images, DICOM, FHIR JSON/XML, and other imports land in `private/{user}/{store}/attachments/`, not `attachments/private/{user}/`. NCM still applies only to markdown that is a page. Existing import/upload doors stay; the __destination__ is the store.
+
+Decided 2026-09-15 ([#1386](https://github.com/jwilleke/ngdpbase/issues/1386)):
+
+- Files live in `{store}/attachments/`, never loose in the store root beside `{uuid}.md`. An uploaded `.md` file in the root would be scanned as a page.
+- The page scan skips `attachments/` as it skips `versions/` and `deleted/`.
+- Flat and content-addressed (`{sha256}.ext`), same as the public pool. No per-type folders (`images/`, `dicom/`, `json/`); type is attachment metadata (`encodingFormat`).
+- The name is `attachments/`, not `blobs/` — it matches `AttachmentManager` and the public pool, and "blobs" already means version/trash content here.
+- Anything an addon owns that is not an attachment (e.g. a later database file) gets its own sibling folder through that addon's provider.
+
+- The folder name is config key `ngdpbase.page.provider.filesystem.attachmentsdir` (default `attachments`), beside `versionsdir` / `deleteddir` (approved 2026-09-15).
 
 Global `attachment-metadata.json` must not list names of files in a __sealed__ store.
+
+### When an attachment is private
+
+Decided 2026-09-15 ([#1398](https://github.com/jwilleke/ngdpbase/issues/1398)). The rule lives at one door, `AttachmentManager.uploadAttachment`, so the upload dialog, the page-import image fetch, and import sidecar files all follow it.
+
+| Case | Result |
+|---|---|
+| New upload onto a private page | Always private. The page forces it; an unticked box does not make it public. Lands in the __page author's__ store, the page's own store. Only the owner, or a delegate of the owner, can upload onto it. |
+| Existing non-private asset attached or linked to a private page | Stays public. Linking never moves or re-flags an existing attachment. |
+| Upload with no page, or onto a public page | The upload dialog's Private checkbox decides. Ticked: the uploader's store. Unticked: public attachments pool. |
+
+__The author owns the page and every attachment uploaded onto it__ (decided 2026-09-15). A delegate who uploads onto the owner's private page adds to the owner's store, never their own; anyone else is refused (see Access). A page-less private upload belongs to the uploader. Owner is the page-index `creator` (the page's `author`), not the last editor.
 
 ## Backups
 
@@ -124,5 +202,7 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1392](https://github.com/jwilleke/ngdpbase/issues/1392) | Drop the session bag on logout | [#1391](https://github.com/jwilleke/ngdpbase/issues/1391) |
 | [#1393](https://github.com/jwilleke/ngdpbase/issues/1393) | Password change re-wraps the KEK envelope; mnemonic wrap unchanged | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
 | [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK (PageManager + AttachmentManager doors; relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
+| [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) | Explicit `private` / `store` on `uploadAttachment` | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
+| [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) | Upload dialog Private checkbox; new upload onto a private page is forced private | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) |
 
 Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.

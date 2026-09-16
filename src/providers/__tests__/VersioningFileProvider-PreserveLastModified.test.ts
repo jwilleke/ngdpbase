@@ -15,6 +15,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -74,8 +75,8 @@ describe('VersioningFileProvider - preserveLastModified (#1325)', () => {
   const OLD = '2019-03-04T05:06:07.000Z';
 
   test('keeps the page date in the file and the index, and still records a version', async () => {
-    await provider.savePage('Anthrax', '* a\n** b', { author: 'jim', lastModified: OLD });
-    await provider.savePage('Anthrax', '* a\n  - b', { author: 'jim', editor: 'system', lastModified: OLD }, { preserveLastModified: true });
+    await provider.savePage('Anthrax', '* a\n** b', { author: 'jim', lastModified: OLD }, TEST_ACTOR);
+    await provider.savePage('Anthrax', '* a\n  - b', { author: 'jim', editor: 'system', lastModified: OLD }, TEST_ACTOR, { preserveLastModified: true });
 
     const page = await provider.getPage('Anthrax');
     expect(page.content).toBe('* a\n  - b');
@@ -85,8 +86,8 @@ describe('VersioningFileProvider - preserveLastModified (#1325)', () => {
   });
 
   test('without the option a save still stamps now', async () => {
-    await provider.savePage('Spin', 'x', { author: 'jim', lastModified: OLD });
-    await provider.savePage('Spin', 'y', { author: 'jim', lastModified: OLD });
+    await provider.savePage('Spin', 'x', { author: 'jim', lastModified: OLD }, TEST_ACTOR);
+    await provider.savePage('Spin', 'y', { author: 'jim', lastModified: OLD }, TEST_ACTOR);
 
     const page = await provider.getPage('Spin');
     expect(page.metadata.lastModified).not.toBe(OLD);

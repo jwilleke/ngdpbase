@@ -1039,7 +1039,7 @@ describe('AddonsManager', () => {
       // #1037: seeded content is shipped by the addon, not user input, so it
       // must bypass save-time validation — startup cannot depend on a content
       // rule aimed at page authors.
-      expect(pageManager.savePage).toHaveBeenCalledWith('home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
     });
 
     test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
@@ -1063,7 +1063,8 @@ describe('AddonsManager', () => {
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
 
-      expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid);
+      // #1179: seeding reads as the boot job it runs under.
+      expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid, expect.objectContaining({ origin: 'boot' }));
       expect(pageManager.savePage).not.toHaveBeenCalled();
     });
 
@@ -1096,6 +1097,7 @@ describe('AddonsManager', () => {
         'about',
         expect.stringContaining('New content v2'),
         expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') }),
+        expect.objectContaining({ origin: 'boot' }),
         { skipValidation: true }
       );
     });
@@ -1119,6 +1121,7 @@ describe('AddonsManager', () => {
         'about',
         expect.stringContaining('New content v2'),
         expect.objectContaining({ 'addon-source-hash': bodyHash('New content v2') }),
+        expect.objectContaining({ origin: 'boot' }),
         { skipValidation: true }
       );
     });
@@ -1152,8 +1155,8 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(2);
-      expect(pageManager.savePage).toHaveBeenCalledWith('page-one', expect.any(String), expect.objectContaining({ uuid: uuid1 }), { skipValidation: true });
-      expect(pageManager.savePage).toHaveBeenCalledWith('page-two', expect.any(String), expect.objectContaining({ uuid: uuid2 }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('page-one', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('page-two', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
     });
 
     test('sets addon field on seeded pages', async () => {

@@ -28,7 +28,7 @@
 import type { Request } from 'express';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
-import type { AgentTokenGrant } from '../managers/UserManager.js';
+import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
@@ -84,6 +84,15 @@ export class ApiContext {
   /** The share this request presented, when it did (#1222). Carried for the same reason as `viaToken`. */
   readonly viaShare?: ShareGrant;
 
+  /**
+   * The request's subject exactly as the middleware wrote it (#1179/#1382).
+   *
+   * The fields above are a flattened copy for convenience; this is the context
+   * itself, to forward to a manager door that takes one — never rebuilt from
+   * the fields, which is the #1173 defect. `null` for a request with no subject.
+   */
+  readonly subject: PermissionSubject | null;
+
   private constructor(
     engine: WikiEngine,
     isAuthenticated: boolean,
@@ -92,7 +101,8 @@ export class ApiContext {
     email: string | null,
     roles: string[],
     viaToken?: AgentTokenGrant,
-    viaShare?: ShareGrant
+    viaShare?: ShareGrant,
+    subject: PermissionSubject | null = null
   ) {
     this.engine = engine;
     this.isAuthenticated = isAuthenticated;
@@ -102,6 +112,7 @@ export class ApiContext {
     this.roles = roles;
     this.viaToken = viaToken;
     this.viaShare = viaShare;
+    this.subject = subject;
   }
 
   /**
@@ -129,7 +140,8 @@ export class ApiContext {
       (uc.email) ?? null,
       Array.isArray(uc.roles) ? (uc.roles) : [],
       uc.viaToken,
-      uc.viaShare
+      uc.viaShare,
+      req.userContext ?? null
     );
   }
 

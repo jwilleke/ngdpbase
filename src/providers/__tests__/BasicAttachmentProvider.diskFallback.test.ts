@@ -17,7 +17,7 @@ import os from 'os';
 import BasicAttachmentProvider from '../BasicAttachmentProvider';
 import type { WikiEngine } from '../../types/WikiEngine';
 
-function makeEngine(storageDir) {
+function makeEngine(storageDir, pagesDir) {
   const configManager = {
     getProperty: vi.fn().mockImplementation((key, defaultValue) => {
       if (key === 'ngdpbase.attachment.maxsize') return 10485760;
@@ -28,6 +28,7 @@ function makeEngine(storageDir) {
     getResolvedDataPath: vi.fn().mockImplementation((key, defaultValue) => {
       if (key === 'ngdpbase.attachment.provider.basic.storagedir') return storageDir;
       if (key === 'ngdpbase.attachment.metadatafile') return path.join(storageDir, 'attachment-metadata.json');
+      if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir ?? defaultValue;
       return defaultValue;
     })
   };
@@ -41,17 +42,23 @@ function makeEngine(storageDir) {
 }
 
 describe('BasicAttachmentProvider — getAttachment() disk-scan fallback', () => {
+  let tmp;
   let storageDir;
+  let pagesDir;
   let provider;
 
   beforeEach(async () => {
-    storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir));
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-test-'));
+    storageDir = path.join(tmp, 'attachments');
+    pagesDir = path.join(tmp, 'pages');
+    await fs.ensureDir(storageDir);
+    await fs.ensureDir(pagesDir);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir));
     await provider.initialize();
   });
 
   afterEach(async () => {
-    await fs.remove(storageDir);
+    await fs.remove(tmp);
   });
 
   it('file {id}.webp exists, no metadata → returns buffer and image/webp', async () => {
@@ -128,17 +135,23 @@ describe('BasicAttachmentProvider — getAttachment() disk-scan fallback', () =>
 });
 
 describe('BasicAttachmentProvider — getAttachment() stale storageLocation fallback', () => {
+  let tmp;
   let storageDir;
+  let pagesDir;
   let provider;
 
   beforeEach(async () => {
-    storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-stale-test-'));
-    provider = new BasicAttachmentProvider(makeEngine(storageDir));
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'attach-stale-test-'));
+    storageDir = path.join(tmp, 'attachments');
+    pagesDir = path.join(tmp, 'pages');
+    await fs.ensureDir(storageDir);
+    await fs.ensureDir(pagesDir);
+    provider = new BasicAttachmentProvider(makeEngine(storageDir, pagesDir));
     await provider.initialize();
   });
 
   afterEach(async () => {
-    await fs.remove(storageDir);
+    await fs.remove(tmp);
   });
 
   it('metadata exists with stale NAS storageLocation → file served from configured storageDirectory', async () => {
@@ -176,13 +189,13 @@ describe('BasicAttachmentProvider — getAttachment() stale storageLocation fall
     expect(result.metadata.filePath).toBe(localFilePath);
   });
 
-  it('private attachment with stale storageLocation → file served from private subdirectory', async () => {
+  it('private attachment with stale storageLocation → file served from the page store', async () => {
     const attachmentId = 'priv1234deadbeef'.padEnd(64, '0');
     const creator = 'alice';
     const filename = `${attachmentId}.pdf`;
-    const privateDir = path.join(storageDir, 'private', creator);
-    await fs.ensureDir(privateDir);
-    const localFilePath = path.join(privateDir, filename);
+    const storeDir = path.join(pagesDir, 'private', creator, 'default', 'attachments');
+    await fs.ensureDir(storeDir);
+    const localFilePath = path.join(storeDir, filename);
     await fs.writeFile(localFilePath, Buffer.from('pdf-content'));
 
     provider['attachmentMetadata'].set(attachmentId, {
@@ -210,5 +223,39 @@ describe('BasicAttachmentProvider — getAttachment() stale storageLocation fall
     expect(result).not.toBeNull();
     expect(result.buffer.toString()).toBe('pdf-content');
     expect(result.metadata.filePath).toBe(localFilePath);
+  });
+
+  it('unmigrated leftover under attachments/private is still served', async () => {
+    const attachmentId = 'left1234deadbeef'.padEnd(64, '0');
+    const creator = 'alice';
+    const filename = `${attachmentId}.pdf`;
+    const leftover = path.join(storageDir, 'private', creator, filename);
+    await fs.ensureDir(path.dirname(leftover));
+    await fs.writeFile(leftover, Buffer.from('legacy-pdf'));
+
+    provider['attachmentMetadata'].set(attachmentId, {
+      '@context': 'https://schema.org',
+      '@type': 'CreativeWork',
+      identifier: attachmentId,
+      name: 'old.pdf',
+      description: '',
+      author: { '@type': 'Person', name: creator },
+      editor: { '@type': 'Person', name: creator },
+      dateCreated: new Date().toISOString(),
+      dateModified: new Date().toISOString(),
+      encodingFormat: 'application/pdf',
+      contentSize: 10,
+      url: `/attachments/${attachmentId}`,
+      storageLocation: leftover,
+      isFamilyFriendly: true,
+      mentions: [],
+      isPrivate: true,
+      creator
+    });
+
+    const result = await provider.getAttachment(attachmentId);
+    expect(result).not.toBeNull();
+    expect(result.buffer.toString()).toBe('legacy-pdf');
+    expect(result.metadata.filePath).toBe(leftover);
   });
 });

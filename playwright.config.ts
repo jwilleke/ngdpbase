@@ -6,17 +6,41 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load PORT from .env if not already set in the environment.
-// Mirrors what server.sh does: source .env, then let shell exports override.
-if (!process.env.PORT) {
+// Read this instance's own `.env`, the way server.sh sources it: a value
+// already exported in the shell wins, `.env` fills the rest.
+//
+// PORT says which instance the run drives. The admin credentials matter just
+// as much: `auth.setup.ts` signs in once and every authenticated spec reuses
+// that session, so when they are wrong the whole authenticated half of the
+// suite fails at setup — which is what a local worktree instance did, with
+// `NGDPBASE_ADMIN_PASSWORD` set and `E2E_ADMIN_PASS` never supplied.
+//
+// Values are never logged: a wrong password shows up as the login failing.
+const envValues = ((): Record<string, string> => {
   const envFile = path.join(__dirname, '.env');
-  if (fs.existsSync(envFile)) {
-    for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
-      const m = line.match(/^\s*PORT\s*=\s*(\d+)/);
-      if (m) { process.env.PORT = m[1]; break; }
-    }
+  if (!fs.existsSync(envFile)) return {};
+  const out: Record<string, string> = {};
+  for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
   }
-}
+  return out;
+})();
+
+// Only set what `.env` actually supplies: assigning `undefined` to a
+// process.env property stores the STRING "undefined", which is truthy and is
+// then used as a username or password.
+const fillFromEnvFile = (key: string, ...candidates: string[]): void => {
+  if (process.env[key]) return;
+  const value = candidates.map((c) => envValues[c]).find((v) => v);
+  if (value) process.env[key] = value;
+};
+
+fillFromEnvFile('PORT', 'PORT');
+fillFromEnvFile('E2E_ADMIN_USER', 'E2E_ADMIN_USER');
+// The account the instance was bootstrapped with, unless the run names another.
+fillFromEnvFile('E2E_ADMIN_PASS', 'E2E_ADMIN_PASS', 'NGDPBASE_ADMIN_PASSWORD');
 
 const PORT = process.env.PORT ?? '3000';
 

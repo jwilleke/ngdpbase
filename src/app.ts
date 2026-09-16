@@ -11,6 +11,7 @@
 // ES imports are hoisted, so this is the only reliable way to populate the
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
+import { ANONYMOUS_SUBJECT } from './managers/UserManager.js';
 import { sessionSecretOrigin } from './bootstrap-env.js';
 import { AUDIT_EVENT } from './utils/auditEventNames.js';
 import { recordSystemAction, systemContext } from './context/bootActions.js';
@@ -44,7 +45,6 @@ import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
 import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
-import { runWithPrivateStoreSession } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -638,19 +638,6 @@ void (async (): Promise<void> => {
     }
   }));
 
-  // #1384: bind this request's session id so every provider/manager in the
-  // process reads the same unlock bag. Keys are not on PageManager.
-  app.use((req: Request, _res: Response, next: NextFunction) => {
-    const sid = req.sessionID;
-    if (!sid) {
-      next();
-      return;
-    }
-    runWithPrivateStoreSession(sid, () => {
-      next();
-    });
-  });
-
   // #776/#777 follow-up: capture req.ip into the session on first write so the
   // admin Session Manager can display it. Only writes when the session exists
   // and doesn't already have an ip — avoids triggering a session save on every
@@ -733,7 +720,13 @@ void (async (): Promise<void> => {
             authenticated: true
           };
           // #1179: the address travels on the subject, so a manager records it from the context it is handed.
-          req.userContext = { ...sessionContext, ipAddress: req.ip };
+          // #1382: so does the handle to this session's private-store keys — never the session id.
+          const privateStoreHandle = req.session.privateStoreHandle;
+          req.userContext = {
+            ...sessionContext,
+            ipAddress: req.ip,
+            ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {})
+          };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {
           req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };
@@ -999,7 +992,7 @@ void (async (): Promise<void> => {
     try {
       const pageManager = engine.getManager<PageManager>('PageManager');
       if (pageManager) {
-        const metricsPage = await pageManager.getPageBySlug('metrics');
+        const metricsPage = await pageManager.getPageBySlug('metrics', req.userContext ?? ANONYMOUS_SUBJECT);
         if (metricsPage?.title) {
           res.redirect(`/view/${encodeURIComponent(metricsPage.title)}`);
           return;
