@@ -8,12 +8,11 @@
  * P1). Key bytes never go into express-session JSON, a context, or a record.
  * Logout calls {@link lockPrivateStores}.
  *
- * The `AsyncLocalStorage` slot below is what page providers still read until
- * page operations take the context (#1382 step 4); P1 refuses it, and it goes
- * then. New callers use the context functions.
+ * There is no ambient slot: `AsyncLocalStorage` is refused by P1 because the
+ * call site does not show what identity it runs under. Every caller reaches
+ * its keys through the context it was handed.
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import fs from 'fs-extra';
 import logger from './logger.js';
@@ -62,16 +61,6 @@ function emptySessionCatalogs(): UnlockedBag['catalogs'] {
 }
 
 const bags = new Map<string, UnlockedBag>();
-const sessionAls = new AsyncLocalStorage<string>();
-
-export function runWithPrivateStoreSession<T>(sessionId: string, fn: () => T): T {
-  return sessionAls.run(sessionId, fn);
-}
-
-export function currentPrivateStoreSessionId(): string | undefined {
-  return sessionAls.getStore();
-}
-
 export function unlockPrivateStores(sessionId: string, username: string, kek: Buffer): void {
   bags.set(sessionId, {
     username,
@@ -93,14 +82,6 @@ export function replaceSessionUserCatalog(
   const bag = bags.get(sessionId);
   if (!bag) return;
   bag.catalogs[kind] = catalog;
-}
-
-export function putSessionUserIndexPage(page: UserCatalogPage): void {
-  const sid = currentPrivateStoreSessionId();
-  if (!sid) return;
-  const bag = bags.get(sid);
-  if (!bag) return;
-  bag.catalogs.index.pages[page.uuid] = page;
 }
 
 export function lockPrivateStores(sessionId: string): void {
@@ -130,10 +111,8 @@ export function getUnlockedDek(sessionId: string, storeId: string): Buffer | und
 }
 
 /** DEK from the process bag for this request's session (or an explicit id). */
-export function sessionDekForStore(storeId: string, sessionId?: string): Buffer | undefined {
-  const sid = sessionId ?? currentPrivateStoreSessionId();
-  if (!sid) return undefined;
-  return getUnlockedDek(sid, storeId);
+export function sessionDekForStore(storeId: string, handle: string): Buffer | undefined {
+  return getUnlockedDek(handle, storeId);
 }
 
 function isUserKeyEnvelope(value: unknown): value is UserKeyEnvelope {
@@ -208,28 +187,6 @@ export async function rewrapUserKeysOnPasswordChange(args: {
   await fs.writeJson(keysPath, next);
 }
 
-/**
- * Encrypt-on write gate for a store. Providers call this; not a PageManager field.
- */
-export async function assertCurrentSessionCanWriteStore(args: {
-  pagesDirectory: string;
-  creator: string;
-  store: string;
-  sessionId?: string;
-  layout?: PrivateStoreLayoutOverrides;
-}): Promise<void> {
-  const meta = await readStoreMeta(args.pagesDirectory, args.creator, args.store, args.layout);
-  const sid = args.sessionId ?? currentPrivateStoreSessionId();
-  // DEKs in a bag are keyed by store id and belong to the bag's user. Another
-  // user's unlocked store with the same id (every user has a `default`) is not
-  // this one — an admin uploading onto someone's sealed page must be refused.
-  const ownBag = sid !== undefined && bags.get(sid)?.username === args.creator;
-  assertEncryptedStoreWritable({
-    encrypt: meta.encrypt,
-    dek: ownBag ? sessionDekForStore(args.store, sid) : undefined
-  });
-}
-
 /** A fresh handle for a session's key bag: random, never the session id. */
 export function newPrivateStoreHandle(): string {
   return randomUUID();
@@ -240,22 +197,23 @@ export function newPrivateStoreHandle(): string {
  * session's request subject has one; a `JobContext`, a bearer-token request
  * and a share visitor carry none, so they reach no keys.
  */
-function handleOf(ctx: ActorContext): string | undefined {
-  return (ctx as Partial<PermissionSubject>).privateStoreHandle;
+function handleOf(ctx: ActorContext | undefined): string | undefined {
+  // A caller that passed no context reaches no keys — a refusal, not a crash.
+  return (ctx as Partial<PermissionSubject> | undefined)?.privateStoreHandle;
 }
 
 /**
  * The DEK for `owner`'s `store` that this context holds, if any. Only from the
  * owner's own bag: DEKs are keyed by store id, and every user has a `default`.
  */
-export function dekFor(ctx: ActorContext, owner: string, store: string): Buffer | undefined {
+export function dekFor(ctx: ActorContext | undefined, owner: string, store: string): Buffer | undefined {
   const handle = handleOf(ctx);
   if (!handle || bags.get(handle)?.username !== owner) return undefined;
   return getUnlockedDek(handle, store);
 }
 
 /** The unlocked sealed-store page catalog this context's session holds, if any (#1385). */
-export function userIndexFor(ctx: ActorContext): UserCatalog | undefined {
+export function userIndexFor(ctx: ActorContext | undefined): UserCatalog | undefined {
   const handle = handleOf(ctx);
   return handle ? getSessionUserIndex(handle) : undefined;
 }
@@ -275,6 +233,26 @@ export async function assertContextCanWriteStore(ctx: ActorContext, args: {
     encrypt: meta.encrypt,
     dek: meta.encrypt ? dekFor(ctx, args.owner, args.store) : undefined
   });
+}
+
+/** The user KEK this context's session holds, if any. */
+export function kekFor(ctx: ActorContext | undefined): Buffer | undefined {
+  const handle = handleOf(ctx);
+  return handle ? getUnlockedKek(handle) : undefined;
+}
+
+/** Replace one user catalog in this context's session bag. */
+export function replaceUserCatalogFor(ctx: ActorContext | undefined, kind: UserCatalogKind, catalog: UserCatalog): void {
+  const handle = handleOf(ctx);
+  if (handle) replaceSessionUserCatalog(handle, kind, catalog);
+}
+
+/** Put one page into this context's session page catalog. */
+export function putUserIndexPageFor(ctx: ActorContext | undefined, page: UserCatalogPage): void {
+  const handle = handleOf(ctx);
+  if (!handle) return;
+  const bag = bags.get(handle);
+  if (bag) bag.catalogs.index.pages[page.uuid] = page;
 }
 
 /** Test teardown only. */

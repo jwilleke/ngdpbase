@@ -2,6 +2,7 @@
  * RenderingManager - Handles markdown rendering and macro expansion
  */
 
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import BaseManager from './BaseManager.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -1073,7 +1074,8 @@ class RenderingManager extends BaseManager {
       // Load all page content in parallel for better performance
       const pageDataArray = await Promise.all(
         pageNames.map(async (pageName) => {
-          const pageData = await pageManager.getPage(pageName);
+          // The link graph is built from the public index, with no caller behind it.
+          const pageData = await pageManager.getPage(pageName, ANONYMOUS_SUBJECT);
           return { pageName, pageData };
         })
       );

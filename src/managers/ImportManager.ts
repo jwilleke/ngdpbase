@@ -716,7 +716,7 @@ class ImportManager extends BaseManager {
     let overwriteExistingUuid: string | undefined;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const existingMetadata = await pageManager?.getPageMetadata(pageTitle);
+      const existingMetadata = await pageManager?.getPageMetadata(pageTitle, options.actorContext);
       if (existingMetadata) {
         const existingUuid = existingMetadata.uuid || '';
         if (options.conflictPolicy === 'overwrite') {
@@ -880,7 +880,7 @@ class ImportManager extends BaseManager {
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot overwrite existing page');
     }
-    const existingPage = await pageManager.getPage(pageTitle);
+    const existingPage = await pageManager.getPage(pageTitle, options.actorContext);
     if (!existingPage) {
       throw new Error(`Existing page "${pageTitle}" disappeared during import`);
     }
@@ -909,7 +909,7 @@ class ImportManager extends BaseManager {
       if (options.store) merged.store = options.store;
     }
     await pageManager.savePage(pageTitle, content, merged, options.actorContext);
-    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle);
+    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle, options.actorContext);
   }
 
   /**
@@ -943,7 +943,7 @@ class ImportManager extends BaseManager {
       if (metadata[key] === undefined) delete metadata[key];
     }
     await pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext);
-    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle);
+    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle, actorContext);
   }
 
   /**
@@ -951,10 +951,10 @@ class ImportManager extends BaseManager {
    * same contract as the ingest API. Failures are logged, not fatal: the
    * page is saved; a manual reindex can recover the index.
    */
-  private async indexImportedPage(pageTitle: string, uuid: string): Promise<void> {
+  private async indexImportedPage(pageTitle: string, uuid: string, ctx: ActorContext): Promise<void> {
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const saved = await pageManager?.getPage(pageTitle);
+      const saved = await pageManager?.getPage(pageTitle, ctx);
       if (saved) {
         const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');
@@ -1080,7 +1080,7 @@ class ImportManager extends BaseManager {
     const pageTitle = conversionResult.metadata['title'] as string;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const existingMetadata = await pageManager?.getPageMetadata(pageTitle);
+      const existingMetadata = await pageManager?.getPageMetadata(pageTitle, options.actorContext);
       if (existingMetadata) {
         const existingUuid = existingMetadata.uuid || '';
         return {

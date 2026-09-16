@@ -5,6 +5,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import VersioningMaintenance from '../../utils/VersioningMaintenance';
 import VersioningAnalytics from '../../utils/VersioningAnalytics';
 import fs from 'fs-extra';
@@ -71,7 +72,7 @@ describe('VersioningFileProvider - Maintenance', () => {
         uuid,
         author: `user${i}`,
         comment: `Version ${i}`
-      });
+      }, TEST_ACTOR);
 
       // Add delay to ensure different timestamps
       await new Promise(resolve => setTimeout(resolve, 10));

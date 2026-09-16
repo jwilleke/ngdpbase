@@ -296,7 +296,8 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   async get(identifier: string): Promise<CreativeWork | null> {
     if (!this.provider) return null;
-    const page = await this.provider.getPageByUUID(identifier);
+    // A catalog read has no caller behind it: public pages only, never a sealed one.
+    const page = await this.provider.getPageByUUID(identifier, ANONYMOUS_SUBJECT);
     if (!page) return null;
     return pageToArticle(page.title, page.metadata);
   }
@@ -684,11 +685,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * const page = await pageManager.getPage('Main');
    * console.log(page.title, page.metadata.author);
    */
-  async getPage(identifier: string): Promise<WikiPage | null> {
+  async getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPage(identifier);
+    return this.provider.getPage(identifier, ctx);
   }
 
   /**
@@ -704,11 +705,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * const content = await pageManager.getPageContent('Main');
    * console.log(content);
    */
-  async getPageContent(identifier: string): Promise<string> {
+  async getPageContent(identifier: string, ctx: ActorContext): Promise<string> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageContent(identifier);
+    return this.provider.getPageContent(identifier, ctx);
   }
 
   /**
@@ -791,7 +792,7 @@ class PageManager extends BaseManager implements CatalogSource {
       const titles = await this.getAllPages();
       for (const title of titles) {
         try {
-          const metadata = await this.provider?.getPageMetadata(title);
+          const metadata = await this.provider?.getPageMetadata(title, ANONYMOUS_SUBJECT);
           sources.push({
             title: (metadata?.title) ?? title,
             formerTitles: (metadata as Record<string, unknown> | null | undefined)?.formerTitles
@@ -809,11 +810,11 @@ class PageManager extends BaseManager implements CatalogSource {
     return index;
   }
 
-  async getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
+  async getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageMetadata(identifier);
+    return this.provider.getPageMetadata(identifier, ctx);
   }
 
   /**
@@ -1015,7 +1016,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // Used for both attribution display and private-page ACL ownership (see ACLManager).
     // Preserve from the existing page — must never be overwritten on edit.
     // For documentation/system category pages, default to 'system' if no user is present.
-    const existingPage = pageName ? await this.provider.getPage(pageName) : null;
+    const existingPage = pageName ? await this.provider.getPage(pageName, saveContext) : null;
     const originalAuthor = existingPage?.metadata?.author;
 
     const incomingCategory = ((metadata as Record<string, unknown>)['system-category'] as string | undefined)
@@ -1219,7 +1220,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (validationManager) {
       const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug);
+      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, saveContext);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
@@ -1366,7 +1367,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (validationManager) {
       const uuid = (metadata as Record<string, unknown>).uuid as string ?? '';
       const slug = (metadata as Record<string, unknown>).slug as string ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug);
+      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
@@ -1376,7 +1377,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // fails, must not break the save — the distinction is a nicety and the
     // record is worth more than the accuracy of one field.
     const existed = typeof this.provider.getPage === 'function'
-      ? Boolean(await this.provider.getPage(pageName).catch(() => null))
+      ? Boolean(await this.provider.getPage(pageName, ctx).catch(() => null))
       : true;
 
     await this.provider.savePage(pageName, content, metadata, ctx);
@@ -1473,11 +1474,11 @@ class PageManager extends BaseManager implements CatalogSource {
    *   console.log('Main page exists');
    * }
    */
-  pageExists(identifier: string): boolean {
+  pageExists(identifier: string, ctx: ActorContext): boolean {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.pageExists(identifier);
+    return this.provider.pageExists(identifier, ctx);
   }
 
   /**
@@ -1555,11 +1556,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param {string} uuid - Page UUID
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  async getPageByUUID(uuid: string): Promise<WikiPage | null> {
+  async getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageByUUID(uuid);
+    return this.provider.getPageByUUID(uuid, ctx);
   }
 
   /**
@@ -1567,11 +1568,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param {string} slug - URL-friendly slug
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  async getPageBySlug(slug: string): Promise<WikiPage | null> {
+  async getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPageBySlug(slug);
+    return this.provider.getPageBySlug(slug, ctx);
   }
 
   /**
@@ -1686,10 +1687,10 @@ class PageManager extends BaseManager implements CatalogSource {
   async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
     try {
       if (!this.provider) return null;
-      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
+      const subject = wikiContext.userContext as ActorContext | undefined;
+      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, subject ?? ANONYMOUS_SUBJECT);
       if (!pageMetadata?.uuid) return null;
 
-      const subject = wikiContext.userContext as ActorContext | undefined;
       const owner = subject
         ? await this.getPrivatePageOwner(pageNameOrUuid, subject)
         : await this.getPrivatePageOwner(pageNameOrUuid, ANONYMOUS_SUBJECT);
@@ -1719,7 +1720,7 @@ class PageManager extends BaseManager implements CatalogSource {
     ctx: ActorContext
   ): Promise<{ creator: string; store: string } | null> {
     if (!this.provider) return null;
-    const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid);
+    const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, ctx);
     if (!pageMetadata?.uuid) return null;
 
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');

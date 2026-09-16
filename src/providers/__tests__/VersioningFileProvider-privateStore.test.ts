@@ -16,7 +16,6 @@ import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePa
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek } from '../../utils/privateStoreCrypto';
 import {
   clearUnlockedPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
@@ -179,7 +178,7 @@ describe('private store default/ (#1383)', () => {
     setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(kek, record));
 
     const provider = await newProvider();
-    await runWithPrivateStoreSession('sid', () =>
+    await (
       provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY)
     );
 

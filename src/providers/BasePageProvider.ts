@@ -157,7 +157,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<WikiPage|null>} Page object or null if not found
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPage(identifier: string): Promise<WikiPage | null>;
+  abstract getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get only page content (without metadata)
@@ -168,7 +168,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<string>} Markdown content
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPageContent(identifier: string): Promise<string>;
+  abstract getPageContent(identifier: string, ctx: ActorContext): Promise<string>;
 
   /**
    * Get only page metadata (without content)
@@ -179,7 +179,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<PageFrontmatter|null>} Metadata object or null if not found
    * @throws {Error} Always throws - must be implemented by subclass
    */
-  abstract getPageMetadata(identifier: string): Promise<PageFrontmatter | null>;
+  abstract getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
 
   /**
    * Save page content and metadata
@@ -233,7 +233,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {boolean}
    */
-  abstract pageExists(identifier: string): boolean;
+  abstract pageExists(identifier: string, ctx: ActorContext): boolean;
 
   /**
    * Get all page titles
@@ -270,14 +270,14 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} uuid - Page UUID
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  abstract getPageByUUID(uuid: string): Promise<WikiPage | null>;
+  abstract getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get a page by its slug
    * @param {string} slug - URL-friendly slug
    * @returns {Promise<WikiPage | null>} Page or null if not found
    */
-  abstract getPageBySlug(slug: string): Promise<WikiPage | null>;
+  abstract getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Refresh internal cache/index

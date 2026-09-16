@@ -16,6 +16,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -75,7 +76,7 @@ describe('VersioningFileProvider - empty page body (#1328)', () => {
   test('creates a page whose body is empty', async () => {
     await provider.savePage('2026-09-10-1-journal-jim', '', { author: 'jim', 'system-category': 'journal' });
 
-    const page = await provider.getPage('2026-09-10-1-journal-jim');
+    const page = await provider.getPage('2026-09-10-1-journal-jim', TEST_ACTOR);
     expect(page).not.toBeNull();
     expect(page.content).toBe('');
     expect(page.metadata['system-category']).toBe('journal');
@@ -85,7 +86,7 @@ describe('VersioningFileProvider - empty page body (#1328)', () => {
     await provider.savePage('2026-09-10-1-journal-jim', '', { author: 'jim' });
     await provider.savePage('2026-09-10-1-journal-jim', '# Furnace Motor\nIt made the sound again.', { author: 'jim' });
 
-    const page = await provider.getPage('2026-09-10-1-journal-jim');
+    const page = await provider.getPage('2026-09-10-1-journal-jim', TEST_ACTOR);
     expect(page.content.startsWith('# Furnace Motor')).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 
 import { existsSync } from 'fs';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import path from 'path';
 import BaseManager from '../../../dist/src/managers/BaseManager.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
@@ -97,7 +98,8 @@ class JournalDataManager extends BaseManager {
     if (!sm || !pm) return [];
 
     const results = await sm.searchByCategory('journal');
-    const pages = await Promise.all(results.map(r => pm.getPage(r.name)));
+    // The journal index is built from the public page index; a sealed page is not in it.
+    const pages = await Promise.all(results.map(r => pm.getPage(r.name, ANONYMOUS_SUBJECT)));
 
     return pages
       .filter((p): p is NonNullable<typeof p> => p != null)

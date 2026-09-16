@@ -22,7 +22,6 @@ import {
 import { storeMetaPath } from '../../utils/privateStorePath';
 import {
   clearUnlockedPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
@@ -331,7 +330,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     expect(stored).toHaveLength(1);
   });
 
-  test('encrypt-on: an ambient session no longer unlocks an upload — only the context\'s handle does', async () => {
+  test('encrypt-on: a context without the session handle cannot unlock the store', async () => {
     const { kek } = createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'vault')));
@@ -346,10 +345,10 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? 'vault' : fallback
     });
+    // Molly's keys are unlocked in the process, but this context carries no
+    // handle to them — and there is no ambient session to fall back on (P1).
     await expect(
-      runWithPrivateStoreSession('sid', () =>
-        m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
-      )
+      m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/locked|DEK/i);
     expect(stored).toHaveLength(0);
   });

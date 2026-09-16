@@ -19,6 +19,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
@@ -155,7 +156,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         if (!p) { res.status(503).send('PageManager not available'); return; }
 
         // If entry already exists for today, go straight to the standard editor
-        const existingSlug = await findJournalEntrySlug(p, date, username);
+        const existingSlug = await findJournalEntrySlug(p, date, username, ctx.subject ?? ANONYMOUS_SUBJECT);
         if (existingSlug) {
           res.redirect(`/edit/${encodeURIComponent(existingSlug)}`);
           return;
@@ -240,7 +241,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const p = pm();
         if (!p) { res.status(503).send('PageManager not available'); return; }
 
-        const page = await p.getPageBySlug(slug);
+        const page = await p.getPageBySlug(slug, ctx.subject ?? ANONYMOUS_SUBJECT);
         if (!page) { res.status(404).send('Journal entry not found.'); return; }
 
         const author = (page.metadata as Record<string, unknown>)?.['author'] as string | undefined;
@@ -267,7 +268,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const p = pm();
         if (!p) { res.status(503).send('PageManager not available'); return; }
 
-        const page = await p.getPageBySlug(slug);
+        const page = await p.getPageBySlug(slug, ctx.subject ?? ANONYMOUS_SUBJECT);
         if (!page) { res.status(404).send('Journal entry not found.'); return; }
 
         const meta = (page.metadata ?? {}) as Record<string, unknown>;

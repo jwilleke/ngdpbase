@@ -161,21 +161,21 @@ export interface PageProvider extends BaseProvider {
    * @param identifier - Page UUID, title, or slug
    * @returns Page object or null if not found
    */
-  getPage(identifier: string): Promise<WikiPage | null>;
+  getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get only page content (without metadata)
    * @param identifier - Page UUID, title, or slug
    * @returns Markdown content
    */
-  getPageContent(identifier: string): Promise<string>;
+  getPageContent(identifier: string, ctx: ActorContext): Promise<string>;
 
   /**
    * Get only page metadata (without content)
    * @param identifier - Page UUID, title, or slug
    * @returns Metadata object or null if not found
    */
-  getPageMetadata(identifier: string): Promise<PageFrontmatter | null>;
+  getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
 
   /**
    * Save page content and metadata
@@ -246,7 +246,7 @@ export interface PageProvider extends BaseProvider {
    * @param identifier - Page UUID or title
    * @returns True if page exists
    */
-  pageExists(identifier: string): boolean;
+  pageExists(identifier: string, ctx: ActorContext): boolean;
 
   /**
    * Get all page titles
@@ -280,14 +280,14 @@ export interface PageProvider extends BaseProvider {
    * @param uuid - Page UUID
    * @returns Page or null if not found
    */
-  getPageByUUID(uuid: string): Promise<WikiPage | null>;
+  getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Get a page by its slug
    * @param slug - URL-friendly slug
    * @returns Page or null if not found
    */
-  getPageBySlug(slug: string): Promise<WikiPage | null>;
+  getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null>;
 
   /**
    * Refresh page cache

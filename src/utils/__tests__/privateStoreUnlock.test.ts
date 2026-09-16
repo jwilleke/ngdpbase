@@ -16,7 +16,6 @@ import {
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
 import {
   assertContextCanWriteStore,
-  assertCurrentSessionCanWriteStore,
   dekFor,
   newPrivateStoreHandle,
   userIndexFor,
@@ -99,7 +98,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
   });
 });
 
-describe('assertCurrentSessionCanWriteStore owner check (#1394, #1398)', () => {
+describe('assertContextCanWriteStore owner check (#1394, #1398)', () => {
   let tmp: string;
   let pagesDir: string;
 
@@ -124,8 +123,9 @@ describe('assertCurrentSessionCanWriteStore owner check (#1394, #1398)', () => {
     unlockPrivateStores('admin-sid', 'admin', adminKeys.kek);
     setUnlockedDek('admin-sid', 'default', unwrapDek(adminKeys.kek, adminStore));
 
-    await expect(assertCurrentSessionCanWriteStore({
-      pagesDirectory: pagesDir, creator: 'alice', store: 'default', handle: 'admin-sid'
+    const admin = { username: 'admin', roles: ['admin'], isAuthenticated: true, privateStoreHandle: 'admin-sid' };
+    await expect(assertContextCanWriteStore(admin, {
+      pagesDirectory: pagesDir, owner: 'alice', store: 'default'
     })).rejects.toThrow(/locked|DEK/i);
   });
 });

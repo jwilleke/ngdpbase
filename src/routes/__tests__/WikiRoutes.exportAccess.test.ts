@@ -149,7 +149,8 @@ describe('#1060 — per-page export requires read access', () => {
 
     await routes.exportPageHtml(createMockReq(reader), res);
 
-    expect(exportManager.exportPageToHtml).toHaveBeenCalledWith('SecretPlans');
+    // #1179: the export door is handed the request's subject.
+    expect(exportManager.exportPageToHtml).toHaveBeenCalledWith('SecretPlans', expect.objectContaining({ username: expect.any(String) }));
     expect(res.download).toHaveBeenCalled();
   });
 
@@ -163,7 +164,7 @@ describe('#1060 — per-page export requires read access', () => {
 
     await routes.exportPageMarkdown(createMockReq(anonymous), res);
 
-    expect(exportManager.exportToMarkdown).toHaveBeenCalledWith('SecretPlans');
+    expect(exportManager.exportToMarkdown).toHaveBeenCalledWith('SecretPlans', expect.objectContaining({ username: expect.any(String) }));
     expect(res.download).toHaveBeenCalled();
   });
 });

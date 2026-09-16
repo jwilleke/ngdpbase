@@ -13,6 +13,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import WikiContext from '../../../dist/src/context/WikiContext.js';
@@ -70,7 +71,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         if (!p) { res.status(503).json({ error: 'PageManager not available' }); return; }
 
         // Redirect to existing entry if one already exists for this date
-        const existingSlug = await findJournalEntrySlug(p, date, username);
+        const existingSlug = await findJournalEntrySlug(p, date, username, ctx.subject ?? ANONYMOUS_SUBJECT);
         if (existingSlug) {
           res.redirect(`/journal/${encodeURIComponent(existingSlug)}/edit`);
           return;
@@ -213,7 +214,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const p = pm();
 
         const exportData = await Promise.all(entries.map(async (e) => {
-          const page = p ? await p.getPage(e.slug) : null;
+          const page = p ? await p.getPage(e.slug, ctx.subject ?? ANONYMOUS_SUBJECT) : null;
           return {
             slug:         e.slug,
             title:        e.title,
@@ -255,7 +256,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const sections: string[] = [`# Journal — ${ctx.username!}\n`];
 
         for (const e of entries) {
-          const page = p ? await p.getPage(e.slug) : null;
+          const page = p ? await p.getPage(e.slug, ctx.subject ?? ANONYMOUS_SUBJECT) : null;
           const meta: string[] = [`Date: ${e.journalDate}`];
           if (e.mood)        meta.push(`Mood: ${e.mood}`);
           if (e.tags.length) meta.push(`Tags: ${e.tags.join(', ')}`);

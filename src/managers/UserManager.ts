@@ -1042,7 +1042,7 @@ class UserManager extends BaseManager {
       }
 
       // Check if page exists with this name (as title, slug, or exact match)
-      return pageManager.pageExists(displayName);
+      return pageManager.pageExists(displayName, ANONYMOUS_SUBJECT);
     } catch (error) {
       logger.error('Error checking display name page conflict:', error);
       return false; // On error, assume no conflict to avoid blocking registration
@@ -1069,7 +1069,7 @@ class UserManager extends BaseManager {
       }
 
       // Check if user page already exists
-      if (pageManager.pageExists(user.displayName)) {
+      if (pageManager.pageExists(user.displayName, ANONYMOUS_SUBJECT)) {
         logger.info(`User page already exists for ${user.displayName}`);
         return true;
       }

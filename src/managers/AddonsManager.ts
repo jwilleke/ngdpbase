@@ -11,6 +11,7 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/158}
  */
 
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
@@ -869,8 +870,8 @@ class AddonsManager extends BaseManager {
         // a slug rename — #908 B1), else fall back to slug. A match means the
         // page is already seeded; by default it is left untouched (operator edits
         // are never clobbered), with an optional edit-preserving reseed (#920).
-        const existing = (await pageManager.getPageByUUID(uuid))
-          ?? (pageManager.pageExists(slug) ? await pageManager.getPage(slug) : null);
+        const existing = (await pageManager.getPageByUUID(uuid, seedContext))
+          ?? (pageManager.pageExists(slug, seedContext) ? await pageManager.getPage(slug, seedContext) : null);
 
         if (existing) {
           const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
@@ -1091,7 +1092,7 @@ class AddonsManager extends BaseManager {
           // Keep the search index fresh regardless (page may predate a rebuild).
           const searchManager = this.engine.getManager<SearchManager>('SearchManager');
           if (searchManager) {
-            const refreshed = await pageManager.getPage(existingSlug);
+            const refreshed = await pageManager.getPage(existingSlug, seedContext);
             if (refreshed) {
               await searchManager.updatePageInIndex(existingSlug, {
                 name: existingSlug,
@@ -1730,7 +1731,8 @@ class AddonsManager extends BaseManager {
       // `user-modified` — the index does not carry it.
       let userModified = false;
       try {
-        const page = await pageManager.getPage(entry.slug || entry.title);
+        // Scanning the public index for orphans: no caller behind it.
+        const page = await pageManager.getPage(entry.slug || entry.title, ANONYMOUS_SUBJECT);
         const meta = (page?.metadata as Record<string, unknown> | undefined) ?? {};
         userModified = meta['user-modified'] === true;
       } catch { /* page unreadable — still report it as orphaned */ }

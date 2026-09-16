@@ -1063,7 +1063,8 @@ describe('AddonsManager', () => {
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
 
-      expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid);
+      // #1179: seeding reads as the boot job it runs under.
+      expect(pageManager.getPageByUUID).toHaveBeenCalledWith(uuid, expect.objectContaining({ origin: 'boot' }));
       expect(pageManager.savePage).not.toHaveBeenCalled();
     });
 

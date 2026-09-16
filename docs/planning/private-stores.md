@@ -106,8 +106,9 @@ Decided 2026-09-15, under [security-posture.md](../security-posture.md) P1 (ever
 - The context never carries key bytes. Keys stay in the process bag, reached by handle, so a forwarded or spread context cannot leak them.
 - The handle never goes into an audit record; `actorOf()` names its fields and must not gain this one.
 - A `JobContext` has no handle, so a background job cannot read or write an encrypted store — the server holds those bytes only while a session is unlocked.
-- The key lookup takes the context (`dekFor(ctx, owner, store)`) and requires the bag to belong to the store's owner. `AsyncLocalStorage` (`privateStoreUnlock.ts`, from #1391) and `runWithPrivateStoreSession` are removed; the compiler finds every call site to thread.
-- Page operations on a private page — read, save, delete — take the context positionally at PageManager and at the page provider. The optional `options.actorContext` on `PageManager.savePage` (c521a3e2) is the weak path P1 names and goes. The provider decides from the context it is handed, not from the page's `author` metadata.
+- The key lookup takes the context (`dekFor(ctx, owner, store)`) and requires the bag to belong to the store's owner. `AsyncLocalStorage` and `runWithPrivateStoreSession` are gone (removed 2026-09-16): there is no ambient slot to fall back on, so a caller with no context reaches no keys.
+- Page operations — `getPage`, `getPageContent`, `getPageMetadata`, `getPageByUUID`, `getPageBySlug`, `pageExists`, `savePage`, `deletePage`, `restoreVersion` — take the context positionally at PageManager and at the page provider. The optional `options.actorContext` is gone. The provider decides from the context it is handed, not from the page's `author` metadata.
+- A caller with no person behind it says so rather than borrowing one: boot and seeding pass a `JobContext`, index and catalog builds pass the anonymous subject (public pages only), and `ApiContext` carries the request's subject for addons to forward (`ctx.subject`) instead of rebuilding one from its fields.
 
 ### Store placement is on BasePageProvider
 

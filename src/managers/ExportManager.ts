@@ -1,3 +1,4 @@
+import type { ActorContext } from '../context/ActorContext.js';
 import BaseManager from './BaseManager.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -117,7 +118,7 @@ class ExportManager extends BaseManager {
    * @param {ExportUser|null} user - User object for locale-aware formatting
    * @returns {Promise<string>} HTML content
    */
-  async exportPageToHtml(pageName: string, user: ExportUser | null = null): Promise<string> {
+  async exportPageToHtml(pageName: string, ctx: ActorContext, user: ExportUser | null = null): Promise<string> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
 
@@ -125,7 +126,7 @@ class ExportManager extends BaseManager {
       throw new Error('Required managers not available');
     }
 
-    const page = (await pageManager.getPage(pageName)) as PageForExport | null;
+    const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
     if (!page) {
       throw new Error(`Page '${pageName}' not found`);
     }
@@ -216,7 +217,7 @@ class ExportManager extends BaseManager {
    * @param {ExportUser|null} user - User object for locale-aware formatting
    * @returns {Promise<string>} Combined HTML content
    */
-  async exportPagesToHtml(pageNames: string[], user: ExportUser | null = null): Promise<string> {
+  async exportPagesToHtml(pageNames: string[], ctx: ActorContext, user: ExportUser | null = null): Promise<string> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
 
@@ -228,7 +229,7 @@ class ExportManager extends BaseManager {
     const validPages: (PageForExport & { name: string })[] = [];
 
     for (const pageName of pageNames) {
-      const page = (await pageManager.getPage(pageName)) as PageForExport | null;
+      const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
       if (page) {
         const renderedContent = await renderingManager.renderMarkdown(page.content, pageName, null);
         combinedContent += `
@@ -353,7 +354,7 @@ class ExportManager extends BaseManager {
    * @param {ExportUser|null} user - User object for locale-aware formatting
    * @returns {Promise<string>} Markdown content
    */
-  async exportToMarkdown(pageNames: string | string[], user: ExportUser | null = null): Promise<string> {
+  async exportToMarkdown(pageNames: string | string[], ctx: ActorContext, user: ExportUser | null = null): Promise<string> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
       throw new Error('PageManager not available');
@@ -374,7 +375,7 @@ class ExportManager extends BaseManager {
     }
 
     for (const pageName of names) {
-      const page = (await pageManager.getPage(pageName)) as PageForExport | null;
+      const page = (await pageManager.getPage(pageName, ctx)) as PageForExport | null;
       if (page) {
         if (names.length > 1) {
           markdown += `# ${pageName}\n\n`;

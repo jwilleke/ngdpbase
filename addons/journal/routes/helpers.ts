@@ -1,5 +1,6 @@
 
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 
@@ -30,10 +31,11 @@ export function legacyJournalSlug(date: string, username: string): string {
 export async function findJournalEntrySlug(
   pm: Pick<PageManager, 'getPageBySlug'>,
   date: string,
-  username: string
+  username: string,
+  ctx: import('../../../dist/src/context/ActorContext.js').ActorContext
 ): Promise<string | null> {
   for (const slug of [journalPageName(date, username), legacyJournalSlug(date, username)]) {
-    if (await pm.getPageBySlug(slug)) return slug;
+    if (await pm.getPageBySlug(slug, ctx)) return slug;
   }
   return null;
 }
@@ -62,7 +64,8 @@ export async function getLeftMenu(
     const rm = engine.getManager<RenderingManager>('RenderingManager');
     if (!pm || !rm) return null;
 
-    const page = await pm.getPage('LeftMenu');
+    // The left menu is public furniture; read it as the viewer, or anonymously.
+    const page = await pm.getPage('LeftMenu', userContext ?? ANONYMOUS_SUBJECT);
     if (!page) {
       engine.logger?.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty.');
       return null;

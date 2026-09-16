@@ -11,6 +11,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
@@ -185,7 +186,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         }
 
         const pm = engine.getManager<PageManager>('PageManager');
-        const page = pm ? await pm.getPage(entry.slug) : null;
+        const page = pm ? await pm.getPage(entry.slug, req.userContext ?? ANONYMOUS_SUBJECT) : null;
         if (!page) {
           res.status(404).send('Journal entry page not found.');
           return;

@@ -21,7 +21,6 @@ import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek
 import {
   clearUnlockedPrivateStores,
   lockPrivateStores,
-  runWithPrivateStoreSession,
   setUnlockedDek,
   unlockPrivateStores,
   unlockPrivateStoresWithPassword
@@ -104,23 +103,21 @@ describe('encrypted user-index (#1385)', () => {
     setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(created.kek, record));
 
     const provider = await newProvider();
-    await runWithPrivateStoreSession('sid', async () => {
-      await provider.savePage('Sealed Diary', 'secret', {
-        uuid: SEALED,
-        private: true,
-        author: 'molly'
-      }, MOLLY);
-    });
+    await provider.savePage('Sealed Diary', 'secret', {
+      uuid: SEALED,
+      private: true,
+      author: 'molly'
+    }, MOLLY);
 
     const index = await readIndex();
     expect(index.pages[SEALED]).toBeUndefined();
     expect(JSON.stringify(index)).not.toContain('Sealed Diary');
 
-    const found = await runWithPrivateStoreSession('sid', () => provider.getPage('Sealed Diary'));
+    const found = await provider.getPage('Sealed Diary', MOLLY);
     expect(found?.content).toContain('secret');
 
     lockPrivateStores('sid');
-    expect(await provider.getPage('Sealed Diary')).toBeNull();
+    expect(await provider.getPage('Sealed Diary', MOLLY)).toBeNull();
   });
 
   test('rebuild does not scan a sealed store tree into the global index', async () => {
@@ -157,13 +154,11 @@ describe('encrypted user-index (#1385)', () => {
     setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, unwrapDek(created.kek, record));
 
     const provider = await newProvider();
-    await runWithPrivateStoreSession('sid', async () => {
-      await provider.savePage('Sealed Diary', 'secret', {
-        uuid: SEALED,
-        private: true,
-        author: 'molly'
-      }, MOLLY);
-    });
+    await provider.savePage('Sealed Diary', 'secret', {
+      uuid: SEALED,
+      private: true,
+      author: 'molly'
+    }, MOLLY);
     lockPrivateStores('sid');
 
     await unlockPrivateStoresWithPassword({
@@ -174,11 +169,11 @@ describe('encrypted user-index (#1385)', () => {
     });
 
     expect(
-      (await runWithPrivateStoreSession('sid-2', () => provider.getPage('Sealed Diary')))?.content
+      (await provider.getPage('Sealed Diary', { ...MOLLY, privateStoreHandle: 'sid-2' }))?.content
     ).toContain('secret');
 
     lockPrivateStores('sid-2');
-    expect(await provider.getPage('Sealed Diary')).toBeNull();
+    expect(await provider.getPage('Sealed Diary', MOLLY)).toBeNull();
     expect((await readIndex()).pages[SEALED]).toBeUndefined();
   });
 });

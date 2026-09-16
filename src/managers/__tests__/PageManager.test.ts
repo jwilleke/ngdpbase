@@ -11,8 +11,7 @@ import { TEST_ACTOR, actor } from '../../test-support/actors';
 import type { WikiEngine } from '../../types/WikiEngine';
 import {
   clearUnlockedPrivateStores,
-  putSessionUserIndexPage,
-  runWithPrivateStoreSession,
+  putUserIndexPageFor,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
 
@@ -117,18 +116,18 @@ describe('PageManager', () => {
       const mockPage = { title: 'Test', content: '# Test' };
       pageManager.provider.getPage = vi.fn().mockResolvedValue(mockPage);
 
-      const result = await pageManager.getPage('Test');
+      const result = await pageManager.getPage('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPage).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPage).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(mockPage);
     });
 
     test('getPageContent() should delegate to provider', async () => {
       pageManager.provider.getPageContent = vi.fn().mockResolvedValue('# Content');
 
-      const result = await pageManager.getPageContent('Test');
+      const result = await pageManager.getPageContent('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageContent).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPageContent).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe('# Content');
     });
 
@@ -136,9 +135,9 @@ describe('PageManager', () => {
       const mockMetadata = { title: 'Test', uuid: '123' };
       pageManager.provider.getPageMetadata = vi.fn().mockResolvedValue(mockMetadata);
 
-      const result = await pageManager.getPageMetadata('Test');
+      const result = await pageManager.getPageMetadata('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageMetadata).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.getPageMetadata).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(mockMetadata);
     });
 
@@ -161,9 +160,9 @@ describe('PageManager', () => {
     test('pageExists() should delegate to provider', () => {
       pageManager.provider.pageExists = vi.fn().mockReturnValue(true);
 
-      const result = pageManager.pageExists('Test');
+      const result = pageManager.pageExists('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.pageExists).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.pageExists).toHaveBeenCalledWith('Test', TEST_ACTOR);
       expect(result).toBe(true);
     });
 
@@ -658,7 +657,7 @@ describe('PageManager', () => {
         pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR)
       ).rejects.toThrow("A page with title 'Speed' already exists");
 
-      expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '');
+      expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '', TEST_ACTOR);
     });
 
     test('should proceed normally when no conflict', async () => {
@@ -836,10 +835,10 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
 
   test('unlocked sealed-store page comes from the session user catalog', async () => {
     unlockPrivateStores('sid-1', 'alice', Buffer.alloc(32, 1));
-    runWithPrivateStoreSession('sid-1', () => putSessionUserIndexPage({
+    putUserIndexPageFor({ ...OWNER_CTX, privateStoreHandle: 'sid-1' }, {
       title: 'Labs', uuid: 'u3', currentVersion: 1, location: 'private', creator: 'alice',
       store: 'yourphr', lastModified: '2026-09-15T00:00:00Z', editor: 'alice', hasVersions: false
-    }));
+    });
     const pm = withProvider({
       getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u3' }),
       pageIndex: { pages: {} }
@@ -848,11 +847,9 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
     await expect(
       pm.getPrivatePageOwner('Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
     ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-    // A context without the handle does not see the sealed page, ambient session or not.
+    // A context without the handle does not see the sealed page. There is no
+    // ambient session to fall back on any more (#1382 step 4b).
     await expect(pm.getPrivatePageOwner('Labs', OWNER_CTX)).resolves.toBeNull();
-    await expect(
-      runWithPrivateStoreSession('sid-1', () => pm.getPrivatePageOwner('Labs', OWNER_CTX))
-    ).resolves.toBeNull();
   });
 });
 

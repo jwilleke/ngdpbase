@@ -12,7 +12,7 @@
  * store is Share Off, so today only the owner passes.
  *
  * An encrypted store additionally needs the owner's DEK in the session
- * (`assertCurrentSessionCanWriteStore`); a delegate carries none until a share
+ * (`assertContextCanWriteStore`); a delegate carries none until a share
  * can wrap a store DEK.
  */
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';

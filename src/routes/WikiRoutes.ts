@@ -784,7 +784,7 @@ class WikiRoutes {
     const configured = typeof raw === 'string' ? raw.trim() : '';
 
     if (configured) {
-      const page = await pageManager.getPage(configured);
+      const page = await pageManager.getPage(configured, ANONYMOUS_SUBJECT);
       if (!page) {
         // ERROR, not warn: this is the operator's OWN configuration naming a
         // page that does not exist — unambiguous misconfiguration, nobody
@@ -807,7 +807,7 @@ class WikiRoutes {
 
     // Legacy slug-convention chain (deprecated).
     for (const slug of legacySlugs) {
-      const page = await pageManager.getPage(slug);
+      const page = await pageManager.getPage(slug, ANONYMOUS_SUBJECT);
       if (!page) continue;
       if (slug !== legacySlugs[legacySlugs.length - 1]) {
         logger.info(
@@ -6401,7 +6401,7 @@ ${panes}
       if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
-      const html = await exportManager.exportPageToHtml(pageName);
+      const html = await exportManager.exportPageToHtml(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       const filePath = await exportManager.saveExport(html, pageName, 'html');
 
       // #1204: page-export is bulk extraction, gated on read until a bulk
@@ -6445,7 +6445,7 @@ ${panes}
       if (denied) return denied;
       const exportManager = this.engine.getManager('ExportManager');
 
-      const markdown = await exportManager.exportToMarkdown(pageName);
+      const markdown = await exportManager.exportToMarkdown(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       const filePath = await exportManager.saveExport(markdown, pageName, 'md');
 
       // #1204: page-export is bulk extraction, gated on read until a bulk
@@ -11570,7 +11570,7 @@ ${panes}
         if (!(await fse.pathExists(destPath))) {
           status = 'new';
           // Check for slug/title conflict: page exists under a different UUID
-          const conflict = await validationManager.checkConflicts(uuid, title, slug);
+          const conflict = await validationManager.checkConflicts(uuid, title, slug, currentUser);
           if (conflict.hasConflict && conflict.conflictingUuid) {
             status = 'uuid-mismatch';
             liveUuid = conflict.conflictingUuid;
@@ -13570,7 +13570,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }
@@ -13622,7 +13622,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
       }

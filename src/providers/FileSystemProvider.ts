@@ -6,10 +6,7 @@ import {
   parsePrivatePageRel,
   privatePageFilePath
 } from '../utils/privateStorePath.js';
-import {
-  currentPrivateStoreSessionId,
-  getSessionUserIndex
-} from '../utils/privateStoreUnlock.js';
+import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import { readStoreMeta, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
@@ -385,7 +382,7 @@ class FileSystemProvider extends BasePageProvider {
    * @returns {PageCacheInfo|null} Page info or null if not found
    * @private
    */
-  protected resolvePageInfo(identifier: string): PageCacheInfo | null {
+  protected resolvePageInfo(identifier: string, ctx?: ActorContext): PageCacheInfo | null {
     if (!identifier || typeof identifier !== 'string') return null;
 
     // 1. Try UUID index first
@@ -419,16 +416,15 @@ class FileSystemProvider extends BasePageProvider {
       }
     }
 
-    return this.resolveSessionCatalogPage(identifier);
+    return ctx ? this.resolveSessionCatalogPage(identifier, ctx) : null;
   }
 
   /**
    * Unlocked sealed-store titles live in the session bag, not pageCache. #1385
    */
-  private resolveSessionCatalogPage(identifier: string): PageCacheInfo | null {
-    const sid = currentPrivateStoreSessionId();
-    if (!sid || !this.pagesDirectory) return null;
-    const catalog = getSessionUserIndex(sid);
+  private resolveSessionCatalogPage(identifier: string, ctx: ActorContext): PageCacheInfo | null {
+    if (!this.pagesDirectory) return null;
+    const catalog = userIndexFor(ctx);
     if (!catalog) return null;
     const idLower = identifier.toLowerCase();
     const page = catalog.pages[identifier]
@@ -463,8 +459,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<WikiPage|null>}
    */
-  async getPage(identifier: string): Promise<WikiPage | null> {
-    const info = this.resolvePageInfo(identifier);
+  async getPage(identifier: string, ctx: ActorContext): Promise<WikiPage | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) {
       return null;
     }
@@ -511,15 +507,15 @@ class FileSystemProvider extends BasePageProvider {
   /**
    * Get a page by its UUID (delegates to getPage — resolvePageInfo checks uuidIndex first)
    */
-  async getPageByUUID(uuid: string): Promise<WikiPage | null> {
-    return this.getPage(uuid);
+  async getPageByUUID(uuid: string, ctx: ActorContext): Promise<WikiPage | null> {
+    return this.getPage(uuid, ctx);
   }
 
   /**
    * Get a page by its slug (delegates to getPage — resolvePageInfo checks slugIndex)
    */
-  async getPageBySlug(slug: string): Promise<WikiPage | null> {
-    return this.getPage(slug);
+  async getPageBySlug(slug: string, ctx: ActorContext): Promise<WikiPage | null> {
+    return this.getPage(slug, ctx);
   }
 
   /**
@@ -529,8 +525,8 @@ class FileSystemProvider extends BasePageProvider {
    * in ways that the normal getPage() path sanitises or normalises away.
    * Returns null when the page is unknown (no page-index entry).
    */
-  async getRawFile(identifier: string): Promise<{ filePath: string; content: string } | null> {
-    const info = this.resolvePageInfo(identifier);
+  async getRawFile(identifier: string, ctx: ActorContext): Promise<{ filePath: string; content: string } | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) return null;
     try {
       const content = await fs.readFile(info.filePath, this.encoding);
@@ -547,8 +543,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<string>} The raw markdown content without frontmatter
    */
-  async getPageContent(identifier: string): Promise<string> {
-    const info = this.resolvePageInfo(identifier);
+  async getPageContent(identifier: string, ctx: ActorContext): Promise<string> {
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) {
       logger.warn(`[FileSystemProvider] Not found: ${identifier}`);
       throw new Error(`Page '${identifier}' not found.`);
@@ -589,8 +585,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<PageFrontmatter|null>} The page metadata, or null if not found
    */
-  getPageMetadata(identifier: string): Promise<PageFrontmatter | null> {
-    const info = this.resolvePageInfo(identifier);
+  getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
+    const info = this.resolvePageInfo(identifier, ctx);
     return Promise.resolve(info ? info.metadata : null);
   }
 
@@ -926,8 +922,8 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {boolean}
    */
-  pageExists(identifier: string): boolean {
-    return !!this.resolvePageInfo(identifier);
+  pageExists(identifier: string, ctx?: ActorContext): boolean {
+    return !!this.resolvePageInfo(identifier, ctx);
   }
 
   /**

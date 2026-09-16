@@ -23,6 +23,7 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   legacyPrivatePageFilePath,
@@ -33,11 +34,10 @@ import {
   privateVersionDirectory
 } from '../utils/privateStorePath.js';
 import {
-  currentPrivateStoreSessionId,
-  getSessionUserIndex,
-  getUnlockedKek,
-  putSessionUserIndexPage,
-  replaceSessionUserCatalog
+  kekFor,
+  putUserIndexPageFor,
+  replaceUserCatalogFor,
+  userIndexFor
 } from '../utils/privateStoreUnlock.js';
 import { upsertUserIndexPage, upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
@@ -979,7 +979,8 @@ class VersioningFileProvider extends FileSystemProvider {
       // this stays affordable on a path that runs per page render.
       if (!includeAll) {
         const isCreator = idx.creator !== undefined && principals.includes(idx.creator);
-        const md = await this.getPageMetadata(idx.uuid);
+        // Lists read the public index; a sealed page is not in it.
+        const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
         const tier1 = decideFrontmatterAccess(md, principals, 'view');
 
         if (tier1.decided) {
@@ -1045,7 +1046,8 @@ class VersioningFileProvider extends FileSystemProvider {
       // page cache, so this is a map lookup per candidate, not a disk read —
       // and the candidate set is already narrowed to one user's own pages.
       if (wantedSystemKeywords) {
-        const md = await this.getPageMetadata(idx.uuid);
+        // Lists read the public index; a sealed page is not in it.
+        const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
         if (!VersioningFileProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
       }
 
@@ -1140,7 +1142,7 @@ class VersioningFileProvider extends FileSystemProvider {
       // A page is "shared with me" when frontmatter states a view rule AND the
       // viewer matches it — `decided && allowed`. Same evaluator ACLManager and
       // getRecentChanges use, so all three agree on what an audience means.
-      const md = await this.getPageMetadata(idx.uuid);
+      const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
       const decision = decideFrontmatterAccess(md, principals, 'view');
       if (!decision.decided || !decision.allowed) continue;
 
@@ -1801,26 +1803,24 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /** Public alias for external tools (VersioningAnalytics) */
-  public _resolveIdentifier(identifier: string): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
-    return this.resolveIdentifier(identifier);
+  public _resolveIdentifier(identifier: string, ctx: ActorContext = ANONYMOUS_SUBJECT): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
+    return this.resolveIdentifier(identifier, ctx);
   }
 
   private getVersionDirectory(
     uuid: string,
     location: 'pages' | 'required-pages' | 'private' = 'pages',
     creator?: string,
-    store?: string
+    store?: string,
+    ctx?: ActorContext
   ): string {
     if (location === 'private') {
       if (!this.pagesDirectory) {
         throw new Error('FileSystemProvider not initialized - directories not set');
       }
       const entry = this.pageIndex?.pages[uuid];
-      const overlay = (() => {
-        const sid = currentPrivateStoreSessionId();
-        if (!sid) return undefined;
-        return getSessionUserIndex(sid)?.pages[uuid];
-      })();
+      // An unlocked sealed page is in the caller's own session catalog (#1382).
+      const overlay = ctx ? userIndexFor(ctx)?.pages[uuid] : undefined;
       const who = creator ?? entry?.creator ?? overlay?.creator ?? 'anonymous';
       const bag = store ?? entry?.store ?? overlay?.store ?? this.privateStoreLayout.defaultStoreId;
       return privateVersionDirectory(
@@ -1952,7 +1952,7 @@ class VersioningFileProvider extends FileSystemProvider {
     let pageInfo: WikiPage | null = null;
     if (pageExists) {
       try {
-        pageInfo = await this.getPage(pageName);
+        pageInfo = await this.getPage(pageName, ctx);
       } catch {
         // Page might exist but not be readable, treat as new
         pageInfo = null;
@@ -1978,8 +1978,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // so the page file, its history and the encryption check name one store.
     // An unlocked sealed page is in the session catalog, not the global index.
     const sessionEntry = (() => {
-      const sid = currentPrivateStoreSessionId();
-      return sid ? getSessionUserIndex(sid)?.pages[uuid] : undefined;
+      return userIndexFor(ctx)?.pages[uuid];
     })();
     const existingStore = currentEntry?.location === 'private'
       ? (currentEntry.store ?? this.privateStoreLayout.defaultStoreId)
@@ -2044,9 +2043,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // #1383: getVersionDirectory for a new private page reads creator/store
     // from the index. Stamp them before the first version is written.
     // #1385: sealed titles go to the session user-index, never page-index.json.
-    const kek = currentPrivateStoreSessionId()
-      ? getUnlockedKek(currentPrivateStoreSessionId() as string)
-      : undefined;
+    const kek = kekFor(ctx);
     const catalogPage: UserCatalogPage | undefined = sealedStore && this.pagesDirectory
       ? {
         title: (metadata.title as string) || pageName,
@@ -2069,11 +2066,8 @@ class VersioningFileProvider extends FileSystemProvider {
       : undefined;
     if (catalogPage && kek && this.pagesDirectory) {
       const indexCatalog = await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, catalogPage);
-      const sid = currentPrivateStoreSessionId();
-      if (sid) {
-        replaceSessionUserCatalog(sid, 'index', indexCatalog);
-        putSessionUserIndexPage(catalogPage);
-      }
+      replaceUserCatalogFor(ctx, 'index', indexCatalog);
+      putUserIndexPageFor(ctx, catalogPage);
     } else if (location === 'private' && this.pageIndex) {
       const prev = this.pageIndex.pages[uuid];
       this.pageIndex.pages[uuid] = {
@@ -2151,12 +2145,9 @@ class VersioningFileProvider extends FileSystemProvider {
         kek,
         versionsPage
       );
-      const sid = currentPrivateStoreSessionId();
-      if (sid) {
-        replaceSessionUserCatalog(sid, 'versions', versionsCatalog);
-        await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, versionsPage);
-        putSessionUserIndexPage(versionsPage);
-      }
+      replaceUserCatalogFor(ctx, 'versions', versionsCatalog);
+      await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, versionsPage);
+      putUserIndexPageFor(ctx, versionsPage);
     } else {
       await this.updatePageInIndex(uuid, indexPayload);
     }
@@ -2271,7 +2262,7 @@ class VersioningFileProvider extends FileSystemProvider {
   async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
     const deletedBy = actorOf(ctx).user;
     // Get page info before deleting
-    const pageData = await this.getPage(identifier);
+    const pageData = await this.getPage(identifier, ctx);
     if (!pageData) {
       logger.warn(`[VersioningFileProvider] Cannot delete - page not found: ${identifier}`);
       return false;
@@ -2836,7 +2827,7 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param identifier - Page UUID or title
    * @returns UUID and location, or null if not found
    */
-  private resolveIdentifier(identifier: string): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
+  private resolveIdentifier(identifier: string, ctx: ActorContext = ANONYMOUS_SUBJECT): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
     // Check if identifier is already a UUID (in page index)
     if (this.pageIndex && this.pageIndex.pages[identifier]) {
       return Promise.resolve({
@@ -2848,7 +2839,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Try slug index before title lookup (handles URL-friendly slugs like 'volcanoes-and-earthquakes')
     const slugKey = this.slugIndex.get(identifier.toLowerCase());
     if (slugKey) {
-      return this.getPage(slugKey)
+      return this.getPage(slugKey, ctx)
         .then(pageInfo => {
           if (pageInfo && pageInfo.uuid) {
             const location = this.pageIndex?.pages[pageInfo.uuid]?.location || 'pages';
@@ -2864,8 +2855,8 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     // Try to find by title using pageExists and getPage
-    if (this.pageExists(identifier)) {
-      return this.getPage(identifier)
+    if (this.pageExists(identifier, ctx)) {
+      return this.getPage(identifier, ctx)
         .then(pageInfo => {
           if (pageInfo && pageInfo.uuid) {
             // Determine location from page index or default to 'pages'
@@ -3039,7 +3030,7 @@ class VersioningFileProvider extends FileSystemProvider {
     const { content, metadata: _versionMetadata } = await this.getPageVersion(identifier, version);
 
     // Resolve identifier to get current page info
-    const resolved = await this.resolveIdentifier(identifier);
+    const resolved = await this.resolveIdentifier(identifier, ctx);
     if (!resolved) {
       throw new Error(`Page not found: ${identifier}`);
     }
@@ -3047,7 +3038,7 @@ class VersioningFileProvider extends FileSystemProvider {
     const { uuid } = resolved;
 
     // Get current page to get title
-    const currentPage = await this.getPage(identifier);
+    const currentPage = await this.getPage(identifier, ctx);
     if (!currentPage) {
       throw new Error(`Page not found: ${identifier}`);
     }
