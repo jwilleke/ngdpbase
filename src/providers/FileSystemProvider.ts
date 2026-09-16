@@ -36,7 +36,7 @@ interface PageCacheInfo {
 /**
  * Backup data structure
  */
-interface BackupData {
+export interface BackupData {
   providerName: string;
   version: string;
   timestamp: string;

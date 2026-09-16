@@ -1,4 +1,4 @@
-import FileSystemProvider from './FileSystemProvider.js';
+import FileSystemProvider, { type BackupData } from './FileSystemProvider.js';
 import type { JobContext } from '../context/JobContext.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordSystemAction, scheduleContext, systemContext } from '../context/bootActions.js';
@@ -183,6 +183,19 @@ interface PagePlacement {
   location: 'pages' | 'required-pages' | 'private';
   creator?: string;
   store?: string;
+}
+
+/** One file of a page history in a backup, path relative to its versions folder. */
+interface VersionBackupFile {
+  relativePath: string;
+  content: string;
+  size: number;
+}
+
+/** FileSystemProvider's backup plus the page version histories (#1380). */
+interface VersioningBackupData extends BackupData {
+  versions?: VersionBackupFile[];
+  requiredPagesVersions?: VersionBackupFile[];
 }
 
 /**
@@ -3215,6 +3228,69 @@ class VersioningFileProvider extends FileSystemProvider {
 
     logger.info(`[VersioningFileProvider] Purged ${versionsToPurge.length} versions from page ${uuid}`);
     return { versionsRemoved: versionsToPurge.length, versionsPurged: versionsToPurge, dryRun: false, spaceFreed, message: `Purged ${versionsToPurge.length} versions` };
+  }
+
+  /**
+   * Back up pages and their version histories (#1380).
+   *
+   * The parent walk skips every `versions/` directory, so each file under
+   * `pages/versions/` and `required-pages/versions/` is added here. Histories of
+   * private stores (`private/{user}/{store}/versions/`) are not included (#1387).
+   */
+  async backup(): Promise<VersioningBackupData> {
+    const backupData: VersioningBackupData = await super.backup();
+    backupData.versions = await this.readVersionFiles(this.pagesVersionsDir);
+    backupData.requiredPagesVersions = await this.readVersionFiles(this.requiredPagesVersionsDir);
+    logger.info(`[VersioningFileProvider] Backup includes ${backupData.versions.length + backupData.requiredPagesVersions.length} version files`);
+    return backupData;
+  }
+
+  /**
+   * Restore pages, then write their version histories back (#1380). A backup
+   * made before #1380 has no history and restores pages only.
+   */
+  async restore(backupData: VersioningBackupData): Promise<void> {
+    await super.restore(backupData);
+    const written = await this.writeVersionFiles(this.pagesVersionsDir, backupData.versions)
+      + await this.writeVersionFiles(this.requiredPagesVersionsDir, backupData.requiredPagesVersions);
+    this.versionCache.clear();
+    logger.info(`[VersioningFileProvider] Restored ${written} version files`);
+  }
+
+  private async readVersionFiles(dir: string | null): Promise<VersionBackupFile[]> {
+    if (!dir || !(await fs.pathExists(dir))) return [];
+    const files: VersionBackupFile[] = [];
+    for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || entry.name.startsWith('.')) continue;
+      const full = path.join(entry.parentPath, entry.name);
+      try {
+        const content = await fs.readFile(full, 'utf8');
+        files.push({ relativePath: path.relative(dir, full), content, size: Buffer.byteLength(content, 'utf8') });
+      } catch (error) {
+        logger.error(`[VersioningFileProvider] Failed to back up version file: ${full}`, error);
+      }
+    }
+    return files;
+  }
+
+  private async writeVersionFiles(dir: string | null, files: VersionBackupFile[] | undefined): Promise<number> {
+    if (!dir || !Array.isArray(files)) return 0;
+    let written = 0;
+    for (const file of files) {
+      const target = path.resolve(dir, file.relativePath);
+      if (!target.startsWith(path.resolve(dir) + path.sep)) {
+        logger.warn(`[VersioningFileProvider] Skipping version file outside ${dir}: ${file.relativePath}`);
+        continue;
+      }
+      try {
+        await fs.ensureDir(path.dirname(target));
+        await writeFileAtomic(target, file.content, 'utf8');
+        written++;
+      } catch (error) {
+        logger.error(`[VersioningFileProvider] Failed to restore version file: ${file.relativePath}`, error);
+      }
+    }
+    return written;
   }
 
   /**
