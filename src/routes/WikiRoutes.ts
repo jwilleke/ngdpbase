@@ -292,7 +292,7 @@ interface IVersioningProvider {
   purgeDeletedPage?(uuid: string): Promise<boolean>;
   getVersionHistory?(name: string, limit?: number): Promise<IVersionEntry[]>;
   compareVersions?(name: string, v1: number, v2: number): Promise<IComparisonResult | null>;
-  restoreVersion?(name: string, version: number, options?: { author?: string; comment?: string }): Promise<number>;
+  restoreVersion?(name: string, version: number, ctx: ActorContext, options?: { author?: string; comment?: string }): Promise<number>;
   getPageVersion?(name: string, version: number): Promise<{ content: string; metadata: unknown }>;
   pageIndex?: { pages: Record<string, { location?: string; creator?: string }> } | null;
   invalidatePageCache?(identifier: string): string | null;
@@ -308,7 +308,7 @@ interface IPageManager {
   getPageNames?(): Promise<string[]>;
   getPageMetadata(name: string): Promise<PageFrontmatter | null>;
   pageExists(name: string): boolean;
-  savePage(name: string, content: string, metadata?: Partial<PageFrontmatter>, options?: unknown): Promise<void>;
+  savePage(name: string, content: string, metadata: Partial<PageFrontmatter> | undefined, ctx: ActorContext, options?: unknown): Promise<void>;
   // #1121: the options argument is NOT `unknown` on purpose. This local
   // interface is a claim about code this file does not own, and a claim loose
   // enough to accept anything would have let the audit enrichment below be
@@ -323,7 +323,7 @@ interface IPageManager {
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
-  deletePage(name: string, options?: unknown): Promise<boolean>;
+  deletePage(name: string, ctx: ActorContext): Promise<boolean>;
   deletePageWithContext(wikiContext: unknown): Promise<boolean>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string): string | null;
@@ -2546,12 +2546,14 @@ class WikiRoutes {
     metadata: Record<string, unknown>
   ): Promise<boolean> {
     const pageManager = this.engine.getManager('PageManager');
+    const ctx = wikiContext.userContext;
+    if (!ctx) return false;
     if (page.metadata?.private === true) {
-      if (!wikiContext.userContext || !(await wikiContext.canAccess('edit', pageName))) return false;
-      await pageManager.savePage(pageName, page.content, metadata, { actorContext: wikiContext.userContext });
+      if (!(await wikiContext.canAccess('edit', pageName))) return false;
+      await pageManager.savePage(pageName, page.content, metadata, ctx);
       return true;
     }
-    await pageManager.savePage(pageName, page.content, metadata);
+    await pageManager.savePage(pageName, page.content, metadata, ctx);
     return true;
   }
 
@@ -4368,14 +4370,14 @@ ${panes}
         return;
       }
       const pageManager = this.engine.getManager('PageManager') as {
-        saveRawPageWithAdminOverride?: (name: string, raw: string) => Promise<void>;
+        saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<void>;
         getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
       } | null;
       if (!pageManager?.saveRawPageWithAdminOverride) {
         await this.renderError(req, res, 500, 'Unavailable', 'PageManager does not support raw save on this deployment.');
         return;
       }
-      await pageManager.saveRawPageWithAdminOverride(pageName, rawContent);
+      await pageManager.saveRawPageWithAdminOverride(pageName, rawContent, wikiContext.userContext);
 
       // Audit log — best-effort; don't fail the save if audit is down.
       // #1205: through recordAuditEvent (see clear-anonymous above).
@@ -8430,7 +8432,7 @@ ${panes}
                 'author-lock': true,
                 description: `${displayName}'s profile page`,
                 badge: `Profile ${displayName}`
-              });
+              }, currentUser);
               // #662: demote the old profile page to system-category 'general'
               // instead of hard-deleting it. Preserves the user's prior
               // content as a regular page they can later edit or delete
@@ -8441,7 +8443,7 @@ ${panes}
               await pageManager.savePage(oldPageName, content, {
                 ...metaForOld,
                 'system-category': 'general'
-              });
+              }, currentUser);
             }
           } catch (renameErr: unknown) {
             logger.error('Error renaming profile page:', renameErr);
@@ -11927,6 +11929,7 @@ ${panes}
           liveTitle || title,
           parsed.content,
           { ...parsed.data, uuid, title, editor: 'system' },
+          currentUser,
           { skipValidation: true }
         );
       };
@@ -12110,7 +12113,7 @@ ${panes}
             logger.warn(`[adminSyncRequiredPages] refused orphan removal for ${uuid} — not currently a source-removed addon page`);
             continue;
           }
-          if (await pm.deletePage(uuid)) {
+          if (await pm.deletePage(uuid, currentUser)) {
             removedOrphans.push(uuid);
             logger.info(`[adminSyncRequiredPages] removed orphaned addon page ${uuid} by ${currentUser.username}`);
           }
@@ -16032,7 +16035,10 @@ ${panes}
       }
 
       // #1198: restoring a version writes the page — page-edit is the door.
-      if (!(await this.permitted(this.createWikiContext(req), 'page-edit', req, res, 'json'))) return;
+      const restoreContext = this.createWikiContext(req);
+      if (!(await this.permitted(restoreContext, 'page-edit', req, res, 'json'))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through.
+      if (!restoreContext.userContext) return this.refuse(restoreContext, req, res, 'json', 'page-edit');
 
       const pageManager = this.engine.getManager('PageManager');
 
@@ -16055,7 +16061,7 @@ ${panes}
 
       // Restore version
       const restoredBy = req.userContext?.username || 'unknown';
-      const newVersion = await provider.restoreVersion(identifier, versionNum, {
+      const newVersion = await provider.restoreVersion(identifier, versionNum, restoreContext.userContext, {
         author: restoredBy,
         comment: comment || `Restored from v${versionNum}`
       });
@@ -16620,7 +16626,7 @@ ${trimmedDescription}
             author: currentUser.username
           };
 
-          await pageManager.savePage(pageName, pageContent, pageMetadata);
+          await pageManager.savePage(pageName, pageContent, pageMetadata, currentUser);
           logger.info(`[WikiRoutes] Created definition page for user-keyword: ${pageName}`);
         }
       }
@@ -16693,7 +16699,7 @@ ${description}
         author: currentUser.username
       };
 
-      await pageManager.savePage(label, pageContent, pageMetadata);
+      await pageManager.savePage(label, pageContent, pageMetadata, currentUser);
       logger.info(`[WikiRoutes] User ${currentUser.username} created page for keyword: ${label}`);
 
       // Redirect to edit so user can add more content

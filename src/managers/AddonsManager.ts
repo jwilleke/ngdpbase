@@ -11,6 +11,7 @@
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/158}
  */
 
+import { systemContext } from '../context/bootActions.js';
 import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -777,6 +778,9 @@ class AddonsManager extends BaseManager {
   }
 
   private async seedAddonPages(addonName: string, addonPath: string): Promise<void> {
+    // Seeding runs at boot with no request behind it: a job that states who
+    // asked and why (#1179, security-posture P1).
+    const seedContext = systemContext(this.engine, `seed pages for addon '${addonName}'`);
     const addonPagesDir = path.join(addonPath, 'pages');
 
     try {
@@ -1015,7 +1019,7 @@ class AddonsManager extends BaseManager {
             const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
             if (clearAccess) delete reconciled.access;
 
-            await pageManager.savePage(existingSlug, existing.content, reconciled, { skipValidation: true });
+            await pageManager.savePage(existingSlug, existing.content, reconciled, seedContext, { skipValidation: true });
             // Keep the in-memory copy consistent — the reseed branch below reads
             // existingMeta again, and would otherwise re-apply a stale category
             // or resurrect the access we just cleared.
@@ -1073,7 +1077,7 @@ class AddonsManager extends BaseManager {
             // #1197: savePage records page-edit under `metadata.editor`; the
             // system principal, not a literal, is who reseeded it.
             reseedMetadata.editor = systemPrincipalOf(this.engine);
-            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, { skipValidation: true });
+            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true });
             reseeded++;
             logger.info(legacy
               ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
@@ -1128,7 +1132,7 @@ class AddonsManager extends BaseManager {
         // #1197: savePage records page-create under `metadata.editor`; the
         // system principal, not a literal, is who seeded it.
         (metadata).editor = systemPrincipalOf(this.engine);
-        await pageManager.savePage(slug, parsed.content, metadata, { skipValidation: true });
+        await pageManager.savePage(slug, parsed.content, metadata, seedContext, { skipValidation: true });
 
         // Update search index so the page is discoverable via category search
         const searchManager = this.engine.getManager<SearchManager>('SearchManager');

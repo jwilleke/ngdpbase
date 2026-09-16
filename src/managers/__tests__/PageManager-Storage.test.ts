@@ -18,6 +18,7 @@ vi.unmock('../../providers/FileSystemProvider');
 vi.unmock('../../utils/PageNameMatcher');
 
 import path from 'path';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import os from 'os';
 import fs from 'fs-extra';
 import PageManager from '../PageManager';
@@ -97,7 +98,7 @@ describe('PageManager Storage Integration', () => {
       await pageManager.savePage('Test Page', '# Hello World', {
         category: 'General',
         author: 'testuser'
-      });
+      }, TEST_ACTOR);
 
       const page = await pageManager.getPage('Test Page');
 
@@ -109,7 +110,7 @@ describe('PageManager Storage Integration', () => {
     });
 
     test('should save page and retrieve content only', async () => {
-      await pageManager.savePage('Content Test', '# Just Content', {});
+      await pageManager.savePage('Content Test', '# Just Content', {}, TEST_ACTOR);
 
       const content = await pageManager.getPageContent('Content Test');
 
@@ -120,7 +121,7 @@ describe('PageManager Storage Integration', () => {
       await pageManager.savePage('Metadata Test', '# Test', {
         category: 'Testing',
         'user-keywords': ['test', 'metadata']
-      });
+      }, TEST_ACTOR);
 
       const metadata = await pageManager.getPageMetadata('Metadata Test');
 
@@ -132,16 +133,16 @@ describe('PageManager Storage Integration', () => {
 
   describe('Page Existence and Listing', () => {
     test('should correctly identify existing pages', async () => {
-      await pageManager.savePage('Exists Page', '# Content', {});
+      await pageManager.savePage('Exists Page', '# Content', {}, TEST_ACTOR);
 
       expect(pageManager.pageExists('Exists Page')).toBe(true);
       expect(pageManager.pageExists('Does Not Exist')).toBe(false);
     });
 
     test('should list all pages', async () => {
-      await pageManager.savePage('Page A', '# A', {});
-      await pageManager.savePage('Page B', '# B', {});
-      await pageManager.savePage('Page C', '# C', {});
+      await pageManager.savePage('Page A', '# A', {}, TEST_ACTOR);
+      await pageManager.savePage('Page B', '# B', {}, TEST_ACTOR);
+      await pageManager.savePage('Page C', '# C', {}, TEST_ACTOR);
 
       const allPages = await pageManager.getAllPages();
 
@@ -154,7 +155,7 @@ describe('PageManager Storage Integration', () => {
 
   describe('Page Updates', () => {
     test('should update existing page content', async () => {
-      await pageManager.savePage('Update Test', '# Original', { category: 'Original' });
+      await pageManager.savePage('Update Test', '# Original', { category: 'Original' }, TEST_ACTOR);
 
       const original = await pageManager.getPage('Update Test');
       expect(original.content).toContain('Original');
@@ -162,7 +163,7 @@ describe('PageManager Storage Integration', () => {
       await pageManager.savePage('Update Test', '# Updated Content', {
         category: 'Updated',
         uuid: original.uuid
-      });
+      }, TEST_ACTOR);
 
       const updated = await pageManager.getPage('Update Test');
       expect(updated.content).toContain('Updated Content');
@@ -245,18 +246,18 @@ describe('PageManager Storage Integration', () => {
 
   describe('Page Deletion', () => {
     test('should delete page', async () => {
-      await pageManager.savePage('Delete Me', '# Content', {});
+      await pageManager.savePage('Delete Me', '# Content', {}, TEST_ACTOR);
 
       expect(pageManager.pageExists('Delete Me')).toBe(true);
 
-      const deleted = await pageManager.deletePage('Delete Me');
+      const deleted = await pageManager.deletePage('Delete Me', TEST_ACTOR);
 
       expect(deleted).toBe(true);
       expect(pageManager.pageExists('Delete Me')).toBe(false);
     });
 
     test('should return false when deleting non-existent page', async () => {
-      const deleted = await pageManager.deletePage('Non Existent');
+      const deleted = await pageManager.deletePage('Non Existent', TEST_ACTOR);
       expect(deleted).toBe(false);
     });
   });
@@ -279,7 +280,7 @@ describe('PageManager Storage Integration', () => {
     });
 
     test('should delete page using WikiContext', async () => {
-      await pageManager.savePage('Context Delete', '# Content', {});
+      await pageManager.savePage('Context Delete', '# Content', {}, TEST_ACTOR);
 
       const wikiContext = {
         pageName: 'Context Delete',
@@ -294,7 +295,7 @@ describe('PageManager Storage Integration', () => {
 
   describe('UUID and File System', () => {
     test('should store page with UUID-based filename', async () => {
-      await pageManager.savePage('UUID Test', '# Content', {});
+      await pageManager.savePage('UUID Test', '# Content', {}, TEST_ACTOR);
 
       const files = await fs.readdir(TEST_PAGES_DIR);
       const mdFiles = files.filter(f => f.endsWith('.md'));
@@ -304,7 +305,7 @@ describe('PageManager Storage Integration', () => {
     });
 
     test('should retrieve page by UUID', async () => {
-      await pageManager.savePage('Find By UUID', '# Content', {});
+      await pageManager.savePage('Find By UUID', '# Content', {}, TEST_ACTOR);
 
       const page = await pageManager.getPage('Find By UUID');
       const uuid = page.uuid;
@@ -317,7 +318,7 @@ describe('PageManager Storage Integration', () => {
 
   describe('Cache Refresh', () => {
     test('should refresh page list after external changes', async () => {
-      await pageManager.savePage('Existing Page', '# Content', {});
+      await pageManager.savePage('Existing Page', '# Content', {}, TEST_ACTOR);
 
       expect((await pageManager.getAllPages()).length).toBe(1);
 
@@ -345,8 +346,8 @@ uuid: ${newUuid}
 
   describe('Backup and Restore', () => {
     test('should backup all pages', async () => {
-      await pageManager.savePage('Backup Page 1', '# Content 1', { category: 'A' });
-      await pageManager.savePage('Backup Page 2', '# Content 2', { category: 'B' });
+      await pageManager.savePage('Backup Page 1', '# Content 1', { category: 'A' }, TEST_ACTOR);
+      await pageManager.savePage('Backup Page 2', '# Content 2', { category: 'B' }, TEST_ACTOR);
 
       const backup = await pageManager.backup();
 
@@ -358,11 +359,11 @@ uuid: ${newUuid}
 
     test('should restore pages from backup', async () => {
       // Create and backup pages
-      await pageManager.savePage('Restore Page', '# Original', {});
+      await pageManager.savePage('Restore Page', '# Original', {}, TEST_ACTOR);
       const backup = await pageManager.backup();
 
       // Delete the page
-      await pageManager.deletePage('Restore Page');
+      await pageManager.deletePage('Restore Page', TEST_ACTOR);
       expect(pageManager.pageExists('Restore Page')).toBe(false);
 
       // Restore from backup
@@ -394,7 +395,7 @@ uuid: ${newUuid}
 
   describe('Plural Name Matching', () => {
     test('should find page by plural form', async () => {
-      await pageManager.savePage('Plugin', '# Plugin Content', {});
+      await pageManager.savePage('Plugin', '# Plugin Content', {}, TEST_ACTOR);
 
       // Search for "Plugins" should find "Plugin"
       const page = await pageManager.getPage('Plugins');
@@ -406,7 +407,7 @@ uuid: ${newUuid}
     });
 
     test('should find page by singular form', async () => {
-      await pageManager.savePage('Categories', '# Categories Content', {});
+      await pageManager.savePage('Categories', '# Categories Content', {}, TEST_ACTOR);
 
       // Search for "Category" should find "Categories"
       const page = await pageManager.getPage('Category');

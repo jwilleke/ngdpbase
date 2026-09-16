@@ -1,4 +1,5 @@
 import BasePageProvider, { WikiEngine, ProviderInfo } from './BasePageProvider.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import {
   isPrivateStoreAttachmentsRel,
   isUnderPrivateRoot,
@@ -662,6 +663,7 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} pageName - The name of the page
    * @param {string} content - The new markdown content
    * @param {Partial<PageFrontmatter>} metadata - The metadata to save in the frontmatter
+   * @param ctx - Who is writing (#1179/#1382): a private store's keys are reached through it
    * @param {PageSaveOptions} options - Save options
    * @returns {Promise<void>}
    */
@@ -669,6 +671,7 @@ class FileSystemProvider extends BasePageProvider {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void> {
     // #1381: a caller may hand over metadata parsed with YAML's own types — a
@@ -714,7 +717,7 @@ class FileSystemProvider extends BasePageProvider {
 
     // #1384: encrypt-on write uses the session DEK from the process bag.
     if (isPrivate && pageCreator && pageStore) {
-      await this.assertPrivateStoreWritable(this.pagesDirectory, pageCreator, pageStore);
+      await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, pageCreator, pageStore);
     }
 
     const filePath = this.resolvePageFilePath(
@@ -821,7 +824,7 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  async deletePage(identifier: string): Promise<boolean> {
+  async deletePage(identifier: string, _ctx: ActorContext): Promise<boolean> {
     const info = this.resolvePageInfo(identifier);
     if (!info) {
       logger.warn(`[FileSystemProvider] Cannot delete - page not found: ${identifier}`);

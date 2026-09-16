@@ -23,6 +23,7 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   legacyPrivatePageFilePath,
   legacyPrivateVersionsRoot,
@@ -1941,6 +1942,7 @@ class VersioningFileProvider extends FileSystemProvider {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void> {
     // Check if page exists using public method
@@ -1991,7 +1993,7 @@ class VersioningFileProvider extends FileSystemProvider {
       : undefined;
 
     if (store && this.pagesDirectory) {
-      await this.assertPrivateStoreWritable(this.pagesDirectory, newCreator, store);
+      await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, newCreator, store);
     }
 
     // Detect location change (e.g. private → public or public → private) and move files
@@ -2037,7 +2039,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // #1325: pass options through — FileSystemProvider already honours
     // `preserveLastModified` for the on-disk frontmatter; dropping it here meant
     // a migration could not keep a page's date.
-    await super.savePage(pageName, content, { ...metadata, uuid, created, ...(store ? { store } : {}) }, options);
+    await super.savePage(pageName, content, { ...metadata, uuid, created, ...(store ? { store } : {}) }, ctx, options);
 
     // #1383: getVersionDirectory for a new private page reads creator/store
     // from the index. Stamp them before the first version is written.
@@ -2266,7 +2268,8 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param deletedBy - Username performing the delete (audit trail)
    * @returns True if deleted, false if not found
    */
-  async deletePage(identifier: string, deletedBy = 'unknown'): Promise<boolean> {
+  async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
+    const deletedBy = actorOf(ctx).user;
     // Get page info before deleting
     const pageData = await this.getPage(identifier);
     if (!pageData) {
@@ -3031,7 +3034,7 @@ class VersioningFileProvider extends FileSystemProvider {
    * await provider.restoreVersion('Main', 5);
    * console.log(`Restored to v5`);
    */
-  async restoreVersion(identifier: string, version: number): Promise<void> {
+  async restoreVersion(identifier: string, version: number, ctx: ActorContext): Promise<void> {
     // Get the content from the target version
     const { content, metadata: _versionMetadata } = await this.getPageVersion(identifier, version);
 
@@ -3050,8 +3053,9 @@ class VersioningFileProvider extends FileSystemProvider {
     }
     const pageName = currentPage.title || identifier;
 
-    // Save as new version with restore metadata
-    const editor = 'system';
+    // Save as new version with restore metadata. The restore is attributed to
+    // whoever asked for it (#1179), not to a literal 'system'.
+    const editor = actorOf(ctx).user;
     const comment = `Restored from v${version}`;
 
     await this.savePage(pageName, content, {
@@ -3059,7 +3063,7 @@ class VersioningFileProvider extends FileSystemProvider {
       editor: editor,
       comment: comment,
       changeType: 'restored'
-    });
+    }, ctx);
 
     // Get the new version number for logging
     const location = this.pageIndex?.pages[uuid]?.location || 'pages';

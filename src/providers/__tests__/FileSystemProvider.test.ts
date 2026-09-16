@@ -13,6 +13,7 @@
  */
 
 import path from 'path';
+import { TEST_ACTOR } from '../../test-support/actors';
 import os from 'os';
 import fs from 'fs-extra';
 import FileSystemProvider from '../FileSystemProvider';
@@ -270,7 +271,7 @@ describe('FileSystemProvider', () => {
       // pageExists is synchronous
       expect(provider.pageExists('Delete Me')).toBe(true);
 
-      const deleted = await provider.deletePage('Delete Me');
+      const deleted = await provider.deletePage('Delete Me', TEST_ACTOR);
       expect(deleted).toBe(true);
       expect(provider.pageExists('Delete Me')).toBe(false);
     });

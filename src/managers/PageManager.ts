@@ -78,11 +78,6 @@ export interface PageSaveOptions {
      */
     skip?: boolean;
   };
-  /**
-   * Identity for a store write (#1389). `savePage` without this must not
-   * write `private: true`. HTTP saves use {@link savePageWithContext} instead.
-   */
-  actorContext?: ActorContext;
 }
 
 /** What {@link PageManager.savePageWithContext} wrote. */
@@ -849,12 +844,16 @@ class PageManager extends BaseManager implements CatalogSource {
    * Versioning, indexing, and cache invalidation still fire via
    * provider.savePage. Throws if the textarea content isn't parseable YAML.
    */
-  async saveRawPageWithAdminOverride(pageName: string, rawFileContent: string): Promise<void> {
+  async saveRawPageWithAdminOverride(
+    pageName: string,
+    rawFileContent: string,
+    ctx: ActorContext
+  ): Promise<void> {
     if (!this.provider) throw new Error('PageManager: Provider not initialized');
     const parsed = parsePageFrontmatter(rawFileContent);
     const metadata = parsed.data as Partial<PageFrontmatter>;
     const content = parsed.content;
-    return this.provider.savePage(pageName, content, metadata);
+    return this.provider.savePage(pageName, content, metadata, ctx);
   }
 
   /**
@@ -986,6 +985,10 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
+
+    // The save acts as the request's subject (#1179); a store write reaches
+    // this session's keys through it (#1382).
+    const saveContext = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
 
     const pageName = wikiContext.pageName;
 
@@ -1231,7 +1234,7 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
 
-    await this.provider.savePage(pageName, content, enrichedMetadata);
+    await this.provider.savePage(pageName, content, enrichedMetadata, saveContext);
 
     // #1121 gap C: audit at the DOOR, not at the caller.
     //
@@ -1349,15 +1352,14 @@ class PageManager extends BaseManager implements CatalogSource {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options: PageSaveOptions = {}
   ): Promise<void> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    if (metadata.private === true && !options.actorContext) {
-      throw new Error(
-        'PageManager.savePage cannot write a private store without ActorContext'
-      );
+    if (!ctx) {
+      throw new Error('PageManager.savePage requires an ActorContext');
     }
     await this.assertContentPasses(pageName, content, options);
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
@@ -1377,7 +1379,7 @@ class PageManager extends BaseManager implements CatalogSource {
       ? Boolean(await this.provider.getPage(pageName).catch(() => null))
       : true;
 
-    await this.provider.savePage(pageName, content, metadata);
+    await this.provider.savePage(pageName, content, metadata, ctx);
 
     // #1121 gap C: this path produces NO audit event from the route layer,
     // because it has no request to audit from. Five callers use it —
@@ -1429,9 +1431,9 @@ class PageManager extends BaseManager implements CatalogSource {
 
     logger.info(`[PageManager] Deleting page: ${identifier} by user: ${deletedBy}`);
 
-    // #947: pass the acting user through so the tombstone records who deleted
-    // the page. Providers that predate soft delete ignore the extra argument.
-    return this.provider.deletePage(identifier, deletedBy);
+    // #947: the context names who deleted the page on the tombstone (#1179).
+    const ctx = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
+    return this.provider.deletePage(identifier, ctx);
   }
 
   /**
@@ -1448,11 +1450,14 @@ class PageManager extends BaseManager implements CatalogSource {
    * const deleted = await pageManager.deletePage('Old Page');
    * if (deleted) console.log('Page removed');
    */
-  async deletePage(identifier: string): Promise<boolean> {
+  async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.deletePage(identifier);
+    if (!ctx) {
+      throw new Error('PageManager.deletePage requires an ActorContext');
+    }
+    return this.provider.deletePage(identifier, ctx);
   }
 
   /**

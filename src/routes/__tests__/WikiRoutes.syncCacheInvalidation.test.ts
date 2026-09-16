@@ -232,11 +232,13 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], force: true }), createMockRes());
 
     expect(savePage).toHaveBeenCalledTimes(1);
-    const [name, content, meta, options] = savePage.mock.calls[0];
+    const [name, content, meta, ctx, options] = savePage.mock.calls[0];
     expect(name).toBe('Using Current Time Plugin');
     expect(content).toContain('new body');
     expect(meta).toMatchObject({ uuid: UUID, title: 'Using Current Time Plugin', editor: 'system' });
     expect(meta).not.toHaveProperty('user-modified');
+    // #1179: the sync acts as the admin who asked for it.
+    expect(ctx).toMatchObject({ username: expect.any(String) });
     expect(options).toEqual({ skipValidation: true });
   });
 

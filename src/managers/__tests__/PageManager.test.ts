@@ -7,6 +7,7 @@
  */
 
 import PageManager from '../PageManager';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import type { WikiEngine } from '../../types/WikiEngine';
 import {
   clearUnlockedPrivateStores,
@@ -144,17 +145,17 @@ describe('PageManager', () => {
     test('savePage() should delegate to provider', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
 
-      await pageManager.savePage('Test', '# Content', { category: 'General' });
+      await pageManager.savePage('Test', '# Content', { category: 'General' }, TEST_ACTOR);
 
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('Test', '# Content', { category: 'General' });
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith('Test', '# Content', { category: 'General' }, TEST_ACTOR);
     });
 
     test('deletePage() should delegate to provider', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(undefined);
 
-      await pageManager.deletePage('Test');
+      await pageManager.deletePage('Test', TEST_ACTOR);
 
-      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test');
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test', TEST_ACTOR);
     });
 
     test('pageExists() should delegate to provider', () => {
@@ -210,7 +211,9 @@ describe('PageManager', () => {
           category: 'General',
           author: 'testuser',
           editor: 'testuser'
-        }
+        },
+        // #1179: the save acts as the request's subject.
+        expect.objectContaining({ username: 'testuser' })
       );
     });
 
@@ -227,7 +230,9 @@ describe('PageManager', () => {
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Test Page',
         '# Test Content',
-        { author: 'anonymous', editor: 'anonymous' }
+        { author: 'anonymous', editor: 'anonymous' },
+        // No subject on the context: the save acts as the anonymous subject.
+        expect.objectContaining({ username: expect.any(String) })
       );
     });
 
@@ -514,7 +519,11 @@ describe('PageManager', () => {
       await pageManager.deletePageWithContext(wikiContext);
 
       // #947: the acting user is passed through so the tombstone records who deleted it
-      expect(pageManager.provider.deletePage).toHaveBeenCalledWith('Test Page', 'testuser');
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith(
+        'Test Page',
+        // #1179: the context names the deleter on the tombstone.
+        expect.objectContaining({ username: 'testuser' })
+      );
     });
   });
 
@@ -646,7 +655,7 @@ describe('PageManager', () => {
       });
 
       await expect(
-        pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' })
+        pageManager.savePage('Speed', '# Speed', { uuid: 'new-uuid' }, TEST_ACTOR)
       ).rejects.toThrow("A page with title 'Speed' already exists");
 
       expect(mockCheckConflicts).toHaveBeenCalledWith('new-uuid', 'Speed', '');
@@ -661,10 +670,10 @@ describe('PageManager', () => {
         return null;
       });
 
-      await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' });
+      await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
 
       expect(mockCheckConflicts).toHaveBeenCalled();
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('New Page', '# Hello', { uuid: 'new-uuid' });
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
     });
   });
 
@@ -757,28 +766,30 @@ describe('PageManager', () => {
   });
 
   describe('savePage() private store requires ActorContext (#1389)', () => {
-    test('refuses a store write when savePage has no actorContext', async () => {
+    // #1179/#1382: the context is mandatory and positional — not an option bag
+    // a caller can leave out — and the provider is handed the one it was given.
+    test('savePage refuses without a context', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
 
       await expect(
-        pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' })
+        pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, undefined)
       ).rejects.toThrow(/ActorContext/);
 
       expect(pageManager.provider.savePage).not.toHaveBeenCalled();
     });
 
-    test('writes a store page when actorContext is on options', async () => {
+    test('a store write forwards the caller\'s context to the provider', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
       pageManager.provider.getPage = vi.fn().mockResolvedValue(null);
+      const molly = actor('molly');
 
-      await pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, {
-        actorContext: { username: 'molly', isAuthenticated: true, roles: ['editor'] }
-      });
+      await pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, molly);
 
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Diary',
         '# secret',
-        { private: true, author: 'molly' }
+        { private: true, author: 'molly' },
+        molly
       );
     });
   });

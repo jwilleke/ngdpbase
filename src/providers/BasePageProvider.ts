@@ -9,7 +9,8 @@ import {
   privateStoreLayoutFromConfig,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
-import { assertCurrentSessionCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * WikiEngine interface (simplified)
@@ -113,13 +114,19 @@ abstract class BasePageProvider extends BaseProvider {
   }
 
   /**
-   * Refuse a write into an encrypted store this session cannot write (#1394).
-   * The one check every page provider calls before writing private bytes.
+   * Refuse a write into an encrypted store this caller cannot write (#1394).
+   * The one check every page provider calls before writing private bytes; the
+   * keys are reached through the caller's context, never ambiently (P1).
    */
-  protected async assertPrivateStoreWritable(pagesDirectory: string, creator: string, store: string): Promise<void> {
-    await assertCurrentSessionCanWriteStore({
+  protected async assertPrivateStoreWritable(
+    ctx: ActorContext,
+    pagesDirectory: string,
+    owner: string,
+    store: string
+  ): Promise<void> {
+    await assertContextCanWriteStore(ctx, {
       pagesDirectory,
-      creator,
+      owner,
       store,
       layout: this.privateStoreLayout
     });
@@ -182,6 +189,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {string} pageName - Page title
    * @param {string} content - Markdown content
    * @param {Partial<PageFrontmatter>} metadata - Frontmatter metadata
+   * @param ctx - Who is writing (#1179): the request's subject, or a JobContext. Mandatory and positional — a store write reaches this caller's keys through it (#1382)
    * @param {PageSaveOptions} options - Save options
    * @returns {Promise<void>}
    * @throws {Error} Always throws - must be implemented by subclass
@@ -189,16 +197,18 @@ abstract class BasePageProvider extends BaseProvider {
   abstract savePage(
     pageName: string,
     content: string,
-    metadata?: Partial<PageFrontmatter>,
+    metadata: Partial<PageFrontmatter> | undefined,
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void>;
 
   /**
    * Delete a page
    * @param {string} identifier - Page UUID or title
+   * @param ctx - Who is deleting (#1179). Names the deleter on the record and reaches a private store's keys (#1382)
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  abstract deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
+  abstract deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.
@@ -342,7 +352,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<void>}
    * @throws {Error} If version does not exist or restoration fails
    */
-  restoreVersion(_identifier: string, _version: number): Promise<void> {
+  restoreVersion(_identifier: string, _version: number, _ctx: ActorContext): Promise<void> {
     throw new Error('restoreVersion() must be implemented by versioning providers');
   }
 

@@ -6,6 +6,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import FileSystemProvider from '../FileSystemProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -14,6 +15,9 @@ import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys } from '..
 import { clearUnlockedPrivateStores } from '../../utils/privateStoreUnlock';
 
 const UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+// The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
+const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
+
 
 describe('FileSystemProvider encrypt-on write (#1394)', () => {
   let testDir: string;
@@ -57,7 +61,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
 
   test('missing store.json (default encrypt off) still saves', async () => {
     const provider = await newProvider();
-    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' });
+    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
   });
 
@@ -69,7 +73,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
 
     const provider = await newProvider();
     await expect(
-      provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' })
+      provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY)
     ).rejects.toThrow(/locked|DEK/i);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
@@ -125,7 +129,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     const provider = await newProvider({
       'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
     });
-    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' });
+    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });

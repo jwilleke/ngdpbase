@@ -99,6 +99,8 @@ function makeEngine({ pageManager = undefined, templateManager = undefined, vali
 // Tests
 // ---------------------------------------------------------------------------
 
+const ADMIN_CTX = { username: 'root', roles: ['admin'], isAuthenticated: true };
+
 describe('UserManager.createUserPage()', () => {
   let userManager;
   let pageManager;
@@ -121,12 +123,14 @@ describe('UserManager.createUserPage()', () => {
   });
 
   test('page is saved with title "Profile: {displayName}"', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     expect(pageManager.savePage).toHaveBeenCalledWith(
       'Profile: Jane Smith',
       expect.any(String),
       expect.any(Object),
+      // #1179: the save acts as whoever created the account.
+      ADMIN_CTX,
       // #1037: the profile page is generated from a template by the system,
       // not typed by a user, so it bypasses save-time content validation.
       { skipValidation: true }
@@ -134,42 +138,42 @@ describe('UserManager.createUserPage()', () => {
   });
 
   test('metadata includes author-lock: true', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata['author-lock']).toBe(true);
   });
 
   test('metadata includes system-category: "user-profile"', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata['system-category']).toBe('user-profile');
   });
 
   test('metadata includes description with displayName (#661)', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata.description).toBe("Jane Smith's profile page");
   });
 
   test('metadata includes badge "Profile {displayName}" (#661)', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata.badge).toBe('Profile Jane Smith');
   });
 
   test('metadata author is set to user.username (not displayName)', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata.author).toBe('jsmith');
   });
 
   test('generateValidMetadata is called with the Profile title', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     expect(validationManager.generateValidMetadata).toHaveBeenCalledWith(
       'Profile: Jane Smith',
@@ -178,7 +182,7 @@ describe('UserManager.createUserPage()', () => {
   });
 
   test('applyTemplate is called with pageName equal to the profile title', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     expect(templateManager.applyTemplate).toHaveBeenCalledWith(
       'user-page',
@@ -187,7 +191,7 @@ describe('UserManager.createUserPage()', () => {
   });
 
   test('returns true on success', async () => {
-    const result = await userManager.createUserPage(TEST_USER);
+    const result = await userManager.createUserPage(TEST_USER, ADMIN_CTX);
     expect(result).toBe(true);
   });
 
@@ -241,7 +245,7 @@ describe('UserManager.createUserPage()', () => {
   });
 
   test('user-keywords include slugified display name', async () => {
-    await userManager.createUserPage(TEST_USER);
+    await userManager.createUserPage(TEST_USER, ADMIN_CTX);
 
     const savedMetadata = pageManager.savePage.mock.calls[0][2];
     expect(savedMetadata['user-keywords']).toContain('jane-smith');

@@ -908,9 +908,7 @@ class ImportManager extends BaseManager {
       merged.private = true;
       if (options.store) merged.store = options.store;
     }
-    await pageManager.savePage(pageTitle, content, merged, {
-      actorContext: options.private === true ? options.actorContext : undefined
-    });
+    await pageManager.savePage(pageTitle, content, merged, options.actorContext);
     await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle);
   }
 
@@ -944,9 +942,7 @@ class ImportManager extends BaseManager {
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];
     }
-    await pageManager.savePage(pageTitle, conversionResult.content, metadata, {
-      actorContext: options.private === true ? actorContext : undefined
-    });
+    await pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext);
     await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle);
   }
 

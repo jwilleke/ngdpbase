@@ -1176,11 +1176,13 @@ See [OtherPage] for more.`;
         private: true
       });
 
+      // #1179: the importer's own context is the fourth argument now, not an
+      // option bag — every page write states who is writing.
       expect(mockSavePage).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ private: true }),
-        expect.objectContaining({ actorContext: IMPORTER })
+        IMPORTER
       );
       expect(mockUploadAttachment).not.toHaveBeenCalled();
     });

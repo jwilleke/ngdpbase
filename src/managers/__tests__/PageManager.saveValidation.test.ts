@@ -12,6 +12,7 @@
  */
 
 import PageManager, { PageContentValidationError } from '../PageManager';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 
 const ERROR = {
   filterId: 'security',
@@ -50,7 +51,7 @@ describe('PageManager.savePage — the chokepoint (#1037)', () => {
   test('refuses content that breaks a rule, and writes nothing', async () => {
     const { manager, provider } = makeManager([ERROR]);
 
-    await expect(manager.savePage('Bad', '<script>alert(1)</script>')).rejects.toThrow(
+    await expect(manager.savePage('Bad', '<script>alert(1)</script>', {}, TEST_ACTOR)).rejects.toThrow(
       PageContentValidationError
     );
     expect(provider.savePage).not.toHaveBeenCalled();
@@ -61,7 +62,7 @@ describe('PageManager.savePage — the chokepoint (#1037)', () => {
     // made moving the gate risky, and why the error is typed.
     const { manager } = makeManager([ERROR]);
 
-    await manager.savePage('Bad', '<script>x</script>').catch((err: unknown) => {
+    await manager.savePage('Bad', '<script>x</script>', {}, TEST_ACTOR).catch((err: unknown) => {
       expect(err).toBeInstanceOf(PageContentValidationError);
       expect((err as PageContentValidationError).validationErrors).toEqual([ERROR]);
     });
@@ -71,7 +72,7 @@ describe('PageManager.savePage — the chokepoint (#1037)', () => {
   test('clean content saves', async () => {
     const { manager, provider } = makeManager([]);
 
-    await manager.savePage('Good', '# Fine');
+    await manager.savePage('Good', '# Fine', {}, TEST_ACTOR);
 
     expect(provider.savePage).toHaveBeenCalledTimes(1);
   });
@@ -83,7 +84,7 @@ describe('the skipValidation opt-out (#1037)', () => {
     // aimed at user input must never be able to stop the instance booting.
     const { manager, provider, validationManager } = makeManager([ERROR]);
 
-    await manager.savePage('Seeded', '<script>from the addon</script>', {}, { skipValidation: true });
+    await manager.savePage('Seeded', '<script>from the addon</script>', {}, TEST_ACTOR, { skipValidation: true });
 
     expect(validationManager.collectContentErrors).not.toHaveBeenCalled();
     expect(provider.savePage).toHaveBeenCalledTimes(1);
@@ -94,7 +95,7 @@ describe('the skipValidation opt-out (#1037)', () => {
     // silently stops being checked.
     const { manager, validationManager } = makeManager([]);
 
-    await manager.savePage('Ordinary', '# Hello');
+    await manager.savePage('Ordinary', '# Hello', {}, TEST_ACTOR);
 
     expect(validationManager.collectContentErrors).toHaveBeenCalled();
   });
@@ -115,7 +116,7 @@ describe('validation failures never become save failures (#1037)', () => {
           : null
     };
 
-    await manager.savePage('Page', '# Hi');
+    await manager.savePage('Page', '# Hi', {}, TEST_ACTOR);
 
     expect(provider.savePage).toHaveBeenCalledTimes(1);
   });
@@ -125,7 +126,7 @@ describe('validation failures never become save failures (#1037)', () => {
     const manager = new PageManager({ getManager: () => null });
     (manager as unknown as { provider: unknown }).provider = provider;
 
-    await manager.savePage('Page', '# Hi');
+    await manager.savePage('Page', '# Hi', {}, TEST_ACTOR);
 
     expect(provider.savePage).toHaveBeenCalledTimes(1);
   });
@@ -138,7 +139,7 @@ describe('a blocked save is visible afterwards (#1037)', () => {
     const { manager, auditManager } = makeManager([ERROR]);
 
     await manager
-      .savePage('Bad', '<script>x</script>', {}, { userName: 'mallory' })
+      .savePage('Bad', '<script>x</script>', {}, TEST_ACTOR, { userName: 'mallory' })
       .catch(() => undefined);
 
     expect(auditManager.logSecurityEvent).toHaveBeenCalledTimes(1);
@@ -155,7 +156,7 @@ describe('a blocked save is visible afterwards (#1037)', () => {
     // event that matters under hundreds that do not.
     const { manager, auditManager } = makeManager([BR_ERROR]);
 
-    await manager.savePage('Old', 'a<br>b').catch(() => undefined);
+    await manager.savePage('Old', 'a<br>b', {}, TEST_ACTOR).catch(() => undefined);
 
     expect(auditManager.logSecurityEvent).not.toHaveBeenCalled();
   });
@@ -163,7 +164,7 @@ describe('a blocked save is visible afterwards (#1037)', () => {
   test('mixed errors audit only the security ones', async () => {
     const { manager, auditManager } = makeManager([BR_ERROR, ERROR]);
 
-    await manager.savePage('Mixed', 'x').catch(() => undefined);
+    await manager.savePage('Mixed', 'x', {}, TEST_ACTOR).catch(() => undefined);
 
     const description = auditManager.logSecurityEvent.mock.calls[0][3];
     expect(description).toContain('no-script-tags');
@@ -176,7 +177,7 @@ describe('a blocked save is visible afterwards (#1037)', () => {
     const { manager, auditManager, provider } = makeManager([ERROR]);
     auditManager.logSecurityEvent.mockRejectedValue(new Error('audit down'));
 
-    await expect(manager.savePage('Bad', 'x')).rejects.toThrow(PageContentValidationError);
+    await expect(manager.savePage('Bad', 'x', {}, TEST_ACTOR)).rejects.toThrow(PageContentValidationError);
     expect(provider.savePage).not.toHaveBeenCalled();
   });
 });

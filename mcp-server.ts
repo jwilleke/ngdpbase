@@ -16,6 +16,8 @@
 // './data' and the MCP server operates on the wrong instance entirely — it is launched
 // by an MCP client that has no reason to export FAST_STORAGE.
 // See src/bootstrap-env.ts and docs/bootstrap-methodology.md.
+import { jobContextFromOperator, type JobContext } from './src/context/JobContext.js';
+import { systemPrincipalOf } from './src/context/bootActions.js';
 import './src/bootstrap-env.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -267,8 +269,8 @@ interface PageManagerType {
   getPage(identifier: string): Promise<WikiPage>;
   getPageMetadata(identifier: string): Promise<PageMetadata>;
   getAllPages(): Promise<string[]>;
-  savePage(pageName: string, content: string, metadata: Record<string, unknown>): Promise<void>;
-  deletePage(identifier: string): Promise<boolean>;
+  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown): Promise<void>;
+  deletePage(identifier: string, ctx: unknown): Promise<boolean>;
   /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
   convertPageToNcm(raw: string): NcmResult;
 }
@@ -303,6 +305,16 @@ class NgdpbaseMCPServer {
     );
 
     this.setupHandlers();
+  }
+
+  /**
+   * The context an MCP write acts under (#1179, security-posture P1). There is
+   * no request behind a stdio tool call: this is the operator running the
+   * server, so the job states who asked and which tool asked.
+   */
+  private mcpContext(tool: string): JobContext {
+    const principal = systemPrincipalOf(this.wikiEngine);
+    return jobContextFromOperator(principal, `MCP tool: ${tool}`);
   }
 
   /**
@@ -1280,7 +1292,7 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data);
+    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data, this.mcpContext('create page'));
     notifyNcmConversion(this.wikiEngine!, 'MCP create_page', title, ncmWarnings);
 
     const savedPage = await pageManager.getPage(title);
@@ -1369,7 +1381,7 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data);
+    await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data, this.mcpContext('update page'));
     notifyNcmConversion(this.wikiEngine!, 'MCP update_page', pageName, ncmWarnings);
 
     const savedPage = await pageManager.getPage(pageName);
@@ -1422,7 +1434,7 @@ class NgdpbaseMCPServer {
     const metadata = await pageManager.getPageMetadata(identifier);
     const pageName = metadata.title;
 
-    const deleted = await pageManager.deletePage(identifier);
+    const deleted = await pageManager.deletePage(identifier, this.mcpContext('delete page'));
 
     if (deleted) {
       await searchManager.removeFromIndex(pageName);

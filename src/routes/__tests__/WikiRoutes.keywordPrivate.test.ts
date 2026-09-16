@@ -5,7 +5,7 @@
  * owner's private container: it is changed only when this request may edit it
  * (`canAccess('edit')` — ACLManager Tier 0: the owner or a delegate, never a
  * role). Another user's private page is left alone; the admin's own private
- * page is saved with the admin's context, which a store write requires.
+ * page is saved with the admin's context; every page write states who is writing (#1179).
  */
 import WikiRoutes from '../WikiRoutes';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -52,7 +52,7 @@ describe('resaveForKeywordChange (#1382)', () => {
       { private: true, author: 'root', 'user-keywords': [] }
     );
     expect(saved).toBe(true);
-    expect(savePage).toHaveBeenCalledWith('RootNotes', 'x', expect.any(Object), { actorContext: admin });
+    expect(savePage).toHaveBeenCalledWith('RootNotes', 'x', expect.any(Object), admin);
   });
 
   test('a public page is saved as before, without asking about a private container', async () => {
@@ -66,6 +66,6 @@ describe('resaveForKeywordChange (#1382)', () => {
     );
     expect(saved).toBe(true);
     expect(canAccess).not.toHaveBeenCalled();
-    expect(savePage).toHaveBeenCalledWith('Main', 'x', { 'user-keywords': [] });
+    expect(savePage).toHaveBeenCalledWith('Main', 'x', { 'user-keywords': [] }, admin);
   });
 });

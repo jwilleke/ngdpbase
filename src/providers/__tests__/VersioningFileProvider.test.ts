@@ -5,6 +5,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -369,7 +370,7 @@ describe('VersioningFileProvider', () => {
       const content = 'This is the initial content';
       const metadata = { author: 'test-user', uuid: 'test-uuid-1' };
 
-      await provider.savePage(pageName, content, metadata);
+      await provider.savePage(pageName, content, metadata, TEST_ACTOR);
 
       // Check v1 directory exists
       const v1Dir = path.join(provider.pagesVersionsDir, 'test-uuid-1', 'v1');
@@ -397,14 +398,14 @@ describe('VersioningFileProvider', () => {
       const uuid = '550e8400-e29b-41d4-a716-446655440099';
 
       // Page 'About' owns the UUID with v1 (content A).
-      await provider.savePage('About', 'content A', { author: 'test-user', uuid, slug: 'about' });
+      await provider.savePage('About', 'content A', { author: 'test-user', uuid, slug: 'about' }, TEST_ACTOR);
       const v1ContentPath = path.join(provider.pagesVersionsDir, uuid, 'v1', 'content.md');
       expect(await fs.readFile(v1ContentPath, 'utf8')).toBe('content A');
 
       // A different page tries to seed with the SAME UUID (the renamed-addon
       // scenario). FileSystemProvider's UUID-uniqueness guard must throw...
       await expect(
-        provider.savePage('Geohazardwatch About', 'content B', { author: 'test-user', uuid, slug: 'geohazardwatch-about' })
+        provider.savePage('Geohazardwatch About', 'content B', { author: 'test-user', uuid, slug: 'geohazardwatch-about' }, TEST_ACTOR)
       ).rejects.toThrow(/already assigned/i);
 
       // ...and because super.savePage() now runs BEFORE version creation, no
@@ -421,7 +422,7 @@ describe('VersioningFileProvider', () => {
       const content = 'Initial content';
       const metadata = { author: 'test-user', uuid: 'test-uuid-2' };
 
-      await provider.savePage(pageName, content, metadata);
+      await provider.savePage(pageName, content, metadata, TEST_ACTOR);
 
       // Check manifest
       const manifestPath = path.join(provider.pagesVersionsDir, 'test-uuid-2', 'manifest.json');
@@ -443,7 +444,7 @@ describe('VersioningFileProvider', () => {
       const content = 'Initial content';
       const metadata = { author: 'test-user', uuid: 'test-uuid-3' };
 
-      await provider.savePage(pageName, content, metadata);
+      await provider.savePage(pageName, content, metadata, TEST_ACTOR);
 
       // Check page index
       const indexData = await fs.readFile(provider.pageIndexPath, 'utf8');
@@ -465,7 +466,7 @@ describe('VersioningFileProvider', () => {
       const content = 'Initial content';
       const metadata = { author: 'test-user', uuid: 'test-uuid-4' };
 
-      await provider.savePage(pageName, content, metadata);
+      await provider.savePage(pageName, content, metadata, TEST_ACTOR);
 
       // Parent should have created the actual page file
       const titleSlug = pageName.toLowerCase().replace(/\s+/g, '-');
@@ -492,10 +493,10 @@ describe('VersioningFileProvider', () => {
       const metadata = { author: 'test-user', uuid: 'test-uuid-5' };
 
       // Create v1
-      await provider.savePage(pageName, v1Content, metadata);
+      await provider.savePage(pageName, v1Content, metadata, TEST_ACTOR);
 
       // Create v2
-      await provider.savePage(pageName, v2Content, metadata);
+      await provider.savePage(pageName, v2Content, metadata, TEST_ACTOR);
 
       // Check v2 directory
       const v2Dir = path.join(provider.pagesVersionsDir, 'test-uuid-5', 'v2');
@@ -522,9 +523,9 @@ describe('VersioningFileProvider', () => {
       const pageName = 'Test Page';
       const metadata = { author: 'test-user', uuid: 'test-uuid-6' };
 
-      await provider.savePage(pageName, 'Version 1', metadata);
-      await provider.savePage(pageName, 'Version 2', metadata);
-      await provider.savePage(pageName, 'Version 3', metadata);
+      await provider.savePage(pageName, 'Version 1', metadata, TEST_ACTOR);
+      await provider.savePage(pageName, 'Version 2', metadata, TEST_ACTOR);
+      await provider.savePage(pageName, 'Version 3', metadata, TEST_ACTOR);
 
       // Check all version directories exist
       const baseDir = path.join(provider.pagesVersionsDir, 'test-uuid-6');
@@ -558,8 +559,8 @@ describe('VersioningFileProvider', () => {
       const v2Content = 'Version 2';
       const metadata = { author: 'test-user', uuid: 'test-uuid-7' };
 
-      await providerNoDelta.savePage(pageName, v1Content, metadata);
-      await providerNoDelta.savePage(pageName, v2Content, metadata);
+      await providerNoDelta.savePage(pageName, v1Content, metadata, TEST_ACTOR);
+      await providerNoDelta.savePage(pageName, v2Content, metadata, TEST_ACTOR);
 
       // v2 should have content.md (not content.diff)
       const v2ContentPath = path.join(providerNoDelta.pagesVersionsDir, 'test-uuid-7', 'v2', 'content.md');
@@ -575,9 +576,9 @@ describe('VersioningFileProvider', () => {
       const pageName = 'Test Page';
       const metadata = { author: 'test-user', uuid: 'test-uuid-8' };
 
-      await provider.savePage(pageName, 'V1', metadata);
-      await provider.savePage(pageName, 'V2', { ...metadata, comment: 'Second version' });
-      await provider.savePage(pageName, 'V3', { ...metadata, comment: 'Third version' });
+      await provider.savePage(pageName, 'V1', metadata, TEST_ACTOR);
+      await provider.savePage(pageName, 'V2', { ...metadata, comment: 'Second version' }, TEST_ACTOR);
+      await provider.savePage(pageName, 'V3', { ...metadata, comment: 'Third version' }, TEST_ACTOR);
 
       const manifestPath = path.join(provider.pagesVersionsDir, 'test-uuid-8', 'manifest.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -597,16 +598,16 @@ describe('VersioningFileProvider', () => {
       const pageName = 'Test Page';
       const metadata = { author: 'user1', uuid: 'test-uuid-9' };
 
-      await provider.savePage(pageName, 'V1', metadata);
+      await provider.savePage(pageName, 'V1', metadata, TEST_ACTOR);
       let index = JSON.parse(await fs.readFile(provider.pageIndexPath, 'utf8'));
       expect(index.pages['test-uuid-9'].currentVersion).toBe(1);
 
-      await provider.savePage(pageName, 'V2', { ...metadata, author: 'user2' });
+      await provider.savePage(pageName, 'V2', { ...metadata, author: 'user2' }, TEST_ACTOR);
       index = JSON.parse(await fs.readFile(provider.pageIndexPath, 'utf8'));
       expect(index.pages['test-uuid-9'].currentVersion).toBe(2);
       expect(index.pages['test-uuid-9'].author).toBe('user2');
 
-      await provider.savePage(pageName, 'V3', metadata);
+      await provider.savePage(pageName, 'V3', metadata, TEST_ACTOR);
       index = JSON.parse(await fs.readFile(provider.pageIndexPath, 'utf8'));
       expect(index.pages['test-uuid-9'].currentVersion).toBe(3);
     });
@@ -628,7 +629,7 @@ describe('VersioningFileProvider', () => {
         uuid: 'test-uuid-10'
       };
 
-      await provider.savePage('Test Page', 'Content', metadata);
+      await provider.savePage('Test Page', 'Content', metadata, TEST_ACTOR);
 
       const meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-10', 1);
       // Author is stored as 'editor' in manifest (derived from metadata.editor || metadata.author)
@@ -639,7 +640,7 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const beforeTime = Date.now();
-      await provider.savePage('Test Page', 'Content', { uuid: 'test-uuid-11' });
+      await provider.savePage('Test Page', 'Content', { uuid: 'test-uuid-11' }, TEST_ACTOR);
       const afterTime = Date.now();
 
       const meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-11', 1);
@@ -653,7 +654,7 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const content = 'Test content for hashing';
-      await provider.savePage('Test Page', content, { uuid: 'test-uuid-12' });
+      await provider.savePage('Test Page', content, { uuid: 'test-uuid-12' }, TEST_ACTOR);
 
       const meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-12', 1);
 
@@ -665,7 +666,7 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const content = 'Test content';
-      await provider.savePage('Test Page', content, { uuid: 'test-uuid-13' });
+      await provider.savePage('Test Page', content, { uuid: 'test-uuid-13' }, TEST_ACTOR);
 
       const meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-13', 1);
 
@@ -677,11 +678,11 @@ describe('VersioningFileProvider', () => {
 
       const metadata = { uuid: 'test-uuid-14' };
 
-      await provider.savePage('Test', 'V1', metadata);
+      await provider.savePage('Test', 'V1', metadata, TEST_ACTOR);
       let meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-14', 1);
       expect(meta.changeType).toBe('created');
 
-      await provider.savePage('Test', 'V2', metadata);
+      await provider.savePage('Test', 'V2', metadata, TEST_ACTOR);
       meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-14', 2);
       expect(meta.changeType).toBe('updated');
     });
@@ -694,7 +695,7 @@ describe('VersioningFileProvider', () => {
         comment: 'Fixed typo in introduction'
       };
 
-      await provider.savePage('Test', 'Content', metadata);
+      await provider.savePage('Test', 'Content', metadata, TEST_ACTOR);
 
       const meta = await getVersionMeta(provider.pagesVersionsDir, 'test-uuid-15', 1);
 
@@ -733,14 +734,14 @@ describe('VersioningFileProvider', () => {
       const metadata = { uuid: 'test-uuid-17' };
 
       // Create v1
-      await provider.savePage(pageName, 'V1', metadata);
+      await provider.savePage(pageName, 'V1', metadata, TEST_ACTOR);
 
       // Delete manifest
       const manifestPath = path.join(provider.pagesVersionsDir, 'test-uuid-17', 'manifest.json');
       await fs.remove(manifestPath);
 
       // Create v2 - should recreate manifest
-      await provider.savePage(pageName, 'V2', metadata);
+      await provider.savePage(pageName, 'V2', metadata, TEST_ACTOR);
 
       // Manifest should exist again
       expect(await fs.pathExists(manifestPath)).toBe(true);
@@ -776,7 +777,7 @@ describe('VersioningFileProvider', () => {
         'system-category': 'Navigation'
       };
 
-      await providerWithCategories.savePage('LeftMenu', 'Menu content', metadata);
+      await providerWithCategories.savePage('LeftMenu', 'Menu content', metadata, TEST_ACTOR);
 
       // History in the pages directory, nothing in the required-pages folder
       expect(await fs.pathExists(path.join(providerWithCategories.pagesVersionsDir, 'test-uuid-18', 'v1'))).toBe(true);
@@ -792,7 +793,7 @@ describe('VersioningFileProvider', () => {
     test('should use atomic writes for manifest', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'Content', { uuid: 'test-uuid-19' });
+      await provider.savePage('Test', 'Content', { uuid: 'test-uuid-19' }, TEST_ACTOR);
 
       // Temporary file should not exist after save
       const tempPath = path.join(provider.pagesVersionsDir, 'test-uuid-19', 'manifest.json.tmp');
@@ -806,7 +807,7 @@ describe('VersioningFileProvider', () => {
     test('should use atomic writes for page-index', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'Content', { uuid: 'test-uuid-20' });
+      await provider.savePage('Test', 'Content', { uuid: 'test-uuid-20' }, TEST_ACTOR);
 
       // Temporary file should not exist
       const tempPath = `${provider.pageIndexPath}.tmp`;
@@ -826,15 +827,15 @@ describe('VersioningFileProvider', () => {
 
       // Initial creation
       const v1 = '# Product\n\nInitial documentation';
-      await provider.savePage(pageName, v1, metadata);
+      await provider.savePage(pageName, v1, metadata, TEST_ACTOR);
 
       // Add features section
       const v2 = '# Product\n\nInitial documentation\n\n## Features\n- Feature 1';
-      await provider.savePage(pageName, v2, { ...metadata, author: 'developer1' });
+      await provider.savePage(pageName, v2, { ...metadata, author: 'developer1' }, TEST_ACTOR);
 
       // Fix typo
       const v3 = '# Product\n\nInitial documentation\n\n## Features\n- Feature One';
-      await provider.savePage(pageName, v3, { ...metadata, author: 'developer2', comment: 'Fixed typo' });
+      await provider.savePage(pageName, v3, { ...metadata, author: 'developer2', comment: 'Fixed typo' }, TEST_ACTOR);
 
       // Verify all versions exist
       const baseDir = path.join(provider.pagesVersionsDir, 'doc-uuid-1');
@@ -873,9 +874,9 @@ describe('VersioningFileProvider', () => {
       const uuid = 'history-uuid-1';
 
       // Create 3 versions
-      await provider.savePage(pageName, 'v1 content', { uuid, author: 'user1' });
-      await provider.savePage(pageName, 'v2 content', { uuid, author: 'user2' });
-      await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' });
+      await provider.savePage(pageName, 'v1 content', { uuid, author: 'user1' }, TEST_ACTOR);
+      await provider.savePage(pageName, 'v2 content', { uuid, author: 'user2' }, TEST_ACTOR);
+      await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' }, TEST_ACTOR);
 
       // Get history by title
       const history = await provider.getVersionHistory(pageName);
@@ -894,8 +895,8 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'history-uuid-2';
-      await provider.savePage('Test', 'v1', { uuid, author: 'admin' });
-      await provider.savePage('Test', 'v2', { uuid, author: 'admin' });
+      await provider.savePage('Test', 'v1', { uuid, author: 'admin' }, TEST_ACTOR);
+      await provider.savePage('Test', 'v2', { uuid, author: 'admin' }, TEST_ACTOR);
 
       // Get history by UUID
       const history = await provider.getVersionHistory(uuid);
@@ -932,7 +933,7 @@ describe('VersioningFileProvider', () => {
         uuid: 'meta-uuid-1',
         author: 'john',
         comment: 'Initial commit'
-      });
+      }, TEST_ACTOR);
 
       const history = await provider.getVersionHistory('Meta Test');
 
@@ -950,7 +951,7 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const content = 'Original content for v1';
-      await provider.savePage('Test', content, { uuid: 'version-uuid-1', author: 'admin' });
+      await provider.savePage('Test', content, { uuid: 'version-uuid-1', author: 'admin' }, TEST_ACTOR);
 
       const { content: retrieved, metadata } = await provider.getPageVersion('Test', 1);
 
@@ -967,9 +968,9 @@ describe('VersioningFileProvider', () => {
       const v2 = 'Hello ngdpbase';
       const v3 = 'Hello ngdpbase community';
 
-      await provider.savePage('Test', v1, { uuid, author: 'user1' });
-      await provider.savePage('Test', v2, { uuid, author: 'user2' });
-      await provider.savePage('Test', v3, { uuid, author: 'user3' });
+      await provider.savePage('Test', v1, { uuid, author: 'user1' }, TEST_ACTOR);
+      await provider.savePage('Test', v2, { uuid, author: 'user2' }, TEST_ACTOR);
+      await provider.savePage('Test', v3, { uuid, author: 'user3' }, TEST_ACTOR);
 
       // Retrieve v2 (should reconstruct from v1 + diff)
       const { content: v2Content } = await provider.getPageVersion('Test', 2);
@@ -984,8 +985,8 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'version-uuid-3';
-      await provider.savePage('Test', 'content v1', { uuid });
-      await provider.savePage('Test', 'content v2', { uuid });
+      await provider.savePage('Test', 'content v1', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'content v2', { uuid }, TEST_ACTOR);
 
       const { content } = await provider.getPageVersion(uuid, 1);
       expect(content).toBe('content v1');
@@ -994,7 +995,7 @@ describe('VersioningFileProvider', () => {
     test('should throw error for invalid version number', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'content', { uuid: 'version-uuid-4' });
+      await provider.savePage('Test', 'content', { uuid: 'version-uuid-4' }, TEST_ACTOR);
 
       await expect(provider.getPageVersion('Test', 0)).rejects.toThrow('Invalid version number');
       await expect(provider.getPageVersion('Test', -1)).rejects.toThrow('Invalid version number');
@@ -1004,7 +1005,7 @@ describe('VersioningFileProvider', () => {
     test('should throw error for version that does not exist', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'content', { uuid: 'version-uuid-5' });
+      await provider.savePage('Test', 'content', { uuid: 'version-uuid-5' }, TEST_ACTOR);
 
       await expect(provider.getPageVersion('Test', 99)).rejects.toThrow('does not exist');
     });
@@ -1023,7 +1024,7 @@ describe('VersioningFileProvider', () => {
 
       // Create 10 versions
       for (let i = 1; i <= 10; i++) {
-        await provider.savePage(pageName, `Content version ${i}`, { uuid, author: `user${i}` });
+        await provider.savePage(pageName, `Content version ${i}`, { uuid, author: `user${i}` }, TEST_ACTOR);
       }
 
       // Retrieve v10 (should reconstruct through 9 diffs)
@@ -1044,12 +1045,12 @@ describe('VersioningFileProvider', () => {
       const pageName = 'Restore Test';
 
       // Create 3 versions
-      await provider.savePage(pageName, 'v1 content', { uuid, author: 'user1' });
-      await provider.savePage(pageName, 'v2 content', { uuid, author: 'user2' });
-      await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' });
+      await provider.savePage(pageName, 'v1 content', { uuid, author: 'user1' }, TEST_ACTOR);
+      await provider.savePage(pageName, 'v2 content', { uuid, author: 'user2' }, TEST_ACTOR);
+      await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' }, TEST_ACTOR);
 
       // Restore to v1 (returns void - new version number found via history)
-      await provider.restoreVersion(pageName, 1);
+      await provider.restoreVersion(pageName, 1, TEST_ACTOR);
 
       // Should create v4 with v1's content
       const { content } = await provider.getPageVersion(pageName, 4);
@@ -1066,12 +1067,12 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'restore-uuid-2';
-      await provider.savePage('Test', 'v1', { uuid });
-      await provider.savePage('Test', 'v2', { uuid });
-      await provider.savePage('Test', 'v3', { uuid });
+      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'v3', { uuid }, TEST_ACTOR);
 
       // Restore to v2
-      await provider.restoreVersion('Test', 2);
+      await provider.restoreVersion('Test', 2, TEST_ACTOR);
 
       // All original versions should still exist
       const history = await provider.getVersionHistory('Test');
@@ -1086,15 +1087,15 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'restore-uuid-3';
-      await provider.savePage('Test', 'v1', { uuid });
-      await provider.savePage('Test', 'v2 bad content', { uuid });
+      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'v2 bad content', { uuid }, TEST_ACTOR);
 
-      // restoreVersion() uses 'system' as editor and 'Restored from v{N}' as comment
-      await provider.restoreVersion('Test', 1);
+      // #1179: the restore is attributed to whoever asked for it, not to a
+      // literal 'system'; the comment stays 'Restored from v{N}'.
+      await provider.restoreVersion('Test', 1, actor('molly'));
 
       const history = await provider.getVersionHistory('Test');
-      // Author will be 'system' (implementation default) and message matches restore pattern
-      expect(history[0].author).toBe('system');
+      expect(history[0].author).toBe('molly');
       expect(history[0].message).toContain('Restored from v1');
     });
 
@@ -1102,11 +1103,11 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'restore-uuid-4';
-      await provider.savePage('Test', 'v1', { uuid });
-      await provider.savePage('Test', 'v2', { uuid });
+      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
 
       // restoreVersion returns void; verify via version count
-      await provider.restoreVersion(uuid, 1);
+      await provider.restoreVersion(uuid, 1, TEST_ACTOR);
       const history = await provider.getVersionHistory(uuid);
       expect(history[0].version).toBe(3);
     });
@@ -1120,7 +1121,7 @@ describe('VersioningFileProvider', () => {
     test('should throw error for non-existent version', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'v1', { uuid: 'restore-uuid-5' });
+      await provider.savePage('Test', 'v1', { uuid: 'restore-uuid-5' }, TEST_ACTOR);
 
       await expect(provider.restoreVersion('Test', 99)).rejects.toThrow();
     });
@@ -1131,8 +1132,8 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'compare-uuid-1';
-      await provider.savePage('Test', 'Hello world', { uuid, author: 'user1' });
-      await provider.savePage('Test', 'Hello ngdpbase', { uuid, author: 'user2' });
+      await provider.savePage('Test', 'Hello world', { uuid, author: 'user1' }, TEST_ACTOR);
+      await provider.savePage('Test', 'Hello ngdpbase', { uuid, author: 'user2' }, TEST_ACTOR);
 
       // compareVersions returns { fromVersion, toVersion, fromMetadata, toMetadata, diff, stats }
       const comparison = await provider.compareVersions('Test', 1, 2);
@@ -1156,9 +1157,9 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'compare-uuid-2';
-      await provider.savePage('Test', 'aaa', { uuid });
-      await provider.savePage('Test', 'bbb', { uuid });
-      await provider.savePage('Test', 'ccc', { uuid });
+      await provider.savePage('Test', 'aaa', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'bbb', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'ccc', { uuid }, TEST_ACTOR);
 
       // Compare v1 to v3
       const forward = await provider.compareVersions('Test', 1, 3);
@@ -1175,8 +1176,8 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'compare-uuid-3';
-      await provider.savePage('Test', 'v1', { uuid });
-      await provider.savePage('Test', 'v2', { uuid });
+      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
 
       const comparison = await provider.compareVersions(uuid, 1, 2);
       expect(comparison.fromVersion).toBe(1);
@@ -1186,8 +1187,8 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'compare-uuid-4';
-      await provider.savePage('Test', 'same content', { uuid });
-      await provider.savePage('Test', 'same content', { uuid }); // No change
+      await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR); // No change
 
       const comparison = await provider.compareVersions('Test', 1, 2);
 
@@ -1199,7 +1200,7 @@ describe('VersioningFileProvider', () => {
     test('should throw error for invalid version numbers', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'content', { uuid: 'compare-uuid-5' });
+      await provider.savePage('Test', 'content', { uuid: 'compare-uuid-5' }, TEST_ACTOR);
 
       await expect(provider.compareVersions('Test', 'invalid', 1)).rejects.toThrow('must be integers');
       await expect(provider.compareVersions('Test', 1, 0)).rejects.toThrow('must be >= 1');
@@ -1208,7 +1209,7 @@ describe('VersioningFileProvider', () => {
     test('should throw error for non-existent versions', async () => {
       await provider.initialize();
 
-      await provider.savePage('Test', 'content', { uuid: 'compare-uuid-6' });
+      await provider.savePage('Test', 'content', { uuid: 'compare-uuid-6' }, TEST_ACTOR);
 
       await expect(provider.compareVersions('Test', 1, 99)).rejects.toThrow();
     });
@@ -1282,7 +1283,7 @@ describe('VersioningFileProvider', () => {
         title: 'Speed',
         uuid: 'eeeeeeee-0000-0000-0000-000000000005',
         author: 'admin'
-      });
+      }, TEST_ACTOR);
 
       // Inject a stale duplicate directly into the in-memory index
       const staleUuid = 'ffffffff-0000-0000-0000-000000000006';
@@ -1300,7 +1301,7 @@ describe('VersioningFileProvider', () => {
         title: 'Speed',
         uuid: 'eeeeeeee-0000-0000-0000-000000000005',
         author: 'admin'
-      });
+      }, TEST_ACTOR);
 
       expect(provider.pageIndex!.pages[staleUuid]).toBeUndefined();
       expect(provider.pageIndex!.pages['eeeeeeee-0000-0000-0000-000000000005']).toBeDefined();

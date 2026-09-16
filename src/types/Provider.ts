@@ -1,3 +1,4 @@
+import type { ActorContext } from '../context/ActorContext.js';
 /**
  * Provider type definitions for ngdpbase
  *
@@ -184,17 +185,23 @@ export interface PageProvider extends BaseProvider {
    * @param options - Save options
    * @returns Promise that resolves when save is complete
    */
-  savePage(pageName: string, content: string, metadata?: Partial<PageFrontmatter>, options?: PageSaveOptions): Promise<void>;
+  savePage(
+    pageName: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> | undefined,
+    ctx: ActorContext,
+    options?: PageSaveOptions
+  ): Promise<void>;
 
   /**
    * Delete a page
    * @param identifier - Page UUID or title
-   * @param deletedBy - Username performing the delete; recorded on the tombstone
-   *                    by providers that support soft delete (#947). Optional so
+   * @param ctx - Who is deleting (#1179): names the deleter on the tombstone
+   *              (#947) and reaches a private store's keys (#1382). Was
    *                    providers written before soft delete stay compatible.
    * @returns True if deleted, false if not found
    */
-  deletePage(identifier: string, deletedBy?: string): Promise<boolean>;
+  deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
 
   /**
    * Move a private page from one creator's directory to another's.

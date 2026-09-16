@@ -1054,7 +1054,7 @@ class UserManager extends BaseManager {
    * @param {User} user - User object
    * @returns {Promise<boolean>} True if user page was created successfully
    */
-  async createUserPage(user: User): Promise<boolean> {
+  async createUserPage(user: User, ctx: ActorContext): Promise<boolean> {
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
       if (!pageManager) {
@@ -1103,7 +1103,7 @@ class UserManager extends BaseManager {
       });
 
       // Save the user page
-      await pageManager.savePage(profileTitle, populatedContent, metadata, { skipValidation: true });
+      await pageManager.savePage(profileTitle, populatedContent, metadata, ctx, { skipValidation: true });
       logger.info(`✅ Created user page for ${user.displayName}`);
       return true;
     } catch (error) {
@@ -1218,7 +1218,7 @@ class UserManager extends BaseManager {
     }
 
     try {
-      const pageCreated = await this.createUserPage(user);
+      const pageCreated = await this.createUserPage(user, ctx);
       if (pageCreated) {
         user.profilePage = user.displayName;
         await this.provider.updateUser(username, user);

@@ -9,6 +9,10 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { actor } from '../../test-support/actors';
+
+// The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
+const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -83,7 +87,7 @@ describe('encrypted user-index (#1385)', () => {
 
   test('unencrypted default/ still lands in global page-index.json', async () => {
     const provider = await newProvider();
-    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' });
+    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' }, MOLLY);
     const index = await readIndex();
     expect(index.pages[OPEN]).toMatchObject({ title: 'Open Diary', store: DEFAULT_PRIVATE_STORE });
   });
@@ -105,7 +109,7 @@ describe('encrypted user-index (#1385)', () => {
         uuid: SEALED,
         private: true,
         author: 'molly'
-      });
+      }, MOLLY);
     });
 
     const index = await readIndex();
@@ -131,7 +135,7 @@ describe('encrypted user-index (#1385)', () => {
     );
 
     const provider = await newProvider();
-    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' });
+    await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' }, MOLLY);
     await provider.refreshPageList();
     await provider.rebuildPageIndexFromDisk();
 
@@ -158,7 +162,7 @@ describe('encrypted user-index (#1385)', () => {
         uuid: SEALED,
         private: true,
         author: 'molly'
-      });
+      }, MOLLY);
     });
     lockPrivateStores('sid');
 
