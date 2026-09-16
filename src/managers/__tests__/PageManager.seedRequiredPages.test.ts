@@ -44,11 +44,13 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
   let requiredDir;
   let pagesDir;
   let installCompletePath;
+  let instanceDir;
 
   beforeEach(async () => {
     tmpDir       = await fs.mkdtemp(path.join(os.tmpdir(), 'pm-seed-test-'));
     requiredDir  = path.join(tmpDir, 'required-pages');
     pagesDir     = path.join(tmpDir, 'pages');
+    instanceDir  = tmpDir;
     installCompletePath = path.join(tmpDir, '.install-complete');
 
     await fse.ensureDir(requiredDir);
@@ -75,7 +77,8 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
       getResolvedDataPath: vi.fn((key, def) => {
         if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;
         return def;
-      })
+      }),
+      getInstanceDataFolder: vi.fn(() => instanceDir)
     };
     return {
       getManager: vi.fn((name) => name === 'ConfigurationManager' ? cm : null)
@@ -197,6 +200,41 @@ describe('PageManager.seedRequiredPages() — github-only filtering', () => {
 
     // Should not seed the new page when install is complete and pages exist
     expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000008.md');
+  });
+
+  test('#1402: with pages on other storage, the marker is read from the instance data folder', async () => {
+    // jimstest: FAST_STORAGE holds .install-complete, SLOW_STORAGE holds pages.
+    // The seed looked beside the pages folder, found no marker, and ran the
+    // first-install seed on every boot.
+    const slowDir = path.join(tmpDir, 'slow');
+    pagesDir = path.join(slowDir, 'pages');
+    await fse.ensureDir(pagesDir);
+    await fse.writeFile(installCompletePath, '');
+    await fse.writeFile(path.join(pagesDir, 'existing.md'), '# existing');
+    await fse.writeFile(
+      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000010.md'),
+      makeFrontmatter('Page New In Release', 'general')
+    );
+
+    await new PageManager(makeEngine()).initialize();
+
+    expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000010.md');
+  });
+
+  test('#1402: a marker beside the pages folder alone does not mark the install complete', async () => {
+    const slowDir = path.join(tmpDir, 'slow');
+    pagesDir = path.join(slowDir, 'pages');
+    await fse.ensureDir(pagesDir);
+    await fse.writeFile(path.join(slowDir, '.install-complete'), '');
+    await fse.writeFile(path.join(pagesDir, 'existing.md'), '# existing');
+    await fse.writeFile(
+      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000011.md'),
+      makeFrontmatter('Page New In Release', 'general')
+    );
+
+    await new PageManager(makeEngine()).initialize();
+
+    expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000011.md');
   });
 
   test('respects custom github-only category beyond developer', async () => {

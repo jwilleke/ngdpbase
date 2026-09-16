@@ -371,7 +371,8 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * Seed required-pages into provider storage on fresh install.
-   * Runs only when data/pages/ is empty or .install-complete is missing.
+   * Runs only when data/pages/ is empty or .install-complete is missing from the
+   * instance data folder.
    * Uses the same syncFile logic as adminSyncRequiredPages() — provider-agnostic
    * at the file level for FileSystemProvider-compatible storage.
    */
@@ -382,8 +383,11 @@ class PageManager extends BaseManager implements CatalogSource {
         'ngdpbase.page.provider.filesystem.storagedir',
         './data/pages'
       );
-      const dataDir = path.dirname(pagesDirResolved);
-      const installCompletePath = path.join(dataDir, '.install-complete');
+      // #1402: the marker lives in the instance data folder, where InstallService
+      // writes it and every other reader looks. Beside the pages folder it was
+      // missing whenever pages sit on other storage (SLOW_STORAGE ≠ FAST_STORAGE),
+      // so an installed site ran the first-install seed on every boot.
+      const installCompletePath = path.join(configManager.getInstanceDataFolder(), '.install-complete');
 
       // Check conditions: skip SEEDING if install is already complete AND pages
       // exist — but not silently. #954: this used to return outright, which made
