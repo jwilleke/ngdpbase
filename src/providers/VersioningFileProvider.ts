@@ -609,63 +609,10 @@ class VersioningFileProvider extends FileSystemProvider {
       logger.warn(`[VersioningFileProvider] Removed ${staleUuids.length} duplicate index entr${staleUuids.length === 1 ? 'y' : 'ies'} and saved corrected index`);
     }
 
-    // Also scan the local required-pages directory for any files not already indexed.
-    // Required-pages are local (not NAS) so reading them is fast and safe regardless
-    // of installationComplete status. This ensures system pages like Welcome and Footer
-    // are always available even if they haven't been synced to NAS/index yet.
-    if (this.requiredPagesDirectory && await fs.pathExists(this.requiredPagesDirectory)) {
-      let reqFiles: string[];
-      try {
-        reqFiles = (await fs.readdir(this.requiredPagesDirectory))
-          .filter(f => f.toLowerCase().endsWith('.md'))
-          .map(f => path.join(this.requiredPagesDirectory!, f));
-      } catch {
-        reqFiles = [];
-      }
+    // #1405: the shipped required-pages folder is not scanned for pages. It is a
+    // source PageManager seeds from at the end of start-up; serving a source file
+    // the site has no copy of brought deleted and purged required pages back.
 
-      let reqLoaded = 0;
-      for (const filePath of reqFiles) {
-        const uuid = path.basename(filePath, '.md');
-        if (this.uuidIndex.has(uuid)) continue; // already loaded from index
-        // #1371: a live copy in the pages directory wins — the recovery scan
-        // below loads it. The source copy is only the safety net for a page
-        // the instance does not have at all.
-        if (this.pagesDirectory && await fs.pathExists(path.join(this.pagesDirectory, `${uuid}.md`))) continue;
-
-        try {
-          const fileContent = await fs.readFile(filePath, this.encoding || 'utf-8');
-          const parsed = parsePageFrontmatter(fileContent);
-          const title = typeof parsed.data.title === 'string' ? parsed.data.title : ''; // #1381: already text
-          if (!title) continue;
-
-          if (this.titleIndex.has(title.toLowerCase())) continue; // duplicate title
-
-          const slug = typeof parsed.data.slug === 'string' && parsed.data.slug ? parsed.data.slug : undefined;
-          const pageInfo: PageCacheInfo = {
-            title,
-            uuid,
-            filePath,
-            metadata: { title, uuid, ...parsed.data } as PageFrontmatter
-          };
-
-          this.pageCache.set(title, pageInfo);
-          this.titleIndex.set(title.toLowerCase(), title);
-          this.uuidIndex.set(uuid, title);
-          if (slug) this.slugIndex.set(slug.toLowerCase(), title);
-          reqLoaded++;
-          loadedCount++;
-        } catch {
-          // skip unreadable files
-        }
-      }
-
-      if (reqLoaded > 0) {
-        logger.info(`[VersioningFileProvider] Loaded ${reqLoaded} additional required-pages not in index`);
-      }
-    }
-
-    // Recovery scan: find UUID.md files in pagesDirectory that are missing from the index.
-    // This happens when the server was killed before pending page-index writes completed.
     if (this.pagesDirectory && await fs.pathExists(this.pagesDirectory)) {
       try {
         const dirFiles = await fs.readdir(this.pagesDirectory);

@@ -21,7 +21,7 @@ __Last Updated:__ 2025-12-22
 - [Page Retrieval](#page-retrieval)
 - [Caching System](#caching-system)
 - [Page Resolution](#page-resolution)
-- [Installation-Aware Loading](#installation-aware-loading)
+- [Required Pages Are Not Loaded From Source](#required-pages-are-not-loaded-from-source)
 - [Methods Reference](#methods-reference)
 - [Error Handling](#error-handling)
 - [Performance](#performance)
@@ -69,7 +69,7 @@ __Performance:__
 
 __Installation Support:__
 
-- Installation-aware loading (required-pages only during install)
+- Loads pages from `pagesDirectory` only; required pages are seeded into it ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405))
 - System page protection (admin-only editing for system-category pages)
 - Automatic directory creation
 
@@ -137,7 +137,7 @@ project-root/
         │   ├── 550e8400-....md              # Page files (UUID names)
         │   ├── 9f3a4b2c-....md
         │   └── ...
-        └── required-pages/                  # System pages (install only)
+        └── required-pages/                  # Shipped source; seeded into pages/ at start-up
               ├── 0a3d3111-....md            # Required for wiki operation
               ├── 86ca6fb2-....md
               └── ...
@@ -187,8 +187,8 @@ All configuration accessed via ConfigurationManager (lowercase keys):
 ### Installation State
 
 Installation completion is determined by the presence of the `.install-complete` marker file
-in the `INSTANCE_DATA_FOLDER` directory (not a config property). This controls whether
-required-pages are loaded (incomplete = load, complete = skip).
+in the `INSTANCE_DATA_FOLDER` directory (not a config property). It no longer controls which
+pages are loaded ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405)).
 
 ### Configuration Example
 
@@ -279,9 +279,6 @@ async initialize() {
 
   // 5. Create directories
   await fs.ensureDir(this.pagesDirectory);
-  if (!this.installationComplete) {
-    await fs.ensureDir(this.requiredPagesDirectory);
-  }
 
   // 6. Load page cache
   await this.refreshPageList();
@@ -511,14 +508,8 @@ async refreshPageList() {
   this.uuidIndex.clear();
   this.slugIndex.clear();
 
-  // 2. Scan directories
-  const pagesFiles = await this.#walkDir(this.pagesDirectory);
-  let allFiles = [...pagesFiles];
-
-  if (!this.installationComplete) {
-    const requiredFiles = await this.#walkDir(this.requiredPagesDirectory);
-    allFiles = [...pagesFiles, ...requiredFiles];
-  }
+  // 2. Scan the page store only (#1405)
+  const allFiles = await this.#walkDir(this.pagesDirectory);
 
   // 3. Filter .md files
   const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'));
@@ -609,55 +600,13 @@ const match = this.pageNameMatcher.findMatch(
 
 ---
 
-## Installation-Aware Loading
+## Required Pages Are Not Loaded From Source
 
-### Installation State
+The provider loads pages from `pagesDirectory` only, before and after installation ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405)).
 
-FileSystemProvider adapts behavior based on installation state:
+Earlier versions also listed the files in `requiredPagesDirectory` while `.install-complete` was missing ("install mode"). A page served that way had no copy in the site's page store, so the required-pages seed saw it as present and never copied it.
 
-__During Installation__ (`installationComplete = false`):
-
-- Loads pages from __both__ directories:
-  - `pagesDirectory` (./data/pages)
-  - `requiredPagesDirectory` (./required-pages)
-- Allows required pages to be accessible for copying
-
-__After Installation__ (`installationComplete = true`):
-
-- Loads pages from __only__ `pagesDirectory`
-- Skips `requiredPagesDirectory` entirely
-- Required pages already copied to pagesDirectory
-
-### Why This Design?
-
-__Problem__: Required pages (system docs, templates) should:
-
-1. Be available during installation (for copying)
-2. NOT appear in production wiki (avoid duplicates)
-
-__Solution__: Installation-aware loading
-
-- Installation copies required-pages → pagesDirectory
-- After install, only pagesDirectory is scanned
-- Required-pages folder remains for future installs
-
-### Implementation
-
-```javascript
-async refreshPageList() {
-  const pagesFiles = await this.#walkDir(this.pagesDirectory);
-  let allFiles = [...pagesFiles];
-
-  if (!this.installationComplete) {
-    // During installation: include required-pages
-    const requiredFiles = await this.#walkDir(this.requiredPagesDirectory);
-    allFiles = [...pagesFiles, ...requiredFiles];
-    logger.info(`Install mode: including ${requiredFiles.length} required pages`);
-  }
-
-  // Process all files...
-}
-```
+Required pages now reach a site through `PageManager.seedRequiredPages()`, which runs at the end of every engine start-up. It saves each required page the site has never had into `pagesDirectory` and records it in `${FAST_STORAGE}/seeded-shipped-pages.json`, so a page removed on the site stays removed.
 
 ---
 

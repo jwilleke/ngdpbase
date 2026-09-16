@@ -1,16 +1,27 @@
-'use strict';
+/**
+ * @file PageManager.seedRequiredPages.test.ts
+ * @description Required pages are seeded once per site, through the shared
+ * shipped-page seeder (#1405, epic #1404).
+ *
+ * - A required page new in a release appears at the next start-up, on every site.
+ * - A required page removed on the site stays removed (#954), whatever the
+ *   provider: the site's seeded-pages record remembers it after the trash forgets.
+ * - Pages in a github-only category are never seeded.
+ *
+ * Real PageManager and FileSystemProvider over temp directories; teardown removes
+ * only the mkdtemp directory.
+ */
+// The real provider: the seeder's lookups and saves are what is under test.
+vi.unmock('../../providers/FileSystemProvider');
+vi.unmock('../PageManager');
 
 import path from 'path';
-import { pendingBootActions, resetBootActions } from '../../context/bootActions';
 import os from 'os';
 import { promises as fs } from 'fs';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
-
-// Access the private seedRequiredPages method via initialize() side-effects.
-// We set up a temp required-pages dir and a temp pages dir, then call initialize()
-// and assert which files landed in pagesDir.
+import { SEEDED_SHIPPED_PAGES_FILE } from '../../utils/seededShippedPages';
 
 vi.mock('../../utils/logger', () => ({
   default: {
@@ -18,239 +29,202 @@ vi.mock('../../utils/logger', () => ({
     warn:  vi.fn(),
     error: vi.fn(),
     debug: vi.fn()
-
   }
 }));
 
+import logger from '../../utils/logger';
 import PageManager from '../PageManager';
-import type { WikiEngine } from '../../types/WikiEngine';
 
-// system-category config matching app-default-config.json entries that matter here
 const SYSTEM_CATEGORIES = {
   general:       { label: 'general',       storageLocation: 'pages' },
   system:        { label: 'system',        storageLocation: 'required' },
   documentation: { label: 'documentation', storageLocation: 'required' },
-  developer:     { label: 'developer',     storageLocation: 'github' },
-  addon:         { label: 'addon',         storageLocation: 'pages' }
+  developer:     { label: 'developer',     storageLocation: 'github' }
 };
 
-const makeFrontmatter = (title, systemCategory) => {
-  const sc = systemCategory ? `system-category: ${systemCategory}\n` : '';
-  return `---\ntitle: ${title}\n${sc}---\n\nPage content.\n`;
-};
+const uuid = (n: number) => `aaaaaaaa-0000-0000-0000-${String(n).padStart(12, '0')}`;
 
-describe('PageManager.seedRequiredPages() — github-only filtering', () => {
-  let tmpDir;
-  let requiredDir;
-  let pagesDir;
-  let installCompletePath;
-  let instanceDir;
+describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () => {
+  let tmpDir: string;
+  let requiredDir: string;
+  let pagesDir: string;
+  let instanceDir: string;
+  let notify: ReturnType<typeof vi.fn>;
 
-  beforeEach(async () => {
-    tmpDir       = await fs.mkdtemp(path.join(os.tmpdir(), 'pm-seed-test-'));
-    requiredDir  = path.join(tmpDir, 'required-pages');
-    pagesDir     = path.join(tmpDir, 'pages');
-    instanceDir  = tmpDir;
-    installCompletePath = path.join(tmpDir, '.install-complete');
+  const writeSource = async (n: number, title: string, category?: string, extra: Record<string, unknown> = {}) => {
+    const data: Record<string, unknown> = { title, uuid: uuid(n), slug: title.toLowerCase().replace(/\s+/g, '-'), ...extra };
+    if (category) data['system-category'] = category;
+    await fse.writeFile(path.join(requiredDir, `${uuid(n)}.md`), matter.stringify(`Body of ${title}.\n`, data));
+  };
 
-    await fse.ensureDir(requiredDir);
-    await fse.ensureDir(pagesDir);
-  });
-
-  afterEach(async () => {
-    await fse.remove(tmpDir);
-  });
-
-  const makeEngine = (overrides = {}) => {
+  const makeEngine = () => {
+    notify = vi.fn().mockResolvedValue(undefined);
     const cm = {
-      getProperty: vi.fn((key, def) => {
-        const map = {
-          'ngdpbase.page.enabled':                           true,
-          'ngdpbase.page.provider':                          'filesystemprovider',
-          'ngdpbase.page.provider.filesystem.storagedir':    pagesDir,
+      getProperty: vi.fn((key: string, def: unknown) => {
+        const map: Record<string, unknown> = {
+          'ngdpbase.page.enabled': true,
+          'ngdpbase.page.provider': 'filesystemprovider',
+          'ngdpbase.page.provider.filesystem.storagedir': pagesDir,
           'ngdpbase.page.provider.filesystem.requiredpagesdir': requiredDir,
-          'ngdpbase.system-category':                        SYSTEM_CATEGORIES,
-          ...overrides
+          'ngdpbase.system-category': SYSTEM_CATEGORIES
         };
         return map[key] !== undefined ? map[key] : def;
       }),
-      getResolvedDataPath: vi.fn((key, def) => {
-        if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;
-        return def;
-      }),
+      getResolvedDataPath: vi.fn((key: string, def: unknown) =>
+        key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : def
+      ),
       getInstanceDataFolder: vi.fn(() => instanceDir)
     };
     return {
-      getManager: vi.fn((name) => name === 'ConfigurationManager' ? cm : null)
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return cm;
+        if (name === 'NotificationManager') return { createNotification: notify };
+        return null;
+      })
     };
   };
 
-  const seededFiles = async () => {
-    const files = await fs.readdir(pagesDir);
-    return files.filter(f => f.endsWith('.md'));
+  /** A booted PageManager, seeded the way the engine does at the end of start-up. */
+  const boot = async () => {
+    const pm = new PageManager(makeEngine());
+    await pm.initialize();
+    await pm.seedRequiredPages();
+    return pm;
   };
 
-  test('seeds normal (general) pages', async () => {
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000001.md'),
-      makeFrontmatter('Normal Page', 'general')
-    );
+  const liveFiles = async () => (await fs.readdir(pagesDir)).filter((f) => f.endsWith('.md')).sort();
 
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000001.md');
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pm-seed-test-'));
+    requiredDir = path.join(tmpDir, 'required-pages');
+    pagesDir = path.join(tmpDir, 'slow', 'pages');
+    instanceDir = path.join(tmpDir, 'fast');
+    await fse.ensureDir(requiredDir);
+    await fse.ensureDir(pagesDir);
+    await fse.ensureDir(instanceDir);
+    vi.mocked(logger.warn).mockClear();
   });
 
-  test('#1395: a seeded page carries required-source-hash of its body', async () => {
-    const file = 'aaaaaaaa-0000-0000-0000-000000000001.md';
-    await fse.writeFile(path.join(requiredDir, file), makeFrontmatter('Normal Page', 'general'));
+  afterEach(async () => {
+    // Scoped to this test's mkdtemp directory — never a project path.
+    await fse.remove(tmpDir);
+  });
 
-    await new PageManager(makeEngine()).initialize();
+  test('a fresh site gets every required page, stamped with its body hash', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+    await writeSource(2, 'Beta', 'system');
 
-    const seeded = matter(await fs.readFile(path.join(pagesDir, file), 'utf8'));
+    await boot();
+
+    expect(await liveFiles()).toEqual([`${uuid(1)}.md`, `${uuid(2)}.md`]);
+    const seeded = matter(await fs.readFile(path.join(pagesDir, `${uuid(1)}.md`), 'utf8'));
     expect(seeded.data[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash(seeded.content));
+    expect(seeded.data['user-modified']).toBeUndefined();
   });
 
-  test('#1197: each seeded page is recorded as page-create under the system principal, origin boot, held in the ledger', async () => {
-    resetBootActions();
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000001.md'),
-      makeFrontmatter('Normal Page', 'general')
-    );
-
-    await new PageManager(makeEngine()).initialize();
-    await new Promise((r) => setTimeout(r, 0));   // the record is fire-and-forget
-
-    const seeds = pendingBootActions().filter((p) => p.event.metadata.seed === 'required-pages');
-    expect(seeds).toHaveLength(1);
-    expect(seeds[0].event).toMatchObject({ eventType: 'page-create', resource: 'Normal Page', metadata: { origin: 'boot' } });
-    expect(seeds[0].context.reason).toMatch(/required-pages seed/);
-  });
-
-  test('skips pages with system-category=developer (storageLocation=github)', async () => {
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000002.md'),
-      makeFrontmatter('Red Link Test', 'developer')
-    );
-
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000002.md');
-  });
-
-  test('seeds pages with no system-category', async () => {
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000003.md'),
-      makeFrontmatter('No Category Page', null)
-    );
-
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000003.md');
-  });
-
-  test('seeds addon pages (storageLocation=pages, not github)', async () => {
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000004.md'),
-      makeFrontmatter('Addon Page', 'addon')
-    );
-
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000004.md');
-  });
-
-  test('mixed: seeds normal, skips developer', async () => {
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000005.md'),
-      makeFrontmatter('Normal', 'general')
-    );
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000006.md'),
-      makeFrontmatter('Dev Page', 'developer')
-    );
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000007.md'),
-      makeFrontmatter('Docs', 'documentation')
-    );
-
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    const files = await seededFiles();
-    expect(files).toContain('aaaaaaaa-0000-0000-0000-000000000005.md');
-    expect(files).not.toContain('aaaaaaaa-0000-0000-0000-000000000006.md');
-    expect(files).toContain('aaaaaaaa-0000-0000-0000-000000000007.md');
-  });
-
-  test('install-complete guard still skips seeding when pages already exist', async () => {
-    await fse.writeFile(installCompletePath, '');
-    await fse.writeFile(path.join(pagesDir, 'existing.md'), '# existing');
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000008.md'),
-      makeFrontmatter('New Page', 'general')
-    );
-
-    const engine = makeEngine();
-    await new PageManager(engine).initialize();
-
-    // Should not seed the new page when install is complete and pages exist
-    expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000008.md');
-  });
-
-  test('#1402: with pages on other storage, the marker is read from the instance data folder', async () => {
-    // jimstest: FAST_STORAGE holds .install-complete, SLOW_STORAGE holds pages.
-    // The seed looked beside the pages folder, found no marker, and ran the
-    // first-install seed on every boot.
-    const slowDir = path.join(tmpDir, 'slow');
-    pagesDir = path.join(slowDir, 'pages');
-    await fse.ensureDir(pagesDir);
-    await fse.writeFile(installCompletePath, '');
-    await fse.writeFile(path.join(pagesDir, 'existing.md'), '# existing');
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000010.md'),
-      makeFrontmatter('Page New In Release', 'general')
-    );
+  test('initialize() alone seeds nothing — seeding waits for the end of engine start-up', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
 
     await new PageManager(makeEngine()).initialize();
 
-    expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000010.md');
+    expect(await liveFiles()).toEqual([]);
   });
 
-  test('#1402: a marker beside the pages folder alone does not mark the install complete', async () => {
-    const slowDir = path.join(tmpDir, 'slow');
-    pagesDir = path.join(slowDir, 'pages');
-    await fse.ensureDir(pagesDir);
-    await fse.writeFile(path.join(slowDir, '.install-complete'), '');
+  test('the site records what it seeded, in the instance data folder', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+
+    await boot();
+
+    const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
+    expect(Object.keys(record.sources['required-pages'])).toEqual([uuid(1)]);
+  });
+
+  test('a page new in a release appears at the next start-up', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+    await boot();
+
+    await writeSource(2, 'New In Release', 'documentation');
+    await boot();
+
+    expect(await liveFiles()).toContain(`${uuid(2)}.md`);
+  });
+
+  test('#954: a page removed on the site stays removed — no trash needed', async () => {
+    // filesystemprovider deletes outright; only the record remembers the page.
+    await writeSource(1, 'Alpha', 'documentation');
+    await writeSource(2, 'Beta', 'documentation');
+    const pm = await boot();
+    expect(await pm.deletePage(uuid(2), { origin: 'test', user: 'admin' })).toBe(true);
+
+    await boot();
+
+    expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
+  });
+
+  test('a page in the trash is not seeded, and is recorded', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+    const pm = new PageManager(makeEngine());
+    await pm.initialize();
+    const provider = (pm as unknown as { provider: { isPageDeleted?: (u: string) => boolean } }).provider;
+    provider.isPageDeleted = (u: string) => u === uuid(1);
+
+    const report = await pm.seedShippedPages(
+      { id: 'required-pages', label: 'required-pages', dir: requiredDir, stampKey: REQUIRED_SOURCE_HASH_KEY },
+      { origin: 'test', user: 'system' }
+    );
+
+    expect(report.seeded).toEqual([]);
+    expect(report.removed).toEqual(['Alpha']);
+    const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
+    expect(record.sources['required-pages'][uuid(1)]).toBeDefined();
+  });
+
+  test('an established site without a record starts it from its live pages and does not rewrite them', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+    const livePath = path.join(pagesDir, `${uuid(1)}.md`);
+    await fse.writeFile(livePath, matter.stringify('Locally edited body.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha' }));
+    const before = await fs.readFile(livePath, 'utf8');
+
+    await boot();
+
+    expect(await fs.readFile(livePath, 'utf8')).toBe(before);
+    const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
+    expect(record.sources['required-pages'][uuid(1)]).toBeDefined();
+  });
+
+  test('the install marker no longer decides anything: an installed site still gets a new page', async () => {
+    await fse.writeFile(path.join(instanceDir, '.install-complete'), '');
+    await writeSource(1, 'Alpha', 'documentation');
     await fse.writeFile(path.join(pagesDir, 'existing.md'), '# existing');
-    await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000011.md'),
-      makeFrontmatter('Page New In Release', 'general')
-    );
 
-    await new PageManager(makeEngine()).initialize();
+    await boot();
 
-    expect(await seededFiles()).toContain('aaaaaaaa-0000-0000-0000-000000000011.md');
+    expect(await liveFiles()).toContain(`${uuid(1)}.md`);
   });
 
-  test('respects custom github-only category beyond developer', async () => {
-    const customCategories = {
-      ...SYSTEM_CATEGORIES,
-      'internal-only': { label: 'internal-only', storageLocation: 'github' }
-    };
+  test('github-only pages are never seeded', async () => {
+    await writeSource(1, 'Dev Page', 'developer');
+    await writeSource(2, 'Docs', 'documentation');
 
+    await boot();
+
+    expect(await liveFiles()).toEqual([`${uuid(2)}.md`]);
+  });
+
+  test('a page with no uuid, or a duplicate uuid, is reported and the rest still seed', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
     await fse.writeFile(
-      path.join(requiredDir, 'aaaaaaaa-0000-0000-0000-000000000009.md'),
-      makeFrontmatter('Internal Page', 'internal-only')
+      path.join(requiredDir, 'zz-copy-of-alpha.md'),
+      matter.stringify('Copy.\n', { title: 'Alpha Copy', uuid: uuid(1), slug: 'alpha-copy' })
     );
+    await fse.writeFile(path.join(requiredDir, 'no-uuid.md'), matter.stringify('x\n', { title: 'No Uuid', slug: 'no-uuid' }));
 
-    const engine = makeEngine({ 'ngdpbase.system-category': customCategories });
-    await new PageManager(engine).initialize();
+    await boot();
 
-    expect(await seededFiles()).not.toContain('aaaaaaaa-0000-0000-0000-000000000009.md');
+    expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
+    const warned = vi.mocked(logger.warn).mock.calls.map((c) => String(c[0])).join('\n');
+    expect(warned).toContain('zz-copy-of-alpha.md');
+    expect(warned).toContain('no-uuid.md');
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Required pages not seeded' }));
   });
 });

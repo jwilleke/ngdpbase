@@ -47,20 +47,20 @@ __Source__: `src/services/InstallService.ts` — `#markInstallationComplete()` (
 
 ## When It Is Checked
 
-Three separate places check for the marker:
+These places check for the marker:
 
 | Location | Method | Effect if missing |
 |---|---|---|
 | `InstallService` | `isInstallComplete()` | Returns `false` → `isInstallRequired()` returns `true` → middleware redirects to `/install` |
-| `FileSystemProvider` | `initialize()` | Sets `this.installationComplete = false` — affects required-pages scan behaviour |
-| `PageManager` | `seedRequiredPages()` | Skips seeding if marker is present; runs seed if missing and pages dir is empty |
+| `FileSystemProvider` | `initialize()` | Sets `this.installationComplete = false`. Since [#1405](https://github.com/jwilleke/ngdpbase/issues/1405) it no longer changes which pages are loaded |
 
 __Sources__:
 
 - `src/services/InstallService.ts:181` — `isInstallComplete()`
 - `src/providers/FileSystemProvider.ts:166` — `initialize()`
 - `src/providers/VersioningFileProvider.ts:335` — `initialize()`
-- `src/managers/PageManager.ts:147` — `seedRequiredPages()`
+
+Required pages do not depend on the marker ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405)). `PageManager.seedRequiredPages()` runs at the end of every engine start-up and seeds each required page a site has never had, recording it in `${FAST_STORAGE}/seeded-shipped-pages.json`. A page removed on the site stays removed.
 
 ---
 

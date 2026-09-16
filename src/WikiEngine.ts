@@ -353,6 +353,11 @@ class WikiEngine extends Engine {
     this.registerManager('BackupManager', backupManager);
     await backupManager.initialize();
 
+    // #1405: seed required pages once every manager exists, so a seeded page
+    // gets ValidationManager's conflict check and SearchManager indexing — at
+    // PageManager.initialize() time neither exists yet.
+    await pageManager.seedRequiredPages();
+
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
 

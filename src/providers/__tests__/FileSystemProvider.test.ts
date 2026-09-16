@@ -131,7 +131,7 @@ describe('FileSystemProvider', () => {
       expect(provider.pageCache.size).toBe(1);
     });
 
-    test('should load from both directories when installation is NOT complete', async () => {
+    test('#1405 loads only the page store before installation too — required pages are seeded, not served from source', async () => {
       // Create pages in both directories
       await createTestPage(TEST_PAGES_DIR, 'page-1', 'Regular Page');
       await createTestPage(TEST_REQUIRED_DIR, 'req-1', 'Required Page');
@@ -140,11 +140,10 @@ describe('FileSystemProvider', () => {
       const provider = new FileSystemProvider(createMockEngine());
       await provider.initialize();
 
-      // Should see both pages
       const allPages = await provider.getAllPages();
       expect(allPages).toContain('Regular Page');
-      expect(allPages).toContain('Required Page');
-      expect(provider.pageCache.size).toBe(2);
+      expect(allPages).not.toContain('Required Page');
+      expect(provider.pageCache.size).toBe(1);
     });
 
     test('should set installationComplete flag from .install-complete file', async () => {

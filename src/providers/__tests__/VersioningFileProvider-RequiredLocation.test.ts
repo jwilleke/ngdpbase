@@ -177,6 +177,29 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     expect(page?.content).toContain('the live copy');
   });
 
+  test('#1405 a source page the site has no copy of is not served — it is seeded, not a fallback', async () => {
+    const provider = await newProvider();
+    await provider.savePage('Other Page', 'x', { uuid: UUID_A, 'system-category': 'general' }, TEST_ACTOR);
+    await writePage(requiredDir, UUID_B, 'Only In Source', 'the source copy', 'documentation');
+
+    const restarted = await newProvider();
+
+    expect(await restarted.getPage('Only In Source')).toBeNull();
+    expect(await restarted.getPageByUUID(UUID_B, TEST_ACTOR)).toBeNull();
+  });
+
+  test('#1405 a deleted required page does not come back from the source folder after a restart', async () => {
+    await writePage(requiredDir, UUID_B, 'Deleted Doc', 'the source copy', 'documentation');
+    const provider = await newProvider();
+    await provider.savePage('Deleted Doc', 'the live copy', { uuid: UUID_B, 'system-category': 'documentation' }, TEST_ACTOR);
+    expect(await provider.deletePage('Deleted Doc', actor('jim'))).toBe(true);
+
+    const restarted = await newProvider();
+
+    expect(await restarted.getPage('Deleted Doc')).toBeNull();
+    expect(restarted.isPageDeleted(UUID_B)).toBe(true);
+  });
+
   // #1374: Rebuild Pages rewrites page-index.json from the disk scan.
   describe('rebuildPageIndexFromDisk (#1374)', () => {
     const UUID_C = '33333333-3333-4333-8333-333333333333';

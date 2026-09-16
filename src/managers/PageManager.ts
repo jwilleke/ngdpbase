@@ -1,10 +1,10 @@
 import path from 'path';
-import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import { recordSystemAction, systemContext } from '../context/bootActions.js';
+import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { SeededShippedPages } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -122,6 +122,38 @@ interface WikiContext {
  */
 interface ProviderConstructor {
   new (engine: WikiEngine): PageProvider;
+}
+
+/**
+ * A folder of pages ngdpbase ships, for `PageManager.seedShippedPages` (#1405).
+ */
+export interface ShippedPageSource {
+  /** Key in the site's seeded-pages record: `required-pages`, or `addon:<name>` */
+  id: string;
+  /** For log lines */
+  label: string;
+  /** Folder of `.md` source pages */
+  dir: string;
+  /** Frontmatter key for the stamped body hash (`required-source-hash`, `addon-source-hash`) */
+  stampKey: string;
+  /** Reason to never seed a page, or undefined to seed it */
+  exclude?: (data: Record<string, unknown>) => string | undefined;
+}
+
+/** What `seedShippedPages` did with each source page. */
+export interface ShippedPageSeedReport {
+  /** Titles saved as new pages */
+  seeded: string[];
+  /** Source pages already live */
+  present: number;
+  /** Titles seeded here before (or trashed) and no longer live — left removed */
+  removed: string[];
+  /** Pages the source excludes */
+  excluded: Array<{ file: string; title: string; reason: string }>;
+  /** Pages that could not be seeded, with why */
+  failed: Array<{ file: string; title: string; reason: string }>;
+  /** True when this run started the site's record for the source */
+  recordStarted: boolean;
 }
 
 /**
@@ -248,7 +280,6 @@ class PageManager extends BaseManager implements CatalogSource {
         logger.info(`📄 Provider features: ${info.features.join(', ')}`);
       }
 
-      await this.seedRequiredPages(configManager);
     } catch (error) {
       logger.error(`📄 Failed to initialize page provider: ${this.providerClass}`, error);
       throw error;
@@ -370,223 +401,198 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Seed required-pages into provider storage on fresh install.
-   * Runs only when data/pages/ is empty or .install-complete is missing from the
-   * instance data folder.
-   * Uses the same syncFile logic as adminSyncRequiredPages() — provider-agnostic
-   * at the file level for FileSystemProvider-compatible storage.
+   * Seed the pages a source ships into this site (#1405, epic #1404).
+   *
+   * The one place shipped pages are seeded. For each source page, in order:
+   *
+   * - no valid uuid, no title or no slug: skipped and reported
+   * - a uuid already used by another file of the same source: skipped and reported
+   * - excluded by the source (e.g. github-only categories): skipped
+   * - **in this site's seeded record**: never seeded again. If it is no longer
+   *   live it was removed here, and it stays removed.
+   * - live already: added to the record
+   * - in the trash: added to the record and skipped (#1403)
+   * - otherwise: saved through `savePage` with the source's stamp, indexed for
+   *   search, and added to the record
+   *
+   * A save the ValidationManager refuses (a title or slug held by another uuid)
+   * is reported, not retried; Required Pages Sync shows it as a UUID mismatch.
+   *
+   * A source this site has no record for yet starts it from the uuids that are
+   * live or in the trash, so an established site does not treat its shipped
+   * pages as new.
+   *
+   * @param source - Where the pages come from and how they are stamped
+   * @param ctx - Who seeds; a boot job's system context
+   * @returns What happened to each source page
    */
-  private async seedRequiredPages(configManager: ConfigurationManager): Promise<void> {
-    const seedContext = systemContext(this.engine, 'required-pages seed at boot — copy shipped pages the instance lacks');
-    try {
-      const pagesDirResolved: string = configManager.getResolvedDataPath(
-        'ngdpbase.page.provider.filesystem.storagedir',
-        './data/pages'
-      );
-      // #1402: the marker lives in the instance data folder, where InstallService
-      // writes it and every other reader looks. Beside the pages folder it was
-      // missing whenever pages sit on other storage (SLOW_STORAGE ≠ FAST_STORAGE),
-      // so an installed site ran the first-install seed on every boot.
-      const installCompletePath = path.join(configManager.getInstanceDataFolder(), '.install-complete');
-
-      // Check conditions: skip SEEDING if install is already complete AND pages
-      // exist — but not silently. #954: this used to return outright, which made
-      // the function a first-install seeder and nothing else. A required page
-      // deleted later was never noticed, never re-seeded and never reported, at
-      // any point, ever. Established instances now get an integrity check.
-      const installComplete: boolean = await fse.pathExists(installCompletePath);
-      if (installComplete) {
-        const existing: string[] = await fse.readdir(pagesDirResolved).catch(() => []);
-        if (existing.filter((f: string) => f.endsWith('.md')).length > 0) {
-          logger.debug('[PageManager] Required pages seed skipped — installation already complete');
-          await this.reportMissingRequiredPages(configManager, pagesDirResolved);
-          return;
-        }
-      }
-
-      const requiredDirRaw: string = configManager.getProperty(
-        'ngdpbase.page.provider.filesystem.requiredpagesdir',
-        './required-pages'
-      ) as string;
-      const requiredDir = path.isAbsolute(requiredDirRaw)
-        ? requiredDirRaw
-        : path.join(process.cwd(), requiredDirRaw);
-
-      if (!(await fse.pathExists(requiredDir))) {
-        logger.warn('[PageManager] Required pages directory not found, skipping seed:', requiredDir);
-        return;
-      }
-
-      await fse.ensureDir(pagesDirResolved);
-
-      const files: string[] = (await fse.readdir(requiredDir))
-        .filter((f: string) => f.endsWith('.md'));
-
-      // Build a set of system-category values whose storageLocation is 'github'
-      // (i.e. pages that live only in the source tree and must never be seeded to data/).
-      const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { storageLocation?: string }>;
-      const githubOnlyCategories = new Set(
-        Object.entries(systemCategories)
-          .filter(([, cfg]) => cfg.storageLocation === 'github')
-          .map(([key]) => key)
-      );
-
-      let seeded = 0;
-      let skipped = 0;
-      let devSkipped = 0;
-
-      for (const file of files) {
-        const srcPath = path.join(requiredDir, file);
-        const dstPath = path.join(pagesDirResolved, file);
-
-        if (await fse.pathExists(dstPath)) {
-          skipped++;
-          continue;
-        }
-
-        // Same logic as adminSyncRequiredPages syncFile(): strip user-modified on copy
-        const raw: string = await fse.readFile(srcPath, 'utf8');
-        const parsed = parsePageFrontmatter(raw);
-
-        // Skip pages whose system-category is github-only (e.g. 'developer')
-        const pageCategory = parsed.data['system-category'] as string | undefined;
-        if (pageCategory && githubOnlyCategories.has(pageCategory)) {
-          const pageTitle = typeof parsed.data['title'] === 'string' ? parsed.data['title'] : file;
-          logger.debug(`[PageManager] Skipping github-only page (${pageCategory}): ${pageTitle}`);
-          devSkipped++;
-          continue;
-        }
-
-        delete parsed.data['user-modified'];
-        // #1395: stamp the seeded body so Required Pages Sync can tell a later
-        // source change from a local edit.
-        parsed.data[REQUIRED_SOURCE_HASH_KEY] = pageSourceHash(parsed.content);
-        const cleaned: string = matter.stringify(parsed.content, parsed.data);
-        await fse.writeFile(dstPath, cleaned, 'utf8');
-        seeded++;
-        // #1197: the seed ACTS — a page now exists that did not. Recorded under
-        // the system principal, origin boot; the audit sink is not up yet at
-        // this point in boot, so the record waits in the boot ledger.
-        void recordSystemAction(this.engine, seedContext, {
-          eventType: AUDIT_EVENT.PAGE_CREATE,
-          action: 'create',
-          resource: typeof parsed.data['title'] === 'string' ? parsed.data['title'] : file,
-          resourceType: 'page',
-          result: 'success',
-          severity: 'low',
-          metadata: { uuid: parsed.data['uuid'] ?? null, seed: 'required-pages', file }
-        });
-      }
-
-      logger.info(`[PageManager] Required pages seeded: ${seeded} new, ${skipped} already present${devSkipped ? `, ${devSkipped} github-only skipped` : ''}`);
-
-      if (devSkipped > 0) {
-        try {
-          const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
-          if (notificationManager?.createNotification) {
-            await notificationManager.createNotification({
-              type: 'system',
-              level: 'info',
-              title: 'Developer pages excluded from seed',
-              message: `${devSkipped} github-only page${devSkipped === 1 ? '' : 's'} in required-pages/ ${devSkipped === 1 ? 'was' : 'were'} skipped during seeding (system-category with storageLocation=github). These pages are source-tree only and will not appear in the wiki.`
-            });
-          }
-        } catch {
-          // non-fatal
-        }
-      }
-    } catch (err) {
-      logger.error('[PageManager] Failed to seed required pages:', err);
+  async seedShippedPages(source: ShippedPageSource, ctx: ActorContext): Promise<ShippedPageSeedReport> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
     }
+    const report: ShippedPageSeedReport = { seeded: [], present: 0, removed: [], excluded: [], failed: [], recordStarted: false };
+    if (!(await fse.pathExists(source.dir))) return report;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      throw new Error('PageManager: ConfigurationManager not available');
+    }
+    const record = await SeededShippedPages.load(configManager.getInstanceDataFolder());
+    report.recordStarted = !record.hasSource(source.id);
+    record.startSource(source.id);
+
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const seen = new Map<string, string>();
+    const files = (await fse.readdir(source.dir)).filter((f: string) => f.endsWith('.md')).sort();
+
+    for (const file of files) {
+      try {
+        const raw = await fse.readFile(path.join(source.dir, file), 'utf8');
+        const parsed = parsePageFrontmatter(raw);
+        const uuid = typeof parsed.data.uuid === 'string' ? parsed.data.uuid.trim() : '';
+        const title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';
+        const slug = typeof parsed.data.slug === 'string' ? parsed.data.slug.trim() : '';
+
+        if (!uuidPattern.test(uuid) || !title || !slug) {
+          report.failed.push({ file, title: title || file, reason: 'missing or invalid uuid, title or slug in frontmatter' });
+          continue;
+        }
+        const duplicateOf = seen.get(uuid.toLowerCase());
+        if (duplicateOf) {
+          report.failed.push({ file, title, reason: `uuid ${uuid} is already used by ${duplicateOf}` });
+          continue;
+        }
+        seen.set(uuid.toLowerCase(), file);
+
+        const exclusion = source.exclude?.(parsed.data);
+        if (exclusion) {
+          report.excluded.push({ file, title, reason: exclusion });
+          continue;
+        }
+
+        // A page counts as live only when the site holds its own copy: a file
+        // in the source folder is the source, not this site's page.
+        const livePage = await this.provider.getPageByUUID(uuid, ctx);
+        const livePath = (livePage as { filePath?: string } | null)?.filePath;
+        const live = Boolean(livePage) && !(livePath && path.resolve(livePath).startsWith(path.resolve(source.dir) + path.sep));
+        if (record.has(source.id, uuid)) {
+          if (live) report.present++;
+          else report.removed.push(title);
+          continue;
+        }
+        if (live) {
+          record.add(source.id, uuid);
+          report.present++;
+          continue;
+        }
+        if (this.provider.isPageDeleted?.(uuid)) {
+          record.add(source.id, uuid);
+          report.removed.push(title);
+          continue;
+        }
+        const metadata: Record<string, unknown> = {
+          ...parsed.data,
+          uuid,
+          title,
+          slug,
+          [source.stampKey]: pageSourceHash(parsed.content),
+          editor: systemPrincipalOf(this.engine)
+        };
+        delete metadata['user-modified'];
+
+        try {
+          await this.savePage(title, parsed.content, metadata, ctx, { skipValidation: true });
+        } catch (err) {
+          report.failed.push({ file, title, reason: err instanceof Error ? err.message : String(err) });
+          continue;
+        }
+        record.add(source.id, uuid);
+        report.seeded.push(title);
+
+        const searchManager = this.engine.getManager<{ updatePageInIndex?: (name: string, data: Record<string, unknown>) => Promise<void> }>('SearchManager');
+        await searchManager?.updatePageInIndex?.(title, { name: title, content: parsed.content, metadata })
+          .catch((err: unknown) => logger.warn(`[PageManager] Seeded '${title}' but could not index it for search:`, err));
+      } catch (err) {
+        report.failed.push({ file, title: file, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    await record.save();
+    return report;
   }
 
   /**
-   * Report required pages that are missing from an established instance (#954).
+   * Seed the required pages this release ships (#1405). Runs at the end of
+   * engine start-up, once ValidationManager and SearchManager exist, so a
+   * seeded page gets the conflict check and search indexing a save gets.
    *
-   * `seedRequiredPages` only ever ran on a fresh install, so a required page
-   * deleted afterwards was invisible forever — no log, no notification, no
-   * re-seed. The page simply stopped existing and nothing said so.
+   * A required page is seeded once per site: pages new in a release appear at
+   * restart, and a page removed on the site stays removed (#954). Pages in a
+   * category whose `storageLocation` is `github` are never seeded.
    *
-   * **Reports; never re-seeds.** Silently restoring pages at boot would fight
-   * the operator: a required page can be deleted deliberately, and since #947 a
-   * delete is a recoverable soft delete, so resurrecting a copy at boot would
-   * leave a live page *and* a tombstone of the same thing. Detection is the
-   * missing capability here; the remedy is already available through the admin
-   * Required Pages Sync tool, and choosing to apply it belongs to the operator.
-   *
-   * Best-effort: a failure here must never block startup.
-   *
-   * @param configManager - For the required-pages directory and category catalog
-   * @param pagesDirResolved - Live page storage directory
+   * Best-effort: a failure is logged and never blocks start-up.
    */
-  private async reportMissingRequiredPages(
-    configManager: ConfigurationManager,
-    pagesDirResolved: string
-  ): Promise<void> {
+  async seedRequiredPages(): Promise<void> {
+    const ctx = systemContext(this.engine, 'required-pages seed at boot — add shipped pages this site has never had');
     try {
-      const requiredDirRaw: string = configManager.getProperty(
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      if (!configManager || !this.provider) return;
+
+      const requiredDirRaw = configManager.getProperty(
         'ngdpbase.page.provider.filesystem.requiredpagesdir',
         './required-pages'
       ) as string;
-      const requiredDir = path.isAbsolute(requiredDirRaw)
-        ? requiredDirRaw
-        : path.join(process.cwd(), requiredDirRaw);
+      const dir = path.isAbsolute(requiredDirRaw) ? requiredDirRaw : path.join(process.cwd(), requiredDirRaw);
 
-      if (!(await fse.pathExists(requiredDir))) return;
-
-      // github-only pages live in the source tree by design and are never
-      // seeded, so their absence is correct rather than a defect.
       const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
         Record<string, { storageLocation?: string }>;
-      const githubOnlyCategories = new Set(
+      const githubOnly = new Set(
         Object.entries(systemCategories)
           .filter(([, cfg]) => cfg.storageLocation === 'github')
           .map(([key]) => key)
       );
 
-      const files: string[] = (await fse.readdir(requiredDir)).filter((f: string) => f.endsWith('.md'));
-      const missing: string[] = [];
+      const report = await this.seedShippedPages({
+        id: 'required-pages',
+        label: 'required-pages',
+        dir,
+        stampKey: REQUIRED_SOURCE_HASH_KEY,
+        exclude: (data) => {
+          const category = data['system-category'];
+          return typeof category === 'string' && githubOnly.has(category)
+            ? `github-only category '${category}'`
+            : undefined;
+        }
+      }, ctx);
 
-      for (const file of files) {
-        if (await fse.pathExists(path.join(pagesDirResolved, file))) continue;
-
-        const raw: string = await fse.readFile(path.join(requiredDir, file), 'utf8');
-        const parsed = parsePageFrontmatter(raw);
-        const category = parsed.data['system-category'] as string | undefined;
-        if (category && githubOnlyCategories.has(category)) continue;
-
-        const title = typeof parsed.data['title'] === 'string' ? parsed.data['title'] : file;
-        missing.push(title);
-      }
-
-      if (missing.length === 0) {
-        logger.debug('[PageManager] Required-pages integrity check passed');
-        return;
-      }
-
-      logger.warn(
-        `[PageManager] ${missing.length} required page(s) missing from storage: ${missing.join(', ')}. ` +
-        'They are NOT re-seeded automatically — use the admin Required Pages Sync tool to restore ' +
-        'any that were removed by accident (#954).'
+      logger.info(
+        `[PageManager] Required pages: ${report.seeded.length} seeded, ${report.present} present, ` +
+        `${report.removed.length} removed on this site, ${report.excluded.length} github-only, ${report.failed.length} not seeded`
       );
-
-      try {
+      if (report.seeded.length > 0) {
+        logger.info(`[PageManager] Seeded required pages: ${report.seeded.join(', ')}`);
+        if (report.recordStarted) {
+          logger.info(
+            '[PageManager] This site had no seeded-pages record yet; it was started from the live and trashed ' +
+            'required pages. Pages above were missing: new in this release, or removed before the record existed.'
+          );
+        }
+      }
+      if (report.failed.length > 0) {
+        const lines = report.failed.map((f) => `${f.title} (${f.file}): ${f.reason}`);
+        logger.warn(`[PageManager] Required pages not seeded: ${lines.join('; ')}`);
         const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
         await notificationManager?.createNotification?.({
           type: 'system',
           level: 'warning',
-          title: 'Required pages missing',
+          title: 'Required pages not seeded',
           message:
-            `${missing.length} required page${missing.length === 1 ? '' : 's'} ` +
-            `${missing.length === 1 ? 'is' : 'are'} missing from storage: ${missing.join(', ')}. ` +
-            'Restore from Admin → Required Pages Sync if this was not intentional.'
-        });
-      } catch {
-        // non-fatal
+            `${report.failed.length} required page${report.failed.length === 1 ? '' : 's'} could not be added: ` +
+            `${report.failed.map((f) => f.title).join(', ')}. See Admin → Required Pages Sync.`
+        })?.catch?.(() => { /* non-fatal */ });
       }
     } catch (err) {
-      logger.error('[PageManager] Required-pages integrity check failed:', err);
+      logger.error('[PageManager] Failed to seed required pages:', err);
     }
   }
 

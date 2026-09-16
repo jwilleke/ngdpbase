@@ -193,12 +193,6 @@ class FileSystemProvider extends BasePageProvider {
     await fs.ensureDir(this.pagesDirectory);
     logger.info(`[FileSystemProvider] Page directory: ${this.pagesDirectory}`);
 
-    // Only ensure required-pages directory exists if installation is NOT complete
-    if (!this.installationComplete) {
-      await fs.ensureDir(this.requiredPagesDirectory);
-      logger.info(`[FileSystemProvider] Required-pages directory (install mode): ${this.requiredPagesDirectory}`);
-    }
-
     await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
 
     // Load all pages into cache
@@ -255,16 +249,10 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error('FileSystemProvider not initialized - directories not set');
     }
 
-    // Only scan required-pages during installation (before install is complete)
-    const pagesFiles = await this.walkDir(this.pagesDirectory);
-    let allFiles = [...pagesFiles];
-
-    if (!this.installationComplete) {
-      // During installation, also include required-pages
-      const requiredFiles = await this.walkDir(this.requiredPagesDirectory);
-      allFiles = [...pagesFiles, ...requiredFiles];
-      logger.info(`[FileSystemProvider] Install mode: including ${requiredFiles.length} files from required-pages`);
-    }
+    // #1405: only the page store. The shipped required-pages folder is a source
+    // that PageManager seeds from at the end of start-up; listing it here served
+    // pages the site has no copy of, before install and after a deletion.
+    const allFiles = await this.walkDir(this.pagesDirectory);
 
     const mdFiles = allFiles.filter(f => f.toLowerCase().endsWith('.md'))
       .filter(f => this.isScannablePageFile(f));
