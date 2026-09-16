@@ -2667,6 +2667,17 @@ class VersioningFileProvider extends FileSystemProvider {
       manifest = this.createInitialManifest(uuid, pageName);
     }
 
+    // #1407: a version records page content (the body; frontmatter is never
+    // versioned). A save whose body matches the current version adds nothing to
+    // history, so no version is written — the page file, the index and the audit
+    // record still reflect the save. Repeated Required Pages Sync runs used to
+    // stack identical versions.
+    const latest = manifest.versions[manifest.versions.length - 1];
+    if (latest?.contentHash && latest.contentHash === DeltaStorage.calculateHash(newContent)) {
+      logger.debug(`[VersioningFileProvider] Content of '${pageName}' (${uuid}) unchanged since v${manifest.currentVersion}; no new version`);
+      return;
+    }
+
     const nextVersion = manifest.currentVersion + 1;
     const versionDir = this.getVersionDirectory(uuid, location);
     const vNextDir = path.join(versionDir, `v${nextVersion}`);

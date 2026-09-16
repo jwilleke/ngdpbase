@@ -1187,14 +1187,55 @@ describe('VersioningFileProvider', () => {
       await provider.initialize();
 
       const uuid = 'compare-uuid-4';
+      // #1407: an unchanged save writes no version, so v3 returns to v1's content.
       await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR);
-      await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR); // No change
+      await provider.savePage('Test', 'other content', { uuid }, TEST_ACTOR);
+      await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR);
 
-      const comparison = await provider.compareVersions('Test', 1, 2);
+      const comparison = await provider.compareVersions('Test', 1, 3);
 
       expect(comparison.stats.additions).toBe(0);
       expect(comparison.stats.deletions).toBe(0);
       expect(comparison.stats.unchanged).toBeGreaterThan(0);
+    });
+
+    test('#1407 a save with unchanged content writes no new version', async () => {
+      await provider.initialize();
+
+      const uuid = 'unchanged-uuid-1';
+      await provider.savePage('Unchanged', 'body text', { uuid }, TEST_ACTOR);
+      await provider.savePage('Unchanged', 'body text', { uuid, editor: 'system' }, TEST_ACTOR);
+      await provider.savePage('Unchanged', 'body text', { uuid, 'required-source-hash': 'abc' }, TEST_ACTOR);
+
+      const history = await provider.getVersionHistory('Unchanged');
+      expect(history).toHaveLength(1);
+      const versionDir = provider._getVersionDirectory(uuid, 'pages');
+      expect((await fs.readdir(versionDir)).sort()).toEqual(['manifest.json', 'v1']);
+    });
+
+    test('#1407 an unchanged save still writes the page file and its metadata', async () => {
+      await provider.initialize();
+
+      const uuid = 'unchanged-uuid-2';
+      await provider.savePage('Stamped', 'body text', { uuid }, TEST_ACTOR);
+      await provider.savePage('Stamped', 'body text', { uuid, 'required-source-hash': 'abc' }, TEST_ACTOR);
+
+      const page = await provider.getPage('Stamped');
+      expect(page.metadata['required-source-hash']).toBe('abc');
+    });
+
+    test('#1407 a changed body after an unchanged save still gets the next version', async () => {
+      await provider.initialize();
+
+      const uuid = 'unchanged-uuid-3';
+      await provider.savePage('Changing', 'first', { uuid }, TEST_ACTOR);
+      await provider.savePage('Changing', 'first', { uuid }, TEST_ACTOR);
+      await provider.savePage('Changing', 'second', { uuid }, TEST_ACTOR);
+
+      const history = await provider.getVersionHistory('Changing');
+      expect(history).toHaveLength(2);
+      const v2 = await provider.getPageVersion('Changing', 2);
+      expect(v2.content).toContain('second');
     });
 
     test('should throw error for invalid version numbers', async () => {
