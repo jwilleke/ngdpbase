@@ -3,7 +3,7 @@ import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
-import { evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { defaultShippedPageAccess, evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -643,7 +643,9 @@ class PageManager extends BaseManager implements CatalogSource {
           }
         }
         const liveTitle = typeof live?.metadata?.title === 'string' ? live.metadata.title : '';
-        await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx);
+        // #1411: an operator's access on the live page survives a Sync.
+        const liveAccess = (live?.metadata as Record<string, unknown> | undefined)?.access;
+        await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx, liveAccess !== undefined ? { access: liveAccess } : undefined);
         record.add(source.id, uuid);
         report.synced.push(uuid);
       } catch (err) {
@@ -685,8 +687,38 @@ class PageManager extends BaseManager implements CatalogSource {
         return typeof category === 'string' && githubOnly.has(category)
           ? `github-only category '${category}'`
           : undefined;
-      }
+      },
+      // #1411: administrator-edit only, the rule addon pages follow (#971). A
+      // source that declares its own `access` keeps it.
+      extraMetadata: (data) => {
+        const access = data['access'] ?? defaultShippedPageAccess(data['system-category']);
+        return access ? { access } : {};
+      },
+      onPresent: (live, parsed, ctx) => this.backfillShippedPageAccess(live, parsed, ctx)
     };
+  }
+
+  /**
+   * One-time access backfill for a live required page (#1411): a page with no
+   * `access` gets the default for its category, as a metadata-only save that
+   * keeps `lastModified`. A page that has any `access` — an operator's choice —
+   * is left alone.
+   */
+  private async backfillShippedPageAccess(
+    live: WikiPage,
+    parsed: { data: Record<string, unknown>; content: string },
+    ctx: ActorContext
+  ): Promise<void> {
+    const meta = (live.metadata ?? {}) as Record<string, unknown>;
+    if (meta.access !== undefined) return;
+    const access = parsed.data['access'] ?? defaultShippedPageAccess(meta['system-category'] ?? parsed.data['system-category']);
+    if (!access) return;
+    const title = typeof meta.title === 'string' && meta.title ? meta.title : String(parsed.data.title);
+    try {
+      await this.savePage(title, live.content ?? '', { ...meta, access } as Partial<PageFrontmatter>, ctx, { skipValidation: true, preserveLastModified: true });
+    } catch (err) {
+      logger.warn(`[PageManager] Could not set access on required page '${title}':`, err);
+    }
   }
 
   /**
@@ -776,11 +808,13 @@ class PageManager extends BaseManager implements CatalogSource {
     parsed: { data: Record<string, unknown>; content: string },
     title: string,
     saveAs: string,
-    ctx: ActorContext
+    ctx: ActorContext,
+    keep?: Record<string, unknown>
   ): Promise<void> {
     const metadata: Record<string, unknown> = {
       ...parsed.data,
       ...source.extraMetadata?.(parsed.data),
+      ...keep,
       uuid,
       title,
       [source.stampKey]: pageSourceHash(parsed.content),

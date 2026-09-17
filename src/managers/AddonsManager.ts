@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import { systemPrincipalOf } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import * as path from 'path';
-import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
+import { pageSourceHash, evaluateSeededAddonPage, defaultShippedPageAccess } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
 import type { WikiPage } from '../types/Page.js';
 import {
@@ -732,10 +732,9 @@ class AddonsManager extends BaseManager {
    * @returns The access object to stamp, or undefined to leave the page unprotected
    */
   private defaultAddonPageAccess(category: unknown): { edit: string[] } | undefined {
-    // Instance-owned per §9 — seeded as a starting point, then editable by
-    // whoever normally edits pages on this site.
-    if (category === 'general') return undefined;
-    return { edit: ['admin'] };
+    // One rule for every shipped page (#1411): `general` is instance-owned per
+    // §9, anything else administrator-edit only.
+    return defaultShippedPageAccess(category);
   }
 
   /**

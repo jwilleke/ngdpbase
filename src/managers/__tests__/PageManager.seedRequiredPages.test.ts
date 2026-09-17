@@ -184,11 +184,13 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     await writeSource(1, 'Alpha', 'documentation');
     const livePath = path.join(pagesDir, `${uuid(1)}.md`);
     await fse.writeFile(livePath, matter.stringify('Locally edited body.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha' }));
-    const before = await fs.readFile(livePath, 'utf8');
 
     await boot();
 
-    expect(await fs.readFile(livePath, 'utf8')).toBe(before);
+    // Only the #1411 access backfill touches it: the body is the site's own.
+    const live = matter(await fs.readFile(livePath, 'utf8'));
+    expect(live.content).toContain('Locally edited body.');
+    expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBeUndefined();
     const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
     expect(record.sources['required-pages'][uuid(1)]).toBeDefined();
   });
@@ -235,7 +237,6 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     test('a live page with no stamp whose text differs is left unstamped and reported', async () => {
       await writeSource(1, 'Alpha', 'documentation');
       await writeUnstampedLive(1, 'Alpha', 'Edited on this site.\n');
-      const before = await fs.readFile(livePath(1), 'utf8');
 
       const pm = new PageManager(makeEngine());
       await pm.initialize();
@@ -243,7 +244,9 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
       expect(report.unstamped).toEqual(['Alpha']);
       expect(report.stamped).toEqual([]);
-      expect(await fs.readFile(livePath(1), 'utf8')).toBe(before);
+      const live = matter(await fs.readFile(livePath(1), 'utf8'));
+      expect(live.content).toContain('Edited on this site.');
+      expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBeUndefined();
     });
 
     test('the backfill is one-time: the next start-up stamps nothing', async () => {
@@ -257,6 +260,55 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
       expect(report.stamped).toEqual([]);
       expect(report.present).toBe(1);
+    });
+  });
+
+  describe('#1411 required pages are administrator-edit only', () => {
+    const ADMIN_ONLY = { edit: ['admin'] };
+    const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
+
+    test('a new required page is seeded admin-edit only', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeSource(2, 'Beta', 'system');
+
+      await boot();
+
+      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual(ADMIN_ONLY);
+      expect(matter(await fs.readFile(livePath(2), 'utf8')).data.access).toEqual(ADMIN_ONLY);
+    });
+
+    test('a source that declares its own access keeps it', async () => {
+      await writeSource(1, 'Alpha', 'documentation', { access: { edit: ['editor'] } });
+
+      await boot();
+
+      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor'] });
+    });
+
+    test('a live required page with no access gets it once, keeping lastModified', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await fse.writeFile(livePath(1), matter.stringify('Body of Alpha.\n', {
+        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', lastModified: '2026-01-01T00:00:00.000Z'
+      }));
+
+      await boot();
+
+      const live = matter(await fs.readFile(livePath(1), 'utf8'));
+      expect(live.data.access).toEqual(ADMIN_ONLY);
+      expect(new Date(live.data.lastModified as string).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    test('an access an operator set on the live page is left alone, by the boot seed and by Sync', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await fse.writeFile(livePath(1), matter.stringify('Body of Alpha.\n', {
+        title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', access: { edit: ['editor', 'admin'] }
+      }));
+      const pm = await boot();
+      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor', 'admin'] });
+
+      await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], { force: true }, { origin: 'test', user: 'admin' });
+
+      expect(matter(await fs.readFile(livePath(1), 'utf8')).data.access).toEqual({ edit: ['editor', 'admin'] });
     });
   });
 

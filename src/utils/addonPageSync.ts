@@ -64,3 +64,18 @@ export function evaluateSeededAddonPage(args: {
   const legacy = !hasHash;
   return unmodified || legacy ? 'outdated' : 'locally-modified';
 }
+
+/**
+ * Default edit access for a page ngdpbase ships (#971, #1411): a `general`
+ * page is instance-owned and gets no stamp; any other category — system,
+ * documentation, addon, unclassified — is administrator-edit only. A source
+ * that declares its own `access` overrides this.
+ *
+ * @param category - The page's resolved `system-category`
+ * @returns The access object to stamp, or undefined to leave the page unprotected
+ */
+export function defaultShippedPageAccess(category: unknown): { edit: string[] } | undefined {
+  if (category === 'general') return undefined;
+  return { edit: ['admin'] };
+}
+
