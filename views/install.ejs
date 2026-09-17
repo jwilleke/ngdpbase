@@ -96,7 +96,6 @@
                 <% if (partialInstallation.steps.configWritten) { %><li>✓ Configuration file written</li><% } %>
                 <% if (partialInstallation.steps.organizationCreated) { %><li>✓ Organization created</li><% } %>
                 <% if (partialInstallation.steps.adminCreated) { %><li>✓ Admin user created</li><% } %>
-                <% if (partialInstallation.steps.pagesCopied) { %><li>✓ Pages copied</li><% } %>
               </ul>
               <small class="text-muted">
                 Just fill in the form again and submit to complete the installation.
@@ -257,22 +256,6 @@
           </div>
         </div>
 
-        <!-- Startup Pages Option -->
-        <div class="section-header">
-          <i class="bi bi-file-earmark-text"></i> Initial Content
-        </div>
-
-        <div class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="copyStartupPages"
-                 name="copyStartupPages" checked>
-          <label class="form-check-label" for="copyStartupPages">
-            <strong>Copy startup pages to initialize wiki</strong>
-            <div class="help-text">
-              Includes 33 essential pages: 15 system pages for core functionality
-              and 18 documentation pages for user help. Recommended for first-time setup.
-            </div>
-          </label>
-        </div>
 
         <!-- Submit Button -->
         <div class="d-grid gap-2 mt-4">

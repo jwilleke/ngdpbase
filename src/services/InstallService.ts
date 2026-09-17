@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
+import { SEEDED_SHIPPED_PAGES_FILE } from '../utils/seededShippedPages.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,7 +59,6 @@ interface InstallData {
   orgAddressRegion?: string;
   orgAddressCountry?: string;
   sessionSecret?: string;
-  copyStartupPages?: boolean;
 }
 
 interface OrganizationManagerLike {
@@ -88,28 +88,7 @@ interface PartialInstallationState {
     configWritten?: boolean;
     organizationCreated?: boolean;
     adminCreated?: boolean;
-    pagesCopied?: boolean;
   };
-}
-
-/**
- * Missing pages detection result
- */
-interface MissingPagesResult {
-  missingPagesOnly: boolean;
-  pagesDirExists?: boolean;
-  pagesDir?: string;
-}
-
-/**
- * Pages folder creation result
- */
-interface PagesFolderResult {
-  success: boolean;
-  message?: string;
-  error?: string;
-  copiedCount: number;
-  pagesDir?: string;
 }
 
 /**
@@ -143,7 +122,6 @@ interface HeadlessInstallResult {
   message?: string;
   error?: string;
   steps: {
-    pagesCopied: number;
     markerCreated: boolean;
   };
 }
@@ -154,7 +132,6 @@ interface HeadlessInstallResult {
  * Manages the initial setup process including:
  * - Writing app-custom-config.json with user-provided settings
  * - Creating users/organizations.json with Schema.org organization data
- * - Copying startup pages from required-pages/ to pages/
  * - Creating the initial admin user
  * - Creating .install-complete marker file in INSTANCE_DATA_FOLDER
  *
@@ -244,9 +221,6 @@ class InstallService {
     const userManager = this.engine.getManager('UserManager') as UserManager;
     const adminExists = await userManager.hasRole('admin', 'admin');
 
-    const pagesDir = this.configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    const pagesExist = await this.#hasPagesInDirectory(pagesDir);
-
     const customConfigPath = path.join(__dirname, '../../config/app-custom-config.json');
     const customConfigExists = await fs.pathExists(customConfigPath);
 
@@ -257,113 +231,12 @@ class InstallService {
     const steps = {
       configWritten: customConfigExists,
       organizationCreated: organizationsExist,
-      adminCreated: adminExists,
-      pagesCopied: pagesExist
+      adminCreated: adminExists
     };
 
     const isPartial = Object.values(steps).some(v => v === true) && !completed;
 
     return { isPartial, steps };
-  }
-
-  /**
-   * Detect if only pages folder is missing
-   *
-   * Returns true if installation is otherwise complete but pages folder is missing/empty
-   *
-   * @returns Result with missingPagesOnly flag and details
-   */
-  async detectMissingPagesOnly(): Promise<MissingPagesResult> {
-    const completed = await this.isInstallComplete();
-
-    // Only applicable if installation is completed
-    if (!completed) {
-      return { missingPagesOnly: false };
-    }
-
-    const pagesDir = this.configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    const pagesExist = await this.#hasPagesInDirectory(pagesDir);
-
-    // Check if pages directory exists but is empty
-    let pagesDirExists: boolean;
-    try {
-      const stats = await fs.stat(pagesDir);
-      pagesDirExists = stats.isDirectory();
-    } catch {
-      pagesDirExists = false;
-    }
-
-    return {
-      missingPagesOnly: !pagesExist,
-      pagesDirExists,
-      pagesDir
-    };
-  }
-
-  /**
-   * Create pages folder and copy required pages
-   *
-   * Copies pages from required-pages directory to the pages directory
-   *
-   * @async
-   * @returns Result with success status and number of pages copied
-   */
-  async createPagesFolder(): Promise<PagesFolderResult> {
-    try {
-      const pagesDir = this.configManager.getResolvedDataPath(
-        'ngdpbase.page.provider.filesystem.storagedir',
-        './data/pages'
-      );
-
-      const requiredPagesDir = this.configManager.getResolvedDataPath(
-        'ngdpbase.page.provider.filesystem.requiredpagesdir',
-        './required-pages'
-      );
-
-      // Create pages directory if it doesn't exist
-      await fs.ensureDir(pagesDir);
-
-      // Check if required-pages directory exists
-      const requiredPagesExists = await fs.pathExists(requiredPagesDir);
-      if (!requiredPagesExists) {
-        return {
-          success: false,
-          error: `Required pages directory not found: ${requiredPagesDir}`,
-          copiedCount: 0
-        };
-      }
-
-      // Copy all .md files from required-pages to pages
-      const files = await fs.readdir(requiredPagesDir);
-      const mdFiles = files.filter(f => f.endsWith('.md'));
-
-      let copiedCount = 0;
-      for (const file of mdFiles) {
-        const sourcePath = path.join(requiredPagesDir, file);
-        const destPath = path.join(pagesDir, file);
-
-        // Don't overwrite existing pages
-        const exists = await fs.pathExists(destPath);
-        if (!exists) {
-          await fs.copy(sourcePath, destPath);
-          copiedCount++;
-        }
-      }
-
-      return {
-        success: true,
-        message: `Pages folder created and ${copiedCount} pages copied`,
-        copiedCount,
-        pagesDir
-      };
-    } catch (error) {
-      const err = error as Error;
-      return {
-        success: false,
-        error: `Failed to create pages folder: ${err.message}`,
-        copiedCount: 0
-      };
-    }
   }
 
   /**
@@ -414,9 +287,6 @@ class InstallService {
       if (partialState.steps.adminCreated) {
         alreadyCompleted.push('adminCreated');
       }
-      if (partialState.steps.pagesCopied) {
-        alreadyCompleted.push('pagesCopied');
-      }
 
       // 1. Write app-custom-config.json (skip if already done)
       if (!partialState.steps.configWritten) {
@@ -435,13 +305,10 @@ class InstallService {
       installSteps.push('updateAdminPassword');
       await this.#updateAdminPassword(installData);
 
-      // 4. Copy startup pages if requested
-      if (installData.copyStartupPages && !partialState.steps.pagesCopied) {
-        installSteps.push('copyPages');
-        await this.#copyStartupPages();
-      }
+      // Required pages are not copied here: PageManager seeds them at the end of
+      // every engine start-up, before the install form is served (#1405, #1406).
 
-      // 5. Mark installation as complete
+      // 4. Mark installation as complete
       installSteps.push('markComplete');
       await this.#markInstallationComplete();
 
@@ -573,6 +440,16 @@ class InstallService {
         }
       }
 
+      // #1406: the seeded-pages record says which shipped pages this site already
+      // had. With the pages gone it would mark every one as removed on purpose,
+      // and the next start-up would seed none of them.
+      const seededRecordPath = path.join(path.dirname(this.getInstallCompleteFilePath()), SEEDED_SHIPPED_PAGES_FILE);
+      if (await fs.pathExists(seededRecordPath)) {
+        await fs.copy(seededRecordPath, seededRecordPath + '.backup-' + Date.now());
+        await fs.remove(seededRecordPath);
+        resetSteps.push('Removed seeded-pages record (backup created)');
+      }
+
       // 5. Reload UserManager's provider to clear cached user data
       if (userManager?.provider) {
         await userManager.provider.loadUsers();
@@ -635,22 +512,14 @@ class InstallService {
    */
   async processHeadlessInstallation(): Promise<HeadlessInstallResult> {
     const steps = {
-      pagesCopied: 0,
       markerCreated: false
     };
 
     try {
       logger.info('[InstallService] Starting headless installation...');
 
-      // Step 2: Copy required pages to pages directory
-      const pagesResult = await this.createPagesFolder();
-      if (pagesResult.success) {
-        steps.pagesCopied = pagesResult.copiedCount;
-        logger.info(`[InstallService] Copied ${steps.pagesCopied} required page(s)`);
-      } else {
-        // Log warning but don't fail - pages may already exist
-        logger.warn(`[InstallService] Pages copy note: ${pagesResult.error || pagesResult.message}`);
-      }
+      // Required pages are not copied here: PageManager seeds them at the end of
+      // engine start-up, before the headless install runs (#1405, #1406).
 
       // Headless installs do NOT seed the anchor org from config (#617):
       // org metadata lives in the JSON-LD file at <storagedir>/<file>, not
@@ -659,7 +528,7 @@ class InstallService {
       // in OrganizationManager.initialize() validates it. Form-driven seeding
       // happens in #seedOrganization(data) on the /install path instead.
 
-      // Step 3: Mark installation as complete
+      // Mark installation as complete
       await this.markHeadlessInstallationComplete();
       steps.markerCreated = true;
       logger.info('[InstallService] Created .install-complete marker');
@@ -866,40 +735,6 @@ class InstallService {
     };
 
     await userManager.updateUser('admin', updates, systemContext(this.engine, 'install: set the bootstrap admin password'));
-  }
-
-  /**
-   * Copy startup pages from required-pages/ to pages/
-   *
-   * @private
-   */
-  async #copyStartupPages(): Promise<void> {
-    const requiredPagesDir = this.configManager.getResolvedDataPath(
-      'ngdpbase.page.provider.filesystem.requiredpagesdir',
-      './required-pages'
-    );
-    const pagesDir = this.configManager.getResolvedDataPath(
-      'ngdpbase.page.provider.filesystem.storagedir',
-      './data/pages'
-    );
-
-    // Ensure pages directory exists
-    await fs.ensureDir(pagesDir);
-
-    // Copy all .md files from required-pages to pages
-    const files = await fs.readdir(requiredPagesDir);
-    const mdFiles = files.filter(f => f.endsWith('.md'));
-
-    for (const file of mdFiles) {
-      const sourcePath = path.join(requiredPagesDir, file);
-      const destPath = path.join(pagesDir, file);
-
-      // Don't overwrite existing pages
-      const exists = await fs.pathExists(destPath);
-      if (!exists) {
-        await fs.copy(sourcePath, destPath);
-      }
-    }
   }
 
   /**

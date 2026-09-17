@@ -61,10 +61,9 @@ __Organization Information:__
 - Country
 - Session Secret (auto-generated)
 
-### Startup Pages Option
+### Startup Pages
 
-- Checkbox: "Copy startup pages to initialize wiki" (checked by default)
-- Copies all pages from `required-pages/` to `pages/`
+- No form option: the platform seeds `required-pages/` into `pages/` at every start-up, before the wizard opens ([#1406](https://github.com/jwilleke/ngdpbase/issues/1406))
 
 ## Expected Results
 
@@ -77,7 +76,6 @@ When accessing any URL with install required, should redirect to `/install`
 - Clean, professional Bootstrap 5 interface
 - All fields visible and accessible
 - Session secret pre-generated
-- Startup pages checkbox checked by default
 
 ### 3. Form Validation
 
@@ -183,7 +181,7 @@ __pages/ directory:__
 - [ ] Form displays correctly
 - [ ] All fields visible
 - [ ] Session secret generated
-- [ ] Startup pages checkbox present and checked
+- [ ] No startup pages checkbox on the form
 
 ### Form Validation
 
@@ -278,13 +276,14 @@ cat ~/.pm2/logs/ngdpbase-error.log
 
 ### Issue: Pages Not Copied
 
-__Cause:__ Startup pages checkbox unchecked or copy failed
+__Cause:__ The start-up seed failed, or the site's seeded-pages record already lists the pages (so they count as removed on this site)
 
 __Solution:__
 
 ```bash
-# Manual copy if needed
-cp required-pages/*.md pages/
+# Read what the seed did at start-up
+grep "Required pages" ~/.pm2/logs/ngdpbase-out.log
+# Then restore missing pages from Admin → Required Pages Sync
 
 # Verify source files exist
 ls required-pages/*.md | wc -l  # Should show files
@@ -353,12 +352,12 @@ rm -rf pages && mv .manual-backup/pages pages
 
 ## Testing Different Scenarios
 
-### Scenario 1: Minimal Install (No Startup Pages)
+### Scenario 1: Startup Pages Before the Wizard
 
-- Uncheck "Copy startup pages" checkbox
+- Start a fresh instance
+- Before submitting the form, verify pages/ holds every page in required-pages/
 - Submit form
-- Verify pages/ remains empty
-- Verify other files still created
+- Verify no pages were added or changed by the install
 
 ### Scenario 2: Custom Organization Data
 

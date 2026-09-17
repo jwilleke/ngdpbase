@@ -30,7 +30,6 @@ interface InstallFormData {
   orgAddressRegion: string;
   orgAddressCountry: string;
   sessionSecret: string;
-  copyStartupPages: boolean;
 }
 
 /**
@@ -51,15 +50,7 @@ interface PartialInstallationState {
     configWritten?: boolean;
     organizationCreated?: boolean;
     adminCreated?: boolean;
-    pagesCopied?: boolean;
   };
-}
-
-/**
- * Missing pages detection result
- */
-interface MissingPagesResult {
-  missingPagesOnly: boolean;
 }
 
 /**
@@ -72,11 +63,9 @@ interface InstallSessionData {
 }
 
 /**
- * Form body data (checkbox comes as 'on' string from HTML)
+ * Form body data
  */
-interface InstallFormBody extends Omit<InstallFormData, 'copyStartupPages'> {
-  copyStartupPages?: string | boolean;
-}
+type InstallFormBody = InstallFormData;
 
 /**
  * Extended Request type with session data
@@ -186,8 +175,7 @@ class InstallRoutes {
           orgAddressLocality: req.body.orgAddressLocality || '',
           orgAddressRegion: req.body.orgAddressRegion || '',
           orgAddressCountry: req.body.orgAddressCountry || '',
-          sessionSecret: req.body.sessionSecret || '',
-          copyStartupPages: req.body.copyStartupPages === true || req.body.copyStartupPages === 'on'
+          sessionSecret: req.body.sessionSecret || ''
         };
 
         // Process installation
@@ -211,8 +199,7 @@ class InstallRoutes {
         res.render('install-success', {
           applicationName: installData.applicationName,
           baseURL: installData.baseURL,
-          adminUsername: installData.adminUsername,
-          pagesCopied: installData.copyStartupPages
+          adminUsername: installData.adminUsername
         });
 
       } catch (error: unknown) {
@@ -248,47 +235,13 @@ class InstallRoutes {
       try {
         const partialState: PartialInstallationState = await this.installService.detectPartialInstallation();
         const installRequired: boolean = await this.installService.isInstallRequired();
-        const missingPages: MissingPagesResult = await this.installService.detectMissingPagesOnly();
 
         res.json({
           installRequired,
-          partialInstallation: partialState,
-          missingPagesOnly: missingPages
+          partialInstallation: partialState
         });
       } catch (error: unknown) {
         res.status(500).json({ error: getErrorMessage(error) });
-      }
-    });
-
-    // POST /install/create-pages - Create pages folder and copy required pages
-    this.router.post('/create-pages', async (_req: Request, res: Response): Promise<void> => {
-      try {
-        // Check if only pages are missing
-        const missingPages: MissingPagesResult = await this.installService.detectMissingPagesOnly();
-
-        if (!missingPages.missingPagesOnly) {
-          res.status(400).json({
-            success: false,
-            error: 'Pages folder already exists or installation is not complete'
-          });
-          return;
-        }
-
-        // Create pages folder and copy required pages
-        const result: InstallResult = await this.installService.createPagesFolder();
-
-        if (!result.success) {
-          res.status(500).json(result);
-          return;
-        }
-
-        res.json(result);
-      } catch (error: unknown) {
-        logger.error('Error creating pages folder:', error);
-        res.status(500).json({
-          success: false,
-          error: `Failed to create pages folder: ${getErrorMessage(error)}`
-        });
       }
     });
   }

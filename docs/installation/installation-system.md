@@ -52,10 +52,8 @@ Core service handling:
 - Config file generation (path from `INSTANCE_CONFIG_FILE` env var, default: `./data/config/app-custom-config.json`) — written from install-form data; no template file is copied (#642)
 - Organization JSON creation (Schema.org compliant)
 - Admin user password update with secure hashing
-- Startup pages copying mechanism
 - Installation completion tracking via `.install-complete` marker file
 - Partial installation detection
-- Missing pages folder detection & recovery
 - Retry support (allows continuing from where previous attempt failed)
 
 Key Methods:
@@ -66,8 +64,6 @@ Key Methods:
 - `#validateInstallData()` - Validates form submission (private)
 - `processInstallation()` - Main handler (supports retry)
 - `resetInstallation()` - Clears partial state
-- `createPagesFolder()` - Recovery: recreate pages folder
-- `detectMissingPagesOnly()` - Recovery: detect missing pages
 - `getInstanceConfigDir()` - Returns resolved instance config directory
 - `getInstallCompleteFilePath()` - Returns path to `.install-complete` marker
 
@@ -81,7 +77,6 @@ HTTP endpoints:
 - `POST /install` - Process installation submission (with partial installation support)
 - `POST /install/reset` - Reset partial installation
 - `GET /install/status` - Check installation status (API)
-- `POST /install/create-pages` - Create missing pages folder
 
 #### 3. User Interface
 
@@ -92,7 +87,6 @@ Install Form: `views/install.ejs` (260+ lines)
 - Admin account setup (password only - username/email fixed)
 - Organization information (Schema.org compliant)
 - Advanced settings: address, founding date, session secret
-- Startup pages checkbox
 - Client-side password validation
 - Partial installation status display
 
@@ -326,11 +320,7 @@ Step 4: #updateAdminPassword()
   - Updates ngdpbase.user.provider.storagedir/users.json
     (default: FAST_STORAGE/users/users.json)
     ↓
-Step 5: #copyStartupPages() (if requested)
-  - Copies required-pages/*.md → ngdpbase.page.provider.filesystem.storagedir
-    (default: SLOW_STORAGE/pages)
-    ↓
-Step 6: #markInstallationComplete()
+Step 5: #markInstallationComplete()
   - Creates FAST_STORAGE/.install-complete marker file
     ↓
 Success page → Login
@@ -435,7 +425,7 @@ SLOW_STORAGE/                               (default: ./data — can be NAS/SMB)
 
 ### Required Pages
 
-- `required-pages/` - Startup pages copied during installation
+- `required-pages/` - Startup pages, seeded at every start-up (not by the installer)
 
 ## Current Status
 
@@ -447,7 +437,7 @@ SLOW_STORAGE/                               (default: ./data — can be NAS/SMB)
 - ✅ Partial installation retry logic implemented
 - ✅ Configuration files created correctly
 - ✅ Admin user created/updated with password hashing
-- ✅ Startup pages copied on request
+- ✅ Startup pages seeded at start-up, before the wizard
 - ✅ Admin credentials hardcoded (secure)
 - ✅ Backend validates all form data
 - ✅ Success page displays after completion
@@ -504,17 +494,8 @@ Admin Account Security:
 
 Startup Pages:
 
-- [ ] Check "Copy startup pages" box
-- [ ] Complete installation
-- [ ] Verify pages exist in data/pages/
-- [ ] Verify pages match required-pages/
-
-Recovery Features:
-
-- [ ] Delete data/pages/ folder after installation
-- [ ] Call POST /install/create-pages
-- [ ] Verify pages folder recreated
-- [ ] Verify startup pages restored
+- [ ] Start a fresh instance; before the wizard, verify data/pages/ holds every page in required-pages/
+- [ ] Verify FAST_STORAGE/seeded-shipped-pages.json lists them
 
 Docker/Kubernetes Testing:
 
@@ -563,7 +544,8 @@ Environment variables:
 Startup Pages:
 
 - All pages in `required-pages/`
-- Copied to `ngdpbase.page.provider.filesystem.storagedir` during installation (default: `SLOW_STORAGE/pages`)
+- Seeded by `PageManager.seedRequiredPages()` at the end of every engine start-up, not by the installer ([#1405](https://github.com/jwilleke/ngdpbase/issues/1405), [#1406](https://github.com/jwilleke/ngdpbase/issues/1406)): each page a site has never had is saved to `ngdpbase.page.provider.filesystem.storagedir` (default: `SLOW_STORAGE/pages`) and recorded in `FAST_STORAGE/seeded-shipped-pages.json`
+- A page removed on the site is not seeded again; bring one back with Admin → Required Pages Sync
 
 ## Security Considerations
 

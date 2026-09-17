@@ -453,7 +453,6 @@ void (async (): Promise<void> => {
 
             if (result.success) {
               console.log('✅ Headless installation completed successfully');
-              console.log(`   - Pages copied: ${String(result.steps.pagesCopied)}`);
               next(); return;
             } else {
               console.error('❌ Headless installation failed:', result.error);
