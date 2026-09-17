@@ -1129,9 +1129,13 @@ describe('AddonsManager', () => {
       );
     });
 
-    test('#920: legacy page is a no-op when it already matches source', async () => {
+    test('#920: legacy page that already matches source is not reseeded — #1408 only stamps it', async () => {
       const pm = await setupReseed({ sourceBody: 'Same body', pageBody: 'Same body', storedHashBody: null, pageReseed: true });
-      expect(pm.savePage).not.toHaveBeenCalled();
+      expect(pm.savePage).toHaveBeenCalledTimes(1);
+      const [, content, meta, , options] = pm.savePage.mock.calls[0];
+      expect(content).toBe('Same body');
+      expect(meta['addon-source-hash']).toBe(bodyHash('Same body'));
+      expect(options).toMatchObject({ skipValidation: true, preserveLastModified: true });
     });
 
     test('#920: legacy page not reseeded when the flag is off', async () => {

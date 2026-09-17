@@ -53,6 +53,13 @@ export interface PageSaveOptions {
   /** Attributed to the validation log line; purely diagnostic. */
   userName?: string;
   /**
+   * Keep the page's `lastModified` from the metadata passed in. For a write
+   * that changes no content a reader cares about — e.g. stamping a shipped
+   * page's source hash (#1408) — so the page does not jump to the top of
+   * Recent Changes.
+   */
+  preserveLastModified?: boolean;
+  /**
    * Request-level detail the manager cannot see, for the audit record (#1121).
    *
    * The event is emitted by the manager either way — a caller that omits this
@@ -170,6 +177,10 @@ export interface ShippedPageSeedReport {
   failed: Array<{ file: string; title: string; reason: string; code: ShippedPageFailureCode }>;
   /** True when this run started the site's record for the source */
   recordStarted: boolean;
+  /** Titles of live pages that had no stamp and matched the source, now stamped (#1408) */
+  stamped: string[];
+  /** Titles of live pages with no stamp whose body differs from the source — left unstamped (#1408) */
+  unstamped: string[];
 }
 
 /** What `syncShippedPages` did with each requested uuid. */
@@ -458,7 +469,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    const report: ShippedPageSeedReport = { seeded: [], present: 0, removed: [], excluded: [], failed: [], recordStarted: false };
+    const report: ShippedPageSeedReport = { seeded: [], present: 0, removed: [], excluded: [], failed: [], recordStarted: false, stamped: [], unstamped: [] };
     if (!(await fse.pathExists(source.dir))) return report;
 
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -511,10 +522,13 @@ class PageManager extends BaseManager implements CatalogSource {
           continue;
         }
 
-        const livePage = await this.storeCopyByUUID(uuid, source, ctx);
+        let livePage = await this.storeCopyByUUID(uuid, source, ctx);
         if (livePage) {
           record.add(source.id, uuid);
           report.present++;
+          if (await this.backfillShippedPageStamp(source, livePage, parsed, ctx, report)) {
+            livePage = await this.storeCopyByUUID(uuid, source, ctx) ?? livePage;
+          }
           await source.onPresent?.(livePage, parsed, ctx);
           continue;
         }
@@ -696,6 +710,51 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Stamp a live shipped page that has no stamp, when its body matches the
+   * source (#1408). Its hash then equals the source's, so the stamp records
+   * exactly what the site holds; without one, a later source change cannot be
+   * told from a local edit. A page whose body differs cannot be proven
+   * unedited and is left unstamped, reported for an admin.
+   *
+   * A metadata-only save: no version is written for the unchanged body
+   * (#1407), and `lastModified` is kept so Recent Changes stays quiet.
+   *
+   * @returns True when the page was stamped
+   */
+  private async backfillShippedPageStamp(
+    source: ShippedPageSource,
+    live: WikiPage,
+    parsed: { data: Record<string, unknown>; content: string },
+    ctx: ActorContext,
+    report: ShippedPageSeedReport
+  ): Promise<boolean> {
+    const meta = (live.metadata ?? {}) as Record<string, unknown>;
+    const stamp = meta[source.stampKey];
+    if (typeof stamp === 'string' && stamp.length > 0) return false;
+
+    const title = typeof meta.title === 'string' && meta.title ? meta.title : String(parsed.data.title);
+    const sourceHash = pageSourceHash(parsed.content);
+    if (pageSourceHash(live.content ?? '') !== sourceHash) {
+      report.unstamped.push(title);
+      return false;
+    }
+    try {
+      await this.savePage(
+        title,
+        live.content ?? '',
+        { ...meta, [source.stampKey]: sourceHash },
+        ctx,
+        { skipValidation: true, preserveLastModified: true }
+      );
+      report.stamped.push(title);
+      return true;
+    } catch (err) {
+      logger.warn(`[PageManager] Could not stamp '${title}' from ${source.label}:`, err);
+      return false;
+    }
+  }
+
+  /**
    * This site's own copy of a shipped page, or null. A page served from the
    * source folder is the source, not the site's page.
    */
@@ -757,6 +816,15 @@ class PageManager extends BaseManager implements CatalogSource {
         `[PageManager] Required pages: ${report.seeded.length} seeded, ${report.present} present, ` +
         `${report.removed.length} removed on this site, ${report.excluded.length} github-only, ${report.failed.length} not seeded`
       );
+      if (report.stamped.length > 0) {
+        logger.info(`[PageManager] Stamped ${report.stamped.length} required page(s) whose text matches the source (#1408)`);
+      }
+      if (report.unstamped.length > 0) {
+        logger.info(
+          `[PageManager] ${report.unstamped.length} required page(s) have no stamp and differ from the source, so they cannot be ` +
+          `proven unedited; review them in Admin → Required Pages Sync: ${report.unstamped.join(', ')}`
+        );
+      }
       if (report.seeded.length > 0) {
         logger.info(`[PageManager] Seeded required pages: ${report.seeded.join(', ')}`);
         if (report.recordStarted) {
@@ -1582,7 +1650,11 @@ class PageManager extends BaseManager implements CatalogSource {
       ? Boolean(await this.provider.getPage(pageName, ctx).catch(() => null))
       : true;
 
-    await this.provider.savePage(pageName, content, metadata, ctx);
+    if (options.preserveLastModified) {
+      await this.provider.savePage(pageName, content, metadata, ctx, { preserveLastModified: true });
+    } else {
+      await this.provider.savePage(pageName, content, metadata, ctx);
+    }
 
     // #1121 gap C: this path produces NO audit event from the route layer,
     // because it has no request to audit from. Five callers use it —

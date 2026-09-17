@@ -850,6 +850,12 @@ class AddonsManager extends BaseManager {
     if (report.removed.length > 0) {
       logger.info(`[AddonsManager] Not seeding ${report.removed.length} page(s) from ${addonName} removed on this site: ${report.removed.join(', ')}`);
     }
+    if (report.stamped.length > 0) {
+      logger.info(`[AddonsManager] Stamped ${report.stamped.length} page(s) from ${addonName} whose text matches the source (#1408)`);
+    }
+    if (report.unstamped.length > 0) {
+      logger.info(`[AddonsManager] ${report.unstamped.length} page(s) from ${addonName} have no stamp and differ from the source: ${report.unstamped.join(', ')}`);
+    }
 
     if (report.seeded.length > 0 || this.lastReseedCount > 0) {
       logger.info(`[AddonsManager] Seeded ${report.seeded.length} new + reseeded ${this.lastReseedCount} page(s) from ${addonName}/pages/`);

@@ -30,6 +30,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 import matter from 'gray-matter';
+import { pageSourceHash } from '../../utils/addonPageSync';
 
 const UUID = (n: number) => `${String(n).repeat(8)}-9999-4444-8888-cccccccccccc`;
 
@@ -48,7 +49,10 @@ describe('#1003 system-category drift', () => {
     savePage.mock.calls.find((c) => c[0] === slug || (c[2] as Record<string, unknown>)?.slug === slug)?.[2] as Record<string, unknown> | undefined;
 
   /** Stand up a PageManager whose store already holds this seeded page. */
-  const withExisting = (meta: Record<string, unknown>, content = 'body') => {
+  const withExisting = (rawMeta: Record<string, unknown>, content = 'body') => {
+    // Stamped, as a seeded page is: these cases are about category drift, and an
+    // unstamped page matching its source would first get the #1408 stamp save.
+    const meta = { 'addon-source-hash': pageSourceHash(content), ...rawMeta };
     (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
       getManager: (n: string) => {
         if (n === 'PageManager') {

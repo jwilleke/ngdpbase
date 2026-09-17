@@ -212,6 +212,54 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     expect(await liveFiles()).toEqual([`${uuid(2)}.md`]);
   });
 
+  describe('#1408 stamp backfill', () => {
+    const livePath = (n: number) => path.join(pagesDir, `${uuid(n)}.md`);
+    /** A live copy written before stamps existed: same frontmatter as the source, no stamp. */
+    const writeUnstampedLive = async (n: number, title: string, body: string) => {
+      await fse.writeFile(livePath(n), matter.stringify(body, {
+        title, uuid: uuid(n), slug: title.toLowerCase(), 'system-category': 'documentation', lastModified: '2026-01-01T00:00:00.000Z'
+      }));
+    };
+
+    test('a live page with no stamp whose text matches the source is stamped, keeping lastModified', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeUnstampedLive(1, 'Alpha', 'Body of Alpha.\n');
+
+      await boot();
+
+      const live = matter(await fs.readFile(livePath(1), 'utf8'));
+      expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash(live.content));
+      expect(new Date(live.data.lastModified as string).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    test('a live page with no stamp whose text differs is left unstamped and reported', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeUnstampedLive(1, 'Alpha', 'Edited on this site.\n');
+      const before = await fs.readFile(livePath(1), 'utf8');
+
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      const report = await pm.seedShippedPages(pm.requiredPagesSource(), { origin: 'test', user: 'system' });
+
+      expect(report.unstamped).toEqual(['Alpha']);
+      expect(report.stamped).toEqual([]);
+      expect(await fs.readFile(livePath(1), 'utf8')).toBe(before);
+    });
+
+    test('the backfill is one-time: the next start-up stamps nothing', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      await writeUnstampedLive(1, 'Alpha', 'Body of Alpha.\n');
+      await boot();
+
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      const report = await pm.seedShippedPages(pm.requiredPagesSource(), { origin: 'test', user: 'system' });
+
+      expect(report.stamped).toEqual([]);
+      expect(report.present).toBe(1);
+    });
+  });
+
   test('#1406 onPresent is called for a page the site holds, and not for a removed one', async () => {
     await writeSource(1, 'Alpha', 'documentation');
     await writeSource(2, 'Beta', 'documentation');
