@@ -2608,10 +2608,15 @@ class VersioningFileProvider extends FileSystemProvider {
     _pageInfo: WikiPage
   ): Promise<void> {
     // Load manifest
-    let manifest = await this.loadManifest(uuid, location);
+    const manifest = await this.loadManifest(uuid, location);
     if (!manifest) {
-      logger.warn(`[VersioningFileProvider] No manifest found for ${pageName}, creating new`);
-      manifest = this.createInitialManifest(uuid, pageName);
+      // #1408: a live page with no history (written around versioning, e.g. by
+      // a seed before #1405) starts it here: this save is its v1. Going through
+      // the version-diff path instead read a v1 that did not exist and logged a
+      // false "Failed to read current content" error for every such page.
+      logger.info(`[VersioningFileProvider] '${pageName}' (${uuid}) has no version history; this save starts it as v1`);
+      await this.createInitialVersion(uuid, pageName, newContent, metadata, location);
+      return;
     }
 
     // #1407: a version records page content (the body; frontmatter is never

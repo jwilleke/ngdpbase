@@ -1213,6 +1213,28 @@ describe('VersioningFileProvider', () => {
       expect((await fs.readdir(versionDir)).sort()).toEqual(['manifest.json', 'v1']);
     });
 
+    test('#1408 a page with no history gets v1 on its first save, without a false error', async () => {
+      // A page file written around versioning — as seeds did before #1405.
+      const uuid = 'aaaaaaaa-1408-4000-8000-000000000001';
+      await provider.initialize();
+      await fs.writeFile(
+        path.join(testDir, 'pages', `${uuid}.md`),
+        `---\ntitle: No History\nuuid: ${uuid}\nslug: no-history\n---\nShipped body.\n`
+      );
+      await provider.refreshPageList();
+      expect(await fs.pathExists(path.join(testDir, 'pages', 'versions', uuid))).toBe(false);
+      const logger = (await import('../../utils/logger')).default;
+      const error = vi.spyOn(logger, 'error');
+
+      await provider.savePage('No History', 'Shipped body.\n', { uuid, 'required-source-hash': 'abc' }, TEST_ACTOR);
+
+      const history = await provider.getVersionHistory('No History');
+      expect(history).toHaveLength(1);
+      expect((await provider.getPageVersion('No History', 1)).content).toContain('Shipped body.');
+      expect(error).not.toHaveBeenCalled();
+      error.mockRestore();
+    });
+
     test('#1407 an unchanged save still writes the page file and its metadata', async () => {
       await provider.initialize();
 
