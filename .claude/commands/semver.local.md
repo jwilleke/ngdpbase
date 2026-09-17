@@ -70,6 +70,23 @@ docker exec ngdpbase-release-smoke grep -q 'ngdpbase-session-secret-change-in-pr
 # #1192 — every bundled addon must have loaded IN THE IMAGE. AddonsManager
 # logs and continues on a dead addon, so the container is healthy either way.
 docker logs ngdpbase-release-smoke 2>&1 | grep "Failed to load add-on" && echo "FAILED: addon did not load"
+
+# v4.17.1 — the HTTP checks CI runs. Healthy is not ready: the HEALTHCHECK
+# probes /health/liveness, which answers 200 while the engine is still starting,
+# and a fresh container's first start seeds every required page (#1405). Wait
+# for readiness, then request / and /login exactly as docker-build.yml does.
+# Skipping this is how v4.17.0 passed locally and failed its image build.
+for i in $(seq 1 60); do
+  R=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3099/health/readiness)
+  ROOT=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3099/)
+  [ "$R" = "200" ] && [ "$ROOT" != "503" ] && [ "$ROOT" != "000" ] && { echo "  ready after ~$((i * 3))s"; break; }
+  sleep 3
+done
+for u in / /login; do
+  C=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3099$u")
+  echo "  $u → $C"
+  case "$C" in 200|301|302) ;; *) echo "FAILED: $u answered $C" ;; esac
+done
 ```
 
 Then clean up whatever the outcome:
@@ -80,7 +97,7 @@ docker rmi -f ngdpbase-release-smoke:local 2>/dev/null
 rm -rf "$SM"
 ```
 
-__If either half fails, stop.__ Nothing is tagged yet, which is the whole point of the step. A half
+__If either half fails, or the HTTP checks fail, stop.__ Nothing is tagged yet, which is the whole point of the step. A half
 that fails is not a stale instruction to work around — that reading is what shipped `v4.12.0` with a
 missing `-devtools` tag.
 

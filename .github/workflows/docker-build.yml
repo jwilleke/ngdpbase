@@ -269,6 +269,30 @@ jobs:
             fi
           }
 
+          # v4.17.0: healthy is not ready. The HEALTHCHECK probes
+          # /health/liveness, which answers 200 while the engine is still
+          # starting (#1079), and a fresh container's first start seeds every
+          # required page through PageManager (#1405). The check ran as the
+          # container turned healthy, got 503 from the start-up gate, and failed
+          # the release. Wait until the instance is ready and / stops answering
+          # 503, then check.
+          ready=""
+          for i in $(seq 1 60); do
+            r=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/health/readiness")
+            root=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/")
+            if [ "$r" = "200" ] && [ "$root" != "503" ] && [ "$root" != "000" ]; then
+              ready=yes
+              echo "Ready after ~$((i * 3))s (readiness $r, root $root)."
+              break
+            fi
+            sleep 3
+          done
+          if [ -z "$ready" ]; then
+            echo "FAILED: not ready after 180s (readiness $r, root $root)"
+            docker logs ngdpbase-smoke
+            exit 1
+          fi
+
           check "$BASE/"       "Root"
           check "$BASE/login" "Login page"
 

@@ -83,3 +83,31 @@ export function buildReadinessReport(checks: Record<string, boolean>): Readiness
     failed
   };
 }
+
+/**
+ * Whether the instance data folder is writable — the readiness check that holds
+ * sessions, config, logs and the page index.
+ *
+ * Reads the folder the rest of the app uses, `getInstanceDataFolder()`
+ * (`FAST_STORAGE`, else `INSTANCE_DATA_FOLDER`, else `./data`). It used to read
+ * `ngdpbase.directories.data`, whose default is `"${FAST_STORAGE}"`: the image
+ * sets only `INSTANCE_DATA_FOLDER`, so in a container the placeholder stayed
+ * unresolved, the access check failed, and readiness answered 503 forever
+ * (found releasing v4.17.0).
+ *
+ * @param configManager - Supplies the instance data folder
+ * @param access - Filesystem access check; injected for tests
+ */
+export async function instanceDataFolderWritable(
+  configManager: { getInstanceDataFolder?: () => string } | null | undefined,
+  access: (dir: string) => Promise<void>
+): Promise<boolean> {
+  const dir = configManager?.getInstanceDataFolder?.();
+  if (!dir) return false;
+  try {
+    await access(dir);
+    return true;
+  } catch {
+    return false;
+  }
+}

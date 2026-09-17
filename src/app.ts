@@ -24,7 +24,7 @@ import session from 'express-session';
 import sessionFileStore from 'session-file-store';
 import fs from 'fs-extra';
 import { constants as fsConstants } from 'fs';
-import { runReadinessChecks, buildReadinessReport } from './utils/healthChecks.js';
+import { runReadinessChecks, buildReadinessReport, instanceDataFolderWritable } from './utils/healthChecks.js';
 import { resolveListenPort } from './utils/resolveListenPort.js';
 import { loadMergedConfigSync } from './utils/addonConfigLayer.js';
 
@@ -256,14 +256,10 @@ void (async (): Promise<void> => {
           // FAST_STORAGE holds sessions, config, logs and the page index.
           // Unwritable means the app is up but cannot serve a login.
           name: 'dataDirWritable',
-          run: async () => {
-            const dir = (engineForCheck.getManager('ConfigurationManager') as {
-              getProperty?: (key: string) => unknown;
-            } | null)?.getProperty?.('ngdpbase.directories.data') as string | undefined;
-            if (!dir) return false;
-            await fs.access(dir, fsConstants.W_OK);
-            return true;
-          }
+          run: () => instanceDataFolderWritable(
+            engineForCheck.getManager('ConfigurationManager'),
+            (dir) => fs.access(dir, fsConstants.W_OK)
+          )
         }
       ])
       : { engineInitialized: false };

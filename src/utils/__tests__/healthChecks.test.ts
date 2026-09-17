@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildReadinessReport, runReadinessChecks, type ReadinessCheck } from '../healthChecks.js';
+import { buildReadinessReport, instanceDataFolderWritable, runReadinessChecks, type ReadinessCheck } from '../healthChecks.js';
 
 /**
  * #1079 — the container and k8s probes pointed at `/`, a full page render
@@ -106,3 +106,27 @@ describe('runReadinessChecks', () => {
     expect(later).toHaveBeenCalled();
   });
 });
+
+describe('instanceDataFolderWritable (v4.17.1)', () => {
+  it('checks the instance data folder the app uses, not the unresolved directories.data default', async () => {
+    // A container sets INSTANCE_DATA_FOLDER only; ngdpbase.directories.data
+    // stayed "${FAST_STORAGE}" and readiness answered 503 forever.
+    const access = vi.fn().mockResolvedValue(undefined);
+
+    const ok = await instanceDataFolderWritable({ getInstanceDataFolder: () => '/app/data' }, access);
+
+    expect(ok).toBe(true);
+    expect(access).toHaveBeenCalledWith('/app/data');
+  });
+
+  it('is false when the folder is not writable', async () => {
+    const access = vi.fn().mockRejectedValue(new Error('EACCES'));
+
+    expect(await instanceDataFolderWritable({ getInstanceDataFolder: () => '/app/data' }, access)).toBe(false);
+  });
+
+  it('is false when there is no configuration manager', async () => {
+    expect(await instanceDataFolderWritable(null, vi.fn())).toBe(false);
+  });
+});
+
