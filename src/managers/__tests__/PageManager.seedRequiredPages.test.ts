@@ -212,6 +212,35 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     expect(await liveFiles()).toEqual([`${uuid(2)}.md`]);
   });
 
+  test('#1406 onPresent is called for a page the site holds, and not for a removed one', async () => {
+    await writeSource(1, 'Alpha', 'documentation');
+    await writeSource(2, 'Beta', 'documentation');
+    const pm = await boot();
+    await pm.deletePage(uuid(2), { origin: 'test', user: 'admin' });
+    const onPresent = vi.fn().mockResolvedValue(undefined);
+
+    await pm.seedShippedPages({ ...pm.requiredPagesSource(), onPresent }, { origin: 'test', user: 'system' });
+
+    expect(onPresent).toHaveBeenCalledTimes(1);
+    expect(onPresent.mock.calls[0][1].data.title).toBe('Alpha');
+  });
+
+  test('#1406 each failure carries a code the addon seed reports by', async () => {
+    await fse.writeFile(path.join(requiredDir, 'a.md'), matter.stringify('x\n', { title: 'No Uuid', slug: 'no-uuid' }));
+    await fse.writeFile(path.join(requiredDir, 'b.md'), matter.stringify('x\n', { uuid: uuid(3), slug: 'no-title' }));
+    await fse.writeFile(path.join(requiredDir, 'c.md'), matter.stringify('x\n', { uuid: uuid(4), title: 'No Slug' }));
+    const pm = new PageManager(makeEngine());
+    await pm.initialize();
+
+    const report = await pm.seedShippedPages(pm.requiredPagesSource(), { origin: 'test', user: 'system' });
+
+    expect(report.failed.map((f) => [f.file, f.code])).toEqual([
+      ['a.md', 'missing-or-invalid-uuid'],
+      ['b.md', 'missing-title'],
+      ['c.md', 'missing-slug']
+    ]);
+  });
+
   describe('syncShippedPages — the explicit sync behind Required Pages Sync (#1406)', () => {
     const ADMIN = { origin: 'test', user: 'admin' } as never;
     const liveOf = async (n: number) => matter(await fs.readFile(path.join(pagesDir, `${uuid(n)}.md`), 'utf8'));

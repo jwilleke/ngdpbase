@@ -19,7 +19,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import * as path from 'path';
 import { pageSourceHash, evaluateSeededAddonPage } from '../utils/addonPageSync.js';
 import matter from 'gray-matter';
-import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
+import type { WikiPage } from '../types/Page.js';
 import {
   splitAddonsPath,
   findNodeModulesDir,
@@ -757,7 +757,7 @@ class AddonsManager extends BaseManager {
   private recordSeedFailure(
     addonName: string,
     file: string,
-    reason: 'missing-or-invalid-uuid' | 'duplicate-uuid' | 'missing-slug',
+    reason: 'missing-or-invalid-uuid' | 'duplicate-uuid' | 'missing-slug' | 'missing-title',
     isDomain: boolean
   ): void {
     try {
@@ -796,10 +796,6 @@ class AddonsManager extends BaseManager {
       return;
     }
 
-    const files = (await fs.promises.readdir(addonPagesDir)).filter(f => f.endsWith('.md'));
-    let seeded = 0;
-    let reseeded = 0;
-
     // #920: content-aware, edit-preserving reseed of already-seeded pages.
     // Opt-in (default false) so existing deployments' boot behavior is
     // unchanged; when enabled, a page is refreshed from the addon source only
@@ -808,372 +804,312 @@ class AddonsManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const reseedEnabled = configManager?.getProperty('ngdpbase.addons.page-reseed', false) === true;
 
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
     // #951: a domain addon's page failing to seed is a broken site; the same
-    // failure in an additive addon is a missing help page. Line ~535 already
-    // draws exactly this distinction for identity mismatch — page seeding now
-    // follows it instead of flattening both to `warn`.
+    // failure in an additive addon is a missing help page.
     const isDomain = this.addons.get(addonName)?.manifest?.type === 'domain';
     const reportSkip = (message: string): void => {
       if (isDomain) logger.error(message);
       else logger.warn(message);
     };
 
-    // #951: guard against two source pages sharing a uuid — the obvious
-    // copy-paste mistake when creating a page from an existing one. Without
-    // this the second file matches the first's already-seeded page and is
-    // silently skipped, so ONE PAGE SIMPLY NEVER APPEARS and the only trace is
-    // a debug line phrased as normal operation. With reseed enabled it is
-    // worse: the two files fight over one page and the winner depends on
-    // filesystem ordering.
-    const seenUuids = new Map<string, string>();
+    this.lastReseedCount = 0;
 
-    for (const file of files) {
-      const src = path.join(addonPagesDir, file);
-      try {
-        const raw = await fs.promises.readFile(src, 'utf8');
-        const parsed = parsePageFrontmatter(raw);
-        const uuid = parsed.data.uuid as string | undefined;
-        const slug = parsed.data.slug as string | undefined;
-
-        if (!uuid || !uuidPattern.test(uuid)) {
-          reportSkip(
-            `[AddonsManager] Skipping ${addonName}/pages/${file} — missing or invalid uuid in ` +
-            'frontmatter. The addon owns page uuids and they are mandatory; this page will not appear.'
-          );
-          this.recordSeedFailure(addonName, file, 'missing-or-invalid-uuid', isDomain);
-          continue;
-        }
-
-        const duplicateOf = seenUuids.get(uuid.toLowerCase());
-        if (duplicateOf) {
-          reportSkip(
-            `[AddonsManager] Skipping ${addonName}/pages/${file} — uuid ${uuid} is already used by ` +
-            `${duplicateOf}. Two source pages cannot share a uuid: one of them would never appear, ` +
-            'and with reseed enabled they fight over the same page. Give this page its own uuid.'
-          );
-          this.recordSeedFailure(addonName, file, 'duplicate-uuid', isDomain);
-          continue;
-        }
-        seenUuids.set(uuid.toLowerCase(), file);
-
-        // #1403: a page in the trash was deleted on purpose. It is not missing,
-        // so it is never seeded again — that brought it back live beside its
-        // own trash entry, sharing one version folder that a purge then deleted.
-        // It returns only through an explicit restore.
-        if (pageManager.isPageDeleted(uuid, seedContext)) {
-          logger.info(`[AddonsManager] Skipping ${addonName}/pages/${file} — page ${uuid} is in the trash (#1403)`);
-          continue;
-        }
-
-        if (!slug) {
-          reportSkip(
-            `[AddonsManager] Skipping ${addonName}/pages/${file} — missing slug in frontmatter`
-          );
-          this.recordSeedFailure(addonName, file, 'missing-slug', isDomain);
-          continue;
-        }
-
-        // Resolve an existing instance page for this seed. Prefer UUID (survives
-        // a slug rename — #908 B1), else fall back to slug. A match means the
-        // page is already seeded; by default it is left untouched (operator edits
-        // are never clobbered), with an optional edit-preserving reseed (#920).
-        const existing = (await pageManager.getPageByUUID(uuid, seedContext))
-          ?? (pageManager.pageExists(slug, seedContext) ? await pageManager.getPage(slug, seedContext) : null);
-
-        if (existing) {
-          const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
-          const existingSlug = (existingMeta.slug as string) || slug;
-
-          // #971 backfill: pages seeded before `access` stamping existed carry
-          // none, so §3's admin-only editing simply does not apply to them —
-          // they are silently unprotected while looking identical to pages that
-          // are. §2 called for exactly this: a one-time pass keyed on uuid match
-          // against addon sources, which is what resolving `existing` above
-          // already did.
-          //
-          // Runs regardless of the reseed setting. Reseed governs whether the
-          // addon may overwrite page CONTENT — a different and much riskier
-          // question than attaching the protection the page should have shipped
-          // with. Gating the backfill behind an opt-in that defaults to false
-          // would leave every existing deployment permanently unprotected.
-          //
-          // Metadata-only: the body is passed through untouched, and
-          // pageSourceHash covers the body alone, so this cannot disturb the
-          // #920 reseed comparison or mark the page locally-modified.
-          //
-          // Fires once. After the stamp lands the condition is false forever.
-          // The exception is an operator who DELETES `access` outright — that
-          // gets re-added on the next boot. Setting `access` to something else
-          // (a wider principal list) is preserved, and is the supported way to
-          // open a page up.
-          // #1003: `system-category` drift. A category-only edit in an addon
-          // source never reached an already-seeded page — `evaluateSeededAddonPage`
-          // compares BODY content, so a metadata-only change never flips a page
-          // to `outdated` and the reseed branch below never runs. Categories set
-          // at first seed were therefore frozen forever, which is how all 16
-          // geohazardwatch pages stayed on the flattened `addon` default after
-          // their source was corrected per addons.md §9.
-          //
-          // Corrected here, independent of the body-hash comparison and of
-          // `reseedEnabled` — reseed governs overwriting CONTENT, and a category
-          // is metadata, the same argument #971 made for `access`.
-          //
-          // `addon-source-category` records the source value last propagated —
-          // the category analogue of `addon-source-hash`. It makes this
-          // one-time-PER-DRIFT rather than every-boot: once the source value has
-          // been applied, an operator who re-categorizes the page keeps their
-          // choice, and the addon only speaks again when ITS value changes.
-          // Without that marker this would revert an operator's category on
-          // every restart.
-          const sourceCategoryRaw = (parsed.data)['system-category'];
-          const sourceCategory = typeof sourceCategoryRaw === 'string' ? sourceCategoryRaw : undefined;
-          const liveCategory = existingMeta['system-category'];
-          const appliedCategory = existingMeta['addon-source-category'];
-          const categoryDrifted = sourceCategory !== undefined
-            && sourceCategory !== liveCategory
-            && appliedCategory !== sourceCategory;
-
-          // Source first, then whatever the page already carries — matching the
-          // reseed path below. The original order here was existing-first, so a
-          // corrected source category was ignored in favour of the stale live
-          // one even though the right value was sitting in `parsed.data` (#1003).
-          // Narrow rather than String()-coerce: a non-string category is
-          // malformed frontmatter, and coercing an object would both log
-          // "[object Object]" and silently classify it as unclassified
-          // without saying so. Treat it as unclassified explicitly.
-          const rawCategory = sourceCategoryRaw ?? liveCategory ?? 'addon';
-          const backfillCategory = typeof rawCategory === 'string' ? rawCategory : 'addon';
-
-          // Both corrections go through ONE savePage so a page needing each does
-          // not get two versions for what is a single reconciliation.
-          const metaPatch: Record<string, unknown> = {};
-          const reasons: string[] = [];
-          // Removal, not an assignment — carried separately because spreading
-          // `access: undefined` would leave the key present for the YAML
-          // serializer to render, which is not the same as deleting it.
-          let clearAccess = false;
-
-          if (categoryDrifted) {
-            metaPatch['system-category'] = sourceCategory;
-            metaPatch['addon-source-category'] = sourceCategory;
-            reasons.push(`system-category ${JSON.stringify(liveCategory ?? null)} → '${sourceCategory}' (#1003)`);
-
-            // #1003 remediation: undo an `access` stamp that only exists because
-            // Bug 1 resolved the category from the stale live value.
-            //
-            // The 12 geohazardwatch pages §9 designates instance-owned were
-            // stamped admin-only because they still read `addon` when the #971
-            // backfill ran. Correcting the category alone does not release them:
-            // that backfill fires only on `access === undefined`, so it never
-            // revisits a page it already stamped.
-            //
-            // Loosening a permission, so the conditions are deliberately narrow —
-            // ALL must hold:
-            //   * the category drifted (⇒ this is a page the bug operated on)
-            //   * the CORRECTED category maps to no stamp at all (`general`)
-            //   * the source does not declare its own `access` — an addon's
-            //     explicit value is authoritative and is never removed
-            //   * the live `access` is byte-identical to what the STALE category
-            //     would have produced ⇒ it is the machine's output
-            //
-            // The last is the honest limit of this: frontmatter cannot prove
-            // authorship, so an operator who independently set exactly
-            // `{edit:['admin']}` on a page whose category also drifted is
-            // indistinguishable from the bug's output and would be cleared. That
-            // is the narrowest rule available, not a perfect one.
-            //
-            // Self-limiting: once cleared, the next boot sees `access` undefined
-            // with category `general`, and defaultAddonPageAccess returns nothing
-            // for `general` — so it stays cleared rather than oscillating.
-            const correctedDefault = this.defaultAddonPageAccess(sourceCategory);
-            const staleDefault = this.defaultAddonPageAccess(
-              typeof liveCategory === 'string' ? liveCategory : 'addon'
-            );
-            const sourceDeclaresAccess = (parsed.data)['access'] !== undefined;
-            const looksMachineStamped = staleDefault !== undefined
-              && JSON.stringify(existingMeta.access) === JSON.stringify(staleDefault);
-
-            if (correctedDefault === undefined && !sourceDeclaresAccess && looksMachineStamped) {
-              clearAccess = true;
-              reasons.push(
-                `cleared access edit=[${staleDefault.edit.join(', ')}] stamped from the stale ` +
-                `category '${String(liveCategory)}' — '${sourceCategory}' is instance-owned (#1003)`
-              );
-            }
-          }
-
-          // #971 backfill: pages seeded before `access` stamping existed carry
-          // none, so §3's admin-only editing simply does not apply to them —
-          // they are silently unprotected while looking identical to pages that
-          // are.
-          //
-          // Fires once. After the stamp lands the condition is false forever.
-          // The exception is an operator who DELETES `access` outright — that
-          // gets re-added on the next boot. Setting `access` to something else
-          // (a wider principal list) is preserved, and is the supported way to
-          // open a page up.
-          if (existingMeta.access === undefined) {
-            const backfillAccess = this.defaultAddonPageAccess(backfillCategory);
-            if (backfillAccess) {
-              metaPatch.access = backfillAccess;
-              reasons.push(`access edit=[${backfillAccess.edit.join(', ')}] for category='${backfillCategory}' (#971)`);
-            }
-          }
-
-          if (Object.keys(metaPatch).length > 0 || clearAccess) {
-            // Metadata-only: the body is passed through untouched, and
-            // pageSourceHash covers the body alone, so this cannot disturb the
-            // #920 reseed comparison or mark the page locally-modified.
-            const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
-            if (clearAccess) delete reconciled.access;
-
-            await pageManager.savePage(existingSlug, existing.content, reconciled, seedContext, { skipValidation: true });
-            // Keep the in-memory copy consistent — the reseed branch below reads
-            // existingMeta again, and would otherwise re-apply a stale category
-            // or resurrect the access we just cleared.
-            Object.assign(existingMeta, metaPatch);
-            if (clearAccess) delete existingMeta.access;
-            logger.info(
-              `[AddonsManager] Reconciled '${existingSlug}' (${addonName}): ${reasons.join('; ')}`
-            );
-          }
-
-          const srcHash = pageSourceHash(parsed.content);
-          const storedHash = existingMeta['addon-source-hash'];
-          const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
-          // A legacy page (seeded before the #920 hash existed) has no stamp —
-          // treated as reseedable since the previous body is kept as a
-          // revertable version. Used only to pick the log message below.
-          const legacy = !hasHash;
-          // #931: single shared evaluator — the Required Pages Sync admin
-          // surface computes status the identical way, so boot + UI cannot
-          // disagree. `outdated` = source changed and the live body is
-          // unmodified-since-seed (or legacy); `locally-modified` = edited, skip.
-          const status = evaluateSeededAddonPage({
-            sourceContent: parsed.content,
-            liveContent: existing.content,
-            storedHash: typeof storedHash === 'string' ? storedHash : undefined
-          });
-
-          if (reseedEnabled && status === 'outdated') {
-            // Source is the authority. Merge existing metadata (preserve operator
-            // /pipeline extras + original `created`) with the source's declared
-            // fields, adopt the source body, keep the UUID, stamp the hash. Goes
-            // through savePage so the versioning provider records a revertable
-            // version.
-            const reseedCategory = (parsed.data)['system-category']
-              ?? existingMeta['system-category'] ?? 'addon';
-            // #971: source first, then whatever the page already carries — an
-            // operator who deliberately opened a page up must not have that
-            // reverted by a routine reseed. Only a page with no `access` at all
-            // (seeded before this existed) picks up the default.
-            const reseedAccess = (parsed.data)['access']
-              ?? existingMeta['access']
-              ?? this.defaultAddonPageAccess(reseedCategory);
-
-            const reseedMetadata: Record<string, unknown> = {
-              ...existingMeta,
-              ...(parsed.data),
-              addon: addonName,
-              'system-category': reseedCategory,
-              // #1003: keep the marker truthful — it must always name the source
-              // category most recently applied, whichever path applied it.
-              ...(typeof reseedCategory === 'string' ? { 'addon-source-category': reseedCategory } : {}),
-              ...(reseedAccess ? { access: reseedAccess } : {}),
-              'addon-source-hash': srcHash
-            };
-            // #1197: savePage records page-edit under `metadata.editor`; the
-            // system principal, not a literal, is who reseeded it.
-            reseedMetadata.editor = systemPrincipalOf(this.engine);
-            await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true });
-            reseeded++;
-            logger.info(legacy
-              ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
-              : `[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
-          } else if (reseedEnabled && status === 'locally-modified') {
-            logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
-          } else {
-            logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
-          }
-
-          // Keep the search index fresh regardless (page may predate a rebuild).
-          const searchManager = this.engine.getManager<SearchManager>('SearchManager');
-          if (searchManager) {
-            const refreshed = await pageManager.getPage(existingSlug, seedContext);
-            if (refreshed) {
-              await searchManager.updatePageInIndex(existingSlug, {
-                name: existingSlug,
-                content: refreshed.content,
-                metadata: refreshed.metadata
-              });
-            }
-          }
-          continue;
-        }
-
-        // Seed through PageManager so all page providers (including VersioningFileProvider)
-        // update their index correctly. `addon-source-hash` stamps the seeded
-        // content so a later reseed can tell an unmodified page from an edited one.
-        const seedCategory = (parsed.data)['system-category'] ?? 'addon';
+    // #1406: the shared seeder owns validation, the site lookup (by uuid), the
+    // trash check (#1403), the seeded-pages record and the new-page save. What
+    // stays here is what only addon pages have: the category and access they
+    // are stamped with, and the tidy-ups and opt-in reseed of a page the site
+    // already holds.
+    const report = await pageManager.seedShippedPages({
+      id: `addon:${addonName}`,
+      label: `${addonName}/pages`,
+      dir: addonPagesDir,
+      stampKey: 'addon-source-hash',
+      extraMetadata: (data) => {
+        const seedCategory = data['system-category'] ?? 'addon';
         // #971: stamp `access` only when the source is silent, so an addon can
         // ship a deliberately community-editable page.
-        const seedAccess = (parsed.data)['access']
-          ?? this.defaultAddonPageAccess(seedCategory);
-
-        const metadata: Record<string, unknown> = {
-          ...(parsed.data),
+        const seedAccess = data['access'] ?? this.defaultAddonPageAccess(seedCategory);
+        return {
           addon: addonName,
           'system-category': seedCategory,
-          // #1003: record the source category applied at seed time. Without
-          // this a freshly seeded page has no marker, so the first time an
-          // operator re-categorized it the drift check on the next boot would
-          // read that as "the addon's value has not been applied yet" and
-          // revert them.
+          // #1003: record the source category applied at seed time, so an
+          // operator's later re-categorisation is not read as undelivered drift.
           'addon-source-category': seedCategory,
-          ...(seedAccess ? { access: seedAccess } : {}),
-          'addon-source-hash': pageSourceHash(parsed.content)
+          ...(seedAccess ? { access: seedAccess } : {})
         };
+      },
+      onPresent: (live, parsed) => this.reconcileSeededAddonPage(addonName, live, parsed, seedContext, reseedEnabled)
+    }, seedContext);
 
-        // skipValidation: this is content the addon SHIPS, not user input.
-        // Seeding runs during startup, so a content rule aimed at page authors
-        // must never be able to stop the instance booting (#1037).
-        // #1197: savePage records page-create under `metadata.editor`; the
-        // system principal, not a literal, is who seeded it.
-        (metadata).editor = systemPrincipalOf(this.engine);
-        await pageManager.savePage(slug, parsed.content, metadata, seedContext, { skipValidation: true });
-
-        // Update search index so the page is discoverable via category search
-        const searchManager = this.engine.getManager<SearchManager>('SearchManager');
-        if (searchManager) {
-          await searchManager.updatePageInIndex(slug, {
-            name: slug,
-            content: parsed.content,
-            metadata
-          });
-        }
-
-        seeded++;
-      } catch (err) {
-        logger.warn(`[AddonsManager] Could not seed ${addonName}/pages/${file}:`, err);
+    for (const failure of report.failed) {
+      reportSkip(`[AddonsManager] Could not seed ${addonName}/pages/${failure.file} — ${failure.reason}`);
+      if (failure.code !== 'save-failed') {
+        this.recordSeedFailure(addonName, failure.file, failure.code, isDomain);
       }
     }
+    if (report.removed.length > 0) {
+      logger.info(`[AddonsManager] Not seeding ${report.removed.length} page(s) from ${addonName} removed on this site: ${report.removed.join(', ')}`);
+    }
 
-    if (seeded > 0 || reseeded > 0) {
-      logger.info(`[AddonsManager] Seeded ${seeded} new + reseeded ${reseeded} page(s) from ${addonName}/pages/`);
+    if (report.seeded.length > 0 || this.lastReseedCount > 0) {
+      logger.info(`[AddonsManager] Seeded ${report.seeded.length} new + reseeded ${this.lastReseedCount} page(s) from ${addonName}/pages/`);
     } else {
       logger.debug(`[AddonsManager] No new pages to seed for ${addonName}`);
     }
   }
 
+  /** Pages reseeded by the current `seedAddonPages` pass (#920). */
+  private lastReseedCount = 0;
+
   /**
-   * Instance themes directory — sibling of addons/ under the project root.
-   * `projectRoot` is `process.cwd()` (see app.ts) and the static mount is
-   * `/themes` → `path.join(projectRoot, 'themes')`, so this resolves to the
-   * same place ThemeManager reads from. Matches how the default `./addons`
-   * path resolves.
+   * An addon page this site already holds: metadata tidy-ups (#971, #1003) and
+   * the opt-in content reseed (#920), then a search-index refresh. Called by the
+   * shared seeder for each source page that is live (#1406).
    */
+  private async reconcileSeededAddonPage(
+    addonName: string,
+    existing: WikiPage,
+    parsed: { data: Record<string, unknown>; content: string },
+    seedContext: ActorContext,
+    reseedEnabled: boolean
+  ): Promise<void> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) return;
+    const slug = typeof parsed.data.slug === 'string' ? parsed.data.slug : '';
+    const existingMeta = (existing.metadata as Record<string, unknown> | undefined) ?? {};
+    const existingSlug = (existingMeta.slug as string) || slug;
+
+    // #971 backfill: pages seeded before `access` stamping existed carry
+    // none, so §3's admin-only editing simply does not apply to them —
+    // they are silently unprotected while looking identical to pages that
+    // are. §2 called for exactly this: a one-time pass keyed on uuid match
+    // against addon sources, which is what resolving `existing` above
+    // already did.
+    //
+    // Runs regardless of the reseed setting. Reseed governs whether the
+    // addon may overwrite page CONTENT — a different and much riskier
+    // question than attaching the protection the page should have shipped
+    // with. Gating the backfill behind an opt-in that defaults to false
+    // would leave every existing deployment permanently unprotected.
+    //
+    // Metadata-only: the body is passed through untouched, and
+    // pageSourceHash covers the body alone, so this cannot disturb the
+    // #920 reseed comparison or mark the page locally-modified.
+    //
+    // Fires once. After the stamp lands the condition is false forever.
+    // The exception is an operator who DELETES `access` outright — that
+    // gets re-added on the next boot. Setting `access` to something else
+    // (a wider principal list) is preserved, and is the supported way to
+    // open a page up.
+    // #1003: `system-category` drift. A category-only edit in an addon
+    // source never reached an already-seeded page — `evaluateSeededAddonPage`
+    // compares BODY content, so a metadata-only change never flips a page
+    // to `outdated` and the reseed branch below never runs. Categories set
+    // at first seed were therefore frozen forever, which is how all 16
+    // geohazardwatch pages stayed on the flattened `addon` default after
+    // their source was corrected per addons.md §9.
+    //
+    // Corrected here, independent of the body-hash comparison and of
+    // `reseedEnabled` — reseed governs overwriting CONTENT, and a category
+    // is metadata, the same argument #971 made for `access`.
+    //
+    // `addon-source-category` records the source value last propagated —
+    // the category analogue of `addon-source-hash`. It makes this
+    // one-time-PER-DRIFT rather than every-boot: once the source value has
+    // been applied, an operator who re-categorizes the page keeps their
+    // choice, and the addon only speaks again when ITS value changes.
+    // Without that marker this would revert an operator's category on
+    // every restart.
+    const sourceCategoryRaw = (parsed.data)['system-category'];
+    const sourceCategory = typeof sourceCategoryRaw === 'string' ? sourceCategoryRaw : undefined;
+    const liveCategory = existingMeta['system-category'];
+    const appliedCategory = existingMeta['addon-source-category'];
+    const categoryDrifted = sourceCategory !== undefined
+      && sourceCategory !== liveCategory
+      && appliedCategory !== sourceCategory;
+
+    // Source first, then whatever the page already carries — matching the
+    // reseed path below. The original order here was existing-first, so a
+    // corrected source category was ignored in favour of the stale live
+    // one even though the right value was sitting in `parsed.data` (#1003).
+    // Narrow rather than String()-coerce: a non-string category is
+    // malformed frontmatter, and coercing an object would both log
+    // "[object Object]" and silently classify it as unclassified
+    // without saying so. Treat it as unclassified explicitly.
+    const rawCategory = sourceCategoryRaw ?? liveCategory ?? 'addon';
+    const backfillCategory = typeof rawCategory === 'string' ? rawCategory : 'addon';
+
+    // Both corrections go through ONE savePage so a page needing each does
+    // not get two versions for what is a single reconciliation.
+    const metaPatch: Record<string, unknown> = {};
+    const reasons: string[] = [];
+    // Removal, not an assignment — carried separately because spreading
+    // `access: undefined` would leave the key present for the YAML
+    // serializer to render, which is not the same as deleting it.
+    let clearAccess = false;
+
+    if (categoryDrifted) {
+      metaPatch['system-category'] = sourceCategory;
+      metaPatch['addon-source-category'] = sourceCategory;
+      reasons.push(`system-category ${JSON.stringify(liveCategory ?? null)} → '${sourceCategory}' (#1003)`);
+
+      // #1003 remediation: undo an `access` stamp that only exists because
+      // Bug 1 resolved the category from the stale live value.
+      //
+      // The 12 geohazardwatch pages §9 designates instance-owned were
+      // stamped admin-only because they still read `addon` when the #971
+      // backfill ran. Correcting the category alone does not release them:
+      // that backfill fires only on `access === undefined`, so it never
+      // revisits a page it already stamped.
+      //
+      // Loosening a permission, so the conditions are deliberately narrow —
+      // ALL must hold:
+      //   * the category drifted (⇒ this is a page the bug operated on)
+      //   * the CORRECTED category maps to no stamp at all (`general`)
+      //   * the source does not declare its own `access` — an addon's
+      //     explicit value is authoritative and is never removed
+      //   * the live `access` is byte-identical to what the STALE category
+      //     would have produced ⇒ it is the machine's output
+      //
+      // The last is the honest limit of this: frontmatter cannot prove
+      // authorship, so an operator who independently set exactly
+      // `{edit:['admin']}` on a page whose category also drifted is
+      // indistinguishable from the bug's output and would be cleared. That
+      // is the narrowest rule available, not a perfect one.
+      //
+      // Self-limiting: once cleared, the next boot sees `access` undefined
+      // with category `general`, and defaultAddonPageAccess returns nothing
+      // for `general` — so it stays cleared rather than oscillating.
+      const correctedDefault = this.defaultAddonPageAccess(sourceCategory);
+      const staleDefault = this.defaultAddonPageAccess(
+        typeof liveCategory === 'string' ? liveCategory : 'addon'
+      );
+      const sourceDeclaresAccess = (parsed.data)['access'] !== undefined;
+      const looksMachineStamped = staleDefault !== undefined
+        && JSON.stringify(existingMeta.access) === JSON.stringify(staleDefault);
+
+      if (correctedDefault === undefined && !sourceDeclaresAccess && looksMachineStamped) {
+        clearAccess = true;
+        reasons.push(
+          `cleared access edit=[${staleDefault.edit.join(', ')}] stamped from the stale ` +
+          `category '${String(liveCategory)}' — '${sourceCategory}' is instance-owned (#1003)`
+        );
+      }
+    }
+
+    // #971 backfill: pages seeded before `access` stamping existed carry
+    // none, so §3's admin-only editing simply does not apply to them —
+    // they are silently unprotected while looking identical to pages that
+    // are.
+    //
+    // Fires once. After the stamp lands the condition is false forever.
+    // The exception is an operator who DELETES `access` outright — that
+    // gets re-added on the next boot. Setting `access` to something else
+    // (a wider principal list) is preserved, and is the supported way to
+    // open a page up.
+    if (existingMeta.access === undefined) {
+      const backfillAccess = this.defaultAddonPageAccess(backfillCategory);
+      if (backfillAccess) {
+        metaPatch.access = backfillAccess;
+        reasons.push(`access edit=[${backfillAccess.edit.join(', ')}] for category='${backfillCategory}' (#971)`);
+      }
+    }
+
+    if (Object.keys(metaPatch).length > 0 || clearAccess) {
+      // Metadata-only: the body is passed through untouched, and
+      // pageSourceHash covers the body alone, so this cannot disturb the
+      // #920 reseed comparison or mark the page locally-modified.
+      const reconciled: Record<string, unknown> = { ...existingMeta, ...metaPatch };
+      if (clearAccess) delete reconciled.access;
+
+      await pageManager.savePage(existingSlug, existing.content, reconciled, seedContext, { skipValidation: true });
+      // Keep the in-memory copy consistent — the reseed branch below reads
+      // existingMeta again, and would otherwise re-apply a stale category
+      // or resurrect the access we just cleared.
+      Object.assign(existingMeta, metaPatch);
+      if (clearAccess) delete existingMeta.access;
+      logger.info(
+        `[AddonsManager] Reconciled '${existingSlug}' (${addonName}): ${reasons.join('; ')}`
+      );
+    }
+
+    const srcHash = pageSourceHash(parsed.content);
+    const storedHash = existingMeta['addon-source-hash'];
+    const hasHash = typeof storedHash === 'string' && storedHash.length > 0;
+    // A legacy page (seeded before the #920 hash existed) has no stamp —
+    // treated as reseedable since the previous body is kept as a
+    // revertable version. Used only to pick the log message below.
+    const legacy = !hasHash;
+    // #931: single shared evaluator — the Required Pages Sync admin
+    // surface computes status the identical way, so boot + UI cannot
+    // disagree. `outdated` = source changed and the live body is
+    // unmodified-since-seed (or legacy); `locally-modified` = edited, skip.
+    const status = evaluateSeededAddonPage({
+      sourceContent: parsed.content,
+      liveContent: existing.content,
+      storedHash: typeof storedHash === 'string' ? storedHash : undefined
+    });
+
+    if (reseedEnabled && status === 'outdated') {
+      // Source is the authority. Merge existing metadata (preserve operator
+      // /pipeline extras + original `created`) with the source's declared
+      // fields, adopt the source body, keep the UUID, stamp the hash. Goes
+      // through savePage so the versioning provider records a revertable
+      // version.
+      const reseedCategory = (parsed.data)['system-category']
+        ?? existingMeta['system-category'] ?? 'addon';
+      // #971: source first, then whatever the page already carries — an
+      // operator who deliberately opened a page up must not have that
+      // reverted by a routine reseed. Only a page with no `access` at all
+      // (seeded before this existed) picks up the default.
+      const reseedAccess = (parsed.data)['access']
+        ?? existingMeta['access']
+        ?? this.defaultAddonPageAccess(reseedCategory);
+
+      const reseedMetadata: Record<string, unknown> = {
+        ...existingMeta,
+        ...(parsed.data),
+        addon: addonName,
+        'system-category': reseedCategory,
+        // #1003: keep the marker truthful — it must always name the source
+        // category most recently applied, whichever path applied it.
+        ...(typeof reseedCategory === 'string' ? { 'addon-source-category': reseedCategory } : {}),
+        ...(reseedAccess ? { access: reseedAccess } : {}),
+        'addon-source-hash': srcHash
+      };
+      // #1197: savePage records page-edit under `metadata.editor`; the
+      // system principal, not a literal, is who reseeded it.
+      reseedMetadata.editor = systemPrincipalOf(this.engine);
+      await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true });
+      this.lastReseedCount++;
+      logger.info(legacy
+        ? `[AddonsManager] Reseeded legacy '${existingSlug}' from ${addonName} (no prior source-hash; previous content kept in version history)`
+        : `[AddonsManager] Reseeded '${existingSlug}' from ${addonName} (source changed, page unmodified)`);
+    } else if (reseedEnabled && status === 'locally-modified') {
+      logger.info(`[AddonsManager] Update available for '${existingSlug}' from ${addonName} but the page was locally modified — skipped`);
+    } else {
+      logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
+    }
+
+    // Keep the search index fresh regardless (page may predate a rebuild).
+    const searchManager = this.engine.getManager<SearchManager>('SearchManager');
+    if (searchManager) {
+      const refreshed = await pageManager.getPage(existingSlug, seedContext);
+      if (refreshed) {
+        // #1406: keyed by title, as the editor's save and the shared seeder
+        // index pages — a slug key left a second entry for the same page.
+        const indexName = typeof refreshed.metadata?.title === 'string' && refreshed.metadata.title
+          ? refreshed.metadata.title
+          : existingSlug;
+        await searchManager.updatePageInIndex(indexName, {
+          name: indexName,
+          content: refreshed.content,
+          metadata: refreshed.metadata
+        });
+      }
+    }
+  }
+
   private getInstanceThemesDir(): string {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const configured = cm?.getProperty?.('ngdpbase.theme.directory', 'themes') as string | undefined;

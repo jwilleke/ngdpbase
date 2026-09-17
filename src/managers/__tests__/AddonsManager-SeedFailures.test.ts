@@ -10,6 +10,7 @@
  */
 vi.unmock('../AddonsManager');
 
+import { withRealShippedPageSeeder } from './__fixtures__/realShippedPageSeeder';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
@@ -50,7 +51,7 @@ describe('#951 addon page seed failures', () => {
     const AddonsManager = (mod.default ?? mod) as unknown as { prototype: typeof manager };
     manager = Object.create(AddonsManager.prototype) as typeof manager;
     manager.addons = new Map();
-    (manager as { engine: unknown }).engine = {
+    (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
@@ -65,7 +66,7 @@ describe('#951 addon page seed failures', () => {
         if (n === 'NotificationManager') return { createNotification: vi.fn().mockResolvedValue(undefined) };
         return null;
       }
-    };
+    }, tmpDir);
   });
 
   afterEach(async () => {
@@ -97,8 +98,8 @@ describe('#951 addon page seed failures', () => {
 
     await manager.seedAddonPages('demo', tmpDir);
 
-    // savePage is keyed by slug.
-    const savedSlugs = savePage.mock.calls.map((c) => c[0]);
+    // #1406: the seeder saves under the title; the slug is in the metadata.
+    const savedSlugs = savePage.mock.calls.map((c) => (c[2] as Record<string, unknown>).slug);
     expect(savedSlugs).toContain('first');
     expect(savedSlugs).toContain('third');
     expect(savedSlugs).not.toContain('second');

@@ -6,6 +6,7 @@
  */
 vi.unmock('../AddonsManager');
 
+import { withRealShippedPageSeeder } from './__fixtures__/realShippedPageSeeder';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
@@ -20,12 +21,13 @@ describe('#971 addon page access stamping', () => {
   let manager: { seedAddonPages(n: string, p: string): Promise<void>; addons: Map<string, unknown>; engine: unknown };
 
   const write = async (file: string, data: Record<string, unknown>) => {
-    await fs.writeFile(path.join(pagesDir, file), matter.stringify('body', data), 'utf8');
+    // #1406: the shared seeder requires a title, as every shipped addon page has.
+    await fs.writeFile(path.join(pagesDir, file), matter.stringify('body', { title: `Title ${String(data.slug)}`, ...data }), 'utf8');
   };
 
   /** Metadata the seeder passed to savePage for a given slug. */
   const metaFor = (slug: string) =>
-    savePage.mock.calls.find((c) => c[0] === slug)?.[2] as Record<string, unknown> | undefined;
+    savePage.mock.calls.find((c) => c[0] === slug || (c[2] as Record<string, unknown>)?.slug === slug)?.[2] as Record<string, unknown> | undefined;
 
   beforeEach(async () => {
     tmpDir = path.join(os.tmpdir(), `access-stamp-${Date.now()}-${Math.floor(performance.now())}`);
@@ -37,7 +39,7 @@ describe('#971 addon page access stamping', () => {
     const AddonsManager = (mod.default ?? mod) as unknown as { prototype: typeof manager };
     manager = Object.create(AddonsManager.prototype) as typeof manager;
     manager.addons = new Map([['demo', { path: tmpDir, module: {}, enabled: true, loaded: true, error: null, manifest: { type: 'domain' } }]]);
-    (manager as { engine: unknown }).engine = {
+    (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
@@ -51,7 +53,7 @@ describe('#971 addon page access stamping', () => {
         if (n === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
         return null;
       }
-    };
+    }, tmpDir);
   });
 
   afterEach(async () => {
@@ -114,7 +116,7 @@ describe('#971 addon page access stamping', () => {
   describe('legacy backfill (#971)', () => {
     /** Stand up a manager whose PageManager already has this page seeded. */
     const withExisting = (meta: Record<string, unknown>, content = 'existing body') => {
-      (manager as { engine: unknown }).engine = {
+      (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
         getManager: (n: string) => {
           if (n === 'PageManager') {
             return {
@@ -129,7 +131,7 @@ describe('#971 addon page access stamping', () => {
           if (n === 'SearchManager') return { updatePageInIndex: vi.fn().mockResolvedValue(undefined) };
           return null;
         }
-      };
+      }, tmpDir);
     };
 
     test('stamps access on a page seeded before stamping existed', async () => {

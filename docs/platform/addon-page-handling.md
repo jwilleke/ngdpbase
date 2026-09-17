@@ -26,9 +26,14 @@ An addon page exists in two distinct places with different rules:
 
 `AddonsManager.seedAddonPages()` runs inside `loadAddon()` on __every server boot__, right after the addon's `register()`. For each `addons/<addon>/pages/*.md`:
 
-1. Parse frontmatter — a valid __`uuid`__ (UUID v4) and __`slug`__ are required, else the file is skipped with a warning.
-2. __Idempotency guard__ — skip if a page already exists by that `slug` (`pageExists`) __or__ by that `uuid` (`getPageByUUID`, added in [#908](https://github.com/jwilleke/ngdpbase/issues/908) to catch renamed-slug re-seeds).
-3. Otherwise `pageManager.savePage(slug, content, metadata)` → writes `<data>/pages/{uuid}.md` with auto-set frontmatter (`addon`, `created`, `lastModified`, and `system-category: addon` if absent).
+Since [#1406](https://github.com/jwilleke/ngdpbase/issues/1406) the addon seed hands each folder to `PageManager.seedShippedPages()`, the same seeder required pages use:
+
+1. Parse frontmatter — a valid __`uuid`__ (UUID v4), a __`title`__ and a __`slug`__ are required, and two files may not share a uuid; otherwise the file is reported (an error for a domain addon, a warning otherwise, plus an admin notification).
+2. __Lookup by uuid__ — a page this site holds under that uuid is left to the addon's own steps (the #971 / #1003 metadata tidy-ups and the opt-in [content-aware reseed](#content-aware-reseed-920)), then re-indexed for search by title.
+3. __Seeded once per site__ — the site's record, `${FAST_STORAGE}/seeded-shipped-pages.json` (source `addon:<name>`), lists every page it has seeded. A recorded page that is no longer live was removed on this site and is not seeded again, whatever the provider. A uuid in the trash is recorded and skipped. A site without a record starts it from its live and trashed pages.
+4. Otherwise `pageManager.savePage(title, content, metadata)` writes `<data>/pages/{uuid}.md` with `addon`, `system-category` (`addon` if absent), `addon-source-category`, a default `access` for the category, `addon-source-hash`, `created` and `lastModified`, and indexes it for search by title.
+
+The lookup is by uuid only. A source page whose __slug__ is already used by a page with a __different uuid__ is not treated as seeded: the save is refused as a conflict and reported.
 
 Seeding is __boot-time only__ — there is no file-watcher and no install-event trigger. A __restart is required__ for any seed pass to run.
 
@@ -38,15 +43,13 @@ On restart, comparing the addon's current `pages/` against an already-seeded ins
 
 | Change to `addons/<addon>/pages/` | Synced? | Why |
 |---|---|---|
-| __New__ page (new UUID + slug, never seeded) | ✅ __Yes__ | Neither guard matches → `savePage` seeds it |
+| __New__ page (new UUID, never seeded here) | ✅ __Yes__ | Not live and not in the site's seeded record → `savePage` seeds it |
 | __Updated__ content of a seeded page | ⚙️ Opt-in | Skipped by default; reseeded when the reseed flag is on __and__ the page is unmodified (or a legacy no-hash page) — see [Content-aware reseed](#content-aware-reseed-920) |
 | __Deleted__ source page | ❌ No | There is no removal logic; the instance copy persists indefinitely ([#920](https://github.com/jwilleke/ngdpbase/issues/920) discusses a gated policy) |
 | __Renamed slug__ (same UUID) | ❌ No (skipped) | The UUID guard matches — the page keeps its old slug |
-| Instance page __deleted by an operator__ (in the trash) | ❌ No (skipped) | A uuid in the trash was removed on purpose, so the seed skips it and logs *"is in the trash"* ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403)). It comes back only through a restore from the trash |
+| Instance page __deleted by an operator__ | ❌ No (skipped) | The site's record says it was seeded, so it was removed on purpose — also after the trash purges it, and with `filesystemprovider`, which has no trash ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403), [#1405](https://github.com/jwilleke/ngdpbase/issues/1405)). It comes back through a restore from the trash or an admin's Sync in Required Pages Sync |
 
 So __additions always flow; updates flow only with reseed enabled on an unmodified page; deletions and renames do not.__
-
-With `filesystemprovider` a delete removes the file outright and there is no trash, so a deleted addon page is seeded again as new at the next restart.
 
 Purging a trash entry whose uuid is also a live page removes only the trash file and entry; the version folder belongs to the live page and is kept ([#1403](https://github.com/jwilleke/ngdpbase/issues/1403)).
 

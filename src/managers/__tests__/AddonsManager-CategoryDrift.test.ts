@@ -25,6 +25,7 @@
  */
 vi.unmock('../AddonsManager');
 
+import { withRealShippedPageSeeder } from './__fixtures__/realShippedPageSeeder';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
@@ -39,15 +40,16 @@ describe('#1003 system-category drift', () => {
   let manager: { seedAddonPages(n: string, p: string): Promise<void>; addons: Map<string, unknown>; engine: unknown };
 
   const write = async (file: string, data: Record<string, unknown>, body = 'body') => {
-    await fs.writeFile(path.join(pagesDir, file), matter.stringify(body, data), 'utf8');
+    // #1406: the shared seeder requires a title, as every shipped addon page has.
+    await fs.writeFile(path.join(pagesDir, file), matter.stringify(body, { title: `Title ${String(data.slug)}`, ...data }), 'utf8');
   };
 
   const metaFor = (slug: string) =>
-    savePage.mock.calls.find((c) => c[0] === slug)?.[2] as Record<string, unknown> | undefined;
+    savePage.mock.calls.find((c) => c[0] === slug || (c[2] as Record<string, unknown>)?.slug === slug)?.[2] as Record<string, unknown> | undefined;
 
   /** Stand up a PageManager whose store already holds this seeded page. */
   const withExisting = (meta: Record<string, unknown>, content = 'body') => {
-    (manager as { engine: unknown }).engine = {
+    (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
       getManager: (n: string) => {
         if (n === 'PageManager') {
           return {
@@ -62,7 +64,7 @@ describe('#1003 system-category drift', () => {
         if (n === 'SearchManager') return { updatePageInIndex: vi.fn().mockResolvedValue(undefined) };
         return null;
       }
-    };
+    }, tmpDir);
   };
 
   beforeEach(async () => {
@@ -164,7 +166,7 @@ describe('#1003 system-category drift', () => {
     test('a new page records the marker at first seed', async () => {
       // Without this, the first operator re-categorization reads as "not yet
       // applied" on the next boot and gets reverted.
-      (manager as { engine: unknown }).engine = {
+      (manager as { engine: unknown }).engine = withRealShippedPageSeeder({
         getManager: (n: string) => {
           if (n === 'PageManager') {
             return {
@@ -178,7 +180,7 @@ describe('#1003 system-category drift', () => {
           if (n === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
           return null;
         }
-      };
+      }, tmpDir);
       await write('a.md', { uuid: UUID(8), slug: 'fresh', 'system-category': 'general' });
 
       await manager.seedAddonPages('demo', tmpDir);

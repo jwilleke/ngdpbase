@@ -140,7 +140,21 @@ export interface ShippedPageSource {
   exclude?: (data: Record<string, unknown>) => string | undefined;
   /** Metadata the source adds to every page it writes (e.g. `addon`, a default category) */
   extraMetadata?: (data: Record<string, unknown>) => Record<string, unknown>;
+  /**
+   * Called by the boot seed for a source page this site already holds, with the
+   * live page and the parsed source — the addon seed's metadata tidy-ups and
+   * opt-in reseed (#971, #1003, #920). Not called for removed or trashed pages.
+   */
+  onPresent?: (live: WikiPage, source: { data: Record<string, unknown>; content: string }, ctx: ActorContext) => Promise<void>;
 }
+
+/** Why a shipped page was not seeded. */
+export type ShippedPageFailureCode =
+  | 'missing-or-invalid-uuid'
+  | 'missing-title'
+  | 'missing-slug'
+  | 'duplicate-uuid'
+  | 'save-failed';
 
 /** What `seedShippedPages` did with each source page. */
 export interface ShippedPageSeedReport {
@@ -153,7 +167,7 @@ export interface ShippedPageSeedReport {
   /** Pages the source excludes */
   excluded: Array<{ file: string; title: string; reason: string }>;
   /** Pages that could not be seeded, with why */
-  failed: Array<{ file: string; title: string; reason: string }>;
+  failed: Array<{ file: string; title: string; reason: string; code: ShippedPageFailureCode }>;
   /** True when this run started the site's record for the source */
   recordStarted: boolean;
 }
@@ -467,13 +481,26 @@ class PageManager extends BaseManager implements CatalogSource {
         const title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';
         const slug = typeof parsed.data.slug === 'string' ? parsed.data.slug.trim() : '';
 
-        if (!uuidPattern.test(uuid) || !title || !slug) {
-          report.failed.push({ file, title: title || file, reason: 'missing or invalid uuid, title or slug in frontmatter' });
+        if (!uuidPattern.test(uuid)) {
+          report.failed.push({ file, title: title || file, reason: 'missing or invalid uuid in frontmatter', code: 'missing-or-invalid-uuid' });
+          continue;
+        }
+        if (!title) {
+          report.failed.push({ file, title: file, reason: 'missing title in frontmatter', code: 'missing-title' });
+          continue;
+        }
+        if (!slug) {
+          report.failed.push({ file, title, reason: 'missing slug in frontmatter', code: 'missing-slug' });
           continue;
         }
         const duplicateOf = seen.get(uuid.toLowerCase());
         if (duplicateOf) {
-          report.failed.push({ file, title, reason: `uuid ${uuid} is already used by ${duplicateOf}` });
+          report.failed.push({
+            file,
+            title,
+            reason: `uuid ${uuid} is already used by ${duplicateOf}. Two source pages cannot share a uuid: one of them would never appear`,
+            code: 'duplicate-uuid'
+          });
           continue;
         }
         seen.set(uuid.toLowerCase(), file);
@@ -484,15 +511,15 @@ class PageManager extends BaseManager implements CatalogSource {
           continue;
         }
 
-        const live = Boolean(await this.storeCopyByUUID(uuid, source, ctx));
-        if (record.has(source.id, uuid)) {
-          if (live) report.present++;
-          else report.removed.push(title);
-          continue;
-        }
-        if (live) {
+        const livePage = await this.storeCopyByUUID(uuid, source, ctx);
+        if (livePage) {
           record.add(source.id, uuid);
           report.present++;
+          await source.onPresent?.(livePage, parsed, ctx);
+          continue;
+        }
+        if (record.has(source.id, uuid)) {
+          report.removed.push(title);
           continue;
         }
         if (this.provider.isPageDeleted?.(uuid)) {
@@ -503,13 +530,13 @@ class PageManager extends BaseManager implements CatalogSource {
         try {
           await this.saveShippedPage(source, uuid, parsed, title, title, ctx);
         } catch (err) {
-          report.failed.push({ file, title, reason: err instanceof Error ? err.message : String(err) });
+          report.failed.push({ file, title, reason: err instanceof Error ? err.message : String(err), code: 'save-failed' });
           continue;
         }
         record.add(source.id, uuid);
         report.seeded.push(title);
       } catch (err) {
-        report.failed.push({ file, title: file, reason: err instanceof Error ? err.message : String(err) });
+        report.failed.push({ file, title: file, reason: err instanceof Error ? err.message : String(err), code: 'save-failed' });
       }
     }
 

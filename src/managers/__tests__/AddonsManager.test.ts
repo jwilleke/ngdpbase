@@ -1,7 +1,9 @@
+import { withRealShippedPageSeeder } from './__fixtures__/realShippedPageSeeder';
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
 import { createHash } from 'node:crypto';
+import logger from '../../utils/logger';
 
 describe('AddonsManager', () => {
   let tmpDir;
@@ -1014,14 +1016,14 @@ describe('AddonsManager', () => {
     /**
      * Build an engine that returns ConfigurationManager, PageManager, and optionally SearchManager.
      */
-    const makeEngineWithPageManager = (configManager, pageManager, searchManager = null) => ({
+    const makeEngineWithPageManager = (configManager, pageManager, searchManager = null) => withRealShippedPageSeeder({
       getManager: vi.fn((name) => {
         if (name === 'ConfigurationManager') return configManager;
         if (name === 'PageManager') return pageManager;
         if (name === 'SearchManager') return searchManager;
         return null;
       })
-    });
+    }, tmpDir);
 
     // Tests ------------------------------------------------------------------
 
@@ -1040,7 +1042,7 @@ describe('AddonsManager', () => {
       // #1037: seeded content is shipped by the addon, not user input, so it
       // must bypass save-time validation — startup cannot depend on a content
       // rule aimed at page authors.
-      expect(pageManager.savePage).toHaveBeenCalledWith('home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Home', expect.stringContaining('Page content.'), expect.objectContaining({ uuid, addon: 'seed-addon' }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
     });
 
     test('#908 B1: skips re-seed when UUID already exists under a different slug', async () => {
@@ -1156,8 +1158,8 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(2);
-      expect(pageManager.savePage).toHaveBeenCalledWith('page-one', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
-      expect(pageManager.savePage).toHaveBeenCalledWith('page-two', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 1', expect.any(String), expect.objectContaining({ uuid: uuid1 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
+      expect(pageManager.savePage).toHaveBeenCalledWith('Page 2', expect.any(String), expect.objectContaining({ uuid: uuid2 }), expect.objectContaining({ origin: 'boot' }), { skipValidation: true });
     });
 
     test('sets addon field on seeded pages', async () => {
@@ -1212,16 +1214,34 @@ describe('AddonsManager', () => {
       ]);
 
       const configManager = makeConfigManager({ enabledAddons: ['idem-addon'] });
-      // pageExists returns true for 'idem-home' — simulates a user-edited page
-      const pageManager = makePageManager(['idem-home'], {
-        // `access` present so the #971 backfill is a no-op — this asserts that
-        // CONTENT is never overwritten, which the backfill does not do.
-        'idem-home': { content: 'existing content', metadata: { title: 'User Edited', 'system-category': 'addon', access: { edit: ['admin'] } } }
-      });
+      // The site already holds this page (same uuid), edited by a user.
+      // `access` present so the #971 backfill is a no-op — this asserts that
+      // CONTENT is never overwritten, which the backfill does not do.
+      const edited = { content: 'existing content', metadata: { title: 'User Edited', slug: 'idem-home', 'system-category': 'addon', access: { edit: ['admin'] } } };
+      const pageManager = makePageManager(['idem-home'], { 'idem-home': edited }, { [uuid]: edited });
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
 
       expect(pageManager.savePage).not.toHaveBeenCalled();
+    });
+
+    test('#1406: a source page whose slug is held by a page with another uuid is reported, not saved over it', async () => {
+      // The seeder looks pages up by uuid only. A slug held by a different page
+      // is a conflict the save refuses (ValidationManager); it is reported.
+      const uuid = '550e8400-e29b-41d4-a716-446655440045';
+      await makeAddonWithSeedPages('slug-clash-addon', [
+        { filename: 'home.md', uuid, slug: 'taken-slug', title: 'Addon Home' }
+      ]);
+
+      const configManager = makeConfigManager({ enabledAddons: ['slug-clash-addon'] });
+      const pageManager = makePageManager(['taken-slug']);
+      pageManager.savePage.mockRejectedValue(new Error('Page conflict: slug'));
+      const warn = vi.spyOn(logger, 'warn');
+      const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
+      await manager.initialize();
+
+      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('slug-clash-addon/pages/home.md'));
+      expect(line).toContain('Page conflict: slug');
     });
 
     test('re-indexes already-existing pages via SearchManager on startup', async () => {
@@ -1234,14 +1254,15 @@ describe('AddonsManager', () => {
       // `access` present so the #971 backfill is a no-op — this is about search
       // re-indexing, not access stamping.
       const existingPage = { content: 'existing content', metadata: { title: 'Test', 'system-category': 'addon', access: { edit: ['admin'] } } };
-      const pageManager = makePageManager(['reindex-page'], { 'reindex-page': existingPage });
+      const pageManager = makePageManager(['reindex-page'], { 'reindex-page': existingPage }, { [uuid]: existingPage });
       const searchManager = makeSearchManager();
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager, searchManager));
       await manager.initialize();
 
       expect(pageManager.savePage).not.toHaveBeenCalled();
-      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('reindex-page', {
-        name: 'reindex-page',
+      // #1406: indexed by title, as the editor's save indexes pages.
+      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('Test', {
+        name: 'Test',
         content: existingPage.content,
         metadata: existingPage.metadata
       });
@@ -1260,8 +1281,8 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(1);
-      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('index-page',
-        expect.objectContaining({ name: 'index-page', metadata: expect.objectContaining({ 'system-category': 'addon' }) })
+      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('Test',
+        expect.objectContaining({ name: 'Test', metadata: expect.objectContaining({ 'system-category': 'addon' }) })
       );
     });
 
