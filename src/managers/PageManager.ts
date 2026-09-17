@@ -576,6 +576,17 @@ class PageManager extends BaseManager implements CatalogSource {
         continue;
       }
       try {
+        // A page in the trash comes back from the trash, keeping its history,
+        // before the source is saved over it — never a second live copy beside
+        // its own trash entry (#1406, #1403).
+        if (!(await this.storeCopyByUUID(uuid, source, ctx)) && this.provider.isPageDeleted?.(uuid)) {
+          const restored = await this.provider.restoreDeletedPage?.(uuid);
+          if (!restored?.ok) {
+            const why = restored ? `${restored.reason}${restored.detail ? ` (${restored.detail})` : ''}` : 'not supported by this provider';
+            report.failed.push({ uuid, reason: `in the trash and could not be restored: ${why}` });
+            continue;
+          }
+        }
         const live = await this.storeCopyByUUID(uuid, source, ctx);
         if (live && !options.force) {
           const liveMeta = (live.metadata ?? {}) as Record<string, unknown>;

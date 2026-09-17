@@ -13,6 +13,7 @@
  */
 // The real provider: the seeder's lookups and saves are what is under test.
 vi.unmock('../../providers/FileSystemProvider');
+vi.unmock('../../providers/VersioningFileProvider');
 vi.unmock('../PageManager');
 
 import path from 'path';
@@ -264,6 +265,42 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
       expect(report.synced).toEqual([uuid(1)]);
       expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
+    });
+
+    test('a page in the trash is restored from the trash, not duplicated beside it (versioning provider)', async () => {
+      // Real VersioningFileProvider: the trash only exists there.
+      const versioningEngine = () => {
+        const engine = makeEngine();
+        const cm = engine.getManager('ConfigurationManager') as { getProperty: ReturnType<typeof vi.fn>; getResolvedDataPath: ReturnType<typeof vi.fn> };
+        const base = cm.getProperty.getMockImplementation();
+        cm.getProperty.mockImplementation((key: string, def: unknown) => {
+          if (key === 'ngdpbase.page.provider') return 'versioningfileprovider';
+          if (key === 'ngdpbase.page.provider.versioning.indexfile') return path.join(instanceDir, 'page-index.json');
+          return base(key, def);
+        });
+        cm.getResolvedDataPath.mockImplementation((key: string, def: unknown) => {
+          if (key === 'ngdpbase.page.provider.filesystem.storagedir') return pagesDir;
+          if (key === 'ngdpbase.page.provider.versioning.indexfile') return path.join(instanceDir, 'page-index.json');
+          return def;
+        });
+        return engine;
+      };
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = new PageManager(versioningEngine());
+      await pm.initialize();
+      await pm.seedRequiredPages();
+      await pm.savePage('Alpha', 'Second version.', { ...(await liveOf(1)).data }, ADMIN);
+      expect(await pm.deletePage(uuid(1), ADMIN)).toBe(true);
+      const provider = (pm as unknown as { provider: { isPageDeleted(u: string): boolean; getVersionHistory(n: string): Promise<unknown[]> } }).provider;
+      expect(provider.isPageDeleted(uuid(1))).toBe(true);
+
+      const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], { force: true }, ADMIN);
+
+      expect(report.synced).toEqual([uuid(1)]);
+      expect(provider.isPageDeleted(uuid(1))).toBe(false);
+      expect(await fse.pathExists(path.join(pagesDir, 'deleted', `${uuid(1)}.md`))).toBe(false);
+      // v1 seed, v2 local edit, v3 the source saved over the restored page
+      expect(await provider.getVersionHistory('Alpha')).toHaveLength(3);
     });
 
     test('a uuid the source does not ship is reported missing', async () => {

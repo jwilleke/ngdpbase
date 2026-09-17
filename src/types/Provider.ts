@@ -258,6 +258,14 @@ export interface PageProvider extends BaseProvider {
   isPageDeleted?(uuid: string): boolean;
 
   /**
+   * Bring a trashed page back with its history (#947). Optional: a provider
+   * without soft delete has nothing to restore.
+   *
+   * @param uuid - Page UUID
+   */
+  restoreDeletedPage?(uuid: string): Promise<{ ok: true; title: string } | { ok: false; reason: string; detail?: string }>;
+
+  /**
    * Get all page titles
    * @returns Sorted array of page titles
    */
