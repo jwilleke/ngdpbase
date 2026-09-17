@@ -3,7 +3,7 @@ import { systemContext, systemPrincipalOf } from '../context/bootActions.js';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
-import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
+import { evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
 import { SeededShippedPages } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
@@ -138,6 +138,8 @@ export interface ShippedPageSource {
   stampKey: string;
   /** Reason to never seed a page, or undefined to seed it */
   exclude?: (data: Record<string, unknown>) => string | undefined;
+  /** Metadata the source adds to every page it writes (e.g. `addon`, a default category) */
+  extraMetadata?: (data: Record<string, unknown>) => Record<string, unknown>;
 }
 
 /** What `seedShippedPages` did with each source page. */
@@ -154,6 +156,18 @@ export interface ShippedPageSeedReport {
   failed: Array<{ file: string; title: string; reason: string }>;
   /** True when this run started the site's record for the source */
   recordStarted: boolean;
+}
+
+/** What `syncShippedPages` did with each requested uuid. */
+export interface ShippedPageSyncReport {
+  /** Uuids saved from the source */
+  synced: string[];
+  /** Uuids left alone because the live page was edited on this site */
+  protected: string[];
+  /** Uuids the source does not ship */
+  missing: string[];
+  /** Uuids that could not be saved, with why */
+  failed: Array<{ uuid: string; reason: string }>;
 }
 
 /**
@@ -470,11 +484,7 @@ class PageManager extends BaseManager implements CatalogSource {
           continue;
         }
 
-        // A page counts as live only when the site holds its own copy: a file
-        // in the source folder is the source, not this site's page.
-        const livePage = await this.provider.getPageByUUID(uuid, ctx);
-        const livePath = (livePage as { filePath?: string } | null)?.filePath;
-        const live = Boolean(livePage) && !(livePath && path.resolve(livePath).startsWith(path.resolve(source.dir) + path.sep));
+        const live = Boolean(await this.storeCopyByUUID(uuid, source, ctx));
         if (record.has(source.id, uuid)) {
           if (live) report.present++;
           else report.removed.push(title);
@@ -490,28 +500,14 @@ class PageManager extends BaseManager implements CatalogSource {
           report.removed.push(title);
           continue;
         }
-        const metadata: Record<string, unknown> = {
-          ...parsed.data,
-          uuid,
-          title,
-          slug,
-          [source.stampKey]: pageSourceHash(parsed.content),
-          editor: systemPrincipalOf(this.engine)
-        };
-        delete metadata['user-modified'];
-
         try {
-          await this.savePage(title, parsed.content, metadata, ctx, { skipValidation: true });
+          await this.saveShippedPage(source, uuid, parsed, title, title, ctx);
         } catch (err) {
           report.failed.push({ file, title, reason: err instanceof Error ? err.message : String(err) });
           continue;
         }
         record.add(source.id, uuid);
         report.seeded.push(title);
-
-        const searchManager = this.engine.getManager<{ updatePageInIndex?: (name: string, data: Record<string, unknown>) => Promise<void> }>('SearchManager');
-        await searchManager?.updatePageInIndex?.(title, { name: title, content: parsed.content, metadata })
-          .catch((err: unknown) => logger.warn(`[PageManager] Seeded '${title}' but could not index it for search:`, err));
       } catch (err) {
         report.failed.push({ file, title: file, reason: err instanceof Error ? err.message : String(err) });
       }
@@ -519,6 +515,187 @@ class PageManager extends BaseManager implements CatalogSource {
 
     await record.save();
     return report;
+  }
+
+  /**
+   * Save the source's copy of the given uuids as this site's pages (#1406) —
+   * the explicit sync behind Admin → Required Pages Sync.
+   *
+   * Unlike the boot seed this overwrites a live page, and it ignores the
+   * seeded-pages record: an admin's Sync is how a page removed on the site is
+   * brought back. Without `force`, a live page edited on this site (the
+   * `user-modified` flag, or a body that no longer matches its stamp) is left
+   * alone and reported as protected.
+   *
+   * A live page under another title is saved under that title, with the
+   * source title in the metadata — a rename, not a second page (#1376).
+   *
+   * @param source - Where the pages come from and how they are stamped
+   * @param uuids - Pages to sync
+   * @param options - `force` overwrites pages edited on this site
+   * @param ctx - Who asked
+   * @returns What happened to each uuid
+   */
+  async syncShippedPages(
+    source: ShippedPageSource,
+    uuids: string[],
+    options: { force?: boolean },
+    ctx: ActorContext
+  ): Promise<ShippedPageSyncReport> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    const report: ShippedPageSyncReport = { synced: [], protected: [], missing: [], failed: [] };
+    if (uuids.length === 0) return report;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      throw new Error('PageManager: ConfigurationManager not available');
+    }
+
+    // uuid → source page, by frontmatter uuid (first file wins, as in the seed)
+    const sourcePages = new Map<string, { data: Record<string, unknown>; content: string }>();
+    if (await fse.pathExists(source.dir)) {
+      for (const file of (await fse.readdir(source.dir)).filter((f: string) => f.endsWith('.md')).sort()) {
+        const parsed = parsePageFrontmatter(await fse.readFile(path.join(source.dir, file), 'utf8'));
+        const uuid = typeof parsed.data.uuid === 'string' ? parsed.data.uuid.trim().toLowerCase() : '';
+        if (uuid && !sourcePages.has(uuid)) sourcePages.set(uuid, parsed);
+      }
+    }
+
+    const record = await SeededShippedPages.load(configManager.getInstanceDataFolder());
+    for (const uuid of uuids) {
+      const parsed = sourcePages.get(uuid.toLowerCase());
+      const title = typeof parsed?.data.title === 'string' ? parsed.data.title.trim() : '';
+      if (!parsed) {
+        report.missing.push(uuid);
+        continue;
+      }
+      if (!title) {
+        report.failed.push({ uuid, reason: 'source page has no title' });
+        continue;
+      }
+      try {
+        const live = await this.storeCopyByUUID(uuid, source, ctx);
+        if (live && !options.force) {
+          const liveMeta = (live.metadata ?? {}) as Record<string, unknown>;
+          const stamp = liveMeta[source.stampKey];
+          const edited = liveMeta['user-modified'] === true || evaluateSeededAddonPage({
+            sourceContent: parsed.content,
+            liveContent: live.content ?? '',
+            storedHash: typeof stamp === 'string' ? stamp : undefined
+          }) === 'locally-modified';
+          if (edited) {
+            report.protected.push(uuid);
+            continue;
+          }
+        }
+        const liveTitle = typeof live?.metadata?.title === 'string' ? live.metadata.title : '';
+        await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx);
+        record.add(source.id, uuid);
+        report.synced.push(uuid);
+      } catch (err) {
+        report.failed.push({ uuid, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    await record.save();
+    return report;
+  }
+
+  /**
+   * The source for the required pages this release ships (#1405, #1406).
+   * Pages in a category whose `storageLocation` is `github` are excluded.
+   */
+  requiredPagesSource(): ShippedPageSource {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      throw new Error('PageManager: ConfigurationManager not available');
+    }
+    const requiredDirRaw = configManager.getProperty(
+      'ngdpbase.page.provider.filesystem.requiredpagesdir',
+      './required-pages'
+    ) as string;
+    const dir = path.isAbsolute(requiredDirRaw) ? requiredDirRaw : path.join(process.cwd(), requiredDirRaw);
+    const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
+      Record<string, { storageLocation?: string }>;
+    const githubOnly = new Set(
+      Object.entries(systemCategories)
+        .filter(([, cfg]) => cfg.storageLocation === 'github')
+        .map(([key]) => key)
+    );
+    return {
+      id: 'required-pages',
+      label: 'required-pages',
+      dir,
+      stampKey: REQUIRED_SOURCE_HASH_KEY,
+      exclude: (data) => {
+        const category = data['system-category'];
+        return typeof category === 'string' && githubOnly.has(category)
+          ? `github-only category '${category}'`
+          : undefined;
+      }
+    };
+  }
+
+  /**
+   * The source for the pages an addon ships (#1406). Pages it writes carry
+   * `addon` and, when the source names none, the `addon` category (#931).
+   *
+   * @param addonName - The addon's name
+   * @param pagesDir - The addon's `pages/` folder
+   */
+  addonPagesSource(addonName: string, pagesDir: string): ShippedPageSource {
+    return {
+      id: `addon:${addonName}`,
+      label: `${addonName}/pages`,
+      dir: pagesDir,
+      stampKey: 'addon-source-hash',
+      extraMetadata: (data) => ({
+        addon: addonName,
+        'system-category': data['system-category'] ?? 'addon'
+      })
+    };
+  }
+
+  /**
+   * This site's own copy of a shipped page, or null. A page served from the
+   * source folder is the source, not the site's page.
+   */
+  private async storeCopyByUUID(uuid: string, source: ShippedPageSource, ctx: ActorContext): Promise<WikiPage | null> {
+    if (!this.provider) return null;
+    const page = await this.provider.getPageByUUID(uuid, ctx);
+    const filePath = (page as { filePath?: string } | null)?.filePath;
+    if (page && filePath && path.resolve(filePath).startsWith(path.resolve(source.dir) + path.sep)) return null;
+    return page;
+  }
+
+  /**
+   * Write one shipped page through `savePage`, stamped, as the system
+   * principal, then index it for search. Throws when the save is refused.
+   */
+  private async saveShippedPage(
+    source: ShippedPageSource,
+    uuid: string,
+    parsed: { data: Record<string, unknown>; content: string },
+    title: string,
+    saveAs: string,
+    ctx: ActorContext
+  ): Promise<void> {
+    const metadata: Record<string, unknown> = {
+      ...parsed.data,
+      ...source.extraMetadata?.(parsed.data),
+      uuid,
+      title,
+      [source.stampKey]: pageSourceHash(parsed.content),
+      editor: systemPrincipalOf(this.engine)
+    };
+    delete metadata['user-modified'];
+
+    await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true });
+
+    const searchManager = this.engine.getManager<{ updatePageInIndex?: (name: string, data: Record<string, unknown>) => Promise<void> }>('SearchManager');
+    await searchManager?.updatePageInIndex?.(saveAs, { name: saveAs, content: parsed.content, metadata })
+      .catch((err: unknown) => logger.warn(`[PageManager] Saved '${saveAs}' but could not index it for search:`, err));
   }
 
   /**
@@ -535,35 +712,8 @@ class PageManager extends BaseManager implements CatalogSource {
   async seedRequiredPages(): Promise<void> {
     const ctx = systemContext(this.engine, 'required-pages seed at boot — add shipped pages this site has never had');
     try {
-      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-      if (!configManager || !this.provider) return;
-
-      const requiredDirRaw = configManager.getProperty(
-        'ngdpbase.page.provider.filesystem.requiredpagesdir',
-        './required-pages'
-      ) as string;
-      const dir = path.isAbsolute(requiredDirRaw) ? requiredDirRaw : path.join(process.cwd(), requiredDirRaw);
-
-      const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { storageLocation?: string }>;
-      const githubOnly = new Set(
-        Object.entries(systemCategories)
-          .filter(([, cfg]) => cfg.storageLocation === 'github')
-          .map(([key]) => key)
-      );
-
-      const report = await this.seedShippedPages({
-        id: 'required-pages',
-        label: 'required-pages',
-        dir,
-        stampKey: REQUIRED_SOURCE_HASH_KEY,
-        exclude: (data) => {
-          const category = data['system-category'];
-          return typeof category === 'string' && githubOnly.has(category)
-            ? `github-only category '${category}'`
-            : undefined;
-        }
-      }, ctx);
+      if (!this.provider) return;
+      const report = await this.seedShippedPages(this.requiredPagesSource(), ctx);
 
       logger.info(
         `[PageManager] Required pages: ${report.seeded.length} seeded, ${report.present} present, ` +

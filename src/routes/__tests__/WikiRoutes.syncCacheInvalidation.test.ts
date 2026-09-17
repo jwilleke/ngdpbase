@@ -15,10 +15,17 @@
  * page list, not the per-page content cache or the rendered-pages region.
  */
 
+// #1406: the route delegates saving to PageManager's shared seeder. A real
+// PageManager over the real FileSystemProvider does the writes here, so these
+// tests exercise what reaches disk rather than a stand-in.
+vi.unmock('../../managers/PageManager');
+vi.unmock('../../providers/FileSystemProvider');
+
 import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
 import WikiRoutes from '../WikiRoutes';
+import PageManager from '../../managers/PageManager';
 
 const UUID = 'b780e809-d45b-4c4b-84ec-ad30a74a3605';
 const OTHER_UUID = 'c0ffee00-1111-2222-3333-444444444444';
@@ -47,8 +54,8 @@ const createMockRes = () => ({
   set: vi.fn().mockReturnThis()
 });
 
-const page = (body: string, extra = '') =>
-  `---\ntitle: Using Current Time Plugin\nuuid: ${UUID}\nslug: using-current-time-plugin\n${extra}---\n${body}\n`;
+const page = (body: string, extra = '', title = 'Using Current Time Plugin', uuid = UUID) =>
+  `---\ntitle: ${title}\nuuid: ${uuid}\nslug: ${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}\n${extra}---\n${body}\n`;
 
 /**
  * Real directories — the handler does genuine filesystem work, and stubbing
@@ -62,57 +69,60 @@ async function makeDirs() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdpbase-sync-'));
   const requiredDir = path.join(root, 'required-pages');
   const pagesDir = path.join(root, 'pages');
+  const instanceDir = path.join(root, 'instance');
   await fs.mkdir(requiredDir);
   await fs.mkdir(pagesDir);
-  return { root, requiredDir, pagesDir };
+  await fs.mkdir(instanceDir);
+  return { root, requiredDir, pagesDir, instanceDir };
 }
 
-function makeRoutes(dirs: { requiredDir: string; pagesDir: string }, overrides: {
+async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanceDir: string }, overrides: {
   invalidatePageCache?: (id: string) => void;
-  getPage?: (id: string) => Promise<unknown>;
 } = {}) {
-  const invalidatePageCache = vi.fn(overrides.invalidatePageCache ?? (() => {}));
-  // #1376: the sync saves through PageManager. This stand-in writes the file the
-  // way the provider would, so the on-disk assertions below still mean something.
-  const savePage = vi.fn(async (_name: string, content: string, meta: Record<string, unknown>) => {
-    await fs.writeFile(path.join(dirs.pagesDir, `${String(meta.uuid)}.md`), `---\ntitle: ${String(meta.title)}\nuuid: ${String(meta.uuid)}\n---\n${content}\n`, 'utf8');
-  });
-  const getPage = vi.fn(overrides.getPage ?? (async () => null));
-  const order: string[] = [];
-  const deletePageWithContext = vi.fn(async (ctx: { pageName: string }) => { order.push(`delete ${ctx.pageName}`); return true; });
-  savePage.mockImplementation(async (_name: string, content: string, meta: Record<string, unknown>) => {
-    order.push(`save ${String(meta.uuid)}`);
-    await fs.writeFile(path.join(dirs.pagesDir, `${String(meta.uuid)}.md`), `---\ntitle: ${String(meta.title)}\nuuid: ${String(meta.uuid)}\n---\n${content}\n`, 'utf8');
-  });
-  const refreshPageList = vi.fn().mockResolvedValue(undefined);
+  const configManager = {
+    getProperty: vi.fn((key: string, def: unknown) => {
+      if (key === 'ngdpbase.page.provider') return 'filesystemprovider';
+      if (key === 'ngdpbase.page.provider.filesystem.storagedir') return dirs.pagesDir;
+      if (key === 'ngdpbase.page.provider.filesystem.requiredpagesdir') return dirs.requiredDir;
+      return def;
+    }),
+    getResolvedDataPath: vi.fn(() => dirs.pagesDir),
+    getInstanceDataFolder: vi.fn(() => dirs.instanceDir)
+  };
   const rebuildIndex = vi.fn().mockResolvedValue(undefined);
-
+  const holder: { pageManager?: PageManager } = {};
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'UserManager') {
-        return { hasPermission: vi.fn().mockResolvedValue(true) };
-      }
-      if (name === 'ConfigurationManager') {
-        return {
-          getProperty: vi.fn((key: string, def: unknown) =>
-            key === 'ngdpbase.page.provider.filesystem.requiredpagesdir' ? dirs.requiredDir : def
-          ),
-          getResolvedDataPath: vi.fn(() => dirs.pagesDir)
-        };
-      }
-      if (name === 'PageManager') {
-        return { refreshPageList, invalidatePageCache, savePage, getPage, deletePageWithContext, provider: {} };
-      }
+      if (name === 'UserManager') return { hasPermission: vi.fn().mockResolvedValue(true) };
+      if (name === 'ConfigurationManager') return configManager;
+      if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex };
-      if (name === 'AddonsManager') return null;
       return null;
     })
   };
+  const pageManager = new PageManager(engine);
+  holder.pageManager = pageManager;
+  await pageManager.initialize();
+
+  const order: string[] = [];
+  const savePage = vi.spyOn(pageManager, 'savePage');
+  savePage.mockImplementation(async function (this: PageManager, ...args: Parameters<PageManager['savePage']>) {
+    order.push(`save ${String((args[2] as Record<string, unknown>).uuid)}`);
+    return PageManager.prototype.savePage.apply(pageManager, args);
+  });
+  const invalidatePageCache = vi.spyOn(pageManager, 'invalidatePageCache');
+  if (overrides.invalidatePageCache) invalidatePageCache.mockImplementation(overrides.invalidatePageCache);
+  const refreshPageList = vi.spyOn(pageManager, 'refreshPageList');
+  const deletePageWithContext = vi.spyOn(pageManager, 'deletePageWithContext').mockImplementation(async (ctx: unknown) => {
+    const name = (ctx as { pageName: string }).pageName;
+    order.push(`delete ${name}`);
+    return pageManager.deletePage(name, { origin: 'test', user: 'admin' });
+  });
 
   const routes = new WikiRoutes(engine) as unknown as {
     adminSyncRequiredPages(req: unknown, res: unknown): Promise<void>;
   };
-  return { routes, invalidatePageCache, refreshPageList, savePage, deletePageWithContext, order };
+  return { routes, pageManager, invalidatePageCache, refreshPageList, savePage, deletePageWithContext, order };
 }
 
 /** The identifiers passed to invalidatePageCache, in call order. */
@@ -138,7 +148,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
     await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body'), 'utf8');
 
-    const { routes, invalidatePageCache } = makeRoutes(dirs);
+    const { routes, invalidatePageCache } = await makeRoutes(dirs);
     const res = createMockRes();
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), res);
 
@@ -149,7 +159,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
     await fs.writeFile(path.join(dirs.pagesDir, `${UUID}.md`), page('old body'), 'utf8');
 
-    const { routes } = makeRoutes(dirs);
+    const { routes } = await makeRoutes(dirs);
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), createMockRes());
 
     const live = await fs.readFile(path.join(dirs.pagesDir, `${UUID}.md`), 'utf8');
@@ -168,7 +178,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
       'utf8'
     );
 
-    const { routes, invalidatePageCache } = makeRoutes(dirs);
+    const { routes, invalidatePageCache } = await makeRoutes(dirs);
     const res = createMockRes();
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), res);
 
@@ -177,11 +187,10 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
   });
 
   test('every synced page is evicted, not just the first', async () => {
-    for (const u of [UUID, OTHER_UUID]) {
-      await fs.writeFile(path.join(dirs.requiredDir, `${u}.md`), page('new body'), 'utf8');
-    }
+    await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+    await fs.writeFile(path.join(dirs.requiredDir, `${OTHER_UUID}.md`), page('new body', '', 'Another Plugin', OTHER_UUID), 'utf8');
 
-    const { routes, invalidatePageCache } = makeRoutes(dirs);
+    const { routes, invalidatePageCache } = await makeRoutes(dirs);
     await routes.adminSyncRequiredPages(
       createMockReq({ uuids: [UUID, OTHER_UUID] }),
       createMockRes()
@@ -196,7 +205,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
 
     const order: string[] = [];
-    const { routes } = makeRoutes(dirs);
+    const { routes } = await makeRoutes(dirs);
     const pm = (routes as unknown as { engine: { getManager(n: string): unknown } });
     const manager = pm.engine.getManager('PageManager') as {
       refreshPageList: ReturnType<typeof vi.fn>;
@@ -215,7 +224,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
     // reporting failure would be a lie in the other direction.
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
 
-    const { routes } = makeRoutes(dirs, {
+    const { routes } = await makeRoutes(dirs, {
       invalidatePageCache: () => { throw new Error('cache exploded'); }
     });
     const res = createMockRes();
@@ -228,7 +237,7 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
   test('the sync saves through PageManager with skipValidation, as a version by system (#1376)', async () => {
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body', 'user-modified: true\n'), 'utf8');
 
-    const { routes, savePage } = makeRoutes(dirs);
+    const { routes, savePage } = await makeRoutes(dirs);
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], force: true }), createMockRes());
 
     expect(savePage).toHaveBeenCalledTimes(1);
@@ -245,9 +254,11 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
   test('a page renamed at the source is saved under its live title, as a rename (#1376)', async () => {
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
 
-    const { routes, savePage } = makeRoutes(dirs, {
-      getPage: async () => ({ metadata: { title: 'Current Time Plugin (old name)', uuid: UUID } })
-    });
+    const { routes, pageManager, savePage } = await makeRoutes(dirs);
+    // The site's page has the same uuid under its old title.
+    await pageManager.savePage('Current Time Plugin (old name)', 'old body', { uuid: UUID }, { origin: 'test', user: 'admin' });
+    savePage.mockClear();
+
     await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID], force: true }), createMockRes());
 
     const [name, , meta] = savePage.mock.calls[0];
@@ -258,9 +269,10 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
   test('reconcile deletes the old-UUID page through PageManager before saving the canonical one (#1376)', async () => {
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('canonical body'), 'utf8');
 
-    const { routes, order, deletePageWithContext } = makeRoutes(dirs, {
-      getPage: async (id: string) => (id === OTHER_UUID ? { metadata: { title: 'Using Current Time Plugin', uuid: OTHER_UUID } } : null)
-    });
+    const { routes, pageManager, order, deletePageWithContext } = await makeRoutes(dirs);
+    // The site holds the same page under the old uuid.
+    await pageManager.savePage('Using Current Time Plugin', 'old body', { uuid: OTHER_UUID }, { origin: 'test', user: 'admin' });
+    order.length = 0;
     await routes.adminSyncRequiredPages(createMockReq({ reconcile: [{ sourceUuid: UUID, liveUuid: OTHER_UUID }] }), createMockRes());
 
     expect(deletePageWithContext).toHaveBeenCalledWith(expect.objectContaining({ pageName: OTHER_UUID }));

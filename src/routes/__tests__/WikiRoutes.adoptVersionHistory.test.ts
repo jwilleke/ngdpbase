@@ -88,6 +88,9 @@ function makeRoutes(dirs: { requiredDir: string; pagesDir: string }) {
         return {
           refreshPageList: vi.fn().mockResolvedValue(undefined),
           invalidatePageCache: vi.fn(),
+          // #1406: the route asks for the required-pages source up front; adopt never syncs.
+          requiredPagesSource: () => ({ id: 'required-pages', label: 'required-pages', dir: dirs.requiredDir, stampKey: 'required-source-hash' }),
+          syncShippedPages: vi.fn().mockResolvedValue({ synced: [], protected: [], missing: [], failed: [] }),
           provider: { renamePageInIndex }
         };
       }

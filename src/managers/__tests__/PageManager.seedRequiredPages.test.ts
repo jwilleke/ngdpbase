@@ -211,6 +211,84 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     expect(await liveFiles()).toEqual([`${uuid(2)}.md`]);
   });
 
+  describe('syncShippedPages — the explicit sync behind Required Pages Sync (#1406)', () => {
+    const ADMIN = { origin: 'test', user: 'admin' } as never;
+    const liveOf = async (n: number) => matter(await fs.readFile(path.join(pagesDir, `${uuid(n)}.md`), 'utf8'));
+
+    test('updates an outdated live page and stamps it', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = await boot();
+      await fse.writeFile(path.join(requiredDir, `${uuid(1)}.md`), matter.stringify('Revised body.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+
+      const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], {}, ADMIN);
+
+      expect(report.synced).toEqual([uuid(1)]);
+      const live = await liveOf(1);
+      expect(live.content).toContain('Revised body.');
+      expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash(live.content));
+    });
+
+    test('a page edited on the site is protected unless forced', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = await boot();
+      await pm.savePage('Alpha', 'Edited here.', { uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation', [REQUIRED_SOURCE_HASH_KEY]: (await liveOf(1)).data[REQUIRED_SOURCE_HASH_KEY] }, ADMIN);
+      await fse.writeFile(path.join(requiredDir, `${uuid(1)}.md`), matter.stringify('Revised body.\n', { title: 'Alpha', uuid: uuid(1), slug: 'alpha', 'system-category': 'documentation' }));
+
+      const plain = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], {}, ADMIN);
+      expect(plain.protected).toEqual([uuid(1)]);
+      expect((await liveOf(1)).content).toContain('Edited here.');
+
+      const forced = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], { force: true }, ADMIN);
+      expect(forced.synced).toEqual([uuid(1)]);
+      expect((await liveOf(1)).content).toContain('Revised body.');
+    });
+
+    test('the user-modified flag protects a page too', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = await boot();
+      await pm.savePage('Alpha', (await liveOf(1)).content, { ...(await liveOf(1)).data, 'user-modified': true }, ADMIN);
+
+      const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], {}, ADMIN);
+
+      expect(report.protected).toEqual([uuid(1)]);
+    });
+
+    test('brings back a page removed on the site — the recovery path (decision A)', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const pm = await boot();
+      await pm.deletePage(uuid(1), ADMIN);
+      await boot();
+      expect(await liveFiles()).toEqual([]);
+
+      const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], {}, ADMIN);
+
+      expect(report.synced).toEqual([uuid(1)]);
+      expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
+    });
+
+    test('a uuid the source does not ship is reported missing', async () => {
+      const pm = await boot();
+
+      const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(9)], {}, ADMIN);
+
+      expect(report.missing).toEqual([uuid(9)]);
+    });
+
+    test('an addon source writes its addon name and default category', async () => {
+      const addonDir = path.join(tmpDir, 'addon-pages');
+      await fse.ensureDir(addonDir);
+      await fse.writeFile(path.join(addonDir, 'help.md'), matter.stringify('Addon help.\n', { title: 'Addon Help', uuid: uuid(5), slug: 'addon-help' }));
+      const pm = await boot();
+
+      const report = await pm.syncShippedPages(pm.addonPagesSource('demo', addonDir), [uuid(5)], {}, ADMIN);
+
+      expect(report.synced).toEqual([uuid(5)]);
+      const live = await liveOf(5);
+      expect(live.data).toMatchObject({ addon: 'demo', 'system-category': 'addon' });
+      expect(live.data['addon-source-hash']).toBe(pageSourceHash(live.content));
+    });
+  });
+
   test('a page with no uuid, or a duplicate uuid, is reported and the rest still seed', async () => {
     await writeSource(1, 'Alpha', 'documentation');
     await fse.writeFile(

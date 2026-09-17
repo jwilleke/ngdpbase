@@ -34,7 +34,6 @@ import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
 import SchemaGenerator from '../utils/SchemaGenerator.js';
 import {
-  pageSourceHash,
   evaluateSeededAddonPage,
   REQUIRED_SOURCE_HASH_KEY,
   type SeededAddonPageStatus
@@ -102,7 +101,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
-import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult } from '../managers/PageManager.js';
+import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
 import { registerDawarichCompatRoutes } from './DawarichCompatRoutes.js';
@@ -330,6 +329,10 @@ interface IPageManager {
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
   deletePage(name: string, ctx: ActorContext): Promise<boolean>;
   deletePageWithContext(wikiContext: unknown): Promise<boolean>;
+  /** #1406: the shared shipped-page seeder behind Required Pages Sync */
+  requiredPagesSource(): ShippedPageSource;
+  addonPagesSource(addonName: string, pagesDir: string): ShippedPageSource;
+  syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
@@ -11876,9 +11879,11 @@ ${panes}
       // `addon` + `addon-source-hash` on write and uses hash-based edit
       // protection — keeping the UI apply consistent with the boot reseed.
       const addonSourceUuids = new Map<string, string>();
+      const addonPagesDirs = new Map<string, string>();
       const addonsManagerPost = this.engine.getManager('AddonsManager');
       if (addonsManagerPost) {
         for (const { name: addonName, pagesDir } of addonsManagerPost.getEnabledAddonPagesDirectories()) {
+          addonPagesDirs.set(addonName, pagesDir);
           if (await fse.pathExists(pagesDir)) {
             for (const f of (await fse.readdir(pagesDir))) {
               if (!f.endsWith('.md')) continue;
@@ -11907,87 +11912,32 @@ ${panes}
 
       const synced: string[] = [];
       const protected_: string[] = [];
+      const failed: Array<{ uuid: string; reason: string }> = [];
 
-      /**
-       * Save a source page as the live page, through PageManager (#1376), so the
-       * page index, version history (a version by `system`) and audit record are
-       * current — a plain file write updated none of them. `skipValidation`:
-       * this is content the instance ships, not user input, and may contain
-       * markup a user's save would refuse (#1037). `user-modified` is stripped so
-       * the page shows as 'current' on the next Required Pages Sync load.
-       *
-       * When the live page has the same UUID under another title, it is saved
-       * under that title with the source title in the metadata — a rename —
-       * rather than as a second page with the same UUID.
-       */
+      // #1406: the shared seeder saves each page — stamped, as the system
+      // principal, protected when edited on this site unless forced, recorded.
+      // The route only decides which source each uuid comes from.
       const syncPageManager = this.engine.getManager('PageManager');
-      const syncFile = async (srcPath: string, uuid: string, addonName?: string): Promise<void> => {
-        const raw: string = await fse.readFile(srcPath, 'utf8');
-        const parsed = matter(raw) as { data: Record<string, unknown>; content: string };
-        delete parsed.data['user-modified'];
-        // #931: for an addon-sourced page, stamp the provenance + content hash the
-        // boot reseed relies on, so a UI sync leaves the page in the same state a
-        // boot reseed would (otherwise the next boot sees it as legacy/unstamped).
-        if (addonName) {
-          parsed.data['addon'] = addonName;
-          parsed.data['addon-source-hash'] = pageSourceHash(parsed.content);
-          if (!parsed.data['system-category']) parsed.data['system-category'] = 'addon';
-        } else {
-          // #1395: a required page carries the same kind of stamp.
-          parsed.data[REQUIRED_SOURCE_HASH_KEY] = pageSourceHash(parsed.content);
-        }
-        const title = typeof parsed.data.title === 'string' ? parsed.data.title.trim() : '';
-        if (!title) throw new Error(`source page ${uuid} has no title`);
-        const live = await syncPageManager.getPage(uuid);
-        const liveTitle = typeof live?.metadata?.title === 'string' ? live.metadata.title : '';
-        await syncPageManager.savePage(
-          liveTitle || title,
-          parsed.content,
-          { ...parsed.data, uuid, title, editor: 'system' },
-          currentUser,
-          { skipValidation: true }
-        );
+      const requiredSource = syncPageManager.requiredPagesSource();
+      const syncFrom = async (source: ShippedPageSource, list: string[], force: boolean): Promise<string[]> => {
+        const result = await syncPageManager.syncShippedPages(source, list, { force }, currentUser);
+        protected_.push(...result.protected);
+        failed.push(...result.failed);
+        return result.synced;
       };
 
-      // Normal sync: copy source UUID file to pages dir (stripping user-modified).
-      // Pages with user-modified: true were edited in the wiki UI and are protected —
-      // skip them and return them in the protected list so the caller can inform the user.
+      const byAddon = new Map<string, string[]>();
+      const requiredUuids: string[] = [];
       for (const uuid of uuids) {
-        const fileName = `${uuid}.md`;
-        const sourcePath = sourceFileMap.get(uuid) ?? path.join(requiredDirResolved, fileName);
-        const destPath = path.join(pagesDirResolved, fileName);
         const addonName = addonSourceUuids.get(uuid);
-
-        if (await fse.pathExists(sourcePath)) {
-          if (!forceSync && await fse.pathExists(destPath)) {
-            const liveRaw: string = await fse.readFile(destPath, 'utf8');
-            const liveParsed = matter(liveRaw) as { data: Record<string, unknown>; content: string };
-            let isProtected = liveParsed.data['user-modified'] === true;
-            // #931: addon pages are also protected when the live body diverges
-            // from the seed stamp (hash-based, same signal the boot pass + UI use)
-            // — not only when the explicit user-modified flag is set. #1395:
-            // required pages the same way, under their own stamp.
-            if (!isProtected) {
-              const sourceRaw = await fse.readFile(sourcePath, 'utf8');
-              const st = addonName
-                ? evaluateSeededAddonPage({
-                  sourceContent: matter(sourceRaw).content,
-                  liveContent: liveParsed.content,
-                  storedHash: typeof liveParsed.data['addon-source-hash'] === 'string'
-                    ? (liveParsed.data['addon-source-hash'])
-                    : undefined
-                })
-                : WikiRoutes.requiredPageStatus(sourceRaw, liveParsed.content, liveParsed.data);
-              isProtected = st === 'locally-modified';
-            }
-            if (isProtected) {
-              protected_.push(uuid);
-              continue;
-            }
-          }
-          await syncFile(sourcePath, uuid, addonName);
-          synced.push(uuid);
-        }
+        if (addonName) byAddon.set(addonName, [...(byAddon.get(addonName) ?? []), uuid]);
+        else requiredUuids.push(uuid);
+      }
+      synced.push(...await syncFrom(requiredSource, requiredUuids, forceSync));
+      for (const [addonName, list] of byAddon) {
+        const pagesDir = addonPagesDirs.get(addonName);
+        if (!pagesDir) continue;
+        synced.push(...await syncFrom(syncPageManager.addonPagesSource(addonName, pagesDir), list, forceSync));
       }
 
       // Reconcile uuid-mismatch: create canonical UUID file from source, remove the old UUID file
@@ -12004,8 +11954,7 @@ ${panes}
             await this.auditPageDelete(req, oldContext, liveUuid, liveUuid);
             await syncPageManager.deletePageWithContext(oldContext);
           }
-          await syncFile(sourcePath, sourceUuid);
-          synced.push(sourceUuid);
+          synced.push(...await syncFrom(requiredSource, [sourceUuid], true));
         }
       }
 
@@ -12190,13 +12139,17 @@ ${panes}
       });
 
       logger.info(
-        `Required pages sync: ${synced.length} synced, ${protected_.length} protected (user-modified) by ${currentUser.username}`
+        `Required pages sync: ${synced.length} synced, ${protected_.length} protected (user-modified), ${failed.length} failed by ${currentUser.username}`
       );
+      if (failed.length > 0) {
+        logger.warn(`Required pages sync: not saved — ${failed.map((f) => `${f.uuid}: ${f.reason}`).join('; ')}`);
+      }
 
       const parts: string[] = [];
       if (synced.length > 0) parts.push(`${synced.length} page${synced.length !== 1 ? 's' : ''} synced`);
       if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
       if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
+      if (failed.length > 0) parts.push(`${failed.length} could not be saved: ${failed.map((f) => f.reason).join('; ')}`);
 
       return res.json({
         success: true,
@@ -12204,6 +12157,7 @@ ${panes}
         synced: synced.length,
         uuids: synced,
         protected: protected_,
+        failed,
         removedOrphans
       });
     } catch (err: unknown) {
