@@ -59,6 +59,25 @@ The two are independent. The whole store is encrypted or it is not — no per-fi
 
 PHR-style addons should __default encrypt on__ and warn at least once if the user turns it off. `default` may stay off so existing private pages do not silently require a mnemonic.
 
+### Who decides encryption (2026-09-18)
+
+- __Whoever creates the store decides__, at creation. The end user is never asked an abstract "encrypt?" question — by then the answer follows from what the store is for.
+- __The `default` store is the admin's call__, instance-wide.
+- __Every other store is created by an admin or by an addon__: those two are the only creators.
+- __Sensitive or regulated data MUST be encrypted.__ An addon holding it declares encryption __required__, and no one can turn it off for that store.
+- The admin decides whether encrypted stores are offered on this instance at all.
+- Turning encryption on or off for an existing store is __not offered__ at first: each is a whole-store migration. It can come later if anyone asks.
+
+So `store.json` carries more than `encrypt`: which creator made the store (`admin` or an addon slug) and whether encryption is __required__ (not switchable). An addon declares its store in its manifest; today nothing in the manifest can say so.
+
+### Recovery words: at first login after an encrypted store exists (2026-09-18)
+
+A store created for a user by an admin or an addon exists before that user has any keys, so its DEK cannot be wrapped yet. The store is written with `encrypt: true` and __no wrapped DEK__ — a pending state.
+
+At the user's next __password__ login, the app sees a pending encrypted store and no `user-keys.json`: it creates the user KEK from that password, generates the 12 recovery words, wraps the store's DEK, and shows the words __once__, with the warning. Until that login the store holds no content, because every write into it is already refused without the key.
+
+The words are never generated at store-creation time (the creator is not the keyholder) and never re-shown later; a user who loses both password and words loses that store's contents, and no admin can recover them.
+
 ## Keys
 
 Do not encrypt the folder with the login password. Password change and recovery need a stable store key.
