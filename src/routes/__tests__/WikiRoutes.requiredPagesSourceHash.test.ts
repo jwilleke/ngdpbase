@@ -21,6 +21,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import WikiRoutes from '../WikiRoutes';
 import PageManager from '../../managers/PageManager';
+import { SeededShippedPages } from '../../utils/seededShippedPages';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
 
 const UUID = 'b780e809-d45b-4c4b-84ec-ad30a74a3605';
@@ -213,6 +214,64 @@ describe('Required Pages Sync status — body and source-hash stamp (#1395)', ()
     const [, content, meta] = savePage.mock.calls[0];
     expect(meta[REQUIRED_SOURCE_HASH_KEY]).toBe(pageSourceHash(content));
     expect(meta).not.toHaveProperty('addon-source-hash');
+  });
+
+  describe('#1412 declining a shipped page', () => {
+    const declineBody = (reason = "slug 'x' already exists under UUID other") =>
+      ({ decline: [{ source: 'required-pages', uuid: UUID, reason }] });
+
+    test('the route records the decline, and the seeder then skips the page', async () => {
+      await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+      const { routes, pageManager, savePage } = await makeRoutes(dirs);
+
+      const res = createMockRes();
+      await routes.adminSyncRequiredPages(createMockReq(declineBody()), res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, declined: [UUID] }));
+      const record = await SeededShippedPages.load(dirs.instanceDir);
+      expect(record.isDeclined('required-pages', UUID)).toBe(true);
+      expect(record.declinedEntry('required-pages', UUID)).toMatchObject({ by: 'admin' });
+
+      savePage.mockClear();
+      const report = await pageManager.seedShippedPages(pageManager.requiredPagesSource(), { origin: 'test', user: 'system' });
+      expect(report.declined).toEqual(['FootnoteExample']);
+      expect(savePage).not.toHaveBeenCalled();
+    });
+
+    test('allow undoes it', async () => {
+      await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+      const { routes } = await makeRoutes(dirs);
+      await routes.adminSyncRequiredPages(createMockReq(declineBody()), createMockRes());
+
+      const res = createMockRes();
+      await routes.adminSyncRequiredPages(createMockReq({ allow: [{ source: 'required-pages', uuid: UUID }] }), res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ allowed: [UUID] }));
+      expect((await SeededShippedPages.load(dirs.instanceDir)).isDeclined('required-pages', UUID)).toBe(false);
+    });
+
+    test('an explicit Sync of a declined page overrides the decline', async () => {
+      await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+      const { routes } = await makeRoutes(dirs);
+      await routes.adminSyncRequiredPages(createMockReq(declineBody()), createMockRes());
+
+      await routes.adminSyncRequiredPages(createMockReq({ uuids: [UUID] }), createMockRes());
+
+      expect((await SeededShippedPages.load(dirs.instanceDir)).isDeclined('required-pages', UUID)).toBe(false);
+      expect(await fs.readFile(path.join(dirs.pagesDir, `${UUID}.md`), 'utf8')).toContain('new body');
+    });
+
+    test('the list shows what this site declined, with its source', async () => {
+      await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('new body'), 'utf8');
+      const { routes } = await makeRoutes(dirs);
+      await routes.adminSyncRequiredPages(createMockReq(declineBody('slug taken')), createMockRes());
+
+      const res = createMockRes();
+      await routes.adminRequiredPages(createMockReq(), res);
+
+      const data = res.render.mock.calls[0][1] as { declined: Array<{ source: string; uuid: string; title: string; reason: string }> };
+      expect(data.declined).toEqual([expect.objectContaining({ source: 'required-pages', uuid: UUID, title: 'FootnoteExample', reason: 'slug taken' })]);
+    });
   });
 
   test('push to source does not copy the stamp into the source file', async () => {

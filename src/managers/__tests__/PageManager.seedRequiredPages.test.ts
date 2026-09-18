@@ -22,7 +22,7 @@ import { promises as fs } from 'fs';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
-import { SEEDED_SHIPPED_PAGES_FILE } from '../../utils/seededShippedPages';
+import { SEEDED_SHIPPED_PAGES_FILE, SeededShippedPages } from '../../utils/seededShippedPages';
 
 vi.mock('../../utils/logger', () => ({
   default: {
@@ -137,7 +137,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     await boot();
 
     const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
-    expect(Object.keys(record.sources['required-pages'])).toEqual([uuid(1)]);
+    expect(Object.keys(record.sources['required-pages'].seeded)).toEqual([uuid(1)]);
   });
 
   test('a page new in a release appears at the next start-up', async () => {
@@ -177,7 +177,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     expect(report.seeded).toEqual([]);
     expect(report.removed).toEqual(['Alpha']);
     const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
-    expect(record.sources['required-pages'][uuid(1)]).toBeDefined();
+    expect(record.sources['required-pages'].seeded[uuid(1)]).toBeDefined();
   });
 
   test('an established site without a record starts it from its live pages and does not rewrite them', async () => {
@@ -192,7 +192,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
     expect(live.content).toContain('Locally edited body.');
     expect(live.data[REQUIRED_SOURCE_HASH_KEY]).toBeUndefined();
     const record = await fse.readJson(path.join(instanceDir, SEEDED_SHIPPED_PAGES_FILE));
-    expect(record.sources['required-pages'][uuid(1)]).toBeDefined();
+    expect(record.sources['required-pages'].seeded[uuid(1)]).toBeDefined();
   });
 
   test('the install marker no longer decides anything: an installed site still gets a new page', async () => {
@@ -260,6 +260,35 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
 
       expect(report.stamped).toEqual([]);
       expect(report.present).toBe(1);
+    });
+  });
+
+  describe('#1412 a site can decline a shipped page', () => {
+    test('a declined page is not seeded and is not a failure', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const record = await SeededShippedPages.load(instanceDir);
+      record.decline('required-pages', uuid(1), { at: 'now', by: 'admin', reason: "slug 'alpha' already exists under UUID other" });
+      await record.save();
+
+      const pm = new PageManager(makeEngine());
+      await pm.initialize();
+      const report = await pm.seedShippedPages(pm.requiredPagesSource(), { origin: 'test', user: 'system' });
+
+      expect(report.declined).toEqual(['Alpha']);
+      expect(report.seeded).toEqual([]);
+      expect(report.failed).toEqual([]);
+      expect(await liveFiles()).toEqual([]);
+    });
+
+    test('a decline of another source does not stop this one', async () => {
+      await writeSource(1, 'Alpha', 'documentation');
+      const record = await SeededShippedPages.load(instanceDir);
+      record.decline('addon:demo', uuid(1), { at: 'now', by: 'admin', reason: 'declined for the addon' });
+      await record.save();
+
+      await boot();
+
+      expect(await liveFiles()).toEqual([`${uuid(1)}.md`]);
     });
   });
 

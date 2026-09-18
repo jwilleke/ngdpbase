@@ -1240,12 +1240,17 @@ describe('AddonsManager', () => {
       const configManager = makeConfigManager({ enabledAddons: ['slug-clash-addon'] });
       const pageManager = makePageManager(['taken-slug']);
       pageManager.savePage.mockRejectedValue(new Error('Page conflict: slug'));
+      // #1412: a conflict is a status an admin settles in Required Pages Sync,
+      // logged at info with the reason — not a per-boot error.
+      const info = vi.spyOn(logger, 'info');
       const warn = vi.spyOn(logger, 'warn');
       const manager = new AddonsManager(makeEngineWithPageManager(configManager, pageManager));
       await manager.initialize();
 
-      const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('slug-clash-addon/pages/home.md'));
+      const line = info.mock.calls.map((c) => String(c[0])).find((m) => m.includes('could not be seeded'));
+      expect(line).toContain('slug-clash-addon/pages/home.md');
       expect(line).toContain('Page conflict: slug');
+      expect(warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('home.md'))).toBeUndefined();
     });
 
     test('re-indexes already-existing pages via SearchManager on startup', async () => {

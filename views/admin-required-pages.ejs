@@ -240,6 +240,11 @@
                                                 title="Replace live content with required-pages/ source">
                                             <i class="fas fa-exchange-alt"></i> Replace
                                         </button>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                onclick="declineOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', 'A page with slug or title already exists under UUID <%= page.liveUuid %>')"
+                                                title="Keep the live page. This site stops being offered this shipped page.">
+                                            <i class="fas fa-ban"></i> Don't Seed Here
+                                        </button>
                                         <% } %>
                                         <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
                                         <% if (page.userModified) { %>
@@ -392,7 +397,10 @@
                                     <td><span class="badge bg-secondary"><%= page.addonName %></span></td>
                                     <td><code><%= page.slug || '—' %></code></td>
                                     <td>
-                                        <% if (page.status === 'new') { %>
+                                        <% if (page.status === 'uuid-mismatch') { %>
+                                            <span class="badge bg-danger">UUID Mismatch</span>
+                                            <br><small class="text-muted">live: <span class="font-monospace"><%= page.liveUuid %></span></small>
+                                        <% } else if (page.status === 'new') { %>
                                             <span class="badge bg-primary">New</span>
                                         <% } else if (page.status === 'modified') { %>
                                             <span class="badge bg-warning text-dark">Modified</span>
@@ -418,7 +426,14 @@
                                             <i class="fas fa-code-branch"></i> Diff
                                         </button>
                                         <% } %>
-                                        <% if (page.status !== 'current') { %>
+                                        <% if (page.status === 'uuid-mismatch') { %>
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                                onclick="declineOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', 'A page with slug or title already exists under UUID <%= page.liveUuid %>')"
+                                                title="Keep the live page. This site stops being offered this addon page.">
+                                            <i class="fas fa-ban"></i> Don't Seed Here
+                                        </button>
+                                        <% } %>
+                                        <% if (page.status !== 'current' && page.status !== 'uuid-mismatch') { %>
                                         <% if (page.userModified) { %>
                                         <button class="btn btn-sm btn-outline-danger"
                                                 onclick="syncOne('<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>', true)"
@@ -438,6 +453,55 @@
                                             <i class="fas fa-external-link-alt"></i>
                                         </a>
                                         <% } %>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <% } %>
+
+    <!-- Declined Section (#1412: pages this site will not take) -->
+    <% if (typeof declined !== 'undefined' && declined.length > 0) { %>
+    <div class="row">
+        <div class="col-12">
+            <div class="card mb-4 border-secondary">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-ban me-2 text-secondary"></i>Not Seeded Here (<%= declined.length %>)</h5>
+                    <small class="text-muted">Shipped pages this site was told not to take</small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="declinedTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Shipped By</th>
+                                    <th>Why</th>
+                                    <th>Declined</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% declined.forEach(page => { %>
+                                <tr data-uuid="<%= page.uuid %>" data-source="<%= page.source %>" class="declined-row">
+                                    <td>
+                                        <strong><%= page.title %></strong>
+                                        <br><small class="text-muted font-monospace"><%= page.uuid %></small>
+                                    </td>
+                                    <td><span class="badge bg-secondary"><%= page.source %></span></td>
+                                    <td><small class="text-muted"><%= page.reason %></small></td>
+                                    <td><small class="text-muted"><%= page.at %> by <%= page.by %></small></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                onclick="allowOne('<%= page.source %>', '<%= page.uuid %>', '<%= page.title.replace(/'/g, '\\\'') %>')"
+                                                title="Offer this page again at the next start-up or sync">
+                                            <i class="fas fa-undo"></i> Seed Here
+                                        </button>
                                     </td>
                                 </tr>
                                 <% }); %>
@@ -681,6 +745,38 @@ async function syncSelected() {
         return;
     }
     await doSync(uuids, `Syncing ${uuids.length} selected page${uuids.length !== 1 ? 's' : ''}…`);
+}
+
+// #1412: this site will not take a shipped page whose title or slug belongs to
+// a page it would rather keep. Nothing is written to any page.
+async function declineOne(source, uuid, title, reason) {
+    if (!confirm(`Stop offering "${title}" on this site?\n\nThe live page is untouched. You can undo this from the "Not Seeded Here" list.`)) return;
+    await postSync({ decline: [{ source, uuid, reason }] }, `Declining "${title}"…`);
+}
+
+async function allowOne(source, uuid, title) {
+    await postSync({ allow: [{ source, uuid }] }, `Offering "${title}" again…`);
+}
+
+/** POST the sync endpoint, report, and reload so the lists reflect the change. */
+async function postSync(body, statusMsg) {
+    showToast(statusMsg);
+    try {
+        const response = await csrfFetch('/admin/required-pages/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+            body: JSON.stringify(body)
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast(`✓ ${result.message}`);
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            showToast(`✗ Error: ${result.error}`);
+        }
+    } catch (err) {
+        showToast(`✗ Network error: ${err.message}`);
+    }
 }
 
 async function doSync(uuids, statusMsg, force = false) {

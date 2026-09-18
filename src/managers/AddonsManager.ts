@@ -840,11 +840,21 @@ class AddonsManager extends BaseManager {
       onPresent: (live, parsed) => this.reconcileSeededAddonPage(addonName, live, parsed, seedContext, reseedEnabled)
     }, seedContext);
 
+    // #1412: a title or slug held by another page is a status an admin settles
+    // in Required Pages Sync, not a per-boot error — even for a domain addon.
+    // An authoring error in the addon's own page still reports as before (#951).
+    const conflicts = report.failed.filter((f) => f.code === 'save-failed');
+    if (conflicts.length > 0) {
+      const lines = conflicts.map((f) => `${f.title} (${addonName}/pages/${f.file}): ${f.reason}`);
+      logger.info(`[AddonsManager] Shipped pages could not be seeded: ${lines.join('; ')}`);
+    }
     for (const failure of report.failed) {
+      if (failure.code === 'save-failed') continue;
       reportSkip(`[AddonsManager] Could not seed ${addonName}/pages/${failure.file} — ${failure.reason}`);
-      if (failure.code !== 'save-failed') {
-        this.recordSeedFailure(addonName, failure.file, failure.code, isDomain);
-      }
+      this.recordSeedFailure(addonName, failure.file, failure.code, isDomain);
+    }
+    if (report.declined.length > 0) {
+      logger.info(`[AddonsManager] Not seeding ${report.declined.length} page(s) from ${addonName} declined on this site: ${report.declined.join(', ')}`);
     }
     if (report.removed.length > 0) {
       logger.info(`[AddonsManager] Not seeding ${report.removed.length} page(s) from ${addonName} removed on this site: ${report.removed.join(', ')}`);

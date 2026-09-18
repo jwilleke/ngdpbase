@@ -332,6 +332,9 @@ interface IPageManager {
   /** #1406: the shared shipped-page seeder behind Required Pages Sync */
   requiredPagesSource(): ShippedPageSource;
   addonPagesSource(addonName: string, pagesDir: string): ShippedPageSource;
+  declineShippedPage(sourceId: string, uuid: string, reason: string, ctx: ActorContext): Promise<boolean>;
+  allowShippedPage(sourceId: string, uuid: string, ctx: ActorContext): Promise<boolean>;
+  declinedShippedPages(): Promise<Record<string, Record<string, { at: string; by: string; reason: string }>>>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string): string | null;
@@ -11527,6 +11530,7 @@ ${panes}
       const validationManager = this.engine.getManager('ValidationManager');
 
       const comparison: Array<{
+        source: string;
         uuid: string;
         title: string;
         slug: string;
@@ -11600,7 +11604,7 @@ ${panes}
             // Treat as modified so the admin can re-sync to heal it.
             logger.warn(`[adminRequiredPages] malformed frontmatter in live copy ${uuid}: ${String(yamlErr)}`);
             status = 'modified';
-            comparison.push({ uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
+            comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
             continue;
           }
           // Auto-heal System/Admin → system (invalid legacy category)
@@ -11629,7 +11633,7 @@ ${panes}
           }
         }
 
-        comparison.push({ uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
+        comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
       }
 
       const statusOrder: Record<string, number> = { 'uuid-mismatch': 0, new: 1, modified: 2, current: 3 };
@@ -11645,13 +11649,15 @@ ${panes}
 
       // Scan enabled addon pages/ directories using the same comparison logic
       const addonComparison: Array<{
+        source: string;
         addonName: string;
         uuid: string;
         title: string;
         slug: string;
         lastModified: string;
-        status: 'new' | 'modified' | 'current';
+        status: 'new' | 'modified' | 'current' | 'uuid-mismatch';
         userModified: boolean;
+        liveUuid?: string;
       }> = [];
 
       const addonsManager = this.engine.getManager('AddonsManager');
@@ -11701,11 +11707,20 @@ ${panes}
             // The instance store is uuid-named, so the destination is
             // `<uuid>.md` — not the addon's source filename.
             const destPath = path.join(pagesDirResolved, `${uuid}.md`);
-            let status: 'new' | 'modified' | 'current';
+            let status: 'new' | 'modified' | 'current' | 'uuid-mismatch';
             let userModified = false;
+            let liveUuid: string | undefined;
 
             if (!(await fse.pathExists(destPath))) {
               status = 'new';
+              // #1413: an addon page whose title or slug belongs to another page
+              // can never be seeded. Surfaced like the required-pages set does,
+              // so an admin can reconcile it or decline it (#1412).
+              const conflict = await validationManager.checkConflicts(uuid, title, slug, currentUser);
+              if (conflict.hasConflict && conflict.conflictingUuid) {
+                status = 'uuid-mismatch';
+                liveUuid = conflict.conflictingUuid;
+              }
             } else {
               const destContent: string = await fse.readFile(destPath, 'utf8');
               const destParsed = matter(destContent) as { data: Record<string, unknown>; content: string };
@@ -11725,13 +11740,14 @@ ${panes}
               status = seedStatus === 'current' ? 'current' : 'modified';
             }
 
-            addonComparison.push({ addonName, uuid, title, slug, lastModified, status, userModified });
+            addonComparison.push({ source: `addon:${addonName}`, addonName, uuid, title, slug, lastModified, status, userModified, liveUuid });
           }
         }
         addonComparison.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
       }
 
       const addonCounts = {
+        uuidMismatch: addonComparison.filter(p => p.status === 'uuid-mismatch').length,
         new: addonComparison.filter(p => p.status === 'new').length,
         modified: addonComparison.filter(p => p.status === 'modified').length,
         current: addonComparison.filter(p => p.status === 'current').length
@@ -11759,6 +11775,32 @@ ${panes}
         req.userContext
       );
 
+      // #1412: what this site has told the seeder not to take, with the title
+      // read from the source file so the row means something to an operator.
+      const listPageManager = this.engine.getManager('PageManager');
+      const declinedBySource: Record<string, Record<string, { at: string; by: string; reason: string }>> =
+        await listPageManager.declinedShippedPages();
+      const sourceTitles = new Map<string, string>();
+      for (const file of mdFiles) {
+        try {
+          const parsed = matter(await fse.readFile(path.join(requiredDirResolved, file), 'utf8'));
+          sourceTitles.set(`required-pages:${path.basename(file, '.md').toLowerCase()}`, String(parsed.data.title ?? file));
+        } catch { /* a source we cannot read has no title to show */ }
+      }
+      for (const addon of addonComparison) {
+        sourceTitles.set(`${addon.source}:${addon.uuid.toLowerCase()}`, addon.title);
+      }
+      const declined = Object.entries(declinedBySource).flatMap(([source, entries]) =>
+        Object.entries(entries).map(([uuid, entry]) => ({
+          source,
+          uuid,
+          title: sourceTitles.get(`${source}:${uuid.toLowerCase()}`) ?? uuid,
+          at: entry.at,
+          by: entry.by,
+          reason: entry.reason
+        }))
+      );
+
       const commonData = await this.getCommonTemplateData(req);
       return res.render('admin-required-pages', {
         ...commonData,
@@ -11768,6 +11810,7 @@ ${panes}
         addonComparison,
         addonCounts,
         orphanedAddonPages,
+        declined,
         notInSource,
         csrfToken: req.session.csrfToken,
         successMessage: req.query.success || null,
@@ -11858,6 +11901,8 @@ ${panes}
         adoptUuid?: { sourceUuid: string; liveUuid: string }[];
         pushToSource?: string[];
         removeOrphans?: string[];
+        decline?: Array<{ source: string; uuid: string; reason?: string }>;
+        allow?: Array<{ source: string; uuid: string }>;
       };
       const uuids = Array.isArray(body.uuids) ? body.uuids : [];
       const forceSync = body.force === true;
@@ -11865,8 +11910,12 @@ ${panes}
       const adoptItems = Array.isArray(body.adoptUuid) ? body.adoptUuid : [];
       const pushToSourceUuids = Array.isArray(body.pushToSource) ? body.pushToSource : [];
       const removeOrphanUuids = Array.isArray(body.removeOrphans) ? body.removeOrphans : [];
+      // #1412: a site says it will not take a shipped page whose title or slug
+      // belongs to a page it would rather keep, and can change its mind.
+      const declineItems = Array.isArray(body.decline) ? body.decline : [];
+      const allowItems = Array.isArray(body.allow) ? body.allow : [];
 
-      if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0 && removeOrphanUuids.length === 0) {
+      if (uuids.length === 0 && reconcileItems.length === 0 && adoptItems.length === 0 && pushToSourceUuids.length === 0 && removeOrphanUuids.length === 0 && declineItems.length === 0 && allowItems.length === 0) {
         return res.status(400).json({ success: false, error: 'No pages selected' });
       }
 
@@ -11925,6 +11974,19 @@ ${panes}
         failed.push(...result.failed);
         return result.synced;
       };
+
+      const declined: string[] = [];
+      const allowed: string[] = [];
+      for (const item of declineItems) {
+        if (await syncPageManager.declineShippedPage(item.source, item.uuid, item.reason ?? 'declined by an administrator', currentUser)) {
+          declined.push(item.uuid);
+        }
+      }
+      for (const item of allowItems) {
+        if (await syncPageManager.allowShippedPage(item.source, item.uuid, currentUser)) {
+          allowed.push(item.uuid);
+        }
+      }
 
       const byAddon = new Map<string, string[]>();
       const requiredUuids: string[] = [];
@@ -12150,6 +12212,8 @@ ${panes}
       if (protected_.length > 0) parts.push(`${protected_.length} skipped (user-edited — use Push to Source or diff first)`);
       if (removedOrphans.length > 0) parts.push(`${removedOrphans.length} orphaned addon page${removedOrphans.length !== 1 ? 's' : ''} removed`);
       if (failed.length > 0) parts.push(`${failed.length} could not be saved: ${failed.map((f) => f.reason).join('; ')}`);
+      if (declined.length > 0) parts.push(`${declined.length} page${declined.length !== 1 ? 's' : ''} will not be seeded here`);
+      if (allowed.length > 0) parts.push(`${allowed.length} page${allowed.length !== 1 ? 's' : ''} no longer declined`);
 
       return res.json({
         success: true,
@@ -12158,6 +12222,8 @@ ${panes}
         uuids: synced,
         protected: protected_,
         failed,
+        declined,
+        allowed,
         removedOrphans
       });
     } catch (err: unknown) {

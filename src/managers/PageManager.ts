@@ -4,7 +4,7 @@ import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { defaultShippedPageAccess, evaluateSeededAddonPage, pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../utils/addonPageSync.js';
-import { SeededShippedPages } from '../utils/seededShippedPages.js';
+import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShippedPages.js';
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -27,7 +27,7 @@ import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '
 import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/index.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
@@ -181,6 +181,8 @@ export interface ShippedPageSeedReport {
   stamped: string[];
   /** Titles of live pages with no stamp whose body differs from the source — left unstamped (#1408) */
   unstamped: string[];
+  /** Titles this site declined from the source — never seeded, never reported as a failure (#1412) */
+  declined: string[];
 }
 
 /** What `syncShippedPages` did with each requested uuid. */
@@ -469,7 +471,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    const report: ShippedPageSeedReport = { seeded: [], present: 0, removed: [], excluded: [], failed: [], recordStarted: false, stamped: [], unstamped: [] };
+    const report: ShippedPageSeedReport = { seeded: [], present: 0, removed: [], excluded: [], failed: [], recordStarted: false, stamped: [], unstamped: [], declined: [] };
     if (!(await fse.pathExists(source.dir))) return report;
 
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -534,6 +536,13 @@ class PageManager extends BaseManager implements CatalogSource {
         }
         if (record.has(source.id, uuid)) {
           report.removed.push(title);
+          continue;
+        }
+        // #1412: this site was told not to take this page from this source. It
+        // is not missing and not a failure; an admin can undo it in Required
+        // Pages Sync.
+        if (record.isDeclined(source.id, uuid)) {
+          report.declined.push(title);
           continue;
         }
         if (this.provider.isPageDeleted?.(uuid)) {
@@ -646,6 +655,8 @@ class PageManager extends BaseManager implements CatalogSource {
         // #1411: an operator's access on the live page survives a Sync.
         const liveAccess = (live?.metadata as Record<string, unknown> | undefined)?.access;
         await this.saveShippedPage(source, uuid, parsed, title, liveTitle || title, ctx, liveAccess !== undefined ? { access: liveAccess } : undefined);
+        // #1412: asking for the page plainly overrides an earlier "not here".
+        record.allow(source.id, uuid);
         record.add(source.id, uuid);
         report.synced.push(uuid);
       } catch (err) {
@@ -654,6 +665,70 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     await record.save();
     return report;
+  }
+
+  /**
+   * Record that this site will not take a shipped page from a source (#1412).
+   *
+   * For a page whose title or slug belongs to a page the site would rather
+   * keep: the seeder skips it from then on, so the conflict stops being
+   * reported at every start-up. Nothing is written to any page, and the entry
+   * is per source — an addon shipping the same uuid is still offered.
+   *
+   * @param sourceId - `required-pages`, or `addon:<name>`
+   * @param uuid - The shipped page's uuid
+   * @param reason - The conflict that prompted it
+   * @param ctx - Who decided
+   * @returns True when it was not already declined
+   */
+  async declineShippedPage(sourceId: string, uuid: string, reason: string, ctx: ActorContext): Promise<boolean> {
+    const record = await this.loadSeededRecord();
+    const declined = record.decline(sourceId, uuid, {
+      at: new Date().toISOString(),
+      by: actorOf(ctx).user,
+      reason
+    });
+    if (declined) {
+      await record.save();
+      logger.info(`[PageManager] ${sourceId} page ${uuid} declined by ${actorOf(ctx).user}: ${reason}`);
+    }
+    return declined;
+  }
+
+  /**
+   * Undo a decline (#1412), so the page is offered again at the next start-up
+   * or Sync.
+   *
+   * @param sourceId - `required-pages`, or `addon:<name>`
+   * @param uuid - The shipped page's uuid
+   * @param ctx - Who decided
+   * @returns True when there was a decline to undo
+   */
+  async allowShippedPage(sourceId: string, uuid: string, ctx: ActorContext): Promise<boolean> {
+    const record = await this.loadSeededRecord();
+    const allowed = record.allow(sourceId, uuid);
+    if (allowed) {
+      await record.save();
+      logger.info(`[PageManager] ${sourceId} page ${uuid} is no longer declined (by ${actorOf(ctx).user})`);
+    }
+    return allowed;
+  }
+
+  /**
+   * Every shipped page this site has declined, as source id → uuid → entry
+   * (#1412). Read by Required Pages Sync to list them.
+   */
+  async declinedShippedPages(): Promise<Record<string, Record<string, DeclinedShippedPage>>> {
+    return (await this.loadSeededRecord()).allDeclined();
+  }
+
+  /** The site's seeded-pages record. */
+  private async loadSeededRecord(): Promise<SeededShippedPages> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) {
+      throw new Error('PageManager: ConfigurationManager not available');
+    }
+    return SeededShippedPages.load(configManager.getInstanceDataFolder());
   }
 
   /**
@@ -848,7 +923,8 @@ class PageManager extends BaseManager implements CatalogSource {
 
       logger.info(
         `[PageManager] Required pages: ${report.seeded.length} seeded, ${report.present} present, ` +
-        `${report.removed.length} removed on this site, ${report.excluded.length} github-only, ${report.failed.length} not seeded`
+        `${report.removed.length} removed on this site, ${report.declined.length} declined, ` +
+        `${report.excluded.length} github-only, ${report.failed.length} not seeded`
       );
       if (report.stamped.length > 0) {
         logger.info(`[PageManager] Stamped ${report.stamped.length} required page(s) whose text matches the source (#1408)`);
@@ -868,8 +944,18 @@ class PageManager extends BaseManager implements CatalogSource {
           );
         }
       }
-      if (report.failed.length > 0) {
-        const lines = report.failed.map((f) => `${f.title} (${f.file}): ${f.reason}`);
+      // #1412: a page whose title or slug is held by another page is a status an
+      // admin settles in Required Pages Sync (decline it, or reconcile the
+      // identities), not a boot failure worth a notification at every start-up.
+      // An authoring error in the shipped page still warns and notifies.
+      const conflicts = report.failed.filter((f) => f.code === 'save-failed');
+      const authoringErrors = report.failed.filter((f) => f.code !== 'save-failed');
+      if (conflicts.length > 0) {
+        const lines = conflicts.map((f) => `${f.title} (${f.file}): ${f.reason}`);
+        logger.info(`[PageManager] Shipped pages could not be seeded: ${lines.join('; ')}`);
+      }
+      if (authoringErrors.length > 0) {
+        const lines = authoringErrors.map((f) => `${f.title} (${f.file}): ${f.reason}`);
         logger.warn(`[PageManager] Required pages not seeded: ${lines.join('; ')}`);
         const notificationManager = this.engine.getManager<NotificationManager>('NotificationManager');
         await notificationManager?.createNotification?.({
@@ -877,8 +963,8 @@ class PageManager extends BaseManager implements CatalogSource {
           level: 'warning',
           title: 'Required pages not seeded',
           message:
-            `${report.failed.length} required page${report.failed.length === 1 ? '' : 's'} could not be added: ` +
-            `${report.failed.map((f) => f.title).join(', ')}. See Admin → Required Pages Sync.`
+            `${authoringErrors.length} required page${authoringErrors.length === 1 ? '' : 's'} could not be added: ` +
+            `${authoringErrors.map((f) => f.title).join(', ')}. See Admin → Required Pages Sync.`
         })?.catch?.(() => { /* non-fatal */ });
       }
     } catch (err) {
