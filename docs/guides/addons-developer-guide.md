@@ -475,6 +475,45 @@ Guard admin panel EJS sections:
 
 ---
 
+### Declare a Private Store (planned — [#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
+
+__Not yet available.__ This section is the contract addon authors will be held to; nothing below works today. Design record: [`docs/planning/private-stores.md`](../planning/private-stores.md), epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382).
+
+An addon that holds a user's own data — health records, finances, anything sensitive or regulated — owns a __store kind__: one private container per user, `pages/private/{user}/{storeid}/`.
+
+__You declare the kind. You do not implement encryption, keys, or recovery words.__
+
+The kind is persisted configuration, outside the provider namespace:
+
+```json
+"ngdpbase.stores.yourphr.encrypt": true,
+"ngdpbase.stores.yourphr.owner": "yourphr"
+```
+
+- `owner` is your addon's __slug__ — the canonical addon identity from `package.json` ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), the same id as `ngdpbase.addons.<slug>.enabled`. `admin` is a __reserved slug__: an addon claiming it is refused at load.
+- `encrypt` is __your call as the kind's owner__, not the end user's. Sensitive or regulated data MUST be `true`, and nobody — user or admin — can turn it off for that store.
+- A kind's definition cannot be removed while any user has data in it. Flipping `encrypt` on an existing kind is a whole-store migration, not a config edit, and is not offered.
+
+#### Core owns the door
+
+Every store kind provides an entry step, and __core implements it__. Core's route derives the user's key material if they have none, generates the 12 recovery words, creates the user's copy of the store with its wrapped DEK, and shows the words __once__ with the warning. It runs at the user's first deliberate entry into the store — never at login, never mid-save.
+
+Your addon's part:
+
+- Link to the core door where your set-up step belongs ("set up your health records").
+- Supply a label and a short blurb that core renders on that screen, so it reads as your addon's step.
+- Assume the key exists once the door returns. By the time your addon writes anything, it does.
+
+Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask for, store, or log one. There is no API that hands you key material, and there will not be.
+
+#### What this buys you
+
+- Reads and writes through the normal manager APIs; core seals the bytes and the per-user catalogues.
+- A user who never enters your store is never asked to keep recovery words.
+- Takeout, backup and erasure work on the store because the layout is user-first.
+
+---
+
 ## 4b. Populating `leftMenu` in Add-on Route Views
 
 Add-on route handlers that call `res.render()` must pass `leftMenu` explicitly — the core `getCommonTemplateData()` method is only available inside `WikiRoutes` and is not accessible to addon routes.
@@ -762,6 +801,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
+- [ ] If the addon holds a user's own data: a store kind is declared (`ngdpbase.stores.<id>.*`), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — planned)
 
 ---
 
@@ -876,6 +916,7 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 | [`addons/forms/`](../../addons/forms/) | Schema-driven forms with submission storage — plain JS reference implementation |
 | [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview, use-case analysis, roadmap |
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
+| [`docs/planning/private-stores.md`](../planning/private-stores.md) | Private stores: store kinds, encryption, keys and recovery words (planned) |
 | [AddonsManager source](../../src/managers/AddonsManager.ts) | Discovery, loading, lifecycle implementation |
 | [security-developer-guide.md](security-developer-guide.md) | Authorization and context |
 | [configuration-developer-guide.md](configuration-developer-guide.md) | Merge layers |
@@ -893,4 +934,4 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 ---
 
-Last updated: 2026-04-23
+Last updated: 2026-09-19

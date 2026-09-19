@@ -121,6 +121,17 @@ Supersedes the 2026-09-18 note below. Keys and the 12 words are created when the
 
 Rejected: __at first password login when an encrypted kind is defined__ — every user on the instance would be handed words to keep, including people who never touch that addon. Rejected: __at the first content write__ — the words would appear mid-save, the worst moment to ask someone to record them, and a dismissed dialog would leave a key whose words were never seen.
 
+### Core owns the door (2026-09-19)
+
+Every store kind provides the entry step, but __only core implements it__. Core ships one route — the store's door — that derives the user KEK if they have none, generates the 12 words, creates the store's copy with its wrapped DEK, and renders the words-once screen with the warning.
+
+- An addon "provides" the step by __declaring its store kind and linking to the core door__. It supplies a label and a short blurb that core renders on the screen, so the step reads as the addon's ("set up your health records") without the addon handling any key material.
+- An addon never sees a KEK, a DEK or a recovery word. It cannot log them, store them, or skip the warning.
+- The screen that shows recovery words exists in __exactly one place__, so its wording, its once-only rule and its audit entry are reviewed once rather than per addon.
+- After the door has been walked through, the addon's own pages take over as usual; the door is only for the store's creation.
+
+Rejected: __each store kind renders its own set-up step and calls a core key API__. It buys a flow that fits the addon's look, and costs the one property that matters — an addon that reimplements the words screen wrongly is a bug we cannot see from here.
+
 ### Recovery words: at first login after an encrypted store exists (superseded 2026-09-18)
 
 A store created for a user by an admin or an addon exists before that user has any keys, so its DEK cannot be wrapped yet. The store is written with `encrypt: true` and __no wrapped DEK__ — a pending state.
