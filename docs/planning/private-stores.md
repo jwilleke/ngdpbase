@@ -63,7 +63,19 @@ PHR-style addons should __default encrypt on__ and warn at least once if the use
 
 A __store kind__ is instance-wide; a user's directory under it is that user's security container. Encryption belongs to the __kind__, set by whoever owns it — the admin for `default`, the addon for its own store. Bob's and Jane's copies of a kind are __both__ encrypted or __both__ not; a user never chooses, and nobody can turn it off for one user. There is therefore no per-store "required" flag: the kind's definition is the rule.
 
-- __Store kinds are defined in configuration__, outside the provider namespace (`ngdpbase.stores.{id}.*`): which kinds exist, whether a kind is encrypted, and who owns it (admin, or an addon slug). Changing a kind's setting governs __stores created afterwards__; switching an existing store is a whole-store migration and is not offered.
+__Store kinds are defined in configuration__, outside the provider namespace (`ngdpbase.stores.{id}.*`): which kinds exist, whether a kind is encrypted, and who owns it.
+
+```json
+"ngdpbase.stores.default.encrypt": false,
+"ngdpbase.stores.default.owner": "admin",
+"ngdpbase.stores.yourphr.encrypt": true,
+"ngdpbase.stores.yourphr.owner": "yourphr"
+```
+
+`owner` is `admin`, or an addon's __slug__ — the canonical addon identity from its `package.json` ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), the same id as the registry key and `ngdpbase.addons.<slug>.enabled`. `admin` is therefore a __reserved slug__: an addon may not claim it, and one that does is refused at load (2026-09-19).
+
+Changing a kind's setting governs __stores created afterwards__; switching an existing store is a whole-store migration and is not offered.
+
 - __Layout keys stay with the provider__ (`ngdpbase.page.provider.filesystem.*`: `privateroot`, `versionsdir`, `deleteddir`, `attachmentsdir`, catalogue filenames). They describe how this filesystem provider lays bytes out; another provider would not have a `deleted` folder. A store definition never names a path — the provider maps a store id to a location.
 - __`store.json` keeps per-user state and key material only__: that this user's copy is encrypted, and the wrapped DEK. Keys are data, never configuration.
 
