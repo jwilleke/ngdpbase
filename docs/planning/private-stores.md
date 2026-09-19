@@ -144,8 +144,11 @@ Store-first would suit per-kind operations (uninstall an addon and drop its stor
 - __The `default` store is the admin's call__, instance-wide.
 - __Every other store is created by an admin or by an addon__: those two are the only creators.
 - __Sensitive or regulated data MUST be encrypted.__ An addon holding it declares encryption __required__, and no one can turn it off for that store.
-- The admin decides whether encrypted stores are offered on this instance at all.
 - Turning encryption on or off for an existing store is __not offered__ at first: each is a whole-store migration. It can come later if anyone asks.
+
+__There is no instance-wide "encrypted stores offered here" switch__ (2026-09-19, superseding an earlier bullet that gave the admin that veto). Encryption is __always__ the store kind's owner's call. An admin who does not want an addon's encrypted store on their instance does not install the addon, or disables it — the lever they already have, at the level where the decision actually belongs. A switch that lets an instance overrule a kind would let an operator turn off encryption the addon declared __required__ for sensitive or regulated data, which is precisely the thing nobody may do.
+
+The admin remains the owner of the `default` store, and decides encryption there like any other kind owner.
 
 `store.json` carries the per-user state: `encrypt`, and the wrapped DEK once the user has keys. The kind's owner and its encryption policy live in the kind's definition in configuration, not in each user's copy. An addon declares its store kind in its manifest (see "How an addon declares its kind").
 
