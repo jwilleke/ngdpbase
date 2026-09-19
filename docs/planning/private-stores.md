@@ -9,7 +9,9 @@ epic: 1382
 
 Decision record for [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). This file is the single source of truth for *what was decided*; child issues are the work items. Do not copy these tables into `TODO.md` or into command files.
 
-The epic title talks about "record-level isolation." The unit is not a row in `page-index.json` and not a FHIR resource. It is a __per-user store__ — a directory under `pages/private/{user}/{store}/` that may hold pages, ordinary files, and later a database file. Encryption and sharing are __per store__, chosen by the user.
+__This file is temporary and is deleted when the epic closes__ ([#1416](https://github.com/jwilleke/ngdpbase/issues/1416)). It is the working source of truth __while the epic is being developed__ — a record of intentions, not of shipped behaviour. At the close of #1382 it is replaced by `docs/private-stores.md` (developer and operator, written from the code that actually exists) and `required-pages/Using-private-stores.md` (end users), and then removed. Nothing here should be cited as how the system behaves.
+
+The epic title talks about "record-level isolation." The unit is not a row in `page-index.json` and not a FHIR resource. It is a __per-user store__ — a directory under `pages/private/{user}/{store}/` that may hold pages, ordinary files, and later a database file. Encryption and sharing are __per store__: encryption is decided by the store kind's owner (see "Who decides encryption"), sharing by the user who owns the store ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)).
 
 YourPHR is __out of this epic__. It will be a later collection of addons that use this store through the existing addon contract ([addons developer guide](../guides/addons-developer-guide.md)).
 
