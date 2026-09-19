@@ -6,7 +6,8 @@ import {
   parsePrivatePageRel,
   privatePageFilePath
 } from '../utils/privateStorePath.js';
-import { userIndexFor } from '../utils/privateStoreUnlock.js';
+import { kekFor, putUserIndexPageFor, replaceUserCatalogFor, userIndexFor } from '../utils/privateStoreUnlock.js';
+import { upsertUserIndexPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import {
   PLAIN_FILE_IO,
@@ -241,6 +242,24 @@ class FileSystemProvider extends BasePageProvider {
     });
   }
 
+  /**
+   * Record a sealed page in its owner's encrypted catalogue and in the session
+   * that wrote it (#1385, #1420). A sealed page is in no other index, so every
+   * page provider needs this — it lives here, not in one subclass. Refused
+   * when the context holds no user KEK: a sealed write already required the
+   * store's DEK, so a missing KEK is a fault, never a reason to fall back to
+   * the global index.
+   */
+  protected async putSealedCatalogPage(ctx: ActorContext, page: UserCatalogPage): Promise<void> {
+    const kek = kekFor(ctx);
+    if (!this.pagesDirectory || !kek) {
+      throw new Error('encrypted store is locked: missing KEK');
+    }
+    const catalog = await upsertUserIndexPage(this.pagesDirectory, page.creator, kek, page);
+    replaceUserCatalogFor(ctx, 'index', catalog);
+    putUserIndexPageFor(ctx, page);
+  }
+
   private isScannablePageFile(filePath: string): boolean {
     if (!this.pagesDirectory) return true;
     const rel = path.relative(this.pagesDirectory, filePath).split(path.sep);
@@ -456,7 +475,10 @@ class FileSystemProvider extends BasePageProvider {
         title: page.title,
         uuid: page.uuid,
         private: true,
-        author: page.creator
+        author: page.creator,
+        // #1420: a re-save keeps the page's creation date and slug.
+        ...(page.created ? { created: page.created } : {}),
+        ...(page.slug ? { slug: page.slug } : {})
       } as PageFrontmatter,
       fromSessionCatalog: true
     };
@@ -684,7 +706,9 @@ class FileSystemProvider extends BasePageProvider {
     // #1381: a caller may hand over metadata parsed with YAML's own types — a
     // boolean or Date title would reach toLowerCase() below and throw.
     metadata = namesAsText({ ...metadata });
-    const uuid = metadata.uuid || this.resolvePageInfo(pageName)?.uuid || uuidv4();
+    // #1420: through the caller's context, so the owner's sealed page is found
+    // and saved in place rather than duplicated under a new UUID.
+    const uuid = metadata.uuid || this.resolvePageInfo(pageName, ctx)?.uuid || uuidv4();
 
     if (!this.pagesDirectory || !this.requiredPagesDirectory) {
       throw new Error('FileSystemProvider not initialized - directories not set');
@@ -711,7 +735,7 @@ class FileSystemProvider extends BasePageProvider {
     const md = metadata as Record<string, unknown>;
     const isPrivate = md.private === true;
     const pageCreator = md.author as string | undefined;
-    const oldPageInfo = this.resolvePageInfo(pageName);
+    const oldPageInfo = this.resolvePageInfo(pageName, ctx);
     // One store rule for every page provider (BasePageProvider): the store the
     // save names, else the store the page is in now, else the default. A save
     // that names a different store for an existing page is refused.
@@ -789,6 +813,22 @@ class FileSystemProvider extends BasePageProvider {
 
     // #1385: sealed titles stay in the session overlay, not the process cache.
     if (sealed) {
+      await this.putSealedCatalogPage(ctx, {
+        title: finalTitle,
+        uuid,
+        slug: updatedMetadata.slug ? String(updatedMetadata.slug) : undefined,
+        filename: `${uuid}.md`,
+        currentVersion: 0,
+        location: 'private',
+        creator: pageCreator as string,
+        store: pageStore as string,
+        lastModified: String(now),
+        created: String(created),
+        editor: String(updatedMetadata.editor ?? updatedMetadata.author ?? 'unknown'),
+        author: updatedMetadata.author ? String(updatedMetadata.author) : undefined,
+        hasVersions: false,
+        isPrivate: true
+      });
       logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to sealed store (not cached).`);
       return;
     }
