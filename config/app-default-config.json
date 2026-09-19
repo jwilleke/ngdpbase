@@ -98,6 +98,8 @@
   "ngdpbase.page.provider.filesystem.private.files.userversions": "user-versions.json",
   "ngdpbase.page.provider.filesystem.private.files.usertrash": "user-trash.json",
   "ngdpbase.page.provider.filesystem.private.files.storemeta": "store.json",
+  "_comment_stores_recovery": "Private stores (#1414): how many EXTRA attempts a user gets to confirm their 12 recovery words before the door gives up and they start over. Each attempt shows a NEW set of words \u2014 a failed confirmation never re-shows the set that was just missed. 1 = two attempts in all; 0 = one attempt. Nothing is written until an attempt succeeds.",
+  "ngdpbase.stores.recovery.confirmretries": 1,
   "_comment_page_index": "Page index file - used by VersioningFileProvider for fast lookups (high I/O, consider fast storage)",
   "ngdpbase.page.provider.versioning.indexfile": "${FAST_STORAGE}/page-index.json",
   "ngdpbase.page.provider.filesystem.encoding": "utf-8",

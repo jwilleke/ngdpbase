@@ -191,7 +191,9 @@ So the words are the __last gate__, not a notice:
 - __Only then__ are the user's keys, the store copy and its wrapped DEK written.
 - __Abandon the tab and nothing exists.__ No store, no wrapped DEK, no orphan key. Entering the door again produces a fresh set of words, and the abandoned set is simply forgotten.
 
-__Retries are limited and configurable.__ One retry by default: get all 12 wrong twice and the words and the unwritten key material are discarded, and the user starts over at the door with a new set. Nothing was committed, so there is nothing to clean up. The count is a configuration entry rather than a constant so an instance can be stricter or gentler than the default.
+__A failed confirmation discards the words and generates a new set.__ The missed set is never shown again — not once, not "here they are one more time". A user who could not reproduce them did not write them down, and re-showing the same words turns the gate into a memory test they can pass by scrolling up. They confirm a __fresh__ 12 words, or they do not get a store.
+
+__Retries are limited and configurable.__ `ngdpbase.stores.recovery.confirmretries`, default `1` — one extra attempt, so two in all, each with its own new set. Exhaust them and the door gives up: nothing was committed, so there is nothing to clean up, and the user starts over from the beginning whenever they like. `0` allows a single attempt. The count is configuration rather than a constant so an instance can be stricter or gentler.
 
 Rejected: __create first, allow one re-show__ — the words then sit retrievable somewhere beyond the one screen for minutes, which is the property this design exists to avoid. Rejected: __create first, no re-show__ — simple and safe for the instance, and a silent data-loss trap for anyone who closes the tab.
 
