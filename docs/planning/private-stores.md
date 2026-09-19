@@ -180,6 +180,21 @@ Supersedes the 2026-09-18 note below. Keys and the 12 words are created when the
 
 Rejected: __at first password login when an encrypted kind is defined__ — every user on the instance would be handed words to keep, including people who never touch that addon. Rejected: __at the first content write__ — the words would appear mid-save, the worst moment to ask someone to record them, and a dismissed dialog would leave a key whose words were never seen.
 
+### The words are confirmed before anything is committed (2026-09-19)
+
+The words exist only while that screen renders. Afterwards the instance holds key material wrapped by them and can never re-derive them, so a user who closes the tab on a store that has already been created is left with no recovery path at all — the store is reachable only while they remember their password.
+
+So the words are the __last gate__, not a notice:
+
+- The door shows all 12 words with the warning.
+- The user __re-enters all 12__, in order, to prove they wrote them down.
+- __Only then__ are the user's keys, the store copy and its wrapped DEK written.
+- __Abandon the tab and nothing exists.__ No store, no wrapped DEK, no orphan key. Entering the door again produces a fresh set of words, and the abandoned set is simply forgotten.
+
+__Retries are limited and configurable.__ One retry by default: get all 12 wrong twice and the words and the unwritten key material are discarded, and the user starts over at the door with a new set. Nothing was committed, so there is nothing to clean up. The count is a configuration entry rather than a constant so an instance can be stricter or gentler than the default.
+
+Rejected: __create first, allow one re-show__ — the words then sit retrievable somewhere beyond the one screen for minutes, which is the property this design exists to avoid. Rejected: __create first, no re-show__ — simple and safe for the instance, and a silent data-loss trap for anyone who closes the tab.
+
 ### Core owns the door (2026-09-19)
 
 Every store kind provides the entry step, but __only core implements it__. Core ships one route — the store's door — that derives the user KEK if they have none, generates the 12 words, creates the store's copy with its wrapped DEK, and renders the words-once screen with the warning.
