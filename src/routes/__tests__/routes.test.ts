@@ -583,6 +583,17 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         expect(response.status).toBe(200);
       });
 
+      test('reads the page with the request\'s own context (#1418)', async () => {
+        // The owner's sealed pages resolve only through the context that
+        // carries their session handle, so the route forwards req.userContext
+        // itself — not nothing, and not a subject rebuilt from its fields.
+        mockACLManager.checkPagePermission.mockResolvedValue(true);
+
+        await request(app).get('/view/TestPage');
+
+        expect(mockPageManager.getPageContent).toHaveBeenCalledWith('TestPage', mockUserContext);
+      });
+
       test('should return 404 for non-existent page', async () => {
         // viewPage uses getPageContent, not getPage
         mockPageManager.getPageContent.mockRejectedValue(new Error('Page "NonExistentPage" not found'));
@@ -641,6 +652,28 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           });
 
         expect(response.status).toBe(302); // Redirect after save
+      });
+
+      test('looks up the existing page with the request\'s own context (#1418)', async () => {
+        // Without it an owner's sealed page looked new on every save, and the
+        // slug check refused the second save.
+        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+        mockPageManager.getPage.mockResolvedValue({
+          content: '# Test Page',
+          metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }
+        });
+
+        await request(app)
+          .post('/save/TestPage')
+          .send({ content: '# Updated Content', 'system-category': 'general', _csrf: 'test-csrf-token' });
+
+        // Every lookup the save makes — not just one of them.
+        expect(mockPageManager.getPage).toHaveBeenCalled();
+        for (const call of mockPageManager.getPage.mock.calls) {
+          expect(call[1]).toBe(mockUserContext);
+        }
       });
 
       test('should return 403 for CSRF failure', async () => {

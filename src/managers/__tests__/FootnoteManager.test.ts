@@ -274,9 +274,12 @@ describe('FootnoteManager', () => {
         return null;
       });
 
-      await fm.addFootnote('page-cache', { display: 'X', url: 'http://x.com', note: 'x' }, subject('user'));
+      const who = subject('user');
+      await fm.addFootnote('page-cache', { display: 'X', url: 'http://x.com', note: 'x' }, who);
 
-      expect(mockPm.invalidatePageCache).toHaveBeenCalledWith('page-cache');
+      // #1418: the writer's context goes with the eviction, so a sealed page's
+      // rendered output (keyed by a UUID only its owner can resolve) is cleared.
+      expect(mockPm.invalidatePageCache).toHaveBeenCalledWith('page-cache', who);
     });
 
     test('calls PageManager.invalidatePageCache after deleteFootnote', async () => {
@@ -290,9 +293,10 @@ describe('FootnoteManager', () => {
       await fm.addFootnote('page-cache2', { display: 'X', url: 'http://x.com', note: 'x' }, subject('user'));
       mockPm.invalidatePageCache.mockClear();
 
-      await fm.deleteFootnote('page-cache2', '1', subject('user'));
+      const who = subject('user');
+      await fm.deleteFootnote('page-cache2', '1', who);
 
-      expect(mockPm.invalidatePageCache).toHaveBeenCalledWith('page-cache2');
+      expect(mockPm.invalidatePageCache).toHaveBeenCalledWith('page-cache2', who);
     });
   });
 

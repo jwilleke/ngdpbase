@@ -588,16 +588,17 @@ describe('PageManager', () => {
     test('should delegate to provider', () => {
       pageManager.provider.getPageUUID = vi.fn().mockReturnValue('test-uuid-001');
 
-      const result = pageManager.getPageUUID('My Page');
+      const result = pageManager.getPageUUID('My Page', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageUUID).toHaveBeenCalledWith('My Page');
+      // #1418: the caller's context reaches the provider — a sealed page resolves only through it.
+      expect(pageManager.provider.getPageUUID).toHaveBeenCalledWith('My Page', TEST_ACTOR);
       expect(result).toBe('test-uuid-001');
     });
 
     test('should return null when provider returns null', () => {
       pageManager.provider.getPageUUID = vi.fn().mockReturnValue(null);
 
-      expect(pageManager.getPageUUID('unknown')).toBeNull();
+      expect(pageManager.getPageUUID('unknown', TEST_ACTOR)).toBeNull();
     });
   });
 
@@ -615,10 +616,32 @@ describe('PageManager', () => {
       pageManager.provider.invalidatePageCache = vi.fn().mockReturnValue('My Page');
       pageManager.provider.getPageUUID = vi.fn().mockReturnValue('page-uuid-xyz');
 
-      pageManager.invalidatePageCache('My Page');
+      pageManager.invalidatePageCache('My Page', TEST_ACTOR);
 
-      expect(pageManager.provider.getPageUUID).toHaveBeenCalledWith('My Page');
+      expect(pageManager.provider.getPageUUID).toHaveBeenCalledWith('My Page', TEST_ACTOR);
       expect(mockClear).toHaveBeenCalledWith(undefined, 'rendered-pages:page-uuid-xyz:*');
+    });
+
+    test('a page in no process cache (a sealed page, #1418) is still cleared by the UUID the caller resolves', () => {
+      const mockClear = vi.fn().mockResolvedValue(undefined);
+      const mockCacheManager = { clear: mockClear, isInitialized: () => true };
+
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'CacheManager') return mockCacheManager;
+        return null;
+      });
+
+      const molly = actor('molly');
+      // The provider evicts nothing — sealed pages are never in its caches —
+      // but the owner's context resolves the page's UUID from her session catalogue.
+      pageManager.provider.invalidatePageCache = vi.fn().mockReturnValue(null);
+      pageManager.provider.getPageUUID = vi.fn((id: string, ctx: unknown) => (ctx === molly ? 'sealed-uuid' : null));
+
+      pageManager.invalidatePageCache('Sealed Diary', molly);
+
+      expect(pageManager.provider.getPageUUID).toHaveBeenCalledWith('Sealed Diary', molly);
+      expect(mockClear).toHaveBeenCalledWith(undefined, 'rendered-pages:sealed-uuid:*');
     });
 
     test('should fall back to title when provider has no UUID', () => {
@@ -634,7 +657,7 @@ describe('PageManager', () => {
       pageManager.provider.invalidatePageCache = vi.fn().mockReturnValue('My Page');
       pageManager.provider.getPageUUID = vi.fn().mockReturnValue(null);
 
-      pageManager.invalidatePageCache('My Page');
+      pageManager.invalidatePageCache('My Page', TEST_ACTOR);
 
       expect(mockClear).toHaveBeenCalledWith(undefined, 'rendered-pages:My Page:*');
     });

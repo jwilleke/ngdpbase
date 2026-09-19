@@ -1038,18 +1038,23 @@ class PageManager extends BaseManager implements CatalogSource {
     return this.provider;
   }
 
-  getPageUUID(identifier: string): string | null {
-    return this.provider?.getPageUUID?.(identifier) ?? null;
+  getPageUUID(identifier: string, ctx: ActorContext): string | null {
+    return this.provider?.getPageUUID?.(identifier, ctx) ?? null;
   }
 
-  invalidatePageCache(identifier: string): void {
+  /**
+   * Evict a page's cached content and rendered output. `ctx` is who changed
+   * it (#1418): a sealed page is in no process cache, so its UUID — the
+   * rendered-pages key — resolves only through the owner's context.
+   */
+  invalidatePageCache(identifier: string, ctx: ActorContext): void {
     const resolvedTitle = this.provider?.invalidatePageCache?.(identifier) ?? null;
     const renderingManager = this.engine.getManager<{ invalidateHandlerCache(): void }>('RenderingManager');
     if (renderingManager) {
       renderingManager.invalidateHandlerCache();
     }
-    if (resolvedTitle) {
-      const uuid = this.provider?.getPageUUID?.(resolvedTitle) ?? resolvedTitle;
+    const uuid = this.provider?.getPageUUID?.(resolvedTitle ?? identifier, ctx) ?? resolvedTitle;
+    if (uuid) {
       const cacheManager = this.engine.getManager<{ clear(region: string | undefined, pattern?: string): Promise<void> }>('CacheManager');
       if (cacheManager) {
         cacheManager.clear(undefined, `rendered-pages:${uuid}:*`).catch(() => {});

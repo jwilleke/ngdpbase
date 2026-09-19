@@ -21,6 +21,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../utils/managerUtils.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -198,10 +199,10 @@ abstract class BaseManager {
     return this.engine;
   }
 
-  protected invalidateHandlerCache(pageUuid: string): void {
-    const pm = this.engine.getManager<{ invalidatePageCache(id: string): void }>('PageManager');
+  protected invalidateHandlerCache(pageUuid: string, ctx: ActorContext): void {
+    const pm = this.engine.getManager<{ invalidatePageCache(id: string, ctx: ActorContext): void }>('PageManager');
     if (pm) {
-      pm.invalidatePageCache(pageUuid);
+      pm.invalidatePageCache(pageUuid, ctx);
     }
   }
 

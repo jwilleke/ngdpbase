@@ -86,7 +86,7 @@ export default class CommentManager extends BaseManager {
     const dir = path.join(this.commentsDir, pageUuid);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(comment, null, 2), 'utf-8');
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
 
     // At the door, after the write, on-failure: continue — the same footing as
     // page-edit. The content itself is never recorded; its length is.
@@ -121,7 +121,7 @@ export default class CommentManager extends BaseManager {
     comment.deletedBy = ctx.username;
     comment.deletedAt = new Date().toISOString();
     fs.writeFileSync(filePath, JSON.stringify(comment, null, 2), 'utf-8');
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
 
     const who = actorOf(ctx);
     await recordAuditEvent(this.auditSink(), {

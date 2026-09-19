@@ -43,10 +43,10 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     return typeof v === 'string' ? v : undefined;
   }
 
-  async function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
-    const userMgr = um();
-    const uc = req.userContext || (userMgr ? await userMgr.getCurrentUser(req) : null);
-    return uc as import('../../../dist/src/context/WikiContext.js').UserContext;
+  function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
+    // #1418: the session middleware writes req.userContext on every request;
+    // forward it — never look the user up a second way (security-posture P1).
+    return Promise.resolve(req.userContext);
   }
 
   function handleError(err: unknown, res: Response): void {

@@ -645,8 +645,8 @@ class FileSystemProvider extends BasePageProvider {
     return resolvedTitle;
   }
 
-  getPageUUID(identifier: string): string | null {
-    return this.resolvePageInfo(identifier)?.uuid ?? null;
+  getPageUUID(identifier: string, ctx: ActorContext): string | null {
+    return this.resolvePageInfo(identifier, ctx)?.uuid ?? null;
   }
 
   async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {

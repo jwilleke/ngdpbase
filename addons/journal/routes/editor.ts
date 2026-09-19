@@ -54,10 +54,10 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
   }
 
-  async function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
-    const um = engine.getManager<UserManager>('UserManager');
-    const uc = req.userContext || (um ? await um.getCurrentUser(req) : null);
-    return uc as import('../../../dist/src/context/WikiContext.js').UserContext;
+  function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
+    // #1418: the session middleware writes req.userContext on every request;
+    // forward it — never look the user up a second way (security-posture P1).
+    return Promise.resolve(req.userContext);
   }
 
   function handleError(err: unknown, res: Response): void {

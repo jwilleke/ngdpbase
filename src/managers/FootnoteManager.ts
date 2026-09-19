@@ -112,7 +112,7 @@ export default class FootnoteManager extends BaseManager {
 
     map[nextId] = footnote;
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
     await this.recordEdit('add', pageUuid, ctx, { footnoteId: nextId });
     return footnote;
   }
@@ -132,13 +132,14 @@ export default class FootnoteManager extends BaseManager {
     data: { display: string; url: string; note: string },
     ctx: ActorContext
   ): Promise<boolean> {
-    const ok = this.putImported(pageUuid, id, data, ctx.username);
+    const ok = this.putImported(pageUuid, id, data, ctx);
     if (ok) await this.recordEdit('import', pageUuid, ctx, { footnoteId: id });
     return ok;
   }
 
   /** The write behind `importFootnote` and `transferFromContent`; the callers record it, once each. */
-  private putImported(pageUuid: string, id: string, data: { display: string; url: string; note: string }, createdBy: string): boolean {
+  private putImported(pageUuid: string, id: string, data: { display: string; url: string; note: string }, ctx: ActorContext): boolean {
+    const createdBy = ctx.username;
     const map = this.readMap(pageUuid);
     if (map[id]) return false;
 
@@ -151,7 +152,7 @@ export default class FootnoteManager extends BaseManager {
       createdAt: new Date().toISOString()
     };
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
     return true;
   }
 
@@ -182,7 +183,7 @@ export default class FootnoteManager extends BaseManager {
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
         continue;
       }
-      const ok = this.putImported(pageUuid, def.id, def, ctx.username);
+      const ok = this.putImported(pageUuid, def.id, def, ctx);
       if (ok) {
         transferred.push(def.id);
         warnings.push(`footnote-transferred: [^${def.id}] → footnote list`);
@@ -218,7 +219,7 @@ export default class FootnoteManager extends BaseManager {
       note: data.note.trim()
     };
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
     await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
     return map[id];
   }
@@ -237,7 +238,7 @@ export default class FootnoteManager extends BaseManager {
     } else {
       this.writeMap(pageUuid, map);
     }
-    this.invalidateHandlerCache(pageUuid);
+    this.invalidateHandlerCache(pageUuid, ctx);
     await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote: createdBy === ctx.username });
     return true;
   }
