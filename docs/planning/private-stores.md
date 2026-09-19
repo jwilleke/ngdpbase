@@ -110,7 +110,18 @@ Store-first would suit per-kind operations (uninstall an addon and drop its stor
 
 `store.json` carries the per-user state: `encrypt`, and the wrapped DEK once the user has keys. The kind's owner and its encryption policy live in the kind's definition in configuration, not in each user's copy. An addon declares its store kind; today nothing in the manifest can say so.
 
-### Recovery words: at first login after an encrypted store exists (2026-09-18)
+### Recovery words: at first deliberate entry into the store (2026-09-19)
+
+Supersedes the 2026-09-18 note below. Keys and the 12 words are created when the user __first enters the store__ — the "set up your health records" step of whatever owns it — not at login and not mid-save.
+
+- __Every store provides this step, addon stores included.__ A store a user has never entered is a door, not a directory.
+- At that step: create the user KEK from the session password if they have none, generate the 12 words, create the store's copy with its wrapped DEK, and show the words __once__ with the warning.
+- By the time anything is written, the key exists. Nothing is created mid-save, and no key ever exists whose words were never shown.
+- A user who never enters an encrypted store is never asked to keep recovery words, whatever kinds the instance defines.
+
+Rejected: __at first password login when an encrypted kind is defined__ — every user on the instance would be handed words to keep, including people who never touch that addon. Rejected: __at the first content write__ — the words would appear mid-save, the worst moment to ask someone to record them, and a dismissed dialog would leave a key whose words were never seen.
+
+### Recovery words: at first login after an encrypted store exists (superseded 2026-09-18)
 
 A store created for a user by an admin or an addon exists before that user has any keys, so its DEK cannot be wrapped yet. The store is written with `encrypt: true` and __no wrapped DEK__ — a pending state.
 
