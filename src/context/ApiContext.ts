@@ -14,7 +14,7 @@
  *     try {
  *       const ctx = ApiContext.from(req, engine);
  *       ctx.requireAuthenticated();
- *       await ctx.requirePermission('reservation-manage');
+ *       await ctx.requirePermission('page-edit');
  *       // ...
  *     } catch (err) {
  *       if (err instanceof ApiError) {
