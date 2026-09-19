@@ -35,11 +35,10 @@ import {
 } from '../utils/privateStorePath.js';
 import {
   kekFor,
-  putUserIndexPageFor,
   replaceUserCatalogFor,
   userIndexFor
 } from '../utils/privateStoreUnlock.js';
-import { upsertUserIndexPage, upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
+import { upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { PLAIN_FILE_IO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
@@ -2040,33 +2039,10 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // #1383: getVersionDirectory for a new private page reads creator/store
     // from the index. Stamp them before the first version is written.
-    // #1385: sealed titles go to the session user-index, never page-index.json.
-    const kek = kekFor(ctx);
-    const catalogPage: UserCatalogPage | undefined = sealedStore && this.pagesDirectory
-      ? {
-        title: (metadata.title as string) || pageName,
-        uuid,
-        slug: metadata.slug ? String(metadata.slug) : undefined,
-        filename: `${uuid}.md`,
-        currentVersion: 0,
-        location: 'private',
-        creator: newCreator || 'anonymous',
-        store: sealedStore,
-        lastModified: options?.preserveLastModified && metadata.lastModified
-          ? String(metadata.lastModified)
-          : new Date().toISOString(),
-        created,
-        editor: metadata.editor || metadata.author || 'unknown',
-        author: metadata.author ? String(metadata.author) : undefined,
-        hasVersions: false,
-        isPrivate: true
-      }
-      : undefined;
-    if (catalogPage && kek && this.pagesDirectory) {
-      const indexCatalog = await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, catalogPage);
-      replaceUserCatalogFor(ctx, 'index', indexCatalog);
-      putUserIndexPageFor(ctx, catalogPage);
-    } else if (location === 'private' && this.pageIndex) {
+    // #1385/#1420: a sealed page was already recorded in its owner's encrypted
+    // catalogue by FileSystemProvider.savePage above; it never touches the
+    // global page-index.json.
+    if (!sealedStore && location === 'private' && this.pageIndex) {
       const prev = this.pageIndex.pages[uuid];
       this.pageIndex.pages[uuid] = {
         ...(prev ?? {
@@ -2140,25 +2116,27 @@ class VersioningFileProvider extends FileSystemProvider {
         : undefined,
       ...(location === 'private' ? { store: store ?? this.privateStoreLayout.defaultStoreId } : {})
     };
-    if (sealedStore && kek && this.pagesDirectory && catalogPage) {
+    if (sealedStore) {
+      // Never the global index for a sealed page — refuse instead (#1419/#1420).
+      const kek = kekFor(ctx);
+      if (!kek || !this.pagesDirectory) throw new Error('encrypted store is locked: missing KEK');
       const versionsPage: UserCatalogPage = {
-        ...catalogPage,
         ...indexPayload,
         location: 'private',
-        creator: catalogPage.creator,
+        creator: newCreator || 'anonymous',
         store: sealedStore,
         isPrivate: true,
         hasVersions: true
       };
       const versionsCatalog = await upsertUserVersionsPage(
         this.pagesDirectory,
-        catalogPage.creator,
+        versionsPage.creator,
         kek,
         versionsPage
       );
       replaceUserCatalogFor(ctx, 'versions', versionsCatalog);
-      await upsertUserIndexPage(this.pagesDirectory, catalogPage.creator, kek, versionsPage);
-      putUserIndexPageFor(ctx, versionsPage);
+      // The index entry now carries the version count.
+      await this.putSealedCatalogPage(ctx, versionsPage);
     } else {
       await this.updatePageInIndex(uuid, indexPayload);
     }
