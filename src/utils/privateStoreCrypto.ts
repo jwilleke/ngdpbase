@@ -193,6 +193,45 @@ export function decryptJson<T>(key: Buffer, blob: WrappedBlob): T {
 }
 
 /**
+ * A file in an encrypted store on disk (#1415): `SEALED_MAGIC`, then the IV,
+ * the GCM tag and the ciphertext. Binary, so page text and attachment bytes
+ * (#1400) share one format; the magic lets a reader tell a sealed file from a
+ * plaintext one without trying the key.
+ */
+const SEALED_MAGIC = Buffer.from('NGDPSEAL1', 'ascii');
+const TAGLEN = 16;
+
+/** True when `bytes` start with the sealed-file magic. */
+export function isSealedBytes(bytes: Buffer): boolean {
+  return bytes.length >= SEALED_MAGIC.length + IVLEN + TAGLEN
+    && bytes.subarray(0, SEALED_MAGIC.length).equals(SEALED_MAGIC);
+}
+
+/** Encrypt the bytes of one store file with the store DEK. */
+export function sealBytes(dek: Buffer, plaintext: Buffer): Buffer {
+  if (dek.length !== KEYLEN) throw new Error('encrypted store is locked: missing DEK');
+  const iv = randomBytes(IVLEN);
+  const cipher = createCipheriv('aes-256-gcm', dek, iv);
+  const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([SEALED_MAGIC, iv, cipher.getAuthTag(), ct]);
+}
+
+/** Decrypt a store file written by {@link sealBytes}. */
+export function openBytes(dek: Buffer, sealed: Buffer): Buffer {
+  if (!isSealedBytes(sealed)) throw new Error('not a sealed store file');
+  const ivStart = SEALED_MAGIC.length;
+  const tagStart = ivStart + IVLEN;
+  const ctStart = tagStart + TAGLEN;
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', dek, sealed.subarray(ivStart, tagStart));
+    decipher.setAuthTag(sealed.subarray(tagStart, ctStart));
+    return Buffer.concat([decipher.update(sealed.subarray(ctStart)), decipher.final()]);
+  } catch {
+    throw new Error('cannot open sealed store file');
+  }
+}
+
+/**
  * Shared encrypt-on write gate. Callers pass the DEK from the session bag.
  * Not a PageManager method.
  */

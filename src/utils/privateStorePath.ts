@@ -370,6 +370,22 @@ export function parsePrivatePageRel(
   return null;
 }
 
+/**
+ * The store that holds a file at any depth — the live page, a version blob,
+ * a trash record or an attachment: `{privateroot}/{user}/{store}/…`. `null`
+ * for a file that is not inside a store, including the user-level catalogues
+ * beside the stores (#1415).
+ */
+export function parsePrivateStoreRel(
+  relParts: string[],
+  layout?: PrivateStoreLayoutOverrides
+): { creator: string; store: string } | null {
+  const L = resolvePrivateStoreLayout(layout);
+  if (relParts.length < 4 || relParts[0] !== L.privateRoot) return null;
+  if (!isSafePathSegment(relParts[1]) || !isValidStoreId(relParts[2])) return null;
+  return { creator: relParts[1], store: relParts[2] };
+}
+
 /** True when a path relative to the pages directory is inside the private root. */
 export function isUnderPrivateRoot(
   relParts: string[],
