@@ -1861,6 +1861,21 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Whether a page may go into an index that every reader of this process or
+   * its disk shares — the search index, the page-assets index, the link graph
+   * and the known-page-name list (#1419).
+   *
+   * Such an index is built as the anonymous subject (docs/planning/
+   * private-stores.md, Context): the question is asked with that subject
+   * stated, not with a default. A page in an encrypted store resolves only
+   * through its owner's session, so it never qualifies. Every other page does,
+   * private ones included — their readers are filtered when the index is read.
+   */
+  isSharedIndexable(identifier: string): boolean {
+    return this.pageExists(identifier, ANONYMOUS_SUBJECT);
+  }
+
+  /**
    * Check if page exists
    *
    * Fast existence check without loading page content.

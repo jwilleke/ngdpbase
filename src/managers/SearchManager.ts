@@ -565,6 +565,15 @@ class SearchManager extends BaseManager {
       return;
     }
 
+    // #1419: the index is shared by every searcher and persisted to disk (or
+    // sent to Elasticsearch), so a page in an encrypted store never enters it.
+    // An entry written before this rule is removed on the page's next save.
+    const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
+    if (pageManager && !pageManager.isSharedIndexable(pageName)) {
+      await this.removePageFromIndex(pageName);
+      return;
+    }
+
     try {
       await this.provider.updatePageInIndex(pageName, pageData);
     } catch (err) {

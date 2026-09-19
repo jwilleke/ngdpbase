@@ -436,6 +436,18 @@ class LunrSearchProvider extends BaseSearchProvider {
 
     // Fast path: documents already loaded from disk — skip NAS reads entirely
     if (Object.keys(this.documents).length > 0) {
+      // #1419: a document persisted before sealed pages were kept out of the
+      // index would otherwise be reloaded on every boot. Drop any entry that
+      // is not shared-indexable now; the page list is in memory, no NAS read.
+      const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
+      if (pageManager) {
+        const sealed = Object.keys(this.documents).filter((name) => !pageManager.isSharedIndexable(name));
+        for (const name of sealed) delete this.documents[name];
+        if (sealed.length > 0) {
+          logger.info(`[LunrSearchProvider] Dropped ${sealed.length} persisted document(s) that may not be in a shared index`);
+          await this.persistDocuments();
+        }
+      }
       this.rebuildLunrFromDocuments();
       this.engine.getManager<MetricsManager>('MetricsManager')
         ?.recordSearchRebuild?.(Date.now() - metricsStart);

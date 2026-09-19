@@ -8,6 +8,7 @@
 
 import PageManager from '../PageManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
+import { ANONYMOUS_SUBJECT } from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import {
   clearUnlockedPrivateStores,
@@ -599,6 +600,15 @@ describe('PageManager', () => {
       pageManager.provider.getPageUUID = vi.fn().mockReturnValue(null);
 
       expect(pageManager.getPageUUID('unknown', TEST_ACTOR)).toBeNull();
+    });
+  });
+
+  describe('isSharedIndexable() (#1419)', () => {
+    test('asks the provider as the anonymous subject — stated, not a default', () => {
+      pageManager.provider.pageExists = vi.fn().mockReturnValue(false);
+
+      expect(pageManager.isSharedIndexable('Sealed Diary')).toBe(false);
+      expect(pageManager.provider.pageExists).toHaveBeenCalledWith('Sealed Diary', ANONYMOUS_SUBJECT);
     });
   });
 
