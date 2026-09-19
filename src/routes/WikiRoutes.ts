@@ -8056,7 +8056,10 @@ ${panes}
       if (await storeCopyExists({ ...door, store: door.kind.id })) {
         return await this.renderStoreDoor(req, res, door.kind, { step: 'ready' });
       }
-      const hasKey = !!kekFor(req.userContext);
+      // kekFor hands back a copy of the key; only whether one exists is needed here.
+      const kek = kekFor(req.userContext);
+      const hasKey = !!kek;
+      kek?.fill(0);
       return await this.renderStoreDoor(req, res, door.kind, {
         step: door.kind.encrypt ? 'intro-sealed' : 'intro-plain',
         needsPassword: door.kind.encrypt && !hasKey

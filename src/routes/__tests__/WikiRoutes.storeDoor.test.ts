@@ -81,6 +81,39 @@ describe('store door routes (#1414)', () => {
     expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'default'))).toBe(false);
   });
 
+  test('policy decides, not a role name: an admin whom no policy grants store-create is refused at every door route', async () => {
+    const asked: string[] = [];
+    const admin = { ...subject, roles: ['admin', 'Authenticated'] };
+    vi.mocked(routes.createWikiContext).mockImplementation(() => ({
+      userContext: admin,
+      hasPermission: async (permission: string) => { asked.push(permission); return false; }
+    }) as never);
+
+    for (const route of ['storeDoorPage', 'storeDoorEnter', 'storeDoorConfirmPage', 'storeDoorConfirm'] as const) {
+      const res = newRes();
+      await routes[route](req('default', {}, admin), res);
+      expect(renderError).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 403, 'Access Denied', expect.stringContaining('store-create'));
+      expect(res.render).not.toHaveBeenCalled();
+    }
+    expect(asked).toEqual(['store-create', 'store-create', 'store-create', 'store-create']);
+    expect(audit.logAuditEvent).not.toHaveBeenCalled();
+    expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'default'))).toBe(false);
+  });
+
+  test('an anonymous caller refused by policy is sent to sign in, and nothing is created', async () => {
+    const anonymous = { username: 'Anonymous', roles: ['Anonymous', 'All'], isAuthenticated: false };
+    vi.mocked(routes.createWikiContext).mockImplementation(() => ({
+      userContext: anonymous,
+      hasPermission: async () => false
+    }) as never);
+    const res = newRes();
+    await routes.storeDoorEnter({ ...(req('default', {}, anonymous) as object), originalUrl: '/stores/default' }, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login?redirect=%2Fstores%2Fdefault');
+    expect(audit.logAuditEvent).not.toHaveBeenCalled();
+    expect(await fs.pathExists(storeMetaPath(pagesDir, 'Anonymous', 'default'))).toBe(false);
+  });
+
   test('an unknown kind is a 404', async () => {
     await routes.storeDoorPage(req('nosuch'), newRes());
     expect(renderError).toHaveBeenCalledWith(expect.anything(), expect.anything(), 404, 'Not Found', expect.any(String));
