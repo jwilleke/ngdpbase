@@ -31,6 +31,8 @@ const mockConfigurationManager = {
 
 // Mock PageManager
 const mockPageManager = {
+  // #1419: every page here resolves as the anonymous subject (none is sealed).
+  isSharedIndexable: vi.fn(() => true),
   getAllPages: vi.fn().mockResolvedValue([
     {
       title: 'Welcome',
@@ -135,6 +137,20 @@ describe('SearchManager', () => {
   describe('Index management', () => {
     test('should rebuild search index', async () => {
       await expect(searchManager.rebuildIndex()).resolves.not.toThrow();
+    });
+
+    test('a page that may not be in a shared index (sealed, #1419) is not indexed, and any old entry is removed', async () => {
+      mockPageManager.isSharedIndexable.mockImplementation((name: string) => name !== 'Sealed Diary');
+      const update = vi.fn().mockResolvedValue(undefined);
+      const remove = vi.fn().mockResolvedValue(undefined);
+      searchManager.provider = { updatePageInIndex: update, removePageFromIndex: remove };
+
+      await searchManager.updatePageInIndex('Sealed Diary', { title: 'Sealed Diary', content: 'secret body' });
+
+      expect(mockPageManager.isSharedIndexable).toHaveBeenCalledWith('Sealed Diary');
+      expect(update).not.toHaveBeenCalled();
+      expect(remove).toHaveBeenCalledWith('Sealed Diary');
+      mockPageManager.isSharedIndexable.mockImplementation(() => true);
     });
 
     test('should update page in index', async () => {

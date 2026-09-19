@@ -175,6 +175,14 @@ class AssetManager extends BaseManager {
    * skipped so a missing asset never blocks the page save.
    */
   async syncPageAssets(pageName: string, content: string): Promise<void> {
+    // #1419: the reverse index is persisted to page-assets-index.json, keyed by
+    // page name — a page in an encrypted store never enters it.
+    const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
+    if (pageManager && !pageManager.isSharedIndexable(pageName)) {
+      if (this.pageAssetsMap.delete(pageName)) this._savePageAssetsIndex();
+      return;
+    }
+
     const srcPattern = /\[\{(?:Image|ATTACH)\s[^}]*?src='([^']+)'/gi;
     const composites = new Set<string>();
     let m: RegExpExecArray | null;
@@ -266,8 +274,18 @@ class AssetManager extends BaseManager {
     try {
       if (!await fs.pathExists(this.pageAssetsIndexPath)) return;
       const raw = await fs.readJson(this.pageAssetsIndexPath) as Record<string, string[]>;
+      // #1419: an entry written before sealed pages were kept out is dropped
+      // here rather than reloaded on every boot. PageManager initialises
+      // first, so its page list is already in memory.
+      const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
+      let dropped = 0;
       for (const [slug, ids] of Object.entries(raw)) {
+        if (pageManager && !pageManager.isSharedIndexable(slug)) { dropped++; continue; }
         this.pageAssetsMap.set(slug, new Set(ids));
+      }
+      if (dropped > 0) {
+        logger.info(`[AssetManager] Dropped ${dropped} page-assets entr${dropped === 1 ? 'y' : 'ies'} that may not be in a shared index`);
+        this._savePageAssetsIndex();
       }
       logger.info(`[AssetManager] Loaded page-assets index — ${this.pageAssetsMap.size} pages`);
     } catch (err) {

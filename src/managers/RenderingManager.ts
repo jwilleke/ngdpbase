@@ -1217,6 +1217,13 @@ class RenderingManager extends BaseManager {
    * @param {string} content - New content of the page
    */
   updatePageInLinkGraph(pageName: string, content: string): void {
+    // #1419: the link graph is shared by every reader — a page in an encrypted
+    // store would show its title in other pages' referring-pages lists.
+    if (!this.isSharedIndexable(pageName)) {
+      this.removePageFromLinkGraph(pageName);
+      return;
+    }
+
     // Remove this page from all existing referring pages lists
     for (const targetPage of Object.keys(this.linkGraph)) {
       const referrers = this.linkGraph[targetPage];
@@ -1282,6 +1289,10 @@ class RenderingManager extends BaseManager {
    * @param {string} pageName - Name of the new page
    */
   addPageToCache(pageName: string): void {
+    // #1419: the known-page list decides whether a link renders as an existing
+    // page for every reader, so a sealed title would be disclosed to anyone
+    // who guesses it. A sealed page is left out, and links to it render red.
+    if (!this.isSharedIndexable(pageName)) return;
     if (!this.cachedPageNames) {
       this.cachedPageNames = [];
     }
@@ -1299,6 +1310,12 @@ class RenderingManager extends BaseManager {
     if (markupParser) {
       markupParser.invalidateHandlerCache().catch(() => { /* non-fatal */ });
     }
+  }
+
+  /** #1419: see PageManager.isSharedIndexable. Without a PageManager nothing can be sealed. */
+  private isSharedIndexable(pageName: string): boolean {
+    const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
+    return pageManager ? pageManager.isSharedIndexable(pageName) : true;
   }
 
   /**

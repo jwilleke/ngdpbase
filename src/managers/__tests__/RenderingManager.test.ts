@@ -36,6 +36,8 @@ const mockConfigurationManager = {
 
 // Mock PageManager
 const mockPageManager = {
+  // #1419: every page here resolves as the anonymous subject (none is sealed).
+  isSharedIndexable: vi.fn(() => true),
   getAllPages: vi.fn().mockResolvedValue(['Welcome', 'TestPage', 'Categories']),
   getPage: vi.fn().mockImplementation(async (pageName) => {
     const pages = {
@@ -125,6 +127,7 @@ describe('RenderingManager', () => {
     test('should resolve plural links when building link graph (Issue #172)', async () => {
       // Setup: Page "Plugin" exists, "ContextualVars" links to [Plugins] (plural)
       const mockPageManagerWithPlurals = {
+        isSharedIndexable: () => true,
         getAllPages: async () => ['Plugin', 'ContextualVars'],
         getPage: async (pageName) => {
           const pages = {
@@ -181,6 +184,7 @@ describe('RenderingManager', () => {
     test('should handle unresolved links gracefully', async () => {
       // Setup: Page links to a non-existent page
       const mockPageManagerWithBadLink = {
+        isSharedIndexable: () => true,
         getAllPages: vi.fn().mockResolvedValue(['TestPage']),
         getPage: vi.fn().mockImplementation(async (pageName) => {
           if (pageName === 'TestPage') {
@@ -241,6 +245,35 @@ describe('RenderingManager', () => {
       // The footnote bracket text should not appear as a wiki-link target either
       const footnoteLinkKeys = Object.keys(linkGraph).filter(k => k.trim().startsWith('A short-lived'));
       expect(footnoteLinkKeys).toHaveLength(0);
+    });
+
+    test('a sealed page (#1419) stays out of the link graph and the known-page list', async () => {
+      // Own engine: another test in this file replaces the shared mockEngine.getManager.
+      const pm = {
+        isSharedIndexable: vi.fn((name: string) => name !== 'Sealed Diary'),
+        getAllPages: vi.fn().mockResolvedValue(['Welcome']),
+        getPage: vi.fn().mockResolvedValue({ title: 'Welcome', content: 'Welcome' })
+      };
+      const engine = {
+        log: vi.fn(),
+        getManager: (name: string) => {
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') return pm;
+          return null;
+        },
+        getConfig: vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue({ wiki: { pagesDir: './pages' } }) })
+      };
+      const manager = new RenderingManager(engine);
+      await manager.initialize();
+
+      manager.updatePageInLinkGraph('Sealed Diary', 'See [Welcome]');
+      manager.addPageToCache('Sealed Diary');
+
+      // Its title must not appear as a referrer of the public page it links to …
+      expect(manager.getReferringPages('Welcome')).not.toContain('Sealed Diary');
+      // … and a link to it must not render as an existing page for other readers.
+      expect(manager.cachedPageNames ?? []).not.toContain('Sealed Diary');
+      expect(pm.isSharedIndexable).toHaveBeenCalledWith('Sealed Diary');
     });
 
     test('updatePageInLinkGraph should not add external URLs from markdown links (#294)', () => {

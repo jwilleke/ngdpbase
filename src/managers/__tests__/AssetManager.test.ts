@@ -751,6 +751,27 @@ describe('AssetManager.syncPageAssets()', () => {
     expect(localProvider.getById).toHaveBeenCalledWith('uuid-1');
   });
 
+  it('a page that may not be in a shared index (sealed, #1419) is not recorded, and its old entry is dropped', async () => {
+    const record = makeAssetRecord({ id: 'uuid-1', providerId: 'local' });
+    const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(record) });
+    const { manager, engine } = makeManager({
+      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' })
+    });
+    manager.registerProvider(localProvider);
+    let sealed = false;
+    const pageManager = { isSharedIndexable: vi.fn(() => !sealed) };
+    const base = engine.getManager.getMockImplementation();
+    engine.getManager.mockImplementation((name: string) => (name === 'PageManager' ? pageManager : base?.(name)));
+
+    await manager.syncPageAssets('Sealed Diary', "[{Image src='photo.jpg'}]");
+    expect(await manager.getAssetsForPage('Sealed Diary')).toHaveLength(1);
+
+    sealed = true;
+    await manager.syncPageAssets('Sealed Diary', "[{Image src='photo.jpg'}]");
+    expect(pageManager.isSharedIndexable).toHaveBeenLastCalledWith('Sealed Diary');
+    expect(await manager.getAssetsForPage('Sealed Diary')).toHaveLength(0);
+  });
+
   it('resolves media:// URI → media-library:<id> composite key', async () => {
     const record = makeAssetRecord({ id: 'media-hash-abc', providerId: 'media-library' });
     const mediaProvider = makeProvider({
