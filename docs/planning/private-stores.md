@@ -200,6 +200,14 @@ __Retries are limited and configurable.__ `ngdpbase.stores.recovery.confirmretri
 
 Rejected: __create first, allow one re-show__ — the words then sit retrievable somewhere beyond the one screen for minutes, which is the property this design exists to avoid. Rejected: __create first, no re-show__ — simple and safe for the instance, and a silent data-loss trap for anyone who closes the tab.
 
+### The door asks for the password when the user has no key (2026-09-19)
+
+The user KEK is wrapped with the login password, and the server does not keep the password after login: login only unwraps a KEK that already exists. So when a user enters an encrypted store's door and has no `user-keys.json` yet, __the door asks for their password again__, verifies it, and uses it to create the KEK and its password wrap. A user who already has a KEK (unlocked in the session bag at login) is not asked.
+
+The re-entry is also the right check before an action as consequential as creating key material.
+
+Rejected: __create the KEK at every password login and add the recovery wrap at the door__ — a key would then exist whose words were never shown, which the rules above forbid, and every user would hold a key for a store they may never enter.
+
 ### Core owns the door (2026-09-19)
 
 Every store kind provides the entry step, but __only core implements it__. Core ships one route — the store's door — that derives the user KEK if they have none, generates the 12 words, creates the store's copy with its wrapped DEK, and renders the words-once screen with the warning.
