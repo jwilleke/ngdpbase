@@ -25,7 +25,7 @@ pages/private/{user}/user-index.json       # catalog of encrypted-store pages (u
 pages/private/{user}/user-versions.json    # history catalog (user KEK)
 pages/private/{user}/user-trash.json       # trash catalog (user KEK)
 pages/private/{user}/{store}/              # one store
-pages/private/{user}/{store}/store.json    # encrypt on/off; wrapped DEK if encrypt on
+pages/private/{user}/{store}/store.json    # kind, encrypt, created; wrapped DEK if encrypt on
 pages/private/{user}/{store}/{uuid}.md     # live pages
 pages/private/{user}/{store}/versions/     # page version blobs
 pages/private/{user}/{store}/deleted/      # trash blobs
@@ -147,7 +147,27 @@ Store-first would suit per-kind operations (uninstall an addon and drop its stor
 - The admin decides whether encrypted stores are offered on this instance at all.
 - Turning encryption on or off for an existing store is __not offered__ at first: each is a whole-store migration. It can come later if anyone asks.
 
-`store.json` carries the per-user state: `encrypt`, and the wrapped DEK once the user has keys. The kind's owner and its encryption policy live in the kind's definition in configuration, not in each user's copy. An addon declares its store kind; today nothing in the manifest can say so.
+`store.json` carries the per-user state: `encrypt`, and the wrapped DEK once the user has keys. The kind's owner and its encryption policy live in the kind's definition in configuration, not in each user's copy. An addon declares its store kind in its manifest (see "How an addon declares its kind").
+
+### `store.json` shape (2026-09-19)
+
+Four fields. Written once when the copy is created, at the user's first entry through the door.
+
+```json
+{
+  "kind": "yourphr",
+  "encrypt": true,
+  "created": "2026-09-19T14:02:11.503Z",
+  "dekWrap": { "...": "algorithm, salt and the wrapped key" }
+}
+```
+
+- __`kind`__ — the store kind this copy was created under. Redundant with the directory name until the kind's setting changes, and then it is the only thing that says which rule the copy was made by. The "a copy can differ from its kind" tolerance recorded above needs it; whole-store migration reads it to know what it is converting from.
+- __`encrypt`__ — whether __this copy__ is sealed. The truth for the bytes beside it, never re-read from the kind.
+- __`created`__ — when the user walked through the door. Also the answer to "has this user ever entered?" without opening anything else.
+- __`dekWrap`__ — the data key, wrapped by the user's KEK. Absent when `encrypt` is false. Its algorithm identifiers and parameters are settled with the implementation ([#1400](https://github.com/jwilleke/ngdpbase/issues/1400)), not here.
+
+Not in this file: the user id (it is the parent directory), the recovery words or anything derived from them, and any kind-level policy. `store.json` is per-user state and key material only.
 
 ### Recovery words: at first deliberate entry into the store (2026-09-19)
 
