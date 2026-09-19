@@ -756,6 +756,8 @@
   "_comment_markup_render_tags": "Fenced code block language tags the system recognises. Tags not in this list are flagged as unknown on page save. 'wiki' is intentionally absent — it has no special meaning here.",
   "ngdpbase.markup.fenced-code-tags": [
     "text",
+    "txt",
+    "plaintext",
     "plain",
     "none",
     "javascript",
