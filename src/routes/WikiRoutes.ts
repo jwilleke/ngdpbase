@@ -92,10 +92,27 @@ import {
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
+  kekFor,
   lockPrivateStores,
   newPrivateStoreHandle,
+  setUnlockedDek,
+  unlockPrivateStores,
   unlockPrivateStoresWithPassword
 } from '../utils/privateStoreUnlock.js';
+import {
+  commitStoreCopy,
+  confirmAttempts,
+  confirmWords,
+  dropPendingWords,
+  hasPendingWords,
+  holdWordsForConfirmation,
+  storeCopyExists,
+  storeKindFromConfig,
+  userKeysExist,
+  type StoreKind
+} from '../utils/privateStoreDoor.js';
+import { privateStoreLayoutFromConfig, type PrivateStoreLayout } from '../utils/privateStorePath.js';
+import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
@@ -7084,7 +7101,10 @@ ${panes}
       // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
       // keyed by the session's private-store handle, never the session id.
       const privateStoreHandle = req.session?.privateStoreHandle;
-      if (typeof privateStoreHandle === 'string' && privateStoreHandle) lockPrivateStores(privateStoreHandle);
+      if (typeof privateStoreHandle === 'string' && privateStoreHandle) {
+        lockPrivateStores(privateStoreHandle);
+        dropPendingWords(privateStoreHandle);
+      }
 
       req.session.destroy((err) => {
         if (err) {
@@ -7951,6 +7971,234 @@ ${panes}
       onlyPrivate: true,
       emptyMessage: 'You don\'t have any private pages yet.'
     });
+  }
+
+  // ==========================================================================
+  // The store door (#1414, epic #1382)
+  // ==========================================================================
+
+  /**
+   * Everything a store-door request needs, or `null` when it has already been
+   * answered: the `store-create` permission (P2), a kind configuration defines,
+   * and a password sign-in — the words screen's state and the unlocked keys
+   * live in that session's key bag, which a token or share request does not
+   * have.
+   */
+  private async storeDoorRequest(req: Request, res: Response): Promise<{
+    username: string;
+    handle: string;
+    kind: StoreKind;
+    pagesDirectory: string;
+    layout: PrivateStoreLayout;
+  } | null> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'store-create', req, res, 'page'))) return null;
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
+    const kind = storeKindFromConfig(getProperty, String(req.params.kind ?? ''));
+    if (!kind) {
+      await this.renderError(req, res, 404, 'Not Found', 'There is no such store on this site.');
+      return null;
+    }
+    const username = req.userContext.username;
+    const handle = typeof req.userContext.privateStoreHandle === 'string' ? req.userContext.privateStoreHandle : '';
+    if (!handle) {
+      await this.renderError(req, res, 403, 'Password sign-in needed',
+        'A private store is opened from a session signed in with your password. Sign out, sign in with your password, and try again.');
+      return null;
+    }
+    const pagesDirectory = configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    return { username, handle, kind, pagesDirectory, layout: privateStoreLayoutFromConfig(getProperty) };
+  }
+
+  /** Where a store's own pages take over once its door has been walked through. */
+  private storeLanding(kind: StoreKind): string {
+    return kind.id === 'default' ? '/my/private' : '/';
+  }
+
+  private async renderStoreDoor(req: Request, res: Response, kind: StoreKind, view: Record<string, unknown>): Promise<void> {
+    const commonData = await this.getCommonTemplateData(req);
+    // The words appear on one response only; nothing may keep a copy of it.
+    res.set('Cache-Control', 'no-store');
+    res.render('store-door', {
+      ...commonData,
+      title: 'Private store',
+      storeKind: kind,
+      wordCount: mnemonicWordCount,
+      landing: this.storeLanding(kind),
+      ...view
+    });
+  }
+
+  /**
+   * Record the creation before anything exists (the token-mint ordering): a
+   * `refuse` event throws when its record cannot be written, and then nothing
+   * is created. Never the words or a key in the record.
+   */
+  private async auditStoreCreate(req: Request, kind: StoreKind, keyCreated: boolean): Promise<void> {
+    const actor = actorOf(req.userContext);
+    await recordAuditEvent(this.auditSink(), {
+      eventType: AUDIT_EVENT.STORE_CREATE,
+      user: actor.user,
+      ipAddress: actor.ipAddress,
+      action: 'create',
+      result: 'success',
+      severity: kind.encrypt ? 'high' : 'medium',
+      metadata: { ...actor.metadata, store: kind.id, encrypt: kind.encrypt, keyCreated }
+    });
+  }
+
+  /** GET /stores/:kind — the door, or the way in when the user already has a copy. */
+  async storeDoorPage(req: Request, res: Response) {
+    try {
+      const door = await this.storeDoorRequest(req, res);
+      if (!door) return;
+      if (await storeCopyExists({ ...door, store: door.kind.id })) {
+        return await this.renderStoreDoor(req, res, door.kind, { step: 'ready' });
+      }
+      const hasKey = !!kekFor(req.userContext);
+      return await this.renderStoreDoor(req, res, door.kind, {
+        step: door.kind.encrypt ? 'intro-sealed' : 'intro-plain',
+        needsPassword: door.kind.encrypt && !hasKey
+      });
+    } catch (err) {
+      logger.error('[store-door] could not show the door:', err);
+      return this.renderError(req, res, 500, 'Error', 'The private store door could not be shown.');
+    }
+  }
+
+  /**
+   * POST /stores/:kind — walk through. An unencrypted kind, or a sealed kind
+   * for a user who already has a key, is created at once. A sealed kind for a
+   * user with no key yet asks for the password, makes the key in memory and
+   * shows its words — nothing is written until they are confirmed.
+   */
+  async storeDoorEnter(req: Request, res: Response) {
+    try {
+      const door = await this.storeDoorRequest(req, res);
+      if (!door) return;
+      const { username, handle, kind, pagesDirectory, layout } = door;
+      if (await storeCopyExists({ pagesDirectory, username, store: kind.id, layout })) {
+        return res.redirect(`/stores/${encodeURIComponent(kind.id)}`);
+      }
+
+      if (!kind.encrypt) {
+        await this.auditStoreCreate(req, kind, false);
+        await commitStoreCopy({ pagesDirectory, username, kind, layout });
+        return res.redirect(this.storeLanding(kind));
+      }
+
+      const kek = kekFor(req.userContext);
+      if (kek) {
+        await this.auditStoreCreate(req, kind, false);
+        const { dek } = await commitStoreCopy({ pagesDirectory, username, kind, kek, layout });
+        if (dek) setUnlockedDek(handle, kind.id, dek);
+        kek.fill(0);
+        return await this.renderStoreDoor(req, res, kind, { step: 'done' });
+      }
+      if (await userKeysExist({ pagesDirectory, username, layout })) {
+        // Keys on disk that this session did not unlock: a sign-in problem, not a door one.
+        return await this.renderStoreDoor(req, res, kind, { step: 'intro-sealed', needsPassword: false,
+          error: 'Your key is not unlocked in this session. Sign out and sign in with your password, then try again.' });
+      }
+
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!(await this.verifyDoorPassword(req, username, password))) {
+        return await this.renderStoreDoor(req, res, kind, { step: 'intro-sealed', needsPassword: true,
+          error: 'That password is not correct.' });
+      }
+      const created = createUserKeys(password);
+      holdWordsForConfirmation(handle, {
+        username,
+        store: kind.id,
+        kek: created.kek,
+        envelope: created.envelope,
+        mnemonic: created.mnemonic,
+        attempts: confirmAttempts((key, def) => this.engine.getManager('ConfigurationManager').getProperty(key, def))
+      });
+      created.kek.fill(0);
+      return await this.renderStoreDoor(req, res, kind, { step: 'words', words: created.mnemonic.split(' ') });
+    } catch (err) {
+      logger.error('[store-door] could not create the store:', err);
+      return this.renderError(req, res, 500, 'Error', 'The private store could not be created. Nothing was saved.');
+    }
+  }
+
+  /**
+   * The password re-entry at the door (#1414). Same verification, same
+   * throttle and the same failed-attempt record as the sign-in form: the door
+   * must not be a second place to guess a password.
+   */
+  private async verifyDoorPassword(req: Request, username: string, password: string): Promise<boolean> {
+    if (!password) return false;
+    const throttle = this.getLoginThrottle();
+    const keys = this.throttleKeys(req, username);
+    if (throttle && keys.map((k) => throttle.check(k)).some((state) => state.blocked)) return false;
+    const authManager = this.engine.getManager('AuthManager');
+    const userManager = this.engine.getManager('UserManager');
+    const result = authManager
+      ? await authManager.authenticate('password', { username, password })
+      : { success: await userManager.authenticateUser(username, password).then(Boolean) };
+    if (result.success) return true;
+    if (throttle) for (const key of keys) throttle.recordFailure(key);
+    await this.auditAuthentication(req, username, 'failure', 'invalid password at a private store door');
+    return false;
+  }
+
+  /** GET /stores/:kind/confirm — type the words back. Never shows them. */
+  async storeDoorConfirmPage(req: Request, res: Response) {
+    try {
+      const door = await this.storeDoorRequest(req, res);
+      if (!door) return;
+      if (!hasPendingWords(door.handle, door.username, door.kind.id)) {
+        return res.redirect(`/stores/${encodeURIComponent(door.kind.id)}`);
+      }
+      return await this.renderStoreDoor(req, res, door.kind, { step: 'confirm' });
+    } catch (err) {
+      logger.error('[store-door] could not show the confirmation:', err);
+      return this.renderError(req, res, 500, 'Error', 'The confirmation could not be shown.');
+    }
+  }
+
+  /**
+   * POST /stores/:kind/confirm — the last gate. A match writes the key, the
+   * store and its wrapped DEK, and unlocks them in this session. A miss shows
+   * a NEW set of words; out of attempts, nothing was created.
+   */
+  async storeDoorConfirm(req: Request, res: Response) {
+    try {
+      const door = await this.storeDoorRequest(req, res);
+      if (!door) return;
+      const { username, handle, kind, pagesDirectory, layout } = door;
+      const typed: string[] = [];
+      for (let i = 1; i <= mnemonicWordCount; i++) {
+        const word = req.body?.[`word${i}`];
+        typed.push(typeof word === 'string' ? word : '');
+      }
+      const outcome = confirmWords(handle, username, kind.id, typed.join(' '));
+      if (outcome.status === 'none') return res.redirect(`/stores/${encodeURIComponent(kind.id)}`);
+      if (outcome.status === 'exhausted') return await this.renderStoreDoor(req, res, kind, { step: 'exhausted' });
+      if (outcome.status === 'retry') {
+        return await this.renderStoreDoor(req, res, kind, {
+          step: 'words',
+          words: outcome.mnemonic.split(' '),
+          notice: 'Those words did not match, so they have been discarded. Here is a new set — write these down instead.'
+        });
+      }
+      const { kek, envelope } = outcome;
+      try {
+        await this.auditStoreCreate(req, kind, true);
+        const { dek } = await commitStoreCopy({ pagesDirectory, username, kind, kek, newEnvelope: envelope, layout });
+        unlockPrivateStores(handle, username, kek);
+        if (dek) setUnlockedDek(handle, kind.id, dek);
+      } finally {
+        kek.fill(0);
+      }
+      return await this.renderStoreDoor(req, res, kind, { step: 'done' });
+    } catch (err) {
+      logger.error('[store-door] could not confirm the words:', err);
+      return this.renderError(req, res, 500, 'Error', 'The private store could not be created. Nothing was saved.');
+    }
   }
 
   /**
@@ -14364,6 +14612,11 @@ ${panes}
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/private', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
+    // #1414: the store door — core owns it; an addon links to it.
+    app.get('/stores/:kind', (req: Request, res: Response) => this.storeDoorPage(req, res));
+    app.post('/stores/:kind', (req: Request, res: Response) => this.storeDoorEnter(req, res));
+    app.get('/stores/:kind/confirm', (req: Request, res: Response) => this.storeDoorConfirmPage(req, res));
+    app.post('/stores/:kind/confirm', (req: Request, res: Response) => this.storeDoorConfirm(req, res));
     app.get('/my/journal', (req: Request, res: Response) => this.myJournalPage(req, res));
     app.get('/my/links', (req: Request, res: Response) => this.myLinksPage(req, res));
     // #1004 — captures made by the #881 bookmarklet; 404s when capture is off

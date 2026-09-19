@@ -56,11 +56,19 @@ export async function storeDirectoryIsEncrypted(
   }
 }
 
+/**
+ * `store.json` as the door writes it (#1414, docs/planning/private-stores.md,
+ * "`store.json` shape"): the kind this copy was created under, whether this
+ * copy is sealed, when the user walked through the door, and the wrapped DEK
+ * when it is sealed. Per-user state and key material only — never policy.
+ */
+export type StoreFileRecord = StoreKeyRecord & { kind?: string; created?: string };
+
 export async function writeStoreMeta(
   pagesDirectory: string,
   creator: string,
   store: string,
-  record: StoreKeyRecord,
+  record: StoreFileRecord,
   layout?: PrivateStoreLayoutOverrides
 ): Promise<void> {
   await fs.ensureDir(privateStoreRoot(pagesDirectory, creator, store, layout));

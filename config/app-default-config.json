@@ -409,6 +409,10 @@
       "on-failure": "refuse",
       "description": "Agent token minted; a credential nobody knows exists is the worst case"
     },
+    "store-create": {
+      "on-failure": "refuse",
+      "description": "A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record"
+    },
     "token-revoke": {
       "on-failure": "refuse",
       "description": "Agent token revoked"
@@ -1673,6 +1677,11 @@
       "icon": "key",
       "color": "#fd7e14"
     },
+    "store-create": {
+      "description": "Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it",
+      "icon": "lock",
+      "color": "#198754"
+    },
     "asset-edit": {
       "description": "Edit asset metadata (EXIF/IPTC/XMP)",
       "icon": "pen",
@@ -2102,7 +2111,8 @@
       "actions": [
         "profile-manage",
         "comment-create",
-        "search-user"
+        "search-user",
+        "store-create"
       ]
     },
     {

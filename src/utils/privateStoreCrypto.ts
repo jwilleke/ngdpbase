@@ -10,6 +10,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  timingSafeEqual,
   pbkdf2Sync,
   randomBytes,
   scryptSync
@@ -150,6 +151,24 @@ export function unwrapKekWithPassword(envelope: UserKeyEnvelope, password: strin
 
 export function unwrapKekWithMnemonic(envelope: UserKeyEnvelope, mnemonic: string): Buffer {
   return unwrap(mnemonicToWrapKey(mnemonic), envelope.recoveryWrap, 'recovery');
+}
+
+/**
+ * A fresh set of 12 recovery words for a KEK that has not been committed yet
+ * (#1414): the store door's words screen, where a failed confirmation discards
+ * the words it showed and never re-shows them. The KEK and its password wrap
+ * are kept; only the recovery wrap is replaced.
+ */
+export function newRecoveryWords(kek: Buffer): { mnemonic: string; recoveryWrap: WrappedBlob } {
+  const mnemonic = entropyToMnemonic(randomBytes(16));
+  return { mnemonic, recoveryWrap: wrap(mnemonicToWrapKey(mnemonic), kek) };
+}
+
+/** True when two phrases are the same 12 words, compared as the recovery wrap reads them. */
+export function sameMnemonic(entered: string, expected: string): boolean {
+  const a = Buffer.from(normalizeMnemonic(entered));
+  const b = Buffer.from(normalizeMnemonic(expected));
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export function rewrapPassword(
