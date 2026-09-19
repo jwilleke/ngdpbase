@@ -76,6 +76,10 @@ __Store kinds are defined in configuration__, outside the provider namespace (`n
 
 Changing a kind's setting governs __stores created afterwards__; switching an existing store is a whole-store migration and is not offered.
 
+__A kind's definition is persisted configuration, not a manifest declaration__ (2026-09-19). An addon declares its kind at install and the keys are written to config, so the definition outlives the addon: disabling or uninstalling the addon must not erase the record that a user's store of that kind is encrypted. `domainDefaults`-style merge-at-load was rejected for exactly that.
+
+__A kind cannot be removed while any user still has data in it__ (2026-09-19). Removal is refused until those stores are empty — the user has taken their data out ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)) or deleted it. Nothing deletes a user's store on the instance's behalf.
+
 - __Layout keys stay with the provider__ (`ngdpbase.page.provider.filesystem.*`: `privateroot`, `versionsdir`, `deleteddir`, `attachmentsdir`, catalogue filenames). They describe how this filesystem provider lays bytes out; another provider would not have a `deleted` folder. A store definition never names a path — the provider maps a store id to a location.
 - __`store.json` keeps per-user state and key material only__: that this user's copy is encrypted, and the wrapped DEK. Keys are data, never configuration.
 
