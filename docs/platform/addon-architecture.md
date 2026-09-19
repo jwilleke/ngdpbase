@@ -313,11 +313,11 @@ Use `ApiContext` for all route authentication — the same pattern used by core 
 ```typescript
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext';
 
-router.get('/resource', (req, res) => {
+router.get('/resource', async (req, res) => {
   try {
     const ctx = ApiContext.from(req, engine);   // always succeeds
     ctx.requireAuthenticated();                  // throws ApiError(401) if not logged in
-    ctx.requireRole('admin');                    // throws ApiError(403) if role absent
+    await ctx.requirePermission('my-addon-read'); // throws ApiError(403) unless a policy grants it
     // ctx.username, ctx.roles, ctx.isAuthenticated available
   } catch (err) {
     if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });

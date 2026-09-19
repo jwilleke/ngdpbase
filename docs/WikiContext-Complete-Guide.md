@@ -50,7 +50,7 @@ Inspired by JSPWiki's architectural patterns, `WikiContext` solves "parameter ex
 | __Route integration__ (`src/routes/WikiRoutes.ts`) | ✅ Active | All routes |
 | __Access-method consolidation__ (#625, v3.6.0) | ✅ Production | `hasRole`, `hasPermission`, `canAccess`, `getPrincipals`, static `userHasRole` |
 | __`ParseContext` mirror__ | ✅ Production | `hasRole(...names)` rest-args, `getPrincipals` (#625); `hasPermission` async, `canAccess` (#633) |
-| __`ApiContext` parity__ | ✅ Production | `hasRole`/`requireRole` sync; `hasPermission`/`requirePermission` async (#630) |
+| __`ApiContext` parity__ | ✅ Production | `hasPermission`/`requirePermission` async (#630); `hasRole`/`requireRole` removed (#1198) |
 | __Lazy theme resolution__ | ✅ Production | `activeTheme` / `themeInfo` are lazy getters; permission-only callers don't trigger ConfigurationManager.getProperty |
 | __ESLint guard__ | ✅ Production | `no-restricted-syntax` flags `.isAdmin` and `.roles.includes(...)` reads outside test files |
 | __Manager method migration__ | 🔄 In Progress | `savePageWithContext()` done; new managers start with WikiContext |

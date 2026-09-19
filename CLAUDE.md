@@ -1,7 +1,3 @@
 # CLAUDE.md
 
-Guidance for Claude Code (and other agents) in this repo.
-
-- Read `AGENTS.md` first — it holds the operating protocol and project context.
-- Session continuity lives in `private/project_log.md` (gitignored) and recent `git log`.
-- Priorities are GitHub issue labels; `TODO.md` is their generated mirror.
+Read [AGENTS.md](AGENTS.md). It is the only source of agent instructions for this repo; nothing for agents is kept here.

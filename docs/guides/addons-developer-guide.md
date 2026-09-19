@@ -4,7 +4,8 @@
 
 ## Standing rules
 
-- Addon code is subject to the same invariants as `src/`: context forwarded, allow/deny from `hasPermission` / `canAccess`, outbound HTTP through `src/http/`.
+- Addon code is subject to the same invariants as `src/`: context forwarded, allow/deny from `hasPermission` / `canAccess`, outbound HTTP through `src/http/`. Read [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md) before writing a route, manager method or job; they apply [security-posture.md](../security-posture.md) and [audit-posture.md](../audit-posture.md).
+- An addon never names a role. It declares its own permission and a policy granting it, and asks for the permission.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value.
 - Seed pages get a real UUID v4. A placeholder UUID is skipped silently.
@@ -645,7 +646,7 @@ in route handlers. `ApiContext` wraps these correctly and handles TypeScript typ
 __`ApiContext.from()` always succeeds — it never throws for anonymous callers.__
 On an unauthenticated request it returns a context with `isAuthenticated: false`,
 `username: 'Anonymous'`, and `roles: ['Anonymous', 'All']`. The guard methods
-(`requireAuthenticated`, `requireRole`) are opt-in — a public route simply does not call them:
+(`requireAuthenticated`, `requirePermission`) are opt-in — a public route simply does not call them:
 
 ```typescript
 // Fully public route — no guards, but ApiContext still used for consistency
@@ -674,7 +675,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const mgr = engine.getManager('MyDataManager');
       const q = String(req.query.q || '');
       const results = await mgr.search(q);
-      // Optionally filter results based on ctx.isAuthenticated or ctx.roles
+      // Optionally filter results with await ctx.hasPermission('my-addon-read') — never ctx.roles
       res.json({ results });
     } catch (err) {
       if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
@@ -687,7 +688,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
     try {
       const ctx = ApiContext.from(req, engine);
       ctx.requireAuthenticated();            // → 401 if not logged in
-      ctx.requireRole('admin', 'editor');    // → 403 if neither role
+      await ctx.requirePermission('my-addon-manage'); // → 403 unless a policy grants it
 
       const mgr = engine.getManager('MyDataManager');
       const item = await mgr.create(req.body);
@@ -709,14 +710,16 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ApiContext.from(req, engine)` | Build from an Express request — always succeeds |
 | `ctx.isAuthenticated` | `true` if caller has an active session |
 | `ctx.username` | Caller's username, or `null` for anonymous |
-| `ctx.roles` | Caller's role array — always an array, never undefined |
+| `ctx.roles` | Caller's role array — always an array, never undefined. Never an allow or deny |
 | `ctx.email` | Caller's email, or `null` |
-| `ctx.hasRole(...roles)` | Returns `true` if caller has at least one of the given roles |
+| `await ctx.hasPermission(permission)` | `true` if policy grants the permission — deny policies and the token and share ceilings included |
 | `ctx.requireAuthenticated()` | Throws `ApiError(401)` if not authenticated |
-| `ctx.requireRole(...roles)` | Throws `ApiError(403)` if no matching role |
-| `ctx.engine` | Reference to the wiki engine |
+| `await ctx.requirePermission(permission)` | Throws `ApiError(403)` unless policy grants the permission |
+| `ctx.engine` | Reference to the engine |
 
 `ApiError` carries a `status` number — catch it and forward to `res.status(err.status)`.
+
+There is no `hasRole` / `requireRole`: a role name skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission the action is, grant it in a policy in the addon's `config/default-config.json`, and ask for it.
 
 ---
 
@@ -797,6 +800,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
 - [ ] `shutdown()` closes any open connections or file handles
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
+- [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
 - [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
@@ -918,13 +922,16 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
 | [`docs/planning/private-stores.md`](../planning/private-stores.md) | Private stores: store kinds, encryption, keys and recovery words (planned) |
 | [AddonsManager source](../../src/managers/AddonsManager.ts) | Discovery, loading, lifecycle implementation |
-| [security-developer-guide.md](security-developer-guide.md) | Authorization and context |
+| [security-developer-guide.md](security-developer-guide.md) | Authorization and context — mandatory |
+| [audit-developer-guide.md](audit-developer-guide.md) | Audit events — mandatory |
+| [security-posture.md](../security-posture.md), [audit-posture.md](../audit-posture.md) | The standing law those guides apply |
 | [configuration-developer-guide.md](configuration-developer-guide.md) | Merge layers |
 
 ## How you know you are done
 
 - `npm run lint:addons`
 - `npm run check:addon-load`
+- The security guide's and the audit guide's "How you know you are done" checks
 - `npm run create:addon -- --id …` then enable and restart
 
 ## Known gaps

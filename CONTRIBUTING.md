@@ -843,8 +843,7 @@ test('custom syntax extraction', () => {
 
 ### Security Guidelines
 
-Use __ACLManager__ for content filtering based on user permissions.
-See [Policies-Roles-Permissions](docs/architecture/Policies-Roles-Permissions.md)
+Every route, manager method and addon authorizes and audits as [docs/guides/security-developer-guide.md](docs/guides/security-developer-guide.md) and [docs/guides/audit-developer-guide.md](docs/guides/audit-developer-guide.md) describe. Read them before writing one. The standing rules they apply are in [docs/security-posture.md](docs/security-posture.md) and [docs/audit-posture.md](docs/audit-posture.md).
 
 ### UI/UX Standards
 

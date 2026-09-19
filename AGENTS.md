@@ -175,6 +175,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 - Code Style: [CODE_STANDARDS.md](./CODE_STANDARDS.md) — global preferences, TypeScript config, Prettier, ESLint, Markdownlint (MD036: no bold-as-heading), naming, commit format. __Read this first.__
 - TypeScript: [docs/TypeScript-Style-Guide.md](./docs/TypeScript-Style-Guide.md) — patterns, type definitions, TSDoc conventions.
 - Security: [SECURITY.md](./SECURITY.md) — secrets, auth, dependencies
+- Authorization and audit in code: [docs/guides/security-developer-guide.md](docs/guides/security-developer-guide.md) — the practice; it applies [docs/security-posture.md](docs/security-posture.md) and [docs/audit-posture.md](docs/audit-posture.md). __Mandatory__ — see Critical Technical Mandates.
 - Testing: [docs/guides/testing-developer-guide.md](docs/guides/testing-developer-guide.md) — CRITICAL, read before modifying code. Also see [CODE_STANDARDS.md § Testing](./CODE_STANDARDS.md#testing).
 - Glossary: [docs/GLOSSARY.md](docs/GLOSSARY.md) — canonical terms (Build vs Restart vs Directory Scan vs Page Index vs Search Index Rebuild)
 
@@ -234,6 +235,7 @@ Always use the platform's native link syntax — never construct raw `/view/` UR
 4. `WikiContext`: always use it for request/user state (code identifier; see no-wiki rule above).
 5. `WikiDocument`: use the DOM-based pipeline for parsing (code identifier; see no-wiki rule above).
 6. Secrets: never commit unencrypted secrets to git or any CMS. Store in gitignored `.env`; see [SECURITY.md](./SECURITY.md).
+7. Security and audit: before writing or changing a route, manager method, addon, background job, or a permission, policy or audit event in configuration, read [docs/guides/security-developer-guide.md](docs/guides/security-developer-guide.md) and [docs/guides/audit-developer-guide.md](docs/guides/audit-developer-guide.md) and follow them. They apply the standing law in [docs/security-posture.md](docs/security-posture.md) (P1: every security-relevant call carries a context; P2: allow and deny come only from `hasPermission` / `canAccess`) and [docs/audit-posture.md](docs/audit-posture.md). This binds addons exactly as it binds `src/`. The change is not done until each guide's "How you know you are done" checks pass. Where the code and these documents disagree, stop and ask; do not pick one.
 
 ## Agent Autonomy Matrix
 

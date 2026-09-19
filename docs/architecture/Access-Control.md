@@ -4,6 +4,8 @@ __Status__: Production (as of 2026-05-03, post-v3.6.0)
 __Source__: `src/context/WikiContext.ts`, `src/parsers/context/ParseContext.ts`, `src/context/ApiContext.ts`, `src/managers/UserManager.ts`, `src/managers/ACLManager.ts`, `src/managers/PolicyEvaluator.ts`
 __Related__: [policy-based-access-control-design.md](../design/policy-based-access-control-design.md) | [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
 
+> __Superseded for allow and deny.__ Parts of this page predate [#1198](https://github.com/jwilleke/ngdpbase/issues/1198) and still show role-name gates. A role name is never an allow or a deny: follow [security-developer-guide.md](../guides/security-developer-guide.md) and [security-posture.md](../security-posture.md) P2 where this page disagrees.
+
 How to do permission and role checks in ngdpbase code. One canonical method per question; no inline `userContext.roles.includes('admin')` or `userContext.isAdmin` reads.
 
 ---
@@ -18,7 +20,7 @@ How to do permission and role checks in ngdpbase code. One canonical method per 
 | What principals match this user for audience filters? | `wikiContext.getPrincipals()` | `[...roles, username]` | sync |
 | Hot-path role check, no WikiContext available? | `WikiContext.userHasRole(userContext, ...names)` | static helper | sync |
 
-In `ParseContext` (parser-pipeline plugins), the same four methods exist with the same shapes. In `ApiContext` (`/api/*` routes), `hasRole` / `requireRole` (sync) and `hasPermission` / `requirePermission` (async).
+In `ParseContext` (parser-pipeline plugins), the same four methods exist with the same shapes. In `ApiContext` (`/api/*` routes), `hasPermission` / `requirePermission` (async); `hasRole` / `requireRole` were removed ([#1198](https://github.com/jwilleke/ngdpbase/issues/1198)).
 
 ---
 
@@ -51,12 +53,11 @@ if (!(await context.canAccess('edit'))) return '';
 
 ### `ApiContext` — `/api/*` route-scoped
 
-`src/context/ApiContext.ts`. Built by `ApiContext.from(req, engine)`. Slimmer shape than WikiContext — just the user fields + engine + `requireAuthenticated` / `requireRole` / `requirePermission` guards that throw `ApiError(401|403)` for clean JSON-error handling.
+`src/context/ApiContext.ts`. Built by `ApiContext.from(req, engine)`. Slimmer shape than WikiContext — just the user fields + engine + `requireAuthenticated` / `requirePermission` guards that throw `ApiError(401|403)` for clean JSON-error handling.
 
 ```ts
 const ctx = ApiContext.from(req, engine);
 ctx.requireAuthenticated();              // throws ApiError(401) if not
-ctx.requireRole('admin', 'editor');      // sync — throws ApiError(403) if neither
 await ctx.requirePermission('user-edit'); // async — throws ApiError(403) if denied
 ```
 

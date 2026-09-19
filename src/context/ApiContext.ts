@@ -14,7 +14,7 @@
  *     try {
  *       const ctx = ApiContext.from(req, engine);
  *       ctx.requireAuthenticated();
- *       ctx.requireRole('clubhouse-manager', 'admin');
+ *       await ctx.requirePermission('reservation-manage');
  *       // ...
  *     } catch (err) {
  *       if (err instanceof ApiError) {
