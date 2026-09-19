@@ -78,6 +78,14 @@ Changing a kind's setting governs __stores created afterwards__; switching an ex
 
 __A kind's definition is persisted configuration, not a manifest declaration__ (2026-09-19). An addon declares its kind at install and the keys are written to config, so the definition outlives the addon: disabling or uninstalling the addon must not erase the record that a user's store of that kind is encrypted. `domainDefaults`-style merge-at-load was rejected for exactly that.
 
+__Whole-store migration is its own epic; the architecture supports it__ (2026-09-19). Changing a kind from `encrypt: false` to `true` (or back) re-writes every byte of every user's copy, so it is not part of this work. What this design keeps true for it:
+
+- A user's `store.json` is the truth for __that user's copy__. A kind's setting is the rule applied __when a copy is created__, and changing it never silently reinterprets copies that exist.
+- A copy can therefore differ from its kind, and the system must tolerate that rather than assume the kind's value.
+- A migration runs __in that user's session__: only they hold the key, so encrypting or decrypting their store requires their login. No admin-side batch can do it.
+
+__A store holds nothing until its user logs in and creates data__ (2026-09-19). A copy may be created lazily at the first write in a session that holds the key, so a kind can be defined long before any user has a byte in it — and an encrypted kind's copy never exists without a wrapped DEK.
+
 __A kind cannot be removed while any user still has data in it__ (2026-09-19). Removal is refused until those stores are empty — the user has taken their data out ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)) or deleted it. Nothing deletes a user's store on the instance's behalf.
 
 - __Layout keys stay with the provider__ (`ngdpbase.page.provider.filesystem.*`: `privateroot`, `versionsdir`, `deleteddir`, `attachmentsdir`, catalogue filenames). They describe how this filesystem provider lays bytes out; another provider would not have a `deleted` folder. A store definition never names a path — the provider maps a store id to a location.
