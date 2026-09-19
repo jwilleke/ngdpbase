@@ -80,6 +80,43 @@ Changing a kind's setting governs __stores created afterwards__; switching an ex
 
 __A kind's definition is persisted configuration, not a manifest declaration__ (2026-09-19). An addon declares its kind at install and the keys are written to config, so the definition outlives the addon: disabling or uninstalling the addon must not erase the record that a user's store of that kind is encrypted. `domainDefaults`-style merge-at-load was rejected for exactly that.
 
+### How an addon declares its kind (2026-09-19)
+
+The declaration goes in the addon's `package.json` `ngdpbase` block, beside the existing manifest keys:
+
+```json
+"ngdpbase": {
+  "stores": [{ "id": "yourphr", "encrypt": true }]
+}
+```
+
+- __`domainDefaults` is not the mechanism.__ `AddonsManager.applyDomainDefaults` (`src/managers/AddonsManager.ts`) writes through `ConfigurationManager.setRuntimeProperty` — merged config only, gone on restart, never on disk. Disable the addon and the definition evaporates while the user's encrypted bytes stay on disk with nothing left to say the store is encrypted or who owned it.
+- __At first load the keys are persisted__ through `ConfigurationManager.setProperty`: written to `app-custom-config.json`, with the `config-change` audit event and actor context that path already carries. `owner` is set to the __canonical slug__, never to a value the manifest supplies.
+- __After that, config wins — always.__ The door reads `ngdpbase.stores.{id}.encrypt` when it creates a user's copy; the manifest is never consulted again. A manifest is a proposal at install time and a claim with no authority afterwards.
+
+__A later manifest that disagrees with config is ignored, logged, and shown — not fatal__ (2026-09-19). Because config wins, a manifest that flips `encrypt` changes nothing: new copies keep being created the way existing ones were, so the population cannot split. The disagreement is a stale or wrong manifest, not a live hazard, and taking a working addon down over a line of JSON punishes its users for the author's oversight. It is logged at warn and surfaced on the admin addons screen — "`yourphr` declares `encrypt: false`; this instance holds the kind as `encrypt: true` with N users; the declaration is ignored" — and the addon loads normally.
+
+Refusing to load was considered and rejected: it was proposed to stop the user population splitting between encrypted and plaintext copies, and config precedence already prevents that.
+
+__One case is a hard stop: an addon claiming a store id that config says another slug owns.__ That is not a stale flag, it is one addon reaching into another's data container. The claimant is denied the kind — its door returns unavailable — and it is logged loudly. The rest of that addon may run; it has no business in that store either way.
+
+### Turning the owner off, and what the instance knows (2026-09-19)
+
+Three states already exist and none needed inventing: __enabled__ (`ngdpbase.addons.<slug>.enabled`, read by `AddonsManager.isEnabled`, default false), __present__ (discovered under `addons-path` at boot), and __loaded__ (`register()` ran). `getStatus()` reports `{ enabled, loaded }` per addon.
+
+| Owner state | Kind | Door |
+|---|---|---|
+| loaded | live | open |
+| enabled, load failed | defined, config intact | closed — temporarily unavailable |
+| disabled | defined, config intact | closed — the addon that owns this store is turned off |
+| folder gone | defined, config intact | closed — not installed on this instance |
+
+The config key survives all three, which is the point: a user's encrypted bytes never become bytes nobody can explain. Admin sees "kind `yourphr` — owner `yourphr` (not installed), N users have data".
+
+__Disabling the owner is warned and confirmed, never refused__ (2026-09-19). Disable destroys nothing: the config key stays, the store stays sealed on disk, `store.json` keeps the wrapped DEK, and re-enabling returns every user to the same keys. `canDisable` gains a `warnings` arm the confirm dialog shows — "N users have data in store `yourphr`. Disabling closes their store. Data stays encrypted on disk and returns when you re-enable." — and the audit event records the count. Its existing `blockedBy` arm is unchanged: an enabled addon depending on this one is a real invariant, user data is not.
+
+Refusing the disable was rejected: a broken or compromised addon would become impossible to turn off exactly when it must be, and the guard is walked around by editing `app-custom-config.json` or deleting the folder — with no warning read and no audit event. The hard stop belongs on the irreversible verbs instead: removing a kind's definition, or purging `pages/private/*/{store}/`, is refused while any user holds data.
+
 __Whole-store migration is its own epic; the architecture supports it__ (2026-09-19). Changing a kind from `encrypt: false` to `true` (or back) re-writes every byte of every user's copy, so it is not part of this work. What this design keeps true for it:
 
 - A user's `store.json` is the truth for __that user's copy__. A kind's setting is the rule applied __when a copy is created__, and changing it never silently reinterprets copies that exist.
