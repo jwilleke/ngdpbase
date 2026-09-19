@@ -59,16 +59,32 @@ The two are independent. The whole store is encrypted or it is not — no per-fi
 
 PHR-style addons should __default encrypt on__ and warn at least once if the user turns it off. `default` may stay off so existing private pages do not silently require a mnemonic.
 
+### The store kind, and where it is defined (2026-09-19)
+
+A __store kind__ is instance-wide; a user's directory under it is that user's security container. Encryption belongs to the __kind__, set by whoever owns it — the admin for `default`, the addon for its own store. Bob's and Jane's copies of a kind are __both__ encrypted or __both__ not; a user never chooses, and nobody can turn it off for one user. There is therefore no per-store "required" flag: the kind's definition is the rule.
+
+- __Store kinds are defined in configuration__, outside the provider namespace (`ngdpbase.stores.{id}.*`): which kinds exist, whether a kind is encrypted, and who owns it (admin, or an addon slug). Changing a kind's setting governs __stores created afterwards__; switching an existing store is a whole-store migration and is not offered.
+- __Layout keys stay with the provider__ (`ngdpbase.page.provider.filesystem.*`: `privateroot`, `versionsdir`, `deleteddir`, `attachmentsdir`, catalogue filenames). They describe how this filesystem provider lays bytes out; another provider would not have a `deleted` folder. A store definition never names a path — the provider maps a store id to a location.
+- __`store.json` keeps per-user state and key material only__: that this user's copy is encrypted, and the wrapped DEK. Keys are data, never configuration.
+
+### Layout stays user-first (2026-09-19)
+
+`private/{user}/{store}/` stays as [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) migrated it; `store.{id}/{user}/` was considered and rejected.
+
+Takeout decides it. Everything of one user is one subtree — wrapped keys, catalogues, and every store's pages, versions, trash and files — so a user's takeout is "copy this directory" and erasure is "delete this directory". For an encrypted store the bundle is self-contained: ciphertext travels with that user's own wrapped keys, decryptable with their password or their 12 words, without the instance ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)).
+
+Store-first would suit per-kind operations (uninstall an addon and drop its store for everyone, back up or count one kind), but the user's keys and catalogues would have no natural home, splitting a person's data across two shapes and making takeout and erasure a walk that can miss something. Those per-kind operations are admin-side, rare, and a directory walk here.
+
 ### Who decides encryption (2026-09-18)
 
-- __Whoever creates the store decides__, at creation. The end user is never asked an abstract "encrypt?" question — by then the answer follows from what the store is for.
+- __The store kind's owner decides__, in the kind's definition (see above). The end user is never asked an abstract "encrypt?" question — by then the answer follows from what the store is for.
 - __The `default` store is the admin's call__, instance-wide.
 - __Every other store is created by an admin or by an addon__: those two are the only creators.
 - __Sensitive or regulated data MUST be encrypted.__ An addon holding it declares encryption __required__, and no one can turn it off for that store.
 - The admin decides whether encrypted stores are offered on this instance at all.
 - Turning encryption on or off for an existing store is __not offered__ at first: each is a whole-store migration. It can come later if anyone asks.
 
-So `store.json` carries more than `encrypt`: which creator made the store (`admin` or an addon slug) and whether encryption is __required__ (not switchable). An addon declares its store in its manifest; today nothing in the manifest can say so.
+`store.json` carries the per-user state: `encrypt`, and the wrapped DEK once the user has keys. The kind's owner and its encryption policy live in the kind's definition in configuration, not in each user's copy. An addon declares its store kind; today nothing in the manifest can say so.
 
 ### Recovery words: at first login after an encrypted store exists (2026-09-18)
 
