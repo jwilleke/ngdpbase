@@ -41,6 +41,7 @@ import {
 } from '../utils/privateStoreUnlock.js';
 import { upsertUserIndexPage, upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
+import { PLAIN_FILE_IO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
 
 /**
@@ -183,6 +184,16 @@ interface PagePlacement {
   location: 'pages' | 'required-pages' | 'private';
   creator?: string;
   store?: string;
+}
+
+/**
+ * One page's history: the folder it lives in and how its files are read and
+ * written. For a page in an encrypted store the I/O seals every manifest,
+ * snapshot and diff with the store DEK (#1415).
+ */
+interface VersionTarget {
+  dir: string;
+  io: StoreFileIO;
 }
 
 /** One file of a page history in a backup, path relative to its versions folder. */
@@ -1803,6 +1814,25 @@ class VersioningFileProvider extends FileSystemProvider {
     return path.join(baseDir, uuid);
   }
 
+  /**
+   * A page's history folder and the I/O for it (#1415). A private page's
+   * history sits in its store, so it is read and written as that store is:
+   * sealed with the store DEK in `ctx` when the store is encrypted, refused
+   * when `ctx` does not hold it. Without a context an encrypted store's
+   * history is refused rather than read as plaintext.
+   */
+  private async versionTarget(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    ctx?: ActorContext,
+    creator?: string,
+    store?: string
+  ): Promise<VersionTarget> {
+    const dir = this.getVersionDirectory(uuid, location, creator, store, ctx);
+    if (location !== 'private') return { dir, io: PLAIN_FILE_IO };
+    return { dir, io: await this.fileIOFor(ctx, dir) };
+  }
+
   // ============================================================================
   // Manifest.json Management
   // ============================================================================
@@ -1813,23 +1843,26 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param location - 'pages' or 'required-pages'
    * @returns Manifest data or null if doesn't exist
    */
-  private loadManifest(uuid: string, location: 'pages' | 'required-pages' | 'private'): Promise<InternalManifest | null> {
-    const versionDir = this.getVersionDirectory(uuid, location);
-    const manifestPath = path.join(versionDir, 'manifest.json');
-
-    return fs.pathExists(manifestPath).then(exists => {
-      if (!exists) {
-        return null;
-      }
-
-      return fs.readFile(manifestPath, 'utf8')
-        .then(manifestData => JSON.parse(manifestData) as InternalManifest)
-        .catch(error => {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.error(`[VersioningFileProvider] Failed to load manifest for ${uuid}:`, errorMessage);
-          return null;
-        });
-    });
+  private async loadManifest(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    target?: VersionTarget
+  ): Promise<InternalManifest | null> {
+    const { dir, io } = target ?? await this.versionTarget(uuid, location);
+    const manifestPath = path.join(dir, 'manifest.json');
+    if (!await fs.pathExists(manifestPath)) {
+      return null;
+    }
+    try {
+      return JSON.parse(await io.readText(manifestPath)) as InternalManifest;
+    } catch (error) {
+      // A sealed manifest that does not open is not "no history": answering
+      // null would let the next save start v1 over the real one.
+      if (io.sealed) throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[VersioningFileProvider] Failed to load manifest for ${uuid}:`, errorMessage);
+      return null;
+    }
   }
 
   /**
@@ -1838,16 +1871,19 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param location - 'pages' or 'required-pages'
    * @param manifest - Manifest data
    */
-  private saveManifest(uuid: string, location: 'pages' | 'required-pages' | 'private', manifest: InternalManifest): Promise<void> {
-    const versionDir = this.getVersionDirectory(uuid, location);
-    const manifestPath = path.join(versionDir, 'manifest.json');
-
+  private async saveManifest(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    manifest: InternalManifest,
+    target?: VersionTarget
+  ): Promise<void> {
+    const { dir, io } = target ?? await this.versionTarget(uuid, location);
     // #1062: was a hand-rolled temp-then-rename with a FIXED temp name, so two
     // concurrent manifest writes for the same page could stage into the same
-    // file and publish a mixture. `writeFileAtomic` makes the temp name unique
-    // per writer.
-    return fs.ensureDir(versionDir)
-      .then(() => writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2), 'utf8'));
+    // file and publish a mixture. `writeFileAtomic` (behind the I/O) makes the
+    // temp name unique per writer.
+    await fs.ensureDir(dir);
+    await io.writeText(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   }
 
   /**
@@ -1905,8 +1941,10 @@ class VersioningFileProvider extends FileSystemProvider {
     ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<void> {
-    // Check if page exists using public method
-    const pageExists = this.pageExists(pageName);
+    // Check if page exists using public method. #1415: through the caller's
+    // context, so the owner's unlocked sealed page is found in their session
+    // catalog — without it every save of a sealed page looked like a new page.
+    const pageExists = this.pageExists(pageName, ctx);
 
     // Get existing page info if it exists
     let pageInfo: WikiPage | null = null;
@@ -2045,13 +2083,26 @@ class VersioningFileProvider extends FileSystemProvider {
       };
     }
 
+    // #1415: the history goes to the page's own store, named here rather than
+    // looked up — a sealed page is in no global index entry to look it up
+    // from, and the lookup's fallback was `anonymous/default`, in the clear.
+    const versions = await this.versionTarget(
+      uuid,
+      location,
+      ctx,
+      location === 'private' ? newCreator : undefined,
+      store
+    );
+
     try {
-      if (pageInfo) {
-        // Existing page: create new version with diff
-        await this.createNewVersion(uuid, pageName, content, metadata, location, pageInfo);
+      if (pageInfo || versions.io.sealed) {
+        // Existing page: create new version with diff. A sealed page always
+        // comes this way: createNewVersion starts v1 only when there is no
+        // manifest, so a page file that failed to open cannot reset history.
+        await this.createNewVersion(uuid, pageName, content, metadata, location, pageInfo, versions);
       } else {
         // New page: create initial version
-        await this.createInitialVersion(uuid, pageName, content, metadata, location);
+        await this.createInitialVersion(uuid, pageName, content, metadata, location, versions);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -2072,7 +2123,7 @@ class VersioningFileProvider extends FileSystemProvider {
       uuid: uuid,
       slug: metadata.slug ? String(metadata.slug) : undefined,
       filename: `${uuid}.md`,
-      currentVersion: await this.getCurrentVersion(uuid, location),
+      currentVersion: await this.getCurrentVersion(uuid, location, versions),
       location: location,
       creator: creator,
       lastModified: options?.preserveLastModified && metadata.lastModified
@@ -2557,17 +2608,18 @@ class VersioningFileProvider extends FileSystemProvider {
     pageName: string,
     content: string,
     metadata: Partial<PageFrontmatter>,
-    location: 'pages' | 'required-pages' | 'private'
+    location: 'pages' | 'required-pages' | 'private',
+    target?: VersionTarget
   ): Promise<void> {
-    const versionDir = this.getVersionDirectory(uuid, location);
-    const v1Dir = path.join(versionDir, 'v1');
+    const versions = target ?? await this.versionTarget(uuid, location);
+    const v1Dir = path.join(versions.dir, 'v1');
     await fs.ensureDir(v1Dir);
 
     // Write full content for v1
     // #1062: version snapshots are the recovery path the rest of the
     // durability story leans on — a truncated snapshot corrupts the history
     // that #1061 points people at.
-    await writeFileAtomic(path.join(v1Dir, 'content.md'), content, 'utf8');
+    await versions.io.writeText(path.join(v1Dir, 'content.md'), content);
 
     // Create version metadata (stored in manifest.json only - single source of truth)
     const versionMetadata: InternalVersionMetadata = {
@@ -2585,7 +2637,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Create and save manifest
     const manifest = this.createInitialManifest(uuid, pageName);
     this.addVersionToManifest(manifest, versionMetadata);
-    await this.saveManifest(uuid, location, manifest);
+    await this.saveManifest(uuid, location, manifest, versions);
 
     logger.info(`[VersioningFileProvider] Created v1 for page ${pageName} (${uuid})`);
   }
@@ -2605,17 +2657,19 @@ class VersioningFileProvider extends FileSystemProvider {
     newContent: string,
     metadata: Partial<PageFrontmatter>,
     location: 'pages' | 'required-pages' | 'private',
-    _pageInfo: WikiPage
+    _pageInfo: WikiPage | null,
+    target?: VersionTarget
   ): Promise<void> {
+    const versions = target ?? await this.versionTarget(uuid, location);
     // Load manifest
-    const manifest = await this.loadManifest(uuid, location);
+    const manifest = await this.loadManifest(uuid, location, versions);
     if (!manifest) {
       // #1408: a live page with no history (written around versioning, e.g. by
       // a seed before #1405) starts it here: this save is its v1. Going through
       // the version-diff path instead read a v1 that did not exist and logged a
       // false "Failed to read current content" error for every such page.
       logger.info(`[VersioningFileProvider] '${pageName}' (${uuid}) has no version history; this save starts it as v1`);
-      await this.createInitialVersion(uuid, pageName, newContent, metadata, location);
+      await this.createInitialVersion(uuid, pageName, newContent, metadata, location, versions);
       return;
     }
 
@@ -2631,24 +2685,29 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const nextVersion = manifest.currentVersion + 1;
-    const versionDir = this.getVersionDirectory(uuid, location);
+    const versionDir = versions.dir;
     const vNextDir = path.join(versionDir, `v${nextVersion}`);
     await fs.ensureDir(vNextDir);
 
     // Read current content from previous version file (not from pageInfo)
-    // This ensures we're comparing the exact content we saved, not parsed content
+    // This ensures we're comparing the exact content we saved, not parsed content.
+    // #1415: in an encrypted store both sides are opened with the store DEK and
+    // the diff is taken between plaintexts; only the stored diff is sealed.
     let currentContent: string;
     try {
       const currentVersion = manifest.currentVersion;
       if (currentVersion === 1) {
         // Read from v1/content.md
         const v1Path = path.join(versionDir, 'v1', 'content.md');
-        currentContent = await fs.readFile(v1Path, 'utf8');
+        currentContent = await versions.io.readText(v1Path);
       } else {
         // Reconstruct from v1 + diffs
-        currentContent = await this.reconstructVersion(uuid, location, currentVersion);
+        currentContent = await this.reconstructVersion(uuid, location, currentVersion, versions);
       }
     } catch (error) {
+      // A sealed history that does not open must not gain a diff taken
+      // against an empty baseline.
+      if (versions.io.sealed) throw error;
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('[VersioningFileProvider] Failed to read current content:', errorMessage);
       currentContent = '';
@@ -2661,11 +2720,7 @@ class VersioningFileProvider extends FileSystemProvider {
     if (this.deltaStorageEnabled && nextVersion > 1 && !isCheckpoint) {
       // Create and save diff (unless this is a checkpoint)
       const diff = DeltaStorage.createDiff(currentContent, newContent);
-      await writeFileAtomic(
-        path.join(vNextDir, 'content.diff'),
-        JSON.stringify(diff),
-        'utf8'
-      );
+      await versions.io.writeText(path.join(vNextDir, 'content.diff'), JSON.stringify(diff));
 
       versionMetadata = {
         dateCreated: new Date().toISOString(),
@@ -2680,7 +2735,7 @@ class VersioningFileProvider extends FileSystemProvider {
       };
     } else {
       // Store full content (v1, delta storage disabled, or checkpoint)
-      await writeFileAtomic(path.join(vNextDir, 'content.md'), newContent, 'utf8');
+      await versions.io.writeText(path.join(vNextDir, 'content.md'), newContent);
 
       const comment = isCheckpoint
         ? `Checkpoint at version ${nextVersion}`
@@ -2706,7 +2761,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // Update manifest (single source of truth for metadata)
     // Note: No longer writing individual v{N}/meta.json files
     this.addVersionToManifest(manifest, versionMetadata);
-    await this.saveManifest(uuid, location, manifest);
+    await this.saveManifest(uuid, location, manifest, versions);
 
     logger.info(`[VersioningFileProvider] Created v${nextVersion} for page ${pageName} (${uuid})`);
   }
@@ -2717,8 +2772,13 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param location - 'pages' or 'required-pages'
    * @returns Current version number (0 if no versions)
    */
-  private getCurrentVersion(uuid: string, location: 'pages' | 'required-pages' | 'private'): Promise<number> {
-    return this.loadManifest(uuid, location).then(manifest => manifest ? manifest.currentVersion : 0);
+  private async getCurrentVersion(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    target?: VersionTarget
+  ): Promise<number> {
+    const manifest = await this.loadManifest(uuid, location, target);
+    return manifest ? manifest.currentVersion : 0;
   }
 
   /**
@@ -2731,15 +2791,23 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param targetVersion - Version to reconstruct
    * @returns Reconstructed content
    */
-  private async reconstructVersion(uuid: string, location: 'pages' | 'required-pages' | 'private', targetVersion: number): Promise<string> {
+  private async reconstructVersion(
+    uuid: string,
+    location: 'pages' | 'required-pages' | 'private',
+    targetVersion: number,
+    target?: VersionTarget
+  ): Promise<string> {
+    const { dir: versionDir, io } = target ?? await this.versionTarget(uuid, location);
+    // #1415: a sealed page's text is never kept in the process-wide cache —
+    // it would outlive the session that opened it, keyed by page id alone.
+    const cacheable = !io.sealed;
+
     // Check cache first
     const cacheKey = `${uuid}:${targetVersion}`;
-    if (this.versionCache.has(cacheKey)) {
+    if (cacheable && this.versionCache.has(cacheKey)) {
       this.updateCacheAccess(cacheKey);
       return this.versionCache.get(cacheKey) as string;
     }
-
-    const versionDir = this.getVersionDirectory(uuid, location);
 
     // Find nearest checkpoint at or before target version
     let startVersion = 1;
@@ -2759,11 +2827,11 @@ class VersioningFileProvider extends FileSystemProvider {
     if (!await fs.pathExists(startPath)) {
       throw new Error(`Checkpoint v${startVersion} not found: ${startPath}`);
     }
-    let content = await fs.readFile(startPath, 'utf8');
+    let content = await io.readText(startPath);
 
     // If we're at the target version, we're done
     if (targetVersion === startVersion) {
-      this.addToCache(cacheKey, content);
+      if (cacheable) this.addToCache(cacheKey, content);
       return content;
     }
 
@@ -2774,13 +2842,13 @@ class VersioningFileProvider extends FileSystemProvider {
         throw new Error(`Diff file not found for v${v}: ${diffPath}`);
       }
 
-      const diffData = await fs.readFile(diffPath, 'utf8');
+      const diffData = await io.readText(diffPath);
       const diff = JSON.parse(diffData) as DiffTuple[];
       content = DeltaStorage.applyDiff(content, diff);
     }
 
     // Add to cache
-    this.addToCache(cacheKey, content);
+    if (cacheable) this.addToCache(cacheKey, content);
 
     return content;
   }
@@ -2955,9 +3023,10 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const { uuid, location } = resolved;
+    const versions = await this.versionTarget(uuid, location);
 
     // Load manifest
-    const manifest = await this.loadManifest(uuid, location);
+    const manifest = await this.loadManifest(uuid, location, versions);
     if (!manifest) {
       throw new Error(`No version history found for: ${identifier}`);
     }
@@ -2972,20 +3041,20 @@ class VersioningFileProvider extends FileSystemProvider {
       throw new Error(`Version ${version} metadata not found in manifest`);
     }
 
-    const versionDir = this.getVersionDirectory(uuid, location);
+    const versionDir = versions.dir;
 
     // Reconstruct content based on delta storage setting
     let content: string;
     if (this.deltaStorageEnabled) {
       // Use delta reconstruction (works for all versions including v1)
-      content = await this.reconstructVersion(uuid, location, version);
+      content = await this.reconstructVersion(uuid, location, version, versions);
     } else {
       // Delta storage disabled: read full content directly
       const vPath = path.join(versionDir, `v${version}`, 'content.md');
       if (!await fs.pathExists(vPath)) {
         throw new Error(`Version ${version} content file not found: ${vPath}`);
       }
-      content = await fs.readFile(vPath, 'utf8');
+      content = await versions.io.readText(vPath);
     }
 
     // Convert to VersionContent format

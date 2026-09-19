@@ -7,7 +7,13 @@ import {
   privatePageFilePath
 } from '../utils/privateStorePath.js';
 import { userIndexFor } from '../utils/privateStoreUnlock.js';
-import { readStoreMeta, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import {
+  PLAIN_FILE_IO,
+  storeFileIO,
+  storeFileIOForPath,
+  type StoreFileIO
+} from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -219,6 +225,20 @@ class FileSystemProvider extends BasePageProvider {
       path.relative(this.pagesDirectory, filePath).split(path.sep),
       this.privateStoreLayout
     )?.store;
+  }
+
+  /**
+   * How this caller reads and writes `file`: sealed with the store DEK when the
+   * file sits in an encrypted store, refused when that DEK is not in the
+   * caller's context, plain otherwise (#1415).
+   */
+  protected fileIOFor(ctx: ActorContext | undefined, file: string): Promise<StoreFileIO> {
+    if (!this.pagesDirectory) return Promise.resolve(PLAIN_FILE_IO);
+    return storeFileIOForPath(ctx, {
+      pagesDirectory: this.pagesDirectory,
+      file,
+      layout: this.privateStoreLayout
+    });
   }
 
   private isScannablePageFile(filePath: string): boolean {
@@ -467,7 +487,8 @@ class FileSystemProvider extends BasePageProvider {
 
     // Fallback to disk read (for pages added after initialization)
     try {
-      const fullContent = await fs.readFile(info.filePath, this.encoding);
+      const io = await this.fileIOFor(ctx, info.filePath);
+      const fullContent = await io.readText(info.filePath, this.encoding);
       const { content, data: metadata } = parsePageFrontmatter(fullContent);
 
       if (!info.fromSessionCatalog) {
@@ -517,7 +538,8 @@ class FileSystemProvider extends BasePageProvider {
     const info = this.resolvePageInfo(identifier, ctx);
     if (!info) return null;
     try {
-      const content = await fs.readFile(info.filePath, this.encoding);
+      const io = await this.fileIOFor(ctx, info.filePath);
+      const content = await io.readText(info.filePath, this.encoding);
       return { filePath: info.filePath, content };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -547,7 +569,8 @@ class FileSystemProvider extends BasePageProvider {
 
     // Fallback to disk read
     try {
-      const fullContent = await fs.readFile(info.filePath, this.encoding);
+      const io = await this.fileIOFor(ctx, info.filePath);
+      const fullContent = await io.readText(info.filePath, this.encoding);
       const { content } = matter(fullContent);
 
       if (!info.fromSessionCatalog) {
@@ -695,14 +718,21 @@ class FileSystemProvider extends BasePageProvider {
     const pageStore = isPrivate
       ? this.resolvePrivatePageStore(md.store, this.privateStoreOf(oldPageInfo?.filePath))
       : undefined;
-    const sealed = isPrivate && pageCreator && pageStore
-      ? (await readStoreMeta(this.pagesDirectory, pageCreator, pageStore, this.privateStoreLayout)).encrypt === true
-      : false;
-
     // #1384: encrypt-on write uses the session DEK from the process bag.
     if (isPrivate && pageCreator && pageStore) {
       await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, pageCreator, pageStore);
     }
+    // #1415: the page file is written through its store's I/O, so a page in an
+    // encrypted store is ciphertext at rest — frontmatter and body alike.
+    const io = isPrivate && pageCreator && pageStore
+      ? await storeFileIO(ctx, {
+        pagesDirectory: this.pagesDirectory,
+        owner: pageCreator,
+        store: pageStore,
+        layout: this.privateStoreLayout
+      })
+      : PLAIN_FILE_IO;
+    const sealed = io.sealed;
 
     const filePath = this.resolvePageFilePath(
       uuid,
@@ -755,7 +785,7 @@ class FileSystemProvider extends BasePageProvider {
     // #1062: temp-then-rename. Writing over the live path truncates it first,
     // so a kill mid-write left the page neither old nor new. Containers are
     // killed on deploy, OOM and eviction, so this is routine rather than rare.
-    await writeFileAtomic(filePath, fileContent, this.encoding);
+    await io.writeText(filePath, fileContent, this.encoding);
 
     // #1385: sealed titles stay in the session overlay, not the process cache.
     if (sealed) {
