@@ -59,8 +59,16 @@ declare global {
        * was a compile error — it permits any field, so omitting one is always
        * legal. Removing it is what would make a dropped field fail the build;
        * that is a larger change and is not made here.
+       *
+       * __Required, not optional (#1418).__ The session middleware in `app.ts`
+       * writes it on every request before any route is registered — the
+       * signed-in user, the anonymous subject, or (bearer middleware) the
+       * token's subject — and nothing registered ahead of it reads it. Typed
+       * optional, every route had to invent something for the case that
+       * cannot happen, and the thing invented was a default actor (P1). A
+       * handler forwards `req.userContext`; it never supplies one.
        */
-      userContext?: {
+      userContext: {
         /** #1212: the three authorisation fields are required — the session and bearer middleware always write them. */
         username: string;
         email?: string;

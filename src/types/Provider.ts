@@ -237,9 +237,10 @@ export interface PageProvider extends BaseProvider {
   /**
    * Look up a page's UUID by any identifier (UUID, slug, or title).
    * @param identifier - UUID, slug, or title
+   * @param ctx - who is asking (#1418): the owner's unlocked sealed-store pages resolve only through it
    * @returns UUID string or null if not found
    */
-  getPageUUID(identifier: string): string | null;
+  getPageUUID(identifier: string, ctx: ActorContext): string | null;
 
   /**
    * Check if page exists

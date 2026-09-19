@@ -224,7 +224,7 @@ abstract class BasePageProvider extends BaseProvider {
     return null; // no-op default — override in providers with in-memory caches
   }
 
-  getPageUUID(_identifier: string): string | null {
+  getPageUUID(_identifier: string, _ctx: ActorContext): string | null {
     return null; // no-op default — override in providers with in-memory page caches
   }
 

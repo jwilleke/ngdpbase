@@ -26,7 +26,7 @@ import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
@@ -303,15 +303,17 @@ interface IVersioningProvider {
 }
 
 interface IPageManager {
-  getPage(name: string): Promise<WikiPage | null>;
-  getPageContent(name: string): Promise<string>;
+  // #1418: every page read takes the caller's context, as PageManager does.
+  // Without it the owner's unlocked sealed-store pages (#1385) are never found.
+  getPage(name: string, ctx: ActorContext): Promise<WikiPage | null>;
+  getPageContent(name: string, ctx: ActorContext): Promise<string>;
   getAllPages(): Promise<string[]>;
   /** The pages `subject` may `action` on — the door for anything listed to a reader (#1219). */
   listPagesFor(subject: unknown, action?: string): Promise<string[]>;
   getAllPageNames(): Promise<string[]>;
   getPageNames?(): Promise<string[]>;
-  getPageMetadata(name: string): Promise<PageFrontmatter | null>;
-  pageExists(name: string): boolean;
+  getPageMetadata(name: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
+  pageExists(name: string, ctx: ActorContext): boolean;
   savePage(name: string, content: string, metadata: Partial<PageFrontmatter> | undefined, ctx: ActorContext, options?: unknown): Promise<void>;
   // #1121: the options argument is NOT `unknown` on purpose. This local
   // interface is a claim about code this file does not own, and a claim loose
@@ -337,7 +339,7 @@ interface IPageManager {
   declinedShippedPages(): Promise<Record<string, Record<string, { at: string; by: string; reason: string }>>>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   getCurrentPageProvider(): IVersioningProvider | null;
-  getPageUUID?(identifier: string): string | null;
+  getPageUUID?(identifier: string, ctx: ActorContext): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
   provider?: IVersioningProvider | null;
   refreshPageList(): Promise<void>;
@@ -347,7 +349,7 @@ interface IPageManager {
    * and the rendering handler cache. Needed by any path that writes page files
    * without going through savePage (#1040).
    */
-  invalidatePageCache(identifier: string): void;
+  invalidatePageCache(identifier: string, ctx: ActorContext): void;
   validateAndFixAllFiles(options?: unknown): Promise<IValidationReport>;
 }
 
@@ -1628,79 +1630,6 @@ class WikiRoutes {
   }
 
   /**
-   * Extract categories from System Categories page
-   */
-  async getCategories() {
-    try {
-      const pageManager = this.engine.getManager('PageManager');
-      const categoriesPage = await pageManager.getPage('System Categories');
-
-      if (!categoriesPage) {
-        return ['General', 'Documentation', 'Project', 'Reference'];
-      }
-
-      // Extract categories from the content (lines that start with *)
-      const categories = [];
-      const lines = categoriesPage.content.split('\n');
-
-      for (const line of lines) {
-        const match = line.match(/^\* (.+?) \(/);
-        if (match) {
-          const category = match[1];
-          // Exclude admin-only categories from regular user dropdown
-          if (category !== 'System/Admin') {
-            categories.push(category);
-          }
-        }
-      }
-
-      return categories.length > 0
-        ? categories
-        : ['General', 'Documentation', 'Project', 'Reference'];
-    } catch (err: unknown) {
-      logger.error('Error loading categories:', err);
-      return ['General', 'Documentation', 'Project', 'Reference'];
-    }
-  }
-
-  /**
-   * Get all categories including admin-only categories
-   */
-  async getAllCategories() {
-    try {
-      const pageManager = this.engine.getManager('PageManager');
-      const categoriesPage = await pageManager.getPage('System Categories');
-
-      if (!categoriesPage) {
-        return ['General', 'Documentation', 'System/Admin'];
-      }
-
-      // Extract all categories from the content (lines that start with *)
-      const categories = [];
-      const lines = categoriesPage.content.split('\n');
-
-      for (const line of lines) {
-        const match = line.match(/^\* (.+?) \(/);
-        if (match) {
-          categories.push(match[1]);
-        }
-      }
-
-      // Ensure System/Admin category is always available
-      if (!categories.includes('System/Admin')) {
-        categories.push('System/Admin');
-      }
-
-      return categories.length > 0
-        ? categories
-        : ['General', 'Documentation', 'System/Admin'];
-    } catch (err: unknown) {
-      logger.error('Error loading all categories:', err);
-      return ['General', 'Documentation', 'System/Admin'];
-    }
-  }
-
-  /**
    * Build complete default metadata for a new or existing page.
    * Single source of truth — delegates to ValidationManager.generateValidMetadata().
    */
@@ -1976,14 +1905,17 @@ class WikiRoutes {
    * selected). Best-effort — returns [] on any failure or missing manager.
    */
   private async getSuggestedKeywordSetsForUser(
-    username: string | undefined,
+    ctx: ActorContext,
     currentKeywords: string[],
     excludeTitle?: string
   ): Promise<KeywordSetSuggestion[]> {
+    // #1418: the caller's context, not a name lifted from template data — the
+    // pages it reads are this caller's, and the reads carry who is asking.
+    const username = actorOf(ctx).user;
     if (!username) return [];
     const pm = this.engine.getManager('PageManager') as {
       getPagesByCreator?: (u: string, o?: { limit?: number; sortBy?: string }) => Promise<Array<{ title: string; lastModified: string }>>;
-      getPageMetadata?: (id: string) => Promise<Record<string, unknown> | null>;
+      getPageMetadata?: (id: string, ctx: ActorContext) => Promise<Record<string, unknown> | null>;
     } | undefined;
     if (!pm?.getPagesByCreator || !pm?.getPageMetadata) return [];
     try {
@@ -1991,7 +1923,7 @@ class WikiRoutes {
       const pages: RecentPageKeywords[] = [];
       for (const entry of recent) {
         if (excludeTitle && entry.title === excludeTitle) continue;
-        const meta = await pm.getPageMetadata(entry.title);
+        const meta = await pm.getPageMetadata(entry.title, ctx);
         const raw = meta?.['user-keywords'];
         const kws = Array.isArray(raw)
           ? raw.filter((k): k is string => typeof k === 'string' && k.length > 0 && k !== 'private')
@@ -2094,87 +2026,6 @@ class WikiRoutes {
       return Array.isArray(ys) ? ys : [];
     } catch {
       return [];
-    }
-  }
-
-  /**
-   * Extract user keywords from User-Keywords page
-   */
-  async getUserKeywords() {
-    try {
-      // #894 (Slice 2 of #869): the user-keywords vocabulary lives behind
-      // CatalogManager's provider registry. Resolve through it first; the
-      // config-direct read below survives only as a fallback for engines
-      // without CatalogManager (e.g. minimal test setups).
-      const catalogTerms = await this.getUserKeywordCatalogTerms();
-      if (catalogTerms && catalogTerms.length > 0) {
-        return catalogTerms
-          .map(t => t.label)
-          .sort((a, b) => a.localeCompare(b));
-      }
-
-      const configManager = this.engine.getManager('ConfigurationManager');
-
-      // Fallback: read user keywords straight from configuration
-      if (configManager) {
-        const userKeywordsConfig = configManager.getProperty('ngdpbase.user-keywords', null);
-
-        if (userKeywordsConfig && typeof userKeywordsConfig === 'object') {
-          const keywords: string[] = [];
-
-          // Extract all enabled keyword labels from configuration
-          for (const config of Object.values(userKeywordsConfig)) {
-            const cfg = config as { enabled?: boolean; label?: string };
-            if (cfg.enabled !== false && cfg.label) {
-              keywords.push(cfg.label);
-            }
-          }
-
-          if (keywords.length > 0) {
-            logger.info(`Loaded ${keywords.length} user keywords from configuration`);
-            return keywords.sort((a, b) => a.localeCompare(b));
-          }
-        }
-      }
-
-      // Fallback: read from User Keywords page (legacy method)
-      logger.info('Falling back to reading user keywords from page');
-      const pageManager = this.engine.getManager('PageManager');
-      const keywordsPage = await pageManager.getPage('User Keywords');
-
-      if (!keywordsPage) {
-        return ['geology', 'medicine', 'test'];
-      }
-
-      // Extract keywords only from the bullet list under '## Current User Keywords'
-      const keywords: string[] = [];
-      const lines = keywordsPage.content.split('\n');
-      let inKeywordsSection = false;
-      for (const line of lines) {
-        if (line.trim().startsWith('## ')) {
-          // Enter keywords section
-          inKeywordsSection = line
-            .trim()
-            .toLowerCase()
-            .includes('current user keywords');
-          continue;
-        }
-        if (inKeywordsSection) {
-          // Stop if we hit another heading
-          if (line.trim().startsWith('## ')) break;
-          const bulletMatch = line.match(/^\s*-\s*(.+)$/);
-          if (bulletMatch) {
-            const keyword = bulletMatch[1].trim();
-            if (keyword && !keywords.includes(keyword)) {
-              keywords.push(keyword);
-            }
-          }
-        }
-      }
-      return keywords.length > 0 ? keywords.sort((a, b) => a.localeCompare(b)) : ['geology', 'medicine', 'test'];
-    } catch (err: unknown) {
-      logger.error('Error loading user keywords:', err);
-      return ['geology', 'medicine', 'test'];
     }
   }
 
@@ -2451,7 +2302,7 @@ class WikiRoutes {
           const slug = decodeURIComponent(entry.loc.slice(entry.loc.lastIndexOf('/view/') + 6));
           let meta: RestrictableMetadata | null = null;
           try {
-            meta = await pageManager?.getPageMetadata?.(slug) ?? null;
+            meta = await pageManager?.getPageMetadata?.(slug, req.userContext) ?? null;
           } catch {
             meta = null;
           }
@@ -2568,11 +2419,11 @@ class WikiRoutes {
     return true;
   }
 
-  private async _isPagePrivate(pageName: string): Promise<boolean> {
+  private async _isPagePrivate(pageName: string, ctx: ActorContext): Promise<boolean> {
     try {
       const pageManager = this.engine.getManager('PageManager');
       if (!pageManager) return false;
-      const meta = await pageManager.getPageMetadata(pageName);
+      const meta = await pageManager.getPageMetadata(pageName, ctx);
       if (!meta?.uuid) return false;
       const provider = pageManager.getCurrentPageProvider?.() ?? (pageManager).provider;
       const pageIndex = provider?.pageIndex as { pages: Record<string, { location?: string }> } | null;
@@ -2662,11 +2513,11 @@ ${panes}
 </div>${persistScript}`;
   }
 
-  async isRequiredPage(pageName: string): Promise<boolean> {
+  async isRequiredPage(pageName: string, ctx: ActorContext): Promise<boolean> {
     // Check if page has a protected system-category
     try {
       const pageManager = this.engine.getManager('PageManager');
-      const metadata = await pageManager.getPageMetadata(pageName);
+      const metadata = await pageManager.getPageMetadata(pageName, ctx);
       if (metadata) {
         const systemCategory = (metadata['system-category'] || '').toLowerCase();
         const category = (metadata.category || '').toLowerCase();
@@ -2689,13 +2540,13 @@ ${panes}
   /**
    * Get and format left menu content from LeftMenu page
    */
-  async getLeftMenu(userContext: UserContext | null = null) {
+  async getLeftMenu(userContext: Request['userContext']) {
     try {
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
 
       // Try to get LeftMenu page
-      const leftMenuPage = await pageManager.getPage('LeftMenu');
+      const leftMenuPage = await pageManager.getPage('LeftMenu', userContext);
       if (!leftMenuPage) {
         return null; // Return null to use fallback
       }
@@ -2800,7 +2651,7 @@ ${panes}
 
       // Gracefully handle page not found
       const markdown = await pageManager
-        .getPageContent(pageName)
+        .getPageContent(pageName, req.userContext)
         .catch((err: unknown) => {
           if (getErrorMessage(err).includes('not found')) return null;
           throw err;
@@ -2844,7 +2695,7 @@ ${panes}
       // Load page metadata before ACL checks so Tier 0 / Tier 1.5 have full
       // context. Shared with the export routes (#1060) so the two paths to a
       // page's content cannot present the evaluator with different facts.
-      const metadata = await this.loadPageMetadataForAcl(pageName);
+      const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
       (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
 
       // Update WikiContext with page content for ACL checking
@@ -2923,7 +2774,7 @@ ${panes}
           const noTabsList = (configManager?.getProperty('ngdpbase.page.notabs', []) as string[]);
           if (!noTabsList.includes(pageName)) {
             const tabTemplateName = (configManager?.getProperty('ngdpbase.tab.pagetabs.template', 'Template:PageTabs'));
-            const tabTemplateContent = await pageManager.getPageContent(tabTemplateName).catch(() => null);
+            const tabTemplateContent = await pageManager.getPageContent(tabTemplateName, req.userContext).catch(() => null);
             if (tabTemplateContent) {
               tabSectionHtml = await this.buildPageTabsHtml(tabTemplateContent, wikiContext, renderingManager, configManager);
             }
@@ -3084,7 +2935,7 @@ ${panes}
       // dead markup that invites the reader to think it can be shared.
       const _seoEnabled = this.engine.getManager('ConfigurationManager')
         ?.getProperty?.('ngdpbase.seo.enabled', false) === true;
-      const _pageIsPrivate = await this._isPagePrivate(pageName);
+      const _pageIsPrivate = await this._isPagePrivate(pageName, req.userContext);
       const socialMeta = (_seoEnabled && !_pageIsPrivate)
         ? buildSocialMeta({
           pageName,
@@ -3255,7 +3106,7 @@ ${panes}
         userKeywordSuggestions: await this.getObservedUserKeywords(),
         // #883: recency-weighted keyword sets from this author's recent pages.
         keywordSetSuggestions: await this.getSuggestedKeywordSetsForUser(
-          (commonData as { user?: { username?: string } }).user?.username,
+          req.userContext,
           [], // brand-new page — nothing selected yet
           pageName
         ),
@@ -3405,7 +3256,7 @@ ${panes}
       }
 
       // Check if page already exists
-      const existingPage = await pageManager.getPage(pageName);
+      const existingPage = await pageManager.getPage(pageName, req.userContext);
       if (existingPage) {
         logger.debug(
           `DEBUG: createPageFromTemplate - Page ${pageName} already exists, rendering error template`
@@ -3504,10 +3355,10 @@ ${panes}
       const cacheManager = this.engine.getManager('CacheManager');
       if (cacheManager?.isInitialized?.()) {
         const referringPages = renderingManager.getReferringPages(pageName);
-        const _uuid1 = pageManager?.getPageUUID?.(pageName) ?? pageName;
+        const _uuid1 = pageManager?.getPageUUID?.(pageName, req.userContext) ?? pageName;
         await cacheManager.clear(undefined, `rendered-pages:${_uuid1}:*`);
         for (const refPage of referringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
           await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
         }
         logger.debug(`🗑️  Cleared rendered cache for ${pageName} and ${referringPages.length} referring pages`);
@@ -3557,7 +3408,7 @@ ${panes}
       if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'page-edit');
 
       // Get page data to check ACL (if page exists)
-      let pageData = await pageManager.getPage(pageName);
+      let pageData = await pageManager.getPage(pageName, req.userContext);
 
       // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
       // call that previously sat here. Tier 0 inside the
@@ -3567,7 +3418,7 @@ ${panes}
       // here was a leftover from before #711 unified Tier 0.
 
       // Check if this is a required page that needs admin access
-      if (await this.isRequiredPage(pageName)) {
+      if (await this.isRequiredPage(pageName, req.userContext)) {
         if (
           !currentUser ||
           !(await userManager.hasPermission(
@@ -3719,7 +3570,7 @@ ${panes}
         logger.warn('Could not load attachments for edit page:', err);
       }
 
-      const pageIsRequired = await this.isRequiredPage(pageName);
+      const pageIsRequired = await this.isRequiredPage(pageName, req.userContext);
 
       // #797 — addon-claimed extension slot HTML for the editor's
       // `extraFrontmatterFields` slot (defined in `_basicEditor.ejs`, #794).
@@ -3736,7 +3587,7 @@ ${panes}
         pageName: pageName,
         content: pageData.content,
         metadata: pageData.metadata,
-        pageIsPrivate: await this._isPagePrivate(pageName),
+        pageIsPrivate: await this._isPagePrivate(pageName, req.userContext),
         systemCategories: systemCategories,
         selectedCategories: selectedCategories,
         userKeywords: userKeywords,
@@ -3747,7 +3598,7 @@ ${panes}
         // #883: recency-weighted keyword sets from this author's recent pages,
         // excluding keywords already on this page and this page itself.
         keywordSetSuggestions: await this.getSuggestedKeywordSetsForUser(
-          (commonData as { user?: { username?: string } }).user?.username,
+          req.userContext,
           Array.isArray(selectedUserKeywords) ? selectedUserKeywords : [],
           pageName
         ),
@@ -3842,7 +3693,7 @@ ${panes}
         const sectionIdx = parseInt(String(sectionBodyParam), 10);
         if (!isNaN(sectionIdx) && sectionIdx >= 0) {
           const pageManager0 = this.engine.getManager('PageManager');
-          const fullPage = await pageManager0.getPage(pageName);
+          const fullPage = await pageManager0.getPage(pageName, req.userContext);
           if (fullPage?.content) {
             const aclManager0 = this.engine.getManager('ACLManager');
             const fullClean = aclManager0.removeACLMarkup(fullPage.content);
@@ -3868,7 +3719,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
 
       // Get existing page data for ACL checking
-      const existingPage = await pageManager.getPage(pageName);
+      const existingPage = await pageManager.getPage(pageName, req.userContext);
 
       // Accept system-category as required field (new metadata format)
       const systemCategory = req.body['system-category'] || '';
@@ -4084,7 +3935,7 @@ ${panes}
 
       // Prevent required-pages from being marked private (they live in GitHub).
       // #639: also check the new top-level field; either signal counts.
-      const isCurrentlyRequired = await this.isRequiredPage(pageName);
+      const isCurrentlyRequired = await this.isRequiredPage(pageName, req.userContext);
       if (isCurrentlyRequired && (privateFlag || userKeywordsArray.includes('private'))) {
         return res.status(400).send('Required pages cannot be marked as private');
       }
@@ -4261,15 +4112,15 @@ ${panes}
       if (cacheManager?.isInitialized?.()) {
         const referringPages = renderingManager.getReferringPages(finalTitle);
         // UUID is stable across renames — one clear covers both old and new title
-        const _uuid3 = pageManager?.getPageUUID?.(finalTitle) ?? finalTitle;
+        const _uuid3 = pageManager?.getPageUUID?.(finalTitle, req.userContext) ?? finalTitle;
         await cacheManager.clear(undefined, `rendered-pages:${_uuid3}:*`);
         for (const refPage of referringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
           await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
         }
         if (isRename) {
           for (const refPage of oldReferringPages) {
-            const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+            const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
             await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
           }
           logger.debug(`🗑️  Cleared rendered cache for old title '${pageName}' and ${oldReferringPages.length} referring pages`);
@@ -4599,7 +4450,7 @@ ${panes}
     }
 
     const pageManager = this.engine.getManager('PageManager');
-    const pageData = await pageManager?.getPage(identifier);
+    const pageData = await pageManager?.getPage(identifier, req.userContext);
     if (!pageData) {
       res.status(404).json({ error: 'Page not found', identifier });
       return null;
@@ -4618,7 +4469,7 @@ ${panes}
     (wikiContext as { content: string | null }).content = pageData.content;
 
     // Required pages stay admin-only, matching the form route.
-    if (await this.isRequiredPage(pageName)) {
+    if (await this.isRequiredPage(pageName, req.userContext)) {
       const isAdmin = await wikiContext.hasPermission('admin-system');
       if (!isAdmin) {
         res.status(403).json({ error: 'Access denied', message: 'Only administrators can modify this page' });
@@ -4674,10 +4525,10 @@ ${panes}
         return res.status(500).json({ error: 'Delete failed', pageName });
       }
 
-      await this.reconcileIndexesAfterDelete(pageName, uuid, referringPages);
+      await this.reconcileIndexesAfterDelete(pageName, uuid, referringPages, req.userContext);
       this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
 
-      logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext!.username}`);
+      logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext.username}`);
       return res.json({ success: true, pageName, uuid, recoverable: true });
     } catch (error: unknown) {
       logger.error(`API delete failed: ${getErrorMessage(error)}`);
@@ -4708,7 +4559,7 @@ ${panes}
       }
 
       const pageManager = this.engine.getManager('PageManager');
-      const pageData = await pageManager?.getPage(identifier);
+      const pageData = await pageManager?.getPage(identifier, req.userContext);
       if (!pageData) {
         return res.status(404).json({ error: 'Page not found', identifier });
       }
@@ -4771,7 +4622,7 @@ ${panes}
 
       // Refuse rather than overwrite. Saving onto an existing title would merge
       // two pages into one and lose the target's content silently.
-      const existing = await pageManager?.getPage(newTitle);
+      const existing = await pageManager?.getPage(newTitle, req.userContext);
       if (existing) {
         return res.status(409).json({
           error: 'Title already in use',
@@ -4811,15 +4662,15 @@ ${panes}
       const cacheManager = this.engine.getManager('CacheManager');
       if (cacheManager?.isInitialized?.()) {
         // The uuid is stable across a rename, so one clear covers both titles.
-        const uuid = pageManager?.getPageUUID?.(newTitle) ?? newTitle;
+        const uuid = pageManager?.getPageUUID?.(newTitle, req.userContext) ?? newTitle;
         await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
         for (const refPage of oldReferringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
           await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
         }
       }
 
-      logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext!.username}`);
+      logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
       return res.json({ success: true, from: pageName, to: newTitle });
     } catch (error: unknown) {
       logger.error(`API rename failed: ${getErrorMessage(error)}`);
@@ -4963,7 +4814,7 @@ ${panes}
     if (!pageManager) return 'missing';
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const page = await pageManager.getPage(refPage);
+      const page = await pageManager.getPage(refPage, req.userContext);
       if (!page) return 'missing';
 
       const baseToken = versionTokenOf(page.metadata);
@@ -4972,7 +4823,7 @@ ${panes}
 
       // Re-read as late as possible. This is the same window the editor's
       // stale-base check lives in (#1061) — narrow, not closed.
-      const fresh = await pageManager.getPage(refPage);
+      const fresh = await pageManager.getPage(refPage, req.userContext);
       if (!fresh) return 'missing';
       if (isStaleSave(baseToken, versionTokenOf(fresh.metadata))) continue;
 
@@ -5050,7 +4901,8 @@ ${panes}
   private async reconcileIndexesAfterDelete(
     pageName: string,
     uuid: string,
-    referringPages: string[]
+    referringPages: string[],
+    ctx: ActorContext
   ): Promise<void> {
     logger.debug('🔄 Updating indexes after deletion...');
     const pageManager = this.engine.getManager('PageManager');
@@ -5062,7 +4914,7 @@ ${panes}
     if (cacheManager?.isInitialized?.()) {
       await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
       for (const refPage of referringPages) {
-        const refUUID = pageManager?.getPageUUID?.(refPage) ?? refPage;
+        const refUUID = pageManager?.getPageUUID?.(refPage, ctx) ?? refPage;
         await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
       }
     }
@@ -5286,7 +5138,7 @@ ${panes}
       const aclManager = this.engine.getManager('ACLManager');
 
       // Check if page exists
-      const pageData = await pageManager.getPage(pageName);
+      const pageData = await pageManager.getPage(pageName, req.userContext);
       if (!pageData) {
         logger.debug(`❌ Page not found: ${pageName}`);
         return res.status(404).send('Page not found');
@@ -5299,7 +5151,7 @@ ${panes}
       // `PageManager.checkPrivatePageAccess` per #711).
 
       // Check if this is a required page that needs admin access
-      if (await this.isRequiredPage(pageName)) {
+      if (await this.isRequiredPage(pageName, req.userContext)) {
         if (
           !currentUser ||
           !(await userManager.hasPermission(
@@ -5361,7 +5213,7 @@ ${panes}
       logger.debug(`🗑️ Delete result: ${deleteResult}`);
 
       if (deleteResult) {
-        await this.reconcileIndexesAfterDelete(pageName, _deleteUUID, _deleteRefPages);
+        await this.reconcileIndexesAfterDelete(pageName, _deleteUUID, _deleteRefPages, req.userContext);
 
         logger.debug(`✅ Page deleted successfully: ${pageName}`);
         this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
@@ -5412,7 +5264,7 @@ ${panes}
 
       const pageManager      = this.engine.getManager('PageManager') as {
         listPagesFor(subject: unknown, action?: string): Promise<string[]>;
-        getPage(name: string): Promise<{ title?: string; content?: string; rawContent?: string } | null>;
+        getPage(name: string, ctx: ActorContext): Promise<{ title?: string; content?: string; rawContent?: string } | null>;
       };
       const renderingManager = this.engine.getManager('RenderingManager') as {
         textToHTML(ctx: unknown, markdown: string): Promise<string>;
@@ -5442,7 +5294,7 @@ ${panes}
       for (const name of names) {
         const { allowed } = await this.checkPageReadAccess(req, name);
         if (!allowed) continue;
-        const page = await pageManager.getPage(name);
+        const page = await pageManager.getPage(name, req.userContext);
         if (!page) continue;
         const raw = String(page.rawContent ?? page.content ?? '');
         const wikiCtx = this.createWikiContext(req, { pageName: name });
@@ -5802,7 +5654,7 @@ ${panes}
         return 'filename contains a quote character — add the attachment link to the page manually';
       }
       const pageManager = this.engine.getManager('PageManager');
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, req.userContext);
       if (!page) {
         return `page "${pageName}" not found — attachment stored but not linked`;
       }
@@ -5825,7 +5677,7 @@ ${panes}
       metadata.editor = permContext.userContext?.username || 'unknown';
       await pageManager.savePageWithContext(wikiContext, metadata);
 
-      await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
+      await this.syncAfterProgrammaticSave(pageName, newContent, metadata, req.userContext);
       return undefined;
     } catch (err) {
       logger.error(`Error attaching upload to page "${pageName}":`, err);
@@ -5841,7 +5693,8 @@ ${panes}
   private async syncAfterProgrammaticSave(
     pageName: string,
     content: string,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
+    ctx: ActorContext
   ): Promise<void> {
     const pageManager = this.engine.getManager('PageManager');
     const attachmentManager = this.engine.getManager('AttachmentManager');
@@ -5859,7 +5712,7 @@ ${panes}
     });
     const cacheManager = this.engine.getManager('CacheManager');
     if (cacheManager?.isInitialized?.()) {
-      const uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
+      const uuid = pageManager?.getPageUUID?.(pageName, ctx) ?? pageName;
       await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
     }
   }
@@ -5988,7 +5841,7 @@ ${panes}
       const entry = lines.join('\n');
 
       const pageManager = this.engine.getManager('PageManager');
-      const existing = await pageManager.getPage(pageName);
+      const existing = await pageManager.getPage(pageName, req.userContext);
       const permission = existing ? 'page-edit' : 'page-create';
       if (!(await wikiContext0.hasPermission(permission))) {
         return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
@@ -6028,7 +5881,7 @@ ${panes}
         response: res
       });
       await pageManager.savePageWithContext(wikiContext, metadata);
-      await this.syncAfterProgrammaticSave(pageName, newContent, metadata);
+      await this.syncAfterProgrammaticSave(pageName, newContent, metadata, req.userContext);
 
       return res.render('capture', {
         pageName, url, pageTitle: title, text: '',
@@ -6327,9 +6180,9 @@ ${panes}
    * Keyword fields are coerced to arrays because JSPWiki imports may store
    * them as space-separated scalars (`user-keywords: foo bar baz`).
    */
-  private async loadPageMetadataForAcl(pageName: string): Promise<PageFrontmatter | null> {
+  private async loadPageMetadataForAcl(pageName: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
     const pageManager = this.engine.getManager('PageManager');
-    const metadata = await pageManager.getPageMetadata(pageName);
+    const metadata = await pageManager.getPageMetadata(pageName, ctx);
     if (metadata) {
       if (!Array.isArray(metadata['user-keywords'])) {
         metadata['user-keywords'] = metadata['user-keywords']
@@ -6362,7 +6215,7 @@ ${panes}
       context: WikiContext.CONTEXT.VIEW,
       pageName
     });
-    const metadata = await this.loadPageMetadataForAcl(pageName);
+    const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
     (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
 
     const aclManager = this.engine.getManager('ACLManager');
@@ -8442,10 +8295,10 @@ ${panes}
         const pageManager = this.engine.getManager('PageManager');
         if (pageManager) {
           try {
-            if (pageManager.pageExists(newPageName)) {
+            if (pageManager.pageExists(newPageName, req.userContext)) {
               return res.redirect('/profile?error=Cannot rename: a page named "' + newPageName + '" already exists&success=Profile updated successfully');
             }
-            const page = await pageManager.getPage(oldPageName);
+            const page = await pageManager.getPage(oldPageName, req.userContext);
             if (page) {
               const content = page.content;
               const oldMeta = (page.metadata ?? {}) as Record<string, unknown>;
@@ -9037,7 +8890,7 @@ ${panes}
       }
 
       const pageManager = this.engine.getManager('PageManager');
-      const existing = await pageManager.getPage(pageName);
+      const existing = await pageManager.getPage(pageName, req.userContext);
       const action = existing ? 'updated' : 'created';
 
       // Permission: create vs edit, mirroring createPageFromTemplate / savePage.
@@ -9148,7 +9001,7 @@ ${panes}
       await pageManager.savePageWithContext(wikiContext, finalDoc.data);
 
       // Incremental, in-band index update (mirrors createPageFromTemplate).
-      const saved = await pageManager.getPage(pageName);
+      const saved = await pageManager.getPage(pageName, req.userContext);
       if (!saved) {
         logger.error(`Ingest: page "${pageName}" not retrievable immediately after save`);
         return res.status(500).json({ success: false, error: 'Page saved but could not be reloaded' });
@@ -9165,7 +9018,7 @@ ${panes}
 
       const cacheManager = this.engine.getManager('CacheManager');
       if (cacheManager?.isInitialized?.()) {
-        const _uuid = pageManager?.getPageUUID?.(pageName) ?? pageName;
+        const _uuid = pageManager?.getPageUUID?.(pageName, req.userContext) ?? pageName;
         await cacheManager.clear(undefined, `rendered-pages:${_uuid}:*`);
       }
 
@@ -9451,8 +9304,8 @@ ${panes}
       const requiredPages: Array<{ name: string; userModified: boolean }> = [];
 
       for (const pageName of allPageNames) {
-        if (await this.isRequiredPage(pageName)) {
-          const page = await pageManager.getPage(pageName);
+        if (await this.isRequiredPage(pageName, req.userContext)) {
+          const page = await pageManager.getPage(pageName, req.userContext);
           requiredPages.push({
             name: pageName,
             userModified: page?.metadata?.['user-modified'] === true
@@ -11131,7 +10984,7 @@ ${panes}
 
       const debugInfo = variableManager.getDebugInfo();
       const commonData = await this.getCommonTemplateData(req);
-      const leftMenuContent = await this.getLeftMenu();
+      const leftMenuContent = await this.getLeftMenu(req.userContext);
 
       const templateData = {
         ...commonData,
@@ -11831,7 +11684,7 @@ ${panes}
   private async findRequiredCategoryPagesNotInSource(
     configManager: { getProperty: (key: string, def: unknown) => unknown },
     sourceUuids: string[],
-    reader: unknown
+    reader: ActorContext
   ): Promise<Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }>> {
     const categories = (configManager.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; storageLocation?: string }>;
     const requiredCategories = new Set(
@@ -11845,7 +11698,7 @@ ${panes}
     // Through the listing door (#1219): an admin surface still has a reader,
     // and it lists only pages that reader may view.
     for (const title of await pageManager.listPagesFor(reader, 'view')) {
-      const md = (await pageManager.getPageMetadata(title)) as Record<string, unknown> | null;
+      const md = (await pageManager.getPageMetadata(title, reader)) as Record<string, unknown> | null;
       if (!md || md.private === true || md.addon) continue;
       const category = typeof md['system-category'] === 'string' ? md['system-category'].toLowerCase() : '';
       if (!requiredCategories.has(category)) continue;
@@ -12011,7 +11864,7 @@ ${panes}
           // (a soft delete — recoverable from the trash — audited like any
           // delete). It carries the same title, so saving the canonical page
           // first would be refused as a duplicate title.
-          if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid)) {
+          if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid, req.userContext)) {
             const oldContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName: liveUuid });
             await this.auditPageDelete(req, oldContext, liveUuid, liveUuid);
             await syncPageManager.deletePageWithContext(oldContext);
@@ -12174,7 +12027,7 @@ ${panes}
       for (const { liveUuid } of reconcileItems) touched.add(liveUuid);
       for (const identifier of touched) {
         try {
-          pageManager.invalidatePageCache(identifier);
+          pageManager.invalidatePageCache(identifier, req.userContext);
         } catch (err: unknown) {
           // Best-effort: a page that cannot be evicted must not fail the sync
           // that already wrote it to disk.
@@ -12304,8 +12157,8 @@ ${panes}
 
     if (a && b) {
       // Compare two live pages by UUID or slug
-      const pageA = await pageManager.getPage(a);
-      const pageB = await pageManager.getPage(b);
+      const pageA = await pageManager.getPage(a, req.userContext);
+      const pageB = await pageManager.getPage(b, req.userContext);
 
       if (!pageA || !pageB) return null;
 
@@ -13962,7 +13815,7 @@ ${panes}
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager');
 
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, req.userContext);
       if (!page) {
         return res.status(404).send('Page not found');
       }
@@ -15206,7 +15059,7 @@ ${panes}
       // Also evict from the rendered-pages CacheManager region if available
       const cacheManager = this.engine.getManager('CacheManager');
       if (cacheManager?.isInitialized?.()) {
-        const resolvedUUID = pageManager?.getPageUUID?.(identifier) ?? identifier;
+        const resolvedUUID = pageManager?.getPageUUID?.(identifier, req.userContext) ?? identifier;
         try { await cacheManager.clear(undefined, `rendered-pages:${resolvedUUID}:*`); } catch { /* non-fatal */ }
       }
 
@@ -15611,7 +15464,7 @@ ${panes}
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager');
 
-      const page = await pageManager.getPage(pageName);
+      const page = await pageManager.getPage(pageName, req.userContext);
       if (!page) {
         return res.status(404).json({ error: 'Page not found' });
       }
@@ -15848,7 +15701,7 @@ ${panes}
       const matchingPages = await Promise.all(
         matchingNames.map(async (pageName: string) => {
           try {
-            const metadata = await pageManager.getPageMetadata(pageName);
+            const metadata = await pageManager.getPageMetadata(pageName, req.userContext);
             return {
               name: pageName,
               slug: metadata?.slug || pageName,
@@ -16302,7 +16155,7 @@ ${panes}
       // pulled it out of the search index and the link graph; without this the
       // page is readable but unfindable until the next full rebuild.
       const pageManager = this.engine.getManager('PageManager');
-      const restored = await pageManager?.getPage(result.title);
+      const restored = await pageManager?.getPage(result.title, req.userContext);
       if (restored) {
         await this.engine.getManager('SearchManager')?.updatePageInIndex(result.title, {
           name: result.title,
@@ -16312,7 +16165,7 @@ ${panes}
         this.engine.getManager('RenderingManager')?.updatePageInLinkGraph?.(result.title, restored.content);
       }
 
-      logger.info(`[WikiRoutes] User ${req.userContext!.username} restored deleted page ${uuid} ('${result.title}')`);
+      logger.info(`[WikiRoutes] User ${req.userContext.username} restored deleted page ${uuid} ('${result.title}')`);
       return res.json({ success: true, uuid, title: result.title });
     } catch (error: unknown) {
       logger.error(`Error restoring deleted page: ${getErrorMessage(error)}`);
@@ -16338,7 +16191,7 @@ ${panes}
         return res.status(404).json({ success: false, error: 'not-found' });
       }
 
-      logger.warn(`[WikiRoutes] User ${req.userContext!.username} PERMANENTLY purged page ${uuid}`);
+      logger.warn(`[WikiRoutes] User ${req.userContext.username} PERMANENTLY purged page ${uuid}`);
       return res.json({ success: true, uuid });
     } catch (error: unknown) {
       logger.error(`Error purging deleted page: ${getErrorMessage(error)}`);
@@ -16376,7 +16229,7 @@ ${panes}
       }
 
       // Check if page exists
-      if (!pageManager.pageExists(pageName)) {
+      if (!pageManager.pageExists(pageName, req.userContext)) {
         return this.renderError(req, res, 404, 'Not Found', `Page "${pageName}" not found`);
       }
 
@@ -16390,14 +16243,14 @@ ${panes}
       // current request page, so this is the same-page fast path through
       // `checkPagePermissionWithContext`, NOT the cross-page
       // `canUserAccessPage` route.)
-      const pageMetadataForHistory = await pageManager.getPageMetadata(pageName);
+      const pageMetadataForHistory = await pageManager.getPageMetadata(pageName, req.userContext);
       (wikiContext as { pageMetadata: unknown }).pageMetadata = pageMetadataForHistory ?? null;
       if (!(await wikiContext.canAccess('view'))) {
         return this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page history.');
       }
 
       // Get page metadata (only need uuid and title)
-      const pageMetadata = await pageManager.getPageMetadata(pageName);
+      const pageMetadata = await pageManager.getPageMetadata(pageName, req.userContext);
       logger.info(`[pageHistory] Page info - UUID: ${pageMetadata?.uuid}, Title: ${pageMetadata?.title}`);
 
       // Get version history (BasePageProvider stubs throw; catch and render 501)
@@ -16487,7 +16340,7 @@ ${panes}
       }
 
       // Check if page exists
-      if (!pageManager.pageExists(pageName)) {
+      if (!pageManager.pageExists(pageName, req.userContext)) {
         const templateData = this.getTemplateDataFromContext(wikiContext);
         return res.status(404).render('error', {
           ...templateData,
@@ -16496,7 +16349,7 @@ ${panes}
       }
 
       // Get page metadata (only need uuid)
-      const pageMetadata = await pageManager.getPageMetadata(pageName);
+      const pageMetadata = await pageManager.getPageMetadata(pageName, req.userContext);
 
       // Compare versions
       const comparison = (await provider.compareVersions(pageName, v1, v2)) ?? {};
@@ -16505,7 +16358,7 @@ ${panes}
       const templateData = await this.getCommonTemplateData(req);
 
       // Get left menu content
-      const leftMenu = await this.getLeftMenu(wikiContext.userContext);
+      const leftMenu = await this.getLeftMenu(req.userContext);
 
       res.render('page-diff', {
         ...templateData,
@@ -16645,7 +16498,7 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager');
       if (pageManager) {
         const pageName = trimmedLabel;
-        const pageExists = pageManager.pageExists(pageName);
+        const pageExists = pageManager.pageExists(pageName, req.userContext);
 
         if (!pageExists) {
           const pageContent = `# ${trimmedLabel}
@@ -16716,7 +16569,7 @@ ${trimmedDescription}
 
       // Check if page already exists
       const pageManager = this.engine.getManager('PageManager');
-      if (pageManager.pageExists(label)) {
+      if (pageManager.pageExists(label, req.userContext)) {
         return res.redirect('/view/' + encodeURIComponent(label));
       }
 
@@ -16760,7 +16613,7 @@ ${description}
   /**
    * API endpoint to get all user-keywords with page status
    */
-  async apiGetUserKeywords(_req: Request, res: Response): Promise<void> {
+  async apiGetUserKeywords(req: Request, res: Response): Promise<void> {
     try {
       const pageManager = this.engine.getManager('PageManager');
       // #896: catalog through the vocabulary provider (seed + instance store)
@@ -16768,7 +16621,7 @@ ${description}
 
       const keywords = Object.entries(userKeywordsConfig).map(([key, config]) => {
         const label = (config.label as string) || key;
-        const hasPage = pageManager ? pageManager.pageExists(label) : false;
+        const hasPage = pageManager ? pageManager.pageExists(label, req.userContext) : false;
 
         return {
           id: key,
@@ -16821,7 +16674,7 @@ ${description}
       const keywordUsage: Record<string, string[]> = {};
 
       for (const pageName of allPages) {
-        const metadata = await pageManager.getPageMetadata(pageName);
+        const metadata = await pageManager.getPageMetadata(pageName, req.userContext);
         const pageKeywords = (metadata?.['user-keywords'] as string[]) || [];
         for (const kw of pageKeywords) {
           if (!keywordUsage[kw]) {
@@ -16853,7 +16706,7 @@ ${description}
       // Build keywords array with stats, sorted alphabetically by label to match the form dropdowns
       const keywords = Object.entries(userKeywordsConfig).map(([key, config]) => {
         const label = (config.label as string) || key;
-        const hasPage = pageManager ? pageManager.pageExists(label) : false;
+        const hasPage = pageManager ? pageManager.pageExists(label, req.userContext) : false;
         const usageCount = keywordUsage[key]?.length || 0;
         // Media EXIF keywords are free text — match the catalog entry's id or
         // label, case-insensitively (a term catalogued as 'basketball' counts
@@ -17068,7 +16921,7 @@ ${description}
 
       // Only need metadata, not content
       for (const pageName of allPages) {
-        const metadata = await pageManager.getPageMetadata(pageName);
+        const metadata = await pageManager.getPageMetadata(pageName, req.userContext);
         const pageKeywords = (metadata?.['user-keywords'] as string[]) || [];
         if (pageKeywords.includes(keywordId)) {
           pagesUsingKeyword.push(pageName);
@@ -17182,7 +17035,7 @@ ${description}
       let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
-        const page = await pageManager.getPage(pageName);
+        const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
         if (pageKeywords.includes(keywordId)) {
@@ -17283,7 +17136,7 @@ ${description}
       let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
-        const page = await pageManager.getPage(pageName);
+        const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
         if (pageKeywords.includes(sourceId)) {
@@ -17505,7 +17358,7 @@ ${description}
         const pageManager = this.engine.getManager('PageManager');
         if (pageManager) {
           for (const k of kw) {
-            keywordPageExists[k] = pageManager.pageExists(k);
+            keywordPageExists[k] = pageManager.pageExists(k, req.userContext);
           }
         }
       }
@@ -17526,7 +17379,7 @@ ${description}
       // than the widget having been copied rather than shared.
       const keywordSetSuggestions = canEdit
         ? await this.getSuggestedKeywordSetsForUser(
-          (commonData as { user?: { username?: string } }).user?.username,
+          req.userContext,
           Array.isArray(item?.metadata?.keywords) ? item.metadata.keywords as string[] : []
         )
         : [];
@@ -18160,7 +18013,7 @@ ${description}
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
       const markdown = pageManager
-        ? await pageManager.getPageContent(name).catch(() => null)
+        ? await pageManager.getPageContent(name, req.userContext).catch(() => null)
         : null;
       if (markdown === null || !renderingManager) return res.status(404).send('Not Found');
 
