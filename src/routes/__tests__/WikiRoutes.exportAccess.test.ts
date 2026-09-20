@@ -23,8 +23,11 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
-const anonymous = null;
+// #1399: an anonymous caller carries the anonymous PRINCIPAL. The session
+// middleware assigns it, so `null` here modelled a request the server never makes.
+const anonymous = ANONYMOUS_SUBJECT;
 const reader = { username: 'reader', isAuthenticated: true, roles: ['reader'] };
 
 const createMockReq = (userContext: unknown, page = 'SecretPlans') => ({

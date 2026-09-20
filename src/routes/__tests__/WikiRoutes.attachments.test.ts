@@ -1,4 +1,5 @@
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import { policyShaped } from './__fixtures__/policyShaped';
 import type { WikiEngine } from '../../types/WikiEngine';
 
@@ -26,7 +27,10 @@ const mockEngine = {
 };
 
 // Create request object with proper structure
-const createMockReq = (userContext = null, params = {}, body = {}, file = null) => ({
+// #1399: an anonymous caller carries the anonymous PRINCIPAL, not null. The
+// session middleware assigns it on every request that has no session, so a
+// request with no subject at all is a shape the server never produces.
+const createMockReq = (userContext = ANONYMOUS_SUBJECT, params = {}, body = {}, file = ANONYMOUS_SUBJECT) => ({
   params,
   body,
   file,
@@ -89,8 +93,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
 
     test('should deny access for unauthenticated users', async () => {
       // Setup - no user context
-      const mockReq = createMockReq(
-        null,  // Not authenticated
+      const mockReq = createMockReq(ANONYMOUS_SUBJECT,  // Not authenticated
         { page: 'TestPage' },
         {}
       );
@@ -410,8 +413,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
 
     test('should deny delete access for unauthenticated users', async () => {
       // Setup
-      const mockReq = createMockReq(
-        null,  // Not authenticated
+      const mockReq = createMockReq(ANONYMOUS_SUBJECT,  // Not authenticated
         { attachmentId: 'test-attachment-id' }
       );
       const mockRes = createMockRes();

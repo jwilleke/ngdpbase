@@ -9,13 +9,17 @@
  */
 
 import fs from 'fs';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 
 const adminUser = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 const plainUser = { username: 'bob', isAuthenticated: true, roles: ['reader'] };
 
-const createMockReq = (userContext: unknown = null) => ({
+// #1399: an anonymous caller carries the anonymous PRINCIPAL, not null. The
+// session middleware assigns it on every request that has no session, so a
+// request with no subject at all is a shape the server never produces.
+const createMockReq = (userContext: unknown = ANONYMOUS_SUBJECT) => ({
   params: {},
   query: {},
   body: {},
@@ -91,7 +95,7 @@ describe('GET /admin/trash — authorisation (#969)', () => {
     // The API answers 401 JSON; a browser tab needs somewhere to go.
     const res = createMockRes();
     // #1198: policy refuses the anonymous subject; the refusal is the redirect.
-    await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(null), res);
+    await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(ANONYMOUS_SUBJECT), res);
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/admin/trash'));
     expect(res.render).not.toHaveBeenCalled();
   });

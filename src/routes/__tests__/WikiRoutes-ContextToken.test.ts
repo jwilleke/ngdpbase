@@ -76,9 +76,12 @@ describe('#949 WikiContext preserves agent-token detail', () => {
     expect((ctx.userContext as { username?: string })?.username).toBe('jim');
   });
 
-  test('an anonymous request does not throw', () => {
-    // WikiContext normalises an absent user to null.
-    const ctx = makeRoutes().createWikiContext(makeReq(undefined), { pageName: 'Some Page' });
-    expect(ctx.userContext ?? null).toBeNull();
+  test('a request with no subject is refused, not treated as anonymous (#1399)', () => {
+    // The session middleware writes a subject on every request — the signed-in
+    // user, or the anonymous PRINCIPAL it assigns when nobody has signed in.
+    // A request carrying none is a failure upstream, so the context refuses to
+    // be built rather than inventing a caller (security-posture P1).
+    expect(() => makeRoutes().createWikiContext(makeReq(undefined), { pageName: 'Some Page' }))
+      .toThrow(/requires a subject/);
   });
 });

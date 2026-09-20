@@ -16,6 +16,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
 import type { Request } from 'express';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -123,7 +124,10 @@ function makeEngine(pageManager, attachmentManager, aclManager = makeACLManagerS
   } as unknown as WikiEngine;
 }
 
-function createReq(userContext = null, params = {}) {
+// #1399: an anonymous caller carries the anonymous PRINCIPAL, not null. The
+// session middleware assigns it on every request that has no session, so a
+// request with no subject at all is a shape the server never produces.
+function createReq(userContext = ANONYMOUS_SUBJECT, params = {}) {
   return {
     params,
     session: {},
@@ -162,7 +166,7 @@ describe('WikiRoutes — private attachment access (#122)', () => {
   });
 
   test('anonymous user receives 403 for private attachment', async () => {
-    const req = createReq(null, { attachmentId: 'att-001' });
+    const req = createReq(ANONYMOUS_SUBJECT, { attachmentId: 'att-001' });
     const res = createRes();
 
     await wikiRoutes.serveAttachment(req, res);
@@ -221,7 +225,7 @@ describe('WikiRoutes — public attachment access (#122)', () => {
     const engine = makeEngine(pageManager, attachmentManager);
     const wikiRoutes = new WikiRoutes(engine);
 
-    const req = createReq(null, { attachmentId: 'att-public' });
+    const req = createReq(ANONYMOUS_SUBJECT, { attachmentId: 'att-public' });
     const res = createRes();
 
     await wikiRoutes.serveAttachment(req, res);

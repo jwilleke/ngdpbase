@@ -28,7 +28,6 @@
  */
 
 import type { PermissionSubject } from '../managers/UserManager.js';
-import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type UserManager from '../managers/UserManager.js';
 
 /** The engine surface this door needs — `getManager`, nothing more. */
@@ -74,7 +73,20 @@ export abstract class BaseContext {
    * `privateStoreHandle` (#1382).
    */
   getActor(): PermissionSubject {
-    return this._subject ?? ANONYMOUS_SUBJECT;
+    if (!this._subject) {
+      // #1399, operator 2026-09-20: a null user is a FAILURE, not a visitor.
+      // Anonymous is a principal the session middleware ASSIGNS — a real
+      // subject with its own role and its own grants. Substituting it here for
+      // a missing one would turn a bug upstream into a caller that looks
+      // legitimate, which is the default actor P1 forbids and the precise
+      // reason #1418 made `req.userContext` required rather than optional.
+      // A caller that genuinely acts as nobody passes ANONYMOUS_SUBJECT by
+      // name, or a JobContext that states its reason.
+      throw new Error(
+        'context has no subject: the caller must be forwarded, or ANONYMOUS_SUBJECT passed by name (security-posture P1)'
+      );
+    }
+    return this._subject;
   }
 
   /** True when a real subject was supplied — `getActor()` is not the anonymous fallback. */

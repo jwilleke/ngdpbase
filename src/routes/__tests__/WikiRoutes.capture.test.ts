@@ -5,11 +5,15 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 const authedUser = { username: 'jim', isAuthenticated: true, roles: ['admin'] };
 
-const createMockReq = (userContext: unknown = null, query = {}, body = {}) => ({
+// #1399: an anonymous caller carries the anonymous PRINCIPAL, not null. The
+// session middleware assigns it on every request that has no session, so a
+// request with no subject at all is a shape the server never produces.
+const createMockReq = (userContext: unknown = ANONYMOUS_SUBJECT, query = {}, body = {}) => ({
   params: {},
   query,
   body,
@@ -41,7 +45,10 @@ describe('WikiRoutes capture (#881)', () => {
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
     mockSaveWithContext = vi.fn().mockResolvedValue(undefined);
-    mockHasPermission = vi.fn().mockResolvedValue(true);
+    // #1399: an anonymous caller is a real subject now, so a refusal has to come
+    // from POLICY rather than from a missing user. page-create is not granted to
+    // anonymous, which is what this models.
+    mockHasPermission = vi.fn(async (subject) => subject?.isAuthenticated === true);
     mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
 
     mockEngine = {
@@ -72,7 +79,7 @@ describe('WikiRoutes capture (#881)', () => {
 
   describe('GET /capture', () => {
     test('redirects anonymous users to login', async () => {
-      const req = createMockReq(null, { url: 'https://example.com' });
+      const req = createMockReq(ANONYMOUS_SUBJECT, { url: 'https://example.com' });
       const res = createMockRes();
       await wikiRoutes.captureForm(req, res);
       expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('/login?redirect='));
@@ -289,7 +296,7 @@ describe('WikiRoutes capture (#881)', () => {
     });
 
     test('401 for anonymous', async () => {
-      const req = createMockReq(null, {}, body);
+      const req = createMockReq(ANONYMOUS_SUBJECT, {}, body);
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
       expect(res.status).toHaveBeenCalledWith(401);
@@ -374,7 +381,7 @@ describe('WikiRoutes capture (#881)', () => {
 
     test('redirects anonymous callers to login', async () => {
       const res = createMockRes();
-      await capturesRoutes().myCapturesPage(myReq(null), res);
+      await capturesRoutes().myCapturesPage(myReq(ANONYMOUS_SUBJECT), res);
       expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/my/captures'));
       expect(mockGetPagesByCreator).not.toHaveBeenCalled();
     });

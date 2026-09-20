@@ -1,13 +1,16 @@
 'use strict';
 
 import { ApiContext, ApiError } from '../ApiContext';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { Request } from 'express';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const mockEngine = { getManager: vi.fn() };
 
-function makeReq({ userContext = {}, session = {} } = {}) {
+// #1399: the middleware writes a subject on every request — the anonymous
+// principal when nobody has signed in. The default here models that.
+function makeReq({ userContext = ANONYMOUS_SUBJECT, session = {} } = {}) {
   return { userContext, session } as unknown as Request;
 }
 
@@ -82,20 +85,14 @@ describe('ApiContext.from()', () => {
   });
 
   describe('missing / empty userContext', () => {
-    test('handles undefined userContext gracefully', () => {
-      const ctx = ApiContext.from(makeReq({ userContext: undefined }), mockEngine);
-      expect(ctx.isAuthenticated).toBe(false);
-      expect(ctx.username).toBeNull();
-      expect(ctx.roles).toEqual([]);
+    test('a request with no subject is refused (#1399)', () => {
+      expect(() => ApiContext.from(makeReq({ userContext: null }), mockEngine))
+        .toThrow(/no subject/);
     });
 
-    test('handles empty userContext gracefully', () => {
-      const ctx = ApiContext.from(makeReq({ userContext: {} }), mockEngine);
-      expect(ctx.isAuthenticated).toBe(false);
-      expect(ctx.username).toBeNull();
-      expect(ctx.email).toBeNull();
-      expect(ctx.displayName).toBeNull();
-      expect(ctx.roles).toEqual([]);
+    test('an empty userContext is refused too — it names no caller (#1399)', () => {
+      expect(() => ApiContext.from(makeReq({ userContext: {} }), mockEngine))
+        .toThrow(/no subject/);
     });
 
     test('falls back to session.isAuthenticated when userContext lacks it', () => {
@@ -120,7 +117,7 @@ describe('ApiContext.from()', () => {
 describe('ApiContext#requireAuthenticated()', () => {
   test('does not throw when authenticated', () => {
     const ctx = ApiContext.from(
-      makeReq({ userContext: { isAuthenticated: true, roles: [] } }),
+      makeReq({ userContext: { username: 'jane', isAuthenticated: true, roles: [] } }),
       mockEngine
     );
     expect(() => ctx.requireAuthenticated()).not.toThrow();
@@ -128,7 +125,7 @@ describe('ApiContext#requireAuthenticated()', () => {
 
   test('throws ApiError(401) when not authenticated', () => {
     const ctx = ApiContext.from(
-      makeReq({ userContext: { isAuthenticated: false, roles: [] } }),
+      makeReq({ userContext: ANONYMOUS_SUBJECT }),
       mockEngine
     );
     expect(() => ctx.requireAuthenticated()).toThrow(ApiError);
@@ -173,12 +170,20 @@ describe('ApiContext#hasPermission()', () => {
     expect(result).toBe(true);
   });
 
-  test('passes a named anonymous subject, not an empty string (#1173)', async () => {
-    // The empty string was the username-form of the call, and that form is
-    // gone: it could not carry an agent token, so the scope ceiling had
-    // nothing to read. One code path in, always a subject.
+  test('a request with no subject is refused, not treated as anonymous (#1173, #1399)', () => {
+    // The username-form of this call is gone: it could not carry an agent
+    // token, so the scope ceiling had nothing to read. One code path in, always
+    // a subject — and a request carrying none is a failure upstream, since the
+    // session middleware assigns the anonymous PRINCIPAL when nobody has signed
+    // in. Substituting anonymous here would be a default actor (P1).
     const engine = makeEngineWithUserManager(false);
-    const ctx = ApiContext.from(makeReq({ userContext: undefined }), engine);
+    expect(() => ApiContext.from(makeReq({ userContext: null }), engine))
+      .toThrow(/no subject/);
+  });
+
+  test('forwards the anonymous principal the middleware assigned (#1173)', async () => {
+    const engine = makeEngineWithUserManager(false);
+    const ctx = ApiContext.from(makeReq({ userContext: ANONYMOUS_SUBJECT }), engine);
     const result = await ctx.hasPermission('admin-system');
     expect(engine._hasPermission).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'Anonymous', isAuthenticated: false }),

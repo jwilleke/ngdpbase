@@ -47,6 +47,25 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The subject a request carries, refused when there is none (#1399).
+ *
+ * The session middleware writes one on every request — the signed-in user, or
+ * the anonymous PRINCIPAL it assigns when nobody has signed in — and the bearer
+ * and share paths overwrite it with their own. A request reaching here without
+ * one is a failure upstream, not an anonymous caller, and substituting anonymous
+ * would be the default actor security-posture P1 forbids.
+ */
+function subjectOf(req: Request): PermissionSubject {
+  const uc = req.userContext;
+  if (!uc || typeof uc.username !== 'string' || !uc.username) {
+    throw new Error(
+      'request has no subject: the session middleware writes one on every request (security-posture P1)'
+    );
+  }
+  return uc;
+}
+
 // ── ApiContext ───────────────────────────────────────────────────────────────
 
 export class ApiContext extends BaseContext {
@@ -144,12 +163,8 @@ export class ApiContext extends BaseContext {
       Array.isArray(uc.roles) ? (uc.roles) : [],
       uc.viaToken,
       uc.viaShare,
-      // #1399: forward the subject the middleware wrote, as it wrote it. A
-      // context with no username is not a subject — a malformed or absent one
-      // resolves to the anonymous caller through BaseContext.getActor(), which
-      // is the least-privilege reading, rather than being passed on as an
-      // empty object the evaluator would have to interpret.
-      typeof uc.username === 'string' && uc.username ? (req.userContext ?? null) : null
+      // #1399: forward the subject the middleware wrote, as it wrote it.
+      subjectOf(req)
     );
   }
 

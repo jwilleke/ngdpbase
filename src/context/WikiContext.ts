@@ -141,8 +141,8 @@ export interface WikiContextOptions {
   pageName?: string;
   /** Page content (markdown) */
   content?: string;
-  /** User context/session */
-  userContext?: UserContext;
+  /** The caller's subject. Required (#1399) — see the constructor. */
+  userContext: UserContext;
   /** Express request object */
   request?: Request;
   /** Express response object */
@@ -243,8 +243,12 @@ class WikiContext extends BaseContext {
    * object — never a copy, which is what would drop `privateStoreHandle` and
    * make a sealed page vanish for its owner (#1382, #1173).
    */
-  get userContext(): UserContext | null {
-    return this._subject as UserContext | null;
+  get userContext(): UserContext {
+    // #1399: non-null by construction — the constructor refuses a context with
+    // no subject, and the session middleware writes one on every request. The
+    // routes' `if (!currentUser)` guards that used to follow this read were
+    // guarding a state the system cannot produce.
+    return this._subject as UserContext;
   }
 
   /** Express request object */
@@ -318,14 +322,28 @@ class WikiContext extends BaseContext {
    *   response: res
    * });
    */
-  constructor(engine: WikiEngine, options: WikiContextOptions = {}) {
+  constructor(engine: WikiEngine, options: WikiContextOptions) {
     if (!engine) {
       throw new Error('WikiContext requires a valid WikiEngine instance.');
     }
 
-    // #1399: the subject is held once, by BaseContext, and read back through
-    // the `userContext` accessor below.
-    super(engine, options.userContext ?? null);
+    // #1399, operator 2026-09-20: a context ALWAYS has a subject. The session
+    // middleware writes one on every request — the signed-in user, or the
+    // anonymous principal it assigns when nobody has signed in — so a context
+    // built without one is a failure upstream, not an anonymous visitor.
+    // Refused here, at the mistake, rather than substituting a caller nobody
+    // chose (security-posture P1; the same reason #1418 made
+    // `req.userContext` required rather than optional).
+    //
+    // Checked at runtime, not only in the type: `tsconfig.json` excludes every
+    // `__tests__` directory (#1428), so a missing field in a fixture would
+    // otherwise reach the permission door unnoticed.
+    if (!options.userContext) {
+      throw new Error(
+        'WikiContext requires a subject: forward the caller, or pass ANONYMOUS_SUBJECT by name (security-posture P1)'
+      );
+    }
+    super(engine, options.userContext);
     this.engine = engine;
     this.context = options.context || WikiContext.CONTEXT.NONE;
     this.pageName = options.pageName || null;

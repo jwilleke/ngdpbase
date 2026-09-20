@@ -12,6 +12,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
 const adminUser = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 const readOnlyUser = { username: 'demo', isAuthenticated: true, roles: ['demo-admin'] };
@@ -30,7 +31,10 @@ const CONFIG = {
   'ngdpbase.dawarichCompat.apiKey': ''
 };
 
-const createMockReq = (userContext: unknown = null, params: Record<string, string> = {}) => ({
+// #1399: an anonymous caller carries the anonymous PRINCIPAL, not null. The
+// session middleware assigns it on every request that has no session, so a
+// request with no subject at all is a shape the server never produces.
+const createMockReq = (userContext: unknown = ANONYMOUS_SUBJECT, params: Record<string, string> = {}) => ({
   params,
   query: {},
   body: {},
@@ -174,8 +178,10 @@ describe('GET /api/admin/config/secret/:key — reveal', () => {
 
   test('refuses an anonymous caller', async () => {
     const res = createMockRes();
-    await makeRoutes().adminRevealSecret(
-      createMockReq(null, { key: 'ngdpbase.session.secret' }), res
+    // #1399: the anonymous principal is a real subject, so the refusal comes from
+    // POLICY — admin-system is not granted to anonymous — not from a null user.
+    await makeRoutes({ canReveal: false }).adminRevealSecret(
+      createMockReq(ANONYMOUS_SUBJECT, { key: 'ngdpbase.session.secret' }), res
     );
     expect(res.status).toHaveBeenCalledWith(403);
   });

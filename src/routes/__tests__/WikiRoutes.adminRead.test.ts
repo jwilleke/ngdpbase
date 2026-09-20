@@ -13,6 +13,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
 const readOnlyAdmin = { username: 'admindemo', isAuthenticated: true, roles: ['demo-admin'] };
 const fullAdmin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
@@ -103,7 +104,7 @@ describe('admin-read opens the read-only screens (#1029)', () => {
 
   test('an anonymous caller still gets nothing', async () => {
     const res = createMockRes();
-    await makeRoutes([]).adminTrash(createMockReq(null), res);
+    await makeRoutes([]).adminTrash(createMockReq(ANONYMOUS_SUBJECT), res);
 
     expect(rendered(res, 'admin-trash')).toBe(false);
   });

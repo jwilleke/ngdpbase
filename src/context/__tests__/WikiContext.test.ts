@@ -1,4 +1,5 @@
 import WikiContext from '../WikiContext';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 // Mock managers for testing
@@ -69,17 +70,18 @@ describe('WikiContext', () => {
     });
 
     test('should use defaults for optional properties', () => {
-      const minimalContext = new WikiContext(mockEngine);
+      const minimalContext = new WikiContext(mockEngine, { userContext: ANONYMOUS_SUBJECT });
       expect(minimalContext.context).toBe(WikiContext.CONTEXT.NONE);
       expect(minimalContext.pageName).toBeNull();
       expect(minimalContext.content).toBeNull();
-      expect(minimalContext.userContext).toBeNull();
+      // #1399: a context always has a caller; the minimal one is anonymous.
+      expect(minimalContext.userContext).toBe(ANONYMOUS_SUBJECT);
     });
 
     // #1328: '' is an empty page, not a missing one. Coercing it to null made
     // the save path crash, so callers padded new pages with a space.
     test('keeps an empty body as an empty string', () => {
-      expect(new WikiContext(mockEngine, { content: '' }).content).toBe('');
+      expect(new WikiContext(mockEngine, { content: '', userContext: ANONYMOUS_SUBJECT }).content).toBe('');
     });
   });
 
@@ -89,7 +91,7 @@ describe('WikiContext', () => {
     });
 
     test('should return NONE for default context', () => {
-      const defaultContext = new WikiContext(mockEngine);
+      const defaultContext = new WikiContext(mockEngine, { userContext: ANONYMOUS_SUBJECT });
       expect(defaultContext.getContext()).toBe(WikiContext.CONTEXT.NONE);
     });
   });
@@ -174,7 +176,8 @@ describe('WikiContext', () => {
 
     test('should handle missing request object', () => {
       const contextWithoutRequest = new WikiContext(mockEngine, {
-        pageName: 'Test'
+        pageName: 'Test',
+        userContext: ANONYMOUS_SUBJECT
       });
 
       const options = contextWithoutRequest.toParseOptions();
@@ -256,7 +259,7 @@ describe('WikiContext', () => {
       expect(result).toBe(true);
     });
 
-    test('passes a named anonymous subject when userContext is null (#1173)', async () => {
+    test('forwards the anonymous principal it was given (#1173, #1399)', async () => {
       const userManagerMock = {
         hasPermission: vi.fn().mockResolvedValue(false)
       };
@@ -266,7 +269,7 @@ describe('WikiContext', () => {
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithUser);
+      const ctx = new WikiContext(engineWithUser, { userContext: ANONYMOUS_SUBJECT });
 
       const result = await ctx.hasPermission('admin-system');
 
@@ -588,9 +591,11 @@ describe('WikiContext', () => {
       expect(ctx.getPrincipals()).toEqual(['anonymous']);
     });
 
-    test('returns empty array when userContext is null', () => {
-      const ctx = new WikiContext(mockEngine);
-      expect(ctx.getPrincipals()).toEqual([]);
+    test('returns the anonymous principal\u2019s own principals', () => {
+      const ctx = new WikiContext(mockEngine, { userContext: ANONYMOUS_SUBJECT });
+      // The anonymous principal has its own role and its own name, so it matches
+      // audiences naming either — it is a caller, not an absence (#1399).
+      expect(ctx.getPrincipals()).toEqual(['anonymous', 'All', 'Anonymous']);
     });
 
     test('returns just username when roles is missing', () => {
