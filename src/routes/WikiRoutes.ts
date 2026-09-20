@@ -331,6 +331,8 @@ interface IPageManager {
   getPageNames?(): Promise<string[]>;
   getPageMetadata(name: string, ctx: ActorContext): Promise<PageFrontmatter | null>;
   pageExists(name: string, ctx: ActorContext): boolean;
+  /** #1419: may this page go in an index or cache every reader shares? False for a sealed page. */
+  isSharedIndexable?(identifier: string): boolean;
   savePage(name: string, content: string, metadata: Partial<PageFrontmatter> | undefined, ctx: ActorContext, options?: unknown): Promise<void>;
   // #1121: the options argument is NOT `unknown` on purpose. This local
   // interface is a claim about code this file does not own, and a claim loose
@@ -2766,7 +2768,15 @@ ${panes}
       // That is a minority of page views, and correctness is not negotiable
       // against it.
       const hasQueryParams = Object.keys(req.query ?? {}).length > 0;
-      const useRenderCache = renderCacheEnabled && !hasQueryParams;
+
+      // #1423: rendered-pages is one region every reader of this process
+      // shares, and an entry outlives the session that made it — so a sealed
+      // page's HTML would still be in memory (and in any external cache
+      // backend) after its owner logs out. A page in an encrypted store
+      // resolves only through the owner's unlocked session, which is what
+      // isSharedIndexable asks (#1419).
+      const cacheableForEveryone = pageManager.isSharedIndexable?.(pageName) ?? true;
+      const useRenderCache = renderCacheEnabled && !hasQueryParams && cacheableForEveryone;
 
       let html: string;
       let tabSectionHtml = '';

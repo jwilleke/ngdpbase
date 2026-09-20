@@ -857,9 +857,16 @@ class MarkupParser extends BaseManager {
     try {
       logger.debug('🔄 Using WikiDocument DOM extraction pipeline');
 
+      // #1423: the parse cache is one map every reader of this process shares,
+      // and an entry outlives the session that made it. A sealed page's HTML
+      // would therefore stay in memory after its owner logs out, which is the
+      // one thing an encrypted store promises not to do. Same rule as #1419:
+      // a page that does not resolve for the anonymous subject is not cacheable.
+      const cacheable = this.isSharedIndexable(context);
+
       // Check cache first
       const cacheKey = this.generateCacheKey(content, context);
-      if (this.cacheStrategies.parseResults) {
+      if (cacheable && this.cacheStrategies.parseResults) {
         const cached = await this.getCachedParseResult(cacheKey);
         if (cached) {
           this.updateCacheMetrics('parseResults', 'hit');
@@ -915,8 +922,8 @@ class MarkupParser extends BaseManager {
       // Parse using extraction pipeline
       const result = await this.parseWithDOMExtraction(content, context);
 
-      // Cache the result
-      await this.cacheParseResult(cacheKey, result);
+      // Cache the result — never a sealed page's (#1423).
+      if (cacheable) await this.cacheParseResult(cacheKey, result);
 
       // Update metrics
       const processingTime = Date.now() - startTime;
@@ -1135,6 +1142,29 @@ class MarkupParser extends BaseManager {
     const el = wikiDocument.createElement(tag, attrs);
     await this.appendWikiNodes(inner, el, context, wikiDocument, idStart, true);
     return el;
+  }
+
+  /**
+   * Whether this parse may be cached in a map the whole process shares
+   * (#1423). A page in an encrypted store resolves only through its owner's
+   * unlocked session, so `PageManager.isSharedIndexable` — the same question
+   * #1419 asks of the search index and the link graph — answers false for it.
+   *
+   * A parse with no page name behind it (a preview, a snippet, an addon
+   * rendering a string) is cacheable as before: there is no page to be sealed.
+   */
+  private isSharedIndexable(context: ParseContextData): boolean {
+    const pageCtx = (context.pageContext ?? context) as Record<string, unknown>;
+    const pageName = (pageCtx.pageName ?? context.pageName) as string | undefined;
+    if (!pageName) return true;
+    const pageManager = this.engine?.getManager<{ isSharedIndexable?(id: string): boolean }>('PageManager');
+    if (!pageManager?.isSharedIndexable) return true;
+    try {
+      return pageManager.isSharedIndexable(String(pageName));
+    } catch {
+      // A provider that cannot answer must not turn into a cache write.
+      return false;
+    }
   }
 
   generateCacheKey(content: string, context: ParseContextData): string {

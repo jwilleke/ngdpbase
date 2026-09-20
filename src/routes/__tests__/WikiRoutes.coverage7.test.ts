@@ -77,6 +77,7 @@ const mockPageManager = {
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
+  isSharedIndexable: vi.fn(),
   deletePageWithContext: vi.fn(),
   provider: null as null | { getVersionHistory?: unknown; compareVersions?: unknown; pageIndex?: unknown }
 };
@@ -255,6 +256,7 @@ function resetMocks() {
   mockPageManager.pageExists.mockReturnValue(false);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
+  mockPageManager.isSharedIndexable.mockReturnValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
 
   mockACLManager.checkPagePermission.mockResolvedValue(true);
@@ -425,6 +427,58 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).get('/view/TestPage');
       expect(res.status).toBe(200);
       expect(mockCacheManager.get).toHaveBeenCalled();
+    });
+
+    // #1423: rendered-pages outlives the session that filled it, so a sealed
+    // page's HTML must never go in — it would still be in memory, and in any
+    // external cache backend, after its owner logs out.
+    describe('a sealed page and the rendered-pages cache (#1423)', () => {
+      const enableRenderCache = () => {
+        mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
+          if (key === 'ngdpbase.cache.rendered-pages.enabled') return true;
+          const map: Record<string, unknown> = {
+            'ngdpbase.front-page': 'Welcome', 'ngdpbase.theme.active': 'default',
+            'ngdpbase.application-name': 'ngdpbase', 'ngdpbase.tab.pagetabs': false,
+            'ngdpbase.page.nofooter': [], 'ngdpbase.page.notabs': [],
+            'ngdpbase.system-category': { general: { label: 'general', storageLocation: 'regular', enabled: true } },
+            'ngdpbase.roles.definitions': {}, 'ngdpbase.maximum.user-keywords': 5,
+            'ngdpbase.timezones': []
+          };
+          return key in map ? map[key] : defaultValue;
+        });
+        mockCacheManager.isInitialized.mockReturnValue(true);
+        mockCacheManager.get.mockResolvedValue(null);
+      };
+
+      const renderCacheWrites = () =>
+        mockCacheManager.set.mock.calls.filter(([key]) => String(key).startsWith('rendered-pages:'));
+
+      test('an ordinary page is still cached', async () => {
+        enableRenderCache();
+        const res = await request(app).get('/view/TestPage');
+        expect(res.status).toBe(200);
+        expect(renderCacheWrites()).toHaveLength(1);
+      });
+
+      test('a sealed page renders but is never written to the cache', async () => {
+        enableRenderCache();
+        mockPageManager.isSharedIndexable.mockReturnValue(false);
+        const res = await request(app).get('/view/TestPage');
+        expect(res.status).toBe(200);
+        expect(renderCacheWrites()).toHaveLength(0);
+      });
+
+      test('a sealed page is not read from the cache either — an entry left by an earlier build is never served back', async () => {
+        enableRenderCache();
+        mockPageManager.isSharedIndexable.mockReturnValue(false);
+        mockCacheManager.get.mockResolvedValue({ html: '<p>stale sealed</p>', tabSectionHtml: '' });
+        const res = await request(app).get('/view/TestPage');
+        expect(res.status).toBe(200);
+        const renderCacheReads = mockCacheManager.get.mock.calls
+          .filter(([key]) => String(key).startsWith('rendered-pages:'));
+        expect(renderCacheReads).toHaveLength(0);
+        expect(mockRenderingManager.textToHTML).toHaveBeenCalled();
+      });
     });
 
     test('returns 200 with unauthenticated user when ACL allows', async () => {
