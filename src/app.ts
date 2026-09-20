@@ -31,7 +31,7 @@ import { loadMergedConfigSync } from './utils/addonConfigLayer.js';
 import logger from './utils/logger.js';
 import { resolveEgressPolicy } from './http/egressPolicy.js';
 import { tokenGateRefusal } from './security/tokenRouteMap.js';
-import { resolveMaintenanceState } from './utils/maintenanceState.js';
+import { resolveAvailability } from './utils/availability.js';
 import { resolveTlsConfig } from './utils/tlsConfig.js';
 import { createHttpsRedirectServer, routeSocket } from './utils/httpsRedirect.js';
 import https from 'https';
@@ -901,10 +901,13 @@ void (async (): Promise<void> => {
   // immediately and closing or reopening an instance needs no restart.
   app.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const maintenanceCm = engine.getManager<import('./managers/ConfigurationManager.js').default>('ConfigurationManager');
-    const maintenance = resolveMaintenanceState(
-      (key, fallback) => maintenanceCm?.getProperty?.(key, fallback)
+    // #1432: one gate, several reasons — maintenance, a schedule such as
+    // business hours, a holiday. Each has its own message, and the page says
+    // which one closed the instance.
+    const availability = resolveAvailability(
+      (key) => maintenanceCm?.getProperty?.(key, undefined)
     );
-    if (!maintenance.enabled) { next(); return; }
+    if (!availability.blocked) { next(); return; }
 
     if (req.path.startsWith('/css') || req.path.startsWith('/js') ||
         req.path.startsWith('/images') || req.path === '/favicon.ico' ||
@@ -916,16 +919,19 @@ void (async (): Promise<void> => {
     // #1198: the bypass is a permission, not a role name. A role check skips
     // policy and the token ceiling — an admin's read-only token would have
     // walked through maintenance on its owner's role.
-    const isAdmin = maintenance.allowAdmins && await subjectMayDo(engine, req.userContext, 'admin-system');
+    const isAdmin = availability.allowAdmins && await subjectMayDo(engine, req.userContext, 'admin-system');
     if (isAdmin) {
       next(); return;
     }
 
     res.status(503).render('maintenance', {
-      message: maintenance.message,
-      estimatedDuration: maintenance.estimatedDuration,
+      message: availability.message,
+      // #1432: which reason closed it, so the page can say so and a test can
+      // tell a schedule from a holiday.
+      reason: availability.kind,
+      estimatedDuration: availability.estimatedDuration,
       notifications: [],
-      allowAdmins: maintenance.allowAdmins,
+      allowAdmins: availability.allowAdmins,
       isAdmin
     });
   });

@@ -1009,13 +1009,8 @@
   "ngdpbase.access-control.context-aware.enabled": true,
   "ngdpbase.access-control.context-aware.time-zone": "UTC",
   "ngdpbase.access-control.business-hours.enabled": false,
-  "ngdpbase.access-control.business-hours.start": "09:00",
-  "ngdpbase.access-control.business-hours.end": "17:00",
-  "ngdpbase.access-control.business-hours.days": "monday,tuesday,wednesday,thursday,friday",
   "ngdpbase.access-control.custom-schedules.enabled": false,
   "ngdpbase.access-control.custom-schedules.schedules": "./config/schedules.json",
-  "ngdpbase.access-control.holidays.enabled": false,
-  "ngdpbase.access-control.holidays.calendar": "./config/holidays.json",
   "_comment_audit_legacy": "Legacy audit settings (moved to provider-specific config above)",
   "_comment_defaults": "Default values for page creation",
   "ngdpbase.default.system-category": "general",
@@ -1407,43 +1402,20 @@
   "ngdpbase.storageLocation.categoryBasedStorage.General": "regular",
   "ngdpbase.storageLocation.categoryBasedStorage.Documentation": "regular",
   "_comment_holidays": "Holiday access restrictions and messages",
-  "ngdpbase.holidays.enabled": true,
+  "ngdpbase.holidays.enabled": false,
   "ngdpbase.holidays.dates": {
-    "2025-01-01": {
-      "name": "New Year's Day",
-      "message": "Access restricted on New Year's Day",
-      "enabled": true
-    },
-    "2025-07-04": {
-      "name": "Independence Day",
-      "message": "Access restricted on Independence Day",
-      "enabled": true
-    },
-    "2025-12-25": {
-      "name": "Christmas Day",
-      "message": "Access restricted on Christmas Day",
-      "enabled": true
-    },
-    "2025-12-26": {
-      "name": "Boxing Day",
-      "message": "Access restricted on Boxing Day",
-      "enabled": true
-    }
-  },
-  "ngdpbase.holidays.recurring": {
-    "*-01-01": {
-      "name": "New Year's Day",
-      "message": "Access restricted on New Year's Day",
-      "enabled": true
-    },
-    "*-12-25": {
-      "name": "Christmas Day",
-      "message": "Access restricted on Christmas Day",
-      "enabled": true
-    }
+      "*-01-01": {
+          "name": "New Year's Day",
+          "message": "Access restricted on New Year's Day",
+          "enabled": true
+      },
+      "*-12-25": {
+          "name": "Christmas Day",
+          "message": "Access restricted on Christmas Day",
+          "enabled": true
+      }
   },
   "_comment_schedules": "Access schedules (role/category/default and named definitions)",
-  "ngdpbase.schedules.enabled": true,
   "ngdpbase.schedules": {
     "business-hours": {
       "name": "Standard Business Hours",
