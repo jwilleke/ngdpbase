@@ -608,9 +608,11 @@ describe('ACLManager', () => {
       const newAclManager = new ACLManager(mockEngine);
       await newAclManager.initialize();
 
-      expect(newAclManager.accessPolicies.size).toBe(2);
-      expect(newAclManager.accessPolicies.has('test-policy-1')).toBe(true);
-      expect(newAclManager.accessPolicies.has('test-policy-2')).toBe(true);
+      // #1431: ACLManager keeps no policy cache. The policies belong to
+      // PolicyManager, and PolicyEvaluator asks it for them — this manager
+      // used to load a Map here that nothing ever read.
+      expect((newAclManager as unknown as { accessPolicies?: unknown }).accessPolicies).toBeUndefined();
+      expect(newAclManager.policyEvaluator).toBeDefined();
     });
   });
 
@@ -1273,25 +1275,5 @@ describe('ACLManager', () => {
     });
   });
 
-  describe('loadAccessPolicies()', () => {
-    test('returns early when ConfigurationManager is not available', async () => {
-      const noConfigEngine = { getManager: vi.fn(() => null) };
-      const mgr = new ACLManager(noConfigEngine);
-      await expect(mgr.loadAccessPolicies()).resolves.not.toThrow();
-    });
-
-    test('skips null entries and entries without id', async () => {
-      mockConfigurationManager.getProperty.mockImplementation((key: string, dv: unknown) => {
-        if (key === 'ngdpbase.access.policies') return [
-          null,
-          { id: 'valid-policy', name: 'Valid' },
-          { name: 'no-id-policy' }
-        ];
-        return dv;
-      });
-      await aclManager.loadAccessPolicies();
-      expect(aclManager.accessPolicies.has('valid-policy')).toBe(true);
-      expect(aclManager.accessPolicies.size).toBe(1);
-    });
-  });
+  // #1431: loadAccessPolicies() is gone — it refilled a cache nothing read.
 });

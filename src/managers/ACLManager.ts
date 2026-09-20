@@ -46,15 +46,6 @@ interface UserContext {
 }
 
 /**
- * Access control policy definition
- */
-interface AccessPolicy {
-  id: string;
-  effect?: string;
-  [key: string]: unknown;
-}
-
-/**
  * Permission check result
  */
 interface PermissionResult {
@@ -145,7 +136,6 @@ interface AccessDecisionLog {
  * @class ACLManager
  * @extends BaseManager
  *
- * @property {Map<string, AccessPolicy>} accessPolicies - Global access policies
  * @property {any} policyEvaluator - Policy evaluation engine
  *
  * @see {@link BaseManager} for base functionality
@@ -158,7 +148,6 @@ interface AccessDecisionLog {
  * if (canView) console.log('User can view page');
  */
 class ACLManager extends BaseManager {
-  private accessPolicies: Map<string, AccessPolicy> = new Map();
   private policyEvaluator: PolicyEvaluator | null = null;
 
   /**
@@ -190,9 +179,10 @@ class ACLManager extends BaseManager {
       throw new Error('ACLManager requires ConfigurationManager');
     }
 
-    const policies = configManager.getProperty('ngdpbase.access.policies', []) as AccessPolicy[];
-    this.accessPolicies = new Map(policies.map((p) => [p.id, p]));
-    logger.info(`📋 Loaded ${this.accessPolicies.size} access policies from ConfigurationManager`);
+    // #1431: ACLManager holds no policy cache. It used to read
+    // `ngdpbase.access.policies` into a Map here and refill it in
+    // loadAccessPolicies — written, logged, and read by nothing. The policies
+    // belong to PolicyManager, and PolicyEvaluator asks it for them.
 
     // Get the PolicyEvaluator instance from the engine
     this.policyEvaluator = this.engine.getManager<PolicyEvaluator>('PolicyEvaluator') ?? null;
@@ -229,25 +219,6 @@ class ACLManager extends BaseManager {
     }
   }
 
-  /**
-   * Load access policies from ConfigurationManager.
-   */
-  async loadAccessPolicies(): Promise<void> {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    if (!configManager) {
-      return;
-    }
-
-    const policies = configManager.getProperty('ngdpbase.access.policies', []) as AccessPolicy[];
-
-    this.accessPolicies.clear();
-    for (const policy of policies) {
-      if (policy && policy.id) {
-        this.accessPolicies.set(policy.id, policy);
-      }
-    }
-    logger.info(`📋 Loaded ${this.accessPolicies.size} access policies from ConfigurationManager`);
-  }
 
   /**
    * Parses JSPWiki-style ACL markup from page content
@@ -1440,7 +1411,7 @@ class ACLManager extends BaseManager {
   // NOTE: ACLManager does not need backup/restore methods because:
   // - All policies are loaded from ConfigurationManager (backed up by ConfigurationManager)
   // - Per-page ACLs are embedded in page content (backed up by PageManager)
-  // - The accessPolicies Map is just a runtime cache that can be rebuilt from config
+  // - It holds no policy cache of its own (#1431)
 }
 
 export default ACLManager;
