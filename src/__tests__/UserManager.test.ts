@@ -278,11 +278,11 @@ describe('UserManager', () => {
       expect(anonymousUser.isAuthenticated).toBe(false);
     });
 
-    test('should return asserted user object', () => {
-      const assertedUser = userManager.getAssertedUser();
-      expect(assertedUser).toBeDefined();
-      expect(assertedUser.username).toBe('asserted');
-      expect(assertedUser.isAuthenticated).toBe(false);
+    test('there is no asserted user to return (#1435)', () => {
+      // Removed deliberately: a cookie evidences the browser, never the person
+      // holding it, so "Good morning, Jim" greets whoever sits down at Jim's
+      // machine. Nothing produced the subject; this pins that it stays gone.
+      expect((userManager as unknown as Record<string, unknown>).getAssertedUser).toBeUndefined();
     });
 
     test('should handle anonymous user permissions', async () => {

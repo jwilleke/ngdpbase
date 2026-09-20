@@ -98,17 +98,25 @@ export const ANONYMOUS_SUBJECT: PermissionSubject = {
   isAuthenticated: false
 };
 
-/**
- * The subject for an asserted-but-unverified reader.
+/*
+ * There is deliberately no ASSERTED subject (#1435).
  *
- * Named for the same reason as {@link ANONYMOUS_SUBJECT}: a constant cannot be
- * built slightly differently at a second call site, and a literal can.
+ * JSPWiki's "asserted" state means: a cookie says this browser has been here
+ * before, and nobody authenticated. Its visible form is the greeting — "Good
+ * morning, Jim (please log in)" — and that is the flaw, not a bug in it. A
+ * cookie evidences the BROWSER, never the person holding it, so on a shared
+ * laptop or a kiosk the cookie is correct and the greeting is wrong. It
+ * discloses that Jim has an account, and his name, to precisely the one
+ * visitor who should not learn it, and Jim never sees it happen.
+ *
+ * Nothing here ever produced one: `getAssertedUser()` had no callers, the
+ * constant was declared twice with different roles (`['reader']` against
+ * `['anonymous']`), and no shipped role or policy named it.
+ *
+ * Continuity without an identity claim is still fine — a draft, a theme, a
+ * collapsed sidebar, keyed to the browser and displaying no name. None of that
+ * needs a subject, roles, or a constant to hang them on.
  */
-export const ASSERTED_SUBJECT: PermissionSubject = {
-  username: 'Asserted',
-  roles: ['reader'],
-  isAuthenticated: false
-};
 
 /** Config key naming the system principal. Ships as `$NGDPBASE_SYSTEM_USER` — env-owned, bare form (#631). */
 export const SYSTEM_PRINCIPAL_KEY = 'ngdpbase.system.principal';
@@ -763,7 +771,7 @@ class UserManager extends BaseManager {
    * had nothing to read and every string-form call resolved against the
    * owner's full roles. There is one path now, and the type makes the other
    * impossible. Callers with no subject to hand over have one of two
-   * legitimate shapes: `ANONYMOUS_SUBJECT` / `ASSERTED_SUBJECT`, or the
+   * legitimate shapes: `ANONYMOUS_SUBJECT`, or the
    * separate question `userHoldsPermission()` — "does the named user hold
    * this?" — which is a lookup about somebody else, not an authorisation.
    *
@@ -889,12 +897,6 @@ class UserManager extends BaseManager {
 
     // Handle anonymous user (no session cookie)
     if (!username || username === 'anonymous') {
-      const userRoles = ['anonymous'];
-      return this.getPermissionsFromPolicies(policyManager, userRoles);
-    }
-
-    // Handle asserted user (has session cookie but expired/invalid) — treat as anonymous
-    if (username === 'asserted') {
       const userRoles = ['anonymous'];
       return this.getPermissionsFromPolicies(policyManager, userRoles);
     }
@@ -1462,10 +1464,6 @@ class UserManager extends BaseManager {
       // literal never appears anywhere (#1164).
       return this.hasPermission(ANONYMOUS_SUBJECT, action);
     }
-    if (username === 'asserted') {
-      return this.hasPermission(ASSERTED_SUBJECT, action);
-    }
-
     const user = await this.provider.getUser(username);
     if (!user || !user.isActive) return false;
     // permission-subject-ignore: THE sanctioned construction site.
@@ -1593,17 +1591,6 @@ class UserManager extends BaseManager {
       roles: ['anonymous'],
       isAuthenticated: false,
       authenticated: false
-    };
-  }
-
-  getAssertedUser(): UserContext {
-    return {
-      username: 'asserted',
-      displayName: 'Asserted User',
-      roles: ['anonymous'],
-      isAuthenticated: false,
-      authenticated: false,
-      hasSessionCookie: true
     };
   }
 

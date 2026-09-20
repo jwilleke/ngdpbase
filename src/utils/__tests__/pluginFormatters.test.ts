@@ -223,7 +223,6 @@ describe('formatAsList', () => {
 describe('resolveUserParam', () => {
   const loggedIn = { userName: 'alice', userContext: { username: 'alice' } };
   const anon     = { userName: 'anonymous', userContext: { username: 'anonymous' } };
-  const asserted = { userName: 'asserted', userContext: { username: 'asserted' } };
   const empty    = {};
 
   test('returns undefined when value is undefined', () => {
@@ -248,10 +247,6 @@ describe('resolveUserParam', () => {
 
   test('returns undefined for $currentUser when user is anonymous', () => {
     expect(resolveUserParam('$currentUser', anon)).toBeUndefined();
-  });
-
-  test('returns undefined for $currentUser when username is "asserted"', () => {
-    expect(resolveUserParam('$currentUser', asserted)).toBeUndefined();
   });
 
   test('returns undefined for $currentUser when context has no username', () => {

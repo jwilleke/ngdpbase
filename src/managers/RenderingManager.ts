@@ -1400,8 +1400,6 @@ class RenderingManager extends BaseManager {
     switch (userContext.username) {
     case 'anonymous':
       return 'Anonymous';
-    case 'asserted':
-      return userContext.displayName || 'Asserted User';
     default:
       return userContext.displayName || userContext.username;
     }
@@ -1421,8 +1419,6 @@ class RenderingManager extends BaseManager {
     switch (userContext.username) {
     case 'anonymous':
       return 'Anonymous';
-    case 'asserted':
-      return 'Asserted';
     default:
       return 'Authenticated';
     }

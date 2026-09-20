@@ -149,7 +149,7 @@ export function formatAsCount(n: number): string {
 // ---------------------------------------------------------------------------
 
 /** Usernames that represent an unauthenticated visitor */
-const ANONYMOUS_NAMES = new Set(['anonymous', 'asserted', '']);
+const ANONYMOUS_NAMES = new Set(['anonymous', '']);
 
 /**
  * Resolve a plugin parameter that may contain the special token `$currentUser`
@@ -160,7 +160,7 @@ const ANONYMOUS_NAMES = new Set(['anonymous', 'asserted', '']);
  * - `$currentUser` resolves to the username from `context.userContext.username`
  *   or `context.userName`, whichever is set first.
  * - Returns `undefined` when the token was used but the visitor is anonymous
- *   (username is "anonymous", "asserted", or absent).  The caller can use this
+ *   (username is "anonymous" or absent).  The caller can use this
  *   to detect the "token present but not logged in" case and show a prompt.
  *
  * @example

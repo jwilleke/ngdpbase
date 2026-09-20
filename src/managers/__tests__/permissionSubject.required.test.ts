@@ -18,7 +18,7 @@ vi.unmock('../UserManager');
 
 import fs from 'fs';
 import path from 'path';
-import UserManager, { ANONYMOUS_SUBJECT, ASSERTED_SUBJECT } from '../UserManager';
+import UserManager, { ANONYMOUS_SUBJECT } from '../UserManager';
 import type { PermissionSubject, JobSubject } from '../UserManager';
 import { toPermissionSubject, jobContextFromRequest } from '../../context/JobContext';
 
@@ -48,7 +48,9 @@ describe('#1212 the type', () => {
   });
 
   test('the named constants are complete subjects', () => {
-    for (const s of [ANONYMOUS_SUBJECT, ASSERTED_SUBJECT] as PermissionSubject[]) {
+    // ASSERTED_SUBJECT was removed in #1435 — nothing produced it, and a
+    // cookie-asserted identity discloses a name to whoever holds the machine.
+    for (const s of [ANONYMOUS_SUBJECT] as PermissionSubject[]) {
       expect(typeof s.username).toBe('string');
       expect(Array.isArray(s.roles)).toBe(true);
       expect(typeof s.isAuthenticated).toBe('boolean');

@@ -2406,6 +2406,11 @@ class WikiRoutes {
     }
 
     // Guard 2 — an explicit deny anywhere wins; ngdpbase policy default is deny.
+    // `asserted` stays in this list although the subject was removed (#1435).
+    // These are POLICY subject names an operator may have written, not code
+    // constants, and the question here is "could a logged-out visitor read
+    // this page" — counting a name that can no longer match errs toward an
+    // empty sitemap, which is the safe direction.
     const anonSubject = (s: { type?: string; value?: string }) =>
       s?.type === 'role' && ['anonymous', 'all', 'asserted'].includes(String(s.value).toLowerCase());
     const readers = policies.filter((p) =>
@@ -7140,11 +7145,9 @@ ${panes}
           ? 'No User/Anonymous'
           : currentUser.username === 'anonymous'
             ? 'Anonymous'
-            : currentUser.username === 'asserted'
-              ? 'Asserted (has cookie)'
-              : currentUser.isAuthenticated
-                ? 'Authenticated'
-                : 'Unknown',
+            : currentUser.isAuthenticated
+              ? 'Authenticated'
+              : 'Unknown',
         hasSessionCookie: !!sessionId,
         permissions: currentUser
           ? userManager.getUserPermissions(currentUser.username ?? '')
@@ -13124,7 +13127,6 @@ ${panes}
           searcher?.authenticated
           && username
           && username !== 'anonymous'
-          && username !== 'asserted'
         );
         if (!canSearchUsers || !searcher) {
           return res.json({ success: true, results: [], total: 0, hasMore: false, capped: false });

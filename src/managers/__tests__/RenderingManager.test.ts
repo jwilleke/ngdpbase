@@ -461,9 +461,6 @@ describe('RenderingManager', () => {
       expect(renderingManager.getUserName({ username: 'asserted', displayName: 'Jane', roles: [] })).toBe('Jane');
     });
 
-    test('returns "Asserted User" when asserted but no displayName', () => {
-      expect(renderingManager.getUserName({ username: 'asserted', roles: [] })).toBe('Asserted User');
-    });
   });
 
   describe('Configuration', () => {
@@ -616,10 +613,6 @@ describe('RenderingManager', () => {
 
     test('returns Anonymous for anonymous username', () => {
       expect(renderingManager.getLoginStatus({ username: 'anonymous', roles: [] })).toBe('Anonymous');
-    });
-
-    test('returns Asserted for asserted username', () => {
-      expect(renderingManager.getLoginStatus({ username: 'asserted', roles: [] })).toBe('Asserted');
     });
 
     test('returns Authenticated for regular username', () => {
