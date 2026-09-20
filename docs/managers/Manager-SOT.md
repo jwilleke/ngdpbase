@@ -169,6 +169,41 @@ rather than failing loudly.
 - __6 Roles used at runtime are absent from the catalogue__ — `All`, `Authenticated`, `occupant` —
   tracked as [#1429](https://github.com/jwilleke/ngdpbase/issues/1429) (P0).
 
+### The model — PEP, PDP, PIP, PAP
+
+Operator, 2026-09-20: use the standard access-control roles. They are already
+present in this codebase; they are just not named, which is why "who decides"
+had no answer.
+
+| Role | What it does | Who, once Subject 1 lands |
+| --- | --- | --- |
+| __PEP__ — enforcement point | Asks, then enforces the answer: 401 vs 403, a redirect, a 503. __Never decides.__ | Route handlers (`permitted`, `ctx.requirePermission`), __manager doors__ (authorization happens at the door with an `ActorContext`), and the availability gate middleware |
+| __PDP__ — decision point | Answers "may this subject do this action, on this resource". One implementation, one ordering, one place the agent-token and share ceilings run | `PolicyDecisionPoint` — today's `PolicyEvaluator` matching, plus the ceilings that currently sit in `UserManager.hasPermission` |
+| __PIP__ — information point | Supplies the attributes a decision needs. Decides nothing | `PolicyInformationPoint` for a page's own rules (ACL markup, audience, private flag) — today's `ACLManager`; `UserManager` / `RoleManager` for the subject's roles |
+| __PAP__ — administration point | Where policy is authored and changed | `ConfigurationManager` (the merge, and the write path for `app-custom-config.json`) together with the admin screens — which is where [#1216](https://github.com/jwilleke/ngdpbase/issues/1216) belongs |
+
+__One question shape.__ `decide(caller, { action, resource? })` returning
+`{ permit, reason }`. A capability check is a decision with no resource; a page
+check is one with `{ type: 'page', id }`. `hasPermission` and `canAccess`
+remain the PEP-side wrappers, and both call it.
+
+__One vocabulary.__ Every action name is declared in
+`ngdpbase.permissions.definitions` and nowhere else. The page actions
+(`view`, `edit`) map onto the registry names (`page-read`, `page-edit`), and
+the colon-separated names in `ACLManager.checkDefaultPermission`
+([#1174](https://github.com/jwilleke/ngdpbase/issues/1174)), which are declared
+nowhere and can therefore only deny, go.
+
+__The vocabulary becomes a type.__ A build step reads the registry and emits a
+union, so a mistyped permission is a compile error rather than a silent deny.
+Addons generate their own union from their own `config/default-config.json`, so
+the guarantee holds per package rather than being weakened to `string` for
+everyone.
+
+__Availability stays a separate PEP at the edge__, not environment attributes
+inside the PDP: it must answer before any resource is resolved, and it covers
+static assets that never reach a decision ([#1432](https://github.com/jwilleke/ngdpbase/issues/1432)).
+
 ### Target ownership
 
 | Fact | Owner |
@@ -184,35 +219,30 @@ rather than failing loudly.
 
 Each step is shippable alone and leaves the tree green.
 
-- 1 __Delete the snapshot.__ Remove `permissions` from the role record, and the cosmetic fields
-  unless the admin UI reads them (check first). Remove per-record overrides. Nothing reads them, so
-  this is a deletion, not a migration. Existing files keep the extra keys harmlessly until rewritten.
-- 2 __Derive the role × permission matrix.__ `ConfigAccessorPlugin` computes it from the policies;
-  the inline `permissions[]` arrays are deleted. Removes #713's hand-sync rule rather than policing
-  it.
-- 3 __Move availability out of `ACLManager`__ — maintenance mode, business hours, holidays, time
-  restrictions. They gate the site, not the identity. New home to be decided.
-- 4 __One policy read.__ `ACLManager` asks `PolicyManager` instead of reading
-  `ngdpbase.access.policies` itself.
-- 5 __Name the gatekeeper__ and give it the question. Options were: `PolicyEvaluator` keeps
-  deciding and the managers become its catalogue and its resource rules; or `PolicyManager` owns
-  both the policies and the question, with `PolicyEvaluator` as its internals. __Open — see
-  below.__
-- 6 __Fold the resource rules in.__ `ACLManager`'s page-access logic moves behind the gatekeeper;
-  ACL markup parsing is a parser concern. `ACLManager` then has nothing left of its own.
-- 7 __`PolicyManager`'s missing admin methods__ ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216))
-  land on whatever step 5 names, not before — otherwise they are written twice.
+- 1 __Delete the snapshot.__ ✅ [3ec3511b](https://github.com/jwilleke/ngdpbase/commit/3ec3511b) — a role record holds membership only.
+- 2 __Derive the role × permission matrix.__ ✅ [56d4fd1f](https://github.com/jwilleke/ngdpbase/commit/56d4fd1f) — computed from the policies; the inline `permissions[]` arrays are gone, and with them #713's hand-sync rule.
+- 3 __Move availability out of `ACLManager`.__ ✅ [1519af44](https://github.com/jwilleke/ngdpbase/commit/1519af44) — one gate, several reasons, each with its own message ([#1432](https://github.com/jwilleke/ngdpbase/issues/1432)). `ACLManager` 1,446 → 1,079 lines.
+- 4 __One policy read.__ ✅ [62fc4b1d](https://github.com/jwilleke/ngdpbase/commit/62fc4b1d) — `ACLManager` kept a policy cache that was written and never read; deleted. `PolicyEvaluator` asks `PolicyManager`, which is the one read.
+- 5 __One vocabulary, and make it a type.__ Map the page actions onto the registry names, delete the colon names (#1174), and generate the union from the registry.
+- 6 __Introduce the PDP.__ `PolicyDecisionPoint` wraps today's matching and takes over the ceilings; `UserManager.hasPermission` delegates to it. Behaviour identical — one decider exists.
+- 7 __Page decisions delegate.__ `ACLManager` supplies the page's attributes and asks the PDP instead of deciding. __Write down what each of its five entry points orders today before changing any of them__ — that ordering is the risk in this whole plan, not the plumbing.
+- 8 __`ACLManager` becomes the PIP__ in name and location; the ACL markup parsing moves to `src/parsers/`.
+- 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
+- 10 __Retire `PolicyManager`__ once the PDP reads the policies and the PAP writes them.
 
 ### Open decisions
 
-- __Step 5's name.__ One gatekeeper, and whether it is called `PolicyManager`, `AccessManager`, or
-  something else. `ACLManager` is JSPWiki vocabulary for per-page markup, which is one input rather
-  than the subject.
-- __Step 3's destination.__ Where availability checks live once they leave `ACLManager`.
-- __Whether `UserManager` keeps the two catalogues.__ It currently owns permissions, roles, subject
-  construction and membership sync. Some of that belongs to the gatekeeper; splitting it is a
-  larger change than steps 1–7 and is deliberately not planned here yet.
+- __Step 7's orderings.__ `ACLManager`'s five entry points each sequence ACL
+  markup, audience and policy their own way. Which ordering is correct is a
+  decision, not a refactor.
+- __Whether `UserManager` keeps the two catalogues.__ It owns the permission
+  catalogue, the role catalogue, subject construction and membership sync.
+  Some of that is PIP work; splitting it is larger than the steps above.
 
-## Subject 2 — (next)
+### Settled
 
-Nothing yet. Add a section when the next source-of-truth tangle is analysed.
+- __Names:__ `PolicyDecisionPoint`, `PolicyInformationPoint` (operator, 2026-09-20).
+- __PEPs are the doors__, not a layer: routes, manager doors, the availability gate.
+- __PAP is `ConfigurationManager` plus the admin screens__, not a manager with its own store.
+- __Availability is a separate PEP__, not PDP environment attributes.
+- __Admin bypass:__ maintenance keeps its own `allow-admins`; a schedule or holiday never locks out an administrator, because there is no switch to flip from outside.
