@@ -17,8 +17,10 @@
  * is the same reasoning `app.ts` gives for agent tokens: *"roles are resolved
  * live per request — a token never carries a snapshot."*
  *
- * So a job that needs to make a permission decision resolves roles at the
- * moment of the decision, from `username`, via {@link toPermissionSubject}.
+ * So a job that needs to make a permission decision asks for the permission at
+ * the moment of the decision, from `username`, via {@link toPermissionSubject}.
+ * The question is always a permission (P2); roles are lists policy refers to,
+ * carried by nothing and gating nothing.
  *
  * __This is a deliberate reduction, which is the thing #1164 punished.__ The
  * difference is that there it was accidental: `AttachmentManager` rebuilt a
@@ -35,14 +37,19 @@ import type { ShareGrant } from '../types/Share.js';
 /**
  * Where the work came from.
  *
- * `request` is a person. The rest have no person behind them, which is exactly
- * why they need naming rather than defaulting to anonymous.
+ * Every origin is a caller; none of them is "a person" as far as this type is
+ * concerned. `request` acts for an identity the session authenticated — which
+ * may itself be an agent token acting under a delegation. The rest are the
+ * server acting for itself, and they are named for that reason rather than
+ * defaulting to anonymous: `schedule` and `boot` run as the system principal
+ * (#631, env-owned identity, authority resolved through policy like any other
+ * caller), and `operator` is a command line.
  */
 export type JobOrigin = 'request' | 'schedule' | 'boot' | 'operator';
 
 /** The identity a background job runs under. Flat, and serialisable by construction. */
 export interface JobContext {
-  /** Who asked. `System` for origins with no person behind them. */
+  /** Who asked. The system principal for the origins where the server acts for itself. */
   username: string;
   /** From what context the work was requested. */
   origin: JobOrigin;
