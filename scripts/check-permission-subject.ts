@@ -80,7 +80,15 @@ export interface Violation {
   detail: string;
 }
 
-/** `hasPermission({ … }` — an object literal as the subject. */
+/**
+ * `hasPermission({ … }` — an object literal as the subject.
+ *
+ * #1399: this is matched against the line AND the two after it. The
+ * single-line form was all it caught, so `ApiContext.hasPermission` — which
+ * opened the call on one line and the literal on the next — rebuilt the
+ * subject in the class where #1173 happened, dropping `privateStoreHandle`
+ * (#1382), while this guard reported the tree clean.
+ */
 const REBUILT = /hasPermission\(\s*\{/;
 
 /**
@@ -148,7 +156,10 @@ export function checkSource(relPath: string, source: string): Violation[] {
   const rawLines = source.split('\n');
   const stripped = stripComments(source);
   stripped.forEach((line, i) => {
-    if (REBUILT.test(line)) {
+    // A call and its literal may be split across lines; join a small window so
+    // the formatting of the call cannot decide whether the rule applies.
+    const callWindow = [line, stripped[i + 1] ?? '', stripped[i + 2] ?? ''].join(' ');
+    if (REBUILT.test(callWindow) && !rawLines.slice(Math.max(0, i - 12), i + 3).join('\n').includes(SUPPRESS)) {
       out.push({
         file: relPath,
         line: i + 1,

@@ -178,7 +178,12 @@ export function scan(): Violation[] {
             detail: `${decl[1]} must extend PermissionSubject — an identity shape declared twice drifts, and an index signature hides it (#1173)`
           });
         }
-        if (DISCARDED_IDENTITY.test(line)) {
+        // A property declaration is storage, not a door's parameter: a private
+        // field named `_subject` read back through an accessor is the opposite
+        // of discarding the context. Parameters end in `,` or `)`; a property
+        // declaration ends in `;`.
+        const isPropertyDecl = /^\s*(private|protected|public|readonly|abstract|static)\b[^()]*;\s*$/.test(line);
+        if (DISCARDED_IDENTITY.test(line) && !isPropertyDecl) {
           discardedHit.add(rel);
           if (!DISCARDED_ALLOWED[rel]) {
             violations.push({

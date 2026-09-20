@@ -26,11 +26,10 @@
  */
 
 import type { Request } from 'express';
+import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import type UserManager from '../managers/UserManager.js';
 import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
-import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -50,7 +49,7 @@ export class ApiError extends Error {
 
 // ── ApiContext ───────────────────────────────────────────────────────────────
 
-export class ApiContext {
+export class ApiContext extends BaseContext {
   /** Reference to the wiki engine */
   readonly engine: WikiEngine;
 
@@ -104,6 +103,10 @@ export class ApiContext {
     viaShare?: ShareGrant,
     subject: PermissionSubject | null = null
   ) {
+    // #1399: the subject goes to BaseContext as given. The flattened fields
+    // below are a convenience copy for route code to READ; nothing may build a
+    // subject back out of them.
+    super(engine, subject);
     this.engine = engine;
     this.isAuthenticated = isAuthenticated;
     this.username = username;
@@ -141,7 +144,12 @@ export class ApiContext {
       Array.isArray(uc.roles) ? (uc.roles) : [],
       uc.viaToken,
       uc.viaShare,
-      req.userContext ?? null
+      // #1399: forward the subject the middleware wrote, as it wrote it. A
+      // context with no username is not a subject — a malformed or absent one
+      // resolves to the anonymous caller through BaseContext.getActor(), which
+      // is the least-privilege reading, rather than being passed on as an
+      // empty object the evaluator would have to interpret.
+      typeof uc.username === 'string' && uc.username ? (req.userContext ?? null) : null
     );
   }
 
@@ -174,36 +182,18 @@ export class ApiContext {
    * @example
    * if (await ctx.hasPermission('user-read')) { // include PII fields }
    */
-  async hasPermission(permission: string): Promise<boolean> {
-    const userManager = this.engine.getManager<UserManager>('UserManager');
-    if (!userManager) return false;
-    // #637: build a userContext from our request-scoped fields and pass it
-    // through so UserManager can skip provider.getUser + resolveUserRoles.
-    // The session middleware already resolved roles + added 'Authenticated'/'All'
-    // for authenticated callers; we trust that shape here.
-    if (this.username) {
-      return userManager.hasPermission(
-        {
-          username: this.username,
-          roles: this.roles,
-          isAuthenticated: this.isAuthenticated,
-          // #1173: carried, not dropped. Without this the subject is rebuilt
-          // from three fields and the ceiling has no token to find.
-          ...(this.viaToken ? { viaToken: this.viaToken } : {}),
-          // #1222: the share ceiling rides the same way.
-          ...(this.viaShare ? { viaShare: this.viaShare } : {})
-        },
-        permission
-      );
-    }
-    // Anonymous: a named subject rather than an empty string, so there is one
-    // code path into hasPermission (#1173). A share visitor is anonymous too,
-    // and the share must ride along or the ceiling has nothing to read (#1222).
-    return userManager.hasPermission(
-      this.viaShare ? { ...ANONYMOUS_SUBJECT, viaShare: this.viaShare } : ANONYMOUS_SUBJECT,
-      permission
-    );
-  }
+  /**
+   * #1399: the door is BaseContext's, which asks UserManager with the subject
+   * this context was handed. This method used to rebuild that subject from the
+   * flattened fields above — the #1173 defect, in the class where #1173
+   * happened. The rebuild listed username, roles, isAuthenticated, viaToken and
+   * viaShare, so it dropped `privateStoreHandle` and an addon API route could
+   * not see the caller's own sealed pages (#1382).
+   *
+   * @example
+   * if (await ctx.hasPermission('user-read')) { // include PII fields }
+   */
+  // hasPermission(action) is inherited from BaseContext.
 
   /**
    * Throws `ApiError(403)` if the caller's roles do not grant the given permission.
