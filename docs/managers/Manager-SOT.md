@@ -90,7 +90,9 @@ __1 Reading the policies.__ Two owners for one config key.
 - `PolicyManager.initialize` reads `ngdpbase.access.policies` into a Map (`:83`), behind
   `ngdpbase.access.policies.enabled` (`:76`).
 - `ACLManager` reads the same key itself, twice (`:193`, `:241`), and never asks `PolicyManager`.
-- So the `enabled` flag gates one reader and not the other.
+- So the `enabled` flag gates one reader and not the other. It ships `true`, so this is latent
+  rather than live: set it false and `PolicyManager` holds nothing while `ACLManager` keeps
+  deciding from its own read.
 
 __2 Mapping an action to a permission.__ Three vocabularies for one idea.
 
@@ -149,6 +151,18 @@ rather than failing loudly.
   outside the policies, in a data file, invisible to the admin matrix and to the registry checks.
   __Nothing reads that snapshot__ — `resolveUserRoles` takes only `namedPosition` — and nothing
   exports it.
+
+  __The drift is not hypothetical.__ Measured on jimstest, 2026-09-20:
+
+  | role | permissions in the record | granted by policy | missing from the record |
+  | --- | --- | --- | --- |
+  | `admin` | 17 | 21 | `admin-read`, `asset-edit`, `share-manage`, `token-mint` |
+  | `editor` | 10 | 12 | `share-manage`, `token-mint` |
+  | `contributor` | 7 | 7 | — |
+  | `reader` | 4 | 4 | — |
+
+  Two of the four live records are behind the policies, by four entries and two. Nothing reports
+  it, and nothing would.
 - __5 The catalogue is duplicated inside the config too.__ Each role's inline `permissions[]` array
   is display-only; the policies enforce. `_comment_roles` (#713) asks for the two to be kept matched
   by hand. All eight roles agree today (verified 2026-09-20), enforced by nothing.
