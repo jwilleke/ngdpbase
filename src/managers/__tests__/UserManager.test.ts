@@ -7,6 +7,7 @@
  */
 
 import UserManager from '../UserManager';
+import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 /** #1179: the account writes take the actor's context — a request subject here. */
 const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
@@ -364,13 +365,20 @@ describe('UserManager', () => {
 
     // ─── #637: hasPermission fast path (pre-resolved userContext) ─────────────
 
+    // #1431: the decision lives in the PDP now, so the engine gets a REAL one
+    // wired to this mock. That keeps what these tests are about — the ceilings,
+    // the live role resolution, what reaches the evaluator — exercising the
+    // actual ordering rather than a stub of it.
     function installPolicyEvaluator(allowed: boolean) {
       const policyEvaluator = {
         evaluateAccess: vi.fn().mockResolvedValue({ allowed })
       };
+      const pdp = new PolicyDecisionPoint(mockEngine);
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'PolicyEvaluator') return policyEvaluator;
+        if (name === 'PolicyDecisionPoint') return pdp;
+        if (name === 'UserManager') return userManager;
         return null;
       });
       return policyEvaluator;
@@ -564,9 +572,13 @@ describe('UserManager', () => {
   describe('requirePermissions() (#1198)', () => {
     function installPolicyEvaluator(allowed: boolean) {
       const policyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ allowed }) };
+      // #1431: a real PDP over this mock engine — the decision moved there.
+      const pdp = new PolicyDecisionPoint(mockEngine);
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'PolicyEvaluator') return policyEvaluator;
+        if (name === 'PolicyDecisionPoint') return pdp;
+        if (name === 'UserManager') return userManager;
         return null;
       });
       return policyEvaluator;

@@ -18,6 +18,7 @@ import ValidationManager from './managers/ValidationManager.js';
 import PolicyManager from './managers/PolicyManager.js';
 import PolicyValidator from './managers/PolicyValidator.js';
 import PolicyEvaluator from './managers/PolicyEvaluator.js';
+import PolicyDecisionPoint from './security/PolicyDecisionPoint.js';
 import ExportManager from './managers/ExportManager.js';
 import TemplateManager from './managers/TemplateManager.js';
 import AttachmentManager from './managers/AttachmentManager.js';
@@ -245,6 +246,11 @@ class WikiEngine extends Engine {
 
     const policyEvaluator = new PolicyEvaluator(this);
     this.registerManager('PolicyEvaluator', policyEvaluator);
+
+    // #1431: the Policy Decision Point. One component answers "may this subject
+    // do this", with the delegation ceilings running once, inside it.
+    const policyDecisionPoint = new PolicyDecisionPoint(this);
+    this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
     await policyEvaluator.initialize();
 
     const aclManager = new ACLManager(this);

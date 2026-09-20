@@ -1,4 +1,5 @@
 import BaseManager, { BackupData } from './BaseManager.js';
+import PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
@@ -13,7 +14,6 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PersonManager from './PersonManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type RoleManager from './RoleManager.js';
-import type PolicyEvaluator from './PolicyEvaluator.js';
 import type PolicyManager from './PolicyManager.js';
 import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
@@ -772,96 +772,36 @@ class UserManager extends BaseManager {
    * @param action - Action/permission to check (e.g., 'page-create', 'user-read')
    * @returns True if the subject may perform the action under current policy
    */
+  /**
+   * The PDP this manager asks.
+   *
+   * Taken from the engine when it is registered there — which is how a PEP
+   * reaches it — and otherwise constructed here. It holds no state, so one
+   * instance is as good as another; what must not happen is a SECOND
+   * implementation of the decision, which is exactly what this method used to
+   * be (#1431).
+   */
+  private policyDecisionPoint(): PolicyDecisionPoint {
+    const registered = this.engine?.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (registered) return registered;
+    this._pdp ??= new PolicyDecisionPoint(this.engine, this);
+    return this._pdp;
+  }
+
+  private _pdp?: PolicyDecisionPoint;
+
   async hasPermission(
     subject: PermissionSubject | JobSubject,
     action: string
   ): Promise<boolean> {
-    const policyEvaluator = this.engine?.getManager<PolicyEvaluator>('PolicyEvaluator');
-    if (!policyEvaluator) {
-      logger.warn('[UserManager] PolicyEvaluator not available, denying permission');
-      return false;
-    }
-
-    // #946: agent-token scope ceiling for CAPABILITY checks.
-    //
-    // This is a second enforcement point, not a duplicate. ACLManager's ceiling
-    // covers page-resource checks (checkPagePermissionWithContext); this one
-    // covers capability checks, which reach here via WikiContext.hasPermission
-    // and never touch ACLManager at all. POST /api/page/ingest uses exactly
-    // that path — without this, a token scoped `page-read` could create pages.
-    //
-    // Only applies when the caller passed a resolved context carrying a token;
-    // an ordinary session request is unaffected.
-    {
-      const viaToken = subject.viaToken;
-      if (viaToken && !viaToken.scopes.includes(action)) {
-        logger.info(
-          `[UserManager] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
-          `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
-        );
-        return false;
-      }
-    }
-
-    // #1222: a share is a delegation, and for a capability check the share IS
-    // the policy. The subject is anonymous; what it may do is what the issuer
-    // delegated, bounded by what the issuer holds NOW. Three refusals, in
-    // order: the action is not in the share; the share has expired (re-read
-    // here rather than trusted from resolution, so a long request cannot
-    // outlive it); the issuer no longer holds the action — resolved live, so
-    // revoking the issuer's role stops every share they issued on the next
-    // request (epic #1225). Nothing about the anonymous roles is consulted:
-    // a share must work on an instance whose policy gives anonymous nothing.
-    {
-      const viaShare = subject.viaShare;
-      if (viaShare) {
-        if (!viaShare.actions.includes(action)) {
-          logger.info(`[UserManager] share ${viaShare.id} does not delegate '${action}' (has: ${viaShare.actions.join(',') || 'none'}) — denied`);
-          return false;
-        }
-        if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
-          logger.info(`[UserManager] share ${viaShare.id} expired ${viaShare.expiresAt} — denied`);
-          return false;
-        }
-        const issuerHolds = await this.userHoldsPermission(viaShare.issuer, action);
-        if (!issuerHolds) {
-          logger.info(`[UserManager] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
-        }
-        return issuerHolds;
-      }
-    }
-
-    let userContext: UserContext;
-
-    // #1173: one path. There is no username-string branch any more — see
-    // `userHoldsPermission` for the question that legitimately takes a name.
-    if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
-      // #631: a JobSubject asks to be resolved NOW. That is the shape
-      // `toPermissionSubject` hands over for a request-origin job: it carries
-      // who asked and drops the roles they held at enqueue time, so a reindex
-      // enqueued at 09:00 and running at 09:12 authorises against 09:12's
-      // roles. #1212 made the request explicit: until then it was "roles
-      // absent", and the type could not tell a job from a caller that forgot.
-      userContext = await this.resolveSubjectNow(subject.username);
-    } else {
-      // #1212: the three fields are required on the type, so nothing is
-      // defaulted here. A missing username used to fail closed by luck
-      // (`?? 'Anonymous'`); now it does not compile.
-      userContext = {
-        username: subject.username,
-        roles: subject.roles,
-        isAuthenticated: subject.isAuthenticated
-      };
-    }
-
-    // Evaluate using policies - use generic page resource for permission checks
-    const result = await policyEvaluator.evaluateAccess({
-      pageName: '*', // Generic - checking user capability, not specific page
-      action: action,
-      userContext: userContext as unknown as { username: string; roles: string[]; isAuthenticated: boolean }
-    }) as { allowed: boolean };
-
-    return result.allowed;
+    // #1431: the decision is the PDP's. This method stays because it is what
+    // every door already calls — it is the PEP-facing name for the question —
+    // but the agent-token ceiling (#946), the share-is-the-policy rule (#1222),
+    // the live role resolution (#631) and the policy evaluation all live in
+    // src/security/PolicyDecisionPoint.ts now, in that order, so they exist
+    // once rather than here AND in the page path.
+    const decision = await this.policyDecisionPoint().decide(subject, { action });
+    return decision.permit;
   }
 
   /**
@@ -871,8 +811,11 @@ class UserManager extends BaseManager {
    * "what may my requester do, now?". An unknown, inactive or absent user
    * resolves to the anonymous subject: the job then holds exactly what a
    * visitor holds, which is the safe answer for someone who no longer exists.
+   *
+   * #1431: public because this is PIP work — the PDP asks for the subject's
+   * current attributes and decides with them. It answers nothing itself.
    */
-  private async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
+  async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
     if (username && this.isSystemPrincipal(username)) {
       return this.systemSubject();
     }

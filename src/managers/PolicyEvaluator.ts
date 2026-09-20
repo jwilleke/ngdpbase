@@ -1,4 +1,5 @@
 import BaseManager from './BaseManager.js';
+import type { PolicySubject, PolicyResource } from '../types/Policy.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -16,19 +17,6 @@ interface UserContext {
 /**
  * Policy subject definition
  */
-interface PolicySubject {
-  type: string;
-  value: string;
-}
-
-/**
- * Policy resource definition
- */
-interface PolicyResource {
-  type: string;
-  pattern: string;
-}
-
 /**
  * Policy definition for evaluation
  */

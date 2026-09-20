@@ -1,16 +1,10 @@
 import BaseManager from './BaseManager.js';
+import type { Policy } from '../types/Policy.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 
-/**
- * Policy definition
- */
-interface Policy {
-  id: string;
-  priority?: number;
-  [key: string]: unknown;
-}
+// #1431: Policy is declared once, in src/types/Policy.ts.
 
 /**
  * Type guard to check if an object is a valid Policy
