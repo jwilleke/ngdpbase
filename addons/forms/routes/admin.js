@@ -10,7 +10,6 @@ export default function adminRoutes(engine, _addon) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const m = fdm();
                 const definitions = m?.getAllDefinitions() ?? [];
@@ -38,7 +37,6 @@ export default function adminRoutes(engine, _addon) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const m = fdm();
                 const form = m?.getDefinition(String(req.params['formId']));
@@ -71,7 +69,6 @@ export default function adminRoutes(engine, _addon) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const m = fdm();
                 const form = m?.getDefinition(String(req.params['formId']));
@@ -105,7 +102,6 @@ export default function adminRoutes(engine, _addon) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const body = req.body;
                 const status = typeof body['status'] === 'string' ? body['status'] : undefined;

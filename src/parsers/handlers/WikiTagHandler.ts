@@ -381,13 +381,19 @@ class WikiTagHandler extends BaseSyntaxHandler {
       }
     }
 
+    // #1399: the author's [{If role='…'}] directive matches the caller's
+    // principals, not a door method. `hasRole` is gone from the contexts (P2)
+    // because a role name must not decide access; this is a page author
+    // choosing what their own page shows, which is the audience-matching
+    // getPrincipals() exists for — the same data, asked as a question about
+    // content rather than about permission.
     if (role && context.isAuthenticated()) {
-      checkPassed = context.wikiContext.hasRole(role);
+      checkPassed = context.wikiContext.getPrincipals().includes(role);
     }
 
     if (group && context.isAuthenticated()) {
-      // Check group membership (groups are treated as roles in our system)
-      checkPassed = context.wikiContext.hasRole(group);
+      // Groups are named the same way as roles here, so they match the same list.
+      checkPassed = context.wikiContext.getPrincipals().includes(group);
     }
 
     if (user && context.isAuthenticated()) {

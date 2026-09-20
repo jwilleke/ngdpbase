@@ -33,7 +33,6 @@ export default function adminRoutes(
   router.get('/', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
 
       const m = mgr();

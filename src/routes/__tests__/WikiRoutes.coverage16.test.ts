@@ -74,7 +74,11 @@ vi.mock('../../context/ApiContext', () => {
         requireAuthenticated: vi.fn().mockImplementation(() => {
           if (!shouldApiCtxAllowAuth) throw new MockApiError(401, 'Authentication required');
         }),
+        // #1399: requirePermission classifies the refusal itself — 401 for a
+        // caller who has not signed in, 403 for one who has — so routes no
+        // longer pair it with requireAuthenticated. The mock mirrors that.
         requirePermission: vi.fn().mockImplementation(() => {
+          if (!shouldApiCtxAllowAuth) throw new MockApiError(401, 'Authentication required');
           if (!shouldApiCtxAllowPerm) throw new MockApiError(403, 'Forbidden');
         }),
         hasPermission: vi.fn().mockReturnValue(true)

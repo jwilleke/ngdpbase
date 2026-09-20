@@ -43,7 +43,6 @@ export default function builderRoutes(engine) {
     router.get('/new', async (req, res) => {
         try {
             const ctx = ApiContext.from(req, engine);
-            ctx.requireAuthenticated();
             await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
             res.render('forms-builder', { currentUser: req.userContext, form: null, isNew: true, errors: [] });
         }
@@ -57,7 +56,6 @@ export default function builderRoutes(engine) {
     router.get('/:formId', async (req, res) => {
         try {
             const ctx = ApiContext.from(req, engine);
-            ctx.requireAuthenticated();
             await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
             const form = fdm()?.getDefinition(String(req.params['formId']));
             if (!form) {
@@ -77,7 +75,6 @@ export default function builderRoutes(engine) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const body = req.body;
                 const rawId = typeof body['id'] === 'string' ? body['id'].trim() : '';
@@ -131,7 +128,6 @@ export default function builderRoutes(engine) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const formId = String(req.params['formId']);
                 const m = fdm();
@@ -180,7 +176,6 @@ export default function builderRoutes(engine) {
         void (async () => {
             try {
                 const ctx = ApiContext.from(req, engine);
-                ctx.requireAuthenticated();
                 await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
                 const formId = String(req.params['formId']);
                 const m = fdm();

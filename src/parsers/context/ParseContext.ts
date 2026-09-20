@@ -80,7 +80,6 @@ export interface WikiContextLike {
   readonly pageName: string | null;
   readonly userContext: UserContext | null;
   readonly pageMetadata: PageFrontmatter | null;
-  hasRole(...names: string[]): boolean;
   hasPermission(action: string): Promise<boolean>;
   canAccess(action: string): Promise<boolean>;
   getPrincipals(): string[];
@@ -165,7 +164,7 @@ export interface CachedContextData {
  * ParseContext is constructed without a real WikiContext (legacy callers, test
  * fixtures).
  *
- * - hasRole / getPrincipals: pure functions over the snapshot's roles array
+ * - getPrincipals: pure function over the snapshot's roles array
  * - hasPermission / canAccess: delegate to the engine's UserManager / ACLManager
  *   when registered, so legacy callers that wired up these managers (mostly
  *   tests) keep getting the same policy-evaluated answer they did before
@@ -191,11 +190,6 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     pageName,
     userContext,
     pageMetadata,
-    hasRole: (...names: string[]): boolean => {
-      if (names.length === 0) return false;
-      const have = new Set(userContext?.roles ?? []);
-      return names.some((n) => have.has(n));
-    },
     hasPermission: async (action: string): Promise<boolean> => {
       const userManager = engine.getManager<{
         hasPermission(subject: PermissionSubject, a: string): Promise<boolean>;

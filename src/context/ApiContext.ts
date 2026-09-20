@@ -196,15 +196,23 @@ export class ApiContext extends BaseContext {
   // hasPermission(action) is inherited from BaseContext.
 
   /**
-   * Throws `ApiError(403)` if the caller's roles do not grant the given permission.
+   * Throws unless policy grants the caller this permission.
+   *
+   * #1399: the refusal classifies itself — 401 for a caller who has not
+   * signed in, 403 for one who has. That is the ONE sanctioned use of
+   * `isAuthenticated` (security-posture P2): it never decides, it only says
+   * which refusal to send after policy has already said no. Before this,
+   * every route paired `requireAuthenticated()` with this call to get the 401,
+   * which read as though authentication were half the gate.
    *
    * @example
-   * await ctx.requirePermission('search-user'); // → 403 if no role grants it
+   * await ctx.requirePermission('search-user'); // → 401 anonymous, 403 signed in
    */
   async requirePermission(permission: string): Promise<void> {
-    if (!(await this.hasPermission(permission))) {
-      throw new ApiError(403, 'Forbidden');
-    }
+    if (await this.hasPermission(permission)) return;
+    throw this.isAuthenticated
+      ? new ApiError(403, 'Forbidden')
+      : new ApiError(401, 'Authentication required');
   }
 }
 

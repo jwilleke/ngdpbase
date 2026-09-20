@@ -99,7 +99,6 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.create(req.body as Parameters<typeof m.create>[0]);
       res.status(201).json(m.toFullCalendar(event, viewer));
@@ -130,7 +129,6 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
       const viewer = await viewerOf(ctx);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       const event = await m.update(String(req.params['id']), req.body as Parameters<typeof m.update>[1]);
       res.json(m.toFullCalendar(event, viewer));
@@ -145,7 +143,6 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const m = mgr();
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('calendar-manage'); // #1198/#1220: policy, not a role name
       await m.delete(String(req.params['id']));
       res.status(204).end();

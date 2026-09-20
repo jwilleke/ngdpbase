@@ -51,7 +51,6 @@ export default function builderRoutes(engine: WikiEngine): Router {
   router.get('/new', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       res.render('forms-builder', { currentUser: req.userContext, form: null, isNew: true, errors: [] });
     } catch (err) {
@@ -64,7 +63,6 @@ export default function builderRoutes(engine: WikiEngine): Router {
   router.get('/:formId', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       const form = fdm()?.getDefinition(String(req.params['formId']));
       if (!form) { res.status(404).send('Form not found'); return; }
@@ -80,7 +78,6 @@ export default function builderRoutes(engine: WikiEngine): Router {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const body = req.body as Record<string, unknown>;
@@ -136,7 +133,6 @@ export default function builderRoutes(engine: WikiEngine): Router {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const formId = String(req.params['formId']);
@@ -183,7 +179,6 @@ export default function builderRoutes(engine: WikiEngine): Router {
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const formId = String(req.params['formId']);

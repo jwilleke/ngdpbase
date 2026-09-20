@@ -25,7 +25,6 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const showStreakLeaderboard = config['showStreakLeaderboard'] === true;
@@ -84,7 +83,6 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
   router.post('/settings', async (req: Request, res: Response) => {
     try {
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
       // Config changes require editing app-custom-config.json directly.

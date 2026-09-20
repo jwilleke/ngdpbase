@@ -7178,7 +7178,6 @@ ${panes}
   async apiUsersSearch(req: Request, res: Response): Promise<void> {
     try {
       const ctx = ApiContext.from(req, this.engine as unknown as import('../types/WikiEngine.js').WikiEngine);
-      ctx.requireAuthenticated();
       await ctx.requirePermission('search-user');
 
       const userManager = this.engine.getManager('UserManager') as IUserManager | null;

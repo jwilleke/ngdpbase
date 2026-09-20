@@ -365,21 +365,13 @@ class WikiContext extends BaseContext {
     return this.context;
   }
 
-  /**
-   * Returns true if the current user carries any of the given roles.
-   *
-   * Pure roles-array check; does not consult PolicyEvaluator. For policy-backed
-   * permission checks, use {@link hasPermission} or {@link canAccess}.
-   *
-   * @param {...string} names - Role names to check (matches if user has at least one)
-   * @returns {boolean} true if userContext.roles contains any of the given names
-   *
-   * @example
-   * if (wikiContext.hasRole('admin', 'editor')) { ... }
-   */
-  hasRole(...names: string[]): boolean {
-    return WikiContext.userHasRole(this.userContext, ...names);
-  }
+  // #1399: the instance `hasRole` is gone (security-posture P2). A door asks
+  // for a permission — hasPermission / canAccess — and a role name skips the
+  // policy evaluator, deny policies and the token and share ceilings. It had
+  // no callers left after the #1198 series; removing it means the question
+  // cannot be asked of a context at all. The STATIC userHasRole below survives
+  // for the one remaining justified read: counting how many accounts hold a
+  // role, which is data about users rather than a decision about a caller.
 
   /**
    * Static role check for callers that don't have a full WikiContext.

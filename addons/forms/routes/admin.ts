@@ -17,7 +17,6 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
@@ -47,7 +46,6 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
@@ -76,7 +74,6 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const m = fdm();
@@ -104,7 +101,6 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
         await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
 
         const body = req.body as Record<string, unknown>;

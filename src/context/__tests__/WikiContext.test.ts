@@ -223,59 +223,12 @@ describe('WikiContext', () => {
       expect(WikiContext.userHasRole({ roles: ['admin'] })).toBe(false);
     });
 
-    test('instance hasRole delegates to static implementation', () => {
-      const ctx = new WikiContext(mockEngine, {
-        userContext: { roles: ['editor'] }
-      });
-      expect(ctx.hasRole('editor')).toBe(WikiContext.userHasRole(ctx.userContext, 'editor'));
-    });
   });
 
-  describe('hasRole', () => {
-    test('returns true when user carries one of the given roles', () => {
-      const ctx = new WikiContext(mockEngine, {
-        userContext: { roles: ['editor', 'reader'] }
-      });
-      expect(ctx.hasRole('admin', 'editor')).toBe(true);
-    });
-
-    test('returns true for single-arg role match', () => {
-      const ctx = new WikiContext(mockEngine, {
-        userContext: { roles: ['admin'] }
-      });
-      expect(ctx.hasRole('admin')).toBe(true);
-    });
-
-    test('returns false when user has none of the given roles', () => {
-      const ctx = new WikiContext(mockEngine, {
-        userContext: { roles: ['reader'] }
-      });
-      expect(ctx.hasRole('admin', 'editor')).toBe(false);
-    });
-
-    test('returns false when userContext is null', () => {
-      const ctx = new WikiContext(mockEngine);
-      expect(ctx.hasRole('admin')).toBe(false);
-    });
-
-    test('returns false when roles is missing or empty', () => {
-      const noRoles = new WikiContext(mockEngine, {
-        userContext: { username: 'alice' }
-      });
-      const emptyRoles = new WikiContext(mockEngine, {
-        userContext: { roles: [] }
-      });
-      expect(noRoles.hasRole('admin')).toBe(false);
-      expect(emptyRoles.hasRole('admin')).toBe(false);
-    });
-
-    test('returns false when called with no role names', () => {
-      const ctx = new WikiContext(mockEngine, {
-        userContext: { roles: ['admin'] }
-      });
-      expect(ctx.hasRole()).toBe(false);
-    });
-  });
+  // #1399: the instance `hasRole` is gone (security-posture P2) — a context
+  // answers permission questions only. The static `userHasRole` above stays
+  // for the one justified read (counting accounts that hold a role), and
+  // getPrincipals covers audience matching such as [{If role='…'}].
 
   describe('hasPermission', () => {
     test('delegates to UserManager.hasPermission passing the resolved userContext (#637 fast path)', async () => {

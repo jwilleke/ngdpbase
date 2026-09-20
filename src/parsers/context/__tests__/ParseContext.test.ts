@@ -16,39 +16,9 @@ const make = (overrides: Record<string, unknown> = {}) =>
     mockEngine
   );
 
-describe('ParseContext.wikiContext.hasRole (synthesized stub for direct callers)', () => {
-  test('single-arg form (backward-compatible) returns true when user has role', () => {
-    const ctx = make({ userContext: { roles: ['admin'] } });
-    expect(ctx.wikiContext.hasRole('admin')).toBe(true);
-  });
-
-  test('multi-arg form returns true when user has any of the given roles', () => {
-    const ctx = make({ userContext: { roles: ['editor'] } });
-    expect(ctx.wikiContext.hasRole('admin', 'editor', 'reader')).toBe(true);
-  });
-
-  test('returns false when user has none of the given roles', () => {
-    const ctx = make({ userContext: { roles: ['reader'] } });
-    expect(ctx.wikiContext.hasRole('admin', 'editor')).toBe(false);
-  });
-
-  test('returns false when userContext is null', () => {
-    const ctx = make({ userContext: null });
-    expect(ctx.wikiContext.hasRole('admin')).toBe(false);
-  });
-
-  test('returns false when roles is missing or empty', () => {
-    const noRoles = make({ userContext: { username: 'alice' } });
-    const emptyRoles = make({ userContext: { roles: [] } });
-    expect(noRoles.wikiContext.hasRole('admin')).toBe(false);
-    expect(emptyRoles.wikiContext.hasRole('admin')).toBe(false);
-  });
-
-  test('returns false when called with no role names', () => {
-    const ctx = make({ userContext: { roles: ['admin'] } });
-    expect(ctx.wikiContext.hasRole()).toBe(false);
-  });
-});
+// #1399: the synthesized stub no longer answers hasRole — a role name is not
+// authority (security-posture P2), so no context exposes the question. The
+// audience-matching that [{If role='…'}] needs is getPrincipals, below.
 
 describe('ParseContext.wikiContext.getPrincipals (synthesized stub for direct callers)', () => {
   test('returns roles plus username for authenticated user', () => {
@@ -99,7 +69,6 @@ describe('ParseContext — wikiContext delegation (#629 Pass 2)', () => {
       pageName: initial.pageName ?? null,
       userContext: initial.userContext ?? null,
       pageMetadata: initial.pageMetadata ?? null,
-      hasRole: () => false,
       hasPermission: async () => false,
       canAccess: async () => false,
       getPrincipals: () => []
@@ -120,14 +89,13 @@ describe('ParseContext — wikiContext delegation (#629 Pass 2)', () => {
     expect(ctx.userName).toBe('alice');
   });
 
-  test('synthesized stub answers hasRole and getPrincipals using the snapshot userContext', () => {
+  test('synthesized stub answers getPrincipals using the snapshot userContext', () => {
     const ctx = new ParseContext(
       'content',
       { pageName: 'P', userContext: { username: 'alice', roles: ['editor', 'admin'] } },
       mockEngine
     );
-    expect(ctx.wikiContext.hasRole('admin')).toBe(true);
-    expect(ctx.wikiContext.hasRole('reader')).toBe(false);
+    expect(ctx.wikiContext.getPrincipals()).toContain('admin');
     expect(ctx.wikiContext.getPrincipals()).toEqual(['editor', 'admin', 'alice']);
   });
 
