@@ -230,6 +230,40 @@ Each step is shippable alone and leaves the tree green.
 - 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
 - 10 __Retire `PolicyManager`__ once the PDP reads the policies and the PAP writes them.
 
+### Step 7's map — what each page decision orders today
+
+Written down before anything moves, because this ordering IS the behaviour.
+
+__`checkPagePermissionWithContext(wikiContext, action)`__ — the main page door:
+
+| Tier | What | Outcome |
+| --- | --- | --- |
+| −1a | agent-token scope ceiling (#946) | deny if the token lacks the mapped permission |
+| −1b | share ceiling (#1222) | deny unless the share delegates the action, is unexpired, COVERS THE RESOURCE (`shareCoversResource` over the page's keywords), and the issuer still holds the action |
+| 0 | private page (`canAccessPrivateContainer`) | owner or delegate only |
+| 0.5 | author-lock, `edit` only | a locked page's non-author falls through to Tier 1+ rather than being refused here |
+| 1 | frontmatter `audience` / `access` | __overrides global policy__ — this is why the token ceiling must precede it |
+| 2 | global policies via `PolicyEvaluator`; for a share, the share IS the policy | allow/deny |
+| 3 | deprecated page-ACL markup | blocked on new saves, still read |
+| — | default | deny |
+
+__The capability door__ (`UserManager.hasPermission`, now the PDP) orders:
+token ceiling → share (returns) → live role resolution → policies. The same
+two ceilings, implemented separately, and the page one additionally checks
+resource coverage — which is exactly what the PDP's `resource` parameter is
+for.
+
+__What this means for the step.__ The ceilings and Tier 2 belong to the PDP.
+Tiers 0, 0.5, 1 and 3 are page ATTRIBUTES — private flag, author, audience,
+markup — so they become PIP material the PDP consults in that order. The
+sequence above is what the PDP must reproduce; anything else is a behaviour
+change wearing a refactor's clothes.
+
+__Other entry points to reconcile__: `evaluatePagePermission` (same tiers,
+returns a reason), `canUserAccessPage` (cross-page check, loads the target's
+metadata itself), `filterAccessiblePages` (runs the ceilings ONCE for the
+subject, then per-page attributes), `canUserAccessMediaItem`.
+
 ### Open decisions
 
 - __Step 7's orderings.__ `ACLManager`'s five entry points each sequence ACL

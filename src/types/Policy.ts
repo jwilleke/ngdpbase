@@ -94,6 +94,15 @@ export interface DecisionResource {
 export interface DecisionRequest {
   action: string;
   resource?: DecisionResource;
+  /**
+   * Whether a share's `resources` cover the thing being asked about.
+   *
+   * Supplied by the PEP because the answer depends on attributes the PDP does
+   * not hold — a page share is matched against the page's keywords, for
+   * instance. The PDP owns the RULE (a share must cover the resource); the
+   * caller supplies the match, which is the PIP half.
+   */
+  resourceCoverage?: (shareResources: readonly PolicyResource[]) => boolean;
 }
 
 /**

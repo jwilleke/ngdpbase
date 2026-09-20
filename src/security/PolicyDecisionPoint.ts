@@ -28,6 +28,7 @@
 import BaseManager from '../managers/BaseManager.js';
 import logger from '../utils/logger.js';
 import type { PermissionSubject, JobSubject } from '../managers/UserManager.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { Decision, DecisionRequest } from '../types/Policy.js';
 
@@ -84,10 +85,16 @@ export class PolicyDecisionPoint extends BaseManager {
    *    time, not at enqueue time (#631, #1212).
    * 4. __The policies__, through `PolicyEvaluator`.
    */
-  async decide(subject: PermissionSubject | JobSubject, request: DecisionRequest): Promise<Decision> {
+  async decide(
+    subject: PermissionSubject | JobSubject | null | undefined,
+    request: DecisionRequest
+  ): Promise<Decision> {
     const { action } = request;
 
-    const viaToken = subject.viaToken;
+    // A null subject reaches here from the page door, which is called for an
+    // anonymous cross-page check. It carries no delegation, so the ceilings
+    // have nothing to bound; policy decides, as it does for any visitor.
+    const viaToken = subject?.viaToken;
     if (viaToken && !viaToken.scopes.includes(action)) {
       logger.info(
         `[PDP] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
@@ -96,8 +103,17 @@ export class PolicyDecisionPoint extends BaseManager {
       return { permit: false, reason: 'token_scope_deny' };
     }
 
-    const viaShare = subject.viaShare;
+    const viaShare = subject?.viaShare;
     if (viaShare) {
+      // #1431: when the question names a resource, the share must COVER it.
+      // The page door checked this and the capability door did not, because a
+      // capability question has no resource to cover — so this runs only when
+      // one is supplied, and the two ceilings become the same code.
+      const coverage = request.resourceCoverage;
+      if (coverage && !coverage(viaShare.resources)) {
+        logger.info(`[PDP] share ${viaShare.id} does not cover ${request.resource?.type ?? 'resource'} '${request.resource?.id ?? ''}' — denied`);
+        return { permit: false, reason: 'share_resource_deny' };
+      }
       if (!viaShare.actions.includes(action)) {
         logger.info(`[PDP] share ${viaShare.id} does not delegate '${action}' (has: ${viaShare.actions.join(',') || 'none'}) — denied`);
         return { permit: false, reason: 'share_action_deny' };
@@ -133,12 +149,15 @@ export class PolicyDecisionPoint extends BaseManager {
         return { permit: false, reason: 'no_user_manager' };
       }
       userContext = await userManager.resolveSubjectNow(subject.username);
-    } else {
+    } else if (subject) {
       userContext = {
         username: subject.username,
         roles: subject.roles,
         isAuthenticated: subject.isAuthenticated
       };
+    } else {
+      // #1212: the named constant for nobody, never an inline literal.
+      userContext = { ...ANONYMOUS_SUBJECT };
     }
 
     // The PDP speaks resources; PolicyEvaluator still speaks page names. The

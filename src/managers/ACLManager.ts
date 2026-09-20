@@ -1,5 +1,7 @@
 import BaseManager from './BaseManager.js';
 import { permissionForPageAction } from '../security/pageActions.js';
+import PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -178,6 +180,21 @@ class ACLManager extends BaseManager {
    * // acl.get('view') => Set(['All'])
    * // acl.get('edit') => Set(['Admin'])
    */
+  /**
+   * The PDP this manager asks for the delegation ceilings and, in the next
+   * step, for the policy decision itself. Registered on the engine; built here
+   * only when it is not, so tests that stand an ACLManager up alone still
+   * exercise the real ordering rather than skipping it (#1431).
+   */
+  private policyDecisionPoint(): PolicyDecisionPoint {
+    const registered = this.engine?.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (registered) return registered;
+    this._pdp ??= new PolicyDecisionPoint(this.engine);
+    return this._pdp;
+  }
+
+  private _pdp?: PolicyDecisionPoint;
+
   parsePageACL(content: string): Map<string, Set<string>> {
     const acl = new Map<string, Set<string>>();
     if (!content) return acl;
@@ -273,72 +290,49 @@ class ACLManager extends BaseManager {
     logger.info(`[ACL] checkPagePermissionWithContext page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
 
 
-    // #946 Tier -1: agent-token scope ceiling.
-    //
-    // A delegated token may only ever exercise a SUBSET of its owner's rights,
-    // so this is a hard ceiling checked BEFORE every other tier — not a tier of
-    // its own. It must precede tier 1, because frontmatter `access` overrides
-    // global policies and returns directly; a scope check living at tier 2
-    // would simply never run on a page whose frontmatter grants the action.
-    //
-    // Absent `viaToken` means an ordinary session/password request, which this
-    // does not constrain at all.
-    const viaToken = (userContext as { viaToken?: { id: string; name: string; scopes: string[] } } | undefined)?.viaToken;
-    if (viaToken) {
-      const required = permissionForPageAction(action);
-      if (!viaToken.scopes.includes(required)) {
-        this.logAccessDecision({
-          user: userContext, pageName, action, allowed: false, reason: 'token_scope_deny',
-          context: { wikiContext: wikiContext.context, token: viaToken.id, scopes: viaToken.scopes }
-        });
-        logger.info(
-          `[ACL] token ${viaToken.id} ("${viaToken.name}") lacks scope '${required}' ` +
-          `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
-        );
-        return { allowed: false, reason: 'token_scope_deny' };
-      }
-    }
-
     const policyAction = permissionForPageAction(action);
 
-    // #1222 Tier -1: share ceiling (epic #1225).
+    // Tier -1: the delegation ceilings, asked of the PDP (#1431).
     //
-    // A share visit is an anonymous subject carrying `viaShare`. The share is
-    // a delegation, so it bounds the request the way a token does — before
-    // every tier, for the same reason as above — and in four ways: the action
-    // must be one the share carries; the page must be covered by the share's
-    // resources (its user-keywords match, and it is not `owner-only`); the
-    // share must not have expired; and the issuer must STILL hold the action,
-    // resolved live, so revoking the issuer's role stops every share they
-    // issued on the next request. Metadata that cannot be read refuses —
-    // conservative on security, the #714 convention. What passes here is
-    // then subject to the page's own rules (tiers 0–1) exactly as any
-    // anonymous visitor is: a private page or a restricted audience refuses.
-    const viaShare = (userContext as { viaShare?: ShareGrant } | undefined)?.viaShare;
-    if (viaShare) {
-      const refuse = (reason: string, detail: string): { allowed: false; reason: string } => {
-        this.logAccessDecision({
-          user: userContext, pageName, action, allowed: false, reason,
-          context: { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
-        });
-        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${detail} — denied`);
-        return { allowed: false, reason };
-      };
-      if (!viaShare.actions.includes(policyAction)) {
-        return refuse('share_action_deny', `does not delegate '${policyAction}' (has: ${viaShare.actions.join(',') || 'none'})`);
+    // A delegated token may only ever exercise a SUBSET of its owner's rights,
+    // and a share only what its issuer delegated and still holds — hard
+    // ceilings, checked BEFORE every other tier. They must precede tier 1,
+    // because frontmatter `access` overrides global policies and returns
+    // directly; a ceiling living at tier 2 would never run on a page whose
+    // frontmatter grants the action.
+    //
+    // These were implemented here AND in UserManager.hasPermission, the same
+    // protection twice with nothing keeping the two in step. Now there is one
+    // implementation. The PAGE half the PDP cannot know — whether the share
+    // covers this particular page — is supplied as `resourceCoverage`, which
+    // is PIP work.
+    const ceiling = await this.policyDecisionPoint().decide(
+      userContext,
+      {
+        action: policyAction,
+        resource: { type: 'page', id: pageName },
+        resourceCoverage: (shareResources: readonly PolicyResource[]) => {
+          const keywords = wikiContext.pageMetadata?.['user-keywords'];
+          return !!wikiContext.pageMetadata && shareCoversResource(shareResources, 'page', (keywords as string[]) ?? []);
+        }
       }
-      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
-        return refuse('share_expired', `expired ${viaShare.expiresAt}`);
-      }
-      const keywords = wikiContext.pageMetadata?.['user-keywords'];
-      if (!wikiContext.pageMetadata || !shareCoversResource(viaShare.resources, 'page', keywords ?? [])) {
-        return refuse('share_resource_deny', `does not cover page '${pageName}'`);
-      }
-      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
-      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, policyAction))) {
-        return refuse('share_issuer_deny', `issuer no longer holds '${policyAction}'`);
-      }
+    );
+    const delegated = (userContext as { viaToken?: unknown; viaShare?: unknown } | undefined);
+    if ((delegated?.viaToken || delegated?.viaShare) && !ceiling.permit) {
+      this.logAccessDecision({
+        user: userContext, pageName, action, allowed: false, reason: ceiling.reason,
+        context: { wikiContext: wikiContext.context }
+      });
+      logger.info(`[ACL] ${ceiling.reason} for '${policyAction}' on '${pageName}' — denied`);
+      return { allowed: false, reason: ceiling.reason };
     }
+    // NOT an early allow for a share. A share that passed its ceiling still
+    // faces the page's own rules — Tier 0 private, Tier 0.5 author-lock,
+    // Tier 1 audience — because a share visitor is an anonymous visitor, and a
+    // private page or a restricted audience refuses one. The share becomes the
+    // policy only at Tier 2, below, where global policy would otherwise ask
+    // about roles this bearer does not have.
+    const viaShare = delegated?.viaShare as ShareGrant | undefined;
 
     // Tier 0: private — hard constraint, not overridable by front matter.
     // #639 Slice E: top-level `private: true` is the canonical signal; the
