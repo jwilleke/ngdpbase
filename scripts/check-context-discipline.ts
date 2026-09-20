@@ -26,6 +26,14 @@
  * 3. __No discarded identity parameter__ — `_ctx: ActorContext`. Taking the
  *    context and marking it unused is the same defect as never taking it, with
  *    a signature that claims otherwise.
+ * 4. __One identity type__ — a `UserContext` interface must EXTEND
+ *    `PermissionSubject`, never restate its fields. `WikiContext`'s copy had
+ *    drifted without `privateStoreHandle` and `ParseContext`'s without that and
+ *    `ipAddress`; both kept compiling because each carries an index signature,
+ *    which turns a missing field into `unknown` rather than an error. That is
+ *    the #1173 failure mode, and the compiler cannot be asked to catch it:
+ *    `tsconfig.json` excludes every `__tests__` directory, so a type-level
+ *    assertion written as a test is never checked at all.
  *
  * Each allowlist entry states why that site is not the defect. A stale entry
  * fails the run (see `run()`), so the list cannot outlive what it excuses.
@@ -50,6 +58,8 @@ const IDENTITY_TYPES = ['ActorContext', 'PermissionSubject', 'JobContext'];
 const AMBIENT = /\bAsyncLocalStorage\b|['"]node:async_hooks['"]|['"]async_hooks['"]/;
 const OPTIONAL_IDENTITY = new RegExp(`\\b\\w+\\?\\s*:\\s*(${IDENTITY_TYPES.join('|')})\\b`);
 const DISCARDED_IDENTITY = new RegExp(`\\b_\\w*\\s*:\\s*(${IDENTITY_TYPES.join('|')})\\b`);
+/** `export interface …UserContext {` — a redeclared identity shape unless it extends the subject. */
+const USER_CONTEXT_DECL = /^\s*export\s+interface\s+(\w*UserContext)\s*(extends\s+([\w, ]+))?\{/;
 
 /**
  * `file:line-ish` → why this optional identity parameter is not the hazard.
@@ -60,6 +70,14 @@ const OPTIONAL_ALLOWED: Record<string, string> = {
     'getVersionDirectory and versionTarget are private helpers reached only from writers that pass ctx; both fail CLOSED without one — an encrypted store\'s history is refused rather than read as plaintext (#1415)',
   'src/providers/FileSystemProvider.ts':
     'KNOWN, tracked by #1399: resolvePageInfo and pageExists still take ctx optionally. Making them mandatory means threading a context through movePrivatePage and findPage, which are declared on the Provider interface (src/types/Provider.ts) and implemented three times — the #1399 slice that narrows the doors, not a one-line change. Every caller INSIDE these two providers now passes ctx; this entry covers the signatures only'
+};
+
+/** `file` → why a `…UserContext` there is not a second copy of the subject. */
+const REDECLARED_ALLOWED: Record<string, string> = {
+  'src/parsers/context/ParseContext.ts':
+    'ExportedUserContext is a cache PAYLOAD, not a forwarded subject — a deliberate reduction to the three fields a cached parse keyed on, written to disk and read back; extending PermissionSubject would put viaToken and privateStoreHandle in a cache file, which is the opposite of what #1382 wants',
+  'addons/calendar/managers/CalendarDataManager.ts':
+    'an addon-local VIEWER shape with every field optional, used to decide what the calendar UI shows; it is never handed to a permission door — the addon asks ctx.requirePermission (#1198). An addon cannot extend the host type without importing through dist/ (docs/guides/addons-developer-guide.md)'
 };
 
 /** `file` → why a parameter of an identity type is deliberately unused there. */
@@ -73,7 +91,7 @@ const DISCARDED_ALLOWED: Record<string, string> = {
 export interface Violation {
   file: string;
   line: number;
-  rule: 'ambient-context' | 'optional-identity' | 'discarded-identity' | 'stale-allowlist';
+  rule: 'ambient-context' | 'optional-identity' | 'discarded-identity' | 'redeclared-identity' | 'stale-allowlist';
   detail: string;
 }
 
@@ -126,6 +144,7 @@ export function scan(): Violation[] {
   const violations: Violation[] = [];
   const optionalHit = new Set<string>();
   const discardedHit = new Set<string>();
+  const redeclaredHit = new Set<string>();
 
   for (const root of SCAN) {
     for (const file of tsFiles(path.join(REPO, root))) {
@@ -151,6 +170,14 @@ export function scan(): Violation[] {
             });
           }
         }
+        const decl = USER_CONTEXT_DECL.exec(line);
+        if (decl) redeclaredHit.add(rel);
+        if (decl && !(decl[3] ?? '').includes('PermissionSubject') && !REDECLARED_ALLOWED[rel]) {
+          violations.push({
+            file: rel, line: at, rule: 'redeclared-identity',
+            detail: `${decl[1]} must extend PermissionSubject — an identity shape declared twice drifts, and an index signature hides it (#1173)`
+          });
+        }
         if (DISCARDED_IDENTITY.test(line)) {
           discardedHit.add(rel);
           if (!DISCARDED_ALLOWED[rel]) {
@@ -172,6 +199,14 @@ export function scan(): Violation[] {
       });
     }
   }
+  for (const rel of Object.keys(REDECLARED_ALLOWED)) {
+    if (!redeclaredHit.has(rel)) {
+      violations.push({
+        file: rel, line: 0, rule: 'stale-allowlist',
+        detail: 'REDECLARED_ALLOWED entry no longer matches anything — remove it'
+      });
+    }
+  }
   for (const rel of Object.keys(DISCARDED_ALLOWED)) {
     if (!discardedHit.has(rel)) {
       violations.push({
@@ -189,7 +224,7 @@ function run(): void {
   console.log('==========================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('No ambient context, no optional identity parameter, and no identity parameter discarded in src, addons.');
+    console.log('No ambient context, no optional or discarded identity parameter, and no redeclared identity shape in src, addons.');
     return;
   }
   for (const v of violations) {

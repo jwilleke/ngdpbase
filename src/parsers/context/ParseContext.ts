@@ -8,22 +8,20 @@
  */
 
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../../managers/UserManager.js';
-import type { AgentTokenGrant } from '../../managers/UserManager.js';
-import type { ShareGrant } from '../../types/Share.js';
 
 /**
  * User context interface
  */
-export interface UserContext {
-  /** #1212: the three authorisation fields are required — a parse runs as the request's own subject. */
-  username: string;
+export interface UserContext extends PermissionSubject {
+  // #1399: the authorisation fields are PermissionSubject's, declared once. A
+  // parse runs as the request's own subject (#1212), so this IS that subject
+  // plus the parse's own aliases. Repeating the fields is the #1173 failure
+  // mode: this copy had neither `ipAddress` nor `privateStoreHandle` (#1382),
+  // so the handle that reaches a sealed page was untyped here, surviving only
+  // through the index signature below.
+  /** Legacy alias some plugin code reads. */
   userName?: string;
-  isAuthenticated: boolean;
-  roles: string[];
   permissions?: string[];
-  /** The delegations a request carries; declared so the index signature does not erase their type. */
-  viaToken?: AgentTokenGrant;
-  viaShare?: ShareGrant;
   [key: string]: unknown;
 }
 

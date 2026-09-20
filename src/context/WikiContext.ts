@@ -7,8 +7,7 @@
  */
 
 import path from 'path';
-import type { AgentTokenGrant } from '../managers/UserManager.js';
-import type { ShareGrant } from '../types/Share.js';
+import type { PermissionSubject } from '../managers/UserManager.js';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
@@ -64,22 +63,20 @@ export interface UserPreferences {
 /**
  * User context - session or authentication context
  */
-export interface UserContext {
-  /** Username. Required (#1212): a context is a subject the evaluator can be handed as-is. */
-  username: string;
+export interface UserContext extends PermissionSubject {
+  // #1399: the authorisation fields are PermissionSubject's, declared once.
+  // They were repeated here and in ParseContext, and the repetition is the
+  // #1173 failure mode — `privateStoreHandle` (#1382) was added to the subject
+  // and to neither copy, so the one field that reaches a sealed page survived
+  // only because of the index signature below, untyped. A field added to the
+  // subject now arrives here on its own.
+  //
+  // What stays is display-only: things a template reads and the evaluator
+  // never does.
   /** User display name */
   displayName?: string;
-  /** User roles. Required (#1212). */
-  roles: string[];
-  /** Whether user is authenticated. Required (#1212). */
-  isAuthenticated: boolean;
   /** Alias for isAuthenticated (legacy templates) */
   authenticated?: boolean;
-  /** The delegations a request carries (#946, #1222); declared so the index signature does not erase their type. */
-  viaToken?: AgentTokenGrant;
-  viaShare?: ShareGrant;
-  /** The address the request came from (#1179), so a manager records it from the forwarded context. */
-  ipAddress?: string;
   /** User preferences for formatting, locale, etc. */
   preferences?: UserPreferences;
   /** Shorthand for preferences.locale */

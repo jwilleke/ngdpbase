@@ -108,7 +108,6 @@ __ngdpbase API v1.5.0__
 - [src/utils/LocaleUtils](src/utils/LocaleUtils/README.md)
 - [src/utils/PageNameMatcher](src/utils/PageNameMatcher/README.md)
 - [src/utils/SchemaGenerator](src/utils/SchemaGenerator/README.md)
-- [src/utils/sessionUtils](src/utils/sessionUtils/README.md)
 - [src/utils/standardize-categories](src/utils/standardize-categories/README.md)
 - [src/utils/version](src/utils/version/README.md)
 - [src/utils/VersionCompression](src/utils/VersionCompression/README.md)
