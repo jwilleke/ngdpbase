@@ -286,9 +286,11 @@ describe('UserManager', () => {
 
   describe('Permission Management', () => {
     let mockPolicyManager;
+    let mockMemberRoles;
 
     beforeEach(() => {
       // Mock PolicyManager for permission tests
+      mockMemberRoles = ['user'];
       mockPolicyManager = {
         getAllPolicies: vi.fn(() => [
           {
@@ -311,10 +313,18 @@ describe('UserManager', () => {
         ])
       };
 
-      // Override engine.getManager to return mock PolicyManager
+      // Override engine.getManager to return mock PolicyManager.
+      // #1429: a user's roles come from RoleManager records — nothing synthetic
+      // is added any more, so a fixture that wants a role must supply it. These
+      // tests passed before because the injected 'Authenticated' matched
+      // policy1, not because the user's own role did.
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'PolicyManager') return mockPolicyManager;
+        if (name === 'PersonManager') return { getByIdentifier: vi.fn(async () => ({ '@id': 'person-1' })) };
+        if (name === 'RoleManager') return {
+          listByMember: vi.fn(async () => (mockMemberRoles).map((r) => ({ namedPosition: r })))
+        };
         return null;
       });
     });
@@ -372,7 +382,7 @@ describe('UserManager', () => {
       userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
       const result = await userManager.hasPermission(
-        { username: 'jane', roles: ['admin', 'Authenticated'], isAuthenticated: true },
+        { username: 'jane', roles: ['admin'], isAuthenticated: true },
         'admin-system'
       );
 
@@ -443,7 +453,7 @@ describe('UserManager', () => {
       expect(userManager.resolveUserRoles).toHaveBeenCalledWith('jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
-          userContext: expect.objectContaining({ username: 'jim', roles: ['editor', 'Authenticated'], isAuthenticated: true })
+          userContext: expect.objectContaining({ username: 'jim', roles: ['editor'], isAuthenticated: true })
         })
       );
     });
@@ -457,7 +467,8 @@ describe('UserManager', () => {
 
       const seen = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(seen).not.toContain('admin');
-      expect(seen).toEqual(['Authenticated']);
+      // #1429: no synthetic role rides along — a demoted user resolves to nothing.
+      expect(seen).toEqual([]);
     });
 
     test('a subject without roles for a user who no longer exists resolves ANONYMOUS (#631)', async () => {
@@ -500,7 +511,7 @@ describe('UserManager', () => {
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({
-            username: 'svc-ngdpbase', roles: ['admin', 'Authenticated'], isAuthenticated: true
+            username: 'svc-ngdpbase', roles: ['admin'], isAuthenticated: true
           })
         })
       );
@@ -518,7 +529,7 @@ describe('UserManager', () => {
       const policyEvaluator = installSystemPrincipal(true, 'svc-ngdpbase', ['editor']);
       await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
       const roles = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
-      expect(roles).toEqual(['editor', 'Authenticated']);
+      expect(roles).toEqual(['editor']);
       expect(roles).not.toContain('admin');
     });
 

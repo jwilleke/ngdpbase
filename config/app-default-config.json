@@ -1909,7 +1909,10 @@
         "user-delete",
         "admin-roles",
         "admin-read",
-        "admin-system"
+        "admin-system",
+        "profile-manage",
+        "comment-create",
+        "store-create"
       ]
     },
     {
@@ -1938,7 +1941,11 @@
         "asset-read",
         "asset-upload",
         "search-page",
-        "admin-read"
+        "admin-read",
+        "profile-manage",
+        "comment-create",
+        "search-user",
+        "store-create"
       ]
     },
     {
@@ -1965,7 +1972,10 @@
         "user-create",
         "user-delete",
         "search-user",
-        "page-read"
+        "page-read",
+        "profile-manage",
+        "comment-create",
+        "store-create"
       ]
     },
     {
@@ -1998,7 +2008,11 @@
         "asset-delete",
         "share-manage",
         "token-mint",
-        "search-page"
+        "search-page",
+        "profile-manage",
+        "comment-create",
+        "search-user",
+        "store-create"
       ]
     },
     {
@@ -2026,7 +2040,11 @@
         "page-export",
         "asset-read",
         "asset-upload",
-        "search-page"
+        "search-page",
+        "profile-manage",
+        "comment-create",
+        "search-user",
+        "store-create"
       ]
     },
     {
@@ -2051,28 +2069,7 @@
         "page-read",
         "page-export",
         "asset-read",
-        "search-page"
-      ]
-    },
-    {
-      "id": "authenticated-self-service",
-      "name": "Self-service for every signed-in account",
-      "description": "Anyone with an account may manage their own profile, comment, and find other people. One policy on the Authenticated role, so a role added later has it without editing its policy; a role that must not gets a deny (#1198, #694)",
-      "priority": 55,
-      "effect": "allow",
-      "subjects": [
-        {
-          "type": "role",
-          "value": "Authenticated"
-        }
-      ],
-      "resources": [
-        {
-          "type": "page",
-          "pattern": "*"
-        }
-      ],
-      "actions": [
+        "search-page",
         "profile-manage",
         "comment-create",
         "search-user",

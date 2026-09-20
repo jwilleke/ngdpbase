@@ -702,7 +702,6 @@ void (async (): Promise<void> => {
           // RoleManager records exist. See UserManager.resolveUserRoles.
           const baseRoles = await userManager.resolveUserRoles(req.session.username);
           const roles = new Set(baseRoles);
-          roles.add('Authenticated');
 
           // #1212: username stated, not inherited from a spread whose type
           // leaves it optional — the request's subject is complete by construction.
@@ -807,7 +806,6 @@ void (async (): Promise<void> => {
         if (user?.isActive) {
           const baseRoles = await userManager.resolveUserRoles(result.username);
           const roles = new Set(baseRoles);
-          roles.add('Authenticated');
           req.userContext = {
             ...user,
             username: result.username,

@@ -897,7 +897,7 @@ class UserManager extends BaseManager {
     }
     const baseRoles = await this.resolveUserRoles(user.username);
     // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
-    return { username: user.username, roles: [...baseRoles, 'Authenticated'], isAuthenticated: true };
+    return { username: user.username, roles: [...baseRoles], isAuthenticated: true };
   }
 
   /**
@@ -938,7 +938,7 @@ class UserManager extends BaseManager {
     const declared = configManager?.getProperty(SYSTEM_ROLES_KEY, ['admin']);
     const roles = Array.isArray(declared) ? declared.filter((r): r is string => typeof r === 'string') : ['admin'];
     // permission-subject-ignore: the system principal — name from .env, roles from the catalog (#631).
-    return { username: this.systemPrincipalName(), roles: [...roles, 'Authenticated'], isAuthenticated: true };
+    return { username: this.systemPrincipalName(), roles: [...roles], isAuthenticated: true };
   }
 
   /**
@@ -975,9 +975,10 @@ class UserManager extends BaseManager {
       return [];
     }
 
-    // Get all user's roles (including Authenticated, All) via RoleManager
+    // #1429: the user's own roles, via RoleManager. No synthetic role is added —
+    // 'Authenticated' and 'All' were grants nobody was given.
     const baseRoles = await this.resolveUserRoles(username);
-    const userRoles = [...baseRoles, 'Authenticated'];
+    const userRoles = [...baseRoles];
     return this.getPermissionsFromPolicies(policyManager, userRoles);
   }
 
@@ -1548,7 +1549,7 @@ class UserManager extends BaseManager {
     // defect (#1179).
     const baseRoles = await this.resolveUserRoles(username);
     return this.hasPermission(
-      { username: user.username, roles: [...baseRoles, 'Authenticated'], isAuthenticated: true },
+      { username: user.username, roles: [...baseRoles], isAuthenticated: true },
       action
     );
   }
@@ -1603,7 +1604,6 @@ class UserManager extends BaseManager {
       } as UserContext;
 
       const roles = new Set(currentUserContext.roles || []);
-      roles.add('Authenticated');
       currentUserContext.roles = Array.from(roles);
 
       return currentUserContext;
