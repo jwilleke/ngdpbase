@@ -63,8 +63,25 @@
           <% }); %>
         <% } %>
 
-        <div class="alert alert-warning border-0">
-          <h5 class="alert-heading mb-3">We are currently performing maintenance</h5>
+        <%#
+          #1432: one gate closes the instance for several reasons, and this page
+          is all of them. The heading used to read "We are currently performing
+          maintenance" whatever the reason, so a holiday closure announced
+          itself as maintenance. `reason` says which one; `message` is always
+          the operator's own wording for that reason.
+        %>
+        <%
+          const closureReason = (typeof reason !== 'undefined' && reason) ? reason : 'maintenance';
+          const closureHeadings = {
+            maintenance: 'We are currently performing maintenance',
+            schedule: 'The site is closed right now',
+            holiday: 'The site is closed for a holiday',
+            misconfigured: 'The site is temporarily unavailable',
+            starting: 'The site is starting up'
+          };
+        %>
+        <div class="alert alert-warning border-0" data-closure-reason="<%= closureReason %>">
+          <h5 class="alert-heading mb-3"><%= closureHeadings[closureReason] || closureHeadings.maintenance %></h5>
           <p class="mb-3"><%= message %></p>
 
           <% if (typeof estimatedDuration !== 'undefined' && estimatedDuration) { %>

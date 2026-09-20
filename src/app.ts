@@ -279,6 +279,10 @@ void (async (): Promise<void> => {
         : 'The system is starting up. This may take a moment while pages are indexed.',
       estimatedDuration: null,
       notifications: [],
+      // #1432: which state closed it. Neither of the two that reach here is
+      // maintenance, and the page used to announce both as maintenance — an
+      // instance that cannot boot told the operator it was being worked on.
+      reason: blocked ? 'misconfigured' : 'starting',
       // Signals to the page that an administrator can sign in and repair this,
       // which is the difference between the two states that reach here.
       allowAdmins: blocked,
