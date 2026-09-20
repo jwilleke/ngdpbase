@@ -45,6 +45,9 @@ const mockEngine = {
   })
 };
 
+// #1174/#1431: the performStandardACLCheck and checkDefaultPermission suites
+// are gone with the methods. They were the seven mocked tests #1174 named as
+// keeping colon-separated permissions alive.
 describe('ACLManager', () => {
   let aclManager;
 
@@ -616,50 +619,6 @@ describe('ACLManager', () => {
     });
   });
 
-  describe('checkDefaultPermission()', () => {
-    test('returns false when UserManager is unavailable', async () => {
-      const noUmEngine = {
-        getManager: vi.fn((name) => {
-          if (name === 'ConfigurationManager') return mockConfigurationManager;
-          return null; // no UserManager
-        })
-      };
-      const mgr = new ACLManager(noUmEngine);
-      await mgr.initialize();
-
-      const result = await mgr.checkDefaultPermission('view', { username: 'user1', roles: [] });
-      expect(result).toBe(false);
-    });
-
-    test('maps "view" action to page:read permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(true);
-      const result = await aclManager.checkDefaultPermission('view', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'user1' }), 'page:read');
-      expect(result).toBe(true);
-    });
-
-    test('maps "edit" action to page:edit permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      await aclManager.checkDefaultPermission('edit', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'user1' }), 'page:edit');
-    });
-
-    test('uses anonymous when user is null', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      await aclManager.checkDefaultPermission('view', null);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'Anonymous', roles: ['anonymous'] }), 'page:read');   // #1212: the named constant
-    });
-
-    test('falls back to page:<action> for unknown actions', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(true);
-      await aclManager.checkDefaultPermission('upload', { username: 'user1', roles: [] });
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'user1' }), 'page:upload');
-    });
-  });
 
 
 
@@ -780,66 +739,6 @@ describe('ACLManager', () => {
     });
   });
 
-  describe('performStandardACLCheck()', () => {
-    test('throws when UserManager is not available', async () => {
-      const noUmEngine = { getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? mockConfigurationManager : null) };
-      const mgr = new ACLManager(noUmEngine);
-      await mgr.initialize();
-      await expect(mgr.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: [] }, '')).rejects.toThrow('UserManager not available');
-    });
-
-    test('returns true immediately for admin:system user', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(true);
-      const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'user1', roles: [] }, '');
-      expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'user1' }), 'admin:system');
-    });
-
-    test('allows when ACL has All principal', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: [] }, '[{ALLOW view All}]');
-      expect(result).toBe(true);
-    });
-
-    test('allows when ACL matches user role', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: ['editor'] }, '[{ALLOW view editor}]');
-      expect(result).toBe(true);
-    });
-
-    test('returns false when ACL denies (no role match)', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: ['reader'] }, '[{ALLOW view admin}]');
-      expect(result).toBe(false);
-    });
-
-    test('allows view on a regular page with no ACL', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const result = await aclManager.performStandardACLCheck('TestPage', 'view', { username: 'u', roles: [] }, '');
-      expect(result).toBe(true);
-    });
-
-    test('calls checkDefaultPermission for view on a system page', async () => {
-      mockUserManager.hasPermission
-        .mockResolvedValueOnce(false)  // admin:system check
-        .mockResolvedValueOnce(true);  // page:read check
-      const result = await aclManager.performStandardACLCheck('admin-settings', 'view', { username: 'u', roles: [] }, '');
-      expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'u' }), 'page:read');
-    });
-
-    test('calls checkDefaultPermission for non-view actions with no ACL', async () => {
-      mockUserManager.hasPermission
-        .mockResolvedValueOnce(false)  // admin:system
-        .mockResolvedValueOnce(true);  // page:edit
-      const result = await aclManager.performStandardACLCheck('TestPage', 'edit', { username: 'u', roles: [] }, '');
-      expect(result).toBe(true);
-      expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'u' }), 'page:edit');
-    });
-  });
 
   // #1432: notify() went with the availability checks — it existed only to
   // announce a maintenance or holiday refusal, and ACLManager no longer makes

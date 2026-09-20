@@ -13,6 +13,7 @@
  * PolicyEvaluator, deny policies and the token ceiling; this does not.
  */
 import type { PermissionSubject } from '../managers/UserManager.js';
+import type { CorePermission } from '../security/permissions.generated.js';
 
 type EngineLike = { getManager: (name: string) => unknown } | null | undefined;
 type UserManagerLike = { hasPermission(subject: PermissionSubject, action: string): Promise<boolean> };
@@ -20,7 +21,8 @@ type UserManagerLike = { hasPermission(subject: PermissionSubject, action: strin
 export async function subjectMayDo(
   engine: EngineLike,
   subject: PermissionSubject | null | undefined,
-  action: string
+  // #1431: a core caller asks for a core permission, checked by the compiler.
+  action: CorePermission
 ): Promise<boolean> {
   if (!engine || !subject) return false;
   const userManager = engine.getManager('UserManager') as UserManagerLike | null | undefined;

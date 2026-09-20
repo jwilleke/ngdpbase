@@ -65,6 +65,14 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
 const ACTION_MAP_BLOCK = /const actionMap[^=]*=\s*\{([\s\S]*?)\};/;
 
 /**
+ * #1431: the page-action map moved to `src/security/pageActions.ts` and became
+ * the only copy — it had been written out three times, once in a broken
+ * colon-separated form that could only deny (#1174). The permissions it maps to
+ * ARE enforced, at the page door, so they are read from there as well.
+ */
+const PAGE_ACTION_ALIASES_BLOCK = /PAGE_ACTION_ALIASES = \{([\s\S]*?)\} as const/;
+
+/**
  * Known, deliberate divergences. Each needs a reason and an issue, so the list
  * cannot quietly become a place to hide new drift.
  */
@@ -129,10 +137,9 @@ function enforcedNames(): Set<string> {
       while ((m = pattern.exec(text)) !== null) found.add(m[1]);
     }
 
-    const actionMap = ACTION_MAP_BLOCK.exec(text);
-    if (actionMap) {
-      const values = actionMap[1].matchAll(/:\s*'([^']+)'/g);
-      for (const v of values) found.add(v[1]);
+    for (const block of [ACTION_MAP_BLOCK.exec(text), PAGE_ACTION_ALIASES_BLOCK.exec(text)]) {
+      if (!block) continue;
+      for (const v of block[1].matchAll(/:\s*'([^']+)'/g)) found.add(v[1]);
     }
   }
   return found;

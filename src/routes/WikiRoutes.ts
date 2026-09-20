@@ -12,6 +12,7 @@
  */
 
 import path from 'path';
+import type { CorePermission } from '../security/permissions.generated.js';
 import { rolePermissionListsFromPolicies } from '../utils/rolePermissions.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
@@ -2217,7 +2218,9 @@ class WikiRoutes {
    */
   private async permitted(
     wikiContext: WikiContext,
-    permission: string,
+    // #1431: the generated union, so a mistyped permission is a compile error
+    // rather than a silent deny. Core doors ask for core permissions.
+    permission: CorePermission,
     req: Request,
     res: Response,
     mode: 'json' | 'page' | 'text'

@@ -1,4 +1,5 @@
 import BaseManager from './BaseManager.js';
+import { permissionForPageAction } from '../security/pageActions.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -8,7 +9,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
-import { ANONYMOUS_SUBJECT, type AgentTokenGrant } from './UserManager.js';
+import type { AgentTokenGrant } from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversResource, type ShareGrant } from '../types/Share.js';
@@ -271,15 +272,6 @@ class ACLManager extends BaseManager {
     const roles = (userContext?.roles || []).join('|');
     logger.info(`[ACL] checkPagePermissionWithContext page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
 
-    // Map legacy action names to policy action names
-    const actionMap: Record<string, string> = {
-      view: 'page-read',
-      edit: 'page-edit',
-      delete: 'page-delete',
-      create: 'page-create',
-      rename: 'page-rename',
-      upload: 'asset-upload'
-    };
 
     // #946 Tier -1: agent-token scope ceiling.
     //
@@ -293,7 +285,7 @@ class ACLManager extends BaseManager {
     // does not constrain at all.
     const viaToken = (userContext as { viaToken?: { id: string; name: string; scopes: string[] } } | undefined)?.viaToken;
     if (viaToken) {
-      const required = actionMap[action.toLowerCase()] || action;
+      const required = permissionForPageAction(action);
       if (!viaToken.scopes.includes(required)) {
         this.logAccessDecision({
           user: userContext, pageName, action, allowed: false, reason: 'token_scope_deny',
@@ -307,7 +299,7 @@ class ACLManager extends BaseManager {
       }
     }
 
-    const policyAction = actionMap[action.toLowerCase()] || action;
+    const policyAction = permissionForPageAction(action);
 
     // #1222 Tier -1: share ceiling (epic #1225).
     //
@@ -681,10 +673,7 @@ class ACLManager extends BaseManager {
     action: string,
     candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
   ): Promise<string[]> {
-    const actionMap: Record<string, string> = {
-      view: 'page-read', edit: 'page-edit', delete: 'page-delete', create: 'page-create', rename: 'page-rename', upload: 'asset-upload'
-    };
-    const policyAction = actionMap[action.toLowerCase()] || action;
+    const policyAction = permissionForPageAction(action);
     const roles = userContext?.roles ?? [];
     const username = userContext?.username ?? '';
     const isAdmin = roles.includes('admin');
@@ -830,140 +819,12 @@ class ACLManager extends BaseManager {
   // which runs the full 3-tier evaluator (private flag → frontmatter audience/access
   // → global policies). The old 4-arg form lacked tier 0 entirely.
 
-  /**
-   * Perform standard ACL check (original logic)
-   * @param {string} pageName - Name of the page
-   * @param {string} action - Action to check
-   * @param {UserContext | null} user - User object
-   * @param {string} pageContent - Page content
-   * @returns {Promise<boolean>} True if permission granted
-   */
-  async performStandardACLCheck(pageName: string, action: string, user: UserContext | null, pageContent: string): Promise<boolean> {
-    const userManager = this.engine.getManager<UserManager>('UserManager');
-    if (!userManager) {
-      throw new Error('UserManager not available');
-    }
+  // #1174/#1431: performStandardACLCheck and checkDefaultPermission are gone.
+  // Neither had a caller outside its own tests, and checkDefaultPermission
+  // mapped page actions to COLON names — `page:read`, `page:edit` — declared
+  // in no registry, so the check could only ever deny. The action map that
+  // matters is the one in checkPagePermissionWithContext.
 
-    // If user has admin:system permission, always allow
-    if (user?.username && (await userManager.hasPermission(user, 'admin:system'))) {
-      return true;
-    }
-
-    // Parse ACL from page content
-    const acl = this.parseACL(pageContent);
-
-    // If ACL exists, use ACL rules
-    if (acl) {
-      const allowedPrincipals = acl[action.toLowerCase()] || [];
-
-      // If specific ACL for this action exists, check it
-      if (allowedPrincipals.length > 0) {
-        const result = this.userMatchesPrincipals(user, allowedPrincipals);
-        return result;
-      }
-    }
-
-    // Default policy: Allow read access to all pages unless it's a system/admin page
-    if (action.toLowerCase() === 'view') {
-      // Check if this is a system/admin page that should be restricted
-      const isSystemPage = this.isSystemOrAdminPage(pageName);
-
-      if (isSystemPage) {
-        // System/admin pages require proper permissions
-        const result = await this.checkDefaultPermission(action, user);
-        return result;
-      }
-      // Regular pages are readable by everyone (including anonymous)
-      return true;
-    }
-
-    // For non-view actions (edit, delete, etc.), check role-based permissions
-    const result = await this.checkDefaultPermission(action, user);
-    return result;
-  }
-
-  /**
-   * Parse ACL from page content (legacy format)
-   * @private
-   */
-  private parseACL(pageContent: string): Record<string, string[]> | null {
-    // This is a simplified implementation for backwards compatibility
-    const acl = this.parsePageACL(pageContent);
-    if (acl.size === 0) return null;
-
-    const result: Record<string, string[]> = {};
-    for (const [action, principals] of acl.entries()) {
-      result[action] = Array.from(principals);
-    }
-    return result;
-  }
-
-  /**
-   * Check if user matches principals
-   * @private
-   */
-  private userMatchesPrincipals(user: UserContext | null, principals: string[]): boolean {
-    if (principals.includes('All')) return true;
-    if (!user) return false;
-
-    if (user.roles) {
-      for (const role of user.roles) {
-        if (principals.includes(role)) return true;
-      }
-    }
-
-    if (user.username && principals.includes(user.username)) return true;
-    return false;
-  }
-
-  /**
-   * Check if page is system or admin page
-   * @private
-   */
-  private isSystemOrAdminPage(pageName: string): boolean {
-    const systemPages = ['admin', 'system', 'config', 'settings'];
-    const lowerName = pageName.toLowerCase();
-    return systemPages.some((prefix) => lowerName.startsWith(prefix));
-  }
-
-  /**
-   * Check default permissions for actions using UserManager
-   * @param {string} action - Action to check (view, edit, delete, etc.)
-   * @param {UserContext | null} user - User object or null for anonymous
-   * @returns {Promise<boolean>} True if user has permission, false otherwise
-   */
-  async checkDefaultPermission(action: string, user: UserContext | null): Promise<boolean> {
-    const userManager = this.engine.getManager<UserManager>('UserManager');
-    if (!userManager) {
-      logger.warn('UserManager not available for permission check');
-      return false;
-    }
-
-    // Map actions to permission strings
-    const permissionMap: Record<string, string> = {
-      view: 'page:read',
-      edit: 'page:edit',
-      delete: 'page:delete',
-      create: 'page:create'
-    };
-
-    const permission = permissionMap[action.toLowerCase()] || `page:${action.toLowerCase()}`;
-
-    // #1164: the context carries the agent token; `username` alone does not.
-    // #1212: and the named constant for nobody, not `{ username }` — a
-    // one-field literal was a rebuilt subject the lint could not see (it
-    // matched only `hasPermission({`). The compiler refuses it now.
-    const result = await userManager.hasPermission(user ?? ANONYMOUS_SUBJECT, permission);
-
-    return result;
-  }
-
-  /**
-   * Check context-aware restrictions (time-based, maintenance mode)
-   * @param {UserContext | null} user - User object
-   * @param {Record<string, unknown>} context - Request context
-   * @returns {Promise<PermissionResult>} Permission result with reason
-   */
   // #1432: the availability checks that used to live here are gone —
   // checkContextRestrictions, checkMaintenanceMode, checkBusinessHours,
   // checkEnhancedTimeRestrictions and checkHolidayRestrictions. None had a

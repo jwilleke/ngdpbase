@@ -48,3 +48,8 @@ npm run lint:gates --silent
 # an OPTIONAL identity parameter (omission becomes the easy path) and one that
 # is accepted and discarded (`_ctx`), plus any ambient AsyncLocalStorage. Cheap.
 npm run lint:context --silent
+
+# Permission types (#1431) — the registry is a TypeScript union, generated from
+# config. This fails when the two have drifted, i.e. someone added a permission
+# and did not run `npm run generate:permissions`. Cheap.
+npm run lint:permissions --silent
