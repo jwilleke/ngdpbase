@@ -92,6 +92,12 @@ export class PolicyDecisionPoint extends BaseManager {
    * Returns `null` when the caller carries no delegation — there is nothing to
    * bound, and the answer is whatever policy says.
    *
+   * The refusal reasons are the vocabulary already recorded by
+   * `ACLManager.logAccessDecision` — `token_scope_deny`, `share_action_deny`,
+   * `share_expired`, `share_resource_deny`, `share_issuer_deny` — because they
+   * land in the audit trail, and renaming one silently changes what an
+   * assessor reads.
+   *
    * Separate from {@link decide} because a caller sometimes needs ONLY this.
    * `filterAccessiblePages` bounds the subject once and then applies each
    * page's own rules; running a full decision there would refuse the whole
@@ -136,7 +142,7 @@ export class PolicyDecisionPoint extends BaseManager {
       const issuerHolds = !!userManager && await userManager.userHoldsPermission(viaShare.issuer, action);
       if (!issuerHolds) {
         logger.info(`[PDP] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
-        return { permit: false, applicable: true, reason: 'share_issuer_lost_permission' };
+        return { permit: false, applicable: true, reason: 'share_issuer_deny' };
       }
       // #1222: for a capability question the share IS the policy, and this is
       // an allow. A page question keeps going — a share visitor is an

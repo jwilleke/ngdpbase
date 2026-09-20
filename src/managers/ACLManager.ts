@@ -10,7 +10,6 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type UserManager from './UserManager.js';
 import type { AgentTokenGrant } from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -231,6 +230,9 @@ class ACLManager extends BaseManager {
    * "no permission to edit" 403.
    *
    * `reason` values currently emitted (from `logAccessDecision` call sites):
+   *   - `token_scope_deny`                         (Tier -1, the PDP's ceiling)
+   *   - `share_action_deny` / `share_expired` / `share_resource_deny` /
+   *     `share_issuer_deny`                        (Tier -1, the PDP's ceiling)
    *   - `private_match` / `private_deny`           (Tier 0)
    *   - `author_lock_deny`                         (Tier 0.5 — Slice A)
    *   - `frontmatter_principal_<p>` / `frontmatter_deny`  (Tier 1)
@@ -757,30 +759,28 @@ class ACLManager extends BaseManager {
     userContext: UserContext | null | undefined,
     item: MediaItem
   ): Promise<boolean> {
+    // #1431: the share ceiling is the PDP's — this was the fourth copy of it,
+    // after the page door, the list filter and UserManager. The media half it
+    // cannot know (does the share cover THIS item, and is the item private) is
+    // supplied as coverage, which is PIP work.
     const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
     if (viaShare) {
-      const refuse = (reason: string, detail: string): false => {
-        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${detail} — media ${item.id} denied`);
-        void this.auditDenial(userContext?.username || 'anonymous', item.id, 'asset-read', reason, viaShare, 'media');
+      const ceiling = await this.policyDecisionPoint().ceiling(userContext, {
+        action: 'asset-read',
+        resource: { type: 'media', id: item.id },
+        resourceCoverage: (shareResources) => {
+          // `metadata.keywords` sits under the index signature as string | string[].
+          const raw = item.metadata?.keywords;
+          const keywords: string[] = Array.isArray(raw)
+            ? raw.filter((k): k is string => typeof k === 'string')
+            : typeof raw === 'string' ? [raw] : [];
+          return !item.isPrivate && shareCoversResource(shareResources, 'media', keywords);
+        }
+      });
+      if (ceiling && !ceiling.permit) {
+        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${ceiling.reason} — media ${item.id} denied`);
+        void this.auditDenial(userContext?.username || 'anonymous', item.id, 'asset-read', ceiling.reason, viaShare, 'media');
         return false;
-      };
-      if (!viaShare.actions.includes('asset-read')) {
-        return refuse('share_action_deny', 'does not delegate asset-read');
-      }
-      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
-        return refuse('share_expired', `expired ${viaShare.expiresAt}`);
-      }
-      // `metadata.keywords` sits under the index signature as string | string[].
-      const raw = item.metadata?.keywords;
-      const keywords: string[] = Array.isArray(raw)
-        ? raw.filter((k): k is string => typeof k === 'string')
-        : typeof raw === 'string' ? [raw] : [];
-      if (item.isPrivate || !shareCoversResource(viaShare.resources, 'media', keywords)) {
-        return refuse('share_resource_deny', 'does not cover the item');
-      }
-      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
-      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, 'asset-read'))) {
-        return refuse('share_issuer_deny', 'issuer no longer holds asset-read');
       }
     }
     if (item.linkedPageName) {

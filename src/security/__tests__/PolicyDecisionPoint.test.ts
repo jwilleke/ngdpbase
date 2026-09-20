@@ -86,7 +86,7 @@ describe('#1431 PolicyDecisionPoint', () => {
     test('an issuer who lost the permission takes the share with them', async () => {
       const { pdp } = makePdp({ issuerHolds: false });
       const decision = await pdp.decide(subject({ viaShare: SHARE }), { action: 'page-read' });
-      expect(decision).toMatchObject({ permit: false, reason: 'share_issuer_lost_permission' });
+      expect(decision).toMatchObject({ permit: false, reason: 'share_issuer_deny' });
     });
 
     test('a resource the share does not cover is refused — the page half, supplied by the caller', async () => {
