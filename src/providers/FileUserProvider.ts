@@ -2,6 +2,7 @@ import BaseUserProvider, { WikiEngine, BackupData } from './BaseUserProvider.js'
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { normalizeUsername } from '../utils/username.js';
 import logger from '../utils/logger.js';
 import { User, UserUpdateData, UserSession } from '../types/index.js';
 
@@ -101,7 +102,31 @@ class FileUserProvider extends BaseUserProvider {
       const usersData = await fs.readFile(usersFilePath, 'utf8');
       const users = JSON.parse(usersData) as Record<string, User>;
 
-      this.users = new Map(Object.entries(users));
+      // #1436: the index is keyed by the COMPARISON form of the name; the
+      // record keeps whatever the person typed. Two records whose names differ
+      // only in case or padding are one account under that rule, and silently
+      // keeping whichever loaded last would hand one person another's record.
+      // Refuse to start instead — the same choice the system principal makes
+      // when its env var is unset (#631): an instance with an ambiguous user
+      // store stops rather than guessing.
+      const index = new Map<string, User>();
+      const collisions: string[] = [];
+      for (const [storedName, record] of Object.entries(users)) {
+        const key = normalizeUsername(record?.username ?? storedName);
+        const existing = index.get(key);
+        if (existing) {
+          collisions.push(`'${existing.username ?? key}' and '${record?.username ?? storedName}'`);
+          continue;
+        }
+        index.set(key, record);
+      }
+      if (collisions.length > 0) {
+        throw new Error(
+          `User store has names that differ only in case or spacing, so they are the same account: ${collisions.join(', ')}. ` +
+          'Rename or remove one of each pair in the user store, then restart (#1436).'
+        );
+      }
+      this.users = index;
       logger.info(`📁 Loaded ${this.users.size} users from ${usersFilePath}`);
     } catch (err) {
       const error = err as NodeError;
@@ -125,7 +150,11 @@ class FileUserProvider extends BaseUserProvider {
     }
     try {
       const usersFilePath = path.join(this.usersDirectory, this.usersFile);
-      const users = Object.fromEntries(this.users);
+      // Keyed by the stored name, not the normalized one, so the file keeps
+      // reading the way an operator wrote it. Load normalizes again (#1436).
+      const users = Object.fromEntries(
+        Array.from(this.users.values()).map((u) => [u.username, u])
+      );
       await fs.writeFile(usersFilePath, JSON.stringify(users, null, 2), 'utf8');
       logger.debug(`📁 Saved ${this.users.size} users to ${usersFilePath}`);
     } catch (err) {
@@ -200,14 +229,16 @@ class FileUserProvider extends BaseUserProvider {
    * Get a user by username
    */
   getUser(username: string): Promise<User | null> {
-    return Promise.resolve(this.users.get(username) || null);
+    return Promise.resolve(this.users.get(normalizeUsername(username)) || null);
   }
 
   /**
    * Get all usernames
    */
   getAllUsernames(): Promise<string[]> {
-    return Promise.resolve(Array.from(this.users.keys()));
+    // The names as stored, not the comparison keys — this feeds display and
+    // admin listings, and lookups normalize on the way in anyway (#1436).
+    return Promise.resolve(Array.from(this.users.values()).map((u) => u.username));
   }
 
   /**
@@ -222,11 +253,12 @@ class FileUserProvider extends BaseUserProvider {
    */
   async createUser(userData: User): Promise<User> {
     const username = userData.username;
-    if (this.users.has(username)) {
+    // #1436: compare normalized, so `Jim` cannot be registered beside `jim`.
+    if (this.users.has(normalizeUsername(username))) {
       throw new Error(`User already exists: ${username}`);
     }
 
-    this.users.set(username, userData);
+    this.users.set(normalizeUsername(username), userData);
     await this.saveUsers();
     logger.info(`📁 Created user: ${username}`);
     return userData;
@@ -236,11 +268,11 @@ class FileUserProvider extends BaseUserProvider {
    * Update an existing user
    */
   async updateUser(username: string, userData: UserUpdateData): Promise<void> {
-    if (!this.users.has(username)) {
+    if (!this.users.has(normalizeUsername(username))) {
       throw new Error(`User not found: ${username}`);
     }
 
-    this.users.set(username, userData as User);
+    this.users.set(normalizeUsername(username), userData as User);
     await this.saveUsers();
     logger.info(`📁 Updated user: ${username}`);
   }
@@ -249,7 +281,7 @@ class FileUserProvider extends BaseUserProvider {
    * Delete a user
    */
   async deleteUser(username: string): Promise<boolean> {
-    const deleted = this.users.delete(username);
+    const deleted = this.users.delete(normalizeUsername(username));
 
     if (deleted) {
       await this.saveUsers();
@@ -263,7 +295,7 @@ class FileUserProvider extends BaseUserProvider {
    * Check if user exists
    */
   userExists(username: string): Promise<boolean> {
-    return Promise.resolve(this.users.has(username));
+    return Promise.resolve(this.users.has(normalizeUsername(username)));
   }
 
   /**

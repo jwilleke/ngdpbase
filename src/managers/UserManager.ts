@@ -5,6 +5,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
+import { isReservedUsername, normalizeUsername } from '../utils/username.js';
 import { hashPassword, verifyPassword, needsRehash, isLegacyHash } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -895,8 +896,11 @@ class UserManager extends BaseManager {
       return [];
     }
 
-    // Handle anonymous user (no session cookie)
-    if (!username || username === 'anonymous') {
+    // Handle anonymous user (no session cookie).
+    // #1436: normalized. `getAnonymousUser()` emits 'Anonymous' capitalised,
+    // so the bare lowercase comparison this used to make never fired for a
+    // real visitor — it fell through to a provider lookup that found nothing.
+    if (!username || normalizeUsername(username) === 'anonymous') {
       const userRoles = ['anonymous'];
       return this.getPermissionsFromPolicies(policyManager, userRoles);
     }
@@ -1073,6 +1077,20 @@ class UserManager extends BaseManager {
       // its roles the first time a job resolved the name. Same reason code as
       // a taken username so the registration form cannot tell the two apart.
       throw new UserCreateError('username-taken', `Username is reserved for the system principal: "${username}"`);
+    }
+
+    if (isReservedUsername(username)) {
+      // #1436: `anonymous` is the principal for "nobody authenticated", not an
+      // account — nothing is seeded under that name and nothing should be. An
+      // account holding it would collide with the principal wherever the name
+      // is compared, and `getAnonymousUser()` emits exactly that name on every
+      // unauthenticated request. `asserted` is reserved for the same reason
+      // one step earlier: the subject was removed (#1435), so the name must not
+      // become claimable in the meantime.
+      //
+      // Same reason code as a taken username, so the registration form cannot
+      // tell a reserved name from an existing one (#1086).
+      throw new UserCreateError('username-taken', `Username is reserved: "${username}"`);
     }
 
     if (await this.provider.userExists(username)) {
@@ -1459,9 +1477,10 @@ class UserManager extends BaseManager {
   async userHoldsPermission(username: string, action: string): Promise<boolean> {
     if (!this.provider) return false;
 
-    if (!username || username === 'anonymous') {
+    if (!username || normalizeUsername(username) === 'anonymous') {
       // The named constant, not a copy of it — ANONYMOUS_SUBJECT exists so this
-      // literal never appears anywhere (#1164).
+      // literal never appears anywhere (#1164). Normalized because the
+      // constant spells it 'Anonymous' and this compared lowercase (#1436).
       return this.hasPermission(ANONYMOUS_SUBJECT, action);
     }
     const user = await this.provider.getUser(username);
