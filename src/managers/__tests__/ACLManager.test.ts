@@ -32,6 +32,13 @@ const mockUserManager = {
 };
 
 // Mock engine
+/**
+ * #1431: the evaluator is reached through the ENGINE now, because the PDP asks
+ * for it there — setting `aclManager.policyEvaluator` no longer changes what a
+ * decision sees. Tests that want a Tier 2 verdict set this.
+ */
+let mockPolicyEvaluator: { evaluateAccess: (...args: unknown[]) => unknown } | null = null;
+
 const mockEngine = {
   getManager: vi.fn((name) => {
     if (name === 'UserManager') {
@@ -40,7 +47,9 @@ const mockEngine = {
     if (name === 'ConfigurationManager') {
       return mockConfigurationManager;
     }
-    // PolicyEvaluator is optional, return null
+    if (name === 'PolicyEvaluator') {
+      return mockPolicyEvaluator;
+    }
     return null;
   })
 };
@@ -54,6 +63,7 @@ describe('ACLManager', () => {
   beforeEach(async () => {
     // Clear mocks
     vi.clearAllMocks();
+    mockPolicyEvaluator = null;
 
     aclManager = new ACLManager(mockEngine);
     await aclManager.initialize();
@@ -718,24 +728,24 @@ describe('ACLManager', () => {
     });
 
     test('Tier 2 — PolicyEvaluator grants access', async () => {
-      aclManager.policyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
       const ctx = makeWikiContext({ userContext: { username: 'bob', roles: ['reader'] } });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
-      aclManager.policyEvaluator = null;
+      mockPolicyEvaluator = null;
     });
 
     test('Tier 2 — PolicyEvaluator denies access', async () => {
-      aclManager.policyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: false, policyName: 'deny-policy' }) };
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: false, policyName: 'deny-policy' }) };
       const ctx = makeWikiContext({ userContext: { username: 'bob', roles: ['reader'] } });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
-      aclManager.policyEvaluator = null;
+      mockPolicyEvaluator = null;
     });
 
     test('Tier 2 — PolicyEvaluator throws, falls through to Tier 3', async () => {
-      aclManager.policyEvaluator = { evaluateAccess: vi.fn().mockRejectedValue(new Error('PE error')) };
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockRejectedValue(new Error('PE error')) };
       const ctx = makeWikiContext({ content: '[{ALLOW view All}]', userContext: { username: 'bob', roles: ['reader'] } });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
-      aclManager.policyEvaluator = null;
+      mockPolicyEvaluator = null;
     });
   });
 

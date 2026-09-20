@@ -42,7 +42,7 @@ interface PolicyEvaluatorLike {
     pageName: string;
     action: string;
     userContext: { username: string; roles: string[]; isAuthenticated: boolean };
-  }): Promise<{ allowed: boolean; reason?: string }>;
+  }): Promise<{ allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null }>;
 }
 
 export class PolicyDecisionPoint extends BaseManager {
@@ -100,7 +100,7 @@ export class PolicyDecisionPoint extends BaseManager {
         `[PDP] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
         `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`
       );
-      return { permit: false, reason: 'token_scope_deny' };
+      return { permit: false, applicable: true, reason: 'token_scope_deny' };
     }
 
     const viaShare = subject?.viaShare;
@@ -112,29 +112,29 @@ export class PolicyDecisionPoint extends BaseManager {
       const coverage = request.resourceCoverage;
       if (coverage && !coverage(viaShare.resources)) {
         logger.info(`[PDP] share ${viaShare.id} does not cover ${request.resource?.type ?? 'resource'} '${request.resource?.id ?? ''}' — denied`);
-        return { permit: false, reason: 'share_resource_deny' };
+        return { permit: false, applicable: true, reason: 'share_resource_deny' };
       }
       if (!viaShare.actions.includes(action)) {
         logger.info(`[PDP] share ${viaShare.id} does not delegate '${action}' (has: ${viaShare.actions.join(',') || 'none'}) — denied`);
-        return { permit: false, reason: 'share_action_deny' };
+        return { permit: false, applicable: true, reason: 'share_action_deny' };
       }
       if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) {
         logger.info(`[PDP] share ${viaShare.id} expired ${viaShare.expiresAt} — denied`);
-        return { permit: false, reason: 'share_expired' };
+        return { permit: false, applicable: true, reason: 'share_expired' };
       }
       const userManager = this.userManager();
       const issuerHolds = !!userManager && await userManager.userHoldsPermission(viaShare.issuer, action);
       if (!issuerHolds) {
         logger.info(`[PDP] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
-        return { permit: false, reason: 'share_issuer_lost_permission' };
+        return { permit: false, applicable: true, reason: 'share_issuer_lost_permission' };
       }
-      return { permit: true, reason: 'share' };
+      return { permit: true, applicable: true, reason: 'share' };
     }
 
     const policyEvaluator = this.engine.getManager<PolicyEvaluatorLike>('PolicyEvaluator');
     if (!policyEvaluator) {
       logger.warn('[PDP] PolicyEvaluator not available, denying');
-      return { permit: false, reason: 'no_evaluator' };
+      return { permit: false, applicable: false, reason: 'no_evaluator' };
     }
 
     let userContext: { username: string; roles: string[]; isAuthenticated: boolean };
@@ -146,7 +146,7 @@ export class PolicyDecisionPoint extends BaseManager {
       const userManager = this.userManager();
       if (!userManager) {
         logger.warn('[PDP] UserManager not available to resolve roles, denying');
-        return { permit: false, reason: 'no_user_manager' };
+        return { permit: false, applicable: false, reason: 'no_user_manager' };
       }
       userContext = await userManager.resolveSubjectNow(subject.username);
     } else if (subject) {
@@ -169,7 +169,14 @@ export class PolicyDecisionPoint extends BaseManager {
       action,
       userContext
     });
-    return { permit: result.allowed, reason: result.reason ?? (result.allowed ? 'policy_allow' : 'policy_deny') };
+    // `hasDecision` false means no policy spoke — NotApplicable, not a deny.
+    // The page door has further tiers to try; a capability check has none, and
+    // treats silence as a refusal, which is what `permit: false` says here.
+    return {
+      permit: result.allowed,
+      applicable: result.hasDecision !== false,
+      reason: result.policyName ?? result.reason ?? (result.allowed ? 'policy_allow' : 'policy_deny')
+    };
   }
 }
 

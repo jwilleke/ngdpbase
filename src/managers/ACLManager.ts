@@ -306,19 +306,25 @@ class ACLManager extends BaseManager {
     // implementation. The PAGE half the PDP cannot know — whether the share
     // covers this particular page — is supplied as `resourceCoverage`, which
     // is PIP work.
-    const ceiling = await this.policyDecisionPoint().decide(
-      userContext,
-      {
-        action: policyAction,
-        resource: { type: 'page', id: pageName },
-        resourceCoverage: (shareResources: readonly PolicyResource[]) => {
-          const keywords = wikiContext.pageMetadata?.['user-keywords'];
-          return !!wikiContext.pageMetadata && shareCoversResource(shareResources, 'page', (keywords as string[]) ?? []);
-        }
-      }
-    );
     const delegated = (userContext as { viaToken?: unknown; viaShare?: unknown } | undefined);
-    if ((delegated?.viaToken || delegated?.viaShare) && !ceiling.permit) {
+    // Only a DELEGATED caller has a ceiling to check. Asking unconditionally
+    // would evaluate the policies twice for every ordinary request — once here
+    // and again at Tier 2 — and would let an evaluator error escape the Tier 2
+    // catch that exists to fall through to Tier 3.
+    const ceiling = (delegated?.viaToken || delegated?.viaShare)
+      ? await this.policyDecisionPoint().decide(
+        userContext,
+        {
+          action: policyAction,
+          resource: { type: 'page', id: pageName },
+          resourceCoverage: (shareResources: readonly PolicyResource[]) => {
+            const keywords = wikiContext.pageMetadata?.['user-keywords'];
+            return !!wikiContext.pageMetadata && shareCoversResource(shareResources, 'page', (keywords as string[]) ?? []);
+          }
+        }
+      )
+      : null;
+    if (ceiling && !ceiling.permit) {
       this.logAccessDecision({
         user: userContext, pageName, action, allowed: false, reason: ceiling.reason,
         context: { wikiContext: wikiContext.context }
@@ -444,31 +450,32 @@ class ACLManager extends BaseManager {
       return { allowed: true, reason: 'share_grant' };
     }
 
-    // Tier 2: Evaluate Global Policies (fallback when no frontmatter audience set)
-    if (this.policyEvaluator) {
-      try {
-        const policyContext = { pageName, action: policyAction, userContext };
-
-        const policyResult = await this.policyEvaluator.evaluateAccess(policyContext);
-
-        logger.info(`[ACL] PolicyEvaluator decision hasDecision=${policyResult.hasDecision} allowed=${policyResult.allowed} policy=${policyResult.policyName}`);
-
-        if (policyResult.hasDecision) {
-          const reason = policyResult.policyName || 'global_policy';
-          this.logAccessDecision({
-            user: userContext,
-            pageName,
-            action,
-            allowed: policyResult.allowed,
-            reason,
-            context: { wikiContext: wikiContext.context }
-          });
-
-          return { allowed: policyResult.allowed, reason };
-        }
-      } catch (e) {
-        logger.warn('[ACL] PolicyEvaluator error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
+    // Tier 2: the policies, asked of the PDP (#1431).
+    //
+    // `applicable` is why this needs a three-state answer: when no policy
+    // spoke, the page door still has Tier 3 to try, so silence must not read
+    // as a deny here — it does for a capability check, which has no further
+    // tier.
+    try {
+      const decision = await this.policyDecisionPoint().decide(userContext, {
+        action: policyAction,
+        resource: { type: 'page', id: pageName }
+      });
+      logger.info(`[ACL] PDP decision applicable=${decision.applicable} permit=${decision.permit} reason=${decision.reason}`);
+      if (decision.applicable) {
+        const reason = decision.reason || 'global_policy';
+        this.logAccessDecision({
+          user: userContext,
+          pageName,
+          action,
+          allowed: decision.permit,
+          reason,
+          context: { wikiContext: wikiContext.context }
+        });
+        return { allowed: decision.permit, reason };
       }
+    } catch (e) {
+      logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     }
 
     // Tier 3: Page-Level ACL markup (deprecated — blocked on new saves)

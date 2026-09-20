@@ -114,6 +114,17 @@ export interface DecisionRequest {
  */
 export interface Decision {
   permit: boolean;
+  /**
+   * Whether any policy spoke to this question at all.
+   *
+   * XACML's NotApplicable, and it is load-bearing here: the page door falls
+   * through to its remaining tiers when no policy matched, while a capability
+   * check treats silence as a refusal. A binary decision cannot express the
+   * difference, and flattening it would silently delete Tier 3.
+   *
+   * `permit` is always false when this is false — nothing has said yes.
+   */
+  applicable: boolean;
   reason: string;
 }
 
