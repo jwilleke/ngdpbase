@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "4.18.0",
+  "ngdpbase.version": "4.19.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -98,10 +98,10 @@
   "ngdpbase.page.provider.filesystem.private.files.userversions": "user-versions.json",
   "ngdpbase.page.provider.filesystem.private.files.usertrash": "user-trash.json",
   "ngdpbase.page.provider.filesystem.private.files.storemeta": "store.json",
-  "_comment_stores_default": "Private stores (#1414): the store KIND definitions. A kind is instance-wide; a user's directory under it is that user's security container. encrypt is the kind OWNER's call \u2014 admin for 'default', the addon for its own \u2014 and is never overruled per user or per instance. 'admin' is a reserved owner slug no addon may claim. Changing a kind governs stores created afterwards; converting existing ones is a whole-store migration, not a config edit. Addon kinds are written here at first load from the addon's package.json ngdpbase.stores.",
+  "_comment_stores_default": "Private stores (#1414): the store KIND definitions. A kind is instance-wide; a user's directory under it is that user's security container. encrypt is the kind OWNER's call — admin for 'default', the addon for its own — and is never overruled per user or per instance. 'admin' is a reserved owner slug no addon may claim. Changing a kind governs stores created afterwards; converting existing ones is a whole-store migration, not a config edit. Addon kinds are written here at first load from the addon's package.json ngdpbase.stores.",
   "ngdpbase.stores.default.encrypt": false,
   "ngdpbase.stores.default.owner": "admin",
-  "_comment_stores_recovery": "Private stores (#1414): how many EXTRA attempts a user gets to confirm their 12 recovery words before the door gives up and they start over. Each attempt shows a NEW set of words \u2014 a failed confirmation never re-shows the set that was just missed. 1 = two attempts in all; 0 = one attempt. Nothing is written until an attempt succeeds.",
+  "_comment_stores_recovery": "Private stores (#1414): how many EXTRA attempts a user gets to confirm their 12 recovery words before the door gives up and they start over. Each attempt shows a NEW set of words — a failed confirmation never re-shows the set that was just missed. 1 = two attempts in all; 0 = one attempt. Nothing is written until an attempt succeeds.",
   "ngdpbase.stores.recovery.confirmretries": 1,
   "_comment_page_index": "Page index file - used by VersioningFileProvider for fast lookups (high I/O, consider fast storage)",
   "ngdpbase.page.provider.versioning.indexfile": "${FAST_STORAGE}/page-index.json",
@@ -1404,16 +1404,16 @@
   "_comment_holidays": "Holiday access restrictions and messages",
   "ngdpbase.holidays.enabled": false,
   "ngdpbase.holidays.dates": {
-      "*-01-01": {
-          "name": "New Year's Day",
-          "message": "Access restricted on New Year's Day",
-          "enabled": true
-      },
-      "*-12-25": {
-          "name": "Christmas Day",
-          "message": "Access restricted on Christmas Day",
-          "enabled": true
-      }
+    "*-01-01": {
+      "name": "New Year's Day",
+      "message": "Access restricted on New Year's Day",
+      "enabled": true
+    },
+    "*-12-25": {
+      "name": "Christmas Day",
+      "message": "Access restricted on Christmas Day",
+      "enabled": true
+    }
   },
   "_comment_schedules": "Access schedules (role/category/default and named definitions)",
   "ngdpbase.schedules": {
