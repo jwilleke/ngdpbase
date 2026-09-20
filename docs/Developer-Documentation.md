@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 41 | 42 | Core system managers |
+| [Managers](#managers) | 41 | 43 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 36 | 37 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -70,6 +70,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | FilterManager | ✅ [doc](managers/FilterManager.md) | Owns the content-filter pipeline: registration, lifecycle, and the one chain both save and render paths use |
 | FootnoteManager | ✅ [doc](managers/FootnoteManager.md) | Sidecar storage + CRUD for page footnotes (migrated out of page body in |
 | ImportManager | 📘 [doc](managers/ImportManager.md) + [guide](managers/ImportManager-Complete-Guide.md) | Pluggable importer for external wiki formats — extensible converter registry (JSPWiki, MediaWiki, Confluence, …) |
+| Manager-SOT | ✅ [doc](managers/Manager-SOT.md) | Where each fact lives and which manager owns it — the standing rule, the current violations, and the plan to fix them. Starts with the access-control subject |
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
 | MetricsManager | 📘 [doc](managers/MetricsManager.md) + [guide](managers/MetricsManager-Complete-Guide.md) | OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios |
 | NotificationManager | 📘 [doc](managers/NotificationManager.md) + [guide](managers/NotificationManager-Complete-Guide.md) | System and per-user notifications — toast popups, persistent inbox, scheduled expiry |
