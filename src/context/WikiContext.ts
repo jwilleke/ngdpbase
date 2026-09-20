@@ -8,9 +8,9 @@
 
 import path from 'path';
 import type { PermissionSubject } from '../managers/UserManager.js';
+import { BaseContext } from './BaseContext.js';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
-import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
@@ -19,7 +19,6 @@ import type RenderingManager from '../managers/RenderingManager.js';
 import type PluginManager from '../managers/PluginManager.js';
 import type VariableManager from '../managers/VariableManager.js';
 import type ACLManager from '../managers/ACLManager.js';
-import type UserManager from '../managers/UserManager.js';
 import type MarkupParser from '../parsers/MarkupParser.js';
 import type { VariableContext } from '../managers/VariableManager.js';
 import { getThemeManager as getThemeManagerFor, type ThemeInfo } from '../managers/ThemeManager.js';
@@ -200,7 +199,7 @@ export interface ContextTypes {
  * @see {@link WikiEngine} for the main engine
  * @see {@link RenderingManager} for rendering operations
  */
-class WikiContext {
+class WikiContext extends BaseContext {
   /**
    * Context type constants for different rendering modes
    *
@@ -235,7 +234,18 @@ class WikiContext {
   public readonly content: string | null;
 
   /** Current user context/session */
-  public readonly userContext: UserContext | null;
+  /**
+   * The caller's subject, as the middleware wrote it.
+   *
+   * #1399: stored once, on BaseContext, and read here under the name the
+   * render path and the templates already use. A UserContext IS a
+   * PermissionSubject plus display-only extras, so this is a view of the same
+   * object — never a copy, which is what would drop `privateStoreHandle` and
+   * make a sealed page vanish for its owner (#1382, #1173).
+   */
+  get userContext(): UserContext | null {
+    return this._subject as UserContext | null;
+  }
 
   /** Express request object */
   public readonly request: Request | null;
@@ -283,7 +293,6 @@ class WikiContext {
    * We cache the Promise (not the resolved value) so concurrent callers all
    * await the same in-flight evaluation.
    */
-  private readonly _permissionCache: Map<string, Promise<boolean>> = new Map();
 
   /**
    * Per-instance memoization for canAccess(action) results, keyed by
@@ -314,6 +323,9 @@ class WikiContext {
       throw new Error('WikiContext requires a valid WikiEngine instance.');
     }
 
+    // #1399: the subject is held once, by BaseContext, and read back through
+    // the `userContext` accessor below.
+    super(engine, options.userContext ?? null);
     this.engine = engine;
     this.context = options.context || WikiContext.CONTEXT.NONE;
     this.pageName = options.pageName || null;
@@ -322,7 +334,6 @@ class WikiContext {
     // addon worked around that by creating entries with a single space — which
     // the author then typed after, storing ` # heading` (#1328).
     this.content = options.content ?? null;
-    this.userContext = options.userContext || null;
     this.request = options.request || null;
     this.response = options.response || null;
     this._activeThemeOverride = options.activeTheme;
@@ -396,38 +407,10 @@ class WikiContext {
     return names.some((n) => have.has(n));
   }
 
-  /**
-   * Returns true if the current user is globally allowed to perform the given action.
-   *
-   * Delegates to {@link UserManager.hasPermission}, which evaluates through
-   * PolicyEvaluator with role expansion (anonymous → 'All'; authenticated →
-   * 'Authenticated' + 'All'). This is the canonical action-permission path.
-   *
-   * For page-resource-aware checks, use {@link canAccess} instead.
-   *
-   * @param {string} action - Permission action (e.g., 'admin-system', 'user-edit')
-   * @returns {Promise<boolean>} true if the user has the permission
-   *
-   * @example
-   * if (await wikiContext.hasPermission('admin-system')) { ... }
-   */
-  async hasPermission(action: string): Promise<boolean> {
-    const userManager = this.engine.getManager<UserManager>('UserManager');
-    if (!userManager) return false;
-    // #636: per-instance memoization — repeat calls share the same in-flight
-    // promise. Cache the Promise (not the result) so concurrent callers all
-    // wait on one evaluation.
-    const cached = this._permissionCache.get(action);
-    if (cached) return cached;
-    // #637: pass the already-resolved userContext when we have one, so
-    // UserManager.hasPermission can skip provider.getUser + resolveUserRoles.
-    const promise = this.userContext
-      ? userManager.hasPermission(this.userContext, action)
-      // #1173: a named anonymous subject, so there is one code path in.
-      : userManager.hasPermission(ANONYMOUS_SUBJECT, action);
-    this._permissionCache.set(action, promise);
-    return promise;
-  }
+  // #1399: hasPermission(action) is BaseContext's — one implementation of the
+  // global door, asking UserManager with the subject this context holds, with
+  // the same #636 per-instance promise memoisation this class had. The
+  // resource-aware check stays here, because it needs a page.
 
   /**
    * Returns true if the current user is allowed to perform the given action
@@ -499,27 +482,8 @@ class WikiContext {
     return promise;
   }
 
-  /**
-   * Returns the user's principals — the set of identifiers that match
-   * audience-style filters (e.g., search-index private-page filters).
-   *
-   * Includes all roles, plus the username if present. Used by search providers
-   * to filter results without invoking the full ACL evaluator per-result.
-   *
-   * @returns {string[]} Principals: [...roles, username] (username appended only if set)
-   *
-   * @example
-   * const principals = wikiContext.getPrincipals();
-   * if (principals.some((p) => audience.includes(p))) { ... }
-   */
-  getPrincipals(): string[] {
-    const roles = Array.isArray(this.userContext?.roles) ? [...this.userContext.roles] : [];
-    const username = this.userContext?.username;
-    if (typeof username === 'string' && username.length > 0) {
-      roles.push(username);
-    }
-    return roles;
-  }
+  // #1399: getPrincipals() is BaseContext's — [...roles, username] off the
+  // subject this context holds, one implementation for every context.
 
   /**
    * Active theme folder name (e.g. 'default', 'flatly').

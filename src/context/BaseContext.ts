@@ -108,7 +108,13 @@ export abstract class BaseContext {
    * result would be too expensive (search filtering).
    */
   getPrincipals(): string[] {
-    const subject = this.getActor();
+    // Deliberately the RAW subject, not getActor(): with no subject the answer
+    // is an empty list, which matches nothing. Falling back to the anonymous
+    // subject here would hand back its role names and let a context with no
+    // caller match an audience — a filter must fail closed, and unlike the
+    // permission door there is no evaluator behind this to say no.
+    const subject = this._subject;
+    if (!subject) return [];
     const principals = Array.isArray(subject.roles) ? [...subject.roles] : [];
     if (typeof subject.username === 'string' && subject.username.length > 0) {
       principals.push(subject.username);
