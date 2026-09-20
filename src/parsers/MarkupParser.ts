@@ -1181,10 +1181,20 @@ class MarkupParser extends BaseManager {
     const userCtx = (pageCtx.userContext ?? context.userContext) as Record<string, unknown> | undefined;
     const prefs = userCtx?.['preferences'] as Record<string, unknown> | undefined;
 
+    // #1433: the viewer, resolved the same way `parse()` resolves it for
+    // ${username} — `userContext.username` FIRST. The view path arrives from
+    // `WikiContext.toParseOptions()`, which supplies `userContext` and never a
+    // top-level `userName`, so reading `userName` alone yielded `undefined` for
+    // every viewer and collapsed them onto one key. The preference fields below
+    // then carried the whole separation by accident: two subjects whose
+    // preferences are untouched — `admin` and anonymous on a fresh install —
+    // hashed identically and shared one cached render.
+    const userName = (userCtx?.['username'] ?? userCtx?.['userName'] ?? pageCtx.userName ?? context.userName);
+
     const contextHash = crypto.createHash('md5')
       .update(JSON.stringify({
         pageName: pageCtx.pageName ?? context.pageName,
-        userName: pageCtx.userName ?? context.userName,
+        userName,
         query,
         // Preferences affecting date/time variable rendering (#341)
         userLocale: (prefs?.['locale'] ?? userCtx?.['locale']),
