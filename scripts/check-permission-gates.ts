@@ -48,7 +48,8 @@ const ROLE_READ_ALLOWED: Record<string, string> = {
   'src/parsers/handlers/WikiTagHandler.ts': "the [{If role='…'}] content directive — a page author's conditional, documented syntax, not a system gate",
   'src/managers/ACLManager.ts': 'the evaluator itself: tier 0 private-page bypass and the filter that mirrors it',
   'src/routes/WikiRoutes.ts': "validates a user-update PAYLOAD — whether an external account is being handed 'admin' — not the caller's roles; and counts the accounts that HOLD admin for the /admin/users stat bar (#1303), which is data about users",
-  'views/header.ejs': "the 'Admin' badge beside the signed-in name states a membership; the links and actions around it ask can()"
+  'views/header.ejs': "the 'Admin' badge beside the signed-in name states a membership; the links and actions around it ask can()",
+  'views/admin-user-edit.ejs': "browser-side form validation on the PAYLOAD — refuses to hand 'admin' to an external OAuth account, the same claim WikiRoutes validates server-side; it reads the roles being assigned, never the caller's (#1399 widened the pattern that found it)"
 };
 
 /** Methods in WikiRoutes.ts that may read `isAuthenticated`, and why. */
@@ -60,7 +61,12 @@ const AUTH_FLAG_ALLOWED: Record<string, string> = {
   sweepAnonymousSessions: 'reads the flag off session files on disk to decide which to sweep'
 };
 
-const ROLE_GATE = /\buserHasRole\(|\.hasRole\(|\brequireRole\(|\broles\??\.includes\(\s*['"]/;
+// #1399: the optional-call form and a capitalised/prefixed roles array both
+// slipped past the first version — `wikiContext.hasRole?.('admin')` in
+// PageManager and `userRoles.includes('admin')` in ACLManager shipped while
+// this guard was green, because `\.hasRole\(` misses `?.(` and
+// `\broles\??\.includes` misses `userRoles`/`selectedRoles`.
+const ROLE_GATE = /\buserHasRole\(|\.hasRole\??\.?\(|\brequireRole\(|\b\w*[Rr]oles\??\.includes\(\s*['"]/;
 const AUTH_FLAG = /isAuthenticated/;
 const AUTH_DECISION = /if \(|\? |const anonymous =/;
 

@@ -2265,7 +2265,7 @@ class VersioningFileProvider extends FileSystemProvider {
       this.pageIndex?.pages[uuid]?.location === 'private' ? 'private' : 'pages';
 
     try {
-      const info = this.resolvePageInfo(identifier);
+      const info = this.resolvePageInfo(identifier, ctx);
       if (!info) {
         logger.warn(`[VersioningFileProvider] Cannot delete - unresolvable: ${identifier}`);
         return false;

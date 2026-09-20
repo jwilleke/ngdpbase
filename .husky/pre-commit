@@ -42,3 +42,9 @@ npm run lint:http --silent
 npm run lint:permission-subject --silent
 
 npm run lint:gates --silent
+
+# Context discipline (#1399) — a door takes the caller's context, mandatory and
+# positional, and uses it. Catches the two shapes the subject check cannot see:
+# an OPTIONAL identity parameter (omission becomes the easy path) and one that
+# is accepted and discarded (`_ctx`), plus any ambient AsyncLocalStorage. Cheap.
+npm run lint:context --silent

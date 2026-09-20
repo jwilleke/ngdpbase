@@ -878,8 +878,12 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
-  async deletePage(identifier: string, _ctx: ActorContext): Promise<boolean> {
-    const info = this.resolvePageInfo(identifier);
+  async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
+    // #1399: the context this door was handed resolves the page. Without it a
+    // sealed page — which lives only in the caller's session catalogue, never
+    // the shared index — could not be resolved here, so deleting one reported
+    // "page not found".
+    const info = this.resolvePageInfo(identifier, ctx);
     if (!info) {
       logger.warn(`[FileSystemProvider] Cannot delete - page not found: ${identifier}`);
       return false;
