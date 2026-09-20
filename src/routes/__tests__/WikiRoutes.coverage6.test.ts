@@ -19,6 +19,7 @@
  *   GET  /admin/variables (happy + 403)
  */
 import express from 'express';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -366,7 +367,8 @@ describe('WikiRoutes — coverage batch 6', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    mockUserContext = null;
+    mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+    mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
   });
 
   // ── GET / (homePage) ─────────────────────────────────────────────────────────
@@ -388,7 +390,8 @@ describe('WikiRoutes — coverage batch 6', () => {
     });
 
     test('redirects unauthenticated user to login', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app).get('/create');
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/login');

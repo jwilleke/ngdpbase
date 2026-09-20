@@ -11,6 +11,7 @@
  *   POST /export/markdown/:page (exportPageMarkdown — error path)
  */
 import express from 'express';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
@@ -386,7 +387,8 @@ describe('WikiRoutes — coverage batch 7', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    mockUserContext = null;
+    mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+    mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
   });
 
   // ── GET /view/:page (viewPage) ───────────────────────────────────────────────
@@ -482,7 +484,8 @@ describe('WikiRoutes — coverage batch 7', () => {
     });
 
     test('returns 200 with unauthenticated user when ACL allows', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app).get('/view/TestPage');
       expect(res.status).toBe(200);
     });
@@ -498,7 +501,8 @@ describe('WikiRoutes — coverage batch 7', () => {
 
   describe('GET /edit/:page (editPage)', () => {
     test('redirects unauthenticated user to login', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app).get('/edit/TestPage');
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/login');
@@ -665,7 +669,8 @@ describe('WikiRoutes — coverage batch 7', () => {
 
   describe('POST /profile (updateProfile)', () => {
     test('redirects to login when unauthenticated', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app)
         .post('/profile')
         .set('x-csrf-token', 'test-csrf-token')
@@ -804,7 +809,8 @@ describe('WikiRoutes — coverage batch 7', () => {
 
   describe('POST /preferences (updatePreferences)', () => {
     test('redirects to login when unauthenticated', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app)
         .post('/preferences')
         .set('x-csrf-token', 'test-csrf-token')

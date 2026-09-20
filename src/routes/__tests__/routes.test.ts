@@ -1,4 +1,5 @@
 import express from 'express';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -16,7 +17,7 @@ vi.mock('../../utils/LocaleUtils', () => {
 // Mock WikiContext - the central context object for all wiki operations
 // This allows tests to control userContext, pageName, and other context properties
 // Note: mockUserContext is accessed by the mock factory function
-let mockUserContext = null;
+let mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
 
 const mockHolder = vi.hoisted(() => ({ userManager: null }));
 
@@ -1472,7 +1473,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
   describe('Authentication Checks', () => {
     test('should redirect unauthenticated users to login for protected routes', async () => {
       // Set mockUserContext to unauthenticated state - the middleware reads this on each request
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
 
       const response = await request(app).get('/profile');
       expect(response.status).toBe(302); // Should redirect to login

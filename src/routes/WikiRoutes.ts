@@ -3070,8 +3070,6 @@ ${panes}
       // #1198: policy is the door; the login redirect is the refusal for an
       // anonymous subject, decided after the denial, not before it.
       if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'page-create');
 
       const hasPermission = await userManager.hasPermission(
         currentUser,
@@ -3431,8 +3429,6 @@ ${panes}
       // #1198: policy is the door. The page's own rules (private, audience,
       // author-lock) are evaluated below as before; this asks the capability.
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'page-edit');
 
       // Get page data to check ACL (if page exists)
       let pageData = await pageManager.getPage(pageName, req.userContext);
@@ -5589,8 +5585,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'asset-upload', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
 
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -5786,8 +5780,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'page-create');
       const url = typeof req.query.url === 'string' ? req.query.url.slice(0, 2048) : '';
       const title = typeof req.query.title === 'string' ? req.query.title.slice(0, 300) : '';
       const text = typeof req.query.text === 'string' ? req.query.text.slice(0, 8000) : '';
@@ -5814,8 +5806,6 @@ ${panes}
       const wikiContext0 = this.createWikiContext(req);
       const currentUser = wikiContext0.userContext;
       if (!(await this.permitted(wikiContext0, 'page-create', req, res, 'text'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext0, req, res, 'text', 'page-create');
       const pageName = (typeof req.body.pageName === 'string' ? req.body.pageName : '').trim().slice(0, 255);
       const url = (typeof req.body.url === 'string' ? req.body.url : '').trim().slice(0, 2048);
       const title = (typeof req.body.title === 'string' ? req.body.title : '').trim().slice(0, 300);
@@ -6131,8 +6121,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'asset-delete', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'asset-delete');
 
       // #1183: the filename/size pre-read moved into AttachmentManager, so
       // every caller's record names what was lost, not only this route's.
@@ -7784,8 +7772,6 @@ ${panes}
       );
 
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
 
       // Get fresh user data from database to ensure we have latest preferences
       const freshUser = await userManager.getUser(currentUser.username ?? '');
@@ -8455,8 +8441,6 @@ ${panes}
       const currentUser = wikiContext.userContext;
 
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
 
       const {
         displayName,
@@ -8622,8 +8606,6 @@ ${panes}
       );
 
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
 
       logger.debug('DEBUG: updatePreferences - req.body:', req.body);
       logger.debug(
@@ -8774,8 +8756,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
       const theme = req.body?.theme;
       if (!['light', 'dark', 'system'].includes(theme)) {
         return res.status(400).json({ error: 'Invalid theme value' });
@@ -8808,8 +8788,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
       const rawPageName = typeof req.body?.pageName === 'string' ? req.body.pageName.trim() : '';
       const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
       const rawTitle = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
@@ -8850,8 +8828,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
       const ident = decodeURIComponent(req.params.pageName ?? '');
       if (!ident) return res.status(400).json({ error: 'identifier required' });
       const userManager = this.engine.getManager('UserManager');
@@ -8885,8 +8861,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
       const order: string[] = Array.isArray(req.body?.order)
         ? req.body.order.filter((s: unknown): s is string => typeof s === 'string')
         : [];
@@ -8910,8 +8884,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'comment-create', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'comment-create');
 
       const { pageUuid } = req.params;
       const { content } = req.body as { content?: string };
@@ -9095,8 +9067,6 @@ ${panes}
       // (below); this asks the one every ingest needs, so an anonymous or
       // out-of-scope subject is refused before the body is read.
       if (!(await this.permitted(baseContext, 'page-create', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(baseContext, req, res, 'json', 'page-create');
 
       const body = req.body as {
         pageName?: unknown; markdown?: unknown; category?: unknown; keywords?: unknown;
@@ -9311,8 +9281,6 @@ ${panes}
       const currentUser = wikiContext.userContext;
       // #1198: comment-create is the door; own-or-admin decides below.
       if (!(await this.permitted(wikiContext, 'comment-create', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'comment-create');
 
       const { pageUuid, commentId } = req.params;
       const commentManager = this.engine.getManager('CommentManager');
@@ -9420,8 +9388,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'page-edit');
 
       const { pageUuid } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
@@ -9454,8 +9420,6 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently (#1233).
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'page-edit');
 
       const { pageUuid, footnoteId } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
@@ -9503,8 +9467,6 @@ ${panes}
       const currentUser = wikiContext.userContext;
       // #1198: page-edit is the door; own-or-admin decides below.
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'page-edit');
 
       const { pageUuid, footnoteId } = req.params;
       const footnoteManager = this.engine.getManager('FootnoteManager');
@@ -13287,8 +13249,6 @@ ${panes}
       if (!(await wikiContext.hasPermission('asset-delete'))) {
         return res.status(403).json({ success: false, error: 'asset-delete permission required to delete attachments' });
       }
-      // Policy allowed but there is nobody to act as — refuse, never fall through silently (#1179).
-      if (!currentUser) return this.refuse(wikiContext, req, res, 'json', 'asset-delete');
 
       const { attachmentId } = req.params;
       const attachmentManager = this.engine.getManager('AttachmentManager');

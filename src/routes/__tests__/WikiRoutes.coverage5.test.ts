@@ -25,6 +25,7 @@
  *   GET    /admin/variables (403 path)
  */
 import express from 'express';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
@@ -391,14 +392,16 @@ describe('WikiRoutes — coverage batch 5', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    mockUserContext = null;
+    mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+    mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
   });
 
   // ── POST /api/user/display-theme ─────────────────────────────────────────────
 
   describe('POST /api/user/display-theme', () => {
     test('returns 401 for unauthenticated user', async () => {
-      mockUserContext = null;
+      mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
+      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
       const res = await request(app)
         .post('/api/user/display-theme')
         .set('x-csrf-token', 'test-csrf-token')

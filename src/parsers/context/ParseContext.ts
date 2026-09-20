@@ -8,6 +8,7 @@
  */
 
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../../managers/UserManager.js';
+import { BaseContext } from '../../context/BaseContext.js';
 
 /**
  * User context interface
@@ -160,6 +161,21 @@ export interface CachedContextData {
 }
 
 /**
+ * The stub's share of the permission door (#1399).
+ *
+ * `BaseContext` is abstract because a context is always one of the real three;
+ * this is the one exception — the synthesized view a legacy caller or a test
+ * fixture gets when there is no WikiContext to delegate to. It exists so that
+ * view asks the SAME door as everything else rather than carrying a fourth
+ * implementation of it.
+ */
+class StubContext extends BaseContext {
+  constructor(engine: WikiEngine, subject: PermissionSubject) {
+    super(engine, subject);
+  }
+}
+
+/**
  * Synthesize a minimal WikiContextLike from a PageContext snapshot. Used when
  * ParseContext is constructed without a real WikiContext (legacy callers, test
  * fixtures).
@@ -190,22 +206,11 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     pageName,
     userContext,
     pageMetadata,
-    hasPermission: async (action: string): Promise<boolean> => {
-      const userManager = engine.getManager<{
-        hasPermission(subject: PermissionSubject, a: string): Promise<boolean>;
-          }>('UserManager');
-      if (!userManager) return false;
-      const username = userContext?.username ?? userContext?.userName ?? '';
-      // #1173: forward the caller's context, do not rebuild one. The rebuilt
-      // three-field object dropped `viaToken`, so an agent token's scope
-      // ceiling had nothing to find and the check resolved against the token
-      // OWNER's live roles — the #1164 defect, reached through a context class
-      // and invisible to a guard that only scans src/routes/.
-      if (userContext && typeof username === 'string' && username) {
-        return userManager.hasPermission(userContext, action);
-      }
-      return userManager.hasPermission(ANONYMOUS_SUBJECT, action);
-    },
+    // #1399: the global door is BaseContext's — one implementation, asking
+    // UserManager with the subject as given. This stub used to carry its own
+    // copy, which is how three of them drifted apart in the first place.
+    hasPermission: (action: string): Promise<boolean> =>
+      new StubContext(engine, (userContext ?? ANONYMOUS_SUBJECT)).hasPermission(action),
     canAccess: async (action: string): Promise<boolean> => {
       const aclManager = engine.getManager<{
         checkPagePermissionWithContext(ctx: unknown, action: string): Promise<boolean>;
