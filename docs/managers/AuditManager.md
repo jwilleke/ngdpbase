@@ -501,6 +501,7 @@ audited.
 | `asset-upload` | File uploaded | continue | yes |
 | `asset-delete` | File deleted; destruction | refuse | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
+| `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |

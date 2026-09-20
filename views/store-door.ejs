@@ -1,0 +1,108 @@
+<%- include('header', { pageName: '' }) %>
+<%
+  // #1414 — the store door. One template, one step at a time:
+  // ready | intro-plain | intro-sealed | words | confirm | exhausted | done
+  const doorUrl = '/stores/' + encodeURIComponent(storeKind.id);
+  const storeName = storeKind.id === 'default' ? 'your private pages' : 'the "' + storeKind.id + '" store';
+%>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="card mt-4">
+        <div class="card-header">
+          <h4 class="mb-0">
+            <i class="fas <%= storeKind.encrypt ? 'fa-lock' : 'fa-eye-slash' %>"></i>
+            <%= storeKind.id === 'default' ? 'Private pages' : 'Private store: ' + storeKind.id %>
+          </h4>
+        </div>
+        <div class="card-body">
+          <% if (typeof error !== 'undefined' && error) { %>
+            <div class="alert alert-danger" role="alert"><%= error %></div>
+          <% } %>
+          <% if (typeof notice !== 'undefined' && notice) { %>
+            <div class="alert alert-warning" role="alert"><%= notice %></div>
+          <% } %>
+
+          <% if (step === 'ready') { %>
+            <p>You already have <%= storeName %>.</p>
+            <a class="btn btn-primary" href="<%= landing %>">Open it</a>
+
+          <% } else if (step === 'intro-plain') { %>
+            <p>This creates <%= storeName %>. Only you can see what you keep in it, unless you share it.</p>
+            <form method="post" action="<%= doorUrl %>">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn btn-primary">Create it</button>
+            </form>
+
+          <% } else if (step === 'intro-sealed') { %>
+            <p>This creates <%= storeName %>, encrypted. Its contents are stored so that only you can read them, with your password.</p>
+            <% if (needsPassword) { %>
+              <p>
+                You will be shown <strong><%= wordCount %> recovery words</strong> once. They are the only way back into
+                this store if you forget your password — nobody at this site can recover it for you.
+                Have a pen and paper, or somewhere safe to keep them, ready before you continue.
+              </p>
+              <form method="post" action="<%= doorUrl %>" autocomplete="off">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="mb-3">
+                  <label for="door-password" class="form-label">Your password</label>
+                  <input type="password" class="form-control" id="door-password" name="password" required autocomplete="current-password">
+                  <div class="form-text">Asked again because it is used to protect your new key.</div>
+                </div>
+                <button type="submit" class="btn btn-primary">Continue</button>
+              </form>
+            <% } else { %>
+              <form method="post" action="<%= doorUrl %>">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-primary">Create it</button>
+              </form>
+            <% } %>
+
+          <% } else if (step === 'words') { %>
+            <div class="alert alert-danger" role="alert">
+              <strong>Write these <%= wordCount %> words down now, in order.</strong>
+              They are shown only once. If you forget your password, these words are the only way back into
+              <%= storeName %> — without both, its contents are lost, and nobody at this site can recover them.
+              You can copy, print or save them; keep them somewhere safe.
+            </div>
+            <ol class="row list-unstyled g-2 mb-3" style="counter-reset: w;">
+              <% words.forEach(function(word, i) { %>
+                <li class="col-6 col-md-4"><span class="text-muted"><%= i + 1 %>.</span> <strong><%= word %></strong></li>
+              <% }); %>
+            </ol>
+            <label for="door-words" class="form-label small text-muted">The same words, to copy</label>
+            <textarea id="door-words" class="form-control mb-3" rows="2" readonly><%= words.join(' ') %></textarea>
+            <p>On the next page you will type all <%= wordCount %> back. They will not be shown again.</p>
+            <a class="btn btn-primary" href="<%= doorUrl %>/confirm">I have written them down</a>
+
+          <% } else if (step === 'confirm') { %>
+            <p>Type your <%= wordCount %> recovery words, in order. Nothing is saved until they match.</p>
+            <form method="post" action="<%= doorUrl %>/confirm" autocomplete="off">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="row g-2 mb-3">
+                <% for (let i = 1; i <= wordCount; i++) { %>
+                  <div class="col-6 col-md-4">
+                    <label class="form-label small text-muted" for="word<%= i %>"><%= i %>.</label>
+                    <input type="text" class="form-control" id="word<%= i %>" name="word<%= i %>"
+                           autocomplete="off" autocapitalize="none" spellcheck="false" required>
+                  </div>
+                <% } %>
+              </div>
+              <button type="submit" class="btn btn-primary">Confirm</button>
+            </form>
+
+          <% } else if (step === 'exhausted') { %>
+            <p>The words did not match, so nothing was created and no key was kept.</p>
+            <p>You can start again whenever you are ready — you will get a new set of words.</p>
+            <a class="btn btn-outline-primary" href="<%= doorUrl %>">Start again</a>
+
+          <% } else if (step === 'done') { %>
+            <p><%= storeName.charAt(0).toUpperCase() + storeName.slice(1) %> is ready.</p>
+            <a class="btn btn-primary" href="<%= landing %>">Open it</a>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('footer') %>

@@ -28,6 +28,7 @@ export const AUDIT_EVENT = {
   ASSET_DELETE: 'asset-delete',
   TOKEN_MINT: 'token-mint',
   TOKEN_REVOKE: 'token-revoke',
+  STORE_CREATE: 'store-create',
   AUTHENTICATION_SUCCESS: 'authentication-success',
   AUTHENTICATION_FAILED: 'authentication-failed',
   AUTHENTICATION_LOGOUT: 'authentication-logout',
