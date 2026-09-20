@@ -11,6 +11,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AgentTokenGrant } from './UserManager.js';
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversResource, type ShareGrant } from '../types/Share.js';
@@ -612,12 +613,20 @@ class ACLManager extends BaseManager {
     // Load target metadata. PageManager.getPageMetadata may be unavailable
     // in test fixtures without a PageManager mock — deny in that case (we
     // can't evaluate without metadata).
+    // #1422: the real signature takes the caller's context, and this local
+    // type used to omit it — which is how a decision came to read page
+    // metadata as nobody. A page in an encrypted store resolves only through
+    // its owner's unlocked session, so without the context this check could
+    // not see a sealed page at all and refused its owner.
     type PageManagerShape = {
-      getPageMetadata?: (id: string) => Promise<PageFrontmatter | null>;
+      getPageMetadata?: (id: string, ctx: ActorContext) => Promise<PageFrontmatter | null>;
     };
     const pm = this.engine.getManager<PageManagerShape>('PageManager');
     const pageMetadata = pm?.getPageMetadata
-      ? await pm.getPageMetadata(pageName).catch(() => null)
+      ? await pm.getPageMetadata(
+        pageName,
+        (userContext as unknown as ActorContext) ?? ANONYMOUS_SUBJECT
+      ).catch(() => null)
       : null;
     if (!pageMetadata) {
       return false;

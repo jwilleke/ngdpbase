@@ -24,6 +24,7 @@
  */
 
 import type { Client, estypes } from '@elastic/elasticsearch';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { validateUrl } from '../http/ssrf.js';
@@ -116,7 +117,10 @@ interface ConfigurationManager {
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
-  getPage(pageName: string): Promise<{ content?: string; metadata: Record<string, unknown> } | null>;
+  // #1422/#1419: an index build has no caller, so it reads as
+  // ANONYMOUS_SUBJECT by name — and a shared index must not hold a sealed
+  // page, which resolves only through its owner's session.
+  getPage(pageName: string, ctx: unknown): Promise<{ content?: string; metadata: Record<string, unknown> } | null>;
 }
 
 interface CatalogManager {
@@ -208,7 +212,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       const ops: unknown[] = [];
 
       for (const name of batch) {
-        const page = await pageManager.getPage(name);
+        const page = await pageManager.getPage(name, ANONYMOUS_SUBJECT);
         if (!page) continue;
         const doc = this._pageToDoc(name, page.content ?? '', page.metadata);
         // Use UUID as ES _id — UUIDs are guaranteed unique across the system

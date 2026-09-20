@@ -20,6 +20,7 @@
  */
 
 import BaseSearchProvider, { SearchResult, SearchOptions, SearchCriteria, SearchStatistics, BackupData, WikiEngine } from './BaseSearchProvider.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { WikiPage } from '../types/index.js';
 import lunr from 'lunr';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
@@ -183,7 +184,11 @@ interface ConfigurationManager {
  */
 interface PageManager {
   getAllPages(): Promise<string[]>;
-  getPage(pageName: string): Promise<WikiPage | null>;
+  // #1422/#1419: the caller's context. An index build has no caller, so it
+  // reads as ANONYMOUS_SUBJECT by name — and that is also the rule: a shared
+  // index must not contain a sealed page, which resolves only through its
+  // owner's session.
+  getPage(pageName: string, ctx: unknown): Promise<WikiPage | null>;
 }
 
 /**
@@ -472,7 +477,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       // a window after first index where private pages were searchable as
       // public until the next savePage triggered an incremental re-index.
       for (const pageName of pageNames) {
-        const pageData = await pageManager.getPage(pageName);
+        const pageData = await pageManager.getPage(pageName, ANONYMOUS_SUBJECT);
         if (!pageData) {
           continue; // Skip if page can't be loaded
         }

@@ -22,7 +22,10 @@ import type { PageFootnote } from '../managers/FootnoteManager.js';
 import { parseBoolParam, escapeHtml } from '../utils/pluginFormatters.js';
 
 interface PageManagerLike {
-  getPage(name: string): Promise<{ content?: string; rawContent?: string } | null>;
+  // #1422: the real signature takes the caller's context. Typed without it,
+  // this read ran as nobody, so a sealed page — which resolves only through
+  // its owner's unlocked session — had no footnotes even for its owner.
+  getPage(name: string, ctx: unknown): Promise<{ content?: string; rawContent?: string } | null>;
 }
 
 interface InterWikiSiteConfig {
@@ -73,9 +76,10 @@ function renderWikiLink(raw: string, interWikiSites: Map<string, InterWikiSiteCo
 async function readLegacyFootnotes(
   pageName: string,
   pageManager: PageManagerLike,
-  interWikiSites: Map<string, InterWikiSiteConfig>
+  interWikiSites: Map<string, InterWikiSiteConfig>,
+  viewer: unknown
 ): Promise<Array<{ id: string; html: string }>> {
-  const page = await pageManager.getPage(pageName);
+  const page = await pageManager.getPage(pageName, viewer);
   if (!page) return [];
   const raw = String(page.rawContent ?? page.content ?? '').replace(/\r\n/g, '\n');
   const footnotes: Array<{ id: string; html: string }> = [];
@@ -339,7 +343,7 @@ const FootnotesPlugin: SimplePlugin = {
     ) ?? {};
     const interWikiSites = new Map(Object.entries(sitesConfig));
 
-    const footnotes = await readLegacyFootnotes(pageName, pageManager, interWikiSites);
+    const footnotes = await readLegacyFootnotes(pageName, pageManager, interWikiSites, context.userContext);
 
     if (footnotes.length === 0) {
       parts.push('<p class="no-footnotes"><em>No footnotes on this page.</em></p>');

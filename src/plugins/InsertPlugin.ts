@@ -48,7 +48,11 @@ interface WikiPageLike {
 }
 
 interface PageManagerLike {
-  getPage?: (name: string) => Promise<WikiPageLike | null | undefined>;
+  // #1422: the real signature takes the caller's context. Typed without it,
+  // this read ran as nobody — so a sealed page, which resolves only through
+  // its owner's unlocked session, was invisible to [{InsertPage}] even for
+  // the owner looking at it.
+  getPage?: (name: string, ctx: unknown) => Promise<WikiPageLike | null | undefined>;
 }
 
 interface RenderingManagerLike {
@@ -224,7 +228,8 @@ const InsertPlugin: SimplePlugin = {
 
     let page: WikiPageLike | null | undefined;
     try {
-      page = await pageManager.getPage(pageName);
+      // The viewer this parse is running for — forwarded, never rebuilt.
+      page = await pageManager.getPage(pageName, ctx.userContext ?? ctx.currentUser ?? null);
     } catch (err) {
       ctx.engine?.logger?.error?.('[InsertPlugin] getPage failed:', err);
       return renderPlaceholder(pageName, 'Insert: page lookup failed');

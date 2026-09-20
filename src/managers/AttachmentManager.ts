@@ -1,4 +1,5 @@
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
+import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { toPermissionSubject } from '../context/JobContext.js';
 import type { JobSubject } from './UserManager.js';
@@ -1279,7 +1280,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // Page scan for broken / loose references
     const pageManager = this.engine.getManager('PageManager') as {
       getAllPages?: () => Promise<string[]>;
-      getPage?: (n: string) => Promise<{ content?: string } | null>;
+      // #1422: the caller's context. This is a health scan with no caller, so
+      // it reads as ANONYMOUS_SUBJECT by name — a sealed page is not its business.
+      getPage?: (n: string, ctx: unknown) => Promise<{ content?: string } | null>;
     } | null;
     const brokenMap = new Map<string, Set<string>>();
     const looseTextRefs = new Set<string>();
@@ -1289,7 +1292,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       for (const pageName of pageNames) {
         let content: string;
         try {
-          content = (await pageManager.getPage(pageName))?.content ?? '';
+          content = (await pageManager.getPage(pageName, ANONYMOUS_SUBJECT))?.content ?? '';
         } catch { continue; }
         if (!content) continue;
         pagesScanned++;

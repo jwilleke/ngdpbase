@@ -58,7 +58,10 @@ interface MarkupParser {
  * Page manager interface
  */
 interface PageManager {
-  getPage(pageName: string): Promise<{ content: string } | null>;
+  // #1422: the real signature takes the caller's context. Typed without it,
+  // both reads below ran as nobody — so `wiki:Include` of a sealed page, and
+  // the `exists:` condition on one, answered "no such page" to its owner.
+  getPage(pageName: string, ctx: unknown): Promise<{ content: string } | null>;
 }
 
 /**
@@ -319,7 +322,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
 
     try {
       // Load the page content
-      const pageData = await pageManager.getPage(pageName);
+      const pageData = await pageManager.getPage(pageName, context.wikiContext?.userContext);
       if (!pageData) {
         return `<!-- Page not found: ${pageName} -->`;
       }
@@ -450,7 +453,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
       const pageManager = context.getManager('PageManager') as PageManager | undefined;
       if (pageManager) {
         try {
-          const page = await pageManager.getPage(pageName);
+          const page = await pageManager.getPage(pageName, context.wikiContext?.userContext);
           return !!page;
         } catch {
           return false;

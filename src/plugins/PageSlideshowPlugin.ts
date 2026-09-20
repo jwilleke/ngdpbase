@@ -39,7 +39,10 @@ interface PageRecord {
 interface PageManagerLike {
   getAllPages(): Promise<string[]>;
   listPagesFor(subject: unknown, action?: string): Promise<string[]>;
-  getPage(name: string): Promise<PageRecord | null>;
+  // #1422: the caller's context, as the real signature takes it. Without
+  // it this read ran as nobody, so a sealed page never became a slide even
+  // for its owner — while the line above already had the viewer to hand.
+  getPage(name: string, ctx: unknown): Promise<PageRecord | null>;
 }
 
 
@@ -81,7 +84,7 @@ const PageSlideshowPlugin: SimplePlugin = {
       // "null = no access" was wrong, and `pages=` named any page's excerpt
       // to any viewer. The decider says; a refused page is not a slide.
       if (aclManager && !(await aclManager.canUserAccessPage(viewer, name, 'view'))) continue;
-      const page = await pageManager.getPage(name);
+      const page = await pageManager.getPage(name, viewer);
       if (!page) continue;
 
       const raw = String(page.rawContent ?? page.content ?? '');
