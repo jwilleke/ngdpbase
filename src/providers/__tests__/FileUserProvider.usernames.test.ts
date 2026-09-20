@@ -122,3 +122,59 @@ describe('#1436 FileUserProvider username normalization', () => {
     expect(await second.getUser('molly')).not.toBeNull();
   });
 });
+
+describe('#1438 the user store is written atomically', () => {
+  test('a save leaves no partial file, and the store reloads', async () => {
+    await writeUsers({ jim: user('jim') });
+    const provider = new FileUserProvider(engineFor(tempDir));
+    await provider.initialize();
+    await provider.createUser(user('molly'));
+
+    // Temp files are siblings, so a leftover one would sit right here.
+    const stray = (await fs.readdir(tempDir)).filter((f) => f.includes('.tmp.'));
+    expect(stray).toEqual([]);
+
+    const reloaded = new FileUserProvider(engineFor(tempDir));
+    await reloaded.initialize();
+    expect((await reloaded.getAllUsernames()).sort()).toEqual(['jim', 'molly']);
+  });
+
+  test('the live path is never opened for writing — the temp file is', async () => {
+    // The actual guarantee. `fs.writeFile` over the live path truncates it
+    // first, which is how an interrupted save leaves a half-file; atomicWrite
+    // writes a sibling and renames. So: the destination must never be handed
+    // to a plain write.
+    await writeUsers({ jim: user('jim') });
+    const p1 = new FileUserProvider(engineFor(tempDir));
+    await p1.initialize();
+
+    // Installed only now, so the spy sees the provider's save and not this
+    // file's own setup helper, which writes the fixture directly.
+    const fsPromises = await import('fs');
+    const spy = vi.spyOn(fsPromises.promises, 'writeFile');
+    await p1.createUser(user('molly'));
+
+    const wroteLivePath = spy.mock.calls.some(
+      ([target]) => String(target) === path.join(tempDir, 'users.json')
+    );
+    expect(wroteLivePath).toBe(false);
+    spy.mockRestore();
+  });
+
+  test('the store on disk always parses after a save', async () => {
+    await writeUsers({ jim: user('jim') });
+    const provider = new FileUserProvider(engineFor(tempDir));
+    await provider.initialize();
+
+    const before = await fs.readFile(path.join(tempDir, 'users.json'), 'utf8');
+    JSON.parse(before); // precondition: valid to begin with
+
+    await provider.createUser(user('molly'));
+
+    const after = await fs.readFile(path.join(tempDir, 'users.json'), 'utf8');
+    // Whatever happened, the file on disk parses. That is the whole guarantee:
+    // one version or the other, never a mixture (#1438).
+    expect(() => JSON.parse(after)).not.toThrow();
+    expect(Object.keys(JSON.parse(after)).sort()).toEqual(['jim', 'molly']);
+  });
+});

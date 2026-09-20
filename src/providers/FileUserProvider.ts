@@ -3,6 +3,7 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { normalizeUsername } from '../utils/username.js';
+import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import { User, UserUpdateData, UserSession } from '../types/index.js';
 
@@ -155,7 +156,20 @@ class FileUserProvider extends BaseUserProvider {
       const users = Object.fromEntries(
         Array.from(this.users.values()).map((u) => [u.username, u])
       );
-      await fs.writeFile(usersFilePath, JSON.stringify(users, null, 2), 'utf8');
+      // #1438: temp-then-rename, never in place. The user store is the one
+      // file whose loss stops the instance rather than degrading it — no
+      // users means no admin, so it cannot be repaired through the UI. An
+      // interrupted or raced in-place write left `users.json` one byte past
+      // a complete JSON object on jimstest, and the engine refused to boot
+      // nine times until the file was repaired by hand.
+      //
+      // Every sibling provider — role, person, organization — already wrote
+      // this way (#1062). This one was the exception, and it was the one that
+      // mattered most.
+      //
+      // fsync deliberately off, per atomicWrite's default: the failure here is
+      // a process dying or two processes racing, and rename alone covers both.
+      await writeFileAtomic(usersFilePath, JSON.stringify(users, null, 2));
       logger.debug(`📁 Saved ${this.users.size} users to ${usersFilePath}`);
     } catch (err) {
       logger.error('Error saving users:', err);
@@ -217,7 +231,9 @@ class FileUserProvider extends BaseUserProvider {
     try {
       const sessionsObject = Object.fromEntries(this.sessions);
       await fs.mkdir(path.dirname(sessionsFilePath), { recursive: true });
-      await fs.writeFile(sessionsFilePath, JSON.stringify(sessionsObject, null, 2), 'utf8');
+      // #1438: same reason as the user store, though this one fails softly —
+      // a corrupt sessions file costs everyone their login, not the site.
+      await writeFileAtomic(sessionsFilePath, JSON.stringify(sessionsObject, null, 2));
       logger.debug(`📁 Saved ${this.sessions.size} sessions to ${sessionsFilePath}`);
     } catch (err) {
       logger.error(`Error saving sessions to ${sessionsFilePath}:`, err);
