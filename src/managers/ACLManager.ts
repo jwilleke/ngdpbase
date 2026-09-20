@@ -312,7 +312,7 @@ class ACLManager extends BaseManager {
     // and again at Tier 2 — and would let an evaluator error escape the Tier 2
     // catch that exists to fall through to Tier 3.
     const ceiling = (delegated?.viaToken || delegated?.viaShare)
-      ? await this.policyDecisionPoint().decide(
+      ? await this.policyDecisionPoint().ceiling(
         userContext,
         {
           action: policyAction,
@@ -679,15 +679,15 @@ class ACLManager extends BaseManager {
     const username = userContext?.username ?? '';
     const isAdmin = roles.includes('admin');
 
-    // The ceilings that bound the SUBJECT decide once, for every page.
+    // The ceilings that bound the SUBJECT decide once, for every page — the
+    // PDP's, so this is not a third copy of them (#1431). No resource is
+    // passed: coverage is per PAGE and is checked in the loop below, where the
+    // page's keywords are to hand.
     const viaToken = (userContext as { viaToken?: { scopes: string[] } } | null | undefined)?.viaToken;
-    if (viaToken && !viaToken.scopes.includes(policyAction)) return [];
     const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
-    if (viaShare) {
-      if (!viaShare.actions.includes(policyAction)) return [];
-      if (viaShare.expiresAt && Date.now() > Date.parse(viaShare.expiresAt)) return [];
-      const userManager = this.engine.getManager<Pick<UserManager, 'userHoldsPermission'>>('UserManager');
-      if (!userManager || !(await userManager.userHoldsPermission(viaShare.issuer, policyAction))) return [];
+    if (viaToken || viaShare) {
+      const ceiling = await this.policyDecisionPoint().ceiling(userContext, { action: policyAction });
+      if (ceiling && !ceiling.permit) return [];
     }
 
     const pageManager = this.engine.getManager<{

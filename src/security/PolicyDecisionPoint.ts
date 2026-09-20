@@ -85,15 +85,25 @@ export class PolicyDecisionPoint extends BaseManager {
    *    time, not at enqueue time (#631, #1212).
    * 4. __The policies__, through `PolicyEvaluator`.
    */
-  async decide(
+  /**
+   * The delegation ceilings alone: does the token's scope and the share's
+   * grant permit this at all?
+   *
+   * Returns `null` when the caller carries no delegation — there is nothing to
+   * bound, and the answer is whatever policy says.
+   *
+   * Separate from {@link decide} because a caller sometimes needs ONLY this.
+   * `filterAccessiblePages` bounds the subject once and then applies each
+   * page's own rules; running a full decision there would refuse the whole
+   * list on a global policy that the page's frontmatter or ACL markup would
+   * have overridden.
+   */
+  async ceiling(
     subject: PermissionSubject | JobSubject | null | undefined,
     request: DecisionRequest
-  ): Promise<Decision> {
+  ): Promise<Decision | null> {
     const { action } = request;
 
-    // A null subject reaches here from the page door, which is called for an
-    // anonymous cross-page check. It carries no delegation, so the ceilings
-    // have nothing to bound; policy decides, as it does for any visitor.
     const viaToken = subject?.viaToken;
     if (viaToken && !viaToken.scopes.includes(action)) {
       logger.info(
@@ -128,8 +138,37 @@ export class PolicyDecisionPoint extends BaseManager {
         logger.info(`[PDP] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
         return { permit: false, applicable: true, reason: 'share_issuer_lost_permission' };
       }
+      // #1222: for a capability question the share IS the policy, and this is
+      // an allow. A page question keeps going — a share visitor is an
+      // anonymous visitor, and the page's own rules still have their say.
       return { permit: true, applicable: true, reason: 'share' };
     }
+
+    return viaToken ? { permit: true, applicable: true, reason: 'token_scope_ok' } : null;
+  }
+
+  /**
+   * Decide. The order is load-bearing:
+   *
+   * 1. __The ceilings__ (see {@link ceiling}), before anything else. A
+   *    delegated credential may only ever exercise a subset of what was
+   *    delegated, whatever policy says (#946, #1222).
+   * 2. __A share IS the policy__ for a capability check, so a passing share
+   *    returns an allow rather than falling through to the evaluator — a share
+   *    must work on an instance whose policy grants anonymous nothing.
+   * 3. __Roles resolved live__ when the subject asks for it (`resolveRolesNow`),
+   *    so a job authorises against the roles its principal holds at decision
+   *    time, not at enqueue time (#631, #1212).
+   * 4. __The policies__, through `PolicyEvaluator`.
+   */
+  async decide(
+    subject: PermissionSubject | JobSubject | null | undefined,
+    request: DecisionRequest
+  ): Promise<Decision> {
+    const { action } = request;
+
+    const ceiling = await this.ceiling(subject, request);
+    if (ceiling && (!ceiling.permit || ceiling.reason === 'share')) return ceiling;
 
     const policyEvaluator = this.engine.getManager<PolicyEvaluatorLike>('PolicyEvaluator');
     if (!policyEvaluator) {
@@ -140,8 +179,7 @@ export class PolicyDecisionPoint extends BaseManager {
     let userContext: { username: string; roles: string[]; isAuthenticated: boolean };
     // #1173: the `typeof subject === 'object'` guard is load-bearing. A caller
     // passing a username STRING is the shape that loses the agent token, and
-    // `'x' in 'jim'` throws rather than returning false — which is how a test
-    // for exactly that legacy form found this.
+    // `'x' in 'jim'` throws rather than returning false.
     if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
       const userManager = this.userManager();
       if (!userManager) {
@@ -161,7 +199,7 @@ export class PolicyDecisionPoint extends BaseManager {
     }
 
     // The PDP speaks resources; PolicyEvaluator still speaks page names. The
-    // translation lives here, in one line, until step 7 moves the evaluator to
+    // translation lives here, in one line, until the evaluator moves to
     // resources — which is what lets assets and media stop inventing their own
     // paths. '*' is the capability form: the question is about the subject.
     const result = await policyEvaluator.evaluateAccess({
