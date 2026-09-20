@@ -595,7 +595,7 @@ describe('WikiContext', () => {
       const ctx = new WikiContext(mockEngine, { userContext: ANONYMOUS_SUBJECT });
       // The anonymous principal has its own role and its own name, so it matches
       // audiences naming either — it is a caller, not an absence (#1399).
-      expect(ctx.getPrincipals()).toEqual(['anonymous', 'All', 'Anonymous']);
+      expect(ctx.getPrincipals()).toEqual(['anonymous', 'Anonymous']);
     });
 
     test('returns just username when roles is missing', () => {

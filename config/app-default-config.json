@@ -269,7 +269,7 @@
   "ngdpbase.auth.google-oidc.callback-url": "",
   "ngdpbase.auth.google-oidc.auto-provision": true,
   "ngdpbase.auth.google-oidc.default-roles": [
-    "occupant"
+    "reader"
   ],
   "ngdpbase.auth.google-oidc.hd": "",
   "ngdpbase.auth.google-oidc.deny-redirect": "/login?error=Access+denied",
@@ -277,7 +277,7 @@
   "ngdpbase.auth.cloudflare-access.enabled": false,
   "ngdpbase.auth.cloudflare-access.team-domain": "",
   "ngdpbase.auth.cloudflare-access.application-aud": "",
-  "ngdpbase.auth.cloudflare-access.default-role": "occupant",
+  "ngdpbase.auth.cloudflare-access.default-role": "reader",
   "ngdpbase.auth.cloudflare-access.group-map": {},
   "_comment_schema_types": "JSON-LD @type per system-category (#791) — operator-controllable schema.org subtypes. articleToPageJsonLd consults this map at render time; categories not listed fall through to 'Article'. Shipped Article-subtype defaults: documentation/developer → TechArticle, journal → BlogPosting (no-op until `journal` is registered as a system-category per EPIC #790). Operators may add Article-family or non-Article (e.g. FAQPage) types per deployment in app-custom-config.json. See docs/schemas.md § Per-category JSON-LD @type.",
   "ngdpbase.schema-types": {
@@ -1852,19 +1852,6 @@
         "search-page"
       ]
     },
-    "member": {
-      "name": "member",
-      "displayname": "Member",
-      "description": "Community member — same read access as reader, placeholder for community-specific permissions",
-      "issystem": true,
-      "icon": "id-card",
-      "color": "#20c997",
-      "permissions": [
-        "page-read",
-        "asset-read",
-        "search-page"
-      ]
-    },
     "anonymous": {
       "name": "anonymous",
       "displayname": "Anonymous",
@@ -1977,7 +1964,8 @@
         "user-edit",
         "user-create",
         "user-delete",
-        "search-user"
+        "search-user",
+        "page-read"
       ]
     },
     {
@@ -2067,30 +2055,6 @@
       ]
     },
     {
-      "id": "member-permissions",
-      "name": "Member Permissions",
-      "description": "Community member read-only access",
-      "priority": 55,
-      "effect": "allow",
-      "subjects": [
-        {
-          "type": "role",
-          "value": "member"
-        }
-      ],
-      "resources": [
-        {
-          "type": "page",
-          "pattern": "*"
-        }
-      ],
-      "actions": [
-        "page-read",
-        "asset-read",
-        "search-page"
-      ]
-    },
-    {
       "id": "authenticated-self-service",
       "name": "Self-service for every signed-in account",
       "description": "Anyone with an account may manage their own profile, comment, and find other people. One policy on the Authenticated role, so a role added later has it without editing its policy; a role that must not gets a deny (#1198, #694)",
@@ -2137,28 +2101,6 @@
         "page-read",
         "asset-read",
         "search-page"
-      ]
-    },
-    {
-      "id": "default-view-for-all",
-      "name": "Default View Access for All",
-      "description": "Fallback - all authenticated users can at minimum view pages",
-      "priority": 1,
-      "effect": "allow",
-      "subjects": [
-        {
-          "type": "role",
-          "value": "All"
-        }
-      ],
-      "resources": [
-        {
-          "type": "page",
-          "pattern": "*"
-        }
-      ],
-      "actions": [
-        "page-read"
       ]
     }
   ],

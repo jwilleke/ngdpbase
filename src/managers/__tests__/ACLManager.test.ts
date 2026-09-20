@@ -648,7 +648,7 @@ describe('ACLManager', () => {
       mockUserManager.hasPermission.mockResolvedValue(false);
       await aclManager.checkDefaultPermission('view', null);
       expect(mockUserManager.hasPermission).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'Anonymous', roles: ['anonymous', 'All'] }), 'page:read');   // #1212: the named constant
+        expect.objectContaining({ username: 'Anonymous', roles: ['anonymous'] }), 'page:read');   // #1212: the named constant
     });
 
     test('falls back to page:<action> for unknown actions', async () => {

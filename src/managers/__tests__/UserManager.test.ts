@@ -372,7 +372,7 @@ describe('UserManager', () => {
       userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
       const result = await userManager.hasPermission(
-        { username: 'jane', roles: ['admin', 'Authenticated', 'All'], isAuthenticated: true },
+        { username: 'jane', roles: ['admin', 'Authenticated'], isAuthenticated: true },
         'admin-system'
       );
 
@@ -443,7 +443,7 @@ describe('UserManager', () => {
       expect(userManager.resolveUserRoles).toHaveBeenCalledWith('jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
-          userContext: expect.objectContaining({ username: 'jim', roles: ['editor', 'Authenticated', 'All'], isAuthenticated: true })
+          userContext: expect.objectContaining({ username: 'jim', roles: ['editor', 'Authenticated'], isAuthenticated: true })
         })
       );
     });
@@ -457,7 +457,7 @@ describe('UserManager', () => {
 
       const seen = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(seen).not.toContain('admin');
-      expect(seen).toEqual(['Authenticated', 'All']);
+      expect(seen).toEqual(['Authenticated']);
     });
 
     test('a subject without roles for a user who no longer exists resolves ANONYMOUS (#631)', async () => {
@@ -470,7 +470,7 @@ describe('UserManager', () => {
       expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
-          userContext: expect.objectContaining({ username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false })
+          userContext: expect.objectContaining({ username: 'Anonymous', roles: ['anonymous'], isAuthenticated: false })
         })
       );
     });
@@ -500,7 +500,7 @@ describe('UserManager', () => {
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({
-            username: 'svc-ngdpbase', roles: ['admin', 'Authenticated', 'All'], isAuthenticated: true
+            username: 'svc-ngdpbase', roles: ['admin', 'Authenticated'], isAuthenticated: true
           })
         })
       );
@@ -518,7 +518,7 @@ describe('UserManager', () => {
       const policyEvaluator = installSystemPrincipal(true, 'svc-ngdpbase', ['editor']);
       await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
       const roles = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
-      expect(roles).toEqual(['editor', 'Authenticated', 'All']);
+      expect(roles).toEqual(['editor', 'Authenticated']);
       expect(roles).not.toContain('admin');
     });
 
@@ -576,7 +576,7 @@ describe('UserManager', () => {
 
     test('an authenticated request policy refuses answers 403', async () => {
       installPolicyEvaluator(false);
-      const out = await call({ username: 'jim', roles: ['reader', 'All'], isAuthenticated: true });
+      const out = await call({ username: 'jim', roles: ['reader'], isAuthenticated: true });
       expect(out).toEqual({ status: 403, next: false });
     });
 

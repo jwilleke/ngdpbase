@@ -119,7 +119,7 @@ class AuthManager extends BaseManager {
         clientSecret:  configManager.getProperty('ngdpbase.auth.google-oidc.client-secret', '') as string,
         redirectUri:   configManager.getProperty('ngdpbase.auth.google-oidc.callback-url', '') as string,
         autoProvision: configManager.getProperty('ngdpbase.auth.google-oidc.auto-provision', true) as boolean,
-        defaultRoles:  configManager.getProperty('ngdpbase.auth.google-oidc.default-roles', ['occupant']) as string[],
+        defaultRoles:  configManager.getProperty('ngdpbase.auth.google-oidc.default-roles', ['reader']) as string[],
         hostedDomain:  configManager.getProperty('ngdpbase.auth.google-oidc.hd', '') as string || undefined
       };
       this.registerProvider(new GoogleOIDCProvider(this.engine, googleConfig));
@@ -138,7 +138,7 @@ class AuthManager extends BaseManager {
         const cfConfig = {
           teamDomain,
           applicationAud,
-          defaultRole: configManager.getProperty('ngdpbase.auth.cloudflare-access.default-role', 'occupant') as string,
+          defaultRole: configManager.getProperty('ngdpbase.auth.cloudflare-access.default-role', 'reader') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.cloudflare-access.group-map', {}) as Record<string, string>
         };
         this.registerProvider(new CloudflareAccessAuthProvider(this.engine, cfConfig));
@@ -164,7 +164,7 @@ class AuthManager extends BaseManager {
           issuer,
           jwksUrl,
           audience,
-          defaultRole: configManager.getProperty('ngdpbase.auth.authentik-bearer.default-role', 'occupant') as string,
+          defaultRole: configManager.getProperty('ngdpbase.auth.authentik-bearer.default-role', 'reader') as string,
           groupMap: configManager.getProperty('ngdpbase.auth.authentik-bearer.group-map', {}) as Record<string, string>
         };
         this.registerProvider(new AuthentikBearerAuthProvider(this.engine, authentikConfig));

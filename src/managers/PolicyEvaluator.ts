@@ -208,12 +208,13 @@ class PolicyEvaluator extends BaseManager {
 
     const userRoles = new Set(userContext?.roles || []);
 
-    // Check if policy requires "All" role - this matches everyone including anonymous
-    for (const subject of policySubjects) {
-      if (subject.type === 'role' && subject.value === 'All') {
-        return true; // "All" matches any user
-      }
-    }
+    // #1429: the `All` special case is gone. `All` was a role nobody was ever
+    // granted — injected into every subject at construction so that a policy
+    // naming it would match — which put a grant outside the role catalogue and
+    // outside the admin matrix. Every shipped role now grants `page-read` in
+    // its own policy, and an unauthenticated caller carries the `anonymous`
+    // role, which is a real role with real grants. A deployment whose OWN
+    // policies name `All` must name the roles it means instead.
 
     // If user has no roles, they cannot match policies requiring specific roles
     if (userRoles.size === 0) {

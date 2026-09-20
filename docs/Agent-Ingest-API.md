@@ -104,7 +104,7 @@ ngdpbase config files use __flat dotted keys__, not nested objects — a nested 
   "ngdpbase.auth.authentik-bearer.issuer": "https://auth.nerdsbythehour.com/application/o/ngdpbase/",
   "ngdpbase.auth.authentik-bearer.jwks-url": "https://auth.nerdsbythehour.com/application/o/ngdpbase/jwks/",
   "ngdpbase.auth.authentik-bearer.audience": "<the Authentik provider client_id>",
-  "ngdpbase.auth.authentik-bearer.default-role": "occupant",
+  "ngdpbase.auth.authentik-bearer.default-role": "reader",
   "ngdpbase.auth.authentik-bearer.group-map": {}
 }
 ```

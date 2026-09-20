@@ -108,7 +108,7 @@ export interface AgentTokenGrant {
  */
 export const ANONYMOUS_SUBJECT: PermissionSubject = {
   username: 'Anonymous',
-  roles: ['anonymous', 'All'],
+  roles: ['anonymous'],
   isAuthenticated: false
 };
 
@@ -120,7 +120,7 @@ export const ANONYMOUS_SUBJECT: PermissionSubject = {
  */
 export const ASSERTED_SUBJECT: PermissionSubject = {
   username: 'Asserted',
-  roles: ['reader', 'All'],
+  roles: ['reader'],
   isAuthenticated: false
 };
 
@@ -897,7 +897,7 @@ class UserManager extends BaseManager {
     }
     const baseRoles = await this.resolveUserRoles(user.username);
     // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
-    return { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true };
+    return { username: user.username, roles: [...baseRoles, 'Authenticated'], isAuthenticated: true };
   }
 
   /**
@@ -938,7 +938,7 @@ class UserManager extends BaseManager {
     const declared = configManager?.getProperty(SYSTEM_ROLES_KEY, ['admin']);
     const roles = Array.isArray(declared) ? declared.filter((r): r is string => typeof r === 'string') : ['admin'];
     // permission-subject-ignore: the system principal — name from .env, roles from the catalog (#631).
-    return { username: this.systemPrincipalName(), roles: [...roles, 'Authenticated', 'All'], isAuthenticated: true };
+    return { username: this.systemPrincipalName(), roles: [...roles, 'Authenticated'], isAuthenticated: true };
   }
 
   /**
@@ -960,13 +960,13 @@ class UserManager extends BaseManager {
 
     // Handle anonymous user (no session cookie)
     if (!username || username === 'anonymous') {
-      const userRoles = ['anonymous', 'All'];
+      const userRoles = ['anonymous'];
       return this.getPermissionsFromPolicies(policyManager, userRoles);
     }
 
     // Handle asserted user (has session cookie but expired/invalid) — treat as anonymous
     if (username === 'asserted') {
-      const userRoles = ['anonymous', 'All'];
+      const userRoles = ['anonymous'];
       return this.getPermissionsFromPolicies(policyManager, userRoles);
     }
 
@@ -977,7 +977,7 @@ class UserManager extends BaseManager {
 
     // Get all user's roles (including Authenticated, All) via RoleManager
     const baseRoles = await this.resolveUserRoles(username);
-    const userRoles = [...baseRoles, 'Authenticated', 'All'];
+    const userRoles = [...baseRoles, 'Authenticated'];
     return this.getPermissionsFromPolicies(policyManager, userRoles);
   }
 
@@ -1548,7 +1548,7 @@ class UserManager extends BaseManager {
     // defect (#1179).
     const baseRoles = await this.resolveUserRoles(username);
     return this.hasPermission(
-      { username: user.username, roles: [...baseRoles, 'Authenticated', 'All'], isAuthenticated: true },
+      { username: user.username, roles: [...baseRoles, 'Authenticated'], isAuthenticated: true },
       action
     );
   }
@@ -1603,7 +1603,6 @@ class UserManager extends BaseManager {
       } as UserContext;
 
       const roles = new Set(currentUserContext.roles || []);
-      roles.add('All');
       roles.add('Authenticated');
       currentUserContext.roles = Array.from(roles);
 
@@ -1662,7 +1661,7 @@ class UserManager extends BaseManager {
       // spelling matched no policy subject, so every capability check that
       // took the resolved-context path (WikiContext.hasPermission) denied
       // anonymous even where the catalogue granted it (#1059).
-      roles: ['anonymous', 'All'],
+      roles: ['anonymous'],
       isAuthenticated: false,
       authenticated: false
     };
