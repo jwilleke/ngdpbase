@@ -18,9 +18,8 @@ interface MetricsManagerLike {
  * follow-up).
  *
  * One file per (organization, namedPosition) pair. Members of a role are
- * carried as an array of Person `@id` references. Catalog at
- * `ngdpbase.roles.definitions[namedPosition]` is the template at create
- * time; per-record overrides via `additionalProperty[]` are first-class.
+ * carried as an array of Person `@id` references — membership, and nothing
+ * else (#1431). What a role PERMITS is the policies, never a record.
  *
  * Iteration 1 (this file) is plumbing only — no UserManager wiring, no
  * PolicyManager swap. CRUD layer that no caller exercises yet.

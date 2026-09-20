@@ -177,11 +177,12 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       expect(created.namedPosition).toBe('admin');
       expect(created['@id']).toBe('https://example.com/roles/admin#role');
       expect(created.organization).toEqual({ '@id': ORG_ID });
-      expect(created.roleName).toBe('Administrator');
-      expect(created.icon).toBe('shield-alt');
-      expect(created.additionalProperty).toEqual([
-        { '@type': 'PropertyValue', name: 'permissions', value: ['page-read', 'page-edit'] }
-      ]);
+      // #1431: the record holds membership only. It used to snapshot the
+      // catalogue entry — label, icon, and the role's permissions — a copy
+      // nothing read and that later catalogue edits never updated.
+      expect(created.roleName).toBeUndefined();
+      expect(created.icon).toBeUndefined();
+      expect(created.additionalProperty).toBeUndefined();
       // After create, the Person is appended via update(...).
       expect(mocks.roleManager.update).toHaveBeenCalledTimes(1);
       const [, patch] = mocks.roleManager.update.mock.calls[0];
@@ -433,8 +434,8 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
     });
   });
 
-  describe('catalog snapshot', () => {
-    test('roles missing from the catalog still produce a minimal Role record', async () => {
+  describe('record shape', () => {
+    test('a role missing from the catalog produces the same record as one in it (#1431)', async () => {
       const mocks = makeMocks({ person: { '@id': PERSON_ID, identifier: 'alice' } });
       const userManager = await newUserManager(mocks);
 
@@ -455,9 +456,11 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       const created: OrganizationRoleRecord = mocks.roleManager.create.mock.calls[0][0];
       expect(created.namedPosition).toBe('custom-role-not-in-catalog');
       expect(created['@id']).toBe('https://example.com/roles/custom-role-not-in-catalog#role');
-      // No catalog entry → no snapshot fields
+      // #1431: nothing is copied from the catalogue either way, so a role the
+      // catalogue does not declare yields exactly the same shape as one it does.
       expect(created.roleName).toBeUndefined();
       expect(created.additionalProperty).toBeUndefined();
+      expect(created.member).toEqual([]);
     });
   });
 });

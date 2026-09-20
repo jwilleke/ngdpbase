@@ -8,12 +8,16 @@
  * `@id` uses URL form, hierarchical under the organization's URL space:
  *   `<org-url>/roles/<namedPosition>#role`
  *
- * Snapshot semantics: at create time, the role catalog at
- * `ngdpbase.roles.definitions[namedPosition]` is the template — `roleName`,
- * `description`, `issystem`, `icon`, `color`, and the `permissions` list (via
- * `additionalProperty`) get copied into the record. Later catalog edits do
- * NOT retroactively rewrite existing role files. Per-record overrides via
- * `additionalProperty[]` are first-class.
+ * __Membership only (#1431).__ A record says who belongs to this role in this
+ * organisation, and nothing else. It does NOT carry what the role permits:
+ * that is the policies in `ngdpbase.access.policies`, resolved at the moment
+ * of each decision, so a record cannot freeze authority at create time.
+ *
+ * Until #1431 the record snapshotted the catalogue entry — `roleName`,
+ * `description`, `issystem`, `icon`, `color` and a `permissions` list under
+ * `additionalProperty` — which later catalogue edits never updated, and which
+ * nothing read. The fields below remain optional so existing files still
+ * parse; they are not written any more and must not be read for a decision.
  *
  * @see https://schema.org/OrganizationRole
  */
@@ -29,8 +33,11 @@ export interface IdRef {
 }
 
 /**
- * Property-value pair used for schema.org `additionalProperty`. Permissions
- * are carried here as `{ name: 'permissions', value: ['page-read', ...] }`.
+ * Property-value pair used for schema.org `additionalProperty`.
+ *
+ * #1431: this no longer carries permissions. It did — as a snapshot of the
+ * role catalogue — and that copy drifted from the policies that actually
+ * grant. Nothing writes it now.
  */
 export interface PropertyValue {
   '@type': 'PropertyValue';
@@ -57,21 +64,21 @@ export interface Role {
   /** Persons holding this role. References by Person `@id`. */
   member?: IdRef[];
 
-  /** Snapshot from catalog: human-readable role label. */
+  /** Written before #1431 only; the catalogue is the source for display. */
   roleName?: string;
-  /** Snapshot from catalog: short description. */
+  /** Written before #1431 only. */
   description?: string;
-  /** Snapshot from catalog: built-in role flag. */
+  /** Written before #1431 only. */
   issystem?: boolean;
-  /** Snapshot from catalog: Font Awesome icon name. */
+  /** Written before #1431 only. */
   icon?: string;
-  /** Snapshot from catalog: hex color. */
+  /** Written before #1431 only. */
   color?: string;
 
   /**
-   * PropertyValue array; canonically carries `permissions` as a snapshot
-   * from `ngdpbase.roles.definitions[namedPosition].permissions`. Per-record
-   * overrides land here too.
+   * PropertyValue array. Kept so records written before #1431 still parse;
+   * nothing writes it, and nothing may read it for a decision — what a role
+   * permits is the policies.
    */
   additionalProperty?: PropertyValue[];
 

@@ -40,20 +40,6 @@ import { rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
 const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'email', 'profileLocked', 'username'] as const;
 
 /**
- * Catalog entry shape under `ngdpbase.roles.definitions[<name>]`. Snapshot
- * source for OrganizationRole records (#617 follow-up, iteration 2).
- */
-interface RoleCatalogEntry {
-  name?: string;
-  displayname?: string;
-  description?: string;
-  issystem?: boolean;
-  icon?: string;
-  color?: string;
-  permissions?: string[];
-}
-
-/**
  * Provider constructor type for dynamic loading
  */
 interface UserProviderConstructor {
@@ -1957,11 +1943,22 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Look up the OrganizationRole record for (installOrg, namedPosition); if
-   * absent, create a fresh record snapshotted from the role catalog at
-   * `ngdpbase.roles.definitions[namedPosition]`. The catalog snapshot is a
-   * best-effort copy at create time — later catalog edits do not retroactively
-   * rewrite existing role files (per Role.ts docstring).
+   * Look up the OrganizationRole record for (installOrg, namedPosition), or
+   * create one.
+   *
+   * #1429/#1431: the record holds __membership only__ — who belongs to this
+   * role in this organisation. It used to snapshot the catalogue entry as well
+   * (`roleName`, `description`, `issystem`, `icon`, `color`, and `permissions`
+   * under `additionalProperty`), a copy that later catalogue edits never
+   * updated. Nothing read it: the admin UI renders roles from
+   * `ngdpbase.roles.definitions` through ConfigurationManager, and
+   * `resolveUserRoles` takes only `namedPosition`. It had already drifted —
+   * measured on jimstest 2026-09-20, `admin` held 17 permissions against 21
+   * granted by policy and `editor` 10 against 12.
+   *
+   * What a role permits is the policies, resolved at the moment of each
+   * decision. A copy in a data file is authority frozen at create time, and
+   * per-record overrides would be a grant path outside the policies entirely.
    */
   private async getOrCreateRoleRecord(
     roleManager: RoleManager,
@@ -1973,36 +1970,14 @@ class UserManager extends BaseManager {
 
     const orgUrl = installOrg.url || installOrg['@id'];
     const base = orgUrl.endsWith('/') ? orgUrl : `${orgUrl}/`;
-    const id = `${base}roles/${namedPosition}#role`;
-
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const definitions = (configManager?.getProperty(
-      'ngdpbase.roles.definitions',
-      {}
-    ) ?? {}) as Record<string, RoleCatalogEntry>;
-    const def = definitions[namedPosition] ?? {};
-
-    const snapshot: Partial<OrganizationRoleRecord> = {};
-    const label = def.displayname ?? def.name;
-    if (label) snapshot.roleName = label;
-    if (def.description) snapshot.description = def.description;
-    if (def.issystem !== undefined) snapshot.issystem = def.issystem;
-    if (def.icon) snapshot.icon = def.icon;
-    if (def.color) snapshot.color = def.color;
-    if (def.permissions) {
-      snapshot.additionalProperty = [
-        { '@type': 'PropertyValue', name: 'permissions', value: def.permissions }
-      ];
-    }
 
     const role: OrganizationRoleRecord = {
       '@context': 'https://schema.org',
       '@type': 'OrganizationRole',
-      '@id': id,
+      '@id': `${base}roles/${namedPosition}#role`,
       namedPosition,
       organization: { '@id': installOrg['@id'] },
-      member: [],
-      ...snapshot
+      member: []
     };
     return roleManager.create(role);
   }
