@@ -33,6 +33,7 @@
  */
 
 import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
+import { rolePermissionsFromPolicies } from '../utils/rolePermissions.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import {
   escapeHtml,
@@ -239,11 +240,12 @@ function displayRoles(userManager: UserManager | null): string {
 /**
  * Display Security Policy Summary - permissions matrix showing which roles have which permissions
  */
-function displayPermissions(userManager: UserManager | null): string {
+function displayPermissions(userManager: UserManager | null, configManager: ConfigurationManager | null): string {
   if (!userManager) {
     return '<p class="error">UserManager not available</p>';
   }
 
+  const granted = rolePermissionsFromPolicies(configManager);
   const roles = userManager.getRoles();
   const permissions = userManager.getPermissions();
 
@@ -268,7 +270,7 @@ function displayPermissions(userManager: UserManager | null): string {
   html += '  <div class="card mt-4">\n';
   html += '    <div class="card-header">\n';
   html += '      <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Security Policy Summary</h5>\n';
-  html += '      <small class="text-muted">Permissions matrix showing which roles have which permissions</small>\n';
+  html += '      <small class="text-muted">Permissions matrix showing which roles have which permissions, derived from the access policies</small>\n';
   html += '    </div>\n';
   html += '    <div class="card-body">\n';
   html += '      <div class="table-responsive">\n';
@@ -297,7 +299,7 @@ function displayPermissions(userManager: UserManager | null): string {
     // Check each role for this permission
     for (const role of rolesArray) {
       html += '              <td class="text-center">\n';
-      if (role.permissions && role.permissions.includes(perm.key)) {
+      if (granted.get(role.name)?.has(perm.key)) {
         html += '                <i class="fas fa-check text-success"></i>\n';
       } else {
         html += '                <i class="fas fa-times text-muted"></i>\n';
@@ -328,7 +330,11 @@ function displayPermissions(userManager: UserManager | null): string {
  * - Not Authenticated: We know who they probably are but not authenticated
  * - Anonymous: No user information available
  */
-function displayUserSummary(context: ExtendedPluginContext, userManager: UserManager | null): string {
+function displayUserSummary(
+  context: ExtendedPluginContext,
+  userManager: UserManager | null,
+  configManager: ConfigurationManager | null
+): string {
   if (!userManager) {
     return '<p class="error">UserManager not available</p>';
   }
@@ -357,7 +363,8 @@ function displayUserSummary(context: ExtendedPluginContext, userManager: UserMan
   const allRoles = userManager.getRoles();
   const rolesArray: Role[] = allRoles;
 
-  // Collect user's permissions from their roles
+  // Collect user's permissions from their roles, as the policies grant them (#1431)
+  const granted = rolePermissionsFromPolicies(configManager);
   const userPermissions = new Set<string>();
   const roleDetails: Role[] = [];
 
@@ -365,9 +372,9 @@ function displayUserSummary(context: ExtendedPluginContext, userManager: UserMan
     const roleObj = rolesArray.find(r => r.name === roleName);
     if (roleObj) {
       roleDetails.push(roleObj);
-      if (roleObj.permissions && Array.isArray(roleObj.permissions)) {
-        roleObj.permissions.forEach(perm => userPermissions.add(perm));
-      }
+      // #1431: what the role permits comes from the policies, not from the
+      // role's own display list.
+      for (const perm of granted.get(roleName) ?? []) userPermissions.add(perm);
     }
   }
 
@@ -453,7 +460,7 @@ function displayUserSummary(context: ExtendedPluginContext, userManager: UserMan
 
       // Find which roles grant this permission
       const grantingRoles = roleDetails
-        .filter(role => role.permissions && role.permissions.includes(permKey))
+        .filter(role => granted.get(role.name)?.has(permKey))
         .map(role => role.displayname);
 
       html += '            <tr>\n';
@@ -1698,10 +1705,10 @@ const ConfigAccessorPlugin: SimplePlugin = {
 
       case 'permissions':
       case 'policy-summary':
-        return displayPermissions(userManager);
+        return displayPermissions(userManager, configManager);
 
       case 'user-summary':
-        return displayUserSummary(context, userManager);
+        return displayUserSummary(context, userManager, configManager);
 
       case 'actions':
         return displayActions(configManager, valueonly, before, after);

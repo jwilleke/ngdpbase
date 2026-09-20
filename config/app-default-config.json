@@ -1733,7 +1733,7 @@
       "color": "#dc3545"
     }
   },
-  "_comment_roles": "#713 — Role definitions serve TWO purposes that must stay in sync: (1) inline `permissions[]` arrays are read by ConfigAccessorPlugin to render the role×permission matrix on the Roles/Permissions required-pages (display only). (2) Runtime authorization decisions go through PolicyEvaluator.evaluateAccess(), which reads `ngdpbase.access.policies` below — NOT the inline arrays. Keep the two lists matched: editing one without the other introduces display-vs-enforcement drift. (ALL LOWERCASE)",
+  "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it.",
   "ngdpbase.roles.definitions": {
     "admin": {
       "name": "admin",
@@ -1741,30 +1741,7 @@
       "description": "Full system access to all features",
       "issystem": true,
       "icon": "shield-alt",
-      "color": "#dc3545",
-      "permissions": [
-        "page-read",
-        "page-edit",
-        "page-create",
-        "page-delete",
-        "page-rename",
-        "page-export",
-        "asset-read",
-        "asset-upload",
-        "asset-delete",
-        "share-manage",
-        "token-mint",
-        "asset-edit",
-        "search-page",
-        "search-user",
-        "user-read",
-        "user-edit",
-        "user-create",
-        "user-delete",
-        "admin-read",
-        "admin-system",
-        "admin-roles"
-      ]
+      "color": "#dc3545"
     },
     "user-admin": {
       "name": "user-admin",
@@ -1772,14 +1749,7 @@
       "description": "Can manage users — create, edit, deactivate, delete",
       "issystem": true,
       "icon": "user-cog",
-      "color": "#6610f2",
-      "permissions": [
-        "user-read",
-        "user-edit",
-        "user-create",
-        "user-delete",
-        "search-user"
-      ]
+      "color": "#6610f2"
     },
     "editor": {
       "name": "editor",
@@ -1787,21 +1757,7 @@
       "description": "Can create, edit, delete, and rename pages",
       "issystem": true,
       "icon": "edit",
-      "color": "#007bff",
-      "permissions": [
-        "page-read",
-        "page-edit",
-        "page-create",
-        "page-delete",
-        "page-rename",
-        "page-export",
-        "asset-read",
-        "asset-upload",
-        "asset-delete",
-        "share-manage",
-        "token-mint",
-        "search-page"
-      ]
+      "color": "#007bff"
     },
     "contributor": {
       "name": "contributor",
@@ -1809,16 +1765,7 @@
       "description": "Can create and edit pages",
       "issystem": true,
       "icon": "user-edit",
-      "color": "#28a745",
-      "permissions": [
-        "page-read",
-        "page-edit",
-        "page-create",
-        "page-export",
-        "asset-read",
-        "asset-upload",
-        "search-page"
-      ]
+      "color": "#28a745"
     },
     "demo-admin": {
       "name": "demo-admin",
@@ -1826,17 +1773,7 @@
       "description": "Read-only access to the admin dashboard. For public demo instances: can view every admin screen but change nothing, and cannot see the user list.",
       "issystem": false,
       "icon": "eye",
-      "color": "#6c757d",
-      "permissions": [
-        "page-read",
-        "page-edit",
-        "page-create",
-        "page-export",
-        "asset-read",
-        "asset-upload",
-        "search-page",
-        "admin-read"
-      ]
+      "color": "#6c757d"
     },
     "reader": {
       "name": "reader",
@@ -1844,13 +1781,7 @@
       "description": "Read-only access to content",
       "issystem": true,
       "icon": "book-reader",
-      "color": "#6c757d",
-      "permissions": [
-        "page-read",
-        "page-export",
-        "asset-read",
-        "search-page"
-      ]
+      "color": "#6c757d"
     },
     "anonymous": {
       "name": "anonymous",
@@ -1858,12 +1789,7 @@
       "description": "Public access without authentication",
       "issystem": true,
       "icon": "user-secret",
-      "color": "#adb5bd",
-      "permissions": [
-        "page-read",
-        "asset-read",
-        "search-page"
-      ]
+      "color": "#adb5bd"
     }
   },
   "_comment_access_policies": "Access control policies - Role-based with specific action permissions",

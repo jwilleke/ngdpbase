@@ -12,6 +12,7 @@
  */
 
 import path from 'path';
+import { rolePermissionListsFromPolicies } from '../utils/rolePermissions.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
 import multer, { StorageEngine, Multer } from 'multer';
@@ -10334,11 +10335,21 @@ ${panes}
       const commonData = await this.getCommonTemplateData(req);
       const roles = userManager.getRoles();
       const permissions = userManager.getPermissions();
+      // #1431: each role's permission list is DERIVED from the access
+      // policies, which are what grant. The catalogue's inline `permissions[]`
+      // was a display copy kept matched by hand (#713), so this page could
+      // state something the evaluator would never do.
+      const grantedByRole = rolePermissionListsFromPolicies(
+        this.engine.getManager('ConfigurationManager')
+      );
 
       return res.render('admin-roles', {
         ...commonData,
         title: 'Security Policy Management',
-        roles: Array.from(roles.values()),
+        roles: (Array.from(roles.values()) as Array<{ name: string }>).map((role) => ({
+          ...role,
+          permissions: grantedByRole[role.name] ?? []
+        })),
         permissions: Array.from(permissions.entries() as Iterable<[string, string]>).map(([key, desc]) => ({
           key,
           description: desc
