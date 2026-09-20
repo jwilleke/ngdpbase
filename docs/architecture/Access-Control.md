@@ -144,8 +144,7 @@ Search providers receive a duck-typed `SearchWikiContext` (defined in `src/provi
 Used by `wikiContext.hasPermission()`, `apiContext.hasPermission()`, `parseContext.hasPermission()`. Internally:
 
 1. Resolves the userContext from the username:
-   - `null` / `'anonymous'` → `{ roles: ['anonymous', 'All'], isAuthenticated: false }`
-   - `'asserted'` (session expired but cookie present) → `{ roles: ['reader', 'All'], isAuthenticated: false }`
+   - `null` / `'anonymous'` → `{ roles: ['anonymous', 'All'], isAuthenticated: false }` — the name is compared normalized, so `Anonymous` and `anonymous` are one principal ([#1436](https://github.com/jwilleke/ngdpbase/issues/1436))
    - authenticated → `{ roles: [...resolveUserRoles(username), 'Authenticated', 'All'], isAuthenticated: true }`
 2. Rejects users whose record has `isActive: false`.
 3. Calls `PolicyEvaluator.evaluateAccess({ pageName: '*', action, userContext })`.

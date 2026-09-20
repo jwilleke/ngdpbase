@@ -220,8 +220,9 @@ if (canEdit) {
 __User Context:__
 
 - Anonymous: `roles: ['anonymous', 'All']`
-- Asserted: `roles: ['reader', 'All']`
 - Authenticated: `roles: [user.roles, 'Authenticated', 'All']`
+
+There is no Asserted state. It was removed in [#1435](https://github.com/jwilleke/ngdpbase/issues/1435): a cookie evidences the browser, never the person holding it, so on a shared machine "Good morning, Jim" greets whoever sat down — and tells them Jim has an account.
 
 ---
 
