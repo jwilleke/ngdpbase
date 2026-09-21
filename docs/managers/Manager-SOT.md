@@ -60,7 +60,7 @@ written. A declaration is never copied into data, because the copy is what drift
 
 ## Subject 1 — access control
 
-__Status:__ analysed 2026-09-20; steps 1–6 and 7a shipped, 7b/7c and steps 8–10 open. Tracked by
+__Status:__ analysed 2026-09-20; steps 1–7 shipped, steps 8–10 open. Tracked by
 epic [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
 
 __"What the code does today" below is the record of what was found on 2026-09-20__, kept as the
@@ -237,7 +237,7 @@ Each step is shippable alone and leaves the tree green.
   - 7a __Tier 3 deleted.__ ✅ — the markup is read by nothing; `parsePageACL` and the tier are gone, and the four tests that asserted it are kept inverted. Conversion to audience terms moves to the NCM funnel ([#1446](https://github.com/jwilleke/ngdpbase/issues/1446), blocking [#1339](https://github.com/jwilleke/ngdpbase/issues/1339)); stored pages ride along with [#1347](https://github.com/jwilleke/ngdpbase/issues/1347). One sequence now, not two.
   - 7b __The author-lock admin bypass__ is still a role-name gate. __Decided (operator, 2026-09-21): it becomes the `admin-system` permission__ — the existing operator override, already granted to `admin` by `admin-full-access`, so no config change. ✅ Done in both implementations; `ACLManager` holds no role-name gate at all now, so its `check-permission-gates.ts` allowlist entry is removed and a new one there fails CI.
   - 7d __Missing metadata.__ ✅ — the decider refuses (`no_page_metadata`) unless the action is `create`; the view and edit routes, which have just proven the page exists, fail loudly with a 500, an error log and an `admin-system`-holder notification, de-duplicated per page (`utils/pageMetadataMissing.ts`). The rule surfaced a real disclosure: `<wiki:Include>` handed the decider `pageMetadata: null`, so the included page's audience was never consulted and an audience-restricted page rendered for any reader global policy allowed. It now asks `canUserAccessPage`, and fails closed without an `ACLManager` (it used to allow).
-  - 7c __One implementation__ of the tier sequence, shared by `_runEvaluator` and `filterAccessiblePages`. Not yet done.
+  - 7c __One implementation__ of the tier sequence. ✅ — `walkPageTiers` decides tiers 0 → 2 for one page and logs nothing; `_runEvaluator` and `filterAccessiblePages` both call it, supplying only what each can afford (per-page PDP and an audit record per decision, against compiled policy and none). The order now lives in one place. __Step 7 is complete.__
 - 8 __`ACLManager` becomes the PIP__ in name and location; the ACL markup parsing moves to `src/parsers/`.
 - 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
 - 10 __Retire `PolicyManager`__ once the PDP reads the policies and the PAP writes them.

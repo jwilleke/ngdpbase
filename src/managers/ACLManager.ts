@@ -19,6 +19,11 @@ import { shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 
+/** The one thing the page tiers need from PageManager (#1431 7c). */
+interface PrivateAccessCheck {
+  checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
+}
+
 /**
  * Minimal WikiContext interface for type safety
  * TODO: Convert WikiContext.js to TypeScript and import proper type
@@ -325,179 +330,124 @@ class ACLManager extends BaseManager {
       return { allowed: false, reason: 'no_page_metadata' };
     }
 
-    // Tier 0: private — hard constraint, not overridable by front matter.
-    // #639 Slice E: top-level `private: true` is the canonical signal; the
-    // user-keywords back-compat fallback was dropped after all datasets
-    // migrated (Slices A–D, v3.7.0).
-    //
-    // #711: delegate the actual decision to PageManager.checkPrivatePageAccess
-    // when available. That helper reads the page-index `creator` (sticky)
-    // rather than `metadata.author` (mutable), matching the documented privacy
-    // semantics in the [Page Audience] required-pages doc — an admin who
-    // reassigns frontmatter `author` cannot shift private-page ownership.
-    // Falls back to the previous frontmatter-author check when the helper
-    // isn't available (test fixtures without a PageManager mock).
-    const pmForPrivate = this.engine.getManager<{
-      checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
-        }>('PageManager');
-    if (pmForPrivate?.checkPrivatePageAccess) {
-      const decision = await pmForPrivate.checkPrivatePageAccess(wikiContext, pageName);
-      if (decision !== null) {
-        const reason = decision ? 'private_match' : 'private_deny';
-        this.logAccessDecision({
-          user: userContext, pageName, action, allowed: decision, reason,
-          context: { wikiContext: wikiContext.context }
-        });
-        return { allowed: decision, reason };
+    // Tiers 0 → 2, one implementation shared with the list filter (#1431 7c).
+    // What differs between the two is only what each may afford: this door asks
+    // the PDP per page and records every decision; the filter compiles policy
+    // once and records nothing per page. The ORDER is decided in one place.
+    const decision = await this.walkPageTiers({
+      userContext,
+      pageName,
+      metadata: wikiContext.pageMetadata,
+      action,
+      viaShare,
+      privateCtx: wikiContext,
+      pageManager: this.engine.getManager<PrivateAccessCheck>('PageManager'),
+      // Asked only if the page is author-locked and the subject is not its
+      // author — the author needs no override.
+      mayOverrideLock: () => subjectMayDo(this.engine, userContext, 'admin-system'),
+      policy: async () => {
+        // An evaluator fault denies; it never opens the page. There is no tier
+        // below this one to fall through to (Tier 3 was removed in #1431 7a).
+        try {
+          const d = await this.policyDecisionPoint().decide(userContext, {
+            action: policyAction,
+            resource: { type: 'page', id: pageName }
+          });
+          logger.info(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
+          return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy' };
+        } catch (e) {
+          logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
+          return null;
+        }
       }
-    } else if (wikiContext.pageMetadata?.private === true) {
-      // Fallback for legacy callers without a PageManager: use frontmatter
-      // `author` as the creator identity (the pre-#711 behaviour). This
-      // path only fires in tests; production always has a PageManager.
-      // Owner only — no role reaches into a private container (P2; private-stores.md, Access).
-      const creator = (wikiContext.pageMetadata?.author) ?? '';
-      const allowed   = userContext ? mayActInPrivateContainer(userContext, creator) : false;
-      const reason    = allowed ? 'private_match' : 'private_deny';
-      this.logAccessDecision({
-        user: userContext, pageName, action, allowed, reason,
-        context: { wikiContext: wikiContext.context }
-      });
-      return { allowed, reason };
-    }
+    });
 
-    // Tier 0.5: author-lock — write-time constraint on `edit` actions only
-    // (#714 Slice A — first slice of the unified-access-control epic).
-    //
-    // Semantics (mirrors the route-layer branch at `WikiRoutes.editPage`):
-    //   - Only applies when `action === 'edit'` (author-lock is a write
-    //     constraint, not a read constraint).
-    //   - Tier 0 (private) takes precedence — if we reached Tier 0.5, the
-    //     page is NOT private. The route-layer's explicit
-    //     `private !== true` guard is implicit here through tier ordering.
-    //   - Author-lock DENIES non-author, non-admin edit attempts. It does
-    //     NOT grant access — if the user IS author or admin, we fall
-    //     through to Tier 1+ so the normal evaluator decides.
-    //
-    // During #714 Slice A we DO NOT remove the route-layer branch
-    // (`WikiRoutes.ts:2338`); both paths can deny independently. They
-    // produce different error messages — the route-layer branch's
-    // "This page is author-locked..." vs the more general "no permission
-    // to edit" rendered by callers consuming `checkPagePermissionWithContext`.
-    // Slice E removes the route-layer branch once `evaluatePagePermission`
-    // (Slice F's rich-return form) lets the route specialise the 403
-    // message on `reason === 'author_lock_deny'`.
-    if (action.toLowerCase() === 'edit'
-        && wikiContext.pageMetadata?.['author-lock'] === true) {
-      const isAuthor = (userContext?.username ?? '') === (wikiContext.pageMetadata?.author ?? '');
-      // #1431 step 7b: the override is a PERMISSION, not the role name. It
-      // was `roles.includes('admin')`, which never read `admin-full-access`
-      // — so it ignored any change to what the admin role is granted, broke
-      // silently on a rename, and skipped the token ceiling. `admin-system` is
-      // the existing operator override (the maintenance bypass asks it too),
-      // decided by operator 2026-09-21. Asked only when the subject is not
-      // the author, since the author needs no override.
-      const mayOverrideLock = !isAuthor
-        && await subjectMayDo(this.engine, userContext, 'admin-system');
-      if (!isAuthor && !mayOverrideLock) {
-        this.logAccessDecision({
-          user: userContext,
-          pageName,
-          action,
-          allowed: false,
-          reason: 'author_lock_deny',
-          context: { wikiContext: wikiContext.context }
-        });
-        return { allowed: false, reason: 'author_lock_deny' };
-      }
-      // fall through — author-lock doesn't grant edit, it only denies.
-      // Tier 1+ decides whether this author/admin is actually permitted.
+    if (decision.reason === 'default_deny') {
+      logger.info(`[ACL] Default deny for page=${pageName} (no policy matched)`);
     }
-
-    // Tier 1: Front matter audience / access check — page-level overrides global policies
-    if (wikiContext.pageMetadata) {
-      const fm = this.checkFrontmatterAccess(wikiContext.pageMetadata, userContext, action);
-      if (fm.decided) {
-        this.logAccessDecision({
-          user: userContext,
-          pageName,
-          action,
-          allowed: fm.allowed,
-          reason: fm.reason,
-          context: { wikiContext: wikiContext.context }
-        });
-        return { allowed: fm.allowed, reason: fm.reason };
-      }
-    }
-
-    // #1222 Tier 2 for a share: the share IS the policy. The ceiling above
-    // already held the issuer's live authority over it, and the page's own
-    // rules have had their say. Global policy is about the bearer's roles,
-    // and this bearer has none — asking it would refuse every share on an
-    // instance that gives anonymous nothing, which is the instance a share
-    // exists for.
-    if (viaShare) {
-      this.logAccessDecision({
-        user: userContext, pageName, action, allowed: true, reason: 'share_grant',
-        context: { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
-      });
-      return { allowed: true, reason: 'share_grant' };
-    }
-
-    // Tier 2: the policies, asked of the PDP (#1431).
-    //
-    // `applicable` stays a three-state answer even though this is now the
-    // last tier that can say yes. A policy that DECLINED to speak and a policy
-    // that said no are different facts, and the reason recorded in the audit
-    // trail must tell them apart: `default_deny` (nobody spoke) is not
-    // `policy_deny` (someone did).
-    try {
-      const decision = await this.policyDecisionPoint().decide(userContext, {
-        action: policyAction,
-        resource: { type: 'page', id: pageName }
-      });
-      logger.info(`[ACL] PDP decision applicable=${decision.applicable} permit=${decision.permit} reason=${decision.reason}`);
-      if (decision.applicable) {
-        const reason = decision.reason || 'global_policy';
-        this.logAccessDecision({
-          user: userContext,
-          pageName,
-          action,
-          allowed: decision.permit,
-          reason,
-          context: { wikiContext: wikiContext.context }
-        });
-        return { allowed: decision.permit, reason };
-      }
-    } catch (e) {
-      logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
-    }
-
-    // Tier 3 is gone (#1431 step 7, #1446).
-    //
-    // JSPWiki's per-page ACL — `[{ALLOW edit Charlie}]`, written in the page
-    // BODY — used to be consulted last, after private, author-lock,
-    // frontmatter and global policy had all declined to answer. Nothing reads
-    // it now.
-    //
-    // It was reachable only when the caller happened to be holding page
-    // content, which is what made the doors disagree: a page whose only grant
-    // was that markup opened when viewed directly, was absent from every
-    // listing, and was refused by every cross-page check. Deleting it is what
-    // makes the page decision ONE sequence rather than two.
-    //
-    // Access rules belong in audience terms — frontmatter `access[action]`, or
-    // `audience` for view. An imported page's ACL is converted to those on the
-    // way in by the NCM funnel (#1446); stored pages are migrated with the
-    // rest of the JSPWiki conversion steps (#1347).
-    logger.info(`[ACL] Default deny for page=${pageName} (no policy/ACL matched)`);
     this.logAccessDecision({
       user: userContext,
       pageName,
       action,
-      allowed: false,
-      reason: 'default_deny',
-      context: { wikiContext: wikiContext.context }
+      allowed: decision.allowed,
+      reason: decision.reason,
+      context: decision.reason === 'share_grant' && viaShare
+        ? { wikiContext: wikiContext.context, share: viaShare.id, issuer: viaShare.issuer }
+        : { wikiContext: wikiContext.context }
     });
+    return decision;
+  }
+
+  /**
+   * The page's own tiers, walked in order, for ONE page (#1431 step 7c).
+   *
+   * The single implementation of the sequence. The decider and the list filter
+   * each used to carry their own copy of it, and "a listing can never name a
+   * page its reader cannot open, nor hide one they can" (#1219) held only for
+   * as long as someone remembered to change both. Now there is one to change.
+   *
+   * It decides and does nothing else — no log line, no audit record — because
+   * the filter runs it over thousands of pages. Each caller supplies what it
+   * can afford: how to ask policy (per page, or compiled once), and how to ask
+   * the author-lock override (lazily, or once per subject).
+   *
+   * Runs AFTER the delegation ceilings, which bound the subject rather than
+   * the page and so are each caller's to ask first. First tier to answer wins:
+   *
+   * - __Tier 0, private.__ Through `PageManager.checkPrivatePageAccess` — the
+   *   page-index creator, owner or delegate, never a role (#711). Frontmatter
+   *   `private` + `author` is the fallback where there is no PageManager.
+   * - __Tier 0.5, author-lock__, `edit` only. It only denies: an author, or a
+   *   subject holding `admin-system` (#1431 7b), falls through to Tier 1+.
+   * - __Tier 1, frontmatter__ `access[action]` / `audience`. Page-level, and
+   *   overrides global policy when it states a rule (#1054).
+   * - __Tier 2.__ For a share visitor the share IS the policy (#1222); for
+   *   anyone else, global policy.
+   * - __Default deny.__ Nothing below Tier 2 grants — JSPWiki's page-body ACL
+   *   markup was removed (#1431 7a); an imported page's ACL is converted to
+   *   audience terms by the NCM funnel (#1446).
+   */
+  private async walkPageTiers(args: {
+    userContext: UserContext | null | undefined;
+    pageName: string;
+    metadata: PageFrontmatter | null | undefined;
+    action: string;
+    viaShare: ShareGrant | undefined;
+    privateCtx: WikiContext;
+    pageManager: PrivateAccessCheck | null | undefined;
+    mayOverrideLock: () => Promise<boolean>;
+    policy: () => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
+  }): Promise<{ allowed: boolean; reason: string }> {
+    const { userContext, pageName, metadata, action, viaShare } = args;
+
+    // Tier 0: private.
+    if (args.pageManager?.checkPrivatePageAccess) {
+      const decision = await args.pageManager.checkPrivatePageAccess(args.privateCtx, pageName);
+      if (decision !== null) return { allowed: decision, reason: decision ? 'private_match' : 'private_deny' };
+    } else if (metadata?.private === true) {
+      const allowed = userContext ? mayActInPrivateContainer(userContext, metadata.author ?? '') : false;
+      return { allowed, reason: allowed ? 'private_match' : 'private_deny' };
+    }
+
+    // Tier 0.5: author-lock denies a non-author edit; it grants nothing.
+    if (action.toLowerCase() === 'edit' && metadata?.['author-lock'] === true) {
+      const isAuthor = (userContext?.username ?? '') === (metadata.author ?? '');
+      if (!isAuthor && !(await args.mayOverrideLock())) {
+        return { allowed: false, reason: 'author_lock_deny' };
+      }
+    }
+
+    // Tier 1: frontmatter audience / access, when it states a rule.
+    if (metadata) {
+      const fm = this.checkFrontmatterAccess(metadata, userContext, action);
+      if (fm.decided) return { allowed: fm.allowed, reason: fm.reason };
+    }
+
+    // Tier 2: the share is the policy for a share visitor; global policy otherwise.
+    if (viaShare) return { allowed: true, reason: 'share_grant' };
+    const policy = await args.policy();
+    if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason };
+
     return { allowed: false, reason: 'default_deny' };
   }
 
@@ -644,7 +594,6 @@ class ACLManager extends BaseManager {
     candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
   ): Promise<string[]> {
     const policyAction = permissionForPageAction(action);
-    const username = userContext?.username ?? '';
     // #1431 step 7b: the author-lock override is `admin-system`, asked once
     // for the subject — it does not vary by page — and only for `edit`, the
     // one action author-lock constrains.
@@ -662,47 +611,36 @@ class ACLManager extends BaseManager {
       if (ceiling && !ceiling.permit) return [];
     }
 
-    const pageManager = this.engine.getManager<{
-      checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
-        }>('PageManager');
+    const pageManager = this.engine.getManager<PrivateAccessCheck>('PageManager');
     // Tier 0 reads only the subject: owner or delegate, never a role.
     const privateCtx = { userContext: userContext ?? null } as unknown as WikiContext;
     const decidePolicy = this.policyEvaluator?.compile(userContext ?? undefined, policyAction);
 
     const out: string[] = [];
     for (const { title, metadata } of candidates) {
+      // A candidate without metadata is not listed (#714) — the decider
+      // refuses the same page (#1431 step 7).
       if (!metadata) continue;
-
+      // The share's cover is per PAGE, so it is checked here rather than in
+      // the subject's ceiling above.
       if (viaShare && !shareCoversResource(viaShare.resources, 'page', metadata['user-keywords'] ?? [])) continue;
 
-      // Tier 0: private — through the same helper the decider uses (index
-      // creator; owner or delegate, never a role); the frontmatter flag is the
-      // fallback where the helper is absent (fixtures without a PageManager).
-      if (pageManager?.checkPrivatePageAccess) {
-        const decision = await pageManager.checkPrivatePageAccess(privateCtx, title);
-        if (decision === false) continue;
-        if (decision === true) { out.push(title); continue; }
-      } else if (metadata.private === true) {
-        // Owner only — no role reaches into a private container.
-        if (!(userContext && mayActInPrivateContainer(userContext, metadata.author ?? ''))) continue;
-        out.push(title); continue;
-      }
-
-      // Tier 0.5: author-lock denies a non-author, non-admin edit; it grants nothing.
-      if (action.toLowerCase() === 'edit' && metadata['author-lock'] === true) {
-        if (!mayOverrideLock && username !== (metadata.author ?? '')) continue;
-      }
-
-      // Tier 1: frontmatter audience / access decides when it states a rule.
-      const fm = this.checkFrontmatterAccess(metadata, userContext, action);
-      if (fm.decided) { if (fm.allowed) out.push(title); continue; }
-
-      // Tier 2: the share is the policy for a share subject; global policy otherwise.
-      if (viaShare) { out.push(title); continue; }
-      const policy = decidePolicy?.(title);
-      if (policy?.hasDecision) { if (policy.allowed) out.push(title); continue; }
-
-      // Nothing below Tier 2 grants; default deny.
+      // The same tiers the decider walks, in the same order (#1431 7c).
+      const decision = await this.walkPageTiers({
+        userContext,
+        pageName: title,
+        metadata,
+        action,
+        viaShare,
+        privateCtx,
+        pageManager,
+        mayOverrideLock: async () => mayOverrideLock,
+        policy: async () => {
+          const p = decidePolicy?.(title);
+          return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
+        }
+      });
+      if (decision.allowed) out.push(title);
     }
     return out;
   }
