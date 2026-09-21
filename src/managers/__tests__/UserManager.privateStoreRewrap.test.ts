@@ -95,7 +95,7 @@ describe('UserManager password rewrap (#1393)', () => {
       ACTOR
     );
 
-    const stored = users.get('molly')!;
+    const stored = users.get('molly');
     expect(stored.currentPassword).toBeUndefined();
     expect(stored.password).not.toBe('new-pw');
     expect(stored.password).not.toBe('old-pw');
@@ -118,7 +118,7 @@ describe('UserManager password rewrap (#1393)', () => {
 
     await um.updateUser('molly', { password: 'new-pw', currentPassword: 'old-pw' }, ACTOR);
 
-    expect(users.get('molly')!.password).not.toBe('new-pw');
+    expect(users.get('molly').password).not.toBe('new-pw');
     expect(await fs.pathExists(privateUserKeysPath(pagesDir, 'molly'))).toBe(false);
   });
 });

@@ -75,8 +75,8 @@ describe('private store keys (#1384)', () => {
     unlockPrivateStores('sid-b', 'bob', b.kek);
     setUnlockedDek('sid-a', 'yourphr', unwrapDek(a.kek, storeA));
 
-    expect(Buffer.compare(getUnlockedKek('sid-a')!, a.kek)).toBe(0);
-    expect(Buffer.compare(getUnlockedKek('sid-b')!, b.kek)).toBe(0);
+    expect(Buffer.compare(getUnlockedKek('sid-a'), a.kek)).toBe(0);
+    expect(Buffer.compare(getUnlockedKek('sid-b'), b.kek)).toBe(0);
     expect(getUnlockedDek('sid-a', 'yourphr')?.length).toBe(32);
     expect(getUnlockedDek('sid-b', 'yourphr')).toBeUndefined();
 
