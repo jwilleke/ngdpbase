@@ -193,7 +193,7 @@ Variable substitution replaces `{{uuid}}`, `{{date}}`, `{{pageName}}`, `{{keywor
 
 There is no `PolicyManager` — it was removed in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 10. It copied `ngdpbase.access.policies` at start-up, so a policy changed in Configuration was saved and audited but not enforced until a restart. See [PolicyManager.md](../managers/PolicyManager.md).
 
-The policies are read through `ConfigurationManager` at decision time by `readPolicies(get)` in `src/security/policies.ts`: nothing when `ngdpbase.access.policies.enabled` is off (the default), entries without a string `id` skipped, a repeated `id` resolved to the later entry, highest `priority` first.
+The policies are read through `ConfigurationManager` at decision time by the PDP, `PolicyDecisionPoint.policies()` — the one component that interprets them ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 14b): nothing when `ngdpbase.access.policies.enabled` is off (the default), entries without a string `id` skipped, highest `priority` first. A repeated `id` within one layer is not resolved silently; `PolicyValidator` reports it.
 
 Policies define `subject` (user/role/group), `resource` (page/category), `action` (view/edit/delete), `effect` (allow/deny), and numeric `priority`.
 
@@ -217,7 +217,7 @@ __Flow:__
 
 ```
 evaluate(context, action, resource)
-  → readPolicies(ConfigurationManager)  (live; sorted by priority)
+  → PolicyDecisionPoint.policies()  (live; sorted by priority)
   → for each matching policy: apply effect
   → AuditManager.logAccessDecision(context, result, reason, policy)
   → return Allow | Deny | NotApplicable
@@ -602,7 +602,7 @@ AuthManager.handleLocalLogin()
 isAllowed(action, resource, userContext)
   ↓
 PolicyEvaluator.evaluate(ctx, action, resource)
-  → readPolicies(ConfigurationManager)          (live; sorted by priority)
+  → PolicyDecisionPoint.policies()          (live; sorted by priority)
   → match subject / resource / action per policy
   → apply first matching effect (allow/deny)
   → AuditManager.logAccessDecision(ctx, result, reason, policy)

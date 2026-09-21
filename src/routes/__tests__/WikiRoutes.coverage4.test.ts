@@ -115,6 +115,7 @@ const mockUserManager = {
 // #1431 step 14: decisions are the PDP's.
 const mockPolicyDecisionPoint = {
   permits: vi.fn(),
+  rolePermissionLists: vi.fn(() => ({})),
   getUserPermissions: vi.fn()
 };
 

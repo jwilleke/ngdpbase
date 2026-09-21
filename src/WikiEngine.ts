@@ -253,7 +253,7 @@ class WikiEngine extends Engine {
     // and answered every decision from the copy, so a policy changed in
     // /admin/configuration was saved and audited but not enforced until a
     // restart. The policies are read through ConfigurationManager at decision
-    // time (src/security/policies.ts).
+    // time, by the PDP — the one component that interprets them (step 14b).
 
     const policyValidator = new PolicyValidator(this);
     this.registerManager('PolicyValidator', policyValidator);

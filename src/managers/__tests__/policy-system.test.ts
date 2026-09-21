@@ -4,7 +4,7 @@
  * policies in configuration.
  *
  * #1431 step 10: there is no PolicyManager. The policies are read through
- * ConfigurationManager at decision time (src/security/policies.ts), so this
+ * ConfigurationManager at decision time by the PDP (PolicyDecisionPoint.policies), so this
  * puts them where the system reads them — in the configuration — instead of
  * injecting them into a manager's private Map.
  */
@@ -13,11 +13,11 @@ import fs from 'fs';
 import path from 'path';
 import WikiEngine from '../../WikiEngine';
 import type { WikiConfig } from '../../types/Config';
-import { readPolicies } from '../../security/policies';
+import type { Policy } from '../../types/Policy';
 
 describe('Policy System Integration', () => {
   let engine;
-  let policies: () => ReturnType<typeof readPolicies>;
+  let policies: () => Policy[];
   let policyEvaluator;
   let policyValidator;
   let policyInformationPoint;
@@ -94,7 +94,7 @@ describe('Policy System Integration', () => {
       }
       return original(key, def);
     });
-    policies = () => readPolicies((key, def) => configManager.getProperty(key, def));
+    policies = () => engine.getManager('PolicyDecisionPoint').policies();
 
     policyEvaluator = engine.getManager('PolicyEvaluator');
     policyValidator = engine.getManager('PolicyValidator');

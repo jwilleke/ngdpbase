@@ -138,6 +138,7 @@ vi.mock('../../WikiEngine', () => {
   // #1431 step 14: decisions are the PDP's.
   const mockPolicyDecisionPoint = {
     permits: vi.fn().mockReturnValue(true),
+    rolePermissionLists: vi.fn(() => ({})),
     getUserPermissions: vi.fn().mockResolvedValue(['read', 'write'])
   };
 

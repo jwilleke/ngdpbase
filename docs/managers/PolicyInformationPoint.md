@@ -21,7 +21,7 @@ Access control follows the XACML roles, set out in [Manager-SOT.md](Manager-SOT.
 | __PIP__ | __this__ | the page's and the subject's attributes, asking the PDP where global policy decides |
 | PAP | `ConfigurationManager` plus the admin screens | where policy is written, and audited |
 
-A door asks for a __permission__, never a role. The policies are the only grant, read live through `ConfigurationManager` ([policies.ts](../../src/security/policies.ts)).
+A door asks for a __permission__, never a role. The policies are the only grant, read live through `ConfigurationManager` and interpreted only by the PDP ([PolicyDecisionPoint.ts](../../src/security/PolicyDecisionPoint.ts)).
 
 ## The page's rules
 

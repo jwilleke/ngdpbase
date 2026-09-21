@@ -1,9 +1,9 @@
 ---
 name: PolicyManager
-description: Removed in #1431 step 10 — the access policies are read live through ConfigurationManager (src/security/policies.ts)
+description: Removed in #1431 step 10 — the access policies are read live through ConfigurationManager, and interpreted only by the PolicyDecisionPoint
 dateModified: '2026-09-21'
 category: managers
-code: src/security/policies.ts
+code: src/security/PolicyDecisionPoint.ts
 ---
 
 # PolicyManager — removed
@@ -20,22 +20,22 @@ That is the case the [manager source-of-truth rule](Manager-SOT.md) names direct
 
 ## What replaced it
 
-`readPolicies(get)` in `src/security/policies.ts`. It reads the policies through `ConfigurationManager` every time it is asked, and keeps nothing. `ConfigurationManager` is the one owner, because it is what merges the shipped defaults, each addon's defaults and the operator's changes.
+Since step 14b, `PolicyDecisionPoint.policies()` — the PDP is the one component that interprets the policies. (At step 10 it was `readPolicies(get)` in `src/security/policies.ts`.) It reads the policies through `ConfigurationManager` every time it is asked, and keeps nothing. `ConfigurationManager` is the one owner, because it is what merges the shipped defaults, each addon's defaults and the operator's changes.
 
-Its answer is the same as `PolicyManager`'s was, kept exactly so that only the timing changed:
+Its answer:
 
 - `ngdpbase.access.policies.enabled` false — which is its default when unset — means no policies
 - an entry without a string `id` is skipped
-- two entries with the same `id`: the later one wins
 - highest `priority` first
+- two entries with the same `id` are both kept since step 14b. `PolicyManager` kept the later one; merging `id` arrays by id is the configuration merge's rule, and a duplicate within one layer is an authoring error that `PolicyValidator` reports
 
 The readers that used `PolicyManager`:
 
 | Reader | Now |
 | --- | --- |
-| `PolicyEvaluator` | calls `readPolicies` per decision; `compile()` once per listing |
-| `UserManager.getUserPermissions` | uses `permissionsForRoles` in `src/utils/rolePermissions.ts`, the same derivation as the admin __Security Policy Summary__ |
-| `PolicyValidator.validateAllPolicies()` | reads the policies in force when given none |
+| `PolicyEvaluator` | asks the PDP (`policies()`) per decision; `compile()` once per listing |
+| `UserManager.getUserPermissions` | the PDP's `getUserPermissions`, through `permissionsForRoles` — the same derivation as the admin __Security Policy Summary__ |
+| `PolicyValidator.validateAllPolicies()` | reads the STORED entries through `ConfigurationManager` when given none, including duplicates |
 
 ## Where policies are edited
 

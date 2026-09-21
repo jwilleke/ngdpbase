@@ -13,7 +13,6 @@
 
 import path from 'path';
 import type { CorePermission } from '../security/permissions.generated.js';
-import { rolePermissionListsFromPolicies } from '../utils/rolePermissions.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
 import multer, { StorageEngine, Multer } from 'multer';
@@ -10248,7 +10247,7 @@ ${panes}
       // policies, which are what grant. The catalogue's inline `permissions[]`
       // was a display copy kept matched by hand (#713), so this page could
       // state something the evaluator would never do.
-      const grantedByRole = rolePermissionListsFromPolicies(configManager);
+      const grantedByRole = this.engine.getManager('PolicyDecisionPoint').rolePermissionLists();
 
       return res.render('admin-roles', {
         ...commonData,

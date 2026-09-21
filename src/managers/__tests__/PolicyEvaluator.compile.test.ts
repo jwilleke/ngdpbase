@@ -7,6 +7,7 @@
  */
 vi.unmock('../PolicyEvaluator');
 import PolicyEvaluator from '../PolicyEvaluator';
+import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 
 const policies = [
   { id: 'deny-admin-pages', effect: 'deny', subjects: [{ type: 'role', value: 'All' }], resources: [{ type: 'page', pattern: 'Admin*' }], actions: ['page-read', 'page-edit'] },
@@ -16,17 +17,25 @@ const policies = [
 ];
 
 /**
- * #1431 step 10: the evaluator reads the policies through ConfigurationManager,
- * live, so the harness hands it a config — as the running system does — rather
- * than a policy store to reach into.
+ * #1431 step 10: the policies are read through ConfigurationManager, live, so
+ * the harness hands it a config — as the running system does — rather than a
+ * policy store to reach into. Step 14b: the PDP reads them and the evaluator,
+ * its matching engine, asks the PDP — so a real one sits over the same config.
  */
+function engineOver(configManager: unknown) {
+  const managers: Record<string, unknown> = { ConfigurationManager: configManager };
+  const engine = { getManager: (n: string) => managers[n] ?? null };
+  managers.PolicyDecisionPoint = new PolicyDecisionPoint(engine);
+  return engine;
+}
+
 function makeEvaluator() {
   const config: Record<string, unknown> = {
     'ngdpbase.access.policies.enabled': true,
     'ngdpbase.access.policies': policies
   };
   const configManager = { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) };
-  const pe = new PolicyEvaluator({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
+  const pe = new PolicyEvaluator(engineOver(configManager));
   (pe as unknown as { configManager: unknown }).configManager = configManager;
   return pe;
 }
@@ -76,7 +85,7 @@ describe('#1431 step 10 — a policy changed after start is enforced without a r
       'ngdpbase.access.policies': []
     };
     const configManager = { getProperty: (key: string, def: unknown) => (key in live ? live[key] : def) };
-    const pe = new PolicyEvaluator({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
+    const pe = new PolicyEvaluator(engineOver(configManager));
     await pe.initialize();
 
     const ask = () => pe.evaluateAccess({ pageName: 'Notes', action: 'page-read', userContext: { username: 'e', roles: ['editor'] } });

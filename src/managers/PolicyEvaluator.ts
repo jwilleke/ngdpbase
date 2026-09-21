@@ -6,7 +6,7 @@ import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { readPolicies } from '../security/policies.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 /**
  * User context for policy evaluation
@@ -53,7 +53,7 @@ interface EvaluationResult {
  * @property {ConfigurationManager | null} configManager - Where the policies are read, live (#1431)
  *
  * @see {@link BaseManager} for base functionality
- * @see {@link readPolicies} for how the policies are read
+ * @see {@link PolicyDecisionPoint.policies} for how the policies are read
  * @see {@link PolicyInformationPoint} for access control integration
  *
  * @example
@@ -69,14 +69,13 @@ class PolicyEvaluator extends BaseManager {
   private configManager: ConfigurationManager | null = null;
 
   /**
-   * The policies in force NOW, read through ConfigurationManager (#1431 step
-   * 10). PolicyManager used to hand back a copy taken at boot, so a policy
-   * edited in /admin/configuration was saved and audited but not enforced
-   * until a restart.
+   * The policies in force NOW. Only the PDP interprets them (#1431 step 14b);
+   * this evaluator is the PDP's matching engine and asks it for the list, read
+   * live — PolicyManager used to hand back a copy taken at boot, so a policy
+   * edited in /admin/configuration was not enforced until a restart.
    */
   private policies(): Policy[] {
-    const cm = this.configManager;
-    return cm ? readPolicies((key, def) => cm.getProperty(key, def)) : [];
+    return this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint')?.policies() ?? [];
   }
 
   /**

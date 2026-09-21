@@ -50,7 +50,9 @@ function makeRoutes(granted: string[]) {
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint') {
         return {
-          permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p)))
+          permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))),
+          // adminRoles renders what each role permits — the PDP's reading of the policies.
+          rolePermissionLists: vi.fn(() => ({ admin: [] }))
         };
       }
       if (name === 'ConfigurationManager') {

@@ -4,7 +4,6 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { readPolicies } from '../security/policies.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -577,11 +576,12 @@ class PolicyValidator extends BaseManager {
    */
   validateAllPolicies(policies: Policy[] | null = null): AllPoliciesValidationResult {
     if (!policies) {
-      // #1431 step 10: this called `policyManager.getPolicies()`, which never
-      // existed — PolicyManager had `getAllPolicies` — so asking to validate
-      // the policies in force threw a TypeError. Now it reads them.
-      const cm = this.configManager;
-      policies = cm ? (readPolicies((key, def) => cm.getProperty(key, def)) as unknown as Policy[]) : [];
+      // #1431 step 14b: the STORED entries, read through their owner. The
+      // validator checks what was written — every entry, including a
+      // duplicate id or one written while policies are switched off — so it
+      // does not ask the PDP, which interprets them.
+      const stored = this.configManager?.getProperty('ngdpbase.access.policies', []);
+      policies = (Array.isArray(stored) ? stored : []) as Policy[];
     }
 
     const errors: ValidationError[] = [];

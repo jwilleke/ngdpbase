@@ -33,7 +33,7 @@
  */
 
 import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
-import { rolePermissionsFromPolicies } from '../utils/rolePermissions.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import {
   escapeHtml,
@@ -231,8 +231,12 @@ function displayRoles(configManager: ConfigurationManager): string {
 /**
  * Display Security Policy Summary - permissions matrix showing which roles have which permissions
  */
-function displayPermissions(configManager: ConfigurationManager): string {
-  const granted = rolePermissionsFromPolicies(configManager);
+function displayPermissions(configManager: ConfigurationManager, pdp: PolicyDecisionPoint | null): string {
+  if (!pdp) {
+    return '<p class="error">PolicyDecisionPoint not available</p>';
+  }
+  // #1431 step 14b: what a role permits is the PDP's reading of the policies.
+  const granted = pdp.rolePermissions();
   const roles = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
   const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>;
 
@@ -317,7 +321,8 @@ function displayPermissions(configManager: ConfigurationManager): string {
  */
 function displayUserSummary(
   context: ExtendedPluginContext,
-  configManager: ConfigurationManager
+  configManager: ConfigurationManager,
+  pdp: PolicyDecisionPoint | null
 ): string {
 
   // Get current user from context (WikiContext uses userContext, not currentUser)
@@ -343,8 +348,11 @@ function displayUserSummary(
   // Get all permissions for the user's roles
   const rolesArray = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
 
-  // Collect user's permissions from their roles, as the policies grant them (#1431)
-  const granted = rolePermissionsFromPolicies(configManager);
+  // Collect user's permissions from their roles, as the PDP reads the policies (#1431)
+  if (!pdp) {
+    return '<p class="error">PolicyDecisionPoint not available</p>';
+  }
+  const granted = pdp.rolePermissions();
   const userPermissions = new Set<string>();
   const roleDetails: Role[] = [];
 
@@ -1684,10 +1692,10 @@ const ConfigAccessorPlugin: SimplePlugin = {
 
       case 'permissions':
       case 'policy-summary':
-        return displayPermissions(configManager);
+        return displayPermissions(configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
 
       case 'user-summary':
-        return displayUserSummary(context, configManager);
+        return displayUserSummary(context, configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
 
       case 'actions':
         return displayActions(configManager, valueonly, before, after);

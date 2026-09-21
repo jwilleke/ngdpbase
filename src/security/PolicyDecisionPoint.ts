@@ -30,10 +30,16 @@ import logger from '../utils/logger.js';
 import type { PermissionSubject, JobSubject } from '../managers/UserManager.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import type { Decision, DecisionRequest } from '../types/Policy.js';
+import type { Decision, DecisionRequest, Policy } from '../types/Policy.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
-import { permissionsForRoles } from '../utils/rolePermissions.js';
 import { normalizeUsername } from '../utils/username.js';
+
+export const POLICIES_KEY = 'ngdpbase.access.policies';
+export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
+
+function isPolicy(obj: unknown): obj is Policy {
+  return typeof obj === 'object' && obj !== null && 'id' in obj && typeof (obj as Policy).id === 'string';
+}
 
 /** The subject's current attributes are the PIP's (#1431 step 13). */
 interface SubjectSourceLike {
@@ -57,6 +63,94 @@ export class PolicyDecisionPoint extends BaseManager {
    */
   constructor(engine: WikiEngine) {
     super(engine);
+  }
+
+  // ── The policies (#1431 step 14b) ────────────────────────────────────────
+  //
+  // Only the PDP interprets the policies (operator, 2026-09-21). They are
+  // DECLARED in configuration — `ngdpbase.access.policies`, owned by
+  // ConfigurationManager, the merger of the shipped defaults, each addon's
+  // defaults and the operator's overrides — and read here, at the moment they
+  // are asked for, keeping nothing. What they MEAN — whether they are on,
+  // what counts as one, what order they are tried in, what a role is given —
+  // is decided here and nowhere else, so enforcement and the admin summary
+  // cannot disagree. (This was `readPolicies` in src/security/policies.ts and
+  // src/utils/rolePermissions.ts; before step 10, a PolicyManager that copied
+  // the policies at boot, so an edit was not enforced until a restart.)
+
+  /**
+   * The policies in force right now, highest priority first.
+   *
+   * - `ngdpbase.access.policies.enabled` false — its default when unset —
+   *   means none;
+   * - an entry without a string `id` is not a policy, and is skipped;
+   * - two entries with the same `id` are both kept. Merging `id` arrays by id
+   *   is the configuration merge's rule (between the layers), and within one
+   *   layer a duplicate is an authoring error that `PolicyValidator` reports —
+   *   not something to resolve silently here.
+   */
+  policies(): Policy[] {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager || configManager.getProperty(POLICIES_ENABLED_KEY, false) !== true) return [];
+    const raw = configManager.getProperty(POLICIES_KEY, []);
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(isPolicy).sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  }
+
+  /**
+   * What each role permits: role name → the actions its holders are granted.
+   *
+   * It mirrors the evaluator's ROLE matching — an allow policy naming a role
+   * grants its actions, a deny policy naming it takes them away, lower
+   * priority first so a higher-priority deny lands last and wins. It does not
+   * evaluate resource patterns or the ceilings, so it is a summary for a human
+   * reading a table (the admin Security Policy Summary, a profile), never an
+   * authorisation answer — that is {@link permits} with the caller's subject.
+   *
+   * Each role used to carry an inline `permissions[]` display copy kept
+   * matched by hand (#713); this derives the table from the policies instead.
+   */
+  rolePermissions(): Map<string, Set<string>> {
+    const granted = new Map<string, Set<string>>();
+    const ordered = [...this.policies()].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+    for (const policy of ordered) {
+      const roles = (policy.subjects ?? [])
+        .filter((s) => s.type === 'role' && typeof s.value === 'string' && s.value)
+        .map((s) => s.value);
+      for (const role of roles) {
+        let set = granted.get(role);
+        if (!set) {
+          set = new Set<string>();
+          granted.set(role, set);
+        }
+        for (const action of policy.actions ?? []) {
+          if (policy.effect === 'deny') set.delete(action);
+          else set.add(action);
+        }
+      }
+    }
+    return granted;
+  }
+
+  /** {@link rolePermissions} as plain sorted arrays — for template data and JSON. */
+  rolePermissionLists(): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const [role, actions] of this.rolePermissions()) out[role] = [...actions].sort();
+    return out;
+  }
+
+  /**
+   * Everything the given roles permit together, sorted: the union of their
+   * rows in {@link rolePermissions}, so a user's own list is exactly what the
+   * admin summary shows for the roles they hold. A summary, never an answer.
+   */
+  permissionsForRoles(roles: readonly string[]): string[] {
+    const byRole = this.rolePermissions();
+    const out = new Set<string>();
+    for (const role of roles) {
+      for (const action of byRole.get(role) ?? []) out.add(action);
+    }
+    return [...out].sort();
   }
 
   /** Where a subject's attributes come from (#1431 step 13). */
@@ -125,13 +219,12 @@ export class PolicyDecisionPoint extends BaseManager {
    * always {@link permits} with the subject.
    */
   async getUserPermissions(username: string): Promise<string[]> {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!username || normalizeUsername(username) === 'anonymous') {
-      return permissionsForRoles(configManager, ['anonymous']);
+      return this.permissionsForRoles(['anonymous']);
     }
     const subject = await this.informationPoint()?.subjectFor(username);
     if (!subject) return [];
-    return permissionsForRoles(configManager, subject.roles);
+    return this.permissionsForRoles(subject.roles);
   }
 
   /**
