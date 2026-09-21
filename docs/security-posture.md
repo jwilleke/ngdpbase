@@ -55,7 +55,7 @@ Display is the same defect. Showing an Admin link because the owner has the role
 | Check | What it answers | Valid as allow/deny? |
 | --- | --- | --- |
 | `isAuthenticated` | A session exists | No. Identity is not authority. [#1178](https://github.com/jwilleke/ngdpbase/issues/1178): a `page-read` token is authenticated and could mint `page-delete`. Honest use: 401 vs 403, and login vs register chrome. |
-| `hasRole('admin')` | The named user carries that string | No, for this request. Roles are membership, resolved live. A role check skips PolicyEvaluator, deny policies, and the token ceiling. Honest use: `UserManager.hasRole(username, role)` as a lookup about somebody else, the same shape as `userHoldsPermission`. |
+| `hasRole('admin')` | The named user carries that string | No, for this request. Roles are membership, resolved live. A role check skips PolicyEvaluator, deny policies, and the token ceiling. Honest use: `RoleManager.hasRole(username, role)` as a lookup about somebody else, the same shape as `userHoldsPermission`. |
 | `hasPermission('admin-system')` | May this principal do this action, now | Yes. Policies, inactive users, `All` / `Authenticated` expansion, and the token ceiling meet here. |
 | `canAccess('edit')` | May they do it on this page | Yes. Same door, plus ACL / audience. |
 

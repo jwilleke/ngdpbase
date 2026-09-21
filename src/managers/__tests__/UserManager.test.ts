@@ -33,10 +33,19 @@ const mockConfigurationManager = {
   })
 };
 
+// Who holds which role is RoleManager's (#1431 step 12). Tests set
+// mockRoles.resolveUserRoles to say what a user holds.
+const mockRoles = {
+  resolveUserRoles: vi.fn(async () => [] as string[]),
+  applyRoleDiff: vi.fn(async () => undefined),
+  removeAllMemberships: vi.fn(async () => undefined)
+};
+
 // Mock engine
 const mockEngine = {
   getManager: vi.fn((name) => {
     if (name === 'ConfigurationManager') return mockConfigurationManager;
+    if (name === 'RoleManager') return mockRoles;
     return null;
   }),
   getConfig: vi.fn(() => ({ get: vi.fn() }))
@@ -47,6 +56,7 @@ describe('UserManager', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockRoles.resolveUserRoles = vi.fn(async () => [] as string[]);
 
     // Reset mock implementation to default behavior
     mockConfigurationManager.getProperty.mockImplementation((key, defaultValue) => {
@@ -214,67 +224,6 @@ describe('UserManager', () => {
     });
   });
 
-  describe('Role Management', () => {
-    let baseGetProperty;
-    beforeEach(() => {
-      // #1431: the role catalogue is read live from ngdpbase.roles.definitions,
-      // so the roles are declared in config — as they are in a running system —
-      // rather than pushed into a private Map that no longer exists.
-      const roles = {
-        admin: { name: 'admin', permissions: ['read', 'write', 'delete', 'admin'] },
-        user: { name: 'user', permissions: ['read', 'write'] }
-      };
-      baseGetProperty = mockConfigurationManager.getProperty.getMockImplementation();
-      mockConfigurationManager.getProperty.mockImplementation((key, def) =>
-        key === 'ngdpbase.roles.definitions' ? roles : baseGetProperty(key, def));
-    });
-
-    // The mock is shared by the whole file; put it back so no later test
-    // inherits these roles.
-    afterEach(() => {
-      mockConfigurationManager.getProperty.mockImplementation(baseGetProperty);
-    });
-
-    test('hasRole() should check user roles via RoleManager', async () => {
-      // #617 iteration 3b: hasRole consults RoleManager (canonical
-      // OrganizationRole records), not the deprecated User.roles[] field.
-      const personManager = { getByIdentifier: vi.fn().mockResolvedValue({ '@id': 'urn:uuid:test', identifier: 'test' }) };
-      const roleManager = { listByMember: vi.fn().mockResolvedValue([
-        { '@id': 'r1', namedPosition: 'admin', organization: { '@id': 'o' } },
-        { '@id': 'r2', namedPosition: 'user', organization: { '@id': 'o' } }
-      ]) };
-      userManager.engine.getManager = vi.fn((name) => {
-        if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'PersonManager') return personManager;
-        if (name === 'RoleManager') return roleManager;
-        return null;
-      });
-      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test' });
-
-      const result = await userManager.hasRole('test', 'admin');
-
-      expect(result).toBe(true);
-    });
-
-    test('hasRole() should return false for role not assigned', async () => {
-      const personManager = { getByIdentifier: vi.fn().mockResolvedValue({ '@id': 'urn:uuid:test', identifier: 'test' }) };
-      const roleManager = { listByMember: vi.fn().mockResolvedValue([
-        { '@id': 'r2', namedPosition: 'user', organization: { '@id': 'o' } }
-      ]) };
-      userManager.engine.getManager = vi.fn((name) => {
-        if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'PersonManager') return personManager;
-        if (name === 'RoleManager') return roleManager;
-        return null;
-      });
-      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test' });
-
-      const result = await userManager.hasRole('test', 'admin');
-
-      expect(result).toBe(false);
-    });
-  });
-
   describe('Permission Management', () => {
     let policiesConfig;
     let mockMemberRoles;
@@ -318,10 +267,7 @@ describe('UserManager', () => {
       // policy1, not because the user's own role did.
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return policiesConfig;
-        if (name === 'PersonManager') return { getByIdentifier: vi.fn(async () => ({ '@id': 'person-1' })) };
-        if (name === 'RoleManager') return {
-          listByMember: vi.fn(async () => (mockMemberRoles).map((r) => ({ namedPosition: r })))
-        };
+        if (name === 'RoleManager') return { resolveUserRoles: vi.fn(async () => mockMemberRoles) };
         return null;
       });
     });
@@ -350,6 +296,7 @@ describe('UserManager', () => {
       // A config with no policies — and the enabled switch unset, which is off
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'RoleManager') return mockRoles;
         return null;
       });
 
@@ -375,6 +322,7 @@ describe('UserManager', () => {
         if (name === 'PolicyEvaluator') return policyEvaluator;
         if (name === 'PolicyDecisionPoint') return pdp;
         if (name === 'UserManager') return userManager;
+        if (name === 'RoleManager') return mockRoles;
         return null;
       });
       return policyEvaluator;
@@ -383,7 +331,7 @@ describe('UserManager', () => {
     test('hasPermission(userContext, action) skips provider.getUser + resolveUserRoles (#637)', async () => {
       installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
-      userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
+      mockRoles.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
       const result = await userManager.hasPermission(
         { username: 'jane', roles: ['admin'], isAuthenticated: true },
@@ -392,7 +340,7 @@ describe('UserManager', () => {
 
       // Fast path: skipped both lookups
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
-      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
+      expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
@@ -417,7 +365,7 @@ describe('UserManager', () => {
     test('hasPermission(userContext, action) trusts the caller-provided roles array verbatim (#637)', async () => {
       const policyEvaluator = installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn();
-      userManager.resolveUserRoles = vi.fn();
+      mockRoles.resolveUserRoles = vi.fn();
 
       // Caller's userContext claims `super-admin` role even though the user
       // record on disk wouldn't grant it. Fast path must trust the caller —
@@ -428,7 +376,7 @@ describe('UserManager', () => {
       );
 
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
-      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
+      expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
       // Verify the roles array was passed through to PolicyEvaluator verbatim
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -450,11 +398,11 @@ describe('UserManager', () => {
     test('hasPermission(subject without roles) resolves the user\'s CURRENT roles (#631)', async () => {
       const policyEvaluator = installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
-      userManager.resolveUserRoles = vi.fn().mockResolvedValue(['editor']);
+      mockRoles.resolveUserRoles = vi.fn().mockResolvedValue(['editor']);
 
       await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
-      expect(userManager.resolveUserRoles).toHaveBeenCalledWith('jim');
+      expect(mockRoles.resolveUserRoles).toHaveBeenCalledWith('jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({ username: 'jim', roles: ['editor'], isAuthenticated: true })
@@ -465,7 +413,7 @@ describe('UserManager', () => {
     test('a demoted user\'s job asks with the DEMOTED roles — nothing from enqueue time survives (#631)', async () => {
       const policyEvaluator = installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
-      userManager.resolveUserRoles = vi.fn().mockResolvedValue([]);
+      mockRoles.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
       await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'admin-system');
 
@@ -478,11 +426,11 @@ describe('UserManager', () => {
     test('a subject without roles for a user who no longer exists resolves ANONYMOUS (#631)', async () => {
       const policyEvaluator = installPolicyEvaluator(false);
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
-      userManager.resolveUserRoles = vi.fn();
+      mockRoles.resolveUserRoles = vi.fn();
 
       await userManager.hasPermission({ username: 'ghost', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
-      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
+      expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({ username: 'Anonymous', roles: ['anonymous'], isAuthenticated: false })
@@ -506,12 +454,12 @@ describe('UserManager', () => {
     test('a roles-absent subject naming the system principal resolves to the CATALOG roles, not a user record (#631)', async () => {
       const policyEvaluator = installSystemPrincipal(true);
       userManager.provider.getUser = vi.fn();
-      userManager.resolveUserRoles = vi.fn();
+      mockRoles.resolveUserRoles = vi.fn();
 
       await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-create');
 
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
-      expect(userManager.resolveUserRoles).not.toHaveBeenCalled();
+      expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
         expect.objectContaining({
           userContext: expect.objectContaining({
@@ -575,6 +523,7 @@ describe('UserManager', () => {
         if (name === 'PolicyEvaluator') return policyEvaluator;
         if (name === 'PolicyDecisionPoint') return pdp;
         if (name === 'UserManager') return userManager;
+        if (name === 'RoleManager') return mockRoles;
         return null;
       });
       return policyEvaluator;

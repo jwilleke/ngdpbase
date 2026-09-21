@@ -9,6 +9,8 @@
  * filesystem state.
  */
 import UserManager from '../UserManager';
+import type RoleManager from '../RoleManager';
+import { roleManagerOver } from './__fixtures__/roleManagerOver';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { Role as OrganizationRoleRecord } from '../../types/Role';
 /** #1179: the account writes take the actor's context — a request subject here. */
@@ -127,26 +129,40 @@ function makeMocks(opts: {
   return { personManager, organizationManager, roleManager };
 }
 
+/**
+ * The membership logic is RoleManager's (#1431 step 12): a real RoleManager
+ * runs over the in-memory stub, which stands in for its storage.
+ */
 function makeEngine(mocks: ReturnType<typeof makeMocks>, configManager: ReturnType<typeof makeConfigManager>) {
-  return {
+  let userManager: unknown = null;
+  const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'PersonManager') return mocks.personManager;
       if (name === 'OrganizationManager') return mocks.organizationManager;
-      if (name === 'RoleManager') return mocks.roleManager;
+      if (name === 'RoleManager') return roles;
+      if (name === 'UserManager') return userManager;
       return null;
     }),
-    getConfig: vi.fn(() => ({ get: vi.fn() }))
+    getConfig: vi.fn(() => ({ get: vi.fn() })),
+    setUserManager: (um: unknown) => { userManager = um; }
   };
+  const roles = roleManagerOver(engine, mocks.roleManager);
+  return engine;
 }
 
 async function newUserManager(mocks: ReturnType<typeof makeMocks>) {
   const configManager = makeConfigManager();
   const engine = makeEngine(mocks, configManager);
   const manager = new UserManager(engine);
+  engine.setUserManager(manager);
   await manager.initialize();
   return manager;
 }
+
+/** The RoleManager a UserManager's engine holds — where assignRole / removeRole live. */
+const rolesOf = (um: UserManager) =>
+  (um as unknown as { engine: { getManager: (n: string) => RoleManager } }).engine.getManager('RoleManager');
 
 describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
   beforeEach(() => {
@@ -275,7 +291,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.assignRole('alice', 'editor', ACTOR);
+      await rolesOf(userManager).assignRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).toHaveBeenCalledTimes(1);
       const [, patch] = roleManager.update.mock.calls[0];
@@ -299,7 +315,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.assignRole('alice', 'editor', ACTOR);
+      await rolesOf(userManager).assignRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).not.toHaveBeenCalled();
     });
@@ -323,7 +339,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.removeRole('alice', 'editor', ACTOR);
+      await rolesOf(userManager).removeRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).toHaveBeenCalledTimes(1);
       const [, patch] = roleManager.update.mock.calls[0];
@@ -347,7 +363,7 @@ describe('UserManager → RoleManager mirror (#617 iteration 2)', () => {
       });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.removeRole('alice', 'editor', ACTOR);
+      await rolesOf(userManager).removeRole('alice', 'editor', ACTOR);
 
       expect(roleManager.update).not.toHaveBeenCalled();
     });

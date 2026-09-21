@@ -31,8 +31,11 @@ interface ConfigManager {
 /**
  * User manager interface
  */
-interface UserManager {
+interface RoleManager {
   hasRole(username: string, role: string): Promise<boolean>;
+}
+
+interface UserManager {
   updateUser(username: string, updates: Record<string, unknown>, ctx: ActorContext): Promise<void>;
   provider?: {
     loadUsers(): Promise<void>;
@@ -196,8 +199,7 @@ class InstallService {
     }
 
     // Check if admin user exists
-    const userManager = this.engine.getManager('UserManager') as UserManager;
-    const adminExists = await userManager.hasRole('admin', 'admin');
+    const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
 
     // Check if pages directory is empty
     const pagesDir = this.configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
@@ -218,8 +220,7 @@ class InstallService {
       return { isPartial: false, steps: {} };
     }
 
-    const userManager = this.engine.getManager('UserManager') as UserManager;
-    const adminExists = await userManager.hasRole('admin', 'admin');
+    const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
 
     const customConfigPath = path.join(__dirname, '../../config/app-custom-config.json');
     const customConfigExists = await fs.pathExists(customConfigPath);
@@ -398,7 +399,7 @@ class InstallService {
 
       // 3. Remove admin user
       const userManager = this.engine.getManager('UserManager') as UserManager;
-      const adminExists = await userManager.hasRole('admin', 'admin');
+      const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
       if (adminExists) {
         // Get the users file path
         const usersPath = path.join(usersDir, 'users.json');

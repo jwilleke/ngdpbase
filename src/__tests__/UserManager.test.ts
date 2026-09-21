@@ -59,6 +59,7 @@ describe('UserManager', () => {
   let userManager;
   let mockEngine;
   let mockConfigManager;
+  let mockRoleManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,10 +89,19 @@ describe('UserManager', () => {
       })
     };
 
+    // Who holds which role is RoleManager's (#1431 step 12).
+    mockRoleManager = {
+      resolveUserRoles: vi.fn(async () => []),
+      hasRole: vi.fn(async () => false),
+      applyRoleDiff: vi.fn(async () => undefined),
+      removeAllMemberships: vi.fn(async () => undefined)
+    };
+
     // Create mock engine
     mockEngine = {
       getManager: vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'RoleManager') return mockRoleManager;
         return null;
       })
     };
@@ -270,25 +280,26 @@ describe('UserManager', () => {
     });
   });
 
-  describe('hasRole', () => {
-    beforeEach(async () => {
-      await userManager.initialize();
-      // Mock provider to return a user with roles
-      userManager.provider.getUser = vi.fn().mockImplementation((username) => {
-        if (username === 'admin') {
-          return Promise.resolve({ username: 'admin', roles: ['admin'] });
-        }
-        if (username === 'testuser') {
-          return Promise.resolve({ username: 'testuser', roles: ['reader'] });
-        }
-        return Promise.resolve(null);
-      });
+  describe('role membership is RoleManager\'s (#1431 step 12)', () => {
+    test('UserManager has no membership methods of its own', () => {
+      for (const name of ['hasRole', 'assignRole', 'removeRole', 'resolveUserRoles', 'applyRoleDiff']) {
+        expect(name in userManager).toBe(false);
+      }
     });
 
-    test('should check if user has role', async () => {
-      // For admin role checking (synchronous check based on provider data)
-      const hasAdminRole = await userManager.hasRole('admin', 'admin');
-      expect(hasAdminRole).toBeDefined();
+    test('a user\'s roles are read from RoleManager', async () => {
+      await userManager.initialize();
+      userManager.provider.getUser = vi.fn(async () => ({ username: 'alice', isActive: true }));
+      mockRoleManager.resolveUserRoles.mockResolvedValue(['editor']);
+      expect(await userManager.getUserPermissions('alice')).toBeDefined();
+      expect(mockRoleManager.resolveUserRoles).toHaveBeenCalledWith('alice');
+    });
+
+    test('without RoleManager the engine is broken, and says so', async () => {
+      await userManager.initialize();
+      userManager.provider.getUser = vi.fn(async () => ({ username: 'alice', isActive: true }));
+      mockEngine.getManager = vi.fn((name) => (name === 'ConfigurationManager' ? mockConfigManager : null));
+      await expect(userManager.getUserPermissions('alice')).rejects.toThrow('UserManager requires RoleManager');
     });
   });
 

@@ -3,16 +3,19 @@
  *
  * An instance with no anchor Organization cannot attach a Person to a Role, so
  * NO role is ever assigned — including `admin` on the default admin account.
- * That used to happen in complete silence: syncRoleAdd/syncRoleRemove had five
+ * That used to happen in complete silence: the add/remove member paths had five
  * bare `return`s between them and logged nothing, so a failed assignment was
  * indistinguishable from a successful one.
  *
  * These tests pin the diagnostics rather than the behaviour. The behaviour
  * (assignment does not happen) is correct and unchanged — the bug was that
  * nobody could tell.
+ *
+ * The membership writes are RoleManager's (#1431 step 12); they were
+ * UserManager's syncRoleAdd / syncRoleRemove.
  */
 
-import UserManager from '../UserManager';
+import { roleManagerOver } from './__fixtures__/roleManagerOver';
 import logger from '../../utils/logger';
 
 const PERSON_ID = 'urn:uuid:22222222-2222-2222-2222-222222222222';
@@ -51,22 +54,22 @@ function makeEngine(opts: { installOrg?: unknown; person?: unknown } = {}) {
     )
   };
 
-  return {
+  const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return makeConfigManager();
       if (name === 'PersonManager') return personManager;
       if (name === 'OrganizationManager') return organizationManager;
-      if (name === 'RoleManager') return roleManager;
       return null;
     }),
     getConfig: vi.fn(() => ({ get: vi.fn() }))
   };
+  return roleManagerOver(engine, roleManager);
 }
 
-/** syncRoleAdd/Remove are private; exercised through the documented seam. */
+/** addMember / removeMember are private; exercised through the documented seam. */
 type RoleSync = {
-  syncRoleAdd(username: string, roleName: string): Promise<void>;
-  syncRoleRemove(username: string, roleName: string): Promise<void>;
+  addMember(username: string, roleName: string): Promise<void>;
+  removeMember(username: string, roleName: string): Promise<void>;
 };
 
 function warnings(): string {
@@ -81,8 +84,8 @@ beforeEach(() => {
 
 describe('role assignment with no anchor Organization (#1027)', () => {
   test('warns instead of failing silently, naming user, role and cause', async () => {
-    const manager = new UserManager(makeEngine({ installOrg: null }));
-    await (manager as unknown as RoleSync).syncRoleAdd('admin', 'admin');
+    const manager = makeEngine({ installOrg: null });
+    await (manager as unknown as RoleSync).addMember('admin', 'admin');
 
     const out = warnings();
     expect(out).toContain('admin');
@@ -95,8 +98,8 @@ describe('role assignment with no anchor Organization (#1027)', () => {
   test('warns on revocation too — the more dangerous direction', async () => {
     // A revoke that silently does nothing leaves the operator believing access
     // was removed when it was not.
-    const manager = new UserManager(makeEngine({ installOrg: null }));
-    await (manager as unknown as RoleSync).syncRoleRemove('bob', 'editor');
+    const manager = makeEngine({ installOrg: null });
+    await (manager as unknown as RoleSync).removeMember('bob', 'editor');
 
     const out = warnings();
     expect(out).toContain('bob');
@@ -105,8 +108,8 @@ describe('role assignment with no anchor Organization (#1027)', () => {
   });
 
   test('warns when there is no Person record for the username', async () => {
-    const manager = new UserManager(makeEngine({ person: null }));
-    await (manager as unknown as RoleSync).syncRoleAdd('ghost', 'admin');
+    const manager = makeEngine({ person: null });
+    await (manager as unknown as RoleSync).addMember('ghost', 'admin');
 
     expect(warnings()).toMatch(/no Person record/i);
   });
@@ -116,8 +119,8 @@ describe('role assignment with a healthy anchor Organization', () => {
   test('does not warn — diagnostics must not fire on the happy path', async () => {
     // Otherwise the warning becomes noise and stops being read, which is how
     // this class of failure hides in the first place.
-    const manager = new UserManager(makeEngine());
-    await (manager as unknown as RoleSync).syncRoleAdd('alice', 'admin');
+    const manager = makeEngine();
+    await (manager as unknown as RoleSync).addMember('alice', 'admin');
 
     expect(warnings()).not.toMatch(/anchor Organization/i);
   });

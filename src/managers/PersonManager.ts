@@ -34,7 +34,7 @@ class PersonManager extends BaseManager {
   private providerClass?: string;
 
   // #620: cache the two by-key lookups (used per request in
-  // UserManager.resolveUserRoles → getByIdentifier and indirectly in
+  // RoleManager.resolveUserRoles → getByIdentifier and indirectly in
   // getById callers). Lazily populated; cleared on any write.
   private byIdentifierCache = new Map<string, Person | null>();
   private byIdCache = new Map<string, Person | null>();

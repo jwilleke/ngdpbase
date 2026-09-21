@@ -189,6 +189,8 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          // Who holds which role is RoleManager's (#1431 step 12).
+          RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
           BackgroundJobManager: mockBackgroundJobManager,
           ImportManager: mockImportManager,

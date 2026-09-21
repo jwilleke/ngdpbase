@@ -83,12 +83,7 @@ const sessionId = await userManager.createSession('john');
 
 ## Role Methods
 
-The role catalogue itself is read with `ConfigurationManager.getProperty('ngdpbase.roles.definitions', {})`, not through `UserManager` ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 11).
-
-| Method | Returns | Description |
-| -------- | --------- | ------------- |
-| `assignRole(username, role)` | `void` | Assign role to user |
-| `removeRole(username, role)` | `void` | Remove role from user |
+None. The role catalogue is read with `ConfigurationManager.getProperty('ngdpbase.roles.definitions', {})` (step 11), and who holds which role is [RoleManager](RoleManager.md)'s — `resolveUserRoles`, `hasRole`, `assignRole`, `removeRole` (step 12) — per [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
 
 ## Built-in Roles
 

@@ -34,14 +34,16 @@ function makeManager() {
             return Promise.resolve({ allowed: roles.includes('editor') || roles.includes('admin') });
           }
         }
-        : null)
+        // Who holds which role is RoleManager's (#1431 step 12).
+        : name === 'RoleManager'
+          ? { resolveUserRoles: () => Promise.resolve(issuerRoles) }
+          : null)
   });
-  const um = m as unknown as { provider: unknown; resolveUserRoles: (u: string) => Promise<string[]> };
+  const um = m as unknown as { provider: unknown };
   um.provider = {
     getUser: (name: string) =>
       Promise.resolve(name === 'jim' ? { username: 'jim', isActive: true, roles: issuerRoles } : null)
   };
-  um.resolveUserRoles = () => Promise.resolve(issuerRoles);
   return m;
 }
 

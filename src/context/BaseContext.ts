@@ -23,7 +23,7 @@
  *
  * __No `hasRole` here.__ A role name is not authority (P2): it skips the
  * policy evaluator, deny policies and the agent-token and share ceilings. A
- * question about a NAMED user is `UserManager.hasRole` / `userHoldsPermission`,
+ * question about a NAMED user is `RoleManager.hasRole` / `userHoldsPermission`,
  * which is a lookup, not a decision.
  */
 

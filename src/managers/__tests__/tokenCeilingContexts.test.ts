@@ -22,7 +22,10 @@ const token = { id: 'tok-1', name: 'reader', scopes: ['page-read'] };
 function makeUserManager() {
   const m = new UserManager({
     getManager: (n: string) =>
-      (n === 'PolicyEvaluator' ? { evaluateAccess: () => Promise.resolve({ allowed: true }) } : null)
+      (n === 'PolicyEvaluator'
+        ? { evaluateAccess: () => Promise.resolve({ allowed: true }) }
+        // Who holds which role is RoleManager's (#1431 step 12).
+        : n === 'RoleManager' ? { resolveUserRoles: () => Promise.resolve(['admin']) } : null)
   });
   (m as unknown as { provider: unknown }).provider = {
     getUser: () => Promise.resolve({ username: 'jim', isActive: true, roles: ['admin'] })

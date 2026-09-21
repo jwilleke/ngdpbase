@@ -105,6 +105,8 @@ vi.mock('../../WikiEngine', () => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           UserManager: mockUserManager,
+          // Who holds which role is RoleManager's (#1431 step 12).
+          RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           EmailManager: mockEmailManager,
           PageManager: {
             getPage: vi.fn().mockResolvedValue(null),

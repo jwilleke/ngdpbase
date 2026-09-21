@@ -38,8 +38,11 @@ function makeManager(existing: Record<string, unknown>) {
     })
   };
 
+  // Who holds which role is RoleManager's (#1431 step 12); the admin's role
+  // is written there, which this test does not examine.
+  const roleManager = { applyRoleDiff: vi.fn(() => Promise.resolve()), resolveUserRoles: vi.fn(() => Promise.resolve([])) };
   const manager = new UserManager({
-    getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null)
+    getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : n === 'RoleManager' ? roleManager : null)
   });
 
   // Bypass provider loading — this exercises the bootstrap decision, not

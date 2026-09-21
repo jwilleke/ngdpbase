@@ -70,12 +70,15 @@ function makeManager(liveRoles: Record<string, string[]>) {
       if (n === 'ConfigurationManager') {
         return { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.system.principal' ? 'svc-ngdpbase' : k === 'ngdpbase.system.roles' ? ['admin'] : d) };
       }
+      // Who holds which role is RoleManager's (#1431 step 12).
+      if (n === 'RoleManager') {
+        return { resolveUserRoles: (u: string) => Promise.resolve(liveRoles[u] ?? []) };
+      }
       return null;
     }
   });
-  const um = m as unknown as { provider: unknown; resolveUserRoles: (u: string) => Promise<string[]> };
+  const um = m as unknown as { provider: unknown };
   um.provider = { getUser: (u: string) => Promise.resolve(u in liveRoles ? { username: u, isActive: true, roles: liveRoles[u] } : null) };
-  um.resolveUserRoles = (u: string) => Promise.resolve(liveRoles[u] ?? []);
   return m;
 }
 

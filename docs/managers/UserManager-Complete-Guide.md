@@ -355,36 +355,11 @@ const permissions = configManager.getProperty('ngdpbase.permissions.definitions'
 
 ---
 
-#### `assignRole(username, roleName)`
-
-Assigns a role to a user.
-
-__Parameters:__
-
-- `username` (string) - Username
-- `roleName` (string) - Role name to assign
-
-__Example:__
+Who holds which role is [RoleManager](RoleManager.md)'s ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 12): `resolveUserRoles`, `hasRole`, `assignRole` and `removeRole` live there.
 
 ```javascript
-await userManager.assignRole('john', 'editor');
-```
-
----
-
-#### `removeRole(username, roleName)`
-
-Removes a role from a user.
-
-__Parameters:__
-
-- `username` (string) - Username
-- `roleName` (string) - Role name to remove
-
-__Example:__
-
-```javascript
-await userManager.removeRole('john', 'contributor');
+const roleManager = engine.getManager('RoleManager');
+await roleManager.assignRole('john', 'editor', ctx);
 ```
 
 ---

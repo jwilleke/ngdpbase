@@ -20,8 +20,6 @@ import type TemplateManager from './TemplateManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type { Person, PersonUpdate } from '../types/Person.js';
 import type { ShareGrant } from '../types/Share.js';
-import type { Organization } from '../types/Organization.js';
-import type { Role as OrganizationRoleRecord } from '../types/Role.js';
 import type { Request, Response, NextFunction } from 'express';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
@@ -599,7 +597,7 @@ class UserManager extends BaseManager {
     });
 
     await this.syncPersonOnCreate(adminUser);
-    await this.applyRoleDiff(adminUser.username, [], ['admin']);
+    await this.roleManager().applyRoleDiff(adminUser.username, [], ['admin']);
 
     // Never log the value. `2b48d838` removed the equivalent echo from the
     // startup banner but left this one, which writes the live credential into
@@ -623,7 +621,7 @@ class UserManager extends BaseManager {
 
     let user = await this.provider.getUser(username);
     const existedBefore = !!user;
-    const oldRoles = existedBefore ? await this.resolveUserRoles(username) : [];
+    const oldRoles = existedBefore ? await this.roleManager().resolveUserRoles(username) : [];
 
     if (!user) {
       // Create new external user
@@ -663,7 +661,7 @@ class UserManager extends BaseManager {
     } else {
       await this.syncPersonOnUpdate(username, { displayName: user.displayName, email: user.email });
     }
-    await this.applyRoleDiff(username, oldRoles, roles);
+    await this.roleManager().applyRoleDiff(username, oldRoles, roles);
 
     // Return user without password
     const { password: _pwd, ...userWithoutPassword } = user;
@@ -792,7 +790,7 @@ class UserManager extends BaseManager {
       // permission-subject-ignore: the anonymous subject, copied so the constant is never mutated.
       return { username: 'Anonymous', roles: [...(ANONYMOUS_SUBJECT.roles ?? [])], isAuthenticated: false };
     }
-    const baseRoles = await this.resolveUserRoles(user.username);
+    const baseRoles = await this.roleManager().resolveUserRoles(user.username);
     // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
     return { username: user.username, roles: [...baseRoles], isAuthenticated: true };
   }
@@ -871,7 +869,7 @@ class UserManager extends BaseManager {
 
     // #1429: the user's own roles, via RoleManager. No synthetic role is added —
     // 'Authenticated' and 'All' were grants nobody was given.
-    return permissionsForRoles(configManager, await this.resolveUserRoles(username));
+    return permissionsForRoles(configManager, await this.roleManager().resolveUserRoles(username));
   }
 
 
@@ -969,6 +967,19 @@ class UserManager extends BaseManager {
       logger.error(`❌ Error creating user page for ${user.displayName}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Who holds which role is RoleManager's (#1431 step 12). An account write
+   * that changes roles asks it; it is registered before UserManager, so its
+   * absence is a broken engine, not a degraded one.
+   */
+  private roleManager(): RoleManager {
+    const roleManager = this.engine.getManager<RoleManager>('RoleManager');
+    if (!roleManager) {
+      throw new Error('UserManager requires RoleManager');
+    }
+    return roleManager;
   }
 
   private auditSink(): AuditEventSink | null {
@@ -1069,7 +1080,7 @@ class UserManager extends BaseManager {
     await this.provider.createUser(user);
 
     await this.syncPersonOnCreate(user);
-    await this.applyRoleDiff(username, [], roles);
+    await this.roleManager().applyRoleDiff(username, [], roles);
 
     logger.info(`👤 Created user: ${username} (${isExternal ? 'External' : 'Local'})`);
 
@@ -1151,13 +1162,13 @@ class UserManager extends BaseManager {
     // it lands on the User record, diff against the current RoleManager
     // state, and apply the changes through the canonical write path.
     const { roles: incomingRoles, ...userFieldUpdates } = updates;
-    const oldRoles = incomingRoles ? await this.resolveUserRoles(username) : [];
+    const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
     await this.provider.updateUser(username, user);
 
     await this.syncPersonOnUpdate(username, updates);
     if (incomingRoles) {
-      await this.applyRoleDiff(username, oldRoles, incomingRoles);
+      await this.roleManager().applyRoleDiff(username, oldRoles, incomingRoles);
     }
 
     logger.info(`👤 Updated user: ${username}`);
@@ -1212,7 +1223,7 @@ class UserManager extends BaseManager {
     // and a failure refuses it (the token-mint / share-create ordering).
     {
       const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
-      const roles = await this.resolveUserRoles(username);
+      const roles = await this.roleManager().resolveUserRoles(username);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_DELETE,
         user: who,
@@ -1230,7 +1241,7 @@ class UserManager extends BaseManager {
 
     // Order matters: clear role memberships while the Person record still
     // exists, then delete the Person.
-    await this.syncRolesAllRemovedOnDelete(username);
+    await this.roleManager().removeAllMemberships(username);
     await this.syncPersonOnDelete(username);
 
     logger.info(`👤 Deleted user: ${username}`);
@@ -1298,7 +1309,7 @@ class UserManager extends BaseManager {
     const all = await this.getUsers();
     for (const u of all) {
       if (!u.email || u.email === 'admin@localhost') continue;
-      if (await this.hasRole(u.username, 'admin')) return u.email;
+      if (await this.roleManager().hasRole(u.username, 'admin')) return u.email;
     }
     return null;
   }
@@ -1330,7 +1341,7 @@ class UserManager extends BaseManager {
         );
         if (!matchesQuery) continue;
       }
-      if (role && !(await this.hasRole(u.username, role))) continue;
+      if (role && !(await this.roleManager().hasRole(u.username, role))) continue;
       results.push(u);
       if (limit > 0 && results.length >= limit) break;
     }
@@ -1389,7 +1400,7 @@ class UserManager extends BaseManager {
     // from a caller, and there is no request and therefore no token to drop.
     // Every other construction asserts roles it was handed, which is the
     // defect (#1179).
-    const baseRoles = await this.resolveUserRoles(username);
+    const baseRoles = await this.roleManager().resolveUserRoles(username);
     return this.hasPermission(
       { username: user.username, roles: [...baseRoles], isAuthenticated: true },
       action
@@ -1509,66 +1520,6 @@ class UserManager extends BaseManager {
     };
   }
 
-  async hasRole(username: string, roleName: string): Promise<boolean> {
-    if (!this.provider) {
-      return false;
-    }
-    const roles = await this.resolveUserRoles(username);
-    return roles.includes(roleName);
-  }
-
-  async assignRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
-    const user = await this.provider.getUser(username);
-    if (!user) {
-      throw new Error('User not found');
-    }
-    // #1431: the role catalogue is a declaration, read through its owner.
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const declared = configManager?.getProperty('ngdpbase.roles.definitions', {}) as Record<string, unknown>;
-    if (!Object.hasOwn(declared ?? {}, roleName)) {
-      throw new Error('Role not found');
-    }
-    // syncRoleAdd is idempotent (no-op when the Person is already a member),
-    // so we can call unconditionally.
-    await this.syncRoleAdd(username, roleName);
-    logger.info(`👤 Assigned role '${roleName}' to user '${username}'`);
-    await this.recordRoleChange(username, 'assign', roleName, ctx);
-    return true;
-  }
-
-  /** #1204: a role assigned or removed is a user-edit; what the account may do changed. */
-  private async recordRoleChange(username: string, op: 'assign' | 'remove', roleName: string, ctx: ActorContext): Promise<void> {
-    const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
-    await recordAuditEvent(this.auditSink(), {
-      eventType: AUDIT_EVENT.USER_EDIT,
-      user: who,
-      ipAddress,
-      action: 'user-edit',
-      result: 'success',
-      severity: 'high',
-      resource: username,
-      resourceType: 'user',
-      metadata: { username, fields: ['roles'], role: { [op]: roleName }, ...actorMeta }
-    }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit (${op} ${roleName}) of ${username}:`, err));
-  }
-
-  async removeRole(username: string, roleName: string, ctx: ActorContext): Promise<boolean> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
-    const user = await this.provider.getUser(username);
-    if (!user) {
-      throw new Error('User not found');
-    }
-    await this.syncRoleRemove(username, roleName);
-    logger.info(`👤 Removed role '${roleName}' from user '${username}'`);
-    await this.recordRoleChange(username, 'remove', roleName, ctx);
-    return true;
-  }
-
   /**
    * Persist a Person record paired with a newly-created User. The install's
    * anchor org (when configured) is referenced via `memberOf`; without it
@@ -1624,210 +1575,6 @@ class UserManager extends BaseManager {
     } catch (error) {
       logger.error(`❌ Failed to delete Person record for ${username}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  /**
-   * Resolve a user's effective base role names from the canonical
-   * OrganizationRole records owned by RoleManager (#617).
-   *
-   * Returns the array of `namedPosition` strings for every role whose
-   * `member[]` contains the user's Person `@id`. The pseudo-roles
-   * `'Authenticated'` and `'All'` are NOT added here — the caller adds
-   * those when constructing `userContext.roles` (matches the convention
-   * in `src/app.ts` and `hasPermission` / `getUserPermissions`).
-   *
-   * Returns `[]` when:
-   *   - the User provider is unavailable, or
-   *   - PersonManager / RoleManager are unavailable (degraded init), or
-   *   - the user has no paired Person record, or
-   *   - RoleManager.listByMember returns no records, or
-   *   - the underlying lookup throws.
-   *
-   * The legacy `User.roles[]` fallback that bridged iterations 2 and 3a
-   * was removed in iteration 3b — RoleManager is the single source of
-   * truth. Run `scripts/strip-user-roles.ts` to clear the deprecated
-   * field from existing `users.json` files.
-   */
-  async resolveUserRoles(username: string): Promise<string[]> {
-    if (!this.provider) return [];
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    const roleManager = this.engine.getManager<RoleManager>('RoleManager');
-    if (!personManager || !roleManager) return [];
-
-    try {
-      const person = await personManager.getByIdentifier(username);
-      if (!person) return [];
-      const roles = await roleManager.listByMember(person['@id']);
-      return roles.map((r) => r.namedPosition);
-    } catch (error) {
-      logger.warn(
-        `[UserManager.resolveUserRoles] lookup failed for ${username}: ` +
-        (error instanceof Error ? error.message : String(error))
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Add the user's Person `@id` to the OrganizationRole record for
-   * (installOrg, roleName). #617 iteration 3b: this is now the canonical
-   * role-membership write — RoleManager is the single store. Idempotent:
-   * a no-op when the Person is already a member.
-   *
-   * Best-effort under degraded init: skips silently when PersonManager,
-   * RoleManager, or OrganizationManager are unavailable, when no Person
-   * record exists for `username`, or when the install has no anchor org.
-   * Failures are logged, not thrown — User-record writes must succeed even
-   * when role storage is degraded.
-   */
-  private async syncRoleAdd(username: string, roleName: string): Promise<void> {
-    // #1027: every abandon path below used to `return` in silence, so a failed
-    // role assignment was indistinguishable from a successful one — the caller
-    // gets no error and the user simply never has the role. Each now says why.
-    const roleManager = this.engine.getManager<RoleManager>('RoleManager');
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!roleManager || !personManager) {
-      logger.warn(`🔑 Cannot add role ${roleName} to ${username}: RoleManager or PersonManager unavailable (#1027)`);
-      return;
-    }
-    try {
-      const person = await personManager.getByIdentifier(username);
-      if (!person) {
-        logger.warn(`🔑 Cannot add role ${roleName} to ${username}: no Person record for that username (#1027)`);
-        return;
-      }
-      const installOrg = await this.engine
-        .getManager<OrganizationManager>('OrganizationManager')
-        ?.getInstallOrg();
-      if (!installOrg) {
-        logger.warn(
-          `🔑 Cannot add role ${roleName} to ${username}: no anchor Organization — ` +
-          'set ngdpbase.application.organization.file and supply the JSON-LD file (#1027)'
-        );
-        return;
-      }
-      const role = await this.getOrCreateRoleRecord(roleManager, installOrg, roleName);
-      if (!role) {
-        logger.warn(`🔑 Cannot add role ${roleName} to ${username}: role record could not be created (#1027)`);
-        return;
-      }
-      const memberIds = new Set((role.member ?? []).map((m) => m['@id']));
-      if (memberIds.has(person['@id'])) return;
-      const newMembers = [...(role.member ?? []), { '@id': person['@id'] }];
-      await roleManager.update(role['@id'], { member: newMembers });
-      logger.info(`🔑 Role added: ${username} → ${roleName}`);
-    } catch (error) {
-      logger.error(`❌ Failed to add role (${username}, ${roleName}): ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  private async syncRoleRemove(username: string, roleName: string): Promise<void> {
-    const roleManager = this.engine.getManager<RoleManager>('RoleManager');
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    // #1027: same silent-abandon problem as syncRoleAdd. A revocation that
-    // quietly does nothing is the more dangerous direction of the two — the
-    // operator believes access was removed when it was not.
-    if (!roleManager || !personManager) {
-      logger.warn(`🔑 Cannot remove role ${roleName} from ${username}: RoleManager or PersonManager unavailable (#1027)`);
-      return;
-    }
-    try {
-      const person = await personManager.getByIdentifier(username);
-      if (!person) {
-        logger.warn(`🔑 Cannot remove role ${roleName} from ${username}: no Person record for that username (#1027)`);
-        return;
-      }
-      const installOrg = await this.engine
-        .getManager<OrganizationManager>('OrganizationManager')
-        ?.getInstallOrg();
-      if (!installOrg) {
-        logger.warn(
-          `🔑 Cannot remove role ${roleName} from ${username}: no anchor Organization — ` +
-          'the role may still be in effect (#1027)'
-        );
-        return;
-      }
-      const role = await roleManager.getByOrgAndPosition(installOrg['@id'], roleName);
-      if (!role) {
-        // Not an error: nothing to revoke if the role record never existed.
-        return;
-      }
-      const before = role.member ?? [];
-      const after = before.filter((m) => m['@id'] !== person['@id']);
-      if (after.length === before.length) return;
-      await roleManager.update(role['@id'], { member: after });
-      logger.info(`🔑 Role removed: ${username} → ${roleName}`);
-    } catch (error) {
-      logger.error(`❌ Failed to remove role (${username}, ${roleName}): ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  private async applyRoleDiff(username: string, oldRoles: string[], newRoles: string[]): Promise<void> {
-    const oldSet = new Set(oldRoles);
-    const newSet = new Set(newRoles);
-    for (const r of newRoles) {
-      if (!oldSet.has(r)) await this.syncRoleAdd(username, r);
-    }
-    for (const r of oldRoles) {
-      if (!newSet.has(r)) await this.syncRoleRemove(username, r);
-    }
-  }
-
-  private async syncRolesAllRemovedOnDelete(username: string): Promise<void> {
-    const roleManager = this.engine.getManager<RoleManager>('RoleManager');
-    const personManager = this.engine.getManager<PersonManager>('PersonManager');
-    if (!roleManager || !personManager) return;
-    try {
-      const person = await personManager.getByIdentifier(username);
-      if (!person) return;
-      const memberOf = await roleManager.listByMember(person['@id']);
-      for (const role of memberOf) {
-        const after = (role.member ?? []).filter((m) => m['@id'] !== person['@id']);
-        await roleManager.update(role['@id'], { member: after });
-      }
-    } catch (error) {
-      logger.error(`❌ Failed to clean up role memberships for deleted user ${username}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
-   * Look up the OrganizationRole record for (installOrg, namedPosition), or
-   * create one.
-   *
-   * #1429/#1431: the record holds __membership only__ — who belongs to this
-   * role in this organisation. It used to snapshot the catalogue entry as well
-   * (`roleName`, `description`, `issystem`, `icon`, `color`, and `permissions`
-   * under `additionalProperty`), a copy that later catalogue edits never
-   * updated. Nothing read it: the admin UI renders roles from
-   * `ngdpbase.roles.definitions` through ConfigurationManager, and
-   * `resolveUserRoles` takes only `namedPosition`. It had already drifted —
-   * measured on jimstest 2026-09-20, `admin` held 17 permissions against 21
-   * granted by policy and `editor` 10 against 12.
-   *
-   * What a role permits is the policies, resolved at the moment of each
-   * decision. A copy in a data file is authority frozen at create time, and
-   * per-record overrides would be a grant path outside the policies entirely.
-   */
-  private async getOrCreateRoleRecord(
-    roleManager: RoleManager,
-    installOrg: Organization,
-    namedPosition: string
-  ): Promise<OrganizationRoleRecord | null> {
-    const existing = await roleManager.getByOrgAndPosition(installOrg['@id'], namedPosition);
-    if (existing) return existing;
-
-    const orgUrl = installOrg.url || installOrg['@id'];
-    const base = orgUrl.endsWith('/') ? orgUrl : `${orgUrl}/`;
-
-    const role: OrganizationRoleRecord = {
-      '@context': 'https://schema.org',
-      '@type': 'OrganizationRole',
-      '@id': `${base}roles/${namedPosition}#role`,
-      namedPosition,
-      organization: { '@id': installOrg['@id'] },
-      member: []
-    };
-    return roleManager.create(role);
   }
 
   async createSession(username: string, additionalData: Record<string, unknown> = {}): Promise<string> {

@@ -1,4 +1,5 @@
 'use strict';
+import { roleManagerOver } from './__fixtures__/roleManagerOver';
 
 /**
  * Tests for UserManager.getContactRecipient() — #658 iteration 2
@@ -46,14 +47,17 @@ describe('UserManager#getContactRecipient()', () => {
         return u.roles.map((r: string) => ({ '@id': `r-${r}`, namedPosition: r, organization: { '@id': 'o' } }));
       })
     };
-    return {
+    const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'PersonManager') return personManager;
-        if (name === 'RoleManager') return roleManager;
+        if (name === 'RoleManager') return roles;
         return null;
       }),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
     };
+    // #1431 step 12: membership is RoleManager's; the stub is its storage.
+    const roles = roleManagerOver(engine, roleManager);
+    return engine;
   };
 
   const setup = async (users: any[]) => {

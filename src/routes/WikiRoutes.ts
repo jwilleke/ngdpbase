@@ -137,6 +137,7 @@ import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
+import type RoleManager from '../managers/RoleManager.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
 import type MediaManager from '../managers/MediaManager.js';
@@ -261,8 +262,6 @@ interface IUserManager {
    * routes are authorising a request and must forward what the request carries.
    */
   hasPermission(subject: PermissionSubject, permission: string): Promise<boolean>;
-  hasRole(username: string, roleName: string): Promise<boolean>;
-  resolveUserRoles(username: string): Promise<string[]>;
   getUserPermissions(username: string): Promise<string[]>;
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
@@ -444,6 +443,7 @@ interface WikiEngine {
   getManager(name: 'SchemaManager'): ISchemaManager;
   getManager(name: 'OrganizationManager'): IOrganizationManager;
   getManager(name: 'SearchManager'): ISearchManager;
+  getManager(name: 'RoleManager'): RoleManager;
   // Managers using full typed imports
   getManager(name: 'AddonsManager'): AddonsManager;
   getManager(name: 'AssetManager'): AssetManager;
@@ -7808,7 +7808,7 @@ ${panes}
       // #617 iteration 3b: attach RoleManager-resolved roles so profile.ejs
       // can render the role badges.
       if (freshUser && currentUser.username) {
-        (freshUser as { roles?: string[] }).roles = await userManager.resolveUserRoles(currentUser.username);
+        (freshUser as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(currentUser.username);
       }
       logger.debug(
         'DEBUG: profilePage - fresh user preferences:',
@@ -10007,7 +10007,7 @@ ${panes}
       // reading `u.roles` directly (templates unchanged).
       const users = await Promise.all(usersRaw.map(async (u: { username?: string; [key: string]: unknown }) => ({
         ...u,
-        roles: u.username ? await userManager.resolveUserRoles(u.username) : []
+        roles: u.username ? await this.engine.getManager('RoleManager').resolveUserRoles(u.username) : []
       })));
       const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
@@ -10076,7 +10076,7 @@ ${panes}
       // #617 iteration 3b: attach RoleManager-resolved roles so the
       // role-checkbox UI in admin-user-edit.ejs can pre-tick the user's
       // current memberships.
-      (user as { roles?: string[] }).roles = await userManager.resolveUserRoles(username);
+      (user as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(username);
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const coreFields: string[] = configManager.getProperty('ngdpbase.user.coreFields', [

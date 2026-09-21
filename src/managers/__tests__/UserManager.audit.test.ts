@@ -10,6 +10,7 @@
  * try/catch, and the refusal test goes red.
  */
 import UserManager from '../UserManager';
+import RoleManager from '../RoleManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
 
@@ -37,27 +38,32 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
         k === 'ngdpbase.system.principal' ? 'system'
           : k === 'ngdpbase.roles.definitions' ? { reader: { name: 'reader' }, editor: { name: 'editor' } }
             : d) };
+      if (name === 'RoleManager') return roles;
+      if (name === 'UserManager') return um;
       return null;
     })
   } as unknown as WikiEngine;
   const um = new UserManager(engine);
   (um as unknown as { provider: unknown }).provider = provider;
-  // The Person/Role sync and the user page are other managers' business and
-  // are stubbed. Role membership lives in RoleManager, not on the record, so
-  // the stubs keep it in a map the way RoleManager would.
+  // The Person sync and the user page are other managers' business and are
+  // stubbed. Role membership is RoleManager's (#1431 step 12): its storage is
+  // kept in a map here, and assignRole / removeRole are its own, so their
+  // audit record is exercised for real.
   const rolesByUser = new Map<string, string[]>();
-  (um as unknown as { resolveUserRoles: (n: string) => Promise<string[]> }).resolveUserRoles =
-    async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []);
-  (um as unknown as { applyRoleDiff: (n: string, o: string[], nw: string[]) => Promise<void> }).applyRoleDiff =
-    async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); };
+  const roles = new RoleManager(engine);
+  Object.assign(roles, {
+    resolveUserRoles: async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
+    applyRoleDiff: async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); },
+    removeAllMemberships: async () => undefined,
+    addMember: async () => undefined,
+    hasRole: async () => true
+  });
   (um as unknown as { syncPersonOnCreate: () => Promise<void> }).syncPersonOnCreate = async () => undefined;
   (um as unknown as { syncPersonOnUpdate: () => Promise<void> }).syncPersonOnUpdate = async () => undefined;
-  (um as unknown as { syncRolesAllRemovedOnDelete: () => Promise<void> }).syncRolesAllRemovedOnDelete = async () => undefined;
   (um as unknown as { syncPersonOnDelete: () => Promise<void> }).syncPersonOnDelete = async () => undefined;
   (um as unknown as { createUserPage: () => Promise<boolean> }).createUserPage = async () => false;
   (um as unknown as { checkDisplayNamePageConflict: () => Promise<void> }).checkDisplayNamePageConflict = async () => undefined;
-  (um as unknown as { hasRole: () => Promise<boolean> }).hasRole = async () => true;
-  return { um, sink, users, provider };
+  return { um, roles, sink, users, provider };
 }
 
 // #1179: the request's subject, forwarded as-is; the address rides on it.
@@ -116,11 +122,10 @@ describe('#1204 user-edit', () => {
   });
 
   test('assigning a role is a user-edit', async () => {
-    const { um, sink } = makeManager();
-    (um as unknown as { syncRoleAdd: () => Promise<void> }).syncRoleAdd = async () => undefined;
+    const { um, roles, sink } = makeManager();
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
     sink.length = 0;
-    await um.assignRole('alice', 'editor', ADMIN);
+    await roles.assignRole('alice', 'editor', ADMIN);
     expect(sink[0]).toMatchObject({ eventType: 'user-edit', user: 'root', metadata: { fields: ['roles'], role: { assign: 'editor' } } });
   });
 });
@@ -159,19 +164,18 @@ describe('#1204 search-user ships switched off', () => {
     // The role catalogue was copied at boot, so a role an administrator added
     // in Configuration was refused — "Role not found" — until a restart.
     const declared: Record<string, unknown> = { reader: { name: 'reader' } };
-    const { um, sink } = makeManager();
+    const { um, roles, sink } = makeManager();
     (um as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager = ((orig) => (n: string) =>
       n === 'ConfigurationManager'
         ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.system.principal' ? 'system' : k === 'ngdpbase.roles.definitions' ? declared : d) }
         : orig(n))((um as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager);
-    (um as unknown as { syncRoleAdd: () => Promise<void> }).syncRoleAdd = async () => undefined;
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
 
-    await expect(um.assignRole('alice', 'auditor', ADMIN)).rejects.toThrow('Role not found');
+    await expect(roles.assignRole('alice', 'auditor', ADMIN)).rejects.toThrow('Role not found');
 
     declared.auditor = { name: 'auditor' };   // an administrator adds it
     sink.length = 0;
-    await um.assignRole('alice', 'auditor', ADMIN);
+    await roles.assignRole('alice', 'auditor', ADMIN);
     expect(sink[0]).toMatchObject({ eventType: 'user-edit', metadata: { role: { assign: 'auditor' } } });
   });
 });

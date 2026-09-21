@@ -92,7 +92,7 @@ export interface User {
   /**
    * @deprecated since #617 iteration 3b. Role membership is now stored
    * canonically as OrganizationRole records owned by `RoleManager`; resolve
-   * a user's roles via `UserManager.resolveUserRoles(username)`. The field
+   * a user's roles via `RoleManager.resolveUserRoles(username)`. The field
    * is retained as optional for backwards compatibility while in-flight
    * `users.json` files still carry it; the `strip-user-roles.ts` migration
    * removes it. New code MUST NOT read or write this field directly.

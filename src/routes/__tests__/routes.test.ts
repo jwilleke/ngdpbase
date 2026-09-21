@@ -95,8 +95,6 @@ vi.mock('../../WikiEngine', () => {
       roles: ['authenticated']
     }),
     hasPermission: vi.fn().mockReturnValue(true),
-    hasRole: vi.fn().mockResolvedValue(false),
-    resolveUserRoles: vi.fn().mockResolvedValue([]),
     destroySession: vi.fn().mockResolvedValue(true),
     getUsers: vi.fn().mockResolvedValue([
       { 
@@ -312,6 +310,8 @@ vi.mock('../../WikiEngine', () => {
       getManager: vi.fn((name) => {
         const mockManagers = {
           UserManager: mockUserManager,
+          // Who holds which role is RoleManager's (#1431 step 12).
+          RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,

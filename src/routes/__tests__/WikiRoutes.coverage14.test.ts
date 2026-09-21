@@ -81,8 +81,6 @@ const mockUserManager = {
   hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  resolveUserRoles: vi.fn().mockResolvedValue([]),
-  hasRole: vi.fn().mockResolvedValue(false),
   getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
@@ -204,6 +202,8 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          // Who holds which role is RoleManager's (#1431 step 12).
+          RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
           ExportManager: mockExportManager,
           AuthManager: includeAuthManager ? mockAuthManager : null,

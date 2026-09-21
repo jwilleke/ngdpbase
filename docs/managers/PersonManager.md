@@ -22,7 +22,7 @@ Pre-#617, person-shaped data was scattered: author names on pages, contact entri
 
 Per-request hot paths cache by-identifier and by-key lookups (#620):
 
-- `UserManager.resolveUserRoles → getByIdentifier`
+- `RoleManager.resolveUserRoles → getByIdentifier`
 - Various consumer-side `personManager.getByEmail` / `getByUuid` calls
 
 ## See Also

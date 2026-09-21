@@ -683,6 +683,8 @@ void (async (): Promise<void> => {
     getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; [key: string]: unknown } | null>;
     getAnonymousUser(): NonNullable<Request['userContext']>;
     isAdminUsingDefaultPassword(): Promise<boolean>;
+  };
+  const roleManager = engine.getManager('RoleManager') as {
     resolveUserRoles(username: string): Promise<string[]>;
   };
 
@@ -703,8 +705,8 @@ void (async (): Promise<void> => {
         if (user?.isActive) {
           // #617 iteration 3a: source base roles from RoleManager (canonical
           // OrganizationRole records). Falls back to User.roles[] when no
-          // RoleManager records exist. See UserManager.resolveUserRoles.
-          const baseRoles = await userManager.resolveUserRoles(req.session.username);
+          // RoleManager records exist. See RoleManager.resolveUserRoles.
+          const baseRoles = await roleManager.resolveUserRoles(req.session.username);
           const roles = new Set(baseRoles);
 
           // #1212: username stated, not inherited from a spread whose type
@@ -808,7 +810,7 @@ void (async (): Promise<void> => {
       if (result.success && result.username) {
         const user = await userManager.getUser(result.username);
         if (user?.isActive) {
-          const baseRoles = await userManager.resolveUserRoles(result.username);
+          const baseRoles = await roleManager.resolveUserRoles(result.username);
           const roles = new Set(baseRoles);
           req.userContext = {
             ...user,
