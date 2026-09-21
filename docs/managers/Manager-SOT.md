@@ -351,7 +351,10 @@ __Decisions.__
 
 ### Open decisions
 
-- __Whether `UserManager` keeps the two catalogues.__ It owns the permission
+- __Whether `UserManager` keeps the two catalogues.__ Both are now read live
+  (permissions since #1220, roles since e3ccefb2 — the role list had been
+  copied at boot, so a new role could not be assigned until a restart). What
+  remains open is ownership only. It owns the permission
   catalogue, the role catalogue, subject construction and membership sync.
   Some of that is PIP work; splitting it is larger than the steps above.
 
