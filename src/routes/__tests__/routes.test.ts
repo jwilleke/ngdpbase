@@ -125,9 +125,6 @@ vi.mock('../../WikiEngine', () => {
     createUser: vi.fn().mockResolvedValue(true),
     updateUser: vi.fn().mockResolvedValue(true),
     deleteUser: vi.fn().mockResolvedValue(true),
-    createRole: vi.fn().mockResolvedValue(true),
-    updateRolePermissions: vi.fn().mockResolvedValue(true),
-    deleteRole: vi.fn().mockResolvedValue(true),
     authenticateUser: vi.fn().mockResolvedValue({
       username: 'testuser',
       displayName: 'Test User',
@@ -1244,63 +1241,6 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         ]));
 
         const response = await request(app).get('/admin/roles');
-        expect(response.status).toBe(200);
-      });
-    });
-
-    describe('POST /admin/roles', () => {
-      test('should create role for admin', async () => {
-        mockUserManager.createRole.mockResolvedValue({ name: 'newrole' });
-
-        const response = await request(app)
-          .post('/admin/roles')
-          .send({
-            name: 'newrole',
-            displayName: 'New Role',
-            permissions: ['page:read'],
-            _csrf: 'test-csrf-token'
-          });
-
-        expect(response.status).toBe(200);
-      });
-    });
-
-    describe('PUT /admin/roles/:role', () => {
-      test('should update role for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
-          username: 'admin',
-          displayName: 'Admin User',
-          email: 'admin@example.com',
-          isExternal: false,
-          createdAt: new Date('2023-01-01'),
-          lastLogin: new Date('2024-01-01'),
-          isAuthenticated: true,
-          isAdmin: true,
-          roles: ['admin']
-        });
-        mockUserManager.hasPermission.mockReturnValue(true);
-        mockUserManager.updateRolePermissions.mockResolvedValue(true);
-
-        const response = await request(app)
-          .put('/admin/roles/testrole')
-          .send({
-            roleName: 'testrole',
-            permissions: ['page:read', 'page:edit'],
-            _csrf: 'test-csrf-token'
-          });
-
-        expect(response.status).toBe(200);
-      });
-    });
-
-    describe('DELETE /admin/roles/:role', () => {
-      test('should delete role for admin', async () => {
-        mockUserManager.deleteRole.mockResolvedValue(true);
-
-        const response = await request(app)
-          .delete('/admin/roles/testrole')
-          .send({ _csrf: 'test-csrf-token' });
-
         expect(response.status).toBe(200);
       });
     });

@@ -114,9 +114,6 @@ describe('admin-read grants NO ability to change anything (#1029)', () => {
   // The important half. A regression here is a privilege escalation, and the
   // design relies on these handlers never having been touched.
   test.each([
-    'adminCreateRole',
-    'adminUpdateRole',
-    'adminDeleteRole',
     'adminCreateUser',
     'adminUpdateUser',
     'adminDeleteUser',
@@ -144,12 +141,12 @@ describe('admin-read grants NO ability to change anything (#1029)', () => {
 });
 
 describe('control — the mutation tests are not passing vacuously', () => {
-  test('adminCreateRole gets PAST the permission gate when admin-roles is held', async () => {
+  test('adminCreateUser gets PAST the permission gate when user-create is held', async () => {
     // Without this, a handler that threw on a missing mock would look
     // "refused" and the whole block above would prove nothing.
     const res = createMockRes();
-    await makeRoutes(['admin-read', 'admin-roles', 'admin-system'])
-      .adminCreateRole(createMockReq(fullAdmin), res);
+    await makeRoutes(['admin-read', 'user-create', 'admin-system'])
+      .adminCreateUser(createMockReq(fullAdmin), res);
 
     const statuses = res.status.mock.calls.map((c) => c[0]);
     expect(statuses).not.toContain(403);
@@ -157,7 +154,7 @@ describe('control — the mutation tests are not passing vacuously', () => {
 
   test('and refuses with 403 specifically when it is not', async () => {
     const res = createMockRes();
-    await makeRoutes(['admin-read']).adminCreateRole(createMockReq(readOnlyAdmin), res);
+    await makeRoutes(['admin-read']).adminCreateUser(createMockReq(readOnlyAdmin), res);
 
     expect(res.status.mock.calls.map((c) => c[0])).toContain(403);
   });

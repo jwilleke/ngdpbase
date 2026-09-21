@@ -13,9 +13,7 @@
  *   POST   /admin/users          (adminCreateUser)
  *   PUT    /admin/users/:username (adminUpdateUser)
  *   DELETE /admin/users/:username (adminDeleteUser)
- *   PUT    /admin/roles/:role    (adminUpdateRole)
- *   POST   /admin/roles          (adminCreateRole)
- *   DELETE /admin/roles/:role    (adminDeleteRole)
+ *   PUT / POST / DELETE /admin/roles — not routed (#1216)
  *   GET    /admin/users/:username/edit (userEdit)
  *   GET    /admin/backup
  *   POST   /admin/reindex
@@ -118,10 +116,7 @@ const mockUserManager = {
   destroySession: vi.fn(),
   getSession: vi.fn(),
   createUser: vi.fn(),
-  deleteUser: vi.fn(),
-  updateRolePermissions: vi.fn(),
-  createRole: vi.fn(),
-  deleteRole: vi.fn()
+  deleteUser: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -308,9 +303,6 @@ function resetMocks() {
   mockUserManager.getSession.mockResolvedValue(null);
   mockUserManager.createUser.mockResolvedValue(true);
   mockUserManager.deleteUser.mockResolvedValue(true);
-  mockUserManager.updateRolePermissions.mockResolvedValue(true);
-  mockUserManager.createRole.mockResolvedValue(true);
-  mockUserManager.deleteRole.mockResolvedValue(true);
 
   mockNotificationManager.getNotifications.mockReturnValue([]);
   mockNotificationManager.getAllNotifications.mockReturnValue([]);
@@ -639,50 +631,20 @@ describe('WikiRoutes — coverage batch 5', () => {
     });
   });
 
-  // ── PUT /admin/roles/:role (adminUpdateRole) ──────────────────────────────────
+  // ── /admin/roles is read-only (#1216) ─────────────────────────────────────────
 
-  describe('PUT /admin/roles/:role', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .put('/admin/roles/editor')
+  describe('/admin/roles has no write routes (#1216)', () => {
+    // Roles are edited in Configuration. The old PUT / POST / DELETE called
+    // UserManager methods that only threw, so an admin's Save was a 500.
+    test.each([
+      ['put', '/admin/roles/editor'],
+      ['post', '/admin/roles'],
+      ['delete', '/admin/roles/editor']
+    ] as const)('%s %s is not routed, even for an admin', async (method, url) => {
+      const res = await request(app)[method](url)
         .set('x-csrf-token', 'test-csrf-token')
-        .send({ roleName: 'editor', permissions: ['page-read', 'page-edit'] });
-      expect(res.status).toBe(403);
-    });
-
-    test('returns 200 on successful role update', async () => {
-      const res = await request(app)
-        .put('/admin/roles/editor')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ roleName: 'editor', permissions: ['page-read', 'page-edit'], displayName: 'Editor' });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-    });
-  });
-
-  // ── POST /admin/roles (adminCreateRole) ──────────────────────────────────────
-
-  describe('POST /admin/roles', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .post('/admin/roles')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ roleName: 'moderator' });
-      expect(res.status).toBe(403);
-    });
-  });
-
-  // ── DELETE /admin/roles/:role (adminDeleteRole) ───────────────────────────────
-
-  describe('DELETE /admin/roles/:role', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .delete('/admin/roles/editor')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(403);
+        .send({ roleName: 'editor' });
+      expect(res.status).toBe(404);
     });
   });
 

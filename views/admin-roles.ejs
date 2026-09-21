@@ -7,7 +7,10 @@
     </a>
 </div>
 
-<%# #1216: this page used to say it defined each role's permissions, and that page-level
+<%# #1216: read-only. Its Save, Delete and create buttons called UserManager methods that
+    only threw; roles are edited in Configuration, where the change is audited and read live.
+
+    This page used to say it defined each role's permissions, and that page-level
 
     ACLs restrict but cannot grant. Neither was true: permissions come from the access
 
@@ -21,15 +24,16 @@
 
         <strong>access policies</strong> (<code>ngdpbase.access.policies</code>), which you edit in
 
-        <a href="/admin/configuration">Configuration</a>. Changes there are recorded in the audit log.
+        <a href="/admin/configuration">Configuration</a>. The roles themselves are edited there too, as
+        <code>ngdpbase.roles.definitions</code>. Changes there are recorded in the audit log and take
+        effect at once.
 
     </p>
 
     <p class="mb-0">
 
-        The <strong>Security Policy Summary</strong> below shows the result for each role. It is
-
-        read-only here, and always matches the policies. A single page can be narrowed further
+        This page is read-only. The <strong>Security Policy Summary</strong> below shows the result
+        for each role, and always matches the policies. A single page can be narrowed further
 
         with its own <code>audience</code> or <code>access</code> settings.
 
@@ -52,42 +56,8 @@
                 <small class="text-muted"><%= role.name %></small>
             </div>
             <div class="card-body">
-                            <form class="role-form" data-role="<%= role.name %>">
-                                <div class="mb-3">
-                                    <label class="form-label">Display Name</label>
-                                    <input type="text" class="form-control" name="displayName"
-                                           value="<%= role.displayname %>" <%= role.issystem ? 'readonly' : '' %>
-                                           style="<%= role.issystem ? 'background-color: #ffffff !important; color: #212529 !important;' : '' %>">
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">Description</label>
-                                    <textarea class="form-control" name="description" rows="2"
-                                              <%= role.issystem ? 'readonly' : '' %>
-                                              style="<%= role.issystem ? 'background-color: #ffffff !important; color: #212529 !important;' : '' %>"><%= role.description %></textarea>
-                                </div>
-                                
-                                <div class="alert alert-info">
-                                    <small>
-                                        <i class="fas fa-info-circle"></i>
-                                        Permissions are managed through Access Policies, not directly on roles.
-                                        Visit the Policies page to configure role-based permissions.
-                                    </small>
-                                </div>
-
-                                <div class="d-flex justify-content-between">
-                                    <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-roles') %>>
-                                        <i class="fas fa-save"></i> Update Role
-                                    </button>
-                                    <% if (!role.issystem) { %>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" 
-                                            onclick="deleteRole('<%= role.name %>')">
-                                        <i class="fas fa-trash"></i> Delete
-                                    </button>
-                                    <% } %>
-                                </div>
-            </form>
-        </div>
+                <p class="mb-0"><%= role.description || '' %></p>
+            </div>
         <div class="card-footer">
             <small class="text-muted">
                 <% if (role.issystem) { %>
@@ -152,73 +122,5 @@
     </div>
 </div>
 
-<script>
-// Handle role form submissions
-document.querySelectorAll('.role-form').forEach(form => {
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const roleName = form.dataset.role;
-        const formData = new FormData(form);
-        
-        // Get all checked permissions
-        const permissions = Array.from(form.querySelectorAll('input[name="permissions"]:checked'))
-            .map(cb => cb.value);
-        
-        const data = {
-            permissions: permissions,
-            displayName: formData.get('displayName'),
-            description: formData.get('description')
-        };
-        
-        try {
-            // #727: state-changing request needs the CSRF token (#663).
-            const response = await (window.csrfFetch || fetch)(`/admin/roles/${roleName}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                // Show success message
-                showAlert('success', `Role "${roleName}" updated successfully`);
-            } else {
-                showAlert('danger', result.message || 'Failed to update role');
-            }
-        } catch (err) {
-            console.error('Error updating role:', err);
-            showAlert('danger', 'Error updating role');
-        }
-    });
-});
-
-function showAlert(type, message) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    const container = document.querySelector('.container-fluid');
-    container.insertBefore(alertDiv, container.firstChild);
-    
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => {
-        alertDiv.remove();
-    }, 3000);
-}
-
-function deleteRole(roleName) {
-    if (confirm(`Are you sure you want to delete the role "${roleName}"?`)) {
-        // Implement delete functionality
-        console.log('Delete role:', roleName);
-    }
-}
-</script>
 
 <%- include('footer') %>

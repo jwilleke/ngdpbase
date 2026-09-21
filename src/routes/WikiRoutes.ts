@@ -266,9 +266,6 @@ interface IUserManager {
   getUserPermissions(username: string): Promise<string[]>;
   getPermissions(): Map<string, string>;
   getRoles(): unknown[];
-  createRole(data: unknown): Promise<unknown>;
-  deleteRole(name: string): Promise<unknown>;
-  updateRolePermissions(role: string, permissions: unknown): Promise<unknown>;
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
@@ -10245,11 +10242,10 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      // #1029: viewing the role catalogue is separated from editing it.
-      // adminCreateRole / adminUpdateRole / adminDeleteRole all still require
-      // `admin-roles`, so a read-only admin can see how permissions are
-      // composed — which is the most interesting screen to demonstrate — with
-      // no path to granting itself anything.
+      // #1029: a read-only admin may see how permissions are composed.
+      // #1216: the page is read-only for everyone — roles are edited in
+      // Configuration (`ngdpbase.roles.definitions`), so there is nothing
+      // here to grant anything with.
       if (
         !currentUser ||
         !(await this.hasAdminViewAccess(wikiContext) || await wikiContext.hasPermission('admin-roles'))
@@ -10289,152 +10285,6 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error loading admin roles:', err);
       return res.status(500).send('Error loading role management');
-    }
-  }
-
-  /**
-   * Update role permissions (admin only)
-   */
-  async adminUpdateRole(req: Request, res: Response) {
-    try {
-      const userManager = this.engine.getManager('UserManager');
-      const wikiContext = this.createWikiContext(req);
-      const currentUser = wikiContext.userContext;
-
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-roles'))
-      ) {
-        return res
-          .status(403)
-          .json({ success: false, message: 'Access denied' });
-      }
-
-      const { roleName, permissions, displayName, description } = req.body;
-
-      if (!roleName) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Role name required' });
-      }
-
-      const success = await userManager.updateRolePermissions(roleName, {
-        permissions: permissions || [],
-        displayName: displayName || roleName,
-        description: description || ''
-      });
-
-      if (success) {
-        return res.json({ success: true, message: 'Role updated successfully' });
-      } else {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Failed to update role' });
-      }
-    } catch (err: unknown) {
-      logger.error('Error updating role:', err);
-      return res.status(500).json({ success: false, message: 'Error updating role' });
-    }
-  }
-
-  /**
-   * Create new role (admin only)
-   */
-  async adminCreateRole(req: Request, res: Response) {
-    try {
-      const userManager = this.engine.getManager('UserManager');
-      const wikiContext = this.createWikiContext(req);
-      const currentUser = wikiContext.userContext;
-
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-roles'))
-      ) {
-        return res
-          .status(403)
-          .json({ success: false, message: 'Access denied' });
-      }
-
-      const { name, displayName, description, permissions } = req.body;
-
-      if (!name) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Role name required' });
-      }
-
-      const roleData = {
-        name,
-        displayName: displayName || name,
-        description: description || '',
-        permissions: Array.isArray(permissions) ? permissions : []
-      };
-
-      const role = await userManager.createRole(roleData);
-
-      if (role) {
-        return res.json({ success: true, message: 'Role created successfully', role });
-      } else {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Failed to create role' });
-      }
-    } catch (err: unknown) {
-      logger.error('Error creating role:', err);
-      if (getErrorMessage(err) === 'Role already exists') {
-        return res
-          .status(409)
-          .json({ success: false, message: 'Role already exists' });
-      } else {
-        return res
-          .status(500)
-          .json({ success: false, message: 'Error creating role' });
-      }
-    }
-  }
-
-  /**
-   * Delete role (admin only)
-   */
-  async adminDeleteRole(req: Request, res: Response) {
-    try {
-      const userManager = this.engine.getManager('UserManager');
-      const wikiContext = this.createWikiContext(req);
-      const currentUser = wikiContext.userContext;
-
-      if (
-        !currentUser ||
-        !(await wikiContext.hasPermission('admin-roles'))
-      ) {
-        return res
-          .status(403)
-          .json({ success: false, message: 'Access denied' });
-      }
-
-      const { role } = req.params;
-
-      if (!role) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Role name required' });
-      }
-
-      await userManager.deleteRole(role);
-
-      return res.json({ success: true, message: 'Role deleted successfully' });
-    } catch (err: unknown) {
-      logger.error('Error deleting role:', err);
-      if (getErrorMessage(err) === 'Role not found') {
-        return res.status(404).json({ success: false, message: 'Role not found' });
-      } else if (getErrorMessage(err) === 'Cannot delete system role') {
-        return res
-          .status(403)
-          .json({ success: false, message: 'Cannot delete system role' });
-      } else {
-        return res
-          .status(500)
-          .json({ success: false, message: 'Error deleting role' });
-      }
     }
   }
 
@@ -14622,11 +14472,6 @@ ${panes}
       this.adminDeleteUser(req, res)
     );
     app.get('/admin/roles', (req: Request, res: Response) => this.adminRoles(req, res));
-    app.post('/admin/roles', (req: Request, res: Response) => this.adminCreateRole(req, res));
-    app.put('/admin/roles/:role', (req: Request, res: Response) => this.adminUpdateRole(req, res));
-    app.delete('/admin/roles/:role', (req: Request, res: Response) =>
-      this.adminDeleteRole(req, res)
-    );
     app.get('/admin/settings', (req: Request, res: Response) => this.adminSettings(req, res));
     app.post('/admin/settings/theme', (req: Request, res: Response) => this.adminUpdateTheme(req, res));
     app.post('/admin/settings/general', (req: Request, res: Response) => this.adminUpdateGeneralSettings(req, res));

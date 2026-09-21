@@ -181,12 +181,11 @@ const demoAddon = {
 
   async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
     // The `demo-admin` role and its access policy live in
-    // config/app-default-config.json, which is where custom roles belong —
-    // UserManager.createRole() says so explicitly, and it is the only place
-    // that works: UserManager snapshots ngdpbase.roles.definitions during
-    // initialize(), long before AddonsManager loads, so a role injected here
-    // at runtime is enforced by PolicyEvaluator but never appears in the
-    // user-edit role picker. Symptom without a visible cause.
+    // config/app-default-config.json. Roles are defined only in configuration
+    // (`ngdpbase.roles.definitions`), which UserManager reads live (#1431);
+    // there is no API to create one. An earlier revision injected the role at
+    // runtime, and it was enforced but never appeared in the user-edit role
+    // picker.
     //
     // Page seeding is handled by AddonsManager from `pages/`.
     logger.info('[demo addon] Enabled — demo pages seeded from addons/demo/pages');

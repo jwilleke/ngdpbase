@@ -2,12 +2,11 @@
  * Demo addon registration (#1029).
  *
  * The addon deliberately registers NOTHING at runtime. The `demo-admin` role
- * and its access policy live in `config/app-default-config.json`, which is both
- * where custom roles belong (`UserManager.createRole()` says so) and the only
- * place that works: `UserManager` snapshots `ngdpbase.roles.definitions` during
- * `initialize()`, long before `AddonsManager` loads, so a role injected at
- * runtime is enforced by PolicyEvaluator yet never appears in the user-edit
- * role picker — a symptom with no visible cause.
+ * and its access policy live in `config/app-default-config.json`. Roles are
+ * defined only in configuration (`ngdpbase.roles.definitions`), which
+ * `UserManager` reads live (#1431); there is no API to create one. A role
+ * injected at runtime was enforced by PolicyEvaluator yet never appeared in the
+ * user-edit role picker — a symptom with no visible cause.
  *
  * An earlier revision did inject it, and that is exactly what happened.
  */

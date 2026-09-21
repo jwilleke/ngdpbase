@@ -105,10 +105,7 @@ const mockUserManager = {
   destroySession: vi.fn(),
   getSession: vi.fn(),
   createUser: vi.fn(),
-  deleteUser: vi.fn(),
-  updateRolePermissions: vi.fn(),
-  createRole: vi.fn(),
-  deleteRole: vi.fn()
+  deleteUser: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -305,9 +302,6 @@ function resetMocks() {
   mockUserManager.getSession.mockResolvedValue(null);
   mockUserManager.createUser.mockResolvedValue(true);
   mockUserManager.deleteUser.mockResolvedValue(true);
-  mockUserManager.updateRolePermissions.mockResolvedValue(true);
-  mockUserManager.createRole.mockResolvedValue({ name: 'newrole', displayName: 'New Role', permissions: [] });
-  mockUserManager.deleteRole.mockResolvedValue(undefined);
 
   mockNotificationManager.getNotifications.mockReturnValue([]);
   mockNotificationManager.getAllNotifications.mockReturnValue([]);
@@ -506,80 +500,6 @@ describe('WikiRoutes — coverage batch 11', () => {
     test('renders 200 with role list', async () => {
       const res = await request(app).get('/admin/roles');
       expect(res.status).toBe(200);
-    });
-  });
-
-  describe('POST /admin/roles (adminCreateRole)', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .post('/admin/roles')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ name: 'newrole' });
-      expect(res.status).toBe(403);
-    });
-
-    test('returns 400 when no role name provided', async () => {
-      const res = await request(app)
-        .post('/admin/roles')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({});
-      expect(res.status).toBe(400);
-    });
-
-    test('returns 200 when role created', async () => {
-      const res = await request(app)
-        .post('/admin/roles')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ name: 'newrole', displayName: 'New Role' });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-    });
-  });
-
-  describe('PUT /admin/roles/:role (adminUpdateRole)', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .put('/admin/roles/admin')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ roleName: 'admin', permissions: ['read'] });
-      expect(res.status).toBe(403);
-    });
-
-    test('returns 400 when no role name in body', async () => {
-      const res = await request(app)
-        .put('/admin/roles/admin')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ permissions: ['read'] });
-      expect(res.status).toBe(400);
-    });
-
-    test('returns 200 when role updated', async () => {
-      const res = await request(app)
-        .put('/admin/roles/admin')
-        .set('x-csrf-token', 'test-csrf-token')
-        .send({ roleName: 'admin', permissions: ['read', 'write'] });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-    });
-  });
-
-  describe('DELETE /admin/roles/:role (adminDeleteRole)', () => {
-    test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
-      const res = await request(app)
-        .delete('/admin/roles/testrole')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(403);
-    });
-
-    test('returns 200 when role deleted', async () => {
-      const res = await request(app)
-        .delete('/admin/roles/testrole')
-        .set('x-csrf-token', 'test-csrf-token');
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
     });
   });
 

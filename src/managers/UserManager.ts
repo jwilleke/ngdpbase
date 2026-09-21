@@ -234,15 +234,6 @@ interface UserContext {
 }
 
 /**
- * Role creation data (deprecated)
- */
-interface RoleCreateData {
-  name: string;
-  displayName?: string;
-  description?: string;
-}
-
-/**
  * UserManager - Handles user authentication, authorization, and roles
  *
  * Similar to JSPWiki's UserManager with role-based permissions. This manager
@@ -1416,21 +1407,6 @@ class UserManager extends BaseManager {
 
   getRole(roleName: string): Role | null {
     return this.roles.get(roleName) || null;
-  }
-
-  createRole(roleData: RoleCreateData): never {
-    logger.warn(`[DEPRECATED] createRole() is deprecated. Add role '${roleData.name}' to config/app-custom-config.json`);
-    throw new Error('createRole() is deprecated. Please add custom roles to config/app-custom-config.json');
-  }
-
-  deleteRole(roleName: string): never {
-    logger.warn(`[DEPRECATED] deleteRole() is deprecated. Remove role '${roleName}' from config`);
-    throw new Error('deleteRole() is deprecated. Please remove custom roles from config');
-  }
-
-  updateRolePermissions(_roleName: string, _updates: unknown): never {
-    logger.warn('[DEPRECATED] updateRolePermissions() is deprecated.');
-    throw new Error('updateRolePermissions() is deprecated. Use config files and policies');
   }
 
   /**

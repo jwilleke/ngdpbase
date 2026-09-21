@@ -685,19 +685,15 @@ await pageManager.savePage(user.displayName, populatedContent, metadata, user);
 - `loadRoles()` - Roles loaded in initialize() from config
 - `saveRoles()` - Roles managed in config files
 
-#### ⚠️ Deprecated Methods
+#### Removed role methods
 
-These methods now throw errors with migration instructions:
-
-- `createRole(roleData)` - Add roles to `app-custom-config.json` instead
-- `deleteRole(roleName)` - Remove from config files instead
-- `updateRolePermissions(roleName, updates)` - Use policies in config instead
+`createRole()`, `deleteRole()` and `updateRolePermissions()` are gone ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)); they only ever threw. There is no API to change a role: roles are edited in Configuration, as `ngdpbase.roles.definitions`, and what a role may do in `ngdpbase.access.policies`. Both are read live, so a change applies at once. `/admin/roles` is read-only.
 
 #### ✅ New Behavior
 
 - All configuration keys are now __lowercase__ (`ngdpbase.user.provider.storagedir`)
 - Roles loaded from `ngdpbase.roles.definitions` in config
-- Permissions queried from PolicyManager (not hardcoded in roles)
+- Permissions derived from the access policies (not hardcoded in roles)
 - Custom roles added via `app-custom-config.json` (auto-merged by ConfigurationManager)
 
 ---
@@ -726,14 +722,7 @@ role.permissions = ['page:read', 'page:edit'];
 
 ### 2. Add Custom Roles in Config
 
-❌ __Don't__ use `createRole()`:
-
-```javascript
-// Deprecated - throws error
-await userManager.createRole({ name: 'moderator', ... });
-```
-
-✅ __Do__ add to `app-custom-config.json`:
+There is no role API. Add the role to `app-custom-config.json` (or in Configuration):
 
 ```json
 {

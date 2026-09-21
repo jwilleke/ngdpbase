@@ -59,11 +59,6 @@ const SURFACES: Surface[] = [
     mustNotContain: ['fetch(`/admin/users/${username}`']
   },
   {
-    file: 'views/admin-roles.ejs',
-    mustContain: '(window.csrfFetch || fetch)(`/admin/roles/${roleName}`',
-    mustNotContain: ['fetch(`/admin/roles/${roleName}`']
-  },
-  {
     file: 'views/export.ejs',
     mustContain: '(window.csrfFetch || fetch)(url, {',
     mustNotContain: ['fetch(url, {']
