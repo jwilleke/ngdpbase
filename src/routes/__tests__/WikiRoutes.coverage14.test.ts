@@ -83,8 +83,6 @@ const mockUserManager = {
   getUsers: vi.fn(),
   resolveUserRoles: vi.fn().mockResolvedValue([]),
   hasRole: vi.fn().mockResolvedValue(false),
-  getRoles: vi.fn(),
-  getPermissions: vi.fn(),
   getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
@@ -286,8 +284,6 @@ function resetMocks() {
   mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getRoles.mockReturnValue(new Map());
-  mockUserManager.getPermissions.mockReturnValue(new Map());
   mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });

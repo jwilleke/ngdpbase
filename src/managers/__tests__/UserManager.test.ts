@@ -92,11 +92,6 @@ describe('UserManager', () => {
     test('should get configuration from ConfigurationManager', () => {
       expect(mockConfigurationManager.getProperty).toHaveBeenCalledWith('ngdpbase.user.provider', expect.any(String));
     });
-
-    test('should initialize role and permission maps', () => {
-      expect(userManager.roles).toBeInstanceOf(Map);
-      expect(userManager.permissions).toBeInstanceOf(Map);
-    });
   });
 
   describe('getCurrentUserProvider()', () => {
@@ -238,19 +233,6 @@ describe('UserManager', () => {
     // inherits these roles.
     afterEach(() => {
       mockConfigurationManager.getProperty.mockImplementation(baseGetProperty);
-    });
-
-    test('getRole() should return role definition', () => {
-      const role = userManager.getRole('admin');
-      expect(role).toBeTruthy();
-      expect(role.name).toBe('admin');
-      expect(role.permissions).toContain('admin');
-    });
-
-    test('getRoles() should return all roles', () => {
-      const roles = userManager.getRoles();
-      expect(Array.isArray(roles)).toBe(true);
-      expect(roles.length).toBe(2);
     });
 
     test('hasRole() should check user roles via RoleManager', async () => {

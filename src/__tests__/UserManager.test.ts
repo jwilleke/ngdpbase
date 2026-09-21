@@ -104,8 +104,6 @@ describe('UserManager', () => {
       expect(userManager).toBeDefined();
       expect(userManager.engine).toBe(mockEngine);
       expect(userManager.provider).toBeNull();
-      expect(userManager.roles).toBeInstanceOf(Map);
-      expect(userManager.permissions).toBeInstanceOf(Map);
     });
   });
 
@@ -125,20 +123,6 @@ describe('UserManager', () => {
       expect(mockEngine.getManager).toHaveBeenCalledWith('ConfigurationManager');
       expect(mockConfigManager.getProperty).toHaveBeenCalledWith('ngdpbase.user.provider.default', 'fileuserprovider');
       expect(userManager.providerClass).toBe('FileUserProvider');
-    });
-
-    test('should load role definitions from config', async () => {
-      await userManager.initialize();
-
-      expect(userManager.roles.size).toBeGreaterThan(0);
-      expect(userManager.roles.has('admin')).toBe(true);
-      expect(userManager.roles.has('reader')).toBe(true);
-    });
-
-    test('should initialize permissions registry', async () => {
-      await userManager.initialize();
-
-      expect(userManager.permissions.size).toBeGreaterThan(0);
     });
 
     test('should set configuration values', async () => {
@@ -225,45 +209,16 @@ describe('UserManager', () => {
     });
   });
 
-  describe('role management', () => {
-    beforeEach(async () => {
-      await userManager.initialize();
-    });
-
-    test('should get role by name', () => {
-      const adminRole = userManager.getRole('admin');
-      expect(adminRole).toBeDefined();
-      expect(adminRole.name).toBe('admin');
-    });
-
-    test('should return null for non-existent role', () => {
-      const role = userManager.getRole('nonexistent');
-      expect(role).toBeNull();
-    });
-
-    test('should get all roles', () => {
-      const roles = userManager.getRoles();
-      expect(Array.isArray(roles)).toBe(true);
-      expect(roles.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('permission management', () => {
-    beforeEach(async () => {
-      await userManager.initialize();
-    });
-
-    test('should get all permissions', () => {
-      const permissions = userManager.getPermissions();
-      expect(permissions).toBeInstanceOf(Map);
-      expect(permissions.size).toBeGreaterThan(0);
-    });
-
-    test('should check permissions include standard ones', () => {
-      const permissions = userManager.getPermissions();
-      // Standard permissions should be defined
-      expect(permissions.has('page-read') || permissions.has('admin-system')).toBe(true);
-    });
+  describe('the role and permission catalogues (#1431 step 11)', () => {
+    // They are declarations, owned by ConfigurationManager: a caller reads
+    // ngdpbase.roles.definitions / ngdpbase.permissions.definitions through
+    // getProperty. UserManager is not a second door to them.
+    test.each(['getRoles', 'getRole', 'getPermissions', 'roles', 'permissions'])(
+      'UserManager has no %s', async (name) => {
+        await userManager.initialize();
+        expect(name in userManager).toBe(false);
+      }
+    );
   });
 
   describe('anonymous and special users', () => {

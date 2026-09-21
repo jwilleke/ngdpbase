@@ -95,8 +95,6 @@ const mockUserManager = {
   getUsers: vi.fn(),
   resolveUserRoles: vi.fn().mockResolvedValue([]),
   hasRole: vi.fn().mockResolvedValue(false),
-  getRoles: vi.fn(),
-  getPermissions: vi.fn(),
   getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
@@ -292,8 +290,6 @@ function resetMocks() {
     username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {}
   });
   mockUserManager.getUsers.mockResolvedValue([{ username: 'testuser' }]);
-  mockUserManager.getRoles.mockReturnValue(new Map([['admin', { name: 'admin', displayName: 'Admin', permissions: [] }]]));
-  mockUserManager.getPermissions.mockReturnValue(new Map([['read', 'Can read pages']]));
   mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });

@@ -49,17 +49,18 @@ function makeRoutes(granted: string[]) {
     getManager: vi.fn((name: string) => {
       if (name === 'UserManager') {
         return {
-          hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))),
-          // adminRoles renders the role × permission matrix from these.
-          getRoles: () => new Map([['admin', { name: 'admin', permissions: [] }]]),
-          getPermissions: () => new Map([['admin-read', 'View administration screens']])
+          hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p)))
         };
       }
       if (name === 'ConfigurationManager') {
         return {
-          getProperty: vi.fn((key: string, def: unknown) =>
-            key === 'ngdpbase.config.secret-keys' ? ['ngdpbase.session.secret'] : def
-          ),
+          // adminRoles renders the role × permission matrix from the two
+          // catalogues, which it reads here, through their owner (#1431).
+          getProperty: vi.fn((key: string, def: unknown) => ({
+            'ngdpbase.config.secret-keys': ['ngdpbase.session.secret'],
+            'ngdpbase.roles.definitions': { admin: { name: 'admin' } },
+            'ngdpbase.permissions.definitions': { 'admin-read': { description: 'View administration screens' } }
+          } as Record<string, unknown>)[key] ?? def),
           getDefaultProperties: () => ({ 'ngdpbase.session.secret': 'top-secret' }),
           getCustomProperties: () => ({}),
           getAllProperties: () => ({ 'ngdpbase.session.secret': 'top-secret' })

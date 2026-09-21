@@ -118,10 +118,6 @@ vi.mock('../../WikiEngine', () => {
         roles: ['authenticated'] 
       }
     ]),
-    getRoles: vi.fn().mockResolvedValue([
-      { name: 'admin', permissions: ['read', 'write', 'admin'] },
-      { name: 'authenticated', permissions: ['read', 'write'] }
-    ]),
     createUser: vi.fn().mockResolvedValue(true),
     updateUser: vi.fn().mockResolvedValue(true),
     deleteUser: vi.fn().mockResolvedValue(true),
@@ -147,11 +143,6 @@ vi.mock('../../WikiEngine', () => {
       lastLogin: new Date('2024-01-01'),
       preferences: {}
     }),
-    getPermissions: vi.fn().mockReturnValue(new Map([
-      ['read', 'Read access to pages'],
-      ['write', 'Write access to pages'],
-      ['admin', 'Administrative access']
-    ])),
     getUserPermissions: vi.fn().mockResolvedValue(['read', 'write']),
     createSession: vi.fn().mockResolvedValue('session-id-123'),
     isUserInRole: vi.fn().mockReturnValue(true)
@@ -498,15 +489,6 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       { username: 'admin', roles: ['admin'] },
       { username: 'testuser', roles: ['authenticated'] }
     ]);
-    mockUserManager.getRoles.mockResolvedValue([
-      { name: 'admin', permissions: ['read', 'write', 'admin'] },
-      { name: 'authenticated', permissions: ['read', 'write'] }
-    ]);
-    mockUserManager.getPermissions.mockReturnValue(new Map([
-      ['read', 'Read access to pages'],
-      ['write', 'Write access to pages'],
-      ['admin', 'Administrative access']
-    ]));
     mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
     mockPageManager.getPage.mockImplementation((pageName) => {
       if (pageName === 'Footer' || pageName === 'LeftMenu') {
@@ -1235,11 +1217,6 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           isAdmin: true,
           roles: ['admin']
         });
-        mockUserManager.getRoles.mockReturnValue(new Map([
-          ['admin', { name: 'admin', permissions: ['read', 'write', 'admin'] }],
-          ['authenticated', { name: 'authenticated', permissions: ['read', 'write'] }]
-        ]));
-
         const response = await request(app).get('/admin/roles');
         expect(response.status).toBe(200);
       });

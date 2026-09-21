@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword, needsRehash, isLegacyHash } from '../util
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { UserProvider, ProviderInfo } from '../types/Provider.js';
-import { User, Role, UserPreferences, UserSession } from '../types/User.js';
+import { User, UserPreferences, UserSession } from '../types/User.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PersonManager from './PersonManager.js';
 import type OrganizationManager from './OrganizationManager.js';
@@ -274,34 +274,6 @@ interface UserContext {
 class UserManager extends BaseManager {
   private provider: UserProvider | null = null;
   private providerClass?: string;
-  /**
-   * The role catalogue, read live from `ngdpbase.roles.definitions` — which
-   * roles EXIST, and how they are shown. It grants nothing: the policies do.
-   *
-   * Read on every use, like `permissions` below and the policies
-   * (src/security/policies.ts). It used to be copied once at boot, so a role
-   * an administrator added in Configuration could not be assigned to anyone
-   * ("Role not found") and did not appear on /admin/roles or in any role
-   * picker until the server restarted; a removed role stayed assignable. The
-   * reasoning below for permissions applies word for word.
-   */
-  private get roles(): Map<string, Role> {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const defs = (configManager?.getProperty('ngdpbase.roles.definitions', {}) ?? {}) as Record<string, Role>;
-    return new Map(Object.entries(defs));
-  }
-  /**
-   * The permission catalog, read live from `ngdpbase.permissions.definitions`
-   * (#1220). Not cached: a cached copy of an authorization attribute is not
-   * authoritative (guiding-framework.md), and a hardcoded copy is how
-   * `admin-read` came to be declared in configuration and "never registered"
-   * (#1190). Format: {target}-{action} — target-first, hyphen-separated.
-   */
-  get permissions(): Map<string, string> {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const defs = (configManager?.getProperty('ngdpbase.permissions.definitions', {}) ?? {}) as Record<string, { description?: string }>;
-    return new Map(Object.entries(defs).map(([name, def]) => [name, def?.description ?? name]));
-  }
   private passwordSalt?: string;
 
   /**
@@ -380,13 +352,6 @@ class UserManager extends BaseManager {
     // It is read where it is actually needed, in createDefaultAdmin(), which
     // runs only when the user store is empty.
 
-    // The role catalogue is read live (see `roles`); say how many the
-    // configuration declares now, for the boot log.
-    logger.info(`👤 ${this.roles.size} role definitions declared in configuration`);
-
-    // Initialize permissions registry
-    this.initializePermissions();
-
     // Create the bootstrap admin if it is missing.
     //
     // This used to fire only on a COMPLETELY empty store. That left a trap
@@ -425,16 +390,6 @@ class UserManager extends BaseManager {
 
     const userCount = this.provider ? (await this.provider.getAllUsers()).size : 0;
     logger.info(`👤 UserManager initialized with ${userCount} users`);
-  }
-
-  /**
-   * Initialize the permissions registry with all available permissions
-   * @private
-   */
-  private initializePermissions(): void {
-    // #1220: nothing to copy — `permissions` reads configuration live. Say how
-    // many the configuration declares at this point, for the boot log.
-    logger.info(`👤 ${this.permissions.size} permissions declared in configuration`);
   }
 
   /**
@@ -1397,18 +1352,6 @@ class UserManager extends BaseManager {
     return results;
   }
 
-  getRoles(): Role[] {
-    return Array.from(this.roles.values());
-  }
-
-  getPermissions(): Map<string, string> {
-    return this.permissions;
-  }
-
-  getRole(roleName: string): Role | null {
-    return this.roles.get(roleName) || null;
-  }
-
   /**
    * Does this NAMED USER hold a permission? (#1173)
    *
@@ -1582,7 +1525,10 @@ class UserManager extends BaseManager {
     if (!user) {
       throw new Error('User not found');
     }
-    if (!this.roles.has(roleName)) {
+    // #1431: the role catalogue is a declaration, read through its owner.
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declared = configManager?.getProperty('ngdpbase.roles.definitions', {}) as Record<string, unknown>;
+    if (!Object.hasOwn(declared ?? {}, roleName)) {
       throw new Error('Role not found');
     }
     // syncRoleAdd is idempotent (no-op when the Person is already a member),

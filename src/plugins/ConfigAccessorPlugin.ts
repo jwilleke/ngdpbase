@@ -73,11 +73,6 @@ interface ConfigurationManager {
   getFeatureConfig(name: string): Record<string, unknown> | null;
 }
 
-interface UserManager {
-  getRoles(): Role[];
-  getPermissions(): Map<string, string>;
-}
-
 interface UserKeyword {
   label: string;
   description?: string;
@@ -171,12 +166,8 @@ function processEscapeSequences(str: string): string {
 /**
  * Display all roles
  */
-function displayRoles(userManager: UserManager | null): string {
-  if (!userManager) {
-    return '<p class="error">UserManager not available</p>';
-  }
-
-  const roles = userManager.getRoles();
+function displayRoles(configManager: ConfigurationManager): string {
+  const roles = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
 
   if (!roles || roles.length === 0) {
     return '<p class="text-muted">No roles configured</p>';
@@ -240,30 +231,24 @@ function displayRoles(userManager: UserManager | null): string {
 /**
  * Display Security Policy Summary - permissions matrix showing which roles have which permissions
  */
-function displayPermissions(userManager: UserManager | null, configManager: ConfigurationManager | null): string {
-  if (!userManager) {
-    return '<p class="error">UserManager not available</p>';
-  }
-
+function displayPermissions(configManager: ConfigurationManager): string {
   const granted = rolePermissionsFromPolicies(configManager);
-  const roles = userManager.getRoles();
-  const permissions = userManager.getPermissions();
+  const roles = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
+  const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>;
 
   if (!roles || roles.length === 0) {
     return '<p class="text-muted">No roles configured</p>';
   }
 
-  if (!permissions || permissions.size === 0) {
+  if (Object.keys(permissions).length === 0) {
     return '<p class="text-muted">No permissions defined in the system</p>';
   }
 
-  // Convert permissions Map to array
-  const permissionsArray = Array.from(permissions.entries()).map(([key, desc]) => ({
+  const permissionsArray = Object.entries(permissions).map(([key, def]) => ({
     key,
-    description: desc
+    description: def?.description ?? key
   }));
 
-  // Roles are already an array from getRoles()
   const rolesArray: Role[] = roles;
 
   let html = '<div class="config-accessor-plugin">\n';
@@ -332,12 +317,8 @@ function displayPermissions(userManager: UserManager | null, configManager: Conf
  */
 function displayUserSummary(
   context: ExtendedPluginContext,
-  userManager: UserManager | null,
-  configManager: ConfigurationManager | null
+  configManager: ConfigurationManager
 ): string {
-  if (!userManager) {
-    return '<p class="error">UserManager not available</p>';
-  }
 
   // Get current user from context (WikiContext uses userContext, not currentUser)
   const currentUser = context?.userContext || context?.currentUser;
@@ -360,8 +341,7 @@ function displayUserSummary(
   const userRoles = currentUser.roles || [];
 
   // Get all permissions for the user's roles
-  const allRoles = userManager.getRoles();
-  const rolesArray: Role[] = allRoles;
+  const rolesArray = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
 
   // Collect user's permissions from their roles, as the policies grant them (#1431)
   const granted = rolePermissionsFromPolicies(configManager);
@@ -453,10 +433,10 @@ function displayUserSummary(
     html += '          <tbody>\n';
 
     // Get permissions details
-    const allPermissions = userManager.getPermissions();
+    const allPermissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>;
 
     for (const permKey of permissionsArray) {
-      const permDesc = allPermissions.get(permKey) || 'No description';
+      const permDesc = allPermissions[permKey]?.description || 'No description';
 
       // Find which roles grant this permission
       const grantingRoles = roleDetails
@@ -1682,7 +1662,6 @@ const ConfigAccessorPlugin: SimplePlugin = {
     try {
       // Get managers from engine
       const configManager = context?.engine?.getManager?.('ConfigurationManager') as ConfigurationManager | null;
-      const userManager = context?.engine?.getManager?.('UserManager') as UserManager | null;
 
       if (!configManager) {
         return '<p class="error">ConfigurationManager not available</p>';
@@ -1701,14 +1680,14 @@ const ConfigAccessorPlugin: SimplePlugin = {
       // Otherwise handle type-based display (type is guaranteed non-null here due to check above)
       switch ((type ?? '').toLowerCase()) {
       case 'roles':
-        return displayRoles(userManager);
+        return displayRoles(configManager);
 
       case 'permissions':
       case 'policy-summary':
-        return displayPermissions(userManager, configManager);
+        return displayPermissions(configManager);
 
       case 'user-summary':
-        return displayUserSummary(context, userManager, configManager);
+        return displayUserSummary(context, configManager);
 
       case 'actions':
         return displayActions(configManager, valueonly, before, after);

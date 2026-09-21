@@ -264,8 +264,6 @@ interface IUserManager {
   hasRole(username: string, roleName: string): Promise<boolean>;
   resolveUserRoles(username: string): Promise<string[]>;
   getUserPermissions(username: string): Promise<string[]>;
-  getPermissions(): Map<string, string>;
-  getRoles(): unknown[];
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
@@ -9650,7 +9648,7 @@ ${panes}
 
       const commonData = await this.getCommonTemplateData(req);
       const users = await userManager.getUsers();
-      const roles = userManager.getRoles();
+      const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
       // Get all required pages for the admin dashboard
       const pageManager = this.engine.getManager('PageManager');
@@ -10011,7 +10009,7 @@ ${panes}
         ...u,
         roles: u.username ? await userManager.resolveUserRoles(u.username) : []
       })));
-      const roles = userManager.getRoles();
+      const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
       // #1303: the four quick-filter cards are the canonical control now. They
       // were the only working instance of this interaction in the application,
@@ -10096,7 +10094,7 @@ ${panes}
       }
 
       const commonData = await this.getCommonTemplateData(req);
-      const roles = userManager.getRoles();
+      const roles = Object.values(this.engine.getManager('ConfigurationManager').getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>);
 
       return res.render('admin-user-edit', {
         ...commonData,
@@ -10238,7 +10236,6 @@ ${panes}
    */
   async adminRoles(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
@@ -10260,26 +10257,25 @@ ${panes}
       }
 
       const commonData = await this.getCommonTemplateData(req);
-      const roles = userManager.getRoles();
-      const permissions = userManager.getPermissions();
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const roles = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>;
+      const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { description?: string }>;
       // #1431: each role's permission list is DERIVED from the access
       // policies, which are what grant. The catalogue's inline `permissions[]`
       // was a display copy kept matched by hand (#713), so this page could
       // state something the evaluator would never do.
-      const grantedByRole = rolePermissionListsFromPolicies(
-        this.engine.getManager('ConfigurationManager')
-      );
+      const grantedByRole = rolePermissionListsFromPolicies(configManager);
 
       return res.render('admin-roles', {
         ...commonData,
         title: 'Roles and Permissions',
-        roles: (Array.from(roles.values()) as Array<{ name: string }>).map((role) => ({
+        roles: Object.values(roles).map((role) => ({
           ...role,
           permissions: grantedByRole[role.name] ?? []
         })),
-        permissions: Array.from(permissions.entries() as Iterable<[string, string]>).map(([key, desc]) => ({
+        permissions: Object.entries(permissions).map(([key, def]) => ({
           key,
-          description: desc
+          description: def?.description ?? key
         }))
       });
     } catch (err: unknown) {

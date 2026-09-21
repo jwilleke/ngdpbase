@@ -267,7 +267,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
     }
 
     const username = await deriveUsername(entry.email, userManager);
-    const role = this.resolveDefaultRole(userManager);
+    const role = this.resolveDefaultRole();
 
     try {
       await userManager.createUser({
@@ -314,7 +314,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
    * `reader` with a warning — a typo should degrade to read-only, not throw
    * mid-signup or silently mint a more privileged account than intended.
    */
-  private resolveDefaultRole(userManager: UserManager): string {
+  private resolveDefaultRole(): string {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const configured = (configManager?.getProperty?.(
       'ngdpbase.auth.magic-link.registration.default-role',
@@ -323,7 +323,8 @@ export class MagicLinkAuthProvider implements AuthProvider {
 
     if (configured === 'reader') return 'reader';
 
-    if (userManager.getRole?.(configured) == null) {
+    const declared = configManager?.getProperty?.('ngdpbase.roles.definitions', {}) as Record<string, unknown> | undefined;
+    if (!Object.hasOwn(declared ?? {}, configured)) {
       logger.warn(
         `[MagicLinkAuthProvider] Unknown role "${configured}" in ` +
         'ngdpbase.auth.magic-link.registration.default-role — falling back to "reader"'

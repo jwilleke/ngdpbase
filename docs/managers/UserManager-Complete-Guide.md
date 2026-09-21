@@ -345,36 +345,12 @@ __Features:__
 
 ### Role Management
 
-#### `getRole(roleName)`
-
-Gets role metadata by name.
-
-__Parameters:__
-
-- `roleName` (string) - Role name
-
-__Returns:__ Role object or null
-
-__Example:__
+The role and permission catalogues are not read through `UserManager` ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 11). They are declarations, owned by `ConfigurationManager`:
 
 ```javascript
-const adminRole = userManager.getRole('admin');
-console.log(adminRole.displayname); // "Administrator"
-```
-
----
-
-#### `getRoles()`
-
-Gets all role definitions.
-
-__Returns:__ Array of role objects
-
-__Example:__
-
-```javascript
-const roles = userManager.getRoles();
-// Returns: [{ name: 'admin', displayname: 'Administrator', ... }, ...]
+const configManager = engine.getManager('ConfigurationManager');
+const roles = configManager.getProperty('ngdpbase.roles.definitions', {});
+const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {});
 ```
 
 ---

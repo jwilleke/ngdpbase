@@ -186,17 +186,24 @@ describe('MagicLinkAuthProvider', () => {
       return text.match(/token=([a-f0-9]{64})/)[1];
     };
 
-    /** Config stub honouring defaults, overridden per test. */
+    /**
+     * Config stub honouring defaults, overridden per test. The role catalogue
+     * is declared here, as in a running system: the provider reads it through
+     * ConfigurationManager (#1431 step 11).
+     */
     const withConfig = (overrides) => {
+      const config = {
+        'ngdpbase.roles.definitions': { reader: { name: 'reader' }, contributor: { name: 'contributor' } },
+        ...overrides
+      };
       mockConfigManager.getProperty = vi.fn((key, fallback) =>
-        key in overrides ? overrides[key] : fallback
+        key in config ? config[key] : fallback
       );
     };
 
     beforeEach(() => {
       mockUserManager.getUser = vi.fn().mockResolvedValue(undefined);
       mockUserManager.createUser = vi.fn().mockResolvedValue(undefined);
-      mockUserManager.getRole = vi.fn().mockReturnValue({ name: 'contributor' });
     });
 
     test('stays silent for an unknown email when auto-provision is off', async () => {
@@ -266,7 +273,6 @@ describe('MagicLinkAuthProvider', () => {
         'ngdpbase.auth.magic-link.auto-provision': true,
         'ngdpbase.auth.magic-link.registration.default-role': 'wizard'
       });
-      mockUserManager.getRole.mockReturnValue(null);
       mockUserManager.getUserByEmail.mockResolvedValue(undefined);
       await provider.initiate({ email: 'newbie@example.com' });
 
