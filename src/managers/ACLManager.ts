@@ -167,20 +167,6 @@ class ACLManager extends BaseManager {
 
 
   /**
-   * Parses JSPWiki-style ACL markup from page content
-   *
-   * Extracts ACL directives from page content in the format [{ALLOW action principals}].
-   * Multiple actions and principals can be comma-separated.
-   *
-   * @param {string} content - The page's raw markdown content
-   * @returns {Map<string, Set<string>>} Map of actions to sets of allowed principals
-   *
-   * @example
-   * const acl = aclManager.parsePageACL('[{ALLOW view All}] [{ALLOW edit Admin}]');
-   * // acl.get('view') => Set(['All'])
-   * // acl.get('edit') => Set(['Admin'])
-   */
-  /**
    * The PDP this manager asks for the delegation ceilings and, in the next
    * step, for the policy decision itself. Registered on the engine; built here
    * only when it is not, so tests that stand an ACLManager up alone still
@@ -194,31 +180,6 @@ class ACLManager extends BaseManager {
   }
 
   private _pdp?: PolicyDecisionPoint;
-
-  parsePageACL(content: string): Map<string, Set<string>> {
-    const acl = new Map<string, Set<string>>();
-    if (!content) return acl;
-
-    // Regex to match [{ALLOW action principals}]
-    const aclRegex = /\[\{\s*ALLOW\s+([a-z, ]+)\s+([^}]+)\s*\}\]/gi;
-    let match;
-
-    while ((match = aclRegex.exec(content)) !== null) {
-      const actions = match[1].split(',').map((s) => s.trim().toLowerCase());
-      const principals = match[2].split(',').map((s) => s.trim());
-
-      for (const action of actions) {
-        if (!acl.has(action)) {
-          acl.set(action, new Set());
-        }
-        const principalSet = acl.get(action);
-        if (principalSet) {
-          principals.forEach((p) => principalSet.add(p));
-        }
-      }
-    }
-    return acl;
-  }
 
   /**
    * Check page permission using WikiContext — rich-return form (#714 Slice F).
@@ -238,7 +199,6 @@ class ACLManager extends BaseManager {
    *   - `author_lock_deny`                         (Tier 0.5 — Slice A)
    *   - `frontmatter_principal_<p>` / `frontmatter_deny`  (Tier 1)
    *   - `<policyName>` / `global_policy`           (Tier 2)
-   *   - `page_acl_all` / `page_acl_role_<r>` / `page_acl_user`  (Tier 3)
    *   - `default_deny`                             (no tier decided)
    *
    * @async
@@ -272,10 +232,10 @@ class ACLManager extends BaseManager {
   }
 
   /**
-   * Internal evaluator — runs the 3-tier evaluator (Tier 0 private →
-   * Tier 0.5 author-lock → Tier 1 audience/access → Tier 2 global
-   * policies → Tier 3 deprecated page-ACL markup → default deny) and
-   * returns the rich `{ allowed, reason }` decision.
+   * Internal evaluator — walks the tiers in order (Tier -1 delegation
+   * ceilings → Tier 0 private → Tier 0.5 author-lock → Tier 1
+   * audience/access → Tier 2 global policies → default deny) and returns the
+   * rich `{ allowed, reason }` decision. First tier to answer wins.
    *
    * `evaluatePagePermission` (rich) and `checkPagePermissionWithContext`
    * (boolean) both delegate here.
@@ -287,7 +247,6 @@ class ACLManager extends BaseManager {
 
     const pageName = wikiContext.pageName;
     const userContext = wikiContext.userContext;
-    const pageContent = wikiContext.content;
 
     const roles = (userContext?.roles || []).join('|');
     logger.info(`[ACL] checkPagePermissionWithContext page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
@@ -313,7 +272,7 @@ class ACLManager extends BaseManager {
     // Only a DELEGATED caller has a ceiling to check. Asking unconditionally
     // would evaluate the policies twice for every ordinary request — once here
     // and again at Tier 2 — and would let an evaluator error escape the Tier 2
-    // catch that exists to fall through to Tier 3.
+    // catch, which exists so an evaluator fault denies rather than throws.
     const ceiling = (delegated?.viaToken || delegated?.viaShare)
       ? await this.policyDecisionPoint().ceiling(
         userContext,
@@ -455,10 +414,11 @@ class ACLManager extends BaseManager {
 
     // Tier 2: the policies, asked of the PDP (#1431).
     //
-    // `applicable` is why this needs a three-state answer: when no policy
-    // spoke, the page door still has Tier 3 to try, so silence must not read
-    // as a deny here — it does for a capability check, which has no further
-    // tier.
+    // `applicable` stays a three-state answer even though this is now the
+    // last tier that can say yes. A policy that DECLINED to speak and a policy
+    // that said no are different facts, and the reason recorded in the audit
+    // trail must tell them apart: `default_deny` (nobody spoke) is not
+    // `policy_deny` (someone did).
     try {
       const decision = await this.policyDecisionPoint().decide(userContext, {
         action: policyAction,
@@ -481,54 +441,23 @@ class ACLManager extends BaseManager {
       logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     }
 
-    // Tier 3: Page-Level ACL markup (deprecated — blocked on new saves)
-    if (pageContent && typeof pageContent === 'string') {
-      const pageAcl = this.parsePageACL(pageContent);
-      const principals = pageAcl.get(action.toLowerCase());
-      logger.info(`[ACL] Page ACL for action=${action}: ${principals ? Array.from(principals).join('|') : 'none'}`);
-
-      if (principals) {
-        if (principals.has('All')) {
-          this.logAccessDecision({
-            user: userContext,
-            pageName,
-            action,
-            allowed: true,
-            reason: 'page_acl_all',
-            context: { wikiContext: wikiContext.context }
-          });
-          return { allowed: true, reason: 'page_acl_all' };
-        }
-        if (userContext?.roles) {
-          for (const r of userContext.roles) {
-            if (principals.has(r)) {
-              const reason = `page_acl_role_${r}`;
-              this.logAccessDecision({
-                user: userContext,
-                pageName,
-                action,
-                allowed: true,
-                reason,
-                context: { wikiContext: wikiContext.context }
-              });
-              return { allowed: true, reason };
-            }
-          }
-        }
-        if (userContext?.username && principals.has(userContext.username)) {
-          this.logAccessDecision({
-            user: userContext,
-            pageName,
-            action,
-            allowed: true,
-            reason: 'page_acl_user',
-            context: { wikiContext: wikiContext.context }
-          });
-          return { allowed: true, reason: 'page_acl_user' };
-        }
-      }
-    }
-
+    // Tier 3 is gone (#1431 step 7, #1446).
+    //
+    // JSPWiki's per-page ACL — `[{ALLOW edit Charlie}]`, written in the page
+    // BODY — used to be consulted last, after private, author-lock,
+    // frontmatter and global policy had all declined to answer. Nothing reads
+    // it now.
+    //
+    // It was reachable only when the caller happened to be holding page
+    // content, which is what made the doors disagree: a page whose only grant
+    // was that markup opened when viewed directly, was absent from every
+    // listing, and was refused by every cross-page check. Deleting it is what
+    // makes the page decision ONE sequence rather than two.
+    //
+    // Access rules belong in audience terms — frontmatter `access[action]`, or
+    // `audience` for view. An imported page's ACL is converted to those on the
+    // way in by the NCM funnel (#1446); stored pages are migrated with the
+    // rest of the JSPWiki conversion steps (#1347).
     logger.info(`[ACL] Default deny for page=${pageName} (no policy/ACL matched)`);
     this.logAccessDecision({
       user: userContext,
@@ -672,10 +601,11 @@ class ACLManager extends BaseManager {
    * private through `PageManager.checkPrivatePageAccess`; tier 0.5
    * author-lock for `edit`; tier 1 frontmatter audience/access; tier 2 global
    * policy, compiled once through `PolicyEvaluator.compile`, or the share
-   * standing in for it. Tier 3 — deprecated page-ACL markup, blocked on new
-   * saves — needs page content and is not indexed: a page whose only grant is
-   * that markup is hidden here. That is the conservative direction, and it is
-   * the one documented divergence from `canUserAccessPage`.
+   * standing in for it. There is no longer a tier below that: the deprecated
+   * page-ACL markup was deleted in #1431 step 7, which is what removed the one
+   * divergence this filter had from `canUserAccessPage` — it could not read
+   * page content, so a page granted only by that markup used to be hidden
+   * here and visible there.
    *
    * A candidate without metadata is not listed (#714's convention). Order is
    * preserved. Returns titles.
@@ -741,7 +671,7 @@ class ACLManager extends BaseManager {
       const policy = decidePolicy?.(title);
       if (policy?.hasDecision) { if (policy.allowed) out.push(title); continue; }
 
-      // Tier 3 is not indexed; default deny.
+      // Nothing below Tier 2 grants; default deny.
     }
     return out;
   }

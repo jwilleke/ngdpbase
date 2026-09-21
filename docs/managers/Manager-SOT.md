@@ -1,7 +1,7 @@
 ---
 name: Manager source-of-truth plans
 description: "Where each fact lives and which manager owns it — the standing rule, the current violations, and the plan to fix them. Starts with the access-control subject"
-dateModified: '2026-09-20'
+dateModified: '2026-09-21'
 category: managers
 ---
 
@@ -60,7 +60,15 @@ written. A declaration is never copied into data, because the copy is what drift
 
 ## Subject 1 — access control
 
-__Status:__ analysed 2026-09-20, plan below, __not started__. Tracked by epic [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
+__Status:__ analysed 2026-09-20; steps 1–6 and 7a shipped, 7b/7c and steps 8–10 open. Tracked by
+epic [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
+
+__"What the code does today" below is the record of what was found on 2026-09-20__, kept as the
+evidence the plan was built from. Several of its rows have since been fixed — `ACLManager` is ~900
+lines rather than 1,446, `checkDefaultPermission` and `performStandardACLCheck` are gone
+([#1174](https://github.com/jwilleke/ngdpbase/issues/1174)), the availability checks moved out
+([#1432](https://github.com/jwilleke/ngdpbase/issues/1432)), and the policy re-read went with the
+cache. Read it as history; the Plan section carries the current state.
 
 ### The one question
 
@@ -226,6 +234,9 @@ Each step is shippable alone and leaves the tree green.
 - 5 __One vocabulary, and make it a type.__ Map the page actions onto the registry names, delete the colon names (#1174), and generate the union from the registry.
 - 6 __Introduce the PDP.__ `PolicyDecisionPoint` wraps today's matching and takes over the ceilings; `UserManager.hasPermission` delegates to it. Behaviour identical — one decider exists.
 - 7 __Page decisions delegate.__ `ACLManager` supplies the page's attributes and asks the PDP instead of deciding. __Write down what each of its five entry points orders today before changing any of them__ — that ordering is the risk in this whole plan, not the plumbing.
+  - 7a __Tier 3 deleted.__ ✅ — the markup is read by nothing; `parsePageACL` and the tier are gone, and the four tests that asserted it are kept inverted. Conversion to audience terms moves to the NCM funnel ([#1446](https://github.com/jwilleke/ngdpbase/issues/1446), blocking [#1339](https://github.com/jwilleke/ngdpbase/issues/1339)); stored pages ride along with [#1347](https://github.com/jwilleke/ngdpbase/issues/1347). One sequence now, not two.
+  - 7b __The author-lock admin bypass__ is still a role-name gate. Decision 4 below; not yet done.
+  - 7c __One implementation__ of the tier sequence, shared by `_runEvaluator` and `filterAccessiblePages`. Not yet done.
 - 8 __`ACLManager` becomes the PIP__ in name and location; the ACL markup parsing moves to `src/parsers/`.
 - 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
 - 10 __Retire `PolicyManager`__ once the PDP reads the policies and the PAP writes them.
@@ -264,11 +275,74 @@ returns a reason), `canUserAccessPage` (cross-page check, loads the target's
 metadata itself), `filterAccessiblePages` (runs the ceilings ONCE for the
 subject, then per-page attributes), `canUserAccessMediaItem`.
 
+### Step 7's orderings — measured, then decided (2026-09-21)
+
+The premise needed re-checking before anything could be decided, and it had
+moved. The five entry points are no longer five orderings:
+
+| Entry point | Orders the tiers | Tier 3 reachable |
+| --- | --- | --- |
+| `checkPagePermissionWithContext` | `_runEvaluator` | yes — content is to hand |
+| `evaluatePagePermission` | `_runEvaluator` | yes |
+| `canUserAccessPage` | `_runEvaluator`, via a minimal context | __no__ — passes `content: null` |
+| `canUserAccessMediaItem` | share ceiling, then `canUserAccessPage` | no |
+| `filterAccessiblePages` | its own loop | __no__ — content is not indexed |
+
+So there are __two__ implementations of the sequence, not five, and they agree
+on tiers −1 through 2. __Every remaining divergence is Tier 3__, the deprecated
+page-ACL markup: reachable only when the caller happens to hold page content.
+A page whose sole grant is that markup opens when viewed directly, is absent
+from every listing, and is refused by every cross-page check.
+
+__What the markup is worth, measured on a 36,718-page instance:__
+
+| Where the markup lives | Files | Read by Tier 3 |
+| --- | --- | --- |
+| `versions/` (history) | 46 | never |
+| `private/` (sealed store) | 2 | no — Tier 0 decides first |
+| live page content | __1__ | yes |
+
+That one is [Jspwiki.properties](/view/Jspwiki-properties), an imported
+documentation page, and the match is inside prose describing the syntax:
+`[[{ALLOW edit Charlie}]`. `parsePageACL`'s regex finds the inner
+`[{ALLOW edit Charlie}]` and dutifully grants `edit` to a principal named
+Charlie. __A page that documents the feature acquires an ACL by doing so.__
+
+It is also half-broken where it does match. Markup carries JSPWiki's
+capitalised principals — `Admin`, `Trusted` — while this system's roles are
+all lowercase (`admin`, `editor`, `reader`, …). Tier 3 matches roles by exact
+string, so `[{ALLOW edit Admin}]` grants nothing. Only `All` and exact
+usernames can still land.
+
+__Decisions.__
+
+- 1 __Tier 3 is deleted, not made consistent.__ Making it consistent means
+  reading page content for every candidate in every listing — a disk read per
+  page to revive a feature already blocked on new saves. Nothing on this
+  instance depends on it. The ordering question dissolves with it: the two
+  implementations then agree tier for tier.
+- 2 __The deletion is gated on a migration check, not on this one instance.__
+  `npm run check:page-acl` reports any page whose content carries the markup,
+  so an operator can see before upgrading whether a page of theirs relies on
+  it. One instance is evidence, not proof.
+- 3 __One sequence, one implementation.__ With Tier 3 gone, `_runEvaluator`
+  and `filterAccessiblePages` differ only in what they may cost: the filter
+  compiles policy once and writes no audit record per page. The tier sequence
+  is extracted so both call it, and a change cannot land in one and miss the
+  other.
+- 4 __The author-lock admin bypass is a defect, not a decision.__ Tiers 0.5 in
+  both implementations read `roles.includes('admin')` — a role deciding
+  access, which P2 forbids. `ACLManager`'s allowlist entry in
+  `check-permission-gates.ts` reads "tier 0 private-page bypass and the filter
+  that mirrors it", and Tier 0 does not use a role at all
+  (`mayActInPrivateContainer` is owner-or-delegate). The gate is riding on an
+  allowlist reason written for something else. It becomes a permission.
+- 5 __A missing page or missing metadata denies__, as `canUserAccessPage`
+  already does. `_runEvaluator` currently proceeds without metadata and lets
+  later tiers decide; the two agree on deny.
+
 ### Open decisions
 
-- __Step 7's orderings.__ `ACLManager`'s five entry points each sequence ACL
-  markup, audience and policy their own way. Which ordering is correct is a
-  decision, not a refactor.
 - __Whether `UserManager` keeps the two catalogues.__ It owns the permission
   catalogue, the role catalogue, subject construction and membership sync.
   Some of that is PIP work; splitting it is larger than the steps above.

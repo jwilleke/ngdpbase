@@ -69,84 +69,10 @@ describe('ACLManager', () => {
     await aclManager.initialize();
   });
 
-  describe('parsePageACL', () => {
-    test('should parse ALLOW view ACL correctly', () => {
-      const content = '[{ALLOW view admin,editor,user1}]';
-      const acl = aclManager.parsePageACL(content);
-
-      expect(acl).toBeTruthy();
-      expect(acl.get('view')).toEqual(new Set(['admin', 'editor', 'user1']));
-      expect(acl.has('edit')).toBe(false);
-    });
-
-    test('should parse multiple ACL rules', () => {
-      const content = `
-        [{ALLOW view admin,editor}]
-        [{ALLOW edit admin}]
-        [{ALLOW delete admin}]
-      `;
-      const acl = aclManager.parsePageACL(content);
-
-      expect(acl.get('view')).toEqual(new Set(['admin', 'editor']));
-      expect(acl.get('edit')).toEqual(new Set(['admin']));
-      expect(acl.get('delete')).toEqual(new Set(['admin']));
-    });
-
-    test('should handle ACL with different actions', () => {
-      const content = '[{ALLOW upload admin,contributor}] [{ALLOW rename admin}]';
-      const acl = aclManager.parsePageACL(content);
-
-      expect(acl.get('upload')).toEqual(new Set(['admin', 'contributor']));
-      expect(acl.get('rename')).toEqual(new Set(['admin']));
-    });
-
-    test('should handle case insensitive ACL parsing', () => {
-      const content = '[{allow VIEW admin,editor}] [{ALLOW edit ADMIN}]';
-      const acl = aclManager.parsePageACL(content);
-
-      // Actions are normalized to lowercase
-      expect(acl.get('view')).toEqual(new Set(['admin', 'editor']));
-      expect(acl.get('edit')).toEqual(new Set(['ADMIN'])); // Principals keep their case
-    });
-
-    test('should return empty Map for content without ACL', () => {
-      const content = 'This is just regular page content without any ACL rules.';
-      const acl = aclManager.parsePageACL(content);
-
-      expect(acl).toBeInstanceOf(Map);
-      expect(acl.size).toBe(0);
-    });
-
-    test('should handle empty content', () => {
-      const acl = aclManager.parsePageACL('');
-
-      expect(acl).toBeInstanceOf(Map);
-      expect(acl.size).toBe(0);
-    });
-
-    test('should handle null content', () => {
-      const acl = aclManager.parsePageACL(null);
-
-      expect(acl).toBeInstanceOf(Map);
-      expect(acl.size).toBe(0);
-    });
-
-    test('should trim whitespace from principals', () => {
-      const content = '[{ALLOW view admin,editor,user1}]';
-      const acl = aclManager.parsePageACL(content);
-
-      // Principals are comma-separated (no spaces to avoid regex greedy match issue)
-      expect(acl.get('view')).toEqual(new Set(['admin', 'editor', 'user1']));
-    });
-
-    test('should handle multiple actions in single rule', () => {
-      const content = '[{ALLOW view, edit admin}]';
-      const acl = aclManager.parsePageACL(content);
-
-      expect(acl.get('view')).toEqual(new Set(['admin']));
-      expect(acl.get('edit')).toEqual(new Set(['admin']));
-    });
-  });
+  // #1431 step 7: the parsePageACL suite is gone with the method. JSPWiki's
+  // per-page ACL markup is no longer read by anything — access rules are
+  // audience terms in frontmatter, and an imported page's ACL is converted
+  // to those by the NCM funnel (#1446).
 
   // #632: deprecated `checkPagePermission(pageName, action, userContext, content)`
   // method removed; tests for it gone too. The canonical
@@ -577,14 +503,16 @@ describe('ACLManager', () => {
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
-    test('no audience/access → falls through (no pageMetadata decision)', async () => {
+    test('no audience/access → falls through, and body markup does not save it', async () => {
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '' },
         content: '[{ALLOW view All}]',
         userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true }
       });
-      // No audience field → Tier 1.5 passes, Tier 2 (inline ACL) grants All
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      // No audience → Tier 1 declines; no policy spoke → default deny. The
+      // `[{ALLOW view All}]` in the body used to grant here and no longer does
+      // (#1431 step 7): a rule in the page BODY is not an access rule.
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('Tier 1.5 deny does NOT fall through to Tier 2 inline ACL', async () => {
@@ -712,14 +640,17 @@ describe('ACLManager', () => {
       await expect(aclManager.checkPagePermissionWithContext(null, 'view')).rejects.toThrow();
     });
 
-    test('Tier 3 — role match in page ACL', async () => {
+    // #1431 step 7: these two used to pass. They are kept, inverted, because
+    // the removal is the behaviour worth pinning — a page granting itself
+    // access through its own body is exactly what stopped being possible.
+    test('page-body ACL markup no longer grants by role', async () => {
       const ctx = makeWikiContext({ content: '[{ALLOW view editor}]', userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
-    test('Tier 3 — username match in page ACL', async () => {
+    test('page-body ACL markup no longer grants by username', async () => {
       const ctx = makeWikiContext({ content: '[{ALLOW edit alice}]', userContext: { username: 'alice', roles: ['reader'], isAuthenticated: true } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
     test('default deny when ACL has no match', async () => {
@@ -741,10 +672,13 @@ describe('ACLManager', () => {
       mockPolicyEvaluator = null;
     });
 
-    test('Tier 2 — PolicyEvaluator throws, falls through to Tier 3', async () => {
+    test('Tier 2 — a PolicyEvaluator that throws denies, it does not open the page', async () => {
+      // The catch around Tier 2 used to let the request fall through to the
+      // body markup, so an evaluator FAULT could end in an allow. With that
+      // tier gone the fault denies, which is the only safe direction (#1431).
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockRejectedValue(new Error('PE error')) };
       const ctx = makeWikiContext({ content: '[{ALLOW view All}]', userContext: { username: 'bob', roles: ['reader'] } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
       mockPolicyEvaluator = null;
     });
   });
