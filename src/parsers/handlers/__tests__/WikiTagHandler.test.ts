@@ -26,6 +26,11 @@ class MockACLManager {
     if (action === 'write' || action === 'edit') return userContext?.roles?.includes('admin');
     return false;
   }
+  // #1431 step 7: <wiki:Include> asks the cross-page door, which loads the
+  // TARGET page's metadata and runs its own rules — audience included.
+  async canUserAccessPage(_userContext, _pageName, action) {
+    return action === 'read' || action === 'view';
+  }
 }
 
 // Mock VariableManager
@@ -420,7 +425,8 @@ describe('WikiTagHandler', () => {
         getManager: vi.fn((name) => {
           if (name === 'ACLManager') {
             return {
-              checkPagePermissionWithContext: vi.fn().mockResolvedValue(false)
+              checkPagePermissionWithContext: vi.fn().mockResolvedValue(false),
+              canUserAccessPage: vi.fn().mockResolvedValue(false)
             };
           }
           return createMockEngine().getManager(name);

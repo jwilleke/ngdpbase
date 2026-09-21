@@ -247,7 +247,9 @@ describe('Policy System Integration', () => {
         pageName: 'TestPage',
         content: '# Test Page Content\n\nThis is a test page.',
         userContext: user,
-        pageMetadata: null
+        // #1431 step 7: a page decision needs the page's metadata — without
+        // it the decider refuses (no_page_metadata). A real page has some.
+        pageMetadata: { title: 'TestPage', uuid: 'test-page', lastModified: '' }
       };
 
       const result = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');

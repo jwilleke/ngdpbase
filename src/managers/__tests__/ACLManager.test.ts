@@ -697,8 +697,32 @@ describe('ACLManager', () => {
 
     test('Tier 2 — PolicyEvaluator grants access', async () => {
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
-      const ctx = makeWikiContext({ userContext: { username: 'bob', roles: ['reader'] } });
+      const ctx = makeWikiContext({
+        pageMetadata: { title: 'Test', uuid: 'x', lastModified: '' },
+        userContext: { username: 'bob', roles: ['reader'] }
+      });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      mockPolicyEvaluator = null;
+    });
+
+    // #1431 step 7 (operator 2026-09-21): no metadata, no decision — except create.
+    test('no metadata refuses, even where policy would allow', async () => {
+      // The page's own rules all read frontmatter. Without it they silently
+      // fell away and policy answered alone — how an include rendered an
+      // audience-restricted page to readers outside its audience.
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
+      const ctx = makeWikiContext({ pageMetadata: null, userContext: { username: 'bob', roles: ['reader'] } });
+      expect(await aclManager.evaluatePagePermission(ctx, 'view')).toEqual({ allowed: false, reason: 'no_page_metadata' });
+      expect(await aclManager.evaluatePagePermission(ctx, 'edit')).toEqual({ allowed: false, reason: 'no_page_metadata' });
+      mockPolicyEvaluator = null;
+    });
+
+    test('create is the exception — a new page has no metadata yet, so policy decides', async () => {
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
+      const ctx = makeWikiContext({ pageMetadata: null, userContext: { username: 'bob', roles: ['editor'] } });
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'create')).toBe(true);
+      mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: false, policyName: 'deny-policy' }) };
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'create')).toBe(false);
       mockPolicyEvaluator = null;
     });
 

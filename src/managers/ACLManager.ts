@@ -303,6 +303,28 @@ class ACLManager extends BaseManager {
     // about roles this bearer does not have.
     const viaShare = delegated?.viaShare as ShareGrant | undefined;
 
+    // No metadata, no decision — except `create` (#1431 step 7, operator
+    // 2026-09-21). The page's own rules below (private, author-lock,
+    // audience) all read frontmatter; without it they silently fall away and
+    // global policy answers alone, which is how an include came to render an
+    // audience-restricted page to readers outside its audience. A page being
+    // CREATED legitimately has none yet, and there policy decides.
+    //
+    // This refuses; it does not report. The decider cannot tell a page that
+    // does not exist, a sealed page this session cannot unlock, and a damaged
+    // page apart — only a caller that has just loaded the content can, and
+    // those callers raise the loud 500 + admin notification themselves
+    // (utils/pageMetadataMissing). A caller reaching here without metadata
+    // for a page it did load is a caller bug, and the warning names it.
+    if (!wikiContext.pageMetadata && policyAction !== 'page-create') {
+      logger.warn(`[ACL] no metadata for '${pageName}' (action=${action}) — refused; a caller deciding about a page must load its metadata`);
+      this.logAccessDecision({
+        user: userContext, pageName, action, allowed: false, reason: 'no_page_metadata',
+        context: { wikiContext: wikiContext.context }
+      });
+      return { allowed: false, reason: 'no_page_metadata' };
+    }
+
     // Tier 0: private — hard constraint, not overridable by front matter.
     // #639 Slice E: top-level `private: true` is the canonical signal; the
     // user-keywords back-compat fallback was dropped after all datasets

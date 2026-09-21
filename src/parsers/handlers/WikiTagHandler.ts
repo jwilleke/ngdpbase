@@ -569,19 +569,22 @@ class WikiTagHandler extends BaseSyntaxHandler {
     // authenticated paths share one code path. PolicyEvaluator's anonymous-role
     // expansion ('anonymous', 'All') makes the if-anonymous branch unnecessary.
     //
-    // Note: tier 0 (private user-keyword) and tier 1 (frontmatter audience) are
-    // skipped here because we don't fetch the included page's content/metadata.
-    // The check falls through to tier 2 (PolicyEvaluator), which matches what
-    // the original PolicyManager-based path was attempting. A future enhancement
-    // could fetch the included page's metadata for full tier-0/1 evaluation.
-    const aclManager = context.getManager('ACLManager') as { checkPagePermissionWithContext(ctx: unknown, action: string): Promise<boolean> } | undefined;
-    if (!aclManager) return true; // Conservative: allow if ACLManager isn't registered
-    return aclManager.checkPagePermissionWithContext({
-      pageName,
-      content: '',
-      userContext: context.wikiContext?.userContext ?? undefined,
-      pageMetadata: null
-    }, 'view');
+    // #1431 step 7: this used to pass `pageMetadata: null`, and its comment said
+    // so — the INCLUDED page's own rules were skipped and global policy
+    // answered alone. Tier 1 is that page's audience, so a page restricted to
+    // `audience: [admin]` rendered into any page for any reader the global
+    // policy lets view. `canUserAccessPage` is the cross-page door: it loads
+    // the target's metadata as this reader and runs every tier on it, the same
+    // check `[{InsertPlugin}]` asks.
+    //
+    // It also used to allow when ACLManager was missing, under a comment
+    // calling that "conservative". Allowing is the permissive direction;
+    // without a decider there is no decision, so no include.
+    const aclManager = context.getManager('ACLManager') as {
+      canUserAccessPage(userContext: unknown, pageName: string, action: string): Promise<boolean>;
+    } | undefined;
+    if (!aclManager) return false;
+    return aclManager.canUserAccessPage(context.wikiContext?.userContext ?? null, pageName, 'view');
   }
 
   /**

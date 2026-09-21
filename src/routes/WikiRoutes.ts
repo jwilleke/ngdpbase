@@ -41,6 +41,7 @@ import {
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
 import logger from '../utils/logger.js';
+import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
@@ -2724,6 +2725,18 @@ ${panes}
       // context. Shared with the export routes (#1060) so the two paths to a
       // page's content cannot present the evaluator with different facts.
       const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
+      // #1431 step 7 (operator 2026-09-21): the content came back, so this page
+      // EXISTS and this reader could load it — no metadata here is damage, not
+      // a permission question. Fail loudly: 500, error log, admin notification.
+      // A missing page never reaches this line (404 above), and nor does a
+      // sealed page this session cannot unlock (#1422).
+      if (!metadata) {
+        await reportMissingPageMetadata(this.engine, pageName, 'view', req.userContext?.username);
+        return await this.renderError(
+          req, res, 500, 'Page Cannot Be Opened',
+          `The page '${pageName}' is damaged and cannot be opened. The administrators have been notified.`
+        );
+      }
       (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
 
       // Update WikiContext with page content for ACL checking
@@ -3469,8 +3482,17 @@ ${panes}
       } else {
         // For existing pages, check ACL edit permission
         if (pageData) {
+          // #1431 step 7: the page loaded, so missing metadata is damage — the
+          // same loud failure as the view route, not a permission refusal.
+          if (!pageData.metadata) {
+            await reportMissingPageMetadata(this.engine, pageName, 'edit', req.userContext?.username);
+            return await this.renderError(
+              req, res, 500, 'Page Cannot Be Opened',
+              `The page '${pageName}' is damaged and cannot be edited. The administrators have been notified.`
+            );
+          }
           // Load metadata before ACL check so Tier 0 / Tier 1.5 have full context
-          (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata ?? null;
+          (wikiContext as { pageMetadata: unknown }).pageMetadata = pageData.metadata;
           // Update WikiContext with page content for ACL checking
           (wikiContext as { content: string | null }).content = pageData.content;
 
