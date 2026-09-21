@@ -230,7 +230,7 @@ static assets that never reach a decision ([#1432](https://github.com/jwilleke/n
 
 Each step is shippable alone and leaves the tree green.
 
-- 1 __Delete the snapshot.__ ✅ [3ec3511b](https://github.com/jwilleke/ngdpbase/commit/3ec3511b) — a role record holds membership only.
+- 1 __Delete the snapshot.__ ✅ [3ec3511b](https://github.com/jwilleke/ngdpbase/commit/3ec3511b) — a role record holds membership only. Records written before this step kept the copy; RoleManager strips it at start-up (operator, 2026-09-21).
 - 2 __Derive the role × permission matrix.__ ✅ [56d4fd1f](https://github.com/jwilleke/ngdpbase/commit/56d4fd1f) — computed from the policies; the inline `permissions[]` arrays are gone, and with them #713's hand-sync rule.
 - 3 __Move availability out of `ACLManager`.__ ✅ [1519af44](https://github.com/jwilleke/ngdpbase/commit/1519af44) — one gate, several reasons, each with its own message ([#1432](https://github.com/jwilleke/ngdpbase/issues/1432)). `ACLManager` 1,446 → 1,079 lines.
 - 4 __One policy read.__ ✅ [62fc4b1d](https://github.com/jwilleke/ngdpbase/commit/62fc4b1d) — `ACLManager` kept a policy cache that was written and never read; deleted. `PolicyEvaluator` asks `PolicyManager`, which is the one read.

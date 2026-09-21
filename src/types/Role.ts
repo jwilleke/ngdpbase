@@ -16,8 +16,9 @@
  * Until #1431 the record snapshotted the catalogue entry — `roleName`,
  * `description`, `issystem`, `icon`, `color` and a `permissions` list under
  * `additionalProperty` — which later catalogue edits never updated, and which
- * nothing read. The fields below remain optional so existing files still
- * parse; they are not written any more and must not be read for a decision.
+ * nothing read. They are no longer written, and RoleManager strips them from
+ * existing records at start-up (operator, 2026-09-21): the catalogue declares
+ * a role's settings and the policies decide what it permits.
  *
  * @see https://schema.org/OrganizationRole
  */
@@ -64,22 +65,7 @@ export interface Role {
   /** Persons holding this role. References by Person `@id`. */
   member?: IdRef[];
 
-  /** Written before #1431 only; the catalogue is the source for display. */
-  roleName?: string;
-  /** Written before #1431 only. */
-  description?: string;
-  /** Written before #1431 only. */
-  issystem?: boolean;
-  /** Written before #1431 only. */
-  icon?: string;
-  /** Written before #1431 only. */
-  color?: string;
-
-  /**
-   * PropertyValue array. Kept so records written before #1431 still parse;
-   * nothing writes it, and nothing may read it for a decision — what a role
-   * permits is the policies.
-   */
+  /** schema.org extension properties. Not a permissions list (#1431). */
   additionalProperty?: PropertyValue[];
 
   /** Allow extension fields (forwards-compat). */

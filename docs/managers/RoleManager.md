@@ -26,6 +26,10 @@ Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/is
 
 A write that cannot happen (no Person, no anchor Organization) is logged with its cause and does not throw, so an account write still succeeds when role storage is degraded (#1027).
 
+## What a record holds
+
+Identity (`@id`, `namedPosition`, `organization`) and `member` — nothing configuration already says. Records written before #1431 step 1 also carried a copy of the role's catalogue entry (`roleName`, `description`, `issystem`, `icon`, `color`) and a `permissions` list under `additionalProperty`, taken at create time and never updated. At every start RoleManager strips that copy from any record that still has it and logs how many it cleaned; on a clean store it does nothing (operator, 2026-09-21).
+
 ## Why this exists
 
 Follow-up to #617. Once Organization and Person became first-class records, role bindings needed their own home so the role couldn't be lost if the person's user account changed.

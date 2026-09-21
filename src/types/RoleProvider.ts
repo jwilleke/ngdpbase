@@ -31,7 +31,11 @@ export interface RoleProvider extends BaseProvider {
    */
   create(role: Role): Promise<Role>;
 
-  /** Apply a partial update by `@id`. Returns the updated record, or null if not found. */
+  /**
+   * Apply a partial update by `@id`. Returns the updated record, or null if not
+   * found. A field the patch sets to `undefined` is REMOVED from the record —
+   * how a stale field is cleared (#1431).
+   */
   update(id: string, patch: RoleUpdate): Promise<Role | null>;
 
   /** Delete by `@id`. Returns true if a record was removed. */

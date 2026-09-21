@@ -176,4 +176,65 @@ describe('RoleManager (#617 follow-up)', () => {
     const all = await manager.list();
     expect(all.map((r: any) => r.namedPosition).sort()).toEqual(['admin', 'editor', 'reader']);
   });
+  // #1431 (operator, 2026-09-21): a record holds membership only. Records
+  // written before step 1 carried a copy of the catalogue entry and a
+  // permissions list; start-up strips it, once, and leaves the rest alone.
+  describe('start-up strips the stale catalogue copy (#1431)', () => {
+    const legacy = () => ({
+      ...makeRole('admin', [PERSON_A, PERSON_B]),
+      roleName: 'Administrator',
+      description: 'Full system access',
+      issystem: true,
+      icon: 'shield-alt',
+      color: '#dc3545',
+      additionalProperty: [
+        { '@type': 'PropertyValue', name: 'permissions', value: ['page-read', 'admin-system'] },
+        { '@type': 'PropertyValue', name: 'externalRef', value: 'kept' }
+      ]
+    });
+
+    const seed = async (record: Record<string, unknown>) => {
+      await fs.ensureDir(path.join(tmpDir, 'roles'));
+      await fs.writeJson(path.join(tmpDir, 'roles', `${record.namedPosition as string}.json`), record);
+    };
+    const onDisk = (name: string) => fs.readJson(path.join(tmpDir, 'roles', `${name}.json`));
+
+    test('removes the copied fields and the permissions entry; keeps identity, members and other properties', async () => {
+      await seed(legacy());
+      await newManager();
+
+      const record = await onDisk('admin');
+      expect(Object.keys(record).sort()).toEqual(
+        ['@context', '@id', '@type', 'additionalProperty', 'member', 'namedPosition', 'organization'].sort()
+      );
+      expect(record.member).toEqual([{ '@id': PERSON_A }, { '@id': PERSON_B }]);
+      expect(record.additionalProperty).toEqual([{ '@type': 'PropertyValue', name: 'externalRef', value: 'kept' }]);
+    });
+
+    test('drops additionalProperty entirely when permissions was all it held', async () => {
+      const record = legacy();
+      record.additionalProperty = [record.additionalProperty[0]];
+      await seed(record);
+      await newManager();
+
+      expect('additionalProperty' in (await onDisk('admin'))).toBe(false);
+    });
+
+    test('a clean record is not rewritten', async () => {
+      await seed(makeRole('editor', [PERSON_A]));
+      const file = path.join(tmpDir, 'roles', 'editor.json');
+      const before = (await fs.stat(file)).mtimeMs;
+      await new Promise((r) => setTimeout(r, 20));
+      await newManager();
+
+      expect((await fs.stat(file)).mtimeMs).toBe(before);
+      expect(await onDisk('editor')).toEqual(makeRole('editor', [PERSON_A]));
+    });
+
+    test('membership still resolves after the cleanup', async () => {
+      await seed(legacy());
+      const manager = await newManager();
+      expect((await manager.listByMember(PERSON_B)).map((r: any) => r.namedPosition)).toEqual(['admin']);
+    });
+  });
 });

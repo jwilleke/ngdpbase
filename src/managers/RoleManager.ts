@@ -33,6 +33,9 @@ interface MetricsManagerLike {
  * `UserManager` owns the account, and asks here when an account's roles
  * change; it keeps no membership logic of its own.
  */
+/** The catalogue fields records written before #1431 step 1 carried (see stripCatalogueCopies). */
+const CATALOGUE_COPY_FIELDS = ['roleName', 'description', 'issystem', 'icon', 'color'] as const;
+
 class RoleManager extends BaseManager {
   readonly description = 'Canonical OrganizationRole records (#617 follow-up)';
 
@@ -90,7 +93,51 @@ class RoleManager extends BaseManager {
     this.provider = new mod.default(this.engine);
     await this.provider.initialize();
 
+    await this.stripCatalogueCopies();
+
     logger.info(`🔑 RoleManager initialized (${(await this.provider.list()).length} roles)`);
+  }
+
+  /**
+   * Strip the catalogue copy from role records written before #1431 step 1
+   * (operator, 2026-09-21).
+   *
+   * A record holds MEMBERSHIP only. Records created earlier also carried a
+   * copy of the role's catalogue entry — `roleName`, `description`,
+   * `issystem`, `icon`, `color` — and a `permissions` list under
+   * `additionalProperty`, taken at create time, never updated and never read.
+   * Configuration declares the role's settings and the policies decide what
+   * it permits, so the copy was a second source that had already drifted
+   * (jimstest's `admin` listed 17 permissions against the 21 granted).
+   *
+   * Runs at every start and does nothing once a store is clean, so every
+   * install created before the change is cleaned, not just one. Only the copy
+   * goes: `@id`, `namedPosition`, `organization` and `member` are untouched,
+   * as is any other `additionalProperty` entry.
+   */
+  private async stripCatalogueCopies(): Promise<void> {
+    const provider = this.requireProvider();
+    let cleaned = 0;
+    for (const record of await provider.list()) {
+      const stale = record as Record<string, unknown>;
+      const patch: Record<string, undefined | unknown[]> = {};
+      for (const field of CATALOGUE_COPY_FIELDS) {
+        if (field in stale) patch[field] = undefined;
+      }
+      if (Array.isArray(record.additionalProperty)) {
+        const kept = record.additionalProperty.filter((p) => p?.name !== 'permissions');
+        if (kept.length !== record.additionalProperty.length) {
+          patch.additionalProperty = kept.length ? kept : undefined;
+        }
+      }
+      if (Object.keys(patch).length === 0) continue;
+      await provider.update(record['@id'], patch);
+      cleaned++;
+    }
+    if (cleaned > 0) {
+      this.invalidateCache();
+      logger.info(`🔑 RoleManager: removed the stale catalogue copy from ${cleaned} role record(s) (#1431)`);
+    }
   }
 
   /** Provider accessor, mainly for tests. */
