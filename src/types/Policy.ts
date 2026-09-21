@@ -117,10 +117,12 @@ export interface Decision {
   /**
    * Whether any policy spoke to this question at all.
    *
-   * XACML's NotApplicable, and it is load-bearing here: the page door falls
-   * through to its remaining tiers when no policy matched, while a capability
-   * check treats silence as a refusal. A binary decision cannot express the
-   * difference, and flattening it would silently delete Tier 3.
+   * XACML's NotApplicable. Both outcomes refuse when `permit` is false, but
+   * they are different facts: a policy that said no is `policy_deny`, while
+   * no policy speaking is `default_deny`, and the audit trail must tell an
+   * assessor which one happened. Kept three-state for that, even though the
+   * page door no longer has a tier below this one to fall through to — the
+   * page-ACL markup tier it once fed was removed in #1431 step 7a.
    *
    * `permit` is always false when this is false — nothing has said yes.
    */

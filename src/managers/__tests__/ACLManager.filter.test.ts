@@ -9,9 +9,10 @@
  * here is checked both ways. Sabotage: make the filter trust `audienceRoles`
  * instead of frontmatter, or skip tier 0, and a pair goes red.
  *
- * The one deliberate divergence: tier 3 (deprecated page-ACL markup, blocked on
- * new saves) needs page CONTENT and is not indexed. A page whose only grant is
- * that markup is hidden from listings — the conservative direction.
+ * There is no longer any divergence. The one this file used to document —
+ * tier 3, page-ACL markup read from page CONTENT, which the index cannot see —
+ * went with the tier in #1431 step 7a, so the filter and the decider now agree
+ * tier for tier.
  */
 import ACLManager from '../ACLManager';
 import type { ShareGrant } from '../../types/Share';
@@ -69,7 +70,14 @@ function makeEngine() {
         };
       }
       if (name === 'UserManager') {
-        return { userHoldsPermission: async (u: string, a: string) => u === 'jim' && issuerHolds.includes(a) };
+        return {
+          userHoldsPermission: async (u: string, a: string) => u === 'jim' && issuerHolds.includes(a),
+          // #1431 7b: the author-lock override is asked as a permission. The
+          // grant table stands in for policy — keyed by subject, never by role
+          // name, so a test cannot pass by holding a role called admin.
+          hasPermission: async (subject: { username?: string }, a: string) =>
+            (overrideGrants[subject?.username ?? ''] ?? []).includes(a)
+        };
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: async () => 'evt' };
@@ -89,6 +97,9 @@ const grant: ShareGrant = { id: 's', issuer: 'jim', actions: ['page-read'], reso
 const viaShare = { ...anonymous, viaShare: grant };
 
 const candidates = () => Object.keys(PAGES).map((title) => ({ title, metadata: PAGES[title] as never }));
+
+/** Who holds which permission, standing in for policy (#1431 7b). */
+let overrideGrants: Record<string, string[]> = {};
 
 describe('filterAccessiblePages agrees with canUserAccessPage (#1219)', () => {
   let acl: ACLManager;
@@ -135,6 +146,16 @@ describe('filterAccessiblePages agrees with canUserAccessPage (#1219)', () => {
   test('author-lock is an edit constraint the filter applies like the decider', async () => {
     expect(await acl.filterAccessiblePages(editor as never, 'edit', candidates())).not.toContain('Locked');
     expect(await acl.filterAccessiblePages(alice as never, 'edit', candidates())).toContain('Locked');
+  });
+
+  test('the author-lock override in a listing is admin-system, not the admin role (#1431 7b)', async () => {
+    // Holding a role named admin is not enough on its own …
+    overrideGrants = {};
+    expect(await acl.filterAccessiblePages(admin as never, 'edit', candidates())).not.toContain('Locked');
+    // … being granted admin-system is, whatever the role is called.
+    overrideGrants = { root: ['admin-system'] };
+    expect(await acl.filterAccessiblePages(admin as never, 'edit', candidates())).toContain('Locked');
+    overrideGrants = {};
   });
 
   test('a token without the scope lists nothing', async () => {

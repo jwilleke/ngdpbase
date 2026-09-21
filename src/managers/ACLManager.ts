@@ -11,6 +11,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { AgentTokenGrant } from './UserManager.js';
+import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyEvaluator from './PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
@@ -365,9 +366,17 @@ class ACLManager extends BaseManager {
     // message on `reason === 'author_lock_deny'`.
     if (action.toLowerCase() === 'edit'
         && wikiContext.pageMetadata?.['author-lock'] === true) {
-      const isAdmin = (userContext?.roles ?? []).includes('admin');
       const isAuthor = (userContext?.username ?? '') === (wikiContext.pageMetadata?.author ?? '');
-      if (!isAdmin && !isAuthor) {
+      // #1431 step 7b: the override is a PERMISSION, not the role name. It
+      // was `roles.includes('admin')`, which never read `admin-full-access`
+      // — so it ignored any change to what the admin role is granted, broke
+      // silently on a rename, and skipped the token ceiling. `admin-system` is
+      // the existing operator override (the maintenance bypass asks it too),
+      // decided by operator 2026-09-21. Asked only when the subject is not
+      // the author, since the author needs no override.
+      const mayOverrideLock = !isAuthor
+        && await subjectMayDo(this.engine, userContext, 'admin-system');
+      if (!isAuthor && !mayOverrideLock) {
         this.logAccessDecision({
           user: userContext,
           pageName,
@@ -618,7 +627,11 @@ class ACLManager extends BaseManager {
     const policyAction = permissionForPageAction(action);
     const roles = userContext?.roles ?? [];
     const username = userContext?.username ?? '';
-    const isAdmin = roles.includes('admin');
+    // #1431 step 7b: the author-lock override is `admin-system`, asked once
+    // for the subject — it does not vary by page — and only for `edit`, the
+    // one action author-lock constrains.
+    const mayOverrideLock = action.toLowerCase() === 'edit'
+      && await subjectMayDo(this.engine, userContext, 'admin-system');
 
     // The ceilings that bound the SUBJECT decide once, for every page — the
     // PDP's, so this is not a third copy of them (#1431). No resource is
@@ -659,7 +672,7 @@ class ACLManager extends BaseManager {
 
       // Tier 0.5: author-lock denies a non-author, non-admin edit; it grants nothing.
       if (action.toLowerCase() === 'edit' && metadata['author-lock'] === true) {
-        if (!isAdmin && username !== (metadata.author ?? '')) continue;
+        if (!mayOverrideLock && username !== (metadata.author ?? '')) continue;
       }
 
       // Tier 1: frontmatter audience / access decides when it states a rule.

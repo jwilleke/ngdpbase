@@ -235,7 +235,7 @@ Each step is shippable alone and leaves the tree green.
 - 6 __Introduce the PDP.__ `PolicyDecisionPoint` wraps today's matching and takes over the ceilings; `UserManager.hasPermission` delegates to it. Behaviour identical — one decider exists.
 - 7 __Page decisions delegate.__ `ACLManager` supplies the page's attributes and asks the PDP instead of deciding. __Write down what each of its five entry points orders today before changing any of them__ — that ordering is the risk in this whole plan, not the plumbing.
   - 7a __Tier 3 deleted.__ ✅ — the markup is read by nothing; `parsePageACL` and the tier are gone, and the four tests that asserted it are kept inverted. Conversion to audience terms moves to the NCM funnel ([#1446](https://github.com/jwilleke/ngdpbase/issues/1446), blocking [#1339](https://github.com/jwilleke/ngdpbase/issues/1339)); stored pages ride along with [#1347](https://github.com/jwilleke/ngdpbase/issues/1347). One sequence now, not two.
-  - 7b __The author-lock admin bypass__ is still a role-name gate. Decision 4 below; not yet done.
+  - 7b __The author-lock admin bypass__ is still a role-name gate. __Decided (operator, 2026-09-21): it becomes the `admin-system` permission__ — the existing operator override, already granted to `admin` by `admin-full-access`, so no config change. ✅ Done in both implementations; `ACLManager` holds no role-name gate at all now, so its `check-permission-gates.ts` allowlist entry is removed and a new one there fails CI.
   - 7c __One implementation__ of the tier sequence, shared by `_runEvaluator` and `filterAccessiblePages`. Not yet done.
 - 8 __`ACLManager` becomes the PIP__ in name and location; the ACL markup parsing moves to `src/parsers/`.
 - 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
@@ -337,9 +337,16 @@ __Decisions.__
   that mirrors it", and Tier 0 does not use a role at all
   (`mayActInPrivateContainer` is owner-or-delegate). The gate is riding on an
   allowlist reason written for something else. It becomes a permission.
-- 5 __A missing page or missing metadata denies__, as `canUserAccessPage`
-  already does. `_runEvaluator` currently proceeds without metadata and lets
-  later tiers decide; the two agree on deny.
+- 5 __Missing metadata denies loudly — except `create`__ (operator,
+  2026-09-21). A page being created has no metadata yet, so policy decides
+  and the subject must hold `page-create`. For every other action, an
+  existing page without metadata is broken or unreadable: deny, and make it
+  visible rather than an ordinary refusal: __a 500, an error-level log line,
+  and an admin notification__, de-duplicated per page. "No metadata" only
+  means damage when the page exists and this subject could otherwise read it
+  — a page that does not exist stays a not-found, and a sealed page this
+  session cannot unlock stays a refusal (#1422). The first wording here —
+  "both deny" — would have blocked page creation.
 
 ### Open decisions
 

@@ -235,7 +235,10 @@ describe('ACLManager', () => {
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
-    test('edit + author-lock + admin → falls through (Tier 1 access.edit decides allow)', async () => {
+    test('edit + author-lock + admin-system → falls through (Tier 1 access.edit decides allow)', async () => {
+      // #1431 step 7b: the override is the admin-system PERMISSION, asked of
+      // UserManager.hasPermission — the policy decides, as for any door.
+      mockUserManager.hasPermission.mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -245,6 +248,40 @@ describe('ACLManager', () => {
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
       expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      mockUserManager.hasPermission.mockReset();
+    });
+
+    test('the admin ROLE alone no longer overrides author-lock — the permission does (#1431 7b)', async () => {
+      // The regression this step fixes: `roles.includes('admin')` decided
+      // regardless of what policy grants. A subject holding a role NAMED
+      // admin, whose policy does not grant admin-system, is now refused.
+      mockUserManager.hasPermission.mockResolvedValue(false);
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          access: { edit: ['admin'] }
+        },
+        userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
+      });
+      expect(await aclManager.evaluatePagePermission(ctx, 'edit')).toMatchObject({ allowed: false, reason: 'author_lock_deny' });
+      mockUserManager.hasPermission.mockReset();
+    });
+
+    test('a role not named admin but granted admin-system can override (#1431 7b)', async () => {
+      // The other half: the config decides, so an operator role granted the
+      // permission works without being called 'admin'.
+      mockUserManager.hasPermission.mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
+      const ctx = makeWikiContext({
+        pageMetadata: {
+          title: 'Test', uuid: 'x', lastModified: '',
+          'author-lock': true, author: 'alice',
+          access: { edit: ['operator'] }
+        },
+        userContext: { username: 'carol', roles: ['operator'], isAuthenticated: true }
+      });
+      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      mockUserManager.hasPermission.mockReset();
     });
 
     test('view + author-lock + non-author non-admin → Tier 0.5 does NOT fire (action-specific gate)', async () => {

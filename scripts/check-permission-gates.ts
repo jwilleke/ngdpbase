@@ -45,7 +45,6 @@ const ROLE_READ_ALLOWED: Record<string, string> = {
   'src/context/WikiContext.ts': 'defines hasRole / userHasRole — the lookup, not a gate',
   'src/managers/UserManager.ts': 'hasRole(username, role) is a lookup about a NAMED user (P2); getContactRecipient and searchUsers filter people, not requests',
   'src/services/InstallService.ts': 'asks whether the bootstrap admin account exists — a lookup about a named user, before any request',
-  'src/managers/ACLManager.ts': 'the evaluator itself: tier 0 private-page bypass and the filter that mirrors it',
   'src/routes/WikiRoutes.ts': "validates a user-update PAYLOAD — whether an external account is being handed 'admin' — not the caller's roles; and counts the accounts that HOLD admin for the /admin/users stat bar (#1303), which is data about users",
   'views/header.ejs': "the 'Admin' badge beside the signed-in name states a membership; the links and actions around it ask can()",
   'views/admin-user-edit.ejs': "browser-side form validation on the PAYLOAD — refuses to hand 'admin' to an external OAuth account, the same claim WikiRoutes validates server-side; it reads the roles being assigned, never the caller's (#1399 widened the pattern that found it)"
