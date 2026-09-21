@@ -157,16 +157,6 @@ interface AllPoliciesValidationResult {
 }
 
 /**
- * Policy save result
- */
-interface PolicySaveResult {
-  success: boolean;
-  policy: Policy;
-  validation: ValidationResult;
-  conflicts: ValidationWarning[];
-}
-
-/**
  * Validation statistics
  */
 interface ValidationStatistics {
@@ -838,44 +828,6 @@ class PolicyValidator extends BaseManager {
 
     // Simple overlap detection - could be more sophisticated
     return pattern1.includes('*') || pattern2.includes('*') || pattern1.startsWith(pattern2.split('*')[0]) || pattern2.startsWith(pattern1.split('*')[0]);
-  }
-
-  /**
-   * Validate policy before saving
-   *
-   * @param {Policy} policy - Policy to validate and save
-   * @returns {Promise<PolicySaveResult>} Save result
-   * @throws {Error} If validation or conflict check fails
-   */
-  async validateAndSavePolicy(policy: Policy): Promise<PolicySaveResult> {
-    const validation = this.validatePolicy(policy);
-
-    if (!validation.isValid) {
-      throw new Error(`Policy validation failed: ${validation.errors.map((e) => e.message).join(', ')}`);
-    }
-
-    // Check for conflicts with existing policies
-
-    const allPolicies = (this.policyManager as unknown as { getPolicies(): Policy[] })?.getPolicies() ?? [];
-    const conflictCheck = this.detectPolicyConflicts([...allPolicies, policy]);
-
-    if (conflictCheck.errors.length > 0) {
-      throw new Error(`Policy conflicts detected: ${conflictCheck.errors.map((e) => e.message).join(', ')}`);
-    }
-
-    // Save the policy
-
-    await (this.policyManager as unknown as { savePolicy(p: Policy): Promise<void> })?.savePolicy(policy);
-
-    // Clear validation cache
-    this.clearCache();
-
-    return {
-      success: true,
-      policy,
-      validation,
-      conflicts: conflictCheck.warnings
-    };
   }
 
   /**

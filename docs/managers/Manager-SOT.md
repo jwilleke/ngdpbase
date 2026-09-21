@@ -60,7 +60,7 @@ written. A declaration is never copied into data, because the copy is what drift
 
 ## Subject 1 — access control
 
-__Status:__ analysed 2026-09-20; steps 1–7 shipped, steps 8–10 open. Tracked by
+__Status:__ analysed 2026-09-20; steps 1–7 and 9 shipped, steps 8 and 10 open. Tracked by
 epic [#1431](https://github.com/jwilleke/ngdpbase/issues/1431).
 
 __"What the code does today" below is the record of what was found on 2026-09-20__, kept as the
@@ -239,7 +239,7 @@ Each step is shippable alone and leaves the tree green.
   - 7d __Missing metadata.__ ✅ — the decider refuses (`no_page_metadata`) unless the action is `create`; the view and edit routes, which have just proven the page exists, fail loudly with a 500, an error log and an `admin-system`-holder notification, de-duplicated per page (`utils/pageMetadataMissing.ts`). The rule surfaced a real disclosure: `<wiki:Include>` handed the decider `pageMetadata: null`, so the included page's audience was never consulted and an audience-restricted page rendered for any reader global policy allowed. It now asks `canUserAccessPage`, and fails closed without an `ACLManager` (it used to allow).
   - 7c __One implementation__ of the tier sequence. ✅ — `walkPageTiers` decides tiers 0 → 2 for one page and logs nothing; `_runEvaluator` and `filterAccessiblePages` both call it, supplying only what each can afford (per-page PDP and an audit record per decision, against compiled policy and none). The order now lives in one place. __Step 7 is complete.__
 - 8 __`ACLManager` becomes the PIP__ in name and location; the ACL markup parsing moves to `src/parsers/`.
-- 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)).
+- 9 __PAP:__ policy create/update/delete write config through `ConfigurationManager` with an `ActorContext` and an audit record ([#1216](https://github.com/jwilleke/ngdpbase/issues/1216)). ✅ — __it already existed.__ `/admin/configuration` writes `ngdpbase.access.policies` through `ConfigurationManager.setProperty(key, value, actor)`, which records the change (#1150). The dedicated `/admin/policies` editor was dead three ways — unrouted (a 404), unlinked, and its save path called `PolicyManager` methods that do not exist — and is deleted (operator, 2026-09-21). `/admin/roles` keeps the read-only __Security Policy Summary__, derived from the policies; its title and intro were corrected, having claimed permissions were set there and that page ACLs restrict but cannot grant.
 - 10 __Retire `PolicyManager`__ once the PDP reads the policies and the PAP writes them.
 
 ### Step 7's map — what each page decision orders today
