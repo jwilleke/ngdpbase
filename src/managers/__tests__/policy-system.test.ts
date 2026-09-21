@@ -1,19 +1,23 @@
 /**
  * Policy System Integration Tests
- * Tests the integration of PolicyManager, PolicyEvaluator, and PolicyValidator
+ * Tests the integration of PolicyEvaluator and PolicyValidator over the
+ * policies in configuration.
  *
- * NOTE: PolicyManager is READ-ONLY - it loads policies from ConfigurationManager.
- * Policies must be configured in the engine config, not saved dynamically.
+ * #1431 step 10: there is no PolicyManager. The policies are read through
+ * ConfigurationManager at decision time (src/security/policies.ts), so this
+ * puts them where the system reads them — in the configuration — instead of
+ * injecting them into a manager's private Map.
  */
 
 import fs from 'fs';
 import path from 'path';
 import WikiEngine from '../../WikiEngine';
 import type { WikiConfig } from '../../types/Config';
+import { readPolicies } from '../../security/policies';
 
 describe('Policy System Integration', () => {
   let engine;
-  let policyManager;
+  let policies: () => ReturnType<typeof readPolicies>;
   let policyEvaluator;
   let policyValidator;
   let aclManager;
@@ -75,14 +79,22 @@ describe('Policy System Integration', () => {
       }
     });
 
-    // Manually add test policies to PolicyManager for testing
-    // (since they're not loaded from config files in test environment)
-    policyManager = engine.getManager('PolicyManager');
-
-    // Directly inject test policies into PolicyManager's internal Map
-    for (const policy of testPolicies) {
-      policyManager.policies.set(policy.id, policy);
-    }
+    // The test policies go into the configuration, answered in memory. Not
+    // setProperty: that writes the operator's config file, and a test must
+    // never write an instance's data.
+    const configManager = engine.getManager('ConfigurationManager');
+    const original = configManager.getProperty.bind(configManager);
+    vi.spyOn(configManager, 'getProperty').mockImplementation((key: string, def: unknown) => {
+      if (key === 'ngdpbase.access.policies.enabled') return true;
+      // Added to whatever the engine's configuration already holds, as the old
+      // harness added them to PolicyManager's Map on top of the loaded ones.
+      if (key === 'ngdpbase.access.policies') {
+        const loaded = original(key, []);
+        return [...(Array.isArray(loaded) ? loaded : []), ...testPolicies];
+      }
+      return original(key, def);
+    });
+    policies = () => readPolicies((key, def) => configManager.getProperty(key, def));
 
     policyEvaluator = engine.getManager('PolicyEvaluator');
     policyValidator = engine.getManager('PolicyValidator');
@@ -109,7 +121,7 @@ describe('Policy System Integration', () => {
 
   describe('Policy Loading from Configuration', () => {
     test('should load policies from ConfigurationManager', () => {
-      const allPolicies = policyManager.getAllPolicies();
+      const allPolicies = policies();
 
       expect(allPolicies).toBeDefined();
       expect(Array.isArray(allPolicies)).toBe(true);
@@ -117,7 +129,7 @@ describe('Policy System Integration', () => {
     });
 
     test('should retrieve policy by ID', () => {
-      const policy = policyManager.getPolicy('test-policy-allow-editors');
+      const policy = policies().find((p) => p.id === 'test-policy-allow-editors');
 
       expect(policy).toBeDefined();
       expect(policy.id).toBe('test-policy-allow-editors');
@@ -126,7 +138,7 @@ describe('Policy System Integration', () => {
     });
 
     test('should sort policies by priority (descending)', () => {
-      const allPolicies = policyManager.getAllPolicies();
+      const allPolicies = policies();
 
       // Find our test policies in the sorted list
       const allowPolicy = allPolicies.find(p => p.id === 'test-policy-allow-editors');
@@ -145,7 +157,7 @@ describe('Policy System Integration', () => {
 
   describe('Policy Validation', () => {
     test('should validate policy successfully', () => {
-      const policy = policyManager.getPolicy('test-policy-allow-editors');
+      const policy = policies().find((p) => p.id === 'test-policy-allow-editors');
       const validation = policyValidator.validatePolicy(policy);
 
       expect(validation.isValid).toBe(true);
@@ -153,7 +165,7 @@ describe('Policy System Integration', () => {
     });
 
     test('should validate all policies without conflicts', () => {
-      const allPolicies = policyManager.getAllPolicies();
+      const allPolicies = policies();
       const allValidation = policyValidator.validateAllPolicies(allPolicies);
 
       expect(allValidation).toBeDefined();

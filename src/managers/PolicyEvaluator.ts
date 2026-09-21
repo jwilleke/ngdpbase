@@ -1,9 +1,12 @@
 import BaseManager from './BaseManager.js';
-import type { PolicySubject, PolicyResource } from '../types/Policy.js';
+// #1431: the one declaration of a policy. A local copy with `effect` required
+// sat here and drifted from it.
+import type { Policy, PolicySubject, PolicyResource } from '../types/Policy.js';
 import logger from '../utils/logger.js';
 import micromatch from 'micromatch';
 import { WikiEngine } from '../types/WikiEngine.js';
-import type PolicyManager from './PolicyManager.js';
+import type ConfigurationManager from './ConfigurationManager.js';
+import { readPolicies } from '../security/policies.js';
 
 /**
  * User context for policy evaluation
@@ -17,18 +20,6 @@ interface UserContext {
 /**
  * Policy subject definition
  */
-/**
- * Policy definition for evaluation
- */
-interface Policy {
-  id: string;
-  effect: string;
-  subjects?: PolicySubject[];
-  resources?: PolicyResource[];
-  actions?: string[];
-  priority?: number;
-}
-
 /**
  * Access evaluation context
  */
@@ -59,10 +50,10 @@ interface EvaluationResult {
  * @class PolicyEvaluator
  * @extends BaseManager
  *
- * @property {PolicyManager | null} policyManager - Reference to PolicyManager
+ * @property {ConfigurationManager | null} configManager - Where the policies are read, live (#1431)
  *
  * @see {@link BaseManager} for base functionality
- * @see {@link PolicyManager} for policy storage
+ * @see {@link readPolicies} for how the policies are read
  * @see {@link ACLManager} for access control integration
  *
  * @example
@@ -75,7 +66,18 @@ interface EvaluationResult {
  * if (result.allowed) console.log('Access granted');
  */
 class PolicyEvaluator extends BaseManager {
-  private policyManager: PolicyManager | null = null;
+  private configManager: ConfigurationManager | null = null;
+
+  /**
+   * The policies in force NOW, read through ConfigurationManager (#1431 step
+   * 10). PolicyManager used to hand back a copy taken at boot, so a policy
+   * edited in /admin/configuration was saved and audited but not enforced
+   * until a restart.
+   */
+  private policies(): Policy[] {
+    const cm = this.configManager;
+    return cm ? readPolicies((key, def) => cm.getProperty(key, def)) : [];
+  }
 
   /**
    * Creates a new PolicyEvaluator instance
@@ -88,20 +90,20 @@ class PolicyEvaluator extends BaseManager {
   }
 
   /**
-   * Initializes the PolicyEvaluator by getting reference to PolicyManager
+   * Initializes the PolicyEvaluator by getting its reference to ConfigurationManager
    *
    * @async
    * @returns {Promise<void>}
-   * @throws {Error} If PolicyManager is not available
+   * @throws {Error} If ConfigurationManager is not available
    *
    * @example
    * await evaluator.initialize();
    * console.log('Policy evaluator ready');
    */
   async initialize(): Promise<void> {
-    this.policyManager = this.engine.getManager('PolicyManager') ?? null;
-    if (!this.policyManager) {
-      throw new Error('PolicyEvaluator requires PolicyManager to be initialized.');
+    this.configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager') ?? null;
+    if (!this.configManager) {
+      throw new Error('PolicyEvaluator requires ConfigurationManager to be initialized.');
     }
     logger.info('📋 PolicyEvaluator initialized');
   }
@@ -129,12 +131,11 @@ class PolicyEvaluator extends BaseManager {
     const roles = (userContext?.roles || []).join('|');
     logger.info(`[POLICY] Evaluate page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
 
-    if (!this.policyManager) {
-      return { hasDecision: false, allowed: false, reason: 'PolicyManager not initialized', policyName: null };
+    if (!this.configManager) {
+      return { hasDecision: false, allowed: false, reason: 'PolicyEvaluator not initialized', policyName: null };
     }
 
-    // PolicyManager returns Policy[] with different interface - use unknown cast
-    const policies = this.policyManager.getAllPolicies() as unknown as Policy[];
+    const policies = this.policies();
     for (const policy of policies) {
       const match = this.matches(policy, context);
       logger.info(`[POLICY] Check policy=${policy.id} effect=${policy.effect} match=${match}`);
@@ -247,10 +248,10 @@ class PolicyEvaluator extends BaseManager {
    * `evaluateAccess` writes is right for one decision and wrong for a filter.
    */
   compile(userContext: UserContext | undefined, action: string): (pageName: string) => EvaluationResult {
-    if (!this.policyManager) {
-      return () => ({ hasDecision: false, allowed: false, reason: 'PolicyManager not initialized', policyName: null });
+    if (!this.configManager) {
+      return () => ({ hasDecision: false, allowed: false, reason: 'PolicyEvaluator not initialized', policyName: null });
     }
-    const applicable = (this.policyManager.getAllPolicies() as unknown as Policy[])
+    const applicable = this.policies()
       .filter((policy) => this.matchesSubject(policy.subjects, userContext) && this.matchesAction(policy.actions, action));
     logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
     return (pageName: string): EvaluationResult => {

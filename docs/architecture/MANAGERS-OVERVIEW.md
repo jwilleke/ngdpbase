@@ -20,9 +20,8 @@ WikiEngine registers managers in this sequence. Later managers may call `engine.
 | 8 | __NotificationManager__ | ConfigurationManager |
 | 9 | __PageManager__ | ConfigurationManager |
 | 10 | __TemplateManager__ | *(none)* |
-| 11 | __PolicyManager__ | ConfigurationManager |
-| 12 | __PolicyValidator__ | PolicyManager |
-| 13 | __PolicyEvaluator__ | PolicyManager, PolicyValidator |
+| 12 | __PolicyValidator__ | ConfigurationManager |
+| 13 | __PolicyEvaluator__ | ConfigurationManager, PolicyValidator |
 | 14 | __ACLManager__ | PolicyEvaluator |
 | 15 | __PluginManager__ | ConfigurationManager |
 | 16 | __MarkupParser__ | ConfigurationManager, PluginManager |
@@ -197,13 +196,13 @@ Variable substitution replaces `{{uuid}}`, `{{date}}`, `{{pageName}}`, `{{keywor
 
 ---
 
-### PolicyManager
+### Access policies (no manager)
 
-Loads access-control policies from configuration (`ngdpbase.access.policies`). Disabled by default.
+There is no `PolicyManager` — it was removed in [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 10. It copied `ngdpbase.access.policies` at start-up, so a policy changed in Configuration was saved and audited but not enforced until a restart. See [PolicyManager.md](../managers/PolicyManager.md).
+
+The policies are read through `ConfigurationManager` at decision time by `readPolicies(get)` in `src/security/policies.ts`: nothing when `ngdpbase.access.policies.enabled` is off (the default), entries without a string `id` skipped, a repeated `id` resolved to the later entry, highest `priority` first.
 
 Policies define `subject` (user/role/group), `resource` (page/category), `action` (view/edit/delete), `effect` (allow/deny), and numeric `priority`.
-
-__Key API:__ `getPolicy(id)`, `getAllPolicies()` (sorted by priority descending).
 
 ---
 
@@ -225,7 +224,7 @@ __Flow:__
 
 ```
 evaluate(context, action, resource)
-  → PolicyManager.getAllPolicies()  (sorted by priority)
+  → readPolicies(ConfigurationManager)  (live; sorted by priority)
   → for each matching policy: apply effect
   → AuditManager.logAccessDecision(context, result, reason, policy)
   → return Allow | Deny | NotApplicable
@@ -610,7 +609,7 @@ AuthManager.handleLocalLogin()
 isAllowed(action, resource, userContext)
   ↓
 PolicyEvaluator.evaluate(ctx, action, resource)
-  → PolicyManager.getAllPolicies()              (sorted by priority)
+  → readPolicies(ConfigurationManager)          (live; sorted by priority)
   → match subject / resource / action per policy
   → apply first matching effect (allow/deny)
   → AuditManager.logAccessDecision(ctx, result, reason, policy)

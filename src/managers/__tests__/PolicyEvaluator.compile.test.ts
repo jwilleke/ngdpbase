@@ -15,10 +15,19 @@ const policies = [
   { id: 'unrelated', effect: 'allow', subjects: [{ type: 'role', value: 'admin' }], resources: [{ type: 'page', pattern: '*' }], actions: ['admin-system'] }
 ];
 
+/**
+ * #1431 step 10: the evaluator reads the policies through ConfigurationManager,
+ * live, so the harness hands it a config — as the running system does — rather
+ * than a policy store to reach into.
+ */
 function makeEvaluator() {
-  const engine = { getManager: (n: string) => (n === 'PolicyManager' ? { getAllPolicies: () => policies } : null) } as never;
-  const pe = new PolicyEvaluator(engine);
-  (pe as unknown as { policyManager: unknown }).policyManager = { getAllPolicies: () => policies };
+  const config: Record<string, unknown> = {
+    'ngdpbase.access.policies.enabled': true,
+    'ngdpbase.access.policies': policies
+  };
+  const configManager = { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) };
+  const pe = new PolicyEvaluator({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
+  (pe as unknown as { configManager: unknown }).configManager = configManager;
   return pe;
 }
 
@@ -51,8 +60,37 @@ describe('PolicyEvaluator.compile (#1219)', () => {
     expect(decide('Notes')).toMatchObject({ hasDecision: true, allowed: true, policyName: 'everyone-reads' });
   });
 
-  test('no PolicyManager: no decision, like evaluateAccess', () => {
+  test('no ConfigurationManager: no decision, like evaluateAccess', () => {
     const pe = new PolicyEvaluator({ getManager: () => null });
     expect(pe.compile({ roles: ['All'] }, 'page-read')('X')).toMatchObject({ hasDecision: false, allowed: false });
+  });
+});
+
+describe('#1431 step 10 — a policy changed after start is enforced without a restart', () => {
+  test('evaluateAccess sees a policy added after initialize()', async () => {
+    // The defect: PolicyManager copied the policies at boot, so a policy an
+    // admin changed in /admin/configuration was saved and audited but never
+    // enforced until the server restarted.
+    const live: Record<string, unknown> = {
+      'ngdpbase.access.policies.enabled': true,
+      'ngdpbase.access.policies': []
+    };
+    const configManager = { getProperty: (key: string, def: unknown) => (key in live ? live[key] : def) };
+    const pe = new PolicyEvaluator({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
+    await pe.initialize();
+
+    const ask = () => pe.evaluateAccess({ pageName: 'Notes', action: 'page-read', userContext: { username: 'e', roles: ['editor'] } });
+
+    expect((await ask()).hasDecision).toBe(false);
+
+    // An administrator adds a policy, after start.
+    live['ngdpbase.access.policies'] = [
+      { id: 'editors-read', effect: 'allow', subjects: [{ type: 'role', value: 'editor' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read'] }
+    ];
+    expect(await ask()).toMatchObject({ hasDecision: true, allowed: true, policyName: 'editors-read' });
+
+    // And takes it away again.
+    live['ngdpbase.access.policies'] = [];
+    expect((await ask()).hasDecision).toBe(false);
   });
 });

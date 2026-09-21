@@ -286,42 +286,48 @@ describe('UserManager', () => {
   });
 
   describe('Permission Management', () => {
-    let mockPolicyManager;
+    let policiesConfig;
     let mockMemberRoles;
 
     beforeEach(() => {
-      // Mock PolicyManager for permission tests
+      // #1431 step 10: the policies are read through ConfigurationManager,
+      // live — so the fixture puts them in the config, where the system reads
+      // them, rather than in a PolicyManager that no longer exists.
       mockMemberRoles = ['user'];
-      mockPolicyManager = {
-        getAllPolicies: vi.fn(() => [
-          {
-            id: 'policy1',
-            subjects: [
-              { type: 'role', value: 'user' },
-              { type: 'role', value: 'Authenticated' }
-            ],
-            effect: 'allow',
-            actions: ['page:view', 'page:edit']
-          },
-          {
-            id: 'policy2',
-            subjects: [
-              { type: 'role', value: 'admin' }
-            ],
-            effect: 'allow',
-            actions: ['page:view', 'page:edit', 'page:delete', 'admin:manage']
-          }
-        ])
+      const permissionPolicies = [
+        {
+          id: 'policy1',
+          subjects: [
+            { type: 'role', value: 'user' },
+            { type: 'role', value: 'Authenticated' }
+          ],
+          effect: 'allow',
+          actions: ['page:view', 'page:edit']
+        },
+        {
+          id: 'policy2',
+          subjects: [
+            { type: 'role', value: 'admin' }
+          ],
+          effect: 'allow',
+          actions: ['page:view', 'page:edit', 'page:delete', 'admin:manage']
+        }
+      ];
+      policiesConfig = {
+        getProperty: vi.fn((key, def) => {
+          if (key === 'ngdpbase.access.policies.enabled') return true;
+          if (key === 'ngdpbase.access.policies') return permissionPolicies;
+          return mockConfigurationManager.getProperty(key, def);
+        })
       };
 
-      // Override engine.getManager to return mock PolicyManager.
+      // Override engine.getManager to return the policy-carrying config.
       // #1429: a user's roles come from RoleManager records — nothing synthetic
       // is added any more, so a fixture that wants a role must supply it. These
       // tests passed before because the injected 'Authenticated' matched
       // policy1, not because the user's own role did.
       mockEngine.getManager = vi.fn((name) => {
-        if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'PolicyManager') return mockPolicyManager;
+        if (name === 'ConfigurationManager') return policiesConfig;
         if (name === 'PersonManager') return { getByIdentifier: vi.fn(async () => ({ '@id': 'person-1' })) };
         if (name === 'RoleManager') return {
           listByMember: vi.fn(async () => (mockMemberRoles).map((r) => ({ namedPosition: r })))
@@ -350,8 +356,8 @@ describe('UserManager', () => {
       expect(result).toBe(true);
     });
 
-    test('getUserPermissions() should return empty array without PolicyManager', async () => {
-      // Override to return no PolicyManager
+    test('getUserPermissions() is empty when no policies are in force', async () => {
+      // A config with no policies — and the enabled switch unset, which is off
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         return null;

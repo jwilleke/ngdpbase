@@ -13,14 +13,17 @@
 import PolicyValidator from '../PolicyValidator';
 import type { WikiEngine } from '../../types/WikiEngine';
 
-const mockPolicyManager = {
-  getPolicies: vi.fn().mockReturnValue([]),
-  savePolicy: vi.fn().mockResolvedValue(undefined)
+// #1431 step 10: the validator reads policies through ConfigurationManager.
+// This used to mock a PolicyManager with `getPolicies` and `savePolicy` — two
+// methods the real PolicyManager never had — which is how a save path that
+// threw on every call went on passing its tests.
+const mockConfigManager = {
+  getProperty: vi.fn((_key: string, def: unknown) => def)
 };
 
 function makeEngine(): WikiEngine {
   return {
-    getManager: vi.fn((name: string) => name === 'PolicyManager' ? mockPolicyManager : null)
+    getManager: vi.fn((name: string) => name === 'ConfigurationManager' ? mockConfigManager : null)
   };
 }
 

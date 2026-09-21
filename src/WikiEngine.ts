@@ -15,7 +15,6 @@ import ACLManager from './managers/ACLManager.js';
 import SchemaManager from './managers/SchemaManager.js';
 import VariableManager from './managers/VariableManager.js';
 import ValidationManager from './managers/ValidationManager.js';
-import PolicyManager from './managers/PolicyManager.js';
 import PolicyValidator from './managers/PolicyValidator.js';
 import PolicyEvaluator from './managers/PolicyEvaluator.js';
 import PolicyDecisionPoint from './security/PolicyDecisionPoint.js';
@@ -94,7 +93,7 @@ class WikiEngine extends Engine {
    * 4. NotificationManager - Notification system
    * 5. PageManager - Page storage and retrieval
    * 6. TemplateManager - Template rendering
-   * 7. PolicyManager/PolicyValidator/PolicyEvaluator - Policy system
+   * 7. PolicyValidator/PolicyEvaluator - Policy system (policies read live, #1431)
    * 8. ACLManager - Access control (depends on PolicyEvaluator)
    * 9. PluginManager - Plugin system
    * 10. MarkupParser - Markup parsing
@@ -234,11 +233,12 @@ class WikiEngine extends Engine {
     this.registerManager('TemplateManager', templateManager);
     await templateManager.initialize();
 
-    // Initialize PolicyManager and PolicyEvaluator BEFORE ACLManager
-    // because ACLManager depends on PolicyEvaluator
-    const policyManager = new PolicyManager(this);
-    this.registerManager('PolicyManager', policyManager);
-    await policyManager.initialize();
+    // PolicyEvaluator BEFORE ACLManager, because ACLManager depends on it.
+    // #1431 step 10: there is no PolicyManager. It copied the policies at boot
+    // and answered every decision from the copy, so a policy changed in
+    // /admin/configuration was saved and audited but not enforced until a
+    // restart. The policies are read through ConfigurationManager at decision
+    // time (src/security/policies.ts).
 
     const policyValidator = new PolicyValidator(this);
     this.registerManager('PolicyValidator', policyValidator);

@@ -3,7 +3,8 @@ import logger from '../utils/logger.js';
 import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
-import type PolicyManager from './PolicyManager.js';
+import type ConfigurationManager from './ConfigurationManager.js';
+import { readPolicies } from '../security/policies.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -179,7 +180,7 @@ interface PolicySchema {
  * Ensures policy integrity and prevents conflicting rules
  */
 class PolicyValidator extends BaseManager {
-  private policyManager: PolicyManager | null;
+  private configManager: ConfigurationManager | null;
   private schemaValidator: AjvLike | null;
   private policySchema: PolicySchema | null;
   private schemaValidatorCompiled: ValidateFunction | null;
@@ -187,7 +188,7 @@ class PolicyValidator extends BaseManager {
 
   constructor(engine: WikiEngine) {
     super(engine);
-    this.policyManager = null;
+    this.configManager = null;
     this.schemaValidator = null;
     this.policySchema = null;
     this.schemaValidatorCompiled = null;
@@ -197,10 +198,10 @@ class PolicyValidator extends BaseManager {
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
 
-    // Get reference to PolicyManager
-    this.policyManager = this.engine.getManager<PolicyManager>('PolicyManager') ?? null;
-    if (!this.policyManager) {
-      throw new Error('PolicyValidator requires PolicyManager to be registered');
+    // #1431 step 10: the policies are read through ConfigurationManager, live.
+    this.configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager') ?? null;
+    if (!this.configManager) {
+      throw new Error('PolicyValidator requires ConfigurationManager to be registered');
     }
 
     // Initialize JSON schema validator
@@ -571,12 +572,16 @@ class PolicyValidator extends BaseManager {
   /**
    * Validate all policies for conflicts
    *
-   * @param {Policy[] | null} policies - Policies to validate (null = get from manager)
+   * @param {Policy[] | null} policies - Policies to validate (null = the policies in force)
    * @returns {AllPoliciesValidationResult} Validation result
    */
   validateAllPolicies(policies: Policy[] | null = null): AllPoliciesValidationResult {
     if (!policies) {
-      policies = (this.policyManager as unknown as { getPolicies(): Policy[] })?.getPolicies() ?? [];
+      // #1431 step 10: this called `policyManager.getPolicies()`, which never
+      // existed — PolicyManager had `getAllPolicies` — so asking to validate
+      // the policies in force threw a TypeError. Now it reads them.
+      const cm = this.configManager;
+      policies = cm ? (readPolicies((key, def) => cm.getProperty(key, def)) as unknown as Policy[]) : [];
     }
 
     const errors: ValidationError[] = [];

@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 41 | 43 | Core system managers |
+| [Managers](#managers) | 40 | 43 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 36 | 37 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -79,7 +79,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | PersonManager | ✅ [doc](managers/PersonManager.md) | Canonical Person records (#617) — decoupled from User authentication identity, shared across addons |
 | PluginManager | 📘 [doc](managers/PluginManager.md) + [guide](managers/PluginManager-Complete-Guide.md) | Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output |
 | PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of ACLManager — evaluates role/permission policies against principals and resources |
-| PolicyManager | ✅ [doc](managers/PolicyManager.md) | Policy CRUD and lookup — manages the role/permission ruleset that PolicyEvaluator applies |
+| PolicyManager | ✅ [doc](managers/PolicyManager.md) | Removed in |
 | PolicyValidator | ✅ [doc](managers/PolicyValidator.md) | Schema validation for policy definitions; runs at startup to refuse malformed policies |
 | RenderingManager | 📘 [doc](managers/RenderingManager.md) + [guide](managers/RenderingManager-Complete-Guide.md) | Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation |
 | RoleManager | ✅ [doc](managers/RoleManager.md) | Canonical Role records — one file per (organization, namedPosition) pair (#617 follow-up) |
@@ -326,7 +326,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 41/41 with quick-reference docs (100%); 18 with Complete Guides.
+__Managers:__ 40/40 with quick-reference docs (100%); 18 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 

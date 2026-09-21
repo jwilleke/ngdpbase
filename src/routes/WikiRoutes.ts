@@ -438,13 +438,6 @@ interface ISearchManager {
   searchBySystemKeywordsList(keywords: string[]): Promise<unknown[]>;
 }
 
-interface IPolicyManager {
-  getPolicy(id: string): unknown;
-  getAllPolicies(): unknown[];
-  getPolicies(): unknown[];
-  deletePolicy(id: string): Promise<unknown>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface WikiEngine {
@@ -456,7 +449,6 @@ interface WikiEngine {
   getManager(name: 'SchemaManager'): ISchemaManager;
   getManager(name: 'OrganizationManager'): IOrganizationManager;
   getManager(name: 'SearchManager'): ISearchManager;
-  getManager(name: 'PolicyManager'): IPolicyManager;
   // Managers using full typed imports
   getManager(name: 'AddonsManager'): AddonsManager;
   getManager(name: 'AssetManager'): AssetManager;

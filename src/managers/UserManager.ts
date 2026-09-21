@@ -15,7 +15,6 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PersonManager from './PersonManager.js';
 import type OrganizationManager from './OrganizationManager.js';
 import type RoleManager from './RoleManager.js';
-import type PolicyManager from './PolicyManager.js';
 import type PageManager from './PageManager.js';
 import type TemplateManager from './TemplateManager.js';
 import type ValidationManager from './ValidationManager.js';
@@ -29,6 +28,7 @@ import { UserCreateError } from '../utils/userCreateError.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
+import { permissionsForRoles } from '../utils/rolePermissions.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -880,17 +880,18 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Get user's effective permissions from PolicyManager
+   * The permissions a user's roles give them, for display (#1431 step 10).
+   *
+   * The union of their roles' rows in the admin Security Policy Summary, read
+   * live from the policies — so the profile page and the admin page can never
+   * disagree about the same roles. A summary for a human, not an
+   * authorisation answer: that is always `hasPermission` with the subject.
+   *
    * @param {string} username - Username (null for anonymous)
-   * @returns {Promise<string[]>} Array of permission strings
+   * @returns {Promise<string[]>} Permission names, sorted
    */
   async getUserPermissions(username: string): Promise<string[]> {
-    // Query PolicyManager for actual permissions
-    const policyManager = this.engine.getManager<PolicyManager>('PolicyManager');
-    if (!policyManager) {
-      logger.warn('PolicyManager not available, returning empty permissions');
-      return [];
-    }
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
 
     if (!this.provider) {
       return [];
@@ -901,8 +902,7 @@ class UserManager extends BaseManager {
     // so the bare lowercase comparison this used to make never fired for a
     // real visitor — it fell through to a provider lookup that found nothing.
     if (!username || normalizeUsername(username) === 'anonymous') {
-      const userRoles = ['anonymous'];
-      return this.getPermissionsFromPolicies(policyManager, userRoles);
+      return permissionsForRoles(configManager, ['anonymous']);
     }
 
     const user = await this.provider.getUser(username);
@@ -912,45 +912,9 @@ class UserManager extends BaseManager {
 
     // #1429: the user's own roles, via RoleManager. No synthetic role is added —
     // 'Authenticated' and 'All' were grants nobody was given.
-    const baseRoles = await this.resolveUserRoles(username);
-    const userRoles = [...baseRoles];
-    return this.getPermissionsFromPolicies(policyManager, userRoles);
+    return permissionsForRoles(configManager, await this.resolveUserRoles(username));
   }
 
-  /**
-   * Helper method to get permissions from policies for given roles
-   * @private
-   * @param {any} policyManager - PolicyManager instance
-   * @param {string[]} userRoles - Array of role names
-   * @returns {string[]} Array of permission strings
-   */
-
-  private getPermissionsFromPolicies(policyManager: PolicyManager, userRoles: string[]): string[] {
-    interface PolicySubject {
-      type: string;
-      value: string;
-    }
-    interface Policy {
-      effect: string;
-      subjects: PolicySubject[];
-      actions: string[];
-    }
-    const policies = policyManager.getAllPolicies() as unknown as Policy[];
-    const permissions = new Set<string>();
-
-    // Collect permissions from all matching allow policies
-    for (const policy of policies) {
-      if (policy.effect === 'allow') {
-        const hasMatchingRole = policy.subjects.some((subject: PolicySubject) => subject.type === 'role' && userRoles.includes(subject.value));
-
-        if (hasMatchingRole) {
-          policy.actions.forEach((action: string) => permissions.add(action));
-        }
-      }
-    }
-
-    return Array.from(permissions);
-  }
 
   /**
    * Check if a display name conflicts with existing page names or other users
