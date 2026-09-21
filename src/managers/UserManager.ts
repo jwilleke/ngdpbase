@@ -283,7 +283,22 @@ interface RoleCreateData {
 class UserManager extends BaseManager {
   private provider: UserProvider | null = null;
   private providerClass?: string;
-  private roles: Map<string, Role> = new Map();
+  /**
+   * The role catalogue, read live from `ngdpbase.roles.definitions` — which
+   * roles EXIST, and how they are shown. It grants nothing: the policies do.
+   *
+   * Read on every use, like `permissions` below and the policies
+   * (src/security/policies.ts). It used to be copied once at boot, so a role
+   * an administrator added in Configuration could not be assigned to anyone
+   * ("Role not found") and did not appear on /admin/roles or in any role
+   * picker until the server restarted; a removed role stayed assignable. The
+   * reasoning below for permissions applies word for word.
+   */
+  private get roles(): Map<string, Role> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const defs = (configManager?.getProperty('ngdpbase.roles.definitions', {}) ?? {}) as Record<string, Role>;
+    return new Map(Object.entries(defs));
+  }
   /**
    * The permission catalog, read live from `ngdpbase.permissions.definitions`
    * (#1220). Not cached: a cached copy of an authorization attribute is not
@@ -374,11 +389,9 @@ class UserManager extends BaseManager {
     // It is read where it is actually needed, in createDefaultAdmin(), which
     // runs only when the user store is empty.
 
-    // Load role definitions from config
-    const roleDefinitions = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>;
-    this.roles = new Map(Object.entries(roleDefinitions));
-
-    logger.info(`👤 Loaded ${this.roles.size} role definitions from configuration`);
+    // The role catalogue is read live (see `roles`); say how many the
+    // configuration declares now, for the boot log.
+    logger.info(`👤 ${this.roles.size} role definitions declared in configuration`);
 
     // Initialize permissions registry
     this.initializePermissions();

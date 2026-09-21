@@ -31,7 +31,12 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: () => Promise.resolve() };
-      if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.system.principal' ? 'system' : d) };
+      // #1431: the role catalogue is read live from config, so a role that
+      // exists is declared here rather than pushed into a private Map.
+      if (name === 'ConfigurationManager') return { getProperty: (k: string, d: unknown) => (
+        k === 'ngdpbase.system.principal' ? 'system'
+          : k === 'ngdpbase.roles.definitions' ? { reader: { name: 'reader' }, editor: { name: 'editor' } }
+            : d) };
       return null;
     })
   } as unknown as WikiEngine;
@@ -112,7 +117,6 @@ describe('#1204 user-edit', () => {
 
   test('assigning a role is a user-edit', async () => {
     const { um, sink } = makeManager();
-    (um as unknown as { roles: Map<string, unknown> }).roles.set('editor', { name: 'editor' });
     (um as unknown as { syncRoleAdd: () => Promise<void> }).syncRoleAdd = async () => undefined;
     await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
     sink.length = 0;
@@ -149,5 +153,25 @@ describe('#1204 search-user ships switched off', () => {
     (um as unknown as { getUsers: () => Promise<unknown[]> }).getUsers = async () => [...users.values()];
     await um.searchUsers('ali', {}, ADMIN);
     expect(sink).toEqual([]);
+  });
+
+  test('a role added to the configuration after start can be assigned at once (#1431)', async () => {
+    // The role catalogue was copied at boot, so a role an administrator added
+    // in Configuration was refused — "Role not found" — until a restart.
+    const declared: Record<string, unknown> = { reader: { name: 'reader' } };
+    const { um, sink } = makeManager();
+    (um as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager = ((orig) => (n: string) =>
+      n === 'ConfigurationManager'
+        ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.system.principal' ? 'system' : k === 'ngdpbase.roles.definitions' ? declared : d) }
+        : orig(n))((um as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager);
+    (um as unknown as { syncRoleAdd: () => Promise<void> }).syncRoleAdd = async () => undefined;
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567' }, ADMIN);
+
+    await expect(um.assignRole('alice', 'auditor', ADMIN)).rejects.toThrow('Role not found');
+
+    declared.auditor = { name: 'auditor' };   // an administrator adds it
+    sink.length = 0;
+    await um.assignRole('alice', 'auditor', ADMIN);
+    expect(sink[0]).toMatchObject({ eventType: 'user-edit', metadata: { role: { assign: 'auditor' } } });
   });
 });

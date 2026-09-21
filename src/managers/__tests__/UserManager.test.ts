@@ -220,16 +220,24 @@ describe('UserManager', () => {
   });
 
   describe('Role Management', () => {
+    let baseGetProperty;
     beforeEach(() => {
-      // Setup default roles
-      userManager.roles.set('admin', {
-        name: 'admin',
-        permissions: ['read', 'write', 'delete', 'admin']
-      });
-      userManager.roles.set('user', {
-        name: 'user',
-        permissions: ['read', 'write']
-      });
+      // #1431: the role catalogue is read live from ngdpbase.roles.definitions,
+      // so the roles are declared in config — as they are in a running system —
+      // rather than pushed into a private Map that no longer exists.
+      const roles = {
+        admin: { name: 'admin', permissions: ['read', 'write', 'delete', 'admin'] },
+        user: { name: 'user', permissions: ['read', 'write'] }
+      };
+      baseGetProperty = mockConfigurationManager.getProperty.getMockImplementation();
+      mockConfigurationManager.getProperty.mockImplementation((key, def) =>
+        key === 'ngdpbase.roles.definitions' ? roles : baseGetProperty(key, def));
+    });
+
+    // The mock is shared by the whole file; put it back so no later test
+    // inherits these roles.
+    afterEach(() => {
+      mockConfigurationManager.getProperty.mockImplementation(baseGetProperty);
     });
 
     test('getRole() should return role definition', () => {
