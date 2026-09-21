@@ -1,0 +1,39 @@
+<%- include('header', { pageName: '' }) %>
+<%
+  // #1448 — the password prompt for a locked private store. The key is wrapped
+  // by the password and lives only in session memory, so a restart locks the
+  // store while the sign-in survives; the password alone unwraps it again.
+%>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="card mt-4">
+        <div class="card-header">
+          <h4 class="mb-0"><i class="fas fa-lock"></i> Unlock your private store</h4>
+        </div>
+        <div class="card-body">
+          <% if (typeof error !== 'undefined' && error) { %>
+            <div class="alert alert-danger" role="alert"><%= error %></div>
+          <% } %>
+          <p>
+            Your private pages are encrypted with a key that only your password can open.
+            It is kept in memory for this session, so it was cleared when the site restarted.
+            Enter your password to open it again.
+          </p>
+          <form method="POST" action="/private-store/unlock" autocomplete="off">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="next" value="<%= next %>">
+            <div class="mb-3">
+              <label class="form-label" for="unlockPassword">Password</label>
+              <input type="password" class="form-control" id="unlockPassword" name="password"
+                     autocomplete="current-password" required autofocus>
+            </div>
+            <button type="submit" class="btn btn-primary">Unlock</button>
+            <a class="btn btn-link" href="<%= next %>">Not now</a>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('footer') %>

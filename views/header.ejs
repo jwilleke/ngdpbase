@@ -557,6 +557,20 @@
             </nav>
 
             <main role="main" class="col-12 col-md-9 col-lg-10 px-md-4 px-2 jspwiki-content main-content">
+<%# #1448: this session has not unwrapped the signed-in owner's store key — after
+    a restart, typically — so their private pages 404 and are absent from lists.
+    About the user's STATE only: it never names a page, because while locked the
+    server does not know which pages are in the store. Only ever shown to the
+    store's own owner. The unlock page is itself excluded, since it IS the fix. %>
+<% if (typeof privateStoreLocked !== 'undefined' && privateStoreLocked
+      && !(typeof currentUrl === 'string' && currentUrl.startsWith('/private-store/unlock'))) { %>
+                <div class="alert alert-warning d-flex align-items-center mt-3" role="status" data-private-store-locked>
+                    <i class="fas fa-lock me-2" aria-hidden="true"></i>
+                    <div class="flex-grow-1">Your private store is locked, so your private pages are hidden.</div>
+                    <a class="btn btn-sm btn-warning ms-3"
+                       href="/private-store/unlock?next=<%= encodeURIComponent(currentUrl || '/') %>">Unlock</a>
+                </div>
+<% } %>
 
 <script>
     /**

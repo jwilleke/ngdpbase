@@ -235,6 +235,20 @@ export async function assertContextCanWriteStore(ctx: ActorContext, args: {
   });
 }
 
+/**
+ * Whether this context's session holds an unlocked user key (#1448).
+ *
+ * A yes/no, deliberately. {@link kekFor} hands back a COPY of the key bytes,
+ * which is right for a caller that is about to use them and wrong for one that
+ * only needs to know they exist — every page render asks this, and none of
+ * them should be copying key material into a buffer it then has to remember
+ * to zero.
+ */
+export function hasUnlockedKey(ctx: ActorContext | undefined): boolean {
+  const handle = handleOf(ctx);
+  return !!handle && bags.get(handle)?.kek !== undefined;
+}
+
 /** The user KEK this context's session holds, if any. */
 export function kekFor(ctx: ActorContext | undefined): Buffer | undefined {
   const handle = handleOf(ctx);

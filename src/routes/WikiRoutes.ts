@@ -151,6 +151,7 @@ import type ValidationManager from '../managers/ValidationManager.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
+import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
@@ -1071,7 +1072,19 @@ class WikiRoutes {
       ? shareManagerForChrome.isEnabled()
       : false;
 
+    // #1448: the signed-in owner of an encrypted store whose key this session
+    // has not unwrapped — after a restart, typically. Every page carries the
+    // banner so the owner is told wherever they notice their pages are gone,
+    // not only on a 404. A failure here must never break the page it decorates.
+    let privateStoreLocked = false;
+    try {
+      privateStoreLocked = (await this.privateStoreUnlockState(req)).locked;
+    } catch (err) {
+      logger.warn('[private-store] could not determine lock state for the banner:', err);
+    }
+
     const templateData: {
+      privateStoreLocked: boolean;
       currentUser: UserContext | null;
       user: UserContext | null;
       userContext: UserContext | null;
@@ -1107,6 +1120,7 @@ class WikiRoutes {
       // `_asset-picker` gets the same source list — the standalone /search page
       // and the editor's Browse Assets modal alike.
       assetPickerSources: this.getPickerAssetSources(),
+      privateStoreLocked,
       currentUser: userContext,
       user: userContext,       // alias
       userContext: userContext, // used by page-history.ejs and other templates
@@ -8172,6 +8186,106 @@ ${panes}
     return false;
   }
 
+  /**
+   * Where this signed-in user stands with their private store (#1448).
+   *
+   * Reads only the SUBJECT's own key file, so it can say "locked" to the owner
+   * and to nobody else — an administrator asking has no key file of that
+   * owner's to find.
+   */
+  private async privateStoreUnlockState(req: Request): Promise<{
+    username: string;
+    pagesDirectory: string;
+    layout: PrivateStoreLayout;
+    locked: boolean;
+  }> {
+    const configManager = this.engine.getManager('ConfigurationManager');
+    const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
+    const pagesDirectory = configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    const layout = privateStoreLayoutFromConfig(getProperty);
+    const username = req.userContext?.username ?? '';
+    const locked = await privateStoreLockedFor({ ctx: req.userContext, username, pagesDirectory, layout });
+    return { username, pagesDirectory, layout, locked };
+  }
+
+  private async renderPrivateStoreUnlock(req: Request, res: Response, view: { next: string; error?: string }): Promise<void> {
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('private-store-unlock', { ...commonData, title: 'Unlock your private store', ...view });
+  }
+
+  /**
+   * GET /private-store/unlock — the password prompt for a locked store (#1448).
+   *
+   * The key is wrapped by the password and lives only in session memory, so a
+   * restart locks the store while the sign-in survives. The password is all it
+   * takes to unwrap it again; a whole new sign-in is not needed, and until now
+   * it was the only way out ("sign out and sign in with your password").
+   *
+   * Asks `page-read` because unlocking serves reading one's own pages. The
+   * real authorization is the key: this only ever touches the subject's own
+   * key file, and only with their password — an anonymous visitor finds no
+   * keys and is sent straight back.
+   */
+  async privateStoreUnlockPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'page-read', req, res, 'page'))) return;
+      const next = safeRedirect(req.query.next);
+      const { locked } = await this.privateStoreUnlockState(req);
+      if (!locked) return res.redirect(next);
+      return await this.renderPrivateStoreUnlock(req, res, { next });
+    } catch (err) {
+      logger.error('[private-store] unlock page failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The unlock page could not be shown.');
+    }
+  }
+
+  /**
+   * POST /private-store/unlock (#1448).
+   *
+   * The password is checked by {@link verifyDoorPassword} — the same
+   * verification, throttle and failed-attempt record as the sign-in form —
+   * because an unlock prompt IS a password check, and a second, unthrottled
+   * one would be a way to guess passwords.
+   *
+   * Reuses the session's key-bag handle when it has one (the restart case);
+   * mints one when it does not (a session signed in without a password, whose
+   * owner now proves the password here). Either way the unlock is what sign-in
+   * does, through the same function.
+   */
+  async privateStoreUnlock(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!(await this.permitted(wikiContext, 'page-read', req, res, 'page'))) return;
+      const next = safeRedirect(req.body?.next);
+      const state = await this.privateStoreUnlockState(req);
+      if (!state.locked) return res.redirect(next);
+
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!(await this.verifyDoorPassword(req, state.username, password))) {
+        return await this.renderPrivateStoreUnlock(req, res, { next, error: 'That password is not correct.' });
+      }
+
+      let handle = req.session.privateStoreHandle;
+      if (typeof handle !== 'string' || !handle) {
+        handle = newPrivateStoreHandle();
+        req.session.privateStoreHandle = handle;
+      }
+      await unlockPrivateStoresWithPassword({
+        handle,
+        username: state.username,
+        password,
+        pagesDirectory: state.pagesDirectory
+      });
+      await this.auditAuthentication(req, state.username, 'success', 'private store unlocked');
+      return res.redirect(next);
+    } catch (err) {
+      logger.error('[private-store] unlock failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The private store could not be unlocked. Nothing was changed.');
+    }
+  }
+
   /** GET /stores/:kind/confirm — type the words back. Never shows them. */
   async storeDoorConfirmPage(req: Request, res: Response) {
     try {
@@ -14623,6 +14737,10 @@ ${panes}
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/private', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     // #1414: the store door — core owns it; an addon links to it.
+    // #1448: registered before `/stores/:kind` and under its own prefix, so no
+    // store kind can ever shadow it.
+    app.get('/private-store/unlock', (req: Request, res: Response) => this.privateStoreUnlockPage(req, res));
+    app.post('/private-store/unlock', (req: Request, res: Response) => this.privateStoreUnlock(req, res));
     app.get('/stores/:kind', (req: Request, res: Response) => this.storeDoorPage(req, res));
     app.post('/stores/:kind', (req: Request, res: Response) => this.storeDoorEnter(req, res));
     app.get('/stores/:kind/confirm', (req: Request, res: Response) => this.storeDoorConfirmPage(req, res));
