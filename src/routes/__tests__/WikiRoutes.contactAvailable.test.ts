@@ -82,7 +82,6 @@ const recipientResolver = vi.fn(async (override: string) => {
 });
 
 const mockUserManager = {
-  getCurrentUser: vi.fn().mockResolvedValue(null),
   hasPermission: vi.fn().mockResolvedValue(false),
   getUser: vi.fn(),
   getUsers: vi.fn().mockResolvedValue([]),
@@ -115,6 +114,8 @@ vi.mock('../../WikiEngine', () => {
             getCurrentPageProvider: vi.fn().mockReturnValue(null)
           },
           PolicyInformationPoint: {
+            // #1431 step 13: the request subject is the PIP's.
+            currentSubject: vi.fn().mockResolvedValue(null),
             checkPagePermission: vi.fn().mockResolvedValue(true),
             checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
             removeACLMarkup: vi.fn().mockImplementation((c: string) => c),

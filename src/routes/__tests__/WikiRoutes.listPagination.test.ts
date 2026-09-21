@@ -54,7 +54,7 @@ function makeRoutes(history: unknown[]) {
           getPage: async () => ({ content: '', metadata: {} })
         };
       }
-      if (name === 'UserManager') return { getCurrentUser: async () => admin, hasPermission: async () => true };
+      if (name === 'UserManager') return { hasPermission: async () => true };
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
     })
@@ -135,7 +135,7 @@ describe('#1302 the log viewer pages through the file', () => {
         if (name === 'ConfigurationManager') {
           return { getResolvedDataPath: () => tmpDir, getProperty: (_k: string, d: unknown) => d };
         }
-        if (name === 'UserManager') return { getCurrentUser: async () => admin, hasPermission: async () => true };
+        if (name === 'UserManager') return { hasPermission: async () => true };
         return null;
       })
     };

@@ -187,7 +187,7 @@ had no answer.
 | --- | --- | --- |
 | __PEP__ — enforcement point | Asks, then enforces the answer: 401 vs 403, a redirect, a 503. __Never decides.__ | Route handlers (`permitted`, `ctx.requirePermission`), __manager doors__ (authorization happens at the door with an `ActorContext`), and the availability gate middleware |
 | __PDP__ — decision point | Answers "may this subject do this action, on this resource". One implementation, one ordering, one place the agent-token and share ceilings run | `PolicyDecisionPoint` — today's `PolicyEvaluator` matching, plus the ceilings that currently sit in `UserManager.hasPermission` |
-| __PIP__ — information point | Supplies the attributes a decision needs. Decides nothing | `PolicyInformationPoint` for a page's own rules (ACL markup, audience, private flag) — today's `ACLManager`; `UserManager` / `RoleManager` for the subject's roles |
+| __PIP__ — information point | Supplies the attributes a decision needs. Decides nothing | `PolicyInformationPoint` — the one PIP (operator, 2026-09-21): a page's own rules (audience, private flag) and the subject's attributes, asking `RoleManager` for membership |
 | __PAP__ — administration point | Where policy is authored and changed | `ConfigurationManager` (the merge, and the write path for `app-custom-config.json`) together with the admin screens — which is where [#1216](https://github.com/jwilleke/ngdpbase/issues/1216) belongs |
 
 __One question shape.__ `decide(caller, { action, resource? })` returning
@@ -246,7 +246,7 @@ Operator, 2026-09-21: __UserManager is split along the Target ownership table__ 
 
 - 11 __The catalogues.__ ✅ `getRoles` / `getRole` / `getPermissions` and the `roles` / `permissions` getters leave `UserManager`; each caller reads `ngdpbase.roles.definitions` or `ngdpbase.permissions.definitions` through `ConfigurationManager.getProperty`.
 - 12 __Membership to `RoleManager`.__ ✅ `hasRole`, `assignRole`, `removeRole`, `resolveUserRoles` and the role-record sync move to the owner of `data/roles/*.json`.
-- 13 __Subject construction to the PIP.__ `resolveSubjectNow`, `systemSubject`, `getAnonymousUser` and `getCurrentUser` supply the subject's attributes to a decision.
+- 13 __Subject construction to the PIP.__ ✅ `resolveSubjectNow`, `systemSubject`, `getAnonymousUser` and `getCurrentUser` supply the subject's attributes to a decision.
 - 14 __Decisions to the PDP.__ `hasPermission`, `getUserPermissions` and `userHoldsPermission` are PDP questions. __Only the PDP interprets the policies__ (operator, 2026-09-21): `readPolicies` becomes part of `PolicyDecisionPoint`; the admin Security Policy Summary asks the PDP what a role permits; `PolicyValidator`, which checks stored entries, reads `ngdpbase.access.policies` through `getProperty`. `readPolicies`' duplicate-`id` rule goes — merging `id` arrays by id is the configuration merge's rule. The largest slice, because `hasPermission` is called throughout core and the addons, so it is last.
 
 ### Step 7's map — what each page decision orders today

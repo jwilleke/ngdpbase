@@ -11,6 +11,7 @@
  */
 import UserManager from '../UserManager';
 import RoleManager from '../RoleManager';
+import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 import { jobContextFromRequestWithReason, jobContextFromSystem } from '../../context/JobContext';
 
@@ -39,6 +40,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
           : k === 'ngdpbase.roles.definitions' ? { reader: { name: 'reader' }, editor: { name: 'editor' } }
             : d) };
       if (name === 'RoleManager') return roles;
+      if (name === 'PolicyInformationPoint') return pip;
       if (name === 'UserManager') return um;
       return null;
     })
@@ -51,6 +53,8 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   // audit record is exercised for real.
   const rolesByUser = new Map<string, string[]>();
   const roles = new RoleManager(engine);
+  // #1431 step 13: the reserved system-principal name is the PIP's.
+  const pip = new PolicyInformationPoint(engine);
   Object.assign(roles, {
     resolveUserRoles: async (n: string) => rolesByUser.get(n) ?? ((users.get(n)?.roles as string[] | undefined) ?? []),
     applyRoleDiff: async (n: string, _o: string[], nw: string[]) => { rolesByUser.set(n, [...nw]); },
@@ -63,7 +67,7 @@ function makeManager(opts: { auditFails?: boolean } = {}) {
   (um as unknown as { syncPersonOnDelete: () => Promise<void> }).syncPersonOnDelete = async () => undefined;
   (um as unknown as { createUserPage: () => Promise<boolean> }).createUserPage = async () => false;
   (um as unknown as { checkDisplayNamePageConflict: () => Promise<void> }).checkDisplayNamePageConflict = async () => undefined;
-  return { um, roles, sink, users, provider };
+  return { um, roles, pip, sink, users, provider };
 }
 
 // #1179: the request's subject, forwarded as-is; the address rides on it.
@@ -87,10 +91,10 @@ describe('#1204 user-create', () => {
   });
 
   test('a provisioned account names the system principal and the provider, not a person', async () => {
-    const { um, sink } = makeManager();
+    const { um, pip, sink } = makeManager();
     // #1179: what the auth providers pass — the principal acts, the reason names the provider.
-    await um.createUser({ username: 'carol', email: 'c@x', displayName: 'Carol', isExternal: true }, jobContextFromRequestWithReason({ username: um.systemPrincipalName() }, 'provisioned by google-oidc'));
-    expect(sink[0]).toMatchObject({ user: um.systemPrincipalName(), metadata: { origin: 'request', reason: 'provisioned by google-oidc', isExternal: true, selfRegistration: false } });
+    await um.createUser({ username: 'carol', email: 'c@x', displayName: 'Carol', isExternal: true }, jobContextFromRequestWithReason({ username: pip.systemPrincipalName() }, 'provisioned by google-oidc'));
+    expect(sink[0]).toMatchObject({ user: pip.systemPrincipalName(), metadata: { origin: 'request', reason: 'provisioned by google-oidc', isExternal: true, selfRegistration: false } });
   });
 
   test('#1179 a boot-time account write says the system principal and why — nothing is invented (#1181)', async () => {

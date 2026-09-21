@@ -34,6 +34,10 @@ import type { Decision, DecisionRequest } from '../types/Policy.js';
 
 interface UserManagerLike {
   userHoldsPermission(username: string, action: string): Promise<boolean>;
+}
+
+/** The subject's current attributes are the PIP's (#1431 step 13). */
+interface SubjectSourceLike {
   resolveSubjectNow(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean }>;
 }
 
@@ -187,12 +191,12 @@ export class PolicyDecisionPoint extends BaseManager {
     // passing a username STRING is the shape that loses the agent token, and
     // `'x' in 'jim'` throws rather than returning false.
     if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
-      const userManager = this.userManager();
-      if (!userManager) {
-        logger.warn('[PDP] UserManager not available to resolve roles, denying');
-        return { permit: false, applicable: false, reason: 'no_user_manager' };
+      const pip = this.engine?.getManager<SubjectSourceLike>('PolicyInformationPoint');
+      if (!pip) {
+        logger.warn('[PDP] PolicyInformationPoint not available to resolve roles, denying');
+        return { permit: false, applicable: false, reason: 'no_information_point' };
       }
-      userContext = await userManager.resolveSubjectNow(subject.username);
+      userContext = await pip.resolveSubjectNow(subject.username);
     } else if (subject) {
       userContext = {
         username: subject.username,

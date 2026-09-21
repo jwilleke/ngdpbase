@@ -37,9 +37,10 @@ const FALLBACK_PRINCIPAL = 'system';
 
 /** The system principal named in `.env` (#631), or the fallback where no UserManager answers. */
 export function systemPrincipalOf(engine: EngineLike): string {
-  const userManager = engine?.getManager('UserManager') as { systemPrincipalName?: () => string } | null | undefined;
+  // #1431 step 13: the subject's attributes, the system principal among them, are the PIP's.
+  const pip = engine?.getManager('PolicyInformationPoint') as { systemPrincipalName?: () => string } | null | undefined;
   try {
-    return userManager?.systemPrincipalName?.() ?? FALLBACK_PRINCIPAL;
+    return pip?.systemPrincipalName?.() ?? FALLBACK_PRINCIPAL;
   } catch {
     return FALLBACK_PRINCIPAL;
   }

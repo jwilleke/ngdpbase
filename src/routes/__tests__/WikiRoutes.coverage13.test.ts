@@ -74,7 +74,6 @@ const mockPageManager = {
 };
 
 const mockUserManager = {
-  getCurrentUser: vi.fn(),
   hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
@@ -88,6 +87,8 @@ const mockUserManager = {
 };
 
 const mockPolicyInformationPoint = {
+  // #1431 step 13: the request subject is the PIP's.
+  currentSubject: vi.fn(),
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
@@ -304,7 +305,7 @@ function resetMocks() {
   mockSearchManager.getAllSystemKeywords.mockResolvedValue([]);
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
-  mockUserManager.getCurrentUser.mockResolvedValue(adminUser);
+  mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
   mockUserManager.hasPermission.mockResolvedValue(true);
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);

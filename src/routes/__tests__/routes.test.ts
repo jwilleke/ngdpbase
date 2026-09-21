@@ -84,16 +84,6 @@ vi.mock('../../context/WikiContext', () => {
 vi.mock('../../WikiEngine', () => {
   // Create mock managers once
   const mockUserManager = {
-    getCurrentUser: vi.fn().mockResolvedValue({
-      username: 'testuser',
-      displayName: 'Test User',
-      email: 'test@example.com',
-      isExternal: false,
-      isAuthenticated: true,
-      createdAt: new Date('2023-01-01'),
-      lastLogin: new Date('2024-01-01'),
-      roles: ['authenticated']
-    }),
     hasPermission: vi.fn().mockReturnValue(true),
     destroySession: vi.fn().mockResolvedValue(true),
     getUsers: vi.fn().mockResolvedValue([
@@ -221,6 +211,17 @@ vi.mock('../../WikiEngine', () => {
   };
 
   const mockPolicyInformationPoint = {
+  // #1431 step 13: the request subject is the PIP's.
+    currentSubject: vi.fn().mockResolvedValue({
+      username: 'testuser',
+      displayName: 'Test User',
+      email: 'test@example.com',
+      isExternal: false,
+      isAuthenticated: true,
+      createdAt: new Date('2023-01-01'),
+      lastLogin: new Date('2024-01-01'),
+      roles: ['authenticated']
+    }),
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content without ACL markup'),
@@ -470,7 +471,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
   });
 
   function establishMockDefaults() {
-    mockUserManager.getCurrentUser.mockResolvedValue({
+    mockPolicyInformationPoint.currentSubject.mockResolvedValue({
       username: 'testuser',
       displayName: 'Test User',
       email: 'test@example.com',
@@ -585,7 +586,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /edit/:page', () => {
       test('should return 200 for authenticated user', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'testuser',
           displayName: 'Test User',
           email: 'test@example.com',
@@ -613,7 +614,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /save/:page', () => {
       test('should save page successfully', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
         mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
@@ -637,7 +638,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       test('looks up the existing page with the request\'s own context (#1418)', async () => {
         // Without it an owner's sealed page looked new on every save, and the
         // slug check refused the second save.
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
         mockPageManager.getPage.mockResolvedValue({
@@ -665,7 +666,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 409 when rename target title is already in use (#280)', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Old Title',
@@ -689,7 +690,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 409 when UUID is already assigned to another page (#280)', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Page A',
@@ -714,7 +715,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       // the outcome in the page instead of a raw response.
       describe('when the editor asks for JSON (#1369)', () => {
         test('a save answers { ok, redirect } instead of a 302', async () => {
-          mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+          mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
           mockUserManager.hasPermission.mockReturnValue(true);
           mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
           mockPageManager.getPage.mockResolvedValue({
@@ -732,7 +733,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         });
 
         test('a failed save answers { ok: false, error } with its status, not an error page', async () => {
-          mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+          mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
           mockUserManager.hasPermission.mockReturnValue(true);
           mockPageManager.getPage.mockResolvedValue({
             content: '# Old Title',
@@ -762,7 +763,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         .send({});
 
       test('an admin marks a page: system keyword added, saved through PageManager', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: 'body', metadata: { title: 'NGDPBASE-test-X', uuid: 'u1', 'system-keywords': ['general'] }
@@ -778,7 +779,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('a page already marked is left alone', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: 'body', metadata: { title: 'NGDPBASE-test-Y', 'system-keywords': ['test-artifact'] }
@@ -793,7 +794,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('a non-admin is refused before the page is even looked up', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(false);
         mockPageManager.getPage.mockClear();
 
@@ -804,7 +805,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('a missing page is a 404', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue(null);
 
@@ -814,7 +815,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /create', () => {
       test('should return 200 for authenticated user', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
 
         const response = await request(app).get('/create');
@@ -824,7 +825,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /create', () => {
       test('should create page successfully', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
         // Make sure the new page doesn't exist
@@ -850,7 +851,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 409 when page with same name already exists (#280)', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue(createUserContext());
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockUserManager.hasPermission.mockReturnValue(true);
         // getPage returns an existing page for the requested name
         mockPageManager.getPage.mockImplementation((pageName) => {
@@ -946,7 +947,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /login', () => {
       test('should process login successfully', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser' });
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser' });
 
         const response = await request(app)
           .post('/login')
@@ -1008,7 +1009,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /profile', () => {
       test('should return 200 for authenticated user', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser' });
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser' });
         mockUserManager.getUser.mockResolvedValue({
           username: 'testuser',
           email: 'test@example.com',
@@ -1023,7 +1024,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /profile', () => {
       test('should update profile successfully', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser' });
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser' });
         mockUserManager.updateUser.mockResolvedValue(true);
 
         const response = await request(app)
@@ -1040,7 +1041,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /preferences', () => {
       test('should update preferences successfully', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser' });
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser' });
 
         const response = await request(app)
           .post('/preferences')
@@ -1055,7 +1056,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /user-info', () => {
       test('should return user info', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'testuser',
           displayName: 'Test User'
         });
@@ -1069,7 +1070,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
   describe('Admin Routes', () => {
     beforeEach(() => {
       // Set up admin user for all admin tests
-      mockUserManager.getCurrentUser.mockResolvedValue({
+      mockPolicyInformationPoint.currentSubject.mockResolvedValue({
         username: 'admin',
         displayName: 'Admin User',
         email: 'admin@example.com',
@@ -1085,7 +1086,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /admin', () => {
       test('should return 200 for admin user', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com',
@@ -1127,7 +1128,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /admin/users', () => {
       test('should return user list for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com',
@@ -1143,7 +1144,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /admin/users', () => {
       test('should create user for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com',
@@ -1167,7 +1168,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('PUT /admin/users/:username', () => {
       test('should update user for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1188,7 +1189,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('DELETE /admin/users/:username', () => {
       test('should delete user for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1206,7 +1207,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /admin/roles', () => {
       test('should return role list for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com',
@@ -1235,7 +1236,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         mockNotificationManager.getAllNotifications.mockReturnValue([]);
         mockNotificationManager.getStats.mockReturnValue({ total: 0, active: 0, expired: 0, byType: {}, byLevel: {} });
         
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com',
@@ -1255,7 +1256,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /admin/notifications/:id/dismiss', () => {
       test('should dismiss notification for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1275,7 +1276,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('POST /admin/notifications/clear-all', () => {
       test('should clear all notifications for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1292,7 +1293,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /schema/person/:identifier', () => {
       test('should return person schema for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1310,7 +1311,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 404 for non-existent person', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({ 
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({ 
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1327,7 +1328,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     describe('GET /schema/organization/:identifier', () => {
       test('should return organization schema for admin', async () => {
-        mockUserManager.getCurrentUser.mockResolvedValue({
+        mockPolicyInformationPoint.currentSubject.mockResolvedValue({
           username: 'admin',
           displayName: 'Admin User',
           email: 'admin@example.com'
@@ -1398,7 +1399,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     });
 
     test('should allow anonymous access to public routes', async () => {
-      mockUserManager.getCurrentUser.mockResolvedValue(null);
+      mockPolicyInformationPoint.currentSubject.mockResolvedValue(null);
       mockPageManager.getPage.mockResolvedValue({
         content: '# Public Page',
         metadata: { title: 'PublicPage' }

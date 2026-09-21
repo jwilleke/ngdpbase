@@ -69,7 +69,6 @@ const sessionId = await userManager.createSession('john');
 | -------- | --------- | ------------- |
 | `hasPermission(username, action)` | `Promise<boolean>` | Check permission via policies |
 | `getUserPermissions(username)` | `string[]` | Get all effective permissions |
-| `getCurrentUser(req)` | `Object` | Get user context from request |
 
 ## User Management Methods
 

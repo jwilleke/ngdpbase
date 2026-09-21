@@ -114,7 +114,6 @@ const recipientResolver = vi.fn(async (override: string) => {
 });
 
 const mockUserManager = {
-  getCurrentUser: vi.fn().mockResolvedValue(null),
   hasPermission: vi.fn().mockResolvedValue(false),
   getUser: vi.fn(),
   getUsers: vi.fn().mockResolvedValue([]),

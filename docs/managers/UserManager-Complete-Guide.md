@@ -428,23 +428,7 @@ __Parameters:__
 
 ### Helper Methods
 
-#### `getCurrentUser(req)`
-
-Gets the current user context from the request session.
-
-__Parameters:__
-
-- `req` (object) - Express request object
-
-__Returns:__ User context object with roles and authentication status
-
-__Example:__
-
-```javascript
-const currentUser = await userManager.getCurrentUser(req);
-console.log(currentUser.username); // "john"
-console.log(currentUser.roles); // ["editor", "Authenticated", "All"]
-```
+The request's subject is built by [PolicyInformationPoint](PolicyInformationPoint.md) (`currentSubject(req)`, `anonymousSubject()`, `systemSubject()`), not by `UserManager` ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 13).
 
 ---
 

@@ -1,6 +1,9 @@
 /**
  * #1165 — getCurrentUser() returned Anonymous for every authenticated user.
  *
+ * #1431 step 13: building the request's subject is the PIP's; UserManager's
+ * getCurrentUser is now `PolicyInformationPoint.currentSubject`.
+ *
  * It read `req.session.user.isAuthenticated`. Nothing in the codebase writes
  * `req.session.user`: every login path writes the flat `session.username` +
  * `session.isAuthenticated`, which is also what the session middleware reads.
@@ -17,19 +20,17 @@
  * WRITTEN. A test using `session.user` would have passed against the broken
  * code and is how this stayed hidden.
  */
-vi.unmock('../UserManager');
-
-import UserManager from '../UserManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 
 type Req = Record<string, unknown>;
 
+/** The account comes from UserManager, the roles held now from RoleManager. */
 function makeManager(users: Record<string, { username: string; isActive: boolean; roles?: string[] }>) {
-  const m = new UserManager({ getManager: () => null });
-  // The provider is the only thing getCurrentUser needs beyond the request.
-  (m as unknown as { provider: unknown }).provider = {
-    getUser: (username: string) => Promise.resolve(users[username] ?? null)
+  const managers: Record<string, unknown> = {
+    UserManager: { getUser: (username: string) => Promise.resolve(users[username]) },
+    RoleManager: { resolveUserRoles: (username: string) => Promise.resolve(users[username]?.roles ?? []) }
   };
-  return m;
+  return new PolicyInformationPoint({ getManager: (name: string) => managers[name] ?? null });
 }
 
 const jim = { username: 'jim', isActive: true, roles: ['admin'] };
@@ -41,7 +42,7 @@ describe('#1165 — the session shape that login actually writes', () => {
     const m = makeManager({ jim });
     const req = { session: { username: 'jim', isAuthenticated: true } } as Req;
 
-    const user = await m.getCurrentUser(req);
+    const user = await m.currentSubject(req);
     expect(user.username).toBe('jim');
     expect(user.isAuthenticated).toBe(true);
   });
@@ -52,24 +53,24 @@ describe('#1165 — the session shape that login actually writes', () => {
     // is that the flat shape alone is sufficient.
     const m = makeManager({ jim });
     const req = { session: { username: 'jim', isAuthenticated: true, user: undefined } } as Req;
-    expect((await m.getCurrentUser(req as never)).username).toBe('jim');
+    expect((await m.currentSubject(req as never)).username).toBe('jim');
   });
 
   test('an unauthenticated session is Anonymous', async () => {
     const m = makeManager({ jim });
     const req = { session: { username: 'jim', isAuthenticated: false } } as Req;
-    expect((await m.getCurrentUser(req as never)).isAuthenticated).toBeFalsy();
+    expect((await m.currentSubject(req as never)).isAuthenticated).toBeFalsy();
   });
 
   test('a session naming an inactive user is Anonymous', async () => {
     const m = makeManager({ jim: { ...jim, isActive: false } });
     const req = { session: { username: 'jim', isAuthenticated: true } } as Req;
-    expect((await m.getCurrentUser(req as never)).isAuthenticated).toBeFalsy();
+    expect((await m.currentSubject(req as never)).isAuthenticated).toBeFalsy();
   });
 
   test('no session at all is Anonymous', async () => {
     const m = makeManager({ jim });
-    expect((await m.getCurrentUser({})).isAuthenticated).toBeFalsy();
+    expect((await m.currentSubject({})).isAuthenticated).toBeFalsy();
   });
 });
 
@@ -84,7 +85,7 @@ describe('#1165 — req.userContext is preferred over the session', () => {
       userContext: { username: 'jim', isAuthenticated: true, roles: ['admin', 'All'] }
     } as Req;
 
-    const user = await m.getCurrentUser(req);
+    const user = await m.currentSubject(req);
     expect(user.username).toBe('jim');
     expect(user.roles).toContain('admin');
   });
@@ -94,7 +95,7 @@ describe('#1165 — req.userContext is preferred over the session', () => {
     // would have said Anonymous even after the field name was corrected.
     const m = makeManager({});
     const req = { userContext: { username: 'agent', isAuthenticated: true } } as Req;
-    expect((await m.getCurrentUser(req as never)).username).toBe('agent');
+    expect((await m.currentSubject(req as never)).username).toBe('agent');
   });
 
   test('an anonymous userContext does not shadow a valid session', async () => {
@@ -106,6 +107,6 @@ describe('#1165 — req.userContext is preferred over the session', () => {
       userContext: { username: 'Anonymous', isAuthenticated: false },
       session: { username: 'jim', isAuthenticated: true }
     } as Req;
-    expect((await m.getCurrentUser(req as never)).username).toBe('jim');
+    expect((await m.currentSubject(req as never)).username).toBe('jim');
   });
 });

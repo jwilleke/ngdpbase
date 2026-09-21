@@ -8,6 +8,7 @@
 
 import UserManager from '../UserManager';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
+import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 /** #1179: the account writes take the actor's context — a request subject here. */
 const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
@@ -45,11 +46,16 @@ const mockRoles = {
 const mockEngine = {
   getManager: vi.fn((name) => {
     if (name === 'ConfigurationManager') return mockConfigurationManager;
+    if (name === 'PolicyInformationPoint') return pip;
     if (name === 'RoleManager') return mockRoles;
     return null;
   }),
   getConfig: vi.fn(() => ({ get: vi.fn() }))
 };
+
+// #1431 step 13: subjects are built by the PIP — a real one, over this engine,
+// so whatever the test installs as UserManager / RoleManager is what it asks.
+const pip = new PolicyInformationPoint(mockEngine);
 
 describe('UserManager', () => {
   let userManager;
@@ -267,6 +273,7 @@ describe('UserManager', () => {
       // policy1, not because the user's own role did.
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return policiesConfig;
+        if (name === 'PolicyInformationPoint') return pip;
         if (name === 'RoleManager') return { resolveUserRoles: vi.fn(async () => mockMemberRoles) };
         return null;
       });
@@ -296,6 +303,7 @@ describe('UserManager', () => {
       // A config with no policies — and the enabled switch unset, which is off
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'PolicyInformationPoint') return pip;
         if (name === 'RoleManager') return mockRoles;
         return null;
       });
@@ -319,6 +327,7 @@ describe('UserManager', () => {
       const pdp = new PolicyDecisionPoint(mockEngine);
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'PolicyInformationPoint') return pip;
         if (name === 'PolicyEvaluator') return policyEvaluator;
         if (name === 'PolicyDecisionPoint') return pdp;
         if (name === 'UserManager') return userManager;
@@ -495,9 +504,9 @@ describe('UserManager', () => {
       expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['reader']);
     });
 
-    test('systemPrincipalName() refuses an empty name rather than acting as nobody (#631)', () => {
+    test('the PIP\'s systemPrincipalName() refuses an empty name rather than acting as nobody (#631)', () => {
       installSystemPrincipal(true, '');
-      expect(() => userManager.systemPrincipalName()).toThrow(/NGDPBASE_SYSTEM_USER/);
+      expect(() => pip.systemPrincipalName()).toThrow(/NGDPBASE_SYSTEM_USER/);
     });
 
     test('createUser() refuses the system principal name, with the same reason as a taken name (#631)', async () => {
@@ -520,6 +529,7 @@ describe('UserManager', () => {
       const pdp = new PolicyDecisionPoint(mockEngine);
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
+        if (name === 'PolicyInformationPoint') return pip;
         if (name === 'PolicyEvaluator') return policyEvaluator;
         if (name === 'PolicyDecisionPoint') return pdp;
         if (name === 'UserManager') return userManager;

@@ -8,7 +8,6 @@ import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTes
 
 // Mock dependencies
 const mockUserManager = {
-  getCurrentUser: vi.fn(),
   hasPermission: vi.fn()
 };
 
@@ -74,13 +73,6 @@ describe('WikiRoutes - Image Upload (Bug #76)', () => {
 
     // Register routes
     wikiRoutes.registerRoutes(app);
-
-    // Set default authenticated user
-    mockUserManager.getCurrentUser.mockResolvedValue({
-      username: 'testuser',
-      isAuthenticated: true,
-      roles: ['Authenticated']
-    });
   });
 
   afterEach(async () => {

@@ -1,5 +1,6 @@
 import BaseManager, { BackupData } from './BaseManager.js';
 import PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
@@ -215,20 +216,6 @@ interface ExternalUserData {
   displayName?: string;
   roles?: string[];
   provider: string;
-}
-
-/**
- * User context for permission evaluation
- */
-interface UserContext {
-  username: string;
-  displayName?: string;
-  roles: string[];
-  isAuthenticated: boolean;
-  /** Alias for isAuthenticated - used by WikiContext */
-  authenticated?: boolean;
-  isExternal?: boolean;
-  hasSessionCookie?: boolean;
 }
 
 /**
@@ -771,72 +758,6 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Resolve a named user's CURRENT roles for a permission decision (#631).
-   *
-   * Used when a subject arrives without roles — a background job asking
-   * "what may my requester do, now?". An unknown, inactive or absent user
-   * resolves to the anonymous subject: the job then holds exactly what a
-   * visitor holds, which is the safe answer for someone who no longer exists.
-   *
-   * #1431: public because this is PIP work — the PDP asks for the subject's
-   * current attributes and decides with them. It answers nothing itself.
-   */
-  async resolveSubjectNow(username: string | undefined): Promise<UserContext> {
-    if (username && this.isSystemPrincipal(username)) {
-      return this.systemSubject();
-    }
-    const user = username && this.provider ? await this.provider.getUser(username) : null;
-    if (!user || !user.isActive) {
-      // permission-subject-ignore: the anonymous subject, copied so the constant is never mutated.
-      return { username: 'Anonymous', roles: [...(ANONYMOUS_SUBJECT.roles ?? [])], isAuthenticated: false };
-    }
-    const baseRoles = await this.roleManager().resolveUserRoles(user.username);
-    // permission-subject-ignore: THE resolution site — roles come from the store, now, not from a caller.
-    return { username: user.username, roles: [...baseRoles], isAuthenticated: true };
-  }
-
-  /**
-   * The name of the system principal — the server acting for itself at boot
-   * and from timers (#631).
-   *
-   * Owned by the environment: `ngdpbase.system.principal` ships as the bare
-   * env-ref `$NGDPBASE_SYSTEM_USER`, which THROWS when the variable is unset,
-   * so an instance with no named principal refuses to boot rather than
-   * acting as a default nobody chose. `.env` is not reachable from the admin
-   * UI, so the identity cannot be renamed through a form.
-   */
-  systemPrincipalName(): string {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const name = configManager?.getProperty(SYSTEM_PRINCIPAL_KEY, '');
-    if (typeof name !== 'string' || name.trim() === '') {
-      throw new Error(`${SYSTEM_PRINCIPAL_KEY} is empty. Set NGDPBASE_SYSTEM_USER in .env (#631).`);
-    }
-    return name.trim();
-  }
-
-  /** Whether `username` names the system principal. Case-insensitive, like the user store. */
-  isSystemPrincipal(username: string): boolean {
-    return username.trim().toLowerCase() === this.systemPrincipalName().toLowerCase();
-  }
-
-  /**
-   * The system principal as a permission subject (#631).
-   *
-   * Identity from `.env`; authority from the role catalog — `ngdpbase.system.roles`,
-   * `["admin"]` by default — evaluated by policy through the same door as any
-   * request (P2). Nothing here is a grant: the roles are read, not asserted,
-   * which is why this is the sanctioned construction rather than a literal.
-   * The name is reserved in {@link createUser}, so no person can hold it.
-   */
-  systemSubject(): UserContext {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const declared = configManager?.getProperty(SYSTEM_ROLES_KEY, ['admin']);
-    const roles = Array.isArray(declared) ? declared.filter((r): r is string => typeof r === 'string') : ['admin'];
-    // permission-subject-ignore: the system principal — name from .env, roles from the catalog (#631).
-    return { username: this.systemPrincipalName(), roles: [...roles], isAuthenticated: true };
-  }
-
-  /**
    * The permissions a user's roles give them, for display (#1431 step 10).
    *
    * The union of their roles' rows in the admin Security Policy Summary, read
@@ -982,6 +903,15 @@ class UserManager extends BaseManager {
     return roleManager;
   }
 
+  /** The subject's attributes are the PIP's (#1431 step 13); an account write asks it about names. */
+  private policyInformationPoint(): PolicyInformationPoint {
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    if (!pip) {
+      throw new Error('UserManager requires PolicyInformationPoint');
+    }
+    return pip;
+  }
+
   private auditSink(): AuditEventSink | null {
     return this.engine.getManager('AuditManager') as AuditEventSink | null;
   }
@@ -1005,7 +935,7 @@ class UserManager extends BaseManager {
 
     const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
 
-    if (this.isSystemPrincipal(username)) {
+    if (this.policyInformationPoint().isSystemPrincipal(username)) {
       // #631: the system principal is an identity named in .env, not an
       // account. Letting a person register under that name would hand them
       // its roles the first time a job resolved the name. Same reason code as
@@ -1407,64 +1337,6 @@ class UserManager extends BaseManager {
     );
   }
 
-  /**
-   * Who is making this request.
-   *
-   * __This returned Anonymous for every authenticated user, always (#1165).__
-   * It read `req.session.user.isAuthenticated`, and nothing in the codebase
-   * ever writes `req.session.user` — every login path writes the flat
-   * `req.session.username` + `req.session.isAuthenticated`
-   * (`WikiRoutes.ts:6786`, `:7002`, `:7081`, `app.ts:657`), which is also what
-   * the session middleware reads. `session.user` is a declared field with no
-   * writer, so the condition was never true.
-   *
-   * It went unnoticed because the one hot caller guards against it:
-   * `getCommonTemplateData` uses `req.userContext || getCurrentUser(req)`, so
-   * every rendered page took the first branch and looked correct. The audit
-   * routes call this directly, which is why they were the ones to break —
-   * `AuditManager` refused the query as 'Anonymous' on a request the route had
-   * just authorised as an admin.
-   *
-   * __`req.userContext` is preferred over the session now__, rather than only
-   * repairing the field name. It is the identity the middleware already
-   * resolved and validated, enriched with roles from RoleManager, and it is
-   * what the policy engine authorises against — so this method and every
-   * permission check now answer from the same place instead of two. It is also
-   * the only identity a bearer-token request has (#818): those carry no
-   * session at all, so the session path alone would still have said Anonymous.
-   */
-  async getCurrentUser(req: Request): Promise<UserContext> {
-    const fromRequest = (req as RequestWithUser).userContext;
-    if (fromRequest?.isAuthenticated) {
-      return fromRequest;
-    }
-
-    if (!this.provider) {
-      return this.getAnonymousUser();
-    }
-
-    const reqWithUser = req as RequestWithUser;
-    if (reqWithUser.session?.username && reqWithUser.session.isAuthenticated) {
-      const freshUser = await this.provider.getUser(reqWithUser.session.username);
-      if (!freshUser || !freshUser.isActive) {
-        return this.getAnonymousUser();
-      }
-
-      const currentUserContext: UserContext = {
-        ...freshUser,
-        isAuthenticated: true,
-        authenticated: true
-      } as UserContext;
-
-      const roles = new Set(currentUserContext.roles || []);
-      currentUserContext.roles = Array.from(roles);
-
-      return currentUserContext;
-    }
-
-    return this.getAnonymousUser();
-  }
-
   ensureAuthenticated(req: Request, res: Response, next: NextFunction): void {
     const reqWithUser = req as RequestWithUser;
     const user = reqWithUser.user;
@@ -1502,21 +1374,6 @@ class UserManager extends BaseManager {
           }
         })
         .catch(next);
-    };
-  }
-
-  getAnonymousUser(): UserContext {
-    return {
-      username: 'Anonymous',
-      displayName: 'Anonymous User',
-      // 'anonymous' lowercase — the role key in ngdpbase.roles.definitions and
-      // the subject the anonymous-read-only policy names. The capitalized
-      // spelling matched no policy subject, so every capability check that
-      // took the resolved-context path (WikiContext.hasPermission) denied
-      // anonymous even where the catalogue granted it (#1059).
-      roles: ['anonymous'],
-      isAuthenticated: false,
-      authenticated: false
     };
   }
 

@@ -18,7 +18,7 @@ Access control follows the XACML roles, set out in [Manager-SOT.md](Manager-SOT.
 | --- | --- | --- |
 | PEP | the doors — routes, manager doors, the availability gate | ask, then enforce (401 or 403) |
 | PDP | `PolicyDecisionPoint` | may this subject do this — delegation ceilings, then the policies |
-| __PIP__ | __this__ | the page's own attributes and rules, asking the PDP where global policy decides |
+| __PIP__ | __this__ | the page's and the subject's attributes, asking the PDP where global policy decides |
 | PAP | `ConfigurationManager` plus the admin screens | where policy is written, and audited |
 
 A door asks for a __permission__, never a role. The policies are the only grant, read live through `ConfigurationManager` ([policies.ts](../../src/security/policies.ts)).
@@ -49,6 +49,20 @@ A page decision without the page's metadata refuses, except for `create`. A page
 | `canAccessPrivateContainer(subject, owner, resource, action)` | a private store's files |
 
 Every single-page decision is recorded by `logAccessDecision`, and a refusal reaches the audit log as `authorization-deny`.
+
+## The subject
+
+The PIP also supplies the subject's attributes (operator, [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 13 — one PIP). It builds a subject from the account (`UserManager`) and the roles it holds now (`RoleManager`), and stores neither.
+
+| Method | For |
+| --- | --- |
+| `currentSubject(req)` | who is making a request — the middleware's subject, else the session's account now, else anonymous. Was `UserManager.getCurrentUser` |
+| `subjectFor(username)` | an active account with its current roles, or `null`; what the session and bearer middleware in `app.ts` use |
+| `resolveSubjectNow(username)` | a job's requester at decision time (#631); the PDP asks this |
+| `anonymousSubject()` | the anonymous visitor |
+| `systemPrincipalName()` / `isSystemPrincipal(name)` / `systemSubject()` | the server acting for itself (#631); `UserManager.createUser` reserves the name through this |
+
+It starts before `UserManager`, because `UserManager`'s own start-up creates the default admin under the system principal. Everything else it reads at the moment of use.
 
 ## What it no longer does
 

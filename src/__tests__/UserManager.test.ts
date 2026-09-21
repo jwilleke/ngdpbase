@@ -236,11 +236,9 @@ describe('UserManager', () => {
       await userManager.initialize();
     });
 
-    test('should return anonymous user object', () => {
-      const anonymousUser = userManager.getAnonymousUser();
-      expect(anonymousUser).toBeDefined();
-      expect(anonymousUser.username).toBe('Anonymous');
-      expect(anonymousUser.isAuthenticated).toBe(false);
+    test('the anonymous subject is the PIP\'s, not UserManager\'s (#1431 step 13)', () => {
+      expect('getAnonymousUser' in userManager).toBe(false);
+      expect('getCurrentUser' in userManager).toBe(false);
     });
 
     test('there is no asserted user to return (#1435)', () => {

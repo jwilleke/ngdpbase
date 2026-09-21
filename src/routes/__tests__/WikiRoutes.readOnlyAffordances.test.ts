@@ -24,11 +24,11 @@ function makeRoutes(granted: string[]) {
   const managers: Record<string, unknown> = {
     UserManager: {
       hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))),
-      getContactRecipient: vi.fn(() => Promise.resolve(null)),
-      // Reached only on the anonymous path, where WikiRoutes falls back to
-      // asking UserManager who the caller is.
-      getCurrentUser: vi.fn(() => null)
+      getContactRecipient: vi.fn(() => Promise.resolve(null))
     },
+    // Reached only on the anonymous path, where WikiRoutes falls back to
+    // asking the PIP who the caller is (#1431 step 13).
+    PolicyInformationPoint: { currentSubject: vi.fn(() => null) },
     PageManager: { getAllPages: vi.fn(() => Promise.resolve([])) },
     ConfigurationManager: {
       getProperty: vi.fn((_k: string, d: unknown) => d),

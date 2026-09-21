@@ -27,13 +27,6 @@ vi.mock('../../WikiEngine', () => {
   let maintenanceModeEnabled = false;
 
   const mockUserManager = {
-    getCurrentUser: vi.fn().mockResolvedValue({
-      username: 'testuser',
-      displayName: 'Test User',
-      email: 'test@example.com',
-      isAuthenticated: true,
-      roles: ['authenticated']
-    }),
     hasPermission: vi.fn().mockReturnValue(true),
     destroySession: vi.fn().mockResolvedValue(true),
     authenticateUser: vi.fn().mockResolvedValue({
@@ -70,6 +63,14 @@ vi.mock('../../WikiEngine', () => {
   };
 
   const mockPolicyInformationPoint = {
+  // #1431 step 13: the request subject is the PIP's.
+    currentSubject: vi.fn().mockResolvedValue({
+      username: 'testuser',
+      displayName: 'Test User',
+      email: 'test@example.com',
+      isAuthenticated: true,
+      roles: ['authenticated']
+    }),
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content')

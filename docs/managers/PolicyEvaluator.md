@@ -532,9 +532,9 @@ async hasPermission(username, action) {
 // In PageManager or Middleware
 async function checkPageAccess(req, res, next) {
   const policyEvaluator = engine.getManager('PolicyEvaluator');
-  const userManager = engine.getManager('UserManager');
+  const pip = engine.getManager('PolicyInformationPoint');
 
-  const user = await userManager.getCurrentUser(req);
+  const user = await pip.currentSubject(req);
   const pageName = req.params.page;
   const action = getActionFromRequest(req); // 'page:read', 'page:edit', etc.
 

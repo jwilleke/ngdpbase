@@ -36,7 +36,8 @@ function makeRoutes(audit: unknown, hasPermission = true) {
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'AuditManager') return audit;
-      if (name === 'UserManager') return { getCurrentUser: vi.fn().mockResolvedValue(admin) };
+      // #1431 step 13: the request subject is the PIP's.
+      if (name === 'PolicyInformationPoint') return { currentSubject: vi.fn().mockResolvedValue(admin) };
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
     })

@@ -109,9 +109,6 @@ __Key API:__
 | `searchUsers(query, options?)` | Filtered user list |
 | `hasPermission(username, action)` | Checks via PolicyEvaluator |
 | `getUserPermissions(username)` | Full permission list |
-| `hasRole(username, role)` | Role membership test |
-| `assignRole(username, role)` | Grant role |
-| `getCurrentUser(req)` | Extract `UserContext` from Express request |
 | `ensureAuthenticated(req, res, next)` | Express middleware |
 | `requirePermissions(perms)` | Express middleware |
 | `createSession(username, data)` | Return session ID |

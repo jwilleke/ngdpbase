@@ -82,6 +82,8 @@ const mockPageManager = {
 };
 
 const mockPolicyInformationPoint = {
+  // #1431 step 13: the request subject is the PIP's.
+  currentSubject: vi.fn(),
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   // #714 Slice F rich-return form. Tests can override per-scenario to
@@ -128,7 +130,6 @@ const mockSearchManager = {
 };
 
 const mockUserManager = {
-  getCurrentUser: vi.fn(),
   hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
@@ -275,7 +276,7 @@ function resetMocks() {
   mockSearchManager.getSuggestions.mockResolvedValue([]);
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
-  mockUserManager.getCurrentUser.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
+  mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
   mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);

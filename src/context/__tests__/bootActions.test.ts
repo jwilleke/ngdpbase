@@ -13,25 +13,26 @@ const sinkWith = (events: unknown[]) => ({
   flushAuditQueue: vi.fn(async () => undefined)
 });
 const engineWith = (managers: Record<string, unknown>) => ({ getManager: (n: string) => managers[n] ?? null });
-const userManager = { systemPrincipalName: () => 'svc-ngdpbase' };
+// #1431 step 13: the system principal is the PIP's.
+const pip = { systemPrincipalName: () => 'svc-ngdpbase' };
 
 beforeEach(() => resetBootActions());
 
 describe('systemContext (#1197)', () => {
   test('names the principal from .env (#631), origin boot, and the reason', () => {
-    const ctx = systemContext(engineWith({ UserManager: userManager }), 'seed the required pages');
+    const ctx = systemContext(engineWith({ PolicyInformationPoint: pip }), 'seed the required pages');
     expect(ctx).toMatchObject({ username: 'svc-ngdpbase', origin: 'boot', reason: 'seed the required pages' });
-    expect(scheduleContext(engineWith({ UserManager: userManager }), 'tick').origin).toBe('schedule');
+    expect(scheduleContext(engineWith({ PolicyInformationPoint: pip }), 'tick').origin).toBe('schedule');
   });
 
-  test('falls back to the literal only where no UserManager answers — a fixture, never a booted instance', () => {
+  test('falls back to the literal only where no PIP answers — a fixture, never a booted instance', () => {
     expect(systemPrincipalOf(engineWith({}))).toBe('system');
-    expect(systemPrincipalOf(engineWith({ UserManager: { systemPrincipalName: () => { throw new Error('unset'); } } }))).toBe('system');
+    expect(systemPrincipalOf(engineWith({ PolicyInformationPoint: { systemPrincipalName: () => { throw new Error('unset'); } } }))).toBe('system');
     expect(systemPrincipalOf(null)).toBe('system');
   });
 
   test('attributedTo carries who, from where and why into the record', () => {
-    const ctx = systemContext(engineWith({ UserManager: userManager }), 'why');
+    const ctx = systemContext(engineWith({ PolicyInformationPoint: pip }), 'why');
     expect(attributedTo(ctx)).toMatchObject({ user: 'svc-ngdpbase', metadata: { origin: 'boot', reason: 'why' } });
   });
 });
@@ -41,7 +42,7 @@ describe('recordSystemAction (#1197)', () => {
 
   test('with the sink up, records immediately and stamps the attribution', async () => {
     const events: Array<Record<string, unknown>> = [];
-    const engine = engineWith({ UserManager: userManager, AuditManager: sinkWith(events) });
+    const engine = engineWith({ PolicyInformationPoint: pip, AuditManager: sinkWith(events) });
     await recordSystemAction(engine, systemContext(engine, 'seed'), event);
     expect(pendingBootActions()).toHaveLength(0);
     expect(events).toHaveLength(1);
@@ -49,7 +50,7 @@ describe('recordSystemAction (#1197)', () => {
   });
 
   test('with no sink yet, waits in the ledger and is flushed once, in order', async () => {
-    const engine = engineWith({ UserManager: userManager });
+    const engine = engineWith({ PolicyInformationPoint: pip });
     const ctx = systemContext(engine, 'seed');
     await recordSystemAction(engine, ctx, { ...event, resource: 'First' });
     await recordSystemAction(engine, ctx, { ...event, resource: 'Second' });
@@ -64,7 +65,7 @@ describe('recordSystemAction (#1197)', () => {
   });
 
   test('the event\'s own metadata wins over the attribution on a key collision', async () => {
-    const engine = engineWith({ UserManager: userManager });
+    const engine = engineWith({ PolicyInformationPoint: pip });
     await recordSystemAction(engine, systemContext(engine, 'seed'), { ...event, metadata: { origin: 'custom' } });
     expect(pendingBootActions()[0].event.metadata.origin).toBe('custom');
   });

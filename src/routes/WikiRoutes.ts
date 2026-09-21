@@ -240,7 +240,6 @@ interface IValidationReport {
 }
 
 interface IUserManager {
-  getCurrentUser(req: Request): Promise<UserContext>;
   getUser(username: string): Promise<UserContext | null>;
   getUsers(): Promise<UserContext[]>;
   // #1204: the actor is recorded at the manager door. Optional until #1179
@@ -372,6 +371,8 @@ interface IPageManager {
 }
 
 interface IPolicyInformationPoint {
+  /** #1431 step 13: the request's subject — resolved by the session middleware, else now. */
+  currentSubject(req: Request): Promise<UserContext>;
   checkPagePermissionWithContext(wikiContext: WikiContext, action: string): Promise<boolean>;
   /** #714 Slice F: rich-return form — `{ allowed, reason }`. Lets callers
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
@@ -947,7 +948,7 @@ class WikiRoutes {
 
     // Get the user context directly from the request.
     const userContext =
-      req.userContext || (await userManager.getCurrentUser(req));
+      req.userContext || (await this.engine.getManager('PolicyInformationPoint').currentSubject(req));
 
     // Resolve active theme paths
     const activeTheme = (configManager?.getProperty('ngdpbase.theme.active', 'default')) || 'default';
@@ -14106,7 +14107,7 @@ ${panes}
   async adminValidateFiles(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
-      const userContext = await userManager.getCurrentUser(req);
+      const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (
         !userContext?.isAuthenticated ||
@@ -14146,7 +14147,7 @@ ${panes}
   async adminFixFiles(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
-      const userContext = await userManager.getCurrentUser(req);
+      const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (
         !userContext?.isAuthenticated ||
@@ -15258,9 +15259,8 @@ ${panes}
    */
   async adminAuditLogs(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
-      const currentUser = await userManager.getCurrentUser(req);
+      const currentUser = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view audit logs.');
@@ -15367,9 +15367,8 @@ ${panes}
   /** API endpoint for audit logs data (#1113). */
   async adminAuditLogsApi(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
-      const currentUser = await userManager.getCurrentUser(req);
+      const currentUser = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).json({ error: 'Access denied' });
@@ -15399,9 +15398,8 @@ ${panes}
   /** API endpoint for one audit event (#1113). */
   async adminAuditLogDetails(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
-      const currentUser = await userManager.getCurrentUser(req);
+      const currentUser = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).json({ error: 'Access denied' });
@@ -15436,9 +15434,8 @@ ${panes}
   /** Export audit logs (#1113). */
   async adminAuditExport(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const wikiContext = this.createWikiContext(req);
-      const currentUser = await userManager.getCurrentUser(req);
+      const currentUser = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
         return res.status(403).send('Access denied');

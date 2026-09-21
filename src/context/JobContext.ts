@@ -144,7 +144,7 @@ export function jobContextFromOperator(username: string, reason: string, now: Da
  * A job with no person behind it — boot, a schedule, a retention pass.
  *
  * `systemPrincipal` is the name configured in `.env` as `NGDPBASE_SYSTEM_USER`
- * (#631), read through `UserManager.systemPrincipalName()`. It is a mandatory
+ * (#631), read through `PolicyInformationPoint.systemPrincipalName()`. It is a mandatory
  * positional argument rather than a constant here because this module is flat
  * and engine-free by design, and a hardcoded `'System'` would be a second
  * source of truth for a value the environment owns — one that silently names

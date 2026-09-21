@@ -10,6 +10,7 @@
  */
 import UserManager from '../UserManager';
 import type RoleManager from '../RoleManager';
+import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import { roleManagerOver } from './__fixtures__/roleManagerOver';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { Role as OrganizationRoleRecord } from '../../types/Role';
@@ -142,12 +143,15 @@ function makeEngine(mocks: ReturnType<typeof makeMocks>, configManager: ReturnTy
       if (name === 'OrganizationManager') return mocks.organizationManager;
       if (name === 'RoleManager') return roles;
       if (name === 'UserManager') return userManager;
+      if (name === 'PolicyInformationPoint') return pip;
       return null;
     }),
     getConfig: vi.fn(() => ({ get: vi.fn() })),
     setUserManager: (um: unknown) => { userManager = um; }
   };
   const roles = roleManagerOver(engine, mocks.roleManager);
+  // #1431 step 13: the reserved system-principal name is the PIP's.
+  const pip = new PolicyInformationPoint(engine);
   return engine;
 }
 

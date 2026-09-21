@@ -28,17 +28,21 @@ function makePdp(opts: {
     policyName: 'a-policy'
   });
   const userManager = {
-    userHoldsPermission: vi.fn().mockResolvedValue(opts.issuerHolds ?? true),
+    userHoldsPermission: vi.fn().mockResolvedValue(opts.issuerHolds ?? true)
+  };
+  // #1431 step 13: the subject's current attributes are the PIP's.
+  const pip = {
     resolveSubjectNow: vi.fn().mockResolvedValue({ username: 'jim', roles: ['editor'], isAuthenticated: true })
   };
   const engine = {
     getManager: (name: string) => {
       if (name === 'PolicyEvaluator') return opts.evaluator === false ? null : { evaluateAccess };
       if (name === 'UserManager') return userManager;
+      if (name === 'PolicyInformationPoint') return pip;
       return null;
     }
   };
-  return { pdp: new PolicyDecisionPoint(engine), evaluateAccess, userManager };
+  return { pdp: new PolicyDecisionPoint(engine), evaluateAccess, userManager, pip };
 }
 
 const subject = (extra: Record<string, unknown> = {}) => ({
@@ -128,9 +132,9 @@ describe('#1431 PolicyDecisionPoint', () => {
     });
 
     test('a subject asking for live roles is resolved at decision time (#631)', async () => {
-      const { pdp, userManager, evaluateAccess } = makePdp();
+      const { pdp, pip, evaluateAccess } = makePdp();
       await pdp.decide({ username: 'jim', resolveRolesNow: true }, { action: 'page-read' });
-      expect(userManager.resolveSubjectNow).toHaveBeenCalledWith('jim');
+      expect(pip.resolveSubjectNow).toHaveBeenCalledWith('jim');
       expect(evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['editor']);
     });
 

@@ -19,6 +19,7 @@ vi.unmock('../UserManager');
 import fs from 'fs';
 import path from 'path';
 import UserManager, { ANONYMOUS_SUBJECT } from '../UserManager';
+import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { PermissionSubject, JobSubject } from '../UserManager';
 import { toPermissionSubject, jobContextFromRequest } from '../../context/JobContext';
 
@@ -60,8 +61,12 @@ describe('#1212 the type', () => {
 
 /** A UserManager whose policy allows editors and admins; roles come from the provider, live. */
 function makeManager(liveRoles: Record<string, string[]>) {
-  const m = new UserManager({
-    getManager: (n: string) => {
+  // #1431 step 13: a subject is resolved by the PIP — a real one, over this
+  // engine, reading the account from this UserManager and roles from RoleManager.
+  const engine = {
+    getManager: (n: string): unknown => {
+      if (n === 'PolicyInformationPoint') return pip;
+      if (n === 'UserManager') return m;
       if (n === 'PolicyEvaluator') {
         return { evaluateAccess: ({ userContext }: { userContext: { roles: string[] } }) =>
           Promise.resolve({ allowed: userContext.roles.includes('editor') || userContext.roles.includes('admin') }) };
@@ -76,7 +81,9 @@ function makeManager(liveRoles: Record<string, string[]>) {
       }
       return null;
     }
-  });
+  };
+  const m = new UserManager(engine);
+  const pip = new PolicyInformationPoint(engine);
   const um = m as unknown as { provider: unknown };
   um.provider = { getUser: (u: string) => Promise.resolve(u in liveRoles ? { username: u, isActive: true, roles: liveRoles[u] } : null) };
   return m;

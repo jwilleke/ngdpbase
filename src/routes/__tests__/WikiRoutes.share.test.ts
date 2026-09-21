@@ -152,7 +152,6 @@ const mockConfigManager = {
 };
 
 const mockUserManager = {
-  getCurrentUser: vi.fn().mockResolvedValue(null),
   // #1198/#1224: the share routes ask policy — share-manage to issue, list
   // and revoke one's own shares (shipped to admin and editor), admin-system
   // for the override views. Shaped like the shipped catalog.
@@ -194,6 +193,8 @@ vi.mock('../../WikiEngine', () => {
             getReferringPages: vi.fn().mockReturnValue([])
           },
           PolicyInformationPoint: {
+            // #1431 step 13: the request subject is the PIP's.
+            currentSubject: vi.fn().mockResolvedValue(null),
             checkPagePermission: vi.fn().mockResolvedValue(true),
             // #1223: the page read gate. The share page and album routes ask
             // it per page; a refused page reads as not found.

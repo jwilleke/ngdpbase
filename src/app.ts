@@ -681,11 +681,13 @@ void (async (): Promise<void> => {
 
   const userManager = engine.getManager('UserManager') as {
     getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; [key: string]: unknown } | null>;
-    getAnonymousUser(): NonNullable<Request['userContext']>;
     isAdminUsingDefaultPassword(): Promise<boolean>;
   };
-  const roleManager = engine.getManager('RoleManager') as {
-    resolveUserRoles(username: string): Promise<string[]>;
+  // #1431 step 13: the request's subject is built by the PIP — the account and
+  // the roles it holds now — in one place, not inline here.
+  const pip = engine.getManager('PolicyInformationPoint') as {
+    anonymousSubject(): NonNullable<Request['userContext']>;
+    subjectFor(username: string): Promise<NonNullable<Request['userContext']> | null>;
   };
 
   app.use((req: Request, _res: Response, next: NextFunction): void => {
@@ -701,23 +703,8 @@ void (async (): Promise<void> => {
 
     void (async (): Promise<void> => {
       if (req.session?.username && req.session.isAuthenticated) {
-        const user = await userManager.getUser(req.session.username);
-        if (user?.isActive) {
-          // #617 iteration 3a: source base roles from RoleManager (canonical
-          // OrganizationRole records). Falls back to User.roles[] when no
-          // RoleManager records exist. See RoleManager.resolveUserRoles.
-          const baseRoles = await roleManager.resolveUserRoles(req.session.username);
-          const roles = new Set(baseRoles);
-
-          // #1212: username stated, not inherited from a spread whose type
-          // leaves it optional — the request's subject is complete by construction.
-          const sessionContext = {
-            ...user,
-            username: req.session.username,
-            roles: Array.from(roles),
-            isAuthenticated: true,
-            authenticated: true
-          };
+        const sessionContext = await pip.subjectFor(req.session.username);
+        if (sessionContext) {
           // #1179: the address travels on the subject, so a manager records it from the context it is handed.
           // #1382: so does the handle to this session's private-store keys — never the session id.
           const privateStoreHandle = req.session.privateStoreHandle;
@@ -728,11 +715,11 @@ void (async (): Promise<void> => {
           };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {
-          req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };
+          req.userContext = { ...pip.anonymousSubject(), ipAddress: req.ip };
           logger.info('[SESSION] User not found or inactive, treating as Anonymous');
         }
       } else {
-        req.userContext = { ...userManager.getAnonymousUser(), ipAddress: req.ip };
+        req.userContext = { ...pip.anonymousSubject(), ipAddress: req.ip };
         logger.info('[SESSION] Restored session for user: Anonymous');
       }
       next();
@@ -808,17 +795,11 @@ void (async (): Promise<void> => {
         }
       }
       if (result.success && result.username) {
-        const user = await userManager.getUser(result.username);
-        if (user?.isActive) {
-          const baseRoles = await roleManager.resolveUserRoles(result.username);
-          const roles = new Set(baseRoles);
+        const subject = await pip.subjectFor(result.username);
+        if (subject) {
           req.userContext = {
-            ...user,
-            username: result.username,
+            ...subject,
             ipAddress: req.ip,
-            roles: Array.from(roles),
-            isAuthenticated: true,
-            authenticated: true,
             // #946: scopes ride on userContext so they reach both the ACL
             // scope gate and the save path (for via-token provenance) through
             // the WikiContext the route handler already builds. Roles above are

@@ -94,7 +94,7 @@ class WikiEngine extends Engine {
    * 5. PageManager - Page storage and retrieval
    * 6. TemplateManager - Template rendering
    * 7. PolicyValidator/PolicyEvaluator - Policy system (policies read live, #1431)
-   * 8. PolicyInformationPoint - Access control (depends on PolicyEvaluator)
+   * 8. PolicyInformationPoint - page and subject attributes; starts before UserManager and reads PolicyEvaluator at use (#1431 step 13)
    * 9. PluginManager - Plugin system
    * 10. MarkupParser - Markup parsing
    * 11. RenderingManager - Content rendering (depends on MarkupParser)
@@ -194,6 +194,14 @@ class WikiEngine extends Engine {
     this.registerManager('RoleManager', roleManager);
     await roleManager.initialize();
 
+    // #1431 step 13: the PIP builds subjects — the system principal among them —
+    // and UserManager's own start-up needs that (the default admin is created
+    // under the system principal, and its name is reserved). It reads every
+    // other manager at the moment of use, so it can start this early.
+    const policyInformationPoint = new PolicyInformationPoint(this);
+    this.registerManager('PolicyInformationPoint', policyInformationPoint);
+    await policyInformationPoint.initialize();
+
     // 3. Initialize UserManager early as it's critical for security and context
     const userManager = new UserManager(this);
     this.registerManager('UserManager', userManager);
@@ -233,7 +241,6 @@ class WikiEngine extends Engine {
     this.registerManager('TemplateManager', templateManager);
     await templateManager.initialize();
 
-    // PolicyEvaluator BEFORE PolicyInformationPoint, because PolicyInformationPoint depends on it.
     // #1431 step 10: there is no PolicyManager. It copied the policies at boot
     // and answered every decision from the copy, so a policy changed in
     // /admin/configuration was saved and audited but not enforced until a
@@ -253,9 +260,6 @@ class WikiEngine extends Engine {
     this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
     await policyEvaluator.initialize();
 
-    const policyInformationPoint = new PolicyInformationPoint(this);
-    this.registerManager('PolicyInformationPoint', policyInformationPoint);
-    await policyInformationPoint.initialize();
 
     const pluginManager = new PluginManager(this);
     this.registerManager('PluginManager', pluginManager);
