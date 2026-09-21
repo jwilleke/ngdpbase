@@ -1,7 +1,7 @@
 /**
  * What an agent token may REACH (#1173 Part A).
  *
- * The scope ceiling in `UserManager.hasPermission` decides what a token may
+ * The scope ceiling in the PDP (`PolicyDecisionPoint`) decides what a token may
  * DO once a handler asks. This decides what it may reach at all, and the two
  * are not the same question — #1164 was a case where the ceiling was
  * structurally unable to run, and a handler that never asks is a case where

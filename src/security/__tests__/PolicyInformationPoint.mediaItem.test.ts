@@ -13,14 +13,15 @@
  */
 
 import PolicyInformationPoint from '../PolicyInformationPoint';
+import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import type { ShareGrant } from '../../types/Share';
 
 let issuerHolds: string[] = ['asset-read'];
 let denials: Array<Record<string, unknown>> = [];
 
 function makeEngine() {
-  return {
-    getManager: (name: string) => {
+  const engine = {
+    getManager: (name: string): unknown => {
       if (name === 'ConfigurationManager') {
         return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => '/tmp/ngdp-acl-media-test', isInitialized: () => true };
       }
@@ -32,8 +33,8 @@ function makeEngine() {
           }
         };
       }
-      if (name === 'UserManager') {
-        return { userHoldsPermission: async (u: string, a: string) => u === 'jim' && issuerHolds.includes(a) };
+      if (name === 'PolicyDecisionPoint') {
+        return pdp;
       }
       if (name === 'PageManager') {
         // Linked pages: 'Public' anyone may see (tier 1 audience All); 'Secret' is private to bob.
@@ -47,7 +48,13 @@ function makeEngine() {
       }
       return null;
     }
-  } as never;
+  };
+  // #1431 step 14: decisions are the PDP's. A real one, so the share ceiling
+  // runs as shipped; only its lookup of what the issuer holds live is stubbed.
+  const pdp = new PolicyDecisionPoint(engine);
+  vi.spyOn(pdp, 'userHoldsPermission').mockImplementation(async (u: string, a: string) =>
+    u === 'jim' && issuerHolds.includes(a));
+  return engine as never;
 }
 
 const grant: ShareGrant = {

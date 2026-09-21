@@ -56,6 +56,8 @@ const mockEngine = {
 // #1431 step 13: subjects are built by the PIP — a real one, over this engine,
 // so whatever the test installs as UserManager / RoleManager is what it asks.
 const pip = new PolicyInformationPoint(mockEngine);
+// #1431 step 14: decisions are the PDP's — a real one over this engine.
+const pdp = new PolicyDecisionPoint(mockEngine);
 
 describe('UserManager', () => {
   let userManager;
@@ -274,6 +276,7 @@ describe('UserManager', () => {
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return policiesConfig;
         if (name === 'PolicyInformationPoint') return pip;
+        if (name === 'UserManager') return userManager;
         if (name === 'RoleManager') return { resolveUserRoles: vi.fn(async () => mockMemberRoles) };
         return null;
       });
@@ -283,17 +286,17 @@ describe('UserManager', () => {
       const mockUser = { username: 'test', roles: ['user'], isActive: true };
       userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
 
-      const permissions = await userManager.getUserPermissions('test');
+      const permissions = await pdp.getUserPermissions('test');
 
       expect(Array.isArray(permissions)).toBe(true);
       expect(permissions.length).toBeGreaterThan(0);
     });
 
-    test('hasPermission() should check user permissions via policies', async () => {
+    test('permits() should check user permissions via policies', async () => {
       const mockUser = { username: 'test', roles: ['admin'], isActive: true };
       userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
 
-      const permissions = await userManager.getUserPermissions('test');
+      const permissions = await pdp.getUserPermissions('test');
       const result = permissions.length > 0;
 
       expect(result).toBe(true);
@@ -304,11 +307,12 @@ describe('UserManager', () => {
       mockEngine.getManager = vi.fn((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'PolicyInformationPoint') return pip;
+        if (name === 'UserManager') return userManager;
         if (name === 'RoleManager') return mockRoles;
         return null;
       });
 
-      const permissions = await userManager.getUserPermissions('test');
+      const permissions = await pdp.getUserPermissions('test');
 
       expect(Array.isArray(permissions)).toBe(true);
       expect(permissions.length).toBe(0);
@@ -337,12 +341,12 @@ describe('UserManager', () => {
       return policyEvaluator;
     }
 
-    test('hasPermission(userContext, action) skips provider.getUser + resolveUserRoles (#637)', async () => {
+    test('permits(userContext, action) skips provider.getUser + resolveUserRoles (#637)', async () => {
       installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
       mockRoles.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
-      const result = await userManager.hasPermission(
+      const result = await pdp.permits(
         { username: 'jane', roles: ['admin'], isAuthenticated: true },
         'admin-system'
       );
@@ -365,13 +369,13 @@ describe('UserManager', () => {
       const mockUser = { username: 'jane', roles: ['admin'], isActive: true };
       userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
 
-      const result = await userManager.userHoldsPermission('jane', 'admin-system');
+      const result = await pdp.userHoldsPermission('jane', 'admin-system');
 
       expect(userManager.provider.getUser).toHaveBeenCalledWith('jane');
       expect(result).toBe(true);
     });
 
-    test('hasPermission(userContext, action) trusts the caller-provided roles array verbatim (#637)', async () => {
+    test('permits(userContext, action) trusts the caller-provided roles array verbatim (#637)', async () => {
       const policyEvaluator = installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn();
       mockRoles.resolveUserRoles = vi.fn();
@@ -379,7 +383,7 @@ describe('UserManager', () => {
       // Caller's userContext claims `super-admin` role even though the user
       // record on disk wouldn't grant it. Fast path must trust the caller —
       // session middleware is the source of truth for roles.
-      await userManager.hasPermission(
+      await pdp.permits(
         { username: 'mallory', roles: ['super-admin'], isAuthenticated: true },
         'admin-system'
       );
@@ -404,12 +408,12 @@ describe('UserManager', () => {
     // and running at 09:12 authorises against 09:12's roles. Its docblock said
     // hasPermission would resolve them; hasPermission substituted anonymous.
 
-    test('hasPermission(subject without roles) resolves the user\'s CURRENT roles (#631)', async () => {
+    test('permits(subject without roles) resolves the user\'s CURRENT roles (#631)', async () => {
       const policyEvaluator = installPolicyEvaluator(true);
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
       mockRoles.resolveUserRoles = vi.fn().mockResolvedValue(['editor']);
 
-      await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
+      await pdp.permits({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
       expect(mockRoles.resolveUserRoles).toHaveBeenCalledWith('jim');
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
@@ -424,7 +428,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'jim', isActive: true });
       mockRoles.resolveUserRoles = vi.fn().mockResolvedValue([]);
 
-      await userManager.hasPermission({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'admin-system');
+      await pdp.permits({ username: 'jim', isAuthenticated: true, resolveRolesNow: true }, 'admin-system');
 
       const seen = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(seen).not.toContain('admin');
@@ -437,7 +441,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
       mockRoles.resolveUserRoles = vi.fn();
 
-      await userManager.hasPermission({ username: 'ghost', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
+      await pdp.permits({ username: 'ghost', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
 
       expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess).toHaveBeenCalledWith(
@@ -465,7 +469,7 @@ describe('UserManager', () => {
       userManager.provider.getUser = vi.fn();
       mockRoles.resolveUserRoles = vi.fn();
 
-      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-create');
+      await pdp.permits({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-create');
 
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
       expect(mockRoles.resolveUserRoles).not.toHaveBeenCalled();
@@ -481,14 +485,14 @@ describe('UserManager', () => {
     test('the name matches case-insensitively, like the user store (#631)', async () => {
       const policyEvaluator = installSystemPrincipal(true);
       userManager.provider.getUser = vi.fn();
-      await userManager.hasPermission({ username: 'SVC-NGDPBASE', isAuthenticated: true, resolveRolesNow: true }, 'page-read');
+      await pdp.permits({ username: 'SVC-NGDPBASE', isAuthenticated: true, resolveRolesNow: true }, 'page-read');
       expect(userManager.provider.getUser).not.toHaveBeenCalled();
       expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toContain('admin');
     });
 
     test('ngdpbase.system.roles is read, not assumed — a narrower list is honoured (#631)', async () => {
       const policyEvaluator = installSystemPrincipal(true, 'svc-ngdpbase', ['editor']);
-      await userManager.hasPermission({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
+      await pdp.permits({ username: 'svc-ngdpbase', isAuthenticated: true, resolveRolesNow: true }, 'page-edit');
       const roles = policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles;
       expect(roles).toEqual(['editor']);
       expect(roles).not.toContain('admin');
@@ -500,7 +504,7 @@ describe('UserManager', () => {
       // name with its own roles gets its own roles — the store cannot hold
       // such a user anyway, because createUser reserves the name.
       const policyEvaluator = installSystemPrincipal(true);
-      await userManager.hasPermission({ username: 'svc-ngdpbase', roles: ['reader'], isAuthenticated: true }, 'page-read');
+      await pdp.permits({ username: 'svc-ngdpbase', roles: ['reader'], isAuthenticated: true }, 'page-read');
       expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['reader']);
     });
 
@@ -518,50 +522,6 @@ describe('UserManager', () => {
       await expect(userManager.createUser({ username: 'Svc-NgdpBase', password: 'x', email: 'a@b.c' }, ACTOR))
         .rejects.toMatchObject({ reason: 'username-taken' });
       expect(userManager.provider.createUser).not.toHaveBeenCalled();
-    });
-  });
-
-  // ─── #1198: requirePermissions asks policy, never an isAuthenticated gate ──
-  describe('requirePermissions() (#1198)', () => {
-    function installPolicyEvaluator(allowed: boolean) {
-      const policyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ allowed }) };
-      // #1431: a real PDP over this mock engine — the decision moved there.
-      const pdp = new PolicyDecisionPoint(mockEngine);
-      mockEngine.getManager = vi.fn((name) => {
-        if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'PolicyInformationPoint') return pip;
-        if (name === 'PolicyEvaluator') return policyEvaluator;
-        if (name === 'PolicyDecisionPoint') return pdp;
-        if (name === 'UserManager') return userManager;
-        if (name === 'RoleManager') return mockRoles;
-        return null;
-      });
-      return policyEvaluator;
-    }
-    const call = (user: unknown) =>
-      new Promise<{ status?: number; next: boolean }>((resolve) => {
-        const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-        res.json.mockImplementation(() => resolve({ status: res.status.mock.calls[0]?.[0], next: false }));
-        userManager.requirePermissions(['page-edit'])({ userContext: user }, res, () => resolve({ next: true }));
-      });
-
-    test('an anonymous request is asked of POLICY, and a denial answers 401', async () => {
-      const policyEvaluator = installPolicyEvaluator(false);
-      const out = await call(undefined);
-      expect(policyEvaluator.evaluateAccess).toHaveBeenCalled();
-      expect(out).toEqual({ status: 401, next: false });
-    });
-
-    test('an authenticated request policy refuses answers 403', async () => {
-      installPolicyEvaluator(false);
-      const out = await call({ username: 'jim', roles: ['reader'], isAuthenticated: true });
-      expect(out).toEqual({ status: 403, next: false });
-    });
-
-    test('an anonymous request policy ALLOWS proceeds — the refusal moved to policy, it did not vanish', async () => {
-      installPolicyEvaluator(true);
-      const out = await call(undefined);
-      expect(out).toEqual({ next: true });
     });
   });
 

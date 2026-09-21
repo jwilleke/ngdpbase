@@ -35,7 +35,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -87,10 +87,8 @@ const mockCacheManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -98,6 +96,12 @@ const mockUserManager = {
   destroySession: vi.fn(),
   getSession: vi.fn(),
   createUser: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -191,6 +195,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
@@ -302,10 +307,10 @@ function resetMocks() {
   mockTemplateManager.applyTemplate.mockReturnValue('# Template content');
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.searchUsers.mockResolvedValue([]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
@@ -436,7 +441,7 @@ describe('WikiRoutes — coverage batch 8', () => {
     });
 
     test('returns 403 when user lacks required permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -524,7 +529,7 @@ describe('WikiRoutes — coverage batch 8', () => {
     });
 
     test('returns 403 when user lacks page-create permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       mockPageManager.getPage.mockImplementation((name: string) => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AnotherPage'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);

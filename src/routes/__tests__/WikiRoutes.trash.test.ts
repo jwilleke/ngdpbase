@@ -50,7 +50,7 @@ function daysAgo(n: number): string {
 function makeRoutes(opts: {
   deleted?: Array<Record<string, unknown>> | null;
   retentionDays?: number;
-  hasPermission?: boolean;
+  permits?: boolean;
 } = {}) {
   const provider = opts.deleted === null
     ? {}                                        // provider WITHOUT soft-delete support
@@ -68,8 +68,9 @@ function makeRoutes(opts: {
           )
         };
       }
-      if (name === 'UserManager') {
-        return { hasPermission: vi.fn().mockResolvedValue(opts.hasPermission ?? true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: vi.fn().mockResolvedValue(opts.permits ?? true) };
       }
       return null;
     })
@@ -95,14 +96,14 @@ describe('GET /admin/trash — authorisation (#969)', () => {
     // The API answers 401 JSON; a browser tab needs somewhere to go.
     const res = createMockRes();
     // #1198: policy refuses the anonymous subject; the refusal is the redirect.
-    await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(ANONYMOUS_SUBJECT), res);
+    await makeRoutes({ permits: false }).adminTrash(createMockReq(ANONYMOUS_SUBJECT), res);
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/admin/trash'));
     expect(res.render).not.toHaveBeenCalled();
   });
 
   test('refuses a non-admin with 403 and renders nothing', async () => {
     const res = createMockRes();
-    await makeRoutes({ hasPermission: false }).adminTrash(createMockReq(plainUser), res);
+    await makeRoutes({ permits: false }).adminTrash(createMockReq(plainUser), res);
     expect(res.status).toHaveBeenCalledWith(403);
     // #1198: the refusal renders the error page, never the trash page.
     expect(res.render).not.toHaveBeenCalledWith('admin-trash', expect.anything());

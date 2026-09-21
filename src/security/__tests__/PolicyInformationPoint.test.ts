@@ -10,6 +10,7 @@
  */
 
 import PolicyInformationPoint from '../PolicyInformationPoint';
+import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 // Mock ConfigurationManager
@@ -27,7 +28,6 @@ const mockConfigurationManager = {
 
 // Mock UserManager
 const mockUserManager = {
-  hasPermission: vi.fn(),
   hasRole: vi.fn()
 };
 
@@ -50,9 +50,17 @@ const mockEngine = {
     if (name === 'PolicyEvaluator') {
       return mockPolicyEvaluator;
     }
+    if (name === 'PolicyDecisionPoint') {
+      return policyDecisionPoint;
+    }
     return null;
   })
 };
+
+// #1431 step 14: decisions are the PDP's. A REAL one over the mock engine, so
+// the ceilings and Tier 2 run as shipped; tests that need a verdict on a
+// global permission (the author-lock override) spy on its `permits`.
+const policyDecisionPoint = new PolicyDecisionPoint(mockEngine);
 
 // #1174/#1431: the performStandardACLCheck and checkDefaultPermission suites
 // are gone with the methods. They were the seven mocked tests #1174 named as
@@ -235,10 +243,13 @@ describe('PolicyInformationPoint', () => {
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
+    // The author-lock override tests spy on the PDP's permits; put it back even when one fails.
+    afterEach(() => { vi.restoreAllMocks(); });
+
     test('edit + author-lock + admin-system → falls through (Tier 1 access.edit decides allow)', async () => {
       // #1431 step 7b: the override is the admin-system PERMISSION, asked of
-      // UserManager.hasPermission — the policy decides, as for any door.
-      mockUserManager.hasPermission.mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
+      // PolicyDecisionPoint.permits — the policy decides, as for any door.
+      const permits = vi.spyOn(policyDecisionPoint, 'permits').mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -248,14 +259,13 @@ describe('PolicyInformationPoint', () => {
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
-      mockUserManager.hasPermission.mockReset();
     });
 
     test('the admin ROLE alone no longer overrides author-lock — the permission does (#1431 7b)', async () => {
       // The regression this step fixes: `roles.includes('admin')` decided
       // regardless of what policy grants. A subject holding a role NAMED
       // admin, whose policy does not grant admin-system, is now refused.
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      const permits = vi.spyOn(policyDecisionPoint, 'permits').mockResolvedValue(false);
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -265,13 +275,12 @@ describe('PolicyInformationPoint', () => {
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
       expect(await policyInformationPoint.evaluatePagePermission(ctx, 'edit')).toMatchObject({ allowed: false, reason: 'author_lock_deny' });
-      mockUserManager.hasPermission.mockReset();
     });
 
     test('a role not named admin but granted admin-system can override (#1431 7b)', async () => {
       // The other half: the config decides, so an operator role granted the
       // permission works without being called 'admin'.
-      mockUserManager.hasPermission.mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
+      const permits = vi.spyOn(policyDecisionPoint, 'permits').mockImplementation(async (_s: unknown, action: string) => action === 'admin-system');
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -281,7 +290,6 @@ describe('PolicyInformationPoint', () => {
         userContext: { username: 'carol', roles: ['operator'], isAuthenticated: true }
       });
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
-      mockUserManager.hasPermission.mockReset();
     });
 
     test('view + author-lock + non-author non-admin → Tier 0.5 does NOT fire (action-specific gate)', async () => {

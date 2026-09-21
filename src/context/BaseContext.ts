@@ -28,7 +28,7 @@
  */
 
 import type { PermissionSubject } from '../managers/UserManager.js';
-import type UserManager from '../managers/UserManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 /** The engine surface this door needs — `getManager`, nothing more. */
 export interface EngineLike {
@@ -95,21 +95,21 @@ export abstract class BaseContext {
   }
 
   /**
-   * May this caller perform `action` at all? The canonical global check:
-   * `UserManager.hasPermission` through `PolicyEvaluator`, with role
-   * expansion, deny policies and the token and share ceilings.
+   * May this caller perform `action` at all? The canonical global check,
+   * asked of the PDP (#1431 step 14): the token and share ceilings, then the
+   * policies, with deny policies and role expansion.
    *
    * For a check against a PAGE, ask `canAccess` on a context that has one —
    * resource attributes beat global policy.
    */
   async hasPermission(action: string): Promise<boolean> {
-    const userManager = this.engineRef.getManager<UserManager>('UserManager');
-    if (!userManager) return false;
+    const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) return false;
     const cached = this._permissionCache.get(action);
     if (cached) return cached;
-    // #637: hand over the already-resolved subject so UserManager can skip
-    // provider.getUser + resolveUserRoles.
-    const promise = userManager.hasPermission(this.getActor(), action);
+    // #637: hand over the already-resolved subject so the PDP need not
+    // resolve the account and its roles again.
+    const promise = pdp.permits(this.getActor(), action);
     this._permissionCache.set(action, promise);
     return promise;
   }

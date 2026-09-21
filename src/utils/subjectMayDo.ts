@@ -2,9 +2,9 @@
  * subjectMayDo — the one door for a plugin, middleware or handler that has an
  * engine and a subject and needs an allow/deny (#1198, security-posture P2).
  *
- * Asks `UserManager.hasPermission(subject, action)` and nothing else. The
+ * Asks the PDP (`PolicyDecisionPoint.permits`) and nothing else. The
  * subject is forwarded as it was given, so `viaToken` / `viaShare` reach the
- * ceilings. No engine, no UserManager, or no subject is a refusal — the
+ * ceilings. No engine, no PDP, or no subject is a refusal — the
  * anonymous role's policy is asked through `ANONYMOUS_SUBJECT` by the caller
  * that means anonymous, never by this helper defaulting to it.
  *
@@ -16,7 +16,7 @@ import type { PermissionSubject } from '../managers/UserManager.js';
 import type { CorePermission } from '../security/permissions.generated.js';
 
 type EngineLike = { getManager: (name: string) => unknown } | null | undefined;
-type UserManagerLike = { hasPermission(subject: PermissionSubject, action: string): Promise<boolean> };
+type DecisionPointLike = { permits(subject: PermissionSubject, action: string): Promise<boolean> };
 
 export async function subjectMayDo(
   engine: EngineLike,
@@ -25,7 +25,7 @@ export async function subjectMayDo(
   action: CorePermission
 ): Promise<boolean> {
   if (!engine || !subject) return false;
-  const userManager = engine.getManager('UserManager') as UserManagerLike | null | undefined;
-  if (!userManager || typeof userManager.hasPermission !== 'function') return false;
-  return userManager.hasPermission(subject, action);
+  const pdp = engine.getManager('PolicyDecisionPoint') as DecisionPointLike | null | undefined;
+  if (!pdp || typeof pdp.permits !== 'function') return false;
+  return pdp.permits(subject, action);
 }

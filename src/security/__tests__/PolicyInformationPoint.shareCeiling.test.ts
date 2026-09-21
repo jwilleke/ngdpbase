@@ -11,6 +11,7 @@
  */
 
 import PolicyInformationPoint from '../PolicyInformationPoint';
+import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import type { ShareGrant } from '../../types/Share';
 
 /** What jim holds live. Mutated to simulate a revoked role. */
@@ -19,8 +20,8 @@ let issuerHolds: string[] = ['page-read', 'page-edit'];
 let denials: Array<Record<string, unknown>> = [];
 
 function makeEngine() {
-  return {
-    getManager: (name: string) => {
+  const engine = {
+    getManager: (name: string): unknown => {
       if (name === 'ConfigurationManager') {
         return {
           getProperty: (_k: string, d: unknown) => d,
@@ -37,18 +38,21 @@ function makeEngine() {
           }
         };
       }
-      if (name === 'UserManager') {
-        return {
-          userHoldsPermission: async (username: string, action: string) =>
-            username === 'jim' && issuerHolds.includes(action)
-        };
+      if (name === 'PolicyDecisionPoint') {
+        return pdp;
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: async (e: Record<string, unknown>) => { denials.push(e); return 'evt'; } };
       }
       return null;
     }
-  } as never;
+  };
+  // #1431 step 14: decisions are the PDP's. A real one, so the share ceiling
+  // runs as shipped; only its lookup of what the issuer holds live is stubbed.
+  const pdp = new PolicyDecisionPoint(engine);
+  vi.spyOn(pdp, 'userHoldsPermission').mockImplementation(async (username: string, action: string) =>
+    username === 'jim' && issuerHolds.includes(action));
+  return engine as never;
 }
 
 const grant: ShareGrant = {

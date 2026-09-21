@@ -64,31 +64,7 @@ The __UserManager__ handles user authentication, authorization, role management,
 
 ### Permission Resolution Flow
 
-```
-┌────────────────────────────────────────────────────────┐
-│ User requests action (e.g., "edit page")               │
-└────────────────────┬───────────────────────────────────┘
-                     │
-                     ▼
-┌────────────────────────────────────────────────────────┐
-│ UserManager.hasPermission(username, action)            │
-│ - Builds userContext with roles                        │
-│ - Adds built-in roles: All, Authenticated              │
-└────────────────────┬───────────────────────────────────┘
-                     │
-                     ▼
-┌────────────────────────────────────────────────────────┐
-│ PolicyEvaluator.evaluateAccess(context)                │
-│ - Gets policies from PolicyManager                     │
-│ - Matches user roles against policy subjects           │
-│ - Returns allow/deny decision                          │
-└────────────────────┬───────────────────────────────────┘
-                     │
-                     ▼
-┌────────────────────────────────────────────────────────┐
-│ Return true/false to caller                            │
-└────────────────────────────────────────────────────────┘
-```
+`UserManager` takes no part in an access decision ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431)). A door asks its context (`ctx.hasPermission(action)`, or `ctx.canAccess(action, page)` for one page); the context asks the [PolicyDecisionPoint](../../src/security/PolicyDecisionPoint.ts), which runs the agent-token and share ceilings and then the access policies. A subject's current roles come from [PolicyInformationPoint](PolicyInformationPoint.md), which reads the account here and the membership from [RoleManager](RoleManager.md). See [Manager-SOT.md](Manager-SOT.md).
 
 ---
 
@@ -197,60 +173,7 @@ __Features:__
 
 ### Authorization
 
-#### `hasPermission(username, action)`
-
-Checks if user has permission to perform an action using policy-based access control.
-
-__Parameters:__
-
-- `username` (string) - Username (null for anonymous)
-- `action` (string) - Action to check (e.g., 'page:create', 'admin:users')
-
-__Returns:__ `Promise<boolean>` - True if user has permission
-
-__Example:__
-
-```javascript
-const canEdit = await userManager.hasPermission('editor', 'page:edit');
-if (canEdit) {
-  console.log('User can edit pages');
-}
-```
-
-__User Context:__
-
-- Anonymous: `roles: ['anonymous', 'All']`
-- Authenticated: `roles: [user.roles, 'Authenticated', 'All']`
-
-There is no Asserted state. It was removed in [#1435](https://github.com/jwilleke/ngdpbase/issues/1435): a cookie evidences the browser, never the person holding it, so on a shared machine "Good morning, Jim" greets whoever sat down — and tells them Jim has an account.
-
----
-
-#### `getUserPermissions(username)`
-
-Gets all effective permissions for a user by querying PolicyManager.
-
-__Parameters:__
-
-- `username` (string) - Username (null for anonymous)
-
-__Returns:__ `Array<string>` - Array of permission strings
-
-__Example:__
-
-```javascript
-const permissions = userManager.getUserPermissions('admin');
-// Returns: ['page:read', 'page:edit', 'page:create', 'admin:users', ...]
-```
-
-__How It Works:__
-
-1. Queries PolicyManager for all policies
-2. Builds user's role list (including built-in roles)
-3. Collects all actions from matching 'allow' policies
-4. Returns unique set of permissions
-
----
+None. `hasPermission`, `getUserPermissions`, `userHoldsPermission`, `requirePermissions` and `ensureAuthenticated` are gone (#1431 step 14). The decisions are `PolicyDecisionPoint.permits(subject, action)`, `getUserPermissions(username)` and `userHoldsPermission(username, action)`; a door asks its context instead.
 
 ### User Management
 
@@ -560,32 +483,9 @@ __Location:__ `./users/sessions.json` (configurable)
 
 ## Integration with Other Managers
 
-### PolicyManager
+### PolicyDecisionPoint and PolicyInformationPoint
 
-UserManager queries PolicyManager to get role permissions:
-
-```javascript
-const policyManager = this.engine.getManager('PolicyManager');
-const policies = policyManager.getAllPolicies();
-// Match user roles against policy subjects
-```
-
-### PolicyEvaluator
-
-UserManager uses PolicyEvaluator for access decisions:
-
-```javascript
-const policyEvaluator = this.engine.getManager('PolicyEvaluator');
-const result = await policyEvaluator.evaluateAccess({
-  pageName: '*',
-  action: 'page:create',
-  userContext: {
-    username: 'john',
-    roles: ['editor', 'Authenticated', 'All'],
-    isAuthenticated: true
-  }
-});
-```
+`UserManager` supplies the account (`getUser`) that the PIP builds a subject from; it asks neither for a decision. `PolicyManager` no longer exists — the policies are read live through `ConfigurationManager` ([PolicyManager.md](PolicyManager.md)).
 
 ### SchemaManager
 
@@ -672,24 +572,15 @@ There is no role API. Add the role to `app-custom-config.json` (or in Configurat
 }
 ```
 
-### 3. Check Permissions with Policy System
-
-✅ __Use `hasPermission()` for access control:__
+### 3. Ask the context, never UserManager
 
 ```javascript
-if (await userManager.hasPermission(username, 'page:edit')) {
+if (await ctx.hasPermission('page-edit')) {
   // Allow edit
 }
 ```
 
-✅ __Use `getUserPermissions()` for UI rendering:__
-
-```javascript
-const permissions = userManager.getUserPermissions(username);
-if (permissions.includes('admin:users')) {
-  // Show admin menu
-}
-```
+For a UI listing of what a user's roles give them, the PDP's `getUserPermissions(username)`.
 
 ### 4. Handle External Users
 
@@ -742,23 +633,15 @@ __Solution:__ Ensure ConfigurationManager is registered first in WikiEngine
 
 ---
 
-### Issue: "PolicyManager not available, returning empty permissions"
-
-__Cause:__ PolicyManager not initialized or disabled
-
-__Solution:__ Check `ngdpbase.access.policies.enabled` is `true` in config
-
----
-
 ### Issue: User can't perform expected action
 
 __Cause:__ No matching policy for user's roles
 
 __Solution:__
 
-1. Check user's roles: `userManager.getUser(username).roles`
-2. Check available policies: `policyManager.getAllPolicies()`
-3. Verify policy subjects match user's roles
+1. Check the user's roles: `engine.getManager('RoleManager').resolveUserRoles(username)`
+2. Check the policies in force: `ngdpbase.access.policies` in Configuration (and `ngdpbase.access.policies.enabled`)
+3. Verify policy subjects match the user's roles
 4. Check policy priority order
 
 ---

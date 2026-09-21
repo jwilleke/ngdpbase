@@ -13,28 +13,25 @@
  */
 vi.unmock('../UserManager');
 
-import UserManager from '../UserManager';
 import { ApiContext } from '../../context/ApiContext';
+import { makeDecider } from './__fixtures__/decider';
 
 const token = { id: 'tok-1', name: 'reader', scopes: ['page-read'] };
 
-/** A UserManager whose policy engine allows everything — only the ceiling can deny. */
-function makeUserManager() {
-  const m = new UserManager({
-    getManager: (n: string) =>
-      (n === 'PolicyEvaluator'
-        ? { evaluateAccess: () => Promise.resolve({ allowed: true }) }
-        // Who holds which role is RoleManager's (#1431 step 12).
-        : n === 'RoleManager' ? { resolveUserRoles: () => Promise.resolve(['admin']) } : null)
+/**
+ * A real decider (#1431 step 14) whose policy allows everything — only the
+ * ceiling can deny. `known` says whether jim's account exists.
+ */
+function makeUserManager(known = true) {
+  return makeDecider({
+    evaluateAccess: () => Promise.resolve({ allowed: true }),
+    users: (u) => (known && u === 'jim' ? { username: 'jim', isActive: true } : null),
+    roles: () => ['admin']
   });
-  (m as unknown as { provider: unknown }).provider = {
-    getUser: () => Promise.resolve({ username: 'jim', isActive: true, roles: ['admin'] })
-  };
-  return m;
 }
 
-function makeEngine(um: UserManager) {
-  return { getManager: (n: string) => (n === 'UserManager' ? um : null) } as never;
+function makeEngine(decider: ReturnType<typeof makeUserManager>) {
+  return decider.engine as never;
 }
 
 describe('#1173 — ApiContext carries the token through', () => {
@@ -74,10 +71,10 @@ describe('#1222 — ApiContext carries a share through', () => {
     resources: [{ type: 'page', pattern: 'keyword:trip' }], expiresAt: null
   };
 
-  test('the share is captured at construction and reaches hasPermission', async () => {
+  test('the share is captured at construction and reaches the PDP', async () => {
     const um = makeUserManager();
     const seen: unknown[] = [];
-    um.hasPermission = async (subject: unknown) => { seen.push(subject); return true; };
+    um.pdp.permits = async (subject: unknown) => { seen.push(subject); return true; };
     const req = {
       userContext: { username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false, viaShare: share }
     } as never;
@@ -99,14 +96,11 @@ describe('#1173 — the lookup question keeps its own name', () => {
     // this permission?" — is legitimate: no request, no token, nothing to drop.
     // It survives under its own name.
     const um = makeUserManager();
-    expect(await um.userHoldsPermission('jim', 'admin-system')).toBe(true);
+    expect(await um.pdp.userHoldsPermission('jim', 'admin-system')).toBe(true);
   });
 
   test('an unknown user is refused rather than resolving to anonymous rights', async () => {
-    const um = makeUserManager();
-    (um as unknown as { provider: { getUser: () => Promise<null> } }).provider = {
-      getUser: () => Promise.resolve(null)
-    };
-    expect(await um.userHoldsPermission('nobody', 'page-read')).toBe(false);
+    const um = makeUserManager(false);
+    expect(await um.pdp.userHoldsPermission('nobody', 'page-read')).toBe(false);
   });
 });

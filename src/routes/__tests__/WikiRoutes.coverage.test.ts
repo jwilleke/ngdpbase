@@ -35,7 +35,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager
+      mockPolicyDecisionPoint
     });
   });
   (MockWikiContext as unknown as { CONTEXT: typeof MOCK_WIKI_CONTEXT_CONSTANTS }).CONTEXT = MOCK_WIKI_CONTEXT_CONSTANTS;
@@ -115,14 +115,18 @@ const mockSearchManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
   destroySession: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockConfigManager = {
@@ -184,6 +188,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
@@ -285,10 +290,10 @@ function resetMocks() {
 
   // User
   mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getUserPermissions.mockResolvedValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockResolvedValue(['read', 'write']);
   mockUserManager.searchUsers.mockResolvedValue([]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true, roles: ['authenticated'] });
@@ -515,7 +520,7 @@ describe('WikiRoutes — additional coverage', () => {
     test('returns 403 when ACL delete check fails', async () => {
       mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', 'system-category': 'general' });
       mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
 
       const res = await request(app)
         .post('/delete/TestPage')
@@ -589,7 +594,7 @@ describe('WikiRoutes — additional coverage', () => {
     });
 
     test('returns 403 when user lacks page-edit permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
 
       const res = await request(app)
         .post('/api/footnotes/uuid-123')
@@ -646,7 +651,7 @@ describe('WikiRoutes — additional coverage', () => {
     });
 
     test('returns 403 when user lacks page-edit permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
 
       const res = await request(app)
         .put('/api/footnotes/uuid-123/fn-1')
@@ -713,7 +718,7 @@ describe('WikiRoutes — additional coverage', () => {
 
     test('returns 403 when non-owner non-admin tries to delete', async () => {
       // #1198: the gate asks policy for a permission this subject does not hold.
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       mockUserContext = { username: 'other', displayName: 'Other', email: 'other@x.com', isAuthenticated: true, roles: ['authenticated'] };
       mockFootnoteManager.getFootnotes.mockResolvedValue([
         { id: 'fn-1', display: 'Note', url: 'http://a.com', note: '', createdBy: 'testuser' }

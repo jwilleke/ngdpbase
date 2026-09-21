@@ -15,7 +15,7 @@ How to do permission and role checks in ngdpbase code. One canonical method per 
 | Question | Method | Backed by | Async? |
 |---|---|---|---|
 | Does the user carry a role? | `wikiContext.hasRole(...names)` | `userContext.roles` array check | sync |
-| Is the user globally allowed to do action X? | `wikiContext.hasPermission(action)` | `UserManager.hasPermission` → `PolicyEvaluator` | async |
+| Is the user globally allowed to do action X? | `wikiContext.hasPermission(action)` | `PolicyDecisionPoint.permits` → `PolicyEvaluator` | async |
 | Is the user allowed to do action X __on this page__? | `wikiContext.canAccess(action)` | `PolicyInformationPoint.checkPagePermissionWithContext` (3-tier) | async |
 | What principals match this user for audience filters? | `wikiContext.getPrincipals()` | `[...roles, username]` | sync |
 | Hot-path role check, no WikiContext available? | `WikiContext.userHasRole(userContext, ...names)` | static helper | sync |
@@ -85,7 +85,7 @@ if (WikiContext.userHasRole(req.userContext, 'admin')) { ... }
 
 ### 2. `hasPermission(action)` — async, global PolicyEvaluator path
 
-Returns `true` if the user is globally allowed to perform `action`. Delegates to `UserManager.hasPermission(username, action)` which evaluates through `PolicyEvaluator.evaluateAccess({pageName: '*', action, userContext})`.
+Returns `true` if the user is globally allowed to perform `action`. Asks the PDP, `PolicyDecisionPoint.permits(subject, action)`: the token and share ceilings, then `PolicyEvaluator.evaluateAccess({pageName: '*', action, userContext})`.
 
 Honors:
 
@@ -139,14 +139,12 @@ Search providers receive a duck-typed `SearchWikiContext` (defined in `src/provi
 
 ## Two evaluation engines
 
-### `UserManager.hasPermission(username, action)` — global
+### `PolicyDecisionPoint.permits(subject, action)` — global
 
-Used by `wikiContext.hasPermission()`, `apiContext.hasPermission()`, `parseContext.hasPermission()`. Internally:
+Used by `wikiContext.hasPermission()`, `apiContext.hasPermission()`, `parseContext.hasPermission()` — every context asks it with the subject it carries ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 14; it was `UserManager.hasPermission`). Internally:
 
-1. Resolves the userContext from the username:
-   - `null` / `'anonymous'` → `{ roles: ['anonymous', 'All'], isAuthenticated: false }` — the name is compared normalized, so `Anonymous` and `anonymous` are one principal ([#1436](https://github.com/jwilleke/ngdpbase/issues/1436))
-   - authenticated → `{ roles: [...resolveUserRoles(username), 'Authenticated', 'All'], isAuthenticated: true }`
-2. Rejects users whose record has `isActive: false`.
+1. Runs the delegation ceilings: an agent token's scopes, then a share (which is the whole policy for a share visitor, and holds only while its issuer still does).
+2. Takes the subject's roles as the request resolved them; a background job's subject is resolved now by the [PolicyInformationPoint](../managers/PolicyInformationPoint.md) (an unknown or inactive account is the anonymous visitor).
 3. Calls `PolicyEvaluator.evaluateAccess({ pageName: '*', action, userContext })`.
 
 The `pageName: '*'` argument means the evaluator skips per-page resource matching — this is for "can this user do action X anywhere?" gates.
@@ -159,7 +157,7 @@ Used by `wikiContext.canAccess()`, `parseContext.canAccess()`, and route handler
 
 Iterates registered policies in priority order. Each policy has `subjects` (roles), `resources` (page-name globs), `actions`, and `effect: 'allow' | 'deny'`. The first policy whose `subjects` + `resources` + `actions` all match decides. If no policy matches, default deny.
 
-You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through `UserManager` (for global) or `PolicyInformationPoint` (for per-page) so the canonical role-expansion / 3-tier logic runs.
+You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through a context — `hasPermission` (the PDP, global) or `canAccess` (the PIP, per-page) so the canonical role-expansion / 3-tier logic runs.
 
 ---
 
@@ -273,10 +271,10 @@ if (req.userContext?.isAdmin) { ... }
 // ❌ Inline role-name check — use hasRole
 if (currentUser.roles?.includes('admin')) { ... }
 
-// ❌ Threading username through userManager.hasPermission instead of context
-if (await userManager.hasPermission(currentUser.username, 'admin-system')) { ... }
+// ❌ Building a subject by hand instead of asking the context — drops viaToken / viaShare
+if (await pdp.permits({ username, roles, isAuthenticated: true }, 'admin-system')) { ... }
 
-// ❌ Direct PolicyEvaluator call — skips UserManager's role expansion
+// ❌ Direct PolicyEvaluator call — skips the PDP's ceilings
 await policyEvaluator.evaluateAccess({ pageName: '*', action, userContext });
 ```
 
@@ -355,8 +353,8 @@ For a typical `wikiContext.canAccess('view')` call:
 
 For `wikiContext.hasPermission('admin-system')`:
 
-1. Delegates to `userManager.hasPermission(username, action)`.
-2. UserManager builds a userContext (anonymous expansion / authenticated role lookup — the latter calls `provider.getUser(username)` which hits the user provider's in-memory cache).
+1. Asks the PDP, `permits(subject, action)`, with the subject the request already resolved — no account or role lookup.
+2. Runs the delegation ceilings.
 3. Calls `PolicyEvaluator.evaluateAccess({pageName: '*', action, userContext})` — same in-memory policy iteration.
 
 For `wikiContext.hasRole('admin')` / `WikiContext.userHasRole(...)`:

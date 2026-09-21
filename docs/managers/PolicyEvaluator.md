@@ -497,34 +497,18 @@ return {
 
 ### Pattern 1: Check User Permission
 
+The only caller for a capability is the PDP ([#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 14). `PolicyDecisionPoint.permits(subject, action)` runs the agent-token and share ceilings, then:
+
 ```javascript
-// In UserManager.hasPermission()
-async hasPermission(username, action) {
-  const policyEvaluator = this.engine?.getManager('PolicyEvaluator');
-
-  if (!policyEvaluator) {
-    console.warn('[UserManager] PolicyEvaluator not available, denying permission');
-    return false;
-  }
-
-  // Build user context
-  const user = this.users.get(username);
-  const userContext = {
-    username: user.username,
-    roles: [...(user.roles || []), 'Authenticated', 'All'],
-    isAuthenticated: true
-  };
-
-  // Evaluate using policies
-  const result = await policyEvaluator.evaluateAccess({
-    pageName: '*',  // Generic permission check
-    action: action,
-    userContext: userContext
-  });
-
-  return result.allowed;
-}
+const result = await policyEvaluator.evaluateAccess({
+  pageName: '*',  // capability form: the question is about the subject
+  action,
+  userContext     // the subject's username, roles and isAuthenticated
+});
+return result.allowed;
 ```
+
+Application code asks a context (`ctx.hasPermission(action)`), never the evaluator.
 
 ### Pattern 2: Check Page Access
 

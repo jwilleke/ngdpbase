@@ -1,12 +1,11 @@
 import BaseManager, { BackupData } from './BaseManager.js';
-import PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import { recordSystemAction, systemContext } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
-import { isReservedUsername, normalizeUsername } from '../utils/username.js';
+import { isReservedUsername } from '../utils/username.js';
 import { hashPassword, verifyPassword, needsRehash, isLegacyHash } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -21,13 +20,11 @@ import type TemplateManager from './TemplateManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type { Person, PersonUpdate } from '../types/Person.js';
 import type { ShareGrant } from '../types/Share.js';
-import type { Request, Response, NextFunction } from 'express';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
-import { permissionsForRoles } from '../utils/rolePermissions.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -46,26 +43,6 @@ interface UserProviderConstructor {
   new (engine: WikiEngine): UserProvider;
 }
 
-/**
- * Session user data structure
- */
-interface SessionUser {
-  username: string;
-  isAuthenticated: boolean;
-}
-
-/**
- * Express session with user data
- */
-interface SessionWithUser {
-  user?: SessionUser;
-  username?: string;
-  [key: string]: unknown;
-}
-
-/**
- * Express request with user context (using type intersection to avoid extends conflict)
- */
 /**
  * The agent token a request arrived with (#946).
  *
@@ -171,10 +148,6 @@ export interface JobSubject {
   viaShare?: ShareGrant;
 }
 
-type RequestWithUser = Request & {
-  user?: SessionUser;
-  session?: SessionWithUser;
-};
 
 /**
  * User creation input data
@@ -704,97 +677,6 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Authorise a request: may THIS subject perform `action`?
-   *
-   * Takes a `PermissionSubject` — the request's own identity, forwarded from
-   * `req.userContext` (WikiContext, ApiContext, ParseContext) or a
-   * `JobContext` for work with no request (#631). Roles arrive already
-   * resolved; the session middleware did that once per request.
-   *
-   * #1173 Part B: the username-string overload this method once accepted is
-   * gone. A string cannot carry `viaToken`, so the agent-token ceiling below
-   * had nothing to read and every string-form call resolved against the
-   * owner's full roles. There is one path now, and the type makes the other
-   * impossible. Callers with no subject to hand over have one of two
-   * legitimate shapes: `ANONYMOUS_SUBJECT`, or the
-   * separate question `userHoldsPermission()` — "does the named user hold
-   * this?" — which is a lookup about somebody else, not an authorisation.
-   *
-   * @param subject - The identity being authorised, with `roles` resolved and
-   *                  `viaToken` present when a bearer token authenticated it.
-   * @param action - Action/permission to check (e.g., 'page-create', 'user-read')
-   * @returns True if the subject may perform the action under current policy
-   */
-  /**
-   * The PDP this manager asks.
-   *
-   * Taken from the engine when it is registered there — which is how a PEP
-   * reaches it — and otherwise constructed here. It holds no state, so one
-   * instance is as good as another; what must not happen is a SECOND
-   * implementation of the decision, which is exactly what this method used to
-   * be (#1431).
-   */
-  private policyDecisionPoint(): PolicyDecisionPoint {
-    const registered = this.engine?.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (registered) return registered;
-    this._pdp ??= new PolicyDecisionPoint(this.engine, this);
-    return this._pdp;
-  }
-
-  private _pdp?: PolicyDecisionPoint;
-
-  async hasPermission(
-    subject: PermissionSubject | JobSubject,
-    action: string
-  ): Promise<boolean> {
-    // #1431: the decision is the PDP's. This method stays because it is what
-    // every door already calls — it is the PEP-facing name for the question —
-    // but the agent-token ceiling (#946), the share-is-the-policy rule (#1222),
-    // the live role resolution (#631) and the policy evaluation all live in
-    // src/security/PolicyDecisionPoint.ts now, in that order, so they exist
-    // once rather than here AND in the page path.
-    const decision = await this.policyDecisionPoint().decide(subject, { action });
-    return decision.permit;
-  }
-
-  /**
-   * The permissions a user's roles give them, for display (#1431 step 10).
-   *
-   * The union of their roles' rows in the admin Security Policy Summary, read
-   * live from the policies — so the profile page and the admin page can never
-   * disagree about the same roles. A summary for a human, not an
-   * authorisation answer: that is always `hasPermission` with the subject.
-   *
-   * @param {string} username - Username (null for anonymous)
-   * @returns {Promise<string[]>} Permission names, sorted
-   */
-  async getUserPermissions(username: string): Promise<string[]> {
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-
-    if (!this.provider) {
-      return [];
-    }
-
-    // Handle anonymous user (no session cookie).
-    // #1436: normalized. `getAnonymousUser()` emits 'Anonymous' capitalised,
-    // so the bare lowercase comparison this used to make never fired for a
-    // real visitor — it fell through to a provider lookup that found nothing.
-    if (!username || normalizeUsername(username) === 'anonymous') {
-      return permissionsForRoles(configManager, ['anonymous']);
-    }
-
-    const user = await this.provider.getUser(username);
-    if (!user || !user.isActive) {
-      return [];
-    }
-
-    // #1429: the user's own roles, via RoleManager. No synthetic role is added —
-    // 'Authenticated' and 'All' were grants nobody was given.
-    return permissionsForRoles(configManager, await this.roleManager().resolveUserRoles(username));
-  }
-
-
-  /**
    * Check if a display name conflicts with existing page names or other users
    * @param {string} displayName - Display name to check
    * @param {string | null} excludeUsername - Username to exclude from the check (for updates)
@@ -1293,89 +1175,7 @@ class UserManager extends BaseManager {
     return results;
   }
 
-  /**
-   * Does this NAMED USER hold a permission? (#1173)
-   *
-   * A different question from {@link hasPermission}, and that is why it has a
-   * different name. This one __inspects a user__ — "does bob hold
-   * `admin-system`?" — where there is no request, no token, and nothing to cap.
-   * `hasPermission` __authorises a request__, so it must be handed the subject
-   * the request carries or an agent token's scope ceiling has nothing to read.
-   *
-   * They shared a name and one of them took a bare string, which is how #1164
-   * happened seventeen times: route code reached for the convenient overload
-   * and silently lost the token. Splitting them means the dangerous question
-   * cannot be asked by accident — a route authorising a request has no reason
-   * to call this, and calling it does not compile in place of the other.
-   *
-   * Resolves roles live from the provider, so the answer is current rather than
-   * a replay of whatever the caller happened to hold.
-   */
-  async userHoldsPermission(username: string, action: string): Promise<boolean> {
-    if (!this.provider) return false;
 
-    if (!username || normalizeUsername(username) === 'anonymous') {
-      // The named constant, not a copy of it — ANONYMOUS_SUBJECT exists so this
-      // literal never appears anywhere (#1164). Normalized because the
-      // constant spells it 'Anonymous' and this compared lowercase (#1436).
-      return this.hasPermission(ANONYMOUS_SUBJECT, action);
-    }
-    const user = await this.provider.getUser(username);
-    if (!user || !user.isActive) return false;
-    // permission-subject-ignore: THE sanctioned construction site.
-    //
-    // This is the one place a subject is legitimately built rather than
-    // forwarded, and it is what makes the exception safe: the roles come from
-    // `resolveUserRoles` — resolved live from the provider a line above — not
-    // from a caller, and there is no request and therefore no token to drop.
-    // Every other construction asserts roles it was handed, which is the
-    // defect (#1179).
-    const baseRoles = await this.roleManager().resolveUserRoles(username);
-    return this.hasPermission(
-      { username: user.username, roles: [...baseRoles], isAuthenticated: true },
-      action
-    );
-  }
-
-  ensureAuthenticated(req: Request, res: Response, next: NextFunction): void {
-    const reqWithUser = req as RequestWithUser;
-    const user = reqWithUser.user;
-
-    if (!user || !user.isAuthenticated) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-    next();
-  }
-
-  requirePermissions(requiredPermissions: string[] = []) {
-    return (req: Request, res: Response, next: NextFunction): void => {
-      const reqWithUser = req as RequestWithUser;
-      // #1198: no `isAuthenticated` gate ahead of policy. Allow or deny is
-      // policy's answer and nobody else's; the anonymous role's policy already
-      // says what a visitor may do. What stays is the HTTP distinction AFTER
-      // the denial — 401 tells an anonymous caller to log in, 403 tells an
-      // authenticated one it is not allowed — a status choice, not a second
-      // decision.
-      // #1212: the request's OWN context, which the session and bearer
-      // middleware write. This read `req.user`, which nothing in the codebase
-      // sets — so every caller was evaluated as anonymous, and a bearer
-      // request's token never reached the ceiling. Required fields on
-      // `PermissionSubject` are what made the mismatch a compile error.
-      const user: PermissionSubject = reqWithUser.userContext ?? ANONYMOUS_SUBJECT;
-      // #1164: forward the request's context so an agent token is still capped.
-      Promise.all(requiredPermissions.map((p) => this.hasPermission(user, p)))
-        .then((results) => {
-          if (!results.every(Boolean)) {
-            if (user.isAuthenticated) res.status(403).json({ error: 'Forbidden' });
-            else res.status(401).json({ error: 'Unauthorized' });
-          } else {
-            next();
-          }
-        })
-        .catch(next);
-    };
-  }
 
   /**
    * Persist a Person record paired with a newly-created User. The install's

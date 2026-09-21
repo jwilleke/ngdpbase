@@ -19,8 +19,8 @@
  * - __PEP__ — routes, manager doors, the availability gate. They ask and
  *   enforce (401 vs 403); they never decide.
  * - __PDP__ — this. Takes a subject and an action, returns permit or deny.
- * - __PIP__ — `UserManager` / `RoleManager` for the subject's roles, and the
- *   page's own rules for a resource decision.
+ * - __PIP__ — `PolicyInformationPoint`: the subject's attributes and the
+ *   page's own rules (#1431 step 13).
  * - __PAP__ — `ConfigurationManager` and the admin screens, where policy is
  *   written.
  */
@@ -31,14 +31,14 @@ import type { PermissionSubject, JobSubject } from '../managers/UserManager.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { Decision, DecisionRequest } from '../types/Policy.js';
-
-interface UserManagerLike {
-  userHoldsPermission(username: string, action: string): Promise<boolean>;
-}
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import { permissionsForRoles } from '../utils/rolePermissions.js';
+import { normalizeUsername } from '../utils/username.js';
 
 /** The subject's current attributes are the PIP's (#1431 step 13). */
 interface SubjectSourceLike {
   resolveSubjectNow(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean }>;
+  subjectFor(username: string): Promise<{ username: string; roles: string[]; isAuthenticated: boolean } | null>;
 }
 
 interface PolicyEvaluatorLike {
@@ -55,22 +55,83 @@ export class PolicyDecisionPoint extends BaseManager {
    * way it reaches anything else. It holds no state of its own: a decision is
    * derived, never stored.
    */
-  /**
-   * `userManager` is the PIP this asks for subject attributes — the issuer's
-   * live permissions for a share, and a job subject's current roles. It is
-   * injected when `UserManager` builds its own PDP, because at that moment it
-   * IS the UserManager and asking the engine for one would find nothing (or,
-   * worse, a half-built one).
-   */
-  constructor(engine: WikiEngine, userManager?: UserManagerLike) {
+  constructor(engine: WikiEngine) {
     super(engine);
-    this.injectedUserManager = userManager;
   }
 
-  private readonly injectedUserManager?: UserManagerLike;
+  /** Where a subject's attributes come from (#1431 step 13). */
+  private informationPoint(): SubjectSourceLike | null | undefined {
+    return this.engine?.getManager<SubjectSourceLike>('PolicyInformationPoint');
+  }
 
-  private userManager(): UserManagerLike | null | undefined {
-    return this.injectedUserManager ?? this.engine?.getManager<UserManagerLike>('UserManager');
+  /**
+   * Authorise a request: may THIS subject perform `action`? The boolean form
+   * of {@link decide} for a capability. It was `UserManager.hasPermission`
+   * until #1431 step 14; the decision was already here, only the door moved.
+   *
+   * Takes a `PermissionSubject` — the request's own identity, forwarded from
+   * `req.userContext` (WikiContext, ApiContext, ParseContext) or a
+   * `JobContext` for work with no request (#631). Roles arrive already
+   * resolved; the session middleware did that once per request.
+   *
+   * #1173 Part B: the username-string overload this method once accepted is
+   * gone. A string cannot carry `viaToken`, so the agent-token ceiling below
+   * had nothing to read and every string-form call resolved against the
+   * owner's full roles. There is one path now, and the type makes the other
+   * impossible. Callers with no subject to hand over have one of two
+   * legitimate shapes: `ANONYMOUS_SUBJECT`, or the
+   * separate question {@link userHoldsPermission} — "does the named user hold
+   * this?" — which is a lookup about somebody else, not an authorisation.
+   *
+   * @param subject - The identity being authorised, with `roles` resolved and
+   *                  `viaToken` present when a bearer token authenticated it.
+   * @param action - Action/permission to check (e.g., 'page-create', 'user-read')
+   * @returns True if the subject may perform the action under current policy
+   */
+  async permits(subject: PermissionSubject | JobSubject | null | undefined, action: string): Promise<boolean> {
+    return (await this.decide(subject, { action })).permit;
+  }
+
+  /**
+   * Does this NAMED USER hold a permission? (#1173)
+   *
+   * A different question from {@link permits}, and that is why it has a
+   * different name. This one __inspects a user__ — "does bob hold
+   * `admin-system`?" — where there is no request, no token, and nothing to cap.
+   * `permits` __authorises a request__, so it must be handed the subject the
+   * request carries or an agent token's scope ceiling has nothing to read.
+   *
+   * They shared a name and one of them took a bare string, which is how #1164
+   * happened seventeen times. Splitting them means the dangerous question
+   * cannot be asked by accident. The subject is the PIP's, resolved live.
+   */
+  async userHoldsPermission(username: string, action: string): Promise<boolean> {
+    if (!username || normalizeUsername(username) === 'anonymous') {
+      // The named constant, not a copy of it (#1164); normalized because the
+      // constant spells it 'Anonymous' (#1436).
+      return this.permits(ANONYMOUS_SUBJECT, action);
+    }
+    const subject = await this.informationPoint()?.subjectFor(username);
+    if (!subject) return false;
+    return this.permits(subject, action);
+  }
+
+  /**
+   * The permissions a user's roles give them, for display (#1431 step 10).
+   *
+   * The union of their roles' rows in the admin Security Policy Summary, read
+   * live from the policies — so the profile page and the admin page can never
+   * disagree. A summary for a human, not an authorisation answer: that is
+   * always {@link permits} with the subject.
+   */
+  async getUserPermissions(username: string): Promise<string[]> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!username || normalizeUsername(username) === 'anonymous') {
+      return permissionsForRoles(configManager, ['anonymous']);
+    }
+    const subject = await this.informationPoint()?.subjectFor(username);
+    if (!subject) return [];
+    return permissionsForRoles(configManager, subject.roles);
   }
 
   /**
@@ -142,8 +203,7 @@ export class PolicyDecisionPoint extends BaseManager {
         logger.info(`[PDP] share ${viaShare.id} expired ${viaShare.expiresAt} — denied`);
         return { permit: false, applicable: true, reason: 'share_expired' };
       }
-      const userManager = this.userManager();
-      const issuerHolds = !!userManager && await userManager.userHoldsPermission(viaShare.issuer, action);
+      const issuerHolds = await this.userHoldsPermission(viaShare.issuer, action);
       if (!issuerHolds) {
         logger.info(`[PDP] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
         return { permit: false, applicable: true, reason: 'share_issuer_deny' };
@@ -191,7 +251,7 @@ export class PolicyDecisionPoint extends BaseManager {
     // passing a username STRING is the shape that loses the agent token, and
     // `'x' in 'jim'` throws rather than returning false.
     if (typeof subject === 'object' && subject !== null && 'resolveRolesNow' in subject) {
-      const pip = this.engine?.getManager<SubjectSourceLike>('PolicyInformationPoint');
+      const pip = this.informationPoint();
       if (!pip) {
         logger.warn('[PDP] PolicyInformationPoint not available to resolve roles, denying');
         return { permit: false, applicable: false, reason: 'no_information_point' };

@@ -42,7 +42,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager
+      mockPolicyDecisionPoint
     });
   });
   (MockWikiContext as unknown as { CONTEXT: typeof MOCK_WIKI_CONTEXT_CONSTANTS }).CONTEXT = MOCK_WIKI_CONTEXT_CONSTANTS;
@@ -130,10 +130,8 @@ const mockSearchManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -141,6 +139,12 @@ const mockUserManager = {
   updateUser: vi.fn(),
   destroySession: vi.fn(),
   getSession: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockConfigManager = {
@@ -179,6 +183,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           AuthManager: mockAuthManager,
@@ -277,10 +282,10 @@ function resetMocks() {
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue({ username: 'testuser', displayName: 'Test User', email: 'test@example.com', isAuthenticated: true, roles: ['authenticated'] });
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getUserPermissions.mockResolvedValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockResolvedValue(['read', 'write']);
   mockUserManager.searchUsers.mockResolvedValue([]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true, roles: ['authenticated'] });
@@ -415,7 +420,7 @@ describe('WikiRoutes — coverage batch 2', () => {
         return Promise.resolve(null); // page does not exist
       });
       mockPageManager.getPageMetadata.mockResolvedValue(null); // not a required page
-      mockUserManager.hasPermission.mockImplementation((_username: string, perm: string) => {
+      mockPolicyDecisionPoint.permits.mockImplementation((_username: string, perm: string) => {
         if (perm === 'page-create') return Promise.resolve(false);
         return Promise.resolve(true);
       });
@@ -740,7 +745,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns 403 when non-owner non-admin tries to delete', async () => {
       // #1198: the gate asks policy for a permission this subject does not hold.
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       mockUserContext = { username: 'other', displayName: 'Other', email: 'o@x.com', isAuthenticated: true, roles: ['authenticated'] };
       mockCommentManager.getComment.mockResolvedValue({ id: 'c-1', content: 'Hi', author: 'testuser' });
 
@@ -779,7 +784,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
   describe('GET /user-info — userInfo', () => {
     test('returns Authenticated userType for logged-in user', async () => {
-      mockUserManager.getUserPermissions.mockResolvedValue(['read', 'write']);
+      mockPolicyDecisionPoint.getUserPermissions.mockResolvedValue(['read', 'write']);
 
       const res = await request(app).get('/user-info');
 
@@ -789,7 +794,7 @@ describe('WikiRoutes — coverage batch 2', () => {
 
     test('returns No User/Anonymous when userContext is null', async () => {
       mockUserContext = null;
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
 
       const res = await request(app).get('/user-info');
 

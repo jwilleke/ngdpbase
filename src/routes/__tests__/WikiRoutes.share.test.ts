@@ -42,7 +42,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -152,21 +152,25 @@ const mockConfigManager = {
 };
 
 const mockUserManager = {
-  // #1198/#1224: the share routes ask policy — share-manage to issue, list
-  // and revoke one's own shares (shipped to admin and editor), admin-system
-  // for the override views. Shaped like the shipped catalog.
-  hasPermission: vi.fn(async (username: string, action: string) => {
+  getUser: vi.fn(),
+  getUsers: vi.fn().mockResolvedValue([]),
+  searchUsers: vi.fn().mockResolvedValue([]),
+  authenticateUser: vi.fn(),
+  updateUser: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+// #1198/#1224: the share routes ask policy — share-manage to issue, list
+// and revoke one's own shares (shipped to admin and editor), admin-system
+// for the override views. Shaped like the shipped catalog.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(async (username: string, action: string) => {
     const roles = username === 'root' ? ['admin'] : username === 'ed' ? ['editor'] : username === 'reader' ? ['reader'] : [];
     if (action === 'admin-system') return roles.includes('admin');
     if (action === 'share-manage') return roles.includes('admin') || roles.includes('editor');
     return false;
   }),
-  getUser: vi.fn(),
-  getUsers: vi.fn().mockResolvedValue([]),
-  getUserPermissions: vi.fn().mockReturnValue([]),
-  searchUsers: vi.fn().mockResolvedValue([]),
-  authenticateUser: vi.fn(),
-  updateUser: vi.fn()
+  getUserPermissions: vi.fn().mockReturnValue([])
 };
 
 vi.mock('../../WikiEngine', () => {
@@ -176,6 +180,7 @@ vi.mock('../../WikiEngine', () => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           ShareManager: mockShareManager,

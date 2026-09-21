@@ -33,7 +33,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -76,10 +76,8 @@ const mockPageManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -88,6 +86,12 @@ const mockUserManager = {
   getSession: vi.fn(),
   createUser: vi.fn(),
   deleteUser: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -206,6 +210,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
@@ -284,10 +289,10 @@ function resetMocks() {
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
   mockUserManager.updateUser.mockResolvedValue(true);
@@ -384,7 +389,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/interwiki/sites (adminInterwikiSaveSite)', () => {
     test('redirects with error when no permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/interwiki/sites')
         .set('x-csrf-token', 'test-csrf-token')
@@ -432,7 +437,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/interwiki/sites/:siteName/delete (adminInterwikiDeleteSite)', () => {
     test('redirects with error when no permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/interwiki/sites/Wikipedia/delete')
         .set('x-csrf-token', 'test-csrf-token');
@@ -465,7 +470,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/interwiki/options (adminInterwikiSaveOptions)', () => {
     test('redirects with error when no permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/interwiki/options')
         .set('x-csrf-token', 'test-csrf-token')
@@ -488,7 +493,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/settings/theme (adminUpdateTheme)', () => {
     test('redirects with error when no permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/settings/theme')
         .set('x-csrf-token', 'test-csrf-token')
@@ -518,7 +523,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/settings/general (adminUpdateGeneralSettings)', () => {
     test('redirects with error when no permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/settings/general')
         .set('x-csrf-token', 'test-csrf-token')
@@ -540,7 +545,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/maintenance/toggle (adminToggleMaintenance)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/maintenance/toggle')
         .set('x-csrf-token', 'test-csrf-token');
@@ -560,7 +565,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('GET /admin/addons (adminAddons)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/addons');
       expect(res.status).toBe(403);
     });
@@ -573,7 +578,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/addons/:name/toggle (adminAddonToggle)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/addons/my-addon/toggle')
         .set('x-csrf-token', 'test-csrf-token')
@@ -595,7 +600,7 @@ describe('WikiRoutes — coverage batch 12', () => {
 
   describe('POST /admin/variables/test (adminTestVariables)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/variables/test')
         .set('x-csrf-token', 'test-csrf-token')
@@ -770,7 +775,7 @@ describe('WikiRoutes — coverage batch 12', () => {
       // #1034: the gate is a permission check now, not a role-name check, so
       // denial has to be expressed as the permission being absent. Under the
       // old hasRole('admin') test, roles: ['reader'] was enough on its own.
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/api/sessions/list');
       expect(res.status).toBe(403);
       // #1034: gates check a PERMISSION, not a role name. The message names

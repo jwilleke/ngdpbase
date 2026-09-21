@@ -107,10 +107,6 @@ __Key API:__
 | `createOrUpdateExternalUser(data)` | OAuth / magic-link upsert |
 | `getUser(username)` | Fetch without password |
 | `searchUsers(query, options?)` | Filtered user list |
-| `hasPermission(username, action)` | Checks via PolicyEvaluator |
-| `getUserPermissions(username)` | Full permission list |
-| `ensureAuthenticated(req, res, next)` | Express middleware |
-| `requirePermissions(perms)` | Express middleware |
 | `createSession(username, data)` | Return session ID |
 | `getSession(id)` | Return `UserSession \| null` |
 | `isAdminUsingDefaultPassword()` | Boot-time warning check |

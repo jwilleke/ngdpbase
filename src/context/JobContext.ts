@@ -173,7 +173,7 @@ export function jobContextFromSchedule(systemPrincipal: string, reason: string, 
 /**
  * The subject for a permission check made *by* this job.
  *
- * `roles` is deliberately absent for EVERY origin, and `UserManager.hasPermission`
+ * `roles` is deliberately absent for EVERY origin, and the PDP (`permits`)
  * resolves them from the username at decision time — which is what makes the
  * answer current rather than a replay of enqueue time. For a request-origin
  * job that is the requester's current roles. For a boot or schedule job the

@@ -497,12 +497,13 @@ describe('AttachmentManager.quarantineOrphans (#865 Slice 3)', () => {
 describe('AttachmentManager permission enforcement (#1059)', () => {
   const authed = { username: 'jim', isAuthenticated: true, roles: ['editor'] };
 
-  function makePermEngine(hasPermission: ((ctx: unknown, action: string) => Promise<boolean>) | null) {
-    const userManager = hasPermission ? { hasPermission: vi.fn(hasPermission) } : null;
+  function makePermEngine(permits: ((ctx: unknown, action: string) => Promise<boolean>) | null) {
+    // #1431 step 14: decisions are the PDP's.
+    const pdp = permits ? { permits: vi.fn(permits) } : null;
     const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return makeConfigManager();
-        if (name === 'UserManager') return userManager;
+        if (name === 'PolicyDecisionPoint') return pdp;
         return null;
       })
     } as unknown as WikiEngine;
@@ -511,13 +512,13 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
       deleteAttachment: vi.fn(async () => true),
       updateAttachmentMetadata: vi.fn(async () => true)
     };
-    return { mgr, userManager };
+    return { mgr, pdp };
   }
 
   test('deleteAttachment checks asset-delete and denies a caller lacking it', async () => {
-    const { mgr, userManager } = makePermEngine(async (_ctx, action) => action !== 'asset-delete');
+    const { mgr, pdp } = makePermEngine(async (_ctx, action) => action !== 'asset-delete');
     await expect(mgr.deleteAttachment('abc', authed)).rejects.toThrow('Permission denied');
-    expect(userManager.hasPermission).toHaveBeenCalledWith(
+    expect(pdp.permits).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'jim', roles: ['editor'] }),
       'asset-delete'
     );
@@ -529,9 +530,9 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
   });
 
   test('updateAttachmentMetadata checks asset-upload and denies a caller lacking it', async () => {
-    const { mgr, userManager } = makePermEngine(async (_ctx, action) => action !== 'asset-upload');
+    const { mgr, pdp } = makePermEngine(async (_ctx, action) => action !== 'asset-upload');
     await expect(mgr.updateAttachmentMetadata('abc', {}, authed)).rejects.toThrow('Permission denied');
-    expect(userManager.hasPermission).toHaveBeenCalledWith(expect.anything(), 'asset-upload');
+    expect(pdp.permits).toHaveBeenCalledWith(expect.anything(), 'asset-upload');
   });
 
   test('uploadAttachment checks asset-upload and denies a caller lacking it', async () => {
@@ -546,27 +547,27 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
   // UserManager" — which locked in the gate that refused the system principal
   // (#631) and silently nulled #1181's thumbnails before policy was asked.
   test('an unauthenticated caller is refused by POLICY, which is consulted', async () => {
-    const { mgr, userManager } = makePermEngine(async () => false);
+    const { mgr, pdp } = makePermEngine(async () => false);
     await expect(mgr.deleteAttachment('abc', { username: 'guest', isAuthenticated: false })).rejects.toThrow('Permission denied');
-    expect(userManager.hasPermission).toHaveBeenCalledWith(
+    expect(pdp.permits).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'guest', isAuthenticated: false }),
       'asset-delete'
     );
   });
 
   test('an unauthenticated caller the policy allows is allowed — the refusal moved, it did not vanish', async () => {
-    const { mgr, userManager } = makePermEngine(async () => true);
+    const { mgr, pdp } = makePermEngine(async () => true);
     await expect(mgr.deleteAttachment('abc', { username: 'guest', isAuthenticated: false })).resolves.toBe(true);
-    expect(userManager.hasPermission).toHaveBeenCalled();
+    expect(pdp.permits).toHaveBeenCalled();
   });
 
   test('a MISSING context still fails closed — that is #1179, not an authentication gate', async () => {
-    const { mgr, userManager } = makePermEngine(async () => true);
+    const { mgr, pdp } = makePermEngine(async () => true);
     await expect(mgr.deleteAttachment('abc', undefined)).rejects.toThrow('Permission denied');
-    expect(userManager.hasPermission).not.toHaveBeenCalled();
+    expect(pdp.permits).not.toHaveBeenCalled();
   });
 
-  test('fails closed when UserManager is unavailable', async () => {
+  test('fails closed when PolicyDecisionPoint is unavailable', async () => {
     const { mgr } = makePermEngine(null);
     await expect(mgr.deleteAttachment('abc', authed)).rejects.toThrow('Permission denied');
   });
@@ -575,9 +576,9 @@ describe('AttachmentManager permission enforcement (#1059)', () => {
     // #1164: this asserted the STRING path — the branch that dropped the
     // agent-token ceiling. Both branches are gone; the caller's context is
     // forwarded whatever it contains, so a token always reaches the ceiling.
-    const { mgr, userManager } = makePermEngine(async () => true);
+    const { mgr, pdp } = makePermEngine(async () => true);
     await mgr.deleteAttachment('abc', { username: 'jim', isAuthenticated: true });
-    expect(userManager.hasPermission).toHaveBeenCalledWith(
+    expect(pdp.permits).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'jim' }), 'asset-delete');
   });
 });

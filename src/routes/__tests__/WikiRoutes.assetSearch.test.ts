@@ -61,7 +61,7 @@ function policyFor(userContext: { roles?: string[] } | null | undefined) {
     // Only the asset surface is under test here; every other permission stays
     // as permissive as the fixture's old default so the page and user branches
     // behave as before.
-    hasPermission: (_u: string, action: string) => {
+    permits: (_u: string, action: string) => {
       if (action === 'asset-upload') return (userContext?.roles ?? []).some((r) => ASSET_ROLES.has(r));
       // #1198 / #694: search-user is granted on the Authenticated policy —
       // any signed-in account holds it, anonymous does not.
@@ -81,7 +81,7 @@ function makeRoutes(assetService) {
   // #638 — shared mock fixture
   routes.createWikiContext = vi.fn((req: Request) => {
     const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
-    return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+    return createMockWikiContext({ userContext: userContext as never }, { engine, mockPolicyDecisionPoint: policyFor(userContext) });
   });
   return routes;
 }
@@ -135,7 +135,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       // #638 — shared mock fixture
       routes.createWikiContext = vi.fn((req: Request) => {
         const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
-        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockPolicyDecisionPoint: policyFor(userContext) });
       });
       // #742: 503-on-missing-AssetService is an asset-surface invariant; the
       // no-types path no longer needs AssetService (pages/users still work).
@@ -301,7 +301,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const routes = new WikiRoutes(engine);
       routes.createWikiContext = vi.fn((req: Request) => {
         const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
-        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockPolicyDecisionPoint: policyFor(userContext) });
       });
       return routes;
     }
@@ -745,7 +745,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       return { searchUsers: vi.fn().mockResolvedValue(users) };
     }
 
-    function makeRoutesWithUsers(assetService, userManager, mockUserManager?) {
+    function makeRoutesWithUsers(assetService, userManager, mockPolicyDecisionPoint?) {
       const engine = {
         getManager: vi.fn((name: string) => {
           if (name === 'AssetService') return assetService;
@@ -757,7 +757,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       routes.createWikiContext = vi.fn((req: Request) =>
         createMockWikiContext(
           { userContext: (req as { userContext?: unknown }).userContext as never },
-          { engine, mockUserManager }
+          { engine, mockPolicyDecisionPoint }
         )
       );
       return routes;
@@ -1035,7 +1035,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const routes = new WikiRoutes(engine);
       routes.createWikiContext = vi.fn((req: Request) => {
         const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
-        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockPolicyDecisionPoint: policyFor(userContext) });
       });
       return routes;
     }
@@ -1274,7 +1274,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       const routes = new WikiRoutes(engine);
       routes.createWikiContext = vi.fn((req: Request) => {
         const userContext = (req as { userContext?: { roles?: string[] } | null }).userContext;
-        return createMockWikiContext({ userContext: userContext as never }, { engine, mockUserManager: policyFor(userContext) });
+        return createMockWikiContext({ userContext: userContext as never }, { engine, mockPolicyDecisionPoint: policyFor(userContext) });
       });
       return routes;
     }
@@ -1338,7 +1338,7 @@ describe('WikiRoutes.assetSearch — GET /api/assets/search', () => {
       routes.createWikiContext = vi.fn((req: Request) =>
         createMockWikiContext(
           { userContext: (req as { userContext?: unknown }).userContext as never },
-          { engine, mockUserManager: { hasPermission: vi.fn().mockResolvedValue(false) } }
+          { engine, mockPolicyDecisionPoint: { permits: vi.fn().mockResolvedValue(false) } }
         )
       );
       return routes;

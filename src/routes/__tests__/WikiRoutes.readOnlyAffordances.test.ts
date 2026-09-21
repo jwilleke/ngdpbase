@@ -23,8 +23,11 @@ import WikiRoutes from '../WikiRoutes';
 function makeRoutes(granted: string[]) {
   const managers: Record<string, unknown> = {
     UserManager: {
-      hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))),
       getContactRecipient: vi.fn(() => Promise.resolve(null))
+    },
+    // #1431 step 14: decisions are the PDP's.
+    PolicyDecisionPoint: {
+      permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p)))
     },
     // Reached only on the anonymous path, where WikiRoutes falls back to
     // asking the PIP who the caller is (#1431 step 13).

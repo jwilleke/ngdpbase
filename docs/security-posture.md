@@ -34,7 +34,7 @@ __Forward the context you were given; never rebuild one from its fields.__ A rec
 
 __Identity and provenance travel; authority does not.__ A context carries who acted and from what origin. It does not carry resolved roles, because a job enqueued at 09:00 and running at 09:12 must not authorise against 09:00's roles. Same reasoning `app.ts` gives for agent tokens: roles are resolved live per request, and a token never carries a snapshot.
 
-__The one exception is a lookup, and it has its own name.__ Asking "does this named user hold this permission?" involves no request and no token to drop. That is `UserManager.userHoldsPermission(username, action)` — deliberately distinct from `hasPermission`, so route code cannot reach it by accident.
+__The one exception is a lookup, and it has its own name.__ Asking "does this named user hold this permission?" involves no request and no token to drop. That is `PolicyDecisionPoint.userHoldsPermission(username, action)` — deliberately distinct from `hasPermission`, so route code cannot reach it by accident.
 
 __What this rules out.__ Ambient propagation — a process-global request slot, or `AsyncLocalStorage`. The global form was removed as dead surface in [#1132](https://github.com/jwilleke/ngdpbase/issues/1132). `AsyncLocalStorage` is a sounder implementation of the same idea and is still refused here, because it shares the property that made the global wrong: the call site does not show what identity it runs under, so a missing context is invisible at review rather than a compile error. Threading costs more churn and is worth it.
 

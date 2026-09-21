@@ -1,9 +1,8 @@
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { toPermissionSubject } from '../context/JobContext.js';
-import type { JobSubject } from './UserManager.js';
-import type { PermissionSubject } from './UserManager.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -420,7 +419,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   /**
    * Check a registry permission for an attachment operation (#1059).
    *
-   * Evaluates through UserManager.hasPermission → PolicyEvaluator, the same
+   * Evaluates through the PDP (`PolicyDecisionPoint.permits`), the same
    * path WikiContext.hasPermission takes. Until #1059 this was a stub that
    * ignored its argument and granted any authenticated user, which made every
    * permission passed to it decorative — asset-delete sat on the editor role
@@ -446,13 +445,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       return false;
     }
 
-    const userManager = this.engine.getManager<{
-      // #1164: the context form only. The inline string|object type here was a
-      // second copy of the signature that let this file drop the token ceiling.
-      hasPermission(subject: PermissionSubject | JobSubject, action: string): Promise<boolean>;
-        }>('UserManager');
-    if (!userManager) {
-      logger.warn(`📎 Permission denied for ${permission}: UserManager unavailable`);
+    // #1431 step 14: the decision is the PDP's.
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) {
+      logger.warn(`📎 Permission denied for ${permission}: PolicyDecisionPoint unavailable`);
       return false;
     }
 
@@ -469,7 +465,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // along when present) and carries the token when there is one.
     // A JobContext carries identity and provenance, not authority: it is
     // handed over as a JobSubject whose roles policy resolves now (#631).
-    const allowed = await userManager.hasPermission(isJobContext(userContext) ? toPermissionSubject(userContext) : userContext, permission);
+    const allowed = await pdp.permits(isJobContext(userContext) ? toPermissionSubject(userContext) : userContext, permission);
     if (!allowed) {
       logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
     }

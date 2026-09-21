@@ -140,30 +140,30 @@ describe('ApiContext#requireAuthenticated()', () => {
 // ── hasPermission() ───────────────────────────────────────────────────────────
 
 describe('ApiContext#hasPermission()', () => {
-  // #630: hasPermission now delegates to UserManager.hasPermission (canonical
-  // PolicyEvaluator-backed path) rather than reading roles.definitions directly
-  // from ConfigurationManager. Tests mock UserManager.hasPermission accordingly.
+  // #630: hasPermission delegates to the canonical PolicyEvaluator-backed path
+  // rather than reading roles.definitions directly from ConfigurationManager.
+  // #1431 step 14: decisions are the PDP's. Tests mock PolicyDecisionPoint.permits.
 
-  function makeEngineWithUserManager(allowed: boolean | ((user: string, action: string) => boolean)) {
-    const hasPermission = typeof allowed === 'function'
+  function makeEngineWithPdp(allowed: boolean | ((user: string, action: string) => boolean)) {
+    const permits = typeof allowed === 'function'
       ? vi.fn(async (u: string, a: string) => allowed(u, a))
       : vi.fn().mockResolvedValue(allowed);
     return {
-      getManager: vi.fn((name: string) => name === 'UserManager' ? { hasPermission } : null),
-      _hasPermission: hasPermission
+      getManager: vi.fn((name: string) => name === 'PolicyDecisionPoint' ? { permits } : null),
+      _permits: permits
     };
   }
 
-  test('delegates to UserManager.hasPermission passing the resolved userContext (#637 fast path)', async () => {
-    const engine = makeEngineWithUserManager(true);
+  test('delegates to PolicyDecisionPoint.permits passing the resolved userContext (#637 fast path)', async () => {
+    const engine = makeEngineWithPdp(true);
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'jane', roles: ['editor'], isAuthenticated: true } }),
       engine
     );
     const result = await ctx.hasPermission('page-edit');
     // #637: caller passes a structured userContext object instead of just the
-    // username so UserManager can skip provider.getUser + resolveUserRoles.
-    expect(engine._hasPermission).toHaveBeenCalledWith(
+    // username so the PDP can skip provider.getUser + resolveUserRoles.
+    expect(engine._permits).toHaveBeenCalledWith(
       { username: 'jane', roles: ['editor'], isAuthenticated: true },
       'page-edit'
     );
@@ -176,24 +176,24 @@ describe('ApiContext#hasPermission()', () => {
     // a subject — and a request carrying none is a failure upstream, since the
     // session middleware assigns the anonymous PRINCIPAL when nobody has signed
     // in. Substituting anonymous here would be a default actor (P1).
-    const engine = makeEngineWithUserManager(false);
+    const engine = makeEngineWithPdp(false);
     expect(() => ApiContext.from(makeReq({ userContext: null }), engine))
       .toThrow(/no subject/);
   });
 
   test('forwards the anonymous principal the middleware assigned (#1173)', async () => {
-    const engine = makeEngineWithUserManager(false);
+    const engine = makeEngineWithPdp(false);
     const ctx = ApiContext.from(makeReq({ userContext: ANONYMOUS_SUBJECT }), engine);
     const result = await ctx.hasPermission('admin-system');
-    expect(engine._hasPermission).toHaveBeenCalledWith(
+    expect(engine._permits).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'Anonymous', isAuthenticated: false }),
       'admin-system'
     );
     expect(result).toBe(false);
   });
 
-  test('returns whatever UserManager.hasPermission returns (true)', async () => {
-    const engine = makeEngineWithUserManager(true);
+  test('returns whatever PolicyDecisionPoint.permits returns (true)', async () => {
+    const engine = makeEngineWithPdp(true);
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'alice', roles: ['admin'], isAuthenticated: true } }),
       engine
@@ -201,8 +201,8 @@ describe('ApiContext#hasPermission()', () => {
     expect(await ctx.hasPermission('admin-system')).toBe(true);
   });
 
-  test('returns whatever UserManager.hasPermission returns (false)', async () => {
-    const engine = makeEngineWithUserManager(false);
+  test('returns whatever PolicyDecisionPoint.permits returns (false)', async () => {
+    const engine = makeEngineWithPdp(false);
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true } }),
       engine
@@ -210,7 +210,7 @@ describe('ApiContext#hasPermission()', () => {
     expect(await ctx.hasPermission('admin-system')).toBe(false);
   });
 
-  test('returns false when UserManager is unavailable', async () => {
+  test('returns false when the PolicyDecisionPoint is unavailable', async () => {
     const engine = { getManager: vi.fn().mockReturnValue(null) };
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'alice', roles: ['admin'], isAuthenticated: true } }),
@@ -223,16 +223,17 @@ describe('ApiContext#hasPermission()', () => {
 // ── requirePermission() ───────────────────────────────────────────────────────
 
 describe('ApiContext#requirePermission()', () => {
-  function makeEngineWithUserManager(allowed: boolean) {
+  function makeEngineWithPdp(allowed: boolean) {
+    // #1431 step 14: decisions are the PDP's.
     return {
-      getManager: vi.fn((name: string) => name === 'UserManager' ? {
-        hasPermission: vi.fn().mockResolvedValue(allowed)
+      getManager: vi.fn((name: string) => name === 'PolicyDecisionPoint' ? {
+        permits: vi.fn().mockResolvedValue(allowed)
       } : null)
     };
   }
 
   test('does not throw when caller has the permission', async () => {
-    const engine = makeEngineWithUserManager(true);
+    const engine = makeEngineWithPdp(true);
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'alice', roles: ['admin'], isAuthenticated: true } }),
       engine
@@ -241,7 +242,7 @@ describe('ApiContext#requirePermission()', () => {
   });
 
   test('throws ApiError(403) when caller lacks the permission', async () => {
-    const engine = makeEngineWithUserManager(false);
+    const engine = makeEngineWithPdp(false);
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true } }),
       engine

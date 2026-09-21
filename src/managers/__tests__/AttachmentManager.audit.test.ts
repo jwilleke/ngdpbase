@@ -22,7 +22,7 @@ import { jobContextFromSystem } from '../../context/JobContext';
 
 interface Recorded { eventType: string; user: string; ipAddress?: string; metadata: Record<string, unknown> }
 
-/** An engine whose AuditManager records into `sink`, and whose UserManager allows. */
+/** An engine whose AuditManager records into `sink`, and whose PolicyDecisionPoint allows. */
 function makeEngine(sink: Recorded[], opts: { auditFails?: boolean; noAudit?: boolean } = {}) {
   const logAuditEvent = opts.auditFails
     ? vi.fn().mockRejectedValue(new Error('audit disk full'))
@@ -32,8 +32,9 @@ function makeEngine(sink: Recorded[], opts: { auditFails?: boolean; noAudit?: bo
       if (name === 'AuditManager') {
         return opts.noAudit ? null : { logAuditEvent, flushAuditQueue: () => Promise.resolve() };
       }
-      if (name === 'UserManager') {
-        return { hasPermission: () => Promise.resolve(true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: () => Promise.resolve(true) };
       }
       return null;
     }

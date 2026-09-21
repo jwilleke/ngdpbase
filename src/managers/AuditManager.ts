@@ -707,9 +707,9 @@ class AuditManager extends BaseManager {
       // here — not the authorisation of a request, so there is no token to cap.
       // The two questions now have two names, and the dangerous one cannot be
       // reached with a bare string at all.
-      const userManager = this.engine.getManager('UserManager') as
-        { userHoldsPermission?: (username: string, permission: string) => Promise<boolean> } | null;
-      if (userManager?.userHoldsPermission && await userManager.userHoldsPermission(username, 'admin-system')) {
+      const pdp = this.engine.getManager('PolicyDecisionPoint') as
+        { userHoldsPermission(username: string, permission: string): Promise<boolean> } | null;
+      if (pdp && await pdp.userHoldsPermission(username, 'admin-system')) {
         return;
       }
     }

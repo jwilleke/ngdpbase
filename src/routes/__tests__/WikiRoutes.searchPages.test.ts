@@ -252,7 +252,7 @@ describe('WikiRoutes.searchPages — GET /search (post-#693 swap)', () => {
     routes.createWikiContext = vi.fn((req: Request) =>
       createMockWikiContext(
         { userContext: (req as { userContext?: unknown }).userContext as never },
-        { engine, mockUserManager: { hasPermission: vi.fn().mockResolvedValue(false) } }
+        { engine, mockPolicyDecisionPoint: { permits: vi.fn().mockResolvedValue(false) } }
       )
     );
     routes.getCommonTemplateData = vi.fn().mockResolvedValue({ user: null });

@@ -13,15 +13,16 @@ const mockAttachmentManager = {
 };
 
 // #1059: serveAttachment gates on asset-read via WikiContext.hasPermission →
-// UserManager. Default grant; individual tests flip it to exercise the deny path.
-const mockUserManager = {
-  hasPermission: vi.fn(policyShaped)   // #1198: anonymous holds only the read trio
+// the PDP. Default grant; individual tests flip it to exercise the deny path.
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(policyShaped)   // #1198: anonymous holds only the read trio
 };
 
 const mockEngine = {
   getManager: vi.fn((name) => {
     if (name === 'AttachmentManager') return mockAttachmentManager;
-    if (name === 'UserManager') return mockUserManager;
+    if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
     return null;
   })
 };
@@ -334,7 +335,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       );
       const mockRes = { ...createMockRes(), render: vi.fn().mockReturnThis() };
 
-      mockUserManager.hasPermission.mockResolvedValueOnce(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValueOnce(false);
 
       await wikiRoutes.serveAttachment(mockReq, mockRes);
 
@@ -356,10 +357,10 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       const getThumbnail = vi.fn();
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'AttachmentManager') return { ...mockAttachmentManager, getThumbnail };
-        if (name === 'UserManager') return mockUserManager;
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
         return null;
       });
-      mockUserManager.hasPermission.mockResolvedValueOnce(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValueOnce(false);
 
       await wikiRoutes.attachmentThumb(mockReq, mockRes);
 
@@ -370,7 +371,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       // module-scope wiring so later describes see the original managers.
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'AttachmentManager') return mockAttachmentManager;
-        if (name === 'UserManager') return mockUserManager;
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
         return null;
       });
     });
@@ -438,7 +439,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       // refuses the delete before it is attempted (#1121).
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'AttachmentManager') return mockAttachmentManager;
-        if (name === 'UserManager') return mockUserManager;
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
         return null;
       });
 
@@ -458,7 +459,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
   describe('uploadAttachment attach-to-page (#870)', () => {
     let mockSaveWithContext;
     let mockGetPage;
-    let mockHasPermission;
+    let mockPermits;
     let mockSyncPageMentions;
     let mockUpdatePageInIndex;
 
@@ -472,7 +473,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
         content: '# Entry\n\nSome text\n',
         metadata: { title: 'Journal — jim — 2026-06-22', uuid: 'page-uuid-1', author: 'jim' }
       });
-      mockHasPermission = vi.fn().mockResolvedValue(true);
+      mockPermits = vi.fn().mockResolvedValue(true);
       mockSyncPageMentions = vi.fn().mockResolvedValue(undefined);
       mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
 
@@ -493,8 +494,9 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
             getPageUUID: vi.fn().mockReturnValue('page-uuid-1')
           };
         }
-        if (name === 'UserManager') {
-          return { hasPermission: mockHasPermission };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') {
+          return { permits: mockPermits };
         }
         if (name === 'RenderingManager') {
           return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
@@ -556,7 +558,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     });
 
     test('missing page-edit permission stores the file but reports not linked', async () => {
-      mockHasPermission.mockImplementation((_user, action) =>
+      mockPermits.mockImplementation((_user, action) =>
         Promise.resolve(action !== 'page-edit'));
       const mockReq = createMockReq(authedUser, { page: 'P' }, {}, pdfFile);
       const mockRes = createMockRes();

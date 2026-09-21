@@ -38,7 +38,7 @@ describe('WikiRoutes capture (#881)', () => {
   let wikiRoutes;
   let mockGetPage;
   let mockSaveWithContext;
-  let mockHasPermission;
+  let mockPermits;
   let mockUpdatePageInIndex;
   let mockEngine;
 
@@ -48,7 +48,7 @@ describe('WikiRoutes capture (#881)', () => {
     // #1399: an anonymous caller is a real subject now, so a refusal has to come
     // from POLICY rather than from a missing user. page-create is not granted to
     // anonymous, which is what this models.
-    mockHasPermission = vi.fn(async (subject) => subject?.isAuthenticated === true);
+    mockPermits = vi.fn(async (subject) => subject?.isAuthenticated === true);
     mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
 
     mockEngine = {
@@ -60,7 +60,8 @@ describe('WikiRoutes capture (#881)', () => {
             getPageUUID: vi.fn().mockReturnValue('uuid-1')
           };
         }
-        if (name === 'UserManager') return { hasPermission: mockHasPermission };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') return { permits: mockPermits };
         if (name === 'RenderingManager') return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
         if (name === 'SearchManager') return { updatePageInIndex: mockUpdatePageInIndex };
         if (name === 'CacheManager') return { isInitialized: () => false };
@@ -117,7 +118,7 @@ describe('WikiRoutes capture (#881)', () => {
       expect(savedContext.content).toContain('line one');
       expect(savedContext.content).toContain('line two');
       expect(savedContext.content).toContain("[An Article|https://example.com/article|target='_blank']");
-      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), 'page-create');
+      expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
       expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
     });
@@ -267,7 +268,7 @@ describe('WikiRoutes capture (#881)', () => {
       const savedContext = mockSaveWithContext.mock.calls[0][0];
       expect(savedContext.content).toContain('Old capture');
       expect(savedContext.content.indexOf('Old capture')).toBeLessThan(savedContext.content.indexOf('line one'));
-      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), 'page-edit');
+      expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
     });
 
     test('sanitizes pipes and brackets out of the link label', async () => {
@@ -287,7 +288,7 @@ describe('WikiRoutes capture (#881)', () => {
     });
 
     test('403 when user lacks permission', async () => {
-      mockHasPermission.mockResolvedValue(false);
+      mockPermits.mockResolvedValue(false);
       const req = createMockReq(authedUser, {}, body);
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
@@ -357,7 +358,8 @@ describe('WikiRoutes capture (#881)', () => {
         getManager: vi.fn((name) => {
           if (name === 'PageManager') return { getPagesByCreator: mockGetPagesByCreator };
           // #1198: /my/captures asks profile-manage of policy; the signed-in user holds it.
-          if (name === 'UserManager') return { hasPermission: vi.fn(async (subject) => subject?.isAuthenticated === true) };
+          // #1431 step 14: decisions are the PDP's.
+          if (name === 'PolicyDecisionPoint') return { permits: vi.fn(async (subject) => subject?.isAuthenticated === true) };
           if (name === 'ConfigurationManager') {
             return {
               getProperty: vi.fn((key, def) => {

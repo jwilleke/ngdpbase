@@ -36,7 +36,8 @@ describe('WikiRoutes - Version Management API', () => {
       getManager: vi.fn((name) => {
         if (name === 'PageManager') return mockPageManager;
         // #1198: restoring asks page-edit of policy; the test user holds it.
-        if (name === 'UserManager') return { hasPermission: vi.fn(policyShaped) };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') return { permits: vi.fn(policyShaped) };
         if (name === 'ConfigurationManager') {
           return {
             getProperty: vi.fn((key, defaultValue) => defaultValue)

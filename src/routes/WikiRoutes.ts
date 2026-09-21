@@ -26,7 +26,7 @@ import matter from 'gray-matter';
 import { localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
-import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
@@ -138,6 +138,7 @@ import type BackupManager from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
 import type RoleManager from '../managers/RoleManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ExportManager from '../managers/ExportManager.js';
 import type ImportManager from '../managers/ImportManager.js';
 import type MediaManager from '../managers/MediaManager.js';
@@ -247,21 +248,6 @@ interface IUserManager {
   createUser(data: unknown, ctx: ActorContext): Promise<unknown>;
   updateUser(username: string, data: unknown, ctx: ActorContext): Promise<unknown>;
   deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
-  /**
-   * #1164: takes the CONTEXT, never a username string.
-   *
-   * This interface previously declared `hasPermission(username: string | undefined, …)`,
-   * so route code could not pass a context even if it wanted to — the contract
-   * offered only the form that drops the agent-token ceiling. Twelve call sites
-   * used it, five of them the sole `admin-system` gate on an admin write.
-   *
-   * Narrowing it here makes the bypass a COMPILE ERROR in route code rather
-   * than something a reviewer has to notice. `UserManager` still accepts a
-   * string for genuine "does user X hold Y" lookups (AuditManager, PolicyInformationPoint);
-   * routes are authorising a request and must forward what the request carries.
-   */
-  hasPermission(subject: PermissionSubject, permission: string): Promise<boolean>;
-  getUserPermissions(username: string): Promise<string[]>;
   authenticateUser(username: string, password: string): Promise<unknown>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
@@ -445,6 +431,7 @@ interface WikiEngine {
   getManager(name: 'OrganizationManager'): IOrganizationManager;
   getManager(name: 'SearchManager'): ISearchManager;
   getManager(name: 'RoleManager'): RoleManager;
+  getManager(name: 'PolicyDecisionPoint'): PolicyDecisionPoint;
   // Managers using full typed imports
   getManager(name: 'AddonsManager'): AddonsManager;
   getManager(name: 'AssetManager'): AssetManager;
@@ -977,8 +964,8 @@ class WikiRoutes {
     // so a role holding `admin-read` could open /admin by typing the URL but
     // was never shown the link. Ask the same question the route asks.
     const canViewAdmin = userContext?.isAuthenticated
-      ? (await userManager.hasPermission(userContext, 'admin-read'))
-        || (await userManager.hasPermission(userContext, 'admin-system'))
+      ? (await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-read'))
+        || (await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       : false;
 
     // #1034: admin templates need to know what the caller may actually DO, not
@@ -999,7 +986,7 @@ class WikiRoutes {
     const grantedPermissions: Record<string, boolean> = {};
     if (userContext?.isAuthenticated) {
       for (const permission of adminPermissions) {
-        grantedPermissions[permission] = await userManager.hasPermission(
+        grantedPermissions[permission] = await this.engine.getManager('PolicyDecisionPoint').permits(
           userContext,
           permission
         );
@@ -3078,7 +3065,6 @@ ${panes}
 
       // Extract user from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
-      const userManager = this.engine.getManager('UserManager');
 
       logger.debug(
         '[CREATE-DEBUG] currentUser:',
@@ -3095,7 +3081,7 @@ ${panes}
       // anonymous subject, decided after the denial, not before it.
       if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
 
-      const hasPermission = await userManager.hasPermission(
+      const hasPermission = await this.engine.getManager('PolicyDecisionPoint').permits(
         currentUser,
         'page-create'
       );
@@ -3447,7 +3433,6 @@ ${panes}
       // Extract user from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
-      const userManager = this.engine.getManager('UserManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // #1198: policy is the door. The page's own rules (private, audience,
@@ -3468,7 +3453,7 @@ ${panes}
       if (await this.isRequiredPage(pageName, req.userContext)) {
         if (
           !currentUser ||
-          !(await userManager.hasPermission(
+          !(await this.engine.getManager('PolicyDecisionPoint').permits(
             currentUser,
             'admin-system'
           ))
@@ -3537,7 +3522,7 @@ ${panes}
           // For new pages, check general page creation permission
           if (
             !currentUser ||
-            !(await userManager.hasPermission(
+            !(await this.engine.getManager('PolicyDecisionPoint').permits(
               currentUser,
               'page-create'
             ))
@@ -3769,7 +3754,6 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
       const searchManager = this.engine.getManager('SearchManager');
-      const userManager = this.engine.getManager('UserManager');
 
       // Get user context from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
@@ -4003,7 +3987,7 @@ ${panes}
       if (isCurrentlyRequired || willBeRequired) {
         if (
           !currentUser ||
-          !(await userManager.hasPermission(
+          !(await this.engine.getManager('PolicyDecisionPoint').permits(
             currentUser,
             'admin-system'
           ))
@@ -4015,7 +3999,7 @@ ${panes}
         if (existingPage) {
           if (
             !currentUser ||
-            !(await userManager.hasPermission(
+            !(await this.engine.getManager('PolicyDecisionPoint').permits(
               currentUser,
               'page-create'
             ))
@@ -5190,7 +5174,6 @@ ${panes}
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
-      const userManager = this.engine.getManager('UserManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // Check if page exists
@@ -5210,7 +5193,7 @@ ${panes}
       if (await this.isRequiredPage(pageName, req.userContext)) {
         if (
           !currentUser ||
-          !(await userManager.hasPermission(
+          !(await this.engine.getManager('PolicyDecisionPoint').permits(
             currentUser,
             'admin-system'
           ))
@@ -7174,8 +7157,8 @@ ${panes}
               : 'Unknown',
         hasSessionCookie: !!sessionId,
         permissions: currentUser
-          ? userManager.getUserPermissions(currentUser.username ?? '')
-          : (await userManager.hasPermission(ANONYMOUS_SUBJECT, 'page-read'))
+          ? this.engine.getManager('PolicyDecisionPoint').getUserPermissions(currentUser.username ?? '')
+          : (await this.engine.getManager('PolicyDecisionPoint').permits(ANONYMOUS_SUBJECT, 'page-read'))
             ? ['anonymous permissions']
             : []
       };
@@ -7817,7 +7800,7 @@ ${panes}
       );
 
       const commonData = await this.getCommonTemplateData(req);
-      const userPermissions = await userManager.getUserPermissions(
+      const userPermissions = await this.engine.getManager('PolicyDecisionPoint').getUserPermissions(
         currentUser.username ?? ''
       );
 
@@ -13958,10 +13941,9 @@ ${panes}
   async adminUpdateOrganization(req: Request, res: Response) {
     try {
       const userContext = req.userContext;
-      const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext, 'admin-system'))
+        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -14012,10 +13994,9 @@ ${panes}
   async adminDeleteOrganization(req: Request, res: Response) {
     try {
       const userContext = req.userContext;
-      const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext, 'admin-system'))
+        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -14061,10 +14042,9 @@ ${panes}
   async adminGetOrganization(req: Request, res: Response) {
     try {
       const userContext = req.userContext;
-      const userManager = this.engine.getManager('UserManager');
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext, 'admin-system'))
+        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
@@ -14106,12 +14086,11 @@ ${panes}
    */
   async adminValidateFiles(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext, 'admin-system'))
+        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       ) {
         return await this.renderError(
           req,
@@ -14146,12 +14125,11 @@ ${panes}
    */
   async adminFixFiles(req: Request, res: Response) {
     try {
-      const userManager = this.engine.getManager('UserManager');
       const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
       if (
         !userContext?.isAuthenticated ||
-        !(await userManager.hasPermission(userContext, 'admin-system'))
+        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',

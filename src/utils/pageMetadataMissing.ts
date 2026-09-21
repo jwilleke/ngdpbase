@@ -66,6 +66,9 @@ interface NotificationManagerLike {
 }
 interface UserManagerLike {
   getUsers(): Promise<Array<{ username: string }>>;
+}
+
+interface DecisionPointLike {
   userHoldsPermission(username: string, action: string): Promise<boolean>;
 }
 
@@ -90,14 +93,15 @@ export async function reportMissingPageMetadata(
   try {
     const notifications = engine?.getManager('NotificationManager') as NotificationManagerLike | null | undefined;
     const users = engine?.getManager('UserManager') as UserManagerLike | null | undefined;
-    if (!notifications || !users) return;
+    const pdp = engine?.getManager('PolicyDecisionPoint') as DecisionPointLike | null | undefined;
+    if (!notifications || !users || !pdp) return;
 
     const title = missingMetadataTitle(pageName);
     if (notifications.getAllNotifications(false).some((n) => n.title === title)) return;
 
     const admins: string[] = [];
     for (const { username } of await users.getUsers()) {
-      if (await users.userHoldsPermission(username, 'admin-system')) admins.push(username);
+      if (await pdp.userHoldsPermission(username, 'admin-system')) admins.push(username);
     }
     // No administrator to tell is not a reason to tell everybody: an empty
     // target list means ALL users in NotificationManager, which would announce

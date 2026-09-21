@@ -136,7 +136,8 @@ describe('#1215 audit-export', () => {
     const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => os.tmpdir() };
-        if (name === 'UserManager') return { userHoldsPermission: async () => true };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') return { userHoldsPermission: async () => true };
         return null;
       }),
       blockConfiguration: vi.fn(), getBlockingConditions: () => []

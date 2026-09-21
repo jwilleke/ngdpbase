@@ -309,7 +309,7 @@ if (wikiContext.hasRole('admin', 'editor', 'contributor')) { ... }   // multi-ro
 
 ##### `async hasPermission(action: string): Promise<boolean>`
 
-Global permission check. Delegates to `UserManager.hasPermission(username, action)` → `PolicyEvaluator`. Honors anonymous/authenticated role expansion (`'anonymous'`/`'All'`, `'Authenticated'`/`'All'`), inactive-user rejection, deny policies, and policy priority order.
+Global permission check. Asks the PDP, `PolicyDecisionPoint.permits(subject, action)` (#1431 step 14) → `PolicyEvaluator`. Honors anonymous/authenticated role expansion (`'anonymous'`/`'All'`, `'Authenticated'`/`'All'`), inactive-user rejection, deny policies, and policy priority order.
 
 ```typescript
 if (!(await wikiContext.hasPermission('admin-system'))) {

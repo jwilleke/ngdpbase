@@ -22,8 +22,9 @@ const makeCommentManager = (enabled = true, comments: unknown[] = []) => ({
 
 // #1198: the plugin asks policy, not a role name. This stand-in answers as the
 // shipped policies do for the roles the tests use.
-const policyUserManager = {
-  hasPermission: vi.fn(async (subject: { roles?: string[] } | null | undefined, action: string) => {
+// #1431 step 14: decisions are the PDP's.
+const policyDecisionPoint = {
+  permits: vi.fn(async (subject: { roles?: string[] } | null | undefined, action: string) => {
     const roles = subject?.roles ?? [];
     if (action === 'admin-system') return roles.includes('admin');
     if (action === 'comment-create') return (subject as { isAuthenticated?: boolean } | null | undefined)?.isAuthenticated === true;
@@ -31,7 +32,7 @@ const policyUserManager = {
   })
 };
 const makeEngine = (managers: Record<string, unknown> = {}) => ({
-  getManager: vi.fn((name: string) => managers[name] ?? (name === 'UserManager' ? policyUserManager : null)),
+  getManager: vi.fn((name: string) => managers[name] ?? (name === 'PolicyDecisionPoint' ? policyDecisionPoint : null)),
   logger: { error: vi.fn() }
 });
 

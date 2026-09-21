@@ -47,9 +47,10 @@ const createMockRes = () => ({
 function makeRoutes(granted: string[]) {
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'UserManager') {
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
         return {
-          hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p)))
+          permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p)))
         };
       }
       if (name === 'ConfigurationManager') {

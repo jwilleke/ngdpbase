@@ -18,7 +18,7 @@ function subject(username: string): PermissionSubject {
 }
 
 /**
- * The permissions the mock UserManager grants. Every scope by default; a test
+ * The permissions the mock PolicyDecisionPoint grants. Every scope by default; a test
  * that wants a refusal names the scopes the owner lacks.
  */
 let lackingScopes: string[] = [];
@@ -32,8 +32,9 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
           getResolvedDataPath: () => tmpDir
         };
       }
-      if (name === 'UserManager' && !overrides.__noUserManager) {
-        return { hasPermission: async (_s: PermissionSubject, action: string) => !lackingScopes.includes(action) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint' && !overrides.__noDecisionPoint) {
+        return { permits: async (_s: PermissionSubject, action: string) => !lackingScopes.includes(action) };
       }
       return null;
     }
@@ -79,8 +80,8 @@ describe('#1178 — a token carries only what its owner holds', () => {
       .rejects.toThrow(/You do not hold page-delete, page-rename/);
   });
 
-  test('with no UserManager there is no answer, and no answer is a refusal', async () => {
-    const m = await makeManager({ __noUserManager: true });
+  test('with no PolicyDecisionPoint there is no answer, and no answer is a refusal', async () => {
+    const m = await makeManager({ __noDecisionPoint: true });
     await expect(m.mint(subject('jim'), 'x', ['page-edit'])).rejects.toThrow(/cannot be verified/);
   });
 
@@ -659,7 +660,8 @@ describe('#1111 the token lifecycle is audited', () => {
         // #1121: token-mint and token-revoke are CRITICAL, so the sink must be
         // able to flush or the write is refused rather than silently unrecorded.
         if (name === 'AuditManager') return { logAuditEvent, flushAuditQueue: async () => {} };
-        if (name === 'UserManager') return { hasPermission: async () => true };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') return { permits: async () => true };
         return null;
       }
     } as never;
@@ -713,7 +715,8 @@ describe('#1111 the token lifecycle is audited', () => {
           return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => tmpDir };
         }
         if (name === 'AuditManager') return { logAuditEvent: async () => { throw new Error('sink down'); }, flushAuditQueue: async () => {} };
-        if (name === 'UserManager') return { hasPermission: async () => true };
+        // #1431 step 14: decisions are the PDP's.
+        if (name === 'PolicyDecisionPoint') return { permits: async () => true };
         return null;
       }
     } as never;

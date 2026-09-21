@@ -247,17 +247,6 @@ describe('UserManager', () => {
       // machine. Nothing produced the subject; this pins that it stays gone.
       expect((userManager as unknown as Record<string, unknown>).getAssertedUser).toBeUndefined();
     });
-
-    test('should handle anonymous user permissions', async () => {
-      const permissions = await userManager.getUserPermissions('Anonymous');
-      expect(Array.isArray(permissions)).toBe(true);
-      // Anonymous user permissions returned based on role configuration
-    });
-
-    test('should handle null username as anonymous', async () => {
-      const permissions = await userManager.getUserPermissions(null);
-      expect(Array.isArray(permissions)).toBe(true);
-    });
   });
 
   describe('provider normalization', () => {
@@ -285,52 +274,31 @@ describe('UserManager', () => {
       }
     });
 
-    test('a user\'s roles are read from RoleManager', async () => {
+    const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true };
+
+    test('an account edit that changes roles asks RoleManager', async () => {
       await userManager.initialize();
       userManager.provider.getUser = vi.fn(async () => ({ username: 'alice', isActive: true }));
-      mockRoleManager.resolveUserRoles.mockResolvedValue(['editor']);
-      expect(await userManager.getUserPermissions('alice')).toBeDefined();
+      userManager.provider.updateUser = vi.fn(async () => undefined);
+      mockRoleManager.resolveUserRoles.mockResolvedValue(['reader']);
+      await userManager.updateUser('alice', { roles: ['editor'] }, ACTOR);
       expect(mockRoleManager.resolveUserRoles).toHaveBeenCalledWith('alice');
+      expect(mockRoleManager.applyRoleDiff).toHaveBeenCalledWith('alice', ['reader'], ['editor']);
     });
 
     test('without RoleManager the engine is broken, and says so', async () => {
       await userManager.initialize();
       userManager.provider.getUser = vi.fn(async () => ({ username: 'alice', isActive: true }));
       mockEngine.getManager = vi.fn((name) => (name === 'ConfigurationManager' ? mockConfigManager : null));
-      await expect(userManager.getUserPermissions('alice')).rejects.toThrow('UserManager requires RoleManager');
+      await expect(userManager.updateUser('alice', { roles: ['editor'] }, ACTOR)).rejects.toThrow('UserManager requires RoleManager');
     });
   });
 
-  describe('hasPermission', () => {
-    beforeEach(async () => {
-      await userManager.initialize();
-    });
-
-    test('should check user permissions returns boolean', async () => {
-      // hasPermission should return a boolean
-      const result = await userManager.hasPermission('Anonymous', 'page:read');
-      expect(typeof result).toBe('boolean');
-    });
-
-    test('should deny permissions for non-existent permission', async () => {
-      const result = await userManager.hasPermission('Anonymous', 'nonexistent:permission');
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('getUserPermissions', () => {
-    beforeEach(async () => {
-      await userManager.initialize();
-    });
-
-    test('should return array of permissions for anonymous', async () => {
-      const permissions = await userManager.getUserPermissions('Anonymous');
-      expect(Array.isArray(permissions)).toBe(true);
-    });
-
-    test('should return array of permissions for asserted', async () => {
-      const permissions = await userManager.getUserPermissions('asserted');
-      expect(Array.isArray(permissions)).toBe(true);
+  describe('decisions are the PDP\'s (#1431 step 14)', () => {
+    test('UserManager answers no access question', () => {
+      for (const name of ['hasPermission', 'getUserPermissions', 'userHoldsPermission', 'requirePermissions', 'ensureAuthenticated']) {
+        expect(name in userManager).toBe(false);
+      }
     });
   });
 

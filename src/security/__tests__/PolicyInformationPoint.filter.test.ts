@@ -15,6 +15,7 @@
  * tier for tier.
  */
 import PolicyInformationPoint from '../PolicyInformationPoint';
+import PolicyDecisionPoint from '../PolicyDecisionPoint';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
 import type { ShareGrant } from '../../types/Share';
 
@@ -36,8 +37,8 @@ const CREATORS: Record<string, string> = { p4: 'alice', p8: 'alice' };
 let issuerHolds: string[] = ['page-read'];
 
 function makeEngine() {
-  return {
-    getManager: (name: string) => {
+  const engine = {
+    getManager: (name: string): unknown => {
       if (name === 'ConfigurationManager') {
         return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => '/tmp/ngdp-acl-filter-test', isInitialized: () => true };
       }
@@ -76,22 +77,27 @@ function makeEngine() {
           }
         };
       }
-      if (name === 'UserManager') {
-        return {
-          userHoldsPermission: async (u: string, a: string) => u === 'jim' && issuerHolds.includes(a),
-          // #1431 7b: the author-lock override is asked as a permission. The
-          // grant table stands in for policy — keyed by subject, never by role
-          // name, so a test cannot pass by holding a role called admin.
-          hasPermission: async (subject: { username?: string }, a: string) =>
-            (overrideGrants[subject?.username ?? ''] ?? []).includes(a)
-        };
+      if (name === 'PolicyDecisionPoint') {
+        return pdp;
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: async () => 'evt' };
       }
       return null;
     }
-  } as never;
+  };
+  // #1431 step 14: decisions are the PDP's. A real one, so the ceilings and
+  // Tier 2 run as shipped; only its two lookups are stubbed.
+  const pdp = new PolicyDecisionPoint(engine);
+  // What the share's issuer holds live.
+  vi.spyOn(pdp, 'userHoldsPermission').mockImplementation(async (u: string, a: string) =>
+    u === 'jim' && issuerHolds.includes(a));
+  // #1431 7b: the author-lock override is asked as a permission. The grant
+  // table stands in for policy — keyed by subject, never by role name, so a
+  // test cannot pass by holding a role called admin.
+  vi.spyOn(pdp, 'permits').mockImplementation(async (subject, a: string) =>
+    (overrideGrants[(subject as { username?: string } | null | undefined)?.username ?? ''] ?? []).includes(a));
+  return engine as never;
 }
 
 const anonymous = { username: 'Anonymous', roles: ['anonymous', 'All'], isAuthenticated: false };

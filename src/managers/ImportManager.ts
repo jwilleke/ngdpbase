@@ -116,7 +116,7 @@ export interface ImportOptions {
    *                roles: ['admin'] }
    *
    * where `author` came from the imported file's own `attachment.properties`.
-   * `UserManager.hasPermission` trusts supplied roles verbatim — it does not
+   * The PDP (then `UserManager.hasPermission`) trusts supplied roles verbatim — it does not
    * re-resolve them — so that object authorised as an admin, attributed the
    * write to a name taken from imported content, and carried no `viaToken`,
    * so an admin's agent token doing an import escaped its scope ceiling.

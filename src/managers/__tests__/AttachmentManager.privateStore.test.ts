@@ -29,8 +29,9 @@ const kdf = TEST_PRIVATE_STORE_KDF;
 function makeManager(pagesDir: string, stored: unknown[]) {
   const engine = {
     getManager: (name: string) => {
-      if (name === 'UserManager') {
-        return { hasPermission: () => Promise.resolve(true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: () => Promise.resolve(true) };
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: vi.fn().mockResolvedValue('id'), flushAuditQueue: () => Promise.resolve() };

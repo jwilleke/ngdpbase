@@ -44,7 +44,7 @@ import type { PageFrontmatter } from '../types/Page.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { DEFAULT_SHARE_ACTIONS, OWNER_ONLY_KEYWORD, resourcesForScope, type ShareGrant, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from './UserManager.js';
-import type UserManager from './UserManager.js';
+import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 export { OWNER_ONLY_KEYWORD };
 
@@ -117,7 +117,7 @@ export default class ShareManager extends BaseManager {
    * The route asks policy for `share-manage` before calling this (#1224).
    * Here the delegation rule is enforced: __nobody delegates what they do not
    * hold.__ Every action the share would carry is checked against the
-   * issuer's live authority through `UserManager.hasPermission`, with the
+   * issuer's live authority through the PDP (`PolicyDecisionPoint.permits`), with the
    * issuer's own context (P1) so a token-bound issuer is bounded by the token
    * ceiling too. A share asking for an action the issuer lacks is refused
    * outright rather than trimmed silently — trimming would issue a credential
@@ -138,10 +138,10 @@ export default class ShareManager extends BaseManager {
     const actions = [...new Set(options.actions ?? DEFAULT_SHARE_ACTIONS)];
     const resources = [...(options.resources ?? resourcesForScope(scope))];
 
-    const userManager = this.engine.getManager<UserManager>('UserManager');
-    if (!userManager) throw new Error('ShareManager: cannot verify the issuer without UserManager');
+    const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) throw new Error('ShareManager: cannot verify the issuer without the PolicyDecisionPoint');
     for (const action of actions) {
-      if (!(await userManager.hasPermission(issuer, action))) {
+      if (!(await pdp.permits(issuer, action))) {
         throw new Error(`ShareManager: ${issuer.username} does not hold '${action}' and cannot delegate it`);
       }
     }

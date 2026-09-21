@@ -27,9 +27,6 @@ function makePdp(opts: {
     hasDecision: opts.hasDecision ?? true,
     policyName: 'a-policy'
   });
-  const userManager = {
-    userHoldsPermission: vi.fn().mockResolvedValue(opts.issuerHolds ?? true)
-  };
   // #1431 step 13: the subject's current attributes are the PIP's.
   const pip = {
     resolveSubjectNow: vi.fn().mockResolvedValue({ username: 'jim', roles: ['editor'], isAuthenticated: true })
@@ -37,12 +34,16 @@ function makePdp(opts: {
   const engine = {
     getManager: (name: string) => {
       if (name === 'PolicyEvaluator') return opts.evaluator === false ? null : { evaluateAccess };
-      if (name === 'UserManager') return userManager;
       if (name === 'PolicyInformationPoint') return pip;
       return null;
     }
   };
-  return { pdp: new PolicyDecisionPoint(engine), evaluateAccess, userManager, pip };
+  const pdp = new PolicyDecisionPoint(engine);
+  // #1431 step 14: whether a share's issuer still holds the action is the
+  // PDP's own lookup. Stubbed so these tests see the ceiling alone — the
+  // lookup is itself a policy decision, tested on its own below.
+  const userHoldsPermission = vi.spyOn(pdp, 'userHoldsPermission').mockResolvedValue(opts.issuerHolds ?? true);
+  return { pdp, evaluateAccess, pip, userHoldsPermission };
 }
 
 const subject = (extra: Record<string, unknown> = {}) => ({
@@ -154,5 +155,58 @@ describe('#1431 PolicyDecisionPoint', () => {
       const { pdp } = makePdp({ evaluator: false });
       expect(await pdp.decide(subject(), { action: 'page-read' })).toMatchObject({ permit: false, applicable: false });
     });
+  });
+});
+
+// #1431 step 14: the decisions UserManager used to answer are the PDP's.
+describe('the PDP answers what UserManager used to', () => {
+  function makeWith(subjectFor: (u: string) => unknown, allowed = true) {
+    const evaluateAccess = vi.fn().mockResolvedValue({ allowed, hasDecision: true, policyName: 'p' });
+    const pip = { subjectFor: vi.fn(async (u: string) => subjectFor(u)), resolveSubjectNow: vi.fn() };
+    const config = {
+      getProperty: (k: string, d: unknown) => (k === 'ngdpbase.access.policies.enabled' ? true
+        : k === 'ngdpbase.access.policies'
+          ? [{ id: 'ed', effect: 'allow', priority: 1, subjects: [{ type: 'role', value: 'editor' }], actions: ['page-edit'] }]
+          : d)
+    };
+    const engine = {
+      getManager: (name: string) => (name === 'PolicyEvaluator' ? { evaluateAccess }
+        : name === 'PolicyInformationPoint' ? pip
+          : name === 'ConfigurationManager' ? config : null)
+    };
+    return { pdp: new PolicyDecisionPoint(engine), evaluateAccess, pip };
+  }
+
+  test('permits is decide().permit for a capability', async () => {
+    const { pdp } = makeWith(() => null, true);
+    expect(await pdp.permits({ username: 'jim', roles: ['editor'], isAuthenticated: true }, 'page-edit')).toBe(true);
+    const denied = makeWith(() => null, false);
+    expect(await denied.pdp.permits({ username: 'jim', roles: ['editor'], isAuthenticated: true }, 'page-edit')).toBe(false);
+  });
+
+  test('userHoldsPermission asks about the named user as the PIP resolves them now', async () => {
+    const { pdp, pip, evaluateAccess } = makeWith((u) => (u === 'bob' ? { username: 'bob', roles: ['editor'], isAuthenticated: true } : null));
+    expect(await pdp.userHoldsPermission('bob', 'page-edit')).toBe(true);
+    expect(pip.subjectFor).toHaveBeenCalledWith('bob');
+    expect(evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['editor']);
+  });
+
+  test('userHoldsPermission is false for an unknown or inactive user, without asking policy', async () => {
+    const { pdp, evaluateAccess } = makeWith(() => null);
+    expect(await pdp.userHoldsPermission('ghost', 'page-edit')).toBe(false);
+    expect(evaluateAccess).not.toHaveBeenCalled();
+  });
+
+  test('userHoldsPermission for anonymous asks as the anonymous subject', async () => {
+    const { pdp, pip, evaluateAccess } = makeWith(() => null);
+    await pdp.userHoldsPermission('Anonymous', 'page-read');
+    expect(pip.subjectFor).not.toHaveBeenCalled();
+    expect(evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['anonymous']);
+  });
+
+  test('getUserPermissions is the union the policies give the user\'s current roles', async () => {
+    const { pdp } = makeWith((u) => (u === 'bob' ? { username: 'bob', roles: ['editor'], isAuthenticated: true } : null));
+    expect(await pdp.getUserPermissions('bob')).toEqual(['page-edit']);
+    expect(await pdp.getUserPermissions('ghost')).toEqual([]);
   });
 });

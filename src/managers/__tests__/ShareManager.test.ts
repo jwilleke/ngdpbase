@@ -68,7 +68,11 @@ const mockPageManager = {
 // authority. This stand-in answers as the shipped policies do for the roles
 // the tests use; `page-delete` is what an editor may not delegate.
 const mockUserManager = {
-  hasPermission: vi.fn(async (subject: { roles?: string[] }, action: string) => {
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(async (subject: { roles?: string[] }, action: string) => {
     const roles = subject.roles ?? [];
     if (action === 'page-read' || action === 'asset-read') return true;
     if (action === 'page-delete') return roles.includes('admin');
@@ -82,6 +86,7 @@ const mockEngine = {
       ConfigurationManager: mockConfigManager,
       AuditManager: mockAuditManager,
       UserManager: mockUserManager,
+      PolicyDecisionPoint: mockPolicyDecisionPoint,
       MediaManager: mockMediaManager,
       SearchManager: mockSearchManager,
       PageManager: mockPageManager

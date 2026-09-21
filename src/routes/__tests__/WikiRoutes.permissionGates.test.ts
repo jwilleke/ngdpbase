@@ -1,5 +1,5 @@
 /**
- * #1198 — allow and deny come from hasPermission, never from a role name.
+ * #1198 — allow and deny come from policy (the PDP's permits), never from a role name.
  *
  * Seventeen sites in WikiRoutes asked `hasRole('admin', …)`, which skips the
  * policy evaluator, deny policies, and the agent-token scope ceiling. Each now
@@ -26,8 +26,9 @@ function makeRoutes(granted: string[], managers: Record<string, unknown> = {}) {
   const asked: string[] = [];
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'UserManager') {
-        return { hasPermission: vi.fn((_u: unknown, p: string) => { asked.push(p); return Promise.resolve(granted.includes(p)); }) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: vi.fn((_u: unknown, p: string) => { asked.push(p); return Promise.resolve(granted.includes(p)); }) };
       }
       // Agent tokens are opt-in; the list route answers 503 before it asks policy otherwise.
       if (name === 'ConfigurationManager') return { getProperty: vi.fn((k: string, d: unknown) => (k === 'ngdpbase.auth.agent-token.enabled' ? true : d)) };

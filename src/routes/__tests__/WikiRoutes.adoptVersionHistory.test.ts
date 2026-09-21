@@ -75,7 +75,8 @@ function makeRoutes(dirs: { requiredDir: string; pagesDir: string }) {
   const renamePageInIndex = vi.fn().mockResolvedValue(undefined);
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'UserManager') return { hasPermission: vi.fn().mockResolvedValue(true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(true) };
       if (name === 'ConfigurationManager') {
         return {
           getProperty: vi.fn((key: string, def: unknown) =>

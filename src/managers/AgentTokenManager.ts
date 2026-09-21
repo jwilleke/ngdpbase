@@ -460,15 +460,15 @@ class AgentTokenManager extends BaseManager {
       throw new Error(`Tokens cannot carry ${MINT_PERMISSION}: a token never mints a token`);
     }
 
-    // #1178: every scope must be one the owner holds right now. Asked of
-    // policy through UserManager, the same answer the token would get at use
-    // time; with no UserManager there is no answer, and no answer is a refusal.
-    const userManager = this.engine.getManager('UserManager') as
-      { hasPermission(subject: PermissionSubject, action: string): Promise<boolean> } | null;
-    if (!userManager) throw new Error('Cannot mint: the owner\'s permissions cannot be verified');
+    // #1178: every scope must be one the owner holds right now. Asked of the
+    // PDP, the same answer the token would get at use time; with no PDP there
+    // is no answer, and no answer is a refusal.
+    const pdp = this.engine.getManager('PolicyDecisionPoint') as
+      { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
+    if (!pdp) throw new Error('Cannot mint: the owner\'s permissions cannot be verified');
     const lacking: string[] = [];
     for (const scope of effectiveScopes) {
-      if (!(await userManager.hasPermission(subject, scope))) lacking.push(scope);
+      if (!(await pdp.permits(subject, scope))) lacking.push(scope);
     }
     if (lacking.length > 0) {
       throw new Error(

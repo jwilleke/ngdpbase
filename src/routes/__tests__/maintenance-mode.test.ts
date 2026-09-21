@@ -27,7 +27,6 @@ vi.mock('../../WikiEngine', () => {
   let maintenanceModeEnabled = false;
 
   const mockUserManager = {
-    hasPermission: vi.fn().mockReturnValue(true),
     destroySession: vi.fn().mockResolvedValue(true),
     authenticateUser: vi.fn().mockResolvedValue({
       username: 'admin',
@@ -41,6 +40,11 @@ vi.mock('../../WikiEngine', () => {
       if (role === 'admin') return user?.roles?.includes('admin');
       return true;
     })
+  };
+
+  // #1431 step 14: decisions are the PDP's.
+  const mockPolicyDecisionPoint = {
+    permits: vi.fn().mockReturnValue(true)
   };
 
   const mockPageManager = {
@@ -126,6 +130,7 @@ vi.mock('../../WikiEngine', () => {
 
   const managers = {
     UserManager: mockUserManager,
+    PolicyDecisionPoint: mockPolicyDecisionPoint,
     PageManager: mockPageManager,
     RenderingManager: mockRenderingManager,
     PolicyInformationPoint: mockPolicyInformationPoint,

@@ -35,11 +35,8 @@ const userManager = engine.getManager('UserManager');
 // Authenticate
 const user = await userManager.authenticateUser('admin', 'password');
 
-// Check permission
-const canEdit = await userManager.hasPermission('john', 'page:edit');
-
-// Get user permissions
-const permissions = userManager.getUserPermissions('john');
+// Access decisions are the PDP's, asked through a context (#1431):
+// await ctx.hasPermission('page-edit')
 
 // Create user
 const newUser = await userManager.createUser({
@@ -65,10 +62,7 @@ const sessionId = await userManager.createSession('john');
 
 ## Authorization Methods
 
-| Method | Returns | Description |
-| -------- | --------- | ------------- |
-| `hasPermission(username, action)` | `Promise<boolean>` | Check permission via policies |
-| `getUserPermissions(username)` | `string[]` | Get all effective permissions |
+None. A door asks its context (`ctx.hasPermission`, `ctx.canAccess`); the decision is the [PolicyDecisionPoint](../../src/security/PolicyDecisionPoint.ts)'s (`permits`, `getUserPermissions`, `userHoldsPermission`) — [#1431](https://github.com/jwilleke/ngdpbase/issues/1431) step 14.
 
 ## User Management Methods
 

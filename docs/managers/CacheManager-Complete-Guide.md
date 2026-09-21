@@ -894,7 +894,7 @@ Built lazily on first `getThemeManager(activeTheme, themesDir)` call. Ensures `W
 
 __Files__: `src/managers/UserManager.ts`, `src/providers/FileUserProvider.ts`, `src/managers/RoleManager.ts`
 
-These have their own in-memory user / role records loaded at init from JSON files. Used by `userManager.hasPermission(...)` (PolicyEvaluator path) and role-resolution helpers without disk hits. See [Access-Control.md](../architecture/Access-Control.md) for the access-path performance characteristics.
+These have their own in-memory user / role records loaded at init from JSON files. Used by the PDP's `permits(...)` (PolicyEvaluator path) and role-resolution helpers without disk hits. See [Access-Control.md](../architecture/Access-Control.md) for the access-path performance characteristics.
 
 ### Other in-process caches
 

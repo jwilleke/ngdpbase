@@ -9,7 +9,7 @@
  *     defined as a property on the returned object) → `hasPermission` delegate
  *     silently returned true in some tests.
  *   - Different `hasPermission` defaults (some `mockResolvedValue(true)`, others
- *     delegating to `mockUserManager.hasPermission`) → 403-path tests passed or
+ *     delegating to the decider mock) → 403-path tests passed or
  *     failed depending on ordering.
  *
  * This fixture provides one canonical factory. Test files import and use it
@@ -21,11 +21,11 @@
  * import { createMockWikiContext, MOCK_WIKI_CONTEXT_CONSTANTS } from './__fixtures__/createMockWikiContext';
  *
  * let mockUserContext: UserContextLike | null = null;
- * const mockUserManager = { hasPermission: vi.fn() };
+ * const mockPolicyDecisionPoint = { permits: vi.fn() };
  *
  * vi.mock('../../context/WikiContext', () => {
  *   const MockWikiContext = vi.fn().mockImplementation(function (engine: unknown, options = {}) {
- *     return createMockWikiContext(options, { engine, fallbackUserContext: mockUserContext, mockUserManager });
+ *     return createMockWikiContext(options, { engine, fallbackUserContext: mockUserContext, mockPolicyDecisionPoint });
  *   });
  *   (MockWikiContext as unknown as { CONTEXT: typeof MOCK_WIKI_CONTEXT_CONSTANTS }).CONTEXT = MOCK_WIKI_CONTEXT_CONSTANTS;
  *   return { default: MockWikiContext };
@@ -36,7 +36,7 @@
  *
  * ```ts
  * routes.createWikiContext = vi.fn((req) =>
- *   createMockWikiContext({ userContext: req.userContext }, { engine: routes.engine, mockUserManager })
+ *   createMockWikiContext({ userContext: req.userContext }, { engine: routes.engine, mockPolicyDecisionPoint })
  * );
  * ```
  */
@@ -76,9 +76,10 @@ export interface MockWikiContextDeps {
    *  Pass the variable directly — caller re-evaluates on each construction
    *  by re-passing in the vi.mock factory body. */
   fallbackUserContext?: UserContextLike | null;
-  /** Mocked UserManager for hasPermission delegation. When provided, the mocked
-   *  hasPermission delegates to this. Otherwise defaults to true (permissive). */
-  mockUserManager?: { hasPermission?: (u: string, a: string) => Promise<boolean> | boolean };
+  /** Mocked PolicyDecisionPoint for hasPermission delegation (#1431 step 14).
+   *  When provided, the mocked hasPermission delegates to `permits`. Otherwise
+   *  defaults to true (permissive). */
+  mockPolicyDecisionPoint?: { permits?: (u: string, a: string) => Promise<boolean> | boolean };
   /** When true, populate manager properties (pageManager, renderingManager, etc.)
    *  from engine.getManager. Only routes.test.ts needs this; default false. */
   resolveManagers?: boolean;
@@ -138,9 +139,9 @@ export function createMockWikiContext(
     // #625 access-control methods — same shape as the real WikiContext
     hasRole: vi.fn((...names: string[]) => names.some(n => roles.includes(n))),
     hasPermission: vi.fn(async (action: string) => {
-      if (deps.mockUserManager?.hasPermission) {
+      if (deps.mockPolicyDecisionPoint?.permits) {
         try {
-          return await deps.mockUserManager.hasPermission(userContext?.username ?? '', action);
+          return await deps.mockPolicyDecisionPoint.permits(userContext?.username ?? '', action);
         } catch {
           return true;
         }

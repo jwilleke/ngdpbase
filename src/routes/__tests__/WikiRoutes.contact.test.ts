@@ -40,7 +40,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -114,14 +114,18 @@ const recipientResolver = vi.fn(async (override: string) => {
 });
 
 const mockUserManager = {
-  hasPermission: vi.fn().mockResolvedValue(false),
   getUser: vi.fn(),
   getUsers: vi.fn().mockResolvedValue([]),
-  getUserPermissions: vi.fn().mockReturnValue([]),
   searchUsers: vi.fn().mockResolvedValue([]),
   authenticateUser: vi.fn(),
   updateUser: vi.fn(),
   getContactRecipient: recipientResolver
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn().mockResolvedValue(false),
+  getUserPermissions: vi.fn().mockReturnValue([])
 };
 
 const mockEmailManager = {
@@ -136,6 +140,7 @@ vi.mock('../../WikiEngine', () => {
         const managers: Record<string, unknown> = {
           ConfigurationManager: mockConfigManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: {

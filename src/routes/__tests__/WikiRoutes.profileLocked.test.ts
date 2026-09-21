@@ -53,14 +53,16 @@ const createMockRes = () => ({
 
 function makeRoutes(account: Record<string, unknown>) {
   const userManager = {
-    // #1198: the profile routes ask profile-manage of policy; a reader holds it.
-    hasPermission: vi.fn(() => Promise.resolve(true)),
     getUser: vi.fn(() => Promise.resolve(account)),
     updateUser: vi.fn(() => Promise.resolve(account)),
     authenticateUser: vi.fn(() => Promise.resolve(true))
   };
+  // #1431 step 14: decisions are the PDP's.
+  // #1198: the profile routes ask profile-manage of policy; a reader holds it.
+  const policyDecisionPoint = { permits: vi.fn(() => Promise.resolve(true)) };
+  const managers: Record<string, unknown> = { UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
   const engine = {
-    getManager: vi.fn((name: string) => (name === 'UserManager' ? userManager : null))
+    getManager: vi.fn((name: string) => managers[name] ?? null)
   };
   const routes = new WikiRoutes(engine);
   return { routes, userManager };

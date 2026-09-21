@@ -189,7 +189,7 @@ export class ApiContext extends BaseContext {
   /**
    * Returns true if the caller has the given permission.
    *
-   * Delegates to {@link UserManager.hasPermission} — same canonical
+   * Asks the PDP (`PolicyDecisionPoint.permits`, #1431 step 14) — same canonical
    * `PolicyEvaluator`-backed path that `WikiContext.hasPermission` uses.
    * Honors anonymous/authenticated role expansion, deny policies, resource
    * patterns, and the `'All'`/`'Authenticated'` role semantics. (#630)

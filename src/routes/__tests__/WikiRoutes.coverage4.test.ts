@@ -51,7 +51,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -102,16 +102,20 @@ const mockCacheManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
   updateUser: vi.fn(),
   destroySession: vi.fn(),
   getSession: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -198,6 +202,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
@@ -297,10 +302,10 @@ function resetMocks() {
   mockExportManager.exportToMarkdown.mockResolvedValue('# markdown');
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
-  mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.searchUsers.mockResolvedValue([{ username: 'testuser', displayName: 'Test' }]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
@@ -645,7 +650,7 @@ describe('WikiRoutes — coverage batch 4', () => {
     test('returns 403 when a signed-in user lacks admin-read', async () => {
       // #1198: the dashboard asks admin-read of policy, like every admin
       // surface; the refusal is 403 for a signed-in subject.
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin');
       expect(res.status).toBe(403);
     });
@@ -667,7 +672,7 @@ describe('WikiRoutes — coverage batch 4', () => {
     });
 
     test('returns 403 when user lacks user-read permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/users');
       expect(res.status).toBe(403);
     });
@@ -682,7 +687,7 @@ describe('WikiRoutes — coverage batch 4', () => {
     });
 
     test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/roles');
       expect(res.status).toBe(403);
     });
@@ -697,7 +702,7 @@ describe('WikiRoutes — coverage batch 4', () => {
     });
 
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/logs');
       expect(res.status).toBe(403);
     });
@@ -707,7 +712,7 @@ describe('WikiRoutes — coverage batch 4', () => {
 
   describe('GET /admin/settings', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/settings');
       expect(res.status).toBe(403);
     });

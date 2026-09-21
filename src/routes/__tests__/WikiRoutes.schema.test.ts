@@ -53,8 +53,9 @@ const mockConfigManager = {
   getProperty: vi.fn().mockReturnValue('Welcome')
 };
 
-const mockUserManager = {
-  hasPermission: vi.fn().mockReturnValue(true)
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn().mockReturnValue(true)
 };
 
 const mockEngine = {
@@ -65,7 +66,7 @@ const mockEngine = {
       'RenderingManager': mockRenderingManager,
       'PolicyInformationPoint': mockPolicyInformationPoint,
       'ConfigurationManager': mockConfigManager,
-      'UserManager': mockUserManager
+      'PolicyDecisionPoint': mockPolicyDecisionPoint
     };
     return managers[name] || null;
   })
@@ -166,7 +167,7 @@ describe('WikiRoutes Schema.org Integration', () => {
       const res = createMockRes();
 
       // The method checks if user is admin
-      mockUserManager.hasPermission.mockReturnValue(false);
+      mockPolicyDecisionPoint.permits.mockReturnValue(false);
 
       await wikiRoutes.adminOrganizations(req, res);
 
@@ -180,7 +181,7 @@ describe('WikiRoutes Schema.org Integration', () => {
       );
       const res = createMockRes();
 
-      mockUserManager.hasPermission.mockReturnValue(true);
+      mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
       await wikiRoutes.adminOrganizations(req, res);
 

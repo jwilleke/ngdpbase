@@ -3,7 +3,7 @@
  *
  * `AgentTokenManager` refuses `admin-*` at mint (`FORBIDDEN_SCOPE_PREFIX`), so
  * no token can legitimately hold `admin-system`. The ceiling in
- * `UserManager.hasPermission` is what keeps a token from *inheriting* its
+ * the PDP (`UserManager.hasPermission` until #1431 step 14) is what keeps a token from *inheriting* its
  * owner's admin rights instead — and it could only run when the caller passed a
  * context, because the token rides on the context.
  *
@@ -19,19 +19,16 @@
  */
 vi.unmock('../UserManager');
 
-import UserManager from '../UserManager';
 import type { PermissionSubject } from '../UserManager';
+import { makeDecider } from './__fixtures__/decider';
 
-/** A UserManager whose policy engine allows everything — so only the ceiling can deny. */
+/** A decider whose policy allows everything — so only the ceiling can deny. */
 function makeManager() {
-  const m = new UserManager({
-    getManager: (name: string) =>
-      (name === 'PolicyEvaluator' ? { evaluateAccess: () => Promise.resolve({ allowed: true }) } : null)
-  });
-  (m as unknown as { provider: unknown }).provider = {
-    getUser: () => Promise.resolve({ username: 'jim', isActive: true, roles: ['admin'] })
-  };
-  return m;
+  return makeDecider({
+    evaluateAccess: () => Promise.resolve({ allowed: true }),
+    users: () => ({ username: 'jim', isActive: true }),
+    roles: () => ['admin']
+  }).pdp;
 }
 
 /** An admin who signed in normally — no token involved. */
@@ -51,24 +48,24 @@ describe('#1164 — a token cannot exceed its scopes', () => {
     // "browse and restore every deleted page on the instance" on exactly this
     // check, and a token scoped `page-read` passed it.
     const m = makeManager();
-    expect(await m.hasPermission(viaReadOnlyToken, 'admin-system')).toBe(false);
+    expect(await m.permits(viaReadOnlyToken, 'admin-system')).toBe(false);
   });
 
   test('the same admin without a token is allowed', async () => {
     // Proves the refusal above is the ceiling, not a broken policy engine.
     const m = makeManager();
-    expect(await m.hasPermission(human, 'admin-system')).toBe(true);
+    expect(await m.permits(human, 'admin-system')).toBe(true);
   });
 
   test('a token IS allowed what it holds', async () => {
     const m = makeManager();
-    expect(await m.hasPermission(viaReadOnlyToken, 'page-read')).toBe(true);
+    expect(await m.permits(viaReadOnlyToken, 'page-read')).toBe(true);
   });
 
   test('a token is refused a non-admin action outside its scopes', async () => {
     // The cap is about scopes, not about the word "admin".
     const m = makeManager();
-    expect(await m.hasPermission(viaReadOnlyToken, 'page-edit')).toBe(false);
+    expect(await m.permits(viaReadOnlyToken, 'page-edit')).toBe(false);
   });
 });
 
@@ -89,11 +86,11 @@ describe('#1164 — the ways the ceiling used to be dropped', () => {
       isAuthenticated: true
       // viaToken dropped — exactly the bug
     };
-    expect(await m.hasPermission(rebuilt, 'admin-system')).toBe(true);
+    expect(await m.permits(rebuilt, 'admin-system')).toBe(true);
 
     // Forwarding the original is refused. Same call, same permission; the only
     // difference is whether the token survived the journey.
-    expect(await m.hasPermission(viaReadOnlyToken, 'admin-system')).toBe(false);
+    expect(await m.permits(viaReadOnlyToken, 'admin-system')).toBe(false);
   });
 
   test('the username string form also loses the token, which is why routes may not use it', async () => {
@@ -102,6 +99,6 @@ describe('#1164 — the ways the ceiling used to be dropped', () => {
     // is barred from it by the narrowed IUserManager signature, so this can
     // no longer be reached by accident from a request handler.
     const m = makeManager();
-    expect(await m.hasPermission('jim', 'admin-system')).toBe(true);
+    expect(await m.permits('jim', 'admin-system')).toBe(true);
   });
 });

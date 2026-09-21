@@ -93,7 +93,8 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
   const holder: { pageManager?: PageManager } = {};
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'UserManager') return { hasPermission: vi.fn().mockResolvedValue(true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(true) };
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex };

@@ -84,8 +84,9 @@ function makeRoutes(canView: boolean, granted: string[]) {
             subject?.username === 'owner' ? ['SecretPlans', 'PublicNotes'] : ['PublicNotes'])
         };
       }
-      if (name === 'UserManager') {
-        return { hasPermission: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))) };
       }
       if (name === 'ConfigurationManager') {
         return { getProperty: vi.fn((_k: string, d: unknown) => d) };

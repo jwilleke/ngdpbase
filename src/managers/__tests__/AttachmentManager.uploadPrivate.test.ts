@@ -44,8 +44,9 @@ function makeManager(opts: {
   const pageOwner = opts.pageOwner ?? vi.fn().mockResolvedValue(null);
   const engine = {
     getManager: (name: string) => {
-      if (name === 'UserManager') {
-        return { hasPermission: () => Promise.resolve(opts.allow !== false) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: () => Promise.resolve(opts.allow !== false) };
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: vi.fn().mockResolvedValue('id'), flushAuditQueue: () => Promise.resolve() };

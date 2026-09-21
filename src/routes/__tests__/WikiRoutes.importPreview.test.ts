@@ -31,14 +31,14 @@ function makeEngine(previewResult: unknown) {
 }
 
 function installContextSpy(routes: WikiRoutes, permitted = true) {
-  const mockUserManager = { hasPermission: vi.fn().mockResolvedValue(permitted) };
+  const mockPolicyDecisionPoint = { permits: vi.fn().mockResolvedValue(permitted) };
   vi.spyOn(routes, 'createWikiContext').mockImplementation((req: { userContext?: unknown }, options = {}) =>
     createMockWikiContext(
       { userContext: req.userContext as never, ...options },
-      { engine: (routes as unknown as { engine: unknown }).engine, mockUserManager }
+      { engine: (routes as unknown as { engine: unknown }).engine, mockPolicyDecisionPoint }
     ) as never
   );
-  return mockUserManager;
+  return mockPolicyDecisionPoint;
 }
 
 function createRes() {

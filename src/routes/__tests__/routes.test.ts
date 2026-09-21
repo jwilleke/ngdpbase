@@ -19,7 +19,7 @@ vi.mock('../../utils/LocaleUtils', () => {
 // Note: mockUserContext is accessed by the mock factory function
 let mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
 
-const mockHolder = vi.hoisted(() => ({ userManager: null }));
+const mockHolder = vi.hoisted(() => ({ policyDecisionPoint: null }));
 
 vi.mock('../../context/WikiContext', () => {
   const MockWikiContext = vi.fn().mockImplementation(function (engine, options = {}) {
@@ -51,14 +51,15 @@ vi.mock('../../context/WikiContext', () => {
         const roles = ((options.userContext as { roles?: string[] } | null | undefined)?.roles) ?? mockUserContext?.roles ?? [];
         return names.some(n => roles.includes(n));
       }),
-      // The factory is hoisted above the describe-scoped `mockUserManager`, so
-      // a direct reference here threw ReferenceError and the catch returned
-      // true — the context's hasPermission has always said yes in this file
-      // (#1198). The holder is filled in beforeEach once the manager exists.
+      // The factory is hoisted above the describe-scoped mocks, so a direct
+      // reference here threw ReferenceError and the catch returned true — the
+      // context's hasPermission has always said yes in this file (#1198). The
+      // holder is filled in beforeEach once the manager exists.
+      // #1431 step 14: decisions are the PDP's.
       hasPermission: vi.fn(async (action: string) => {
-        const um = mockHolder.userManager;
-        if (!um) return true;
-        return await um.hasPermission(userContext?.username ?? '', action);
+        const pdp = mockHolder.policyDecisionPoint;
+        if (!pdp) return true;
+        return await pdp.permits(userContext, action);
       }),
       canAccess: vi.fn().mockResolvedValue(true),
       getPrincipals: vi.fn(() => {
@@ -84,7 +85,6 @@ vi.mock('../../context/WikiContext', () => {
 vi.mock('../../WikiEngine', () => {
   // Create mock managers once
   const mockUserManager = {
-    hasPermission: vi.fn().mockReturnValue(true),
     destroySession: vi.fn().mockResolvedValue(true),
     getUsers: vi.fn().mockResolvedValue([
       { 
@@ -131,9 +131,14 @@ vi.mock('../../WikiEngine', () => {
       lastLogin: new Date('2024-01-01'),
       preferences: {}
     }),
-    getUserPermissions: vi.fn().mockResolvedValue(['read', 'write']),
     createSession: vi.fn().mockResolvedValue('session-id-123'),
     isUserInRole: vi.fn().mockReturnValue(true)
+  };
+
+  // #1431 step 14: decisions are the PDP's.
+  const mockPolicyDecisionPoint = {
+    permits: vi.fn().mockReturnValue(true),
+    getUserPermissions: vi.fn().mockResolvedValue(['read', 'write'])
   };
 
   const mockPageManager = {
@@ -311,6 +316,7 @@ vi.mock('../../WikiEngine', () => {
       getManager: vi.fn((name) => {
         const mockManagers = {
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           PageManager: mockPageManager,
@@ -347,6 +353,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
   let wikiRoutes;
   let mockEngine;
   let mockUserManager;
+  let mockPolicyDecisionPoint;
   let mockPageManager;
   let mockPolicyInformationPoint;
   let mockNotificationManager;
@@ -446,7 +453,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
     // Get mock managers from the same engine instance
     mockUserManager = mockEngine.getManager('UserManager');
-    mockHolder.userManager = mockUserManager as never;
+    mockPolicyDecisionPoint = mockEngine.getManager('PolicyDecisionPoint');
+    mockHolder.policyDecisionPoint = mockPolicyDecisionPoint as never;
     mockPageManager = mockEngine.getManager('PageManager');
     mockPolicyInformationPoint = mockEngine.getManager('PolicyInformationPoint');
     mockNotificationManager = mockEngine.getManager('NotificationManager');
@@ -478,8 +486,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       isAuthenticated: true,
       roles: ['authenticated']
     });
-    mockUserManager.hasPermission.mockReturnValue(true);
-    mockUserManager.getUserPermissions.mockResolvedValue(['read', 'write']);
+    mockPolicyDecisionPoint.permits.mockReturnValue(true);
+    mockPolicyDecisionPoint.getUserPermissions.mockResolvedValue(['read', 'write']);
     mockUserManager.getUser.mockResolvedValue({
       username: 'testuser',
       email: 'test@example.com',
@@ -593,7 +601,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           isAuthenticated: true,
           roles: ['authenticated']
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage' }
@@ -615,7 +623,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     describe('POST /save/:page', () => {
       test('should save page successfully', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
         mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
         // Mock existing page for the save operation
@@ -639,7 +647,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         // Without it an owner's sealed page looked new on every save, and the
         // slug check refused the second save.
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',
@@ -667,7 +675,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('should return 409 when rename target title is already in use (#280)', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Old Title',
           metadata: { title: 'OldTitle', 'system-category': 'general', uuid: 'uuid-old' }
@@ -691,7 +699,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('should return 409 when UUID is already assigned to another page (#280)', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: '# Page A',
           metadata: { title: 'PageA', 'system-category': 'general', uuid: 'shared-uuid' }
@@ -716,7 +724,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       describe('when the editor asks for JSON (#1369)', () => {
         test('a save answers { ok, redirect } instead of a 302', async () => {
           mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-          mockUserManager.hasPermission.mockReturnValue(true);
+          mockPolicyDecisionPoint.permits.mockReturnValue(true);
           mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
           mockPageManager.getPage.mockResolvedValue({
             content: '# Test Page',
@@ -734,7 +742,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
         test('a failed save answers { ok: false, error } with its status, not an error page', async () => {
           mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-          mockUserManager.hasPermission.mockReturnValue(true);
+          mockPolicyDecisionPoint.permits.mockReturnValue(true);
           mockPageManager.getPage.mockResolvedValue({
             content: '# Old Title',
             metadata: { title: 'OldTitle', 'system-category': 'general', uuid: 'uuid-old' }
@@ -764,7 +772,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('an admin marks a page: system keyword added, saved through PageManager', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: 'body', metadata: { title: 'NGDPBASE-test-X', uuid: 'u1', 'system-keywords': ['general'] }
         });
@@ -780,7 +788,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('a page already marked is left alone', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue({
           content: 'body', metadata: { title: 'NGDPBASE-test-Y', 'system-keywords': ['test-artifact'] }
         });
@@ -795,7 +803,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('a non-admin is refused before the page is even looked up', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(false);
+        mockPolicyDecisionPoint.permits.mockReturnValue(false);
         mockPageManager.getPage.mockClear();
 
         const res = await post('Some Page');
@@ -806,7 +814,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('a missing page is a 404', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext('admin', ['admin', 'Authenticated', 'All']));
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPage.mockResolvedValue(null);
 
         expect((await post('No Such Page')).status).toBe(404);
@@ -816,7 +824,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     describe('GET /create', () => {
       test('should return 200 for authenticated user', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const response = await request(app).get('/create');
         expect(response.status).toBe(200);
@@ -826,7 +834,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     describe('POST /create', () => {
       test('should create page successfully', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
         // Make sure the new page doesn't exist
         mockPageManager.getPage.mockImplementation((pageName) => {
@@ -852,7 +860,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
       test('should return 409 when page with same name already exists (#280)', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         // getPage returns an existing page for the requested name
         mockPageManager.getPage.mockImplementation((pageName) => {
           if (pageName === 'Markdown Cheat Sheet') {
@@ -915,8 +923,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage', 'system-category': 'system' }
         });
-        // User does NOT have admin-system permission - hasPermission(username, permission)
-        mockUserManager.hasPermission.mockImplementation((username, perm) => {
+        // User does NOT have admin-system permission - permits(subject, action)
+        mockPolicyDecisionPoint.permits.mockImplementation((_subject, perm) => {
           if (perm === 'admin-system') return false;
           return true;
         });
@@ -1081,7 +1089,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         isAdmin: true,
         roles: ['admin']
       });
-      mockUserManager.hasPermission.mockReturnValue(true);
+      mockPolicyDecisionPoint.permits.mockReturnValue(true);
     });
 
     describe('GET /admin', () => {
@@ -1097,7 +1105,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           isAdmin: true,
           roles: ['admin']
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.getPageNames.mockResolvedValue(['Welcome']);
         mockPageManager.isRequiredPage.mockResolvedValue(true);
 
@@ -1109,7 +1117,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         // #1198: the dashboard asks admin-read of policy, like every other
         // admin surface. It used to ask `view` on a fake page, which global
         // policy granted to anyone, behind an isAuthenticated pre-check.
-        mockUserManager.hasPermission.mockReturnValue(false);
+        mockPolicyDecisionPoint.permits.mockReturnValue(false);
 
         const response = await request(app).get('/admin');
         expect(response.status).toBe(403);
@@ -1134,7 +1142,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           email: 'admin@example.com',
           roles: ['admin']
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockUserManager.getUsers.mockReturnValue([]);
 
         const response = await request(app).get('/admin/users');
@@ -1150,7 +1158,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           email: 'admin@example.com',
           roles: ['admin']
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockUserManager.createUser.mockResolvedValue(true);
 
         const response = await request(app)
@@ -1173,7 +1181,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockUserManager.updateUser.mockResolvedValue(true);
 
         const response = await request(app)
@@ -1194,7 +1202,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockUserManager.deleteUser.mockResolvedValue(true);
 
         const response = await request(app)
@@ -1247,7 +1255,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           isAdmin: true,
           roles: ['admin']
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const response = await request(app).get('/admin/notifications');
         expect(response.status).toBe(200);
@@ -1261,7 +1269,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const mockNotificationManager = mockEngine.getManager('NotificationManager');
         mockNotificationManager.dismissNotification.mockResolvedValue(true);
@@ -1281,7 +1289,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const response = await request(app)
           .post('/admin/notifications/clear-all')
@@ -1298,7 +1306,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const mockSchemaManager = mockEngine.getManager('SchemaManager');
         mockSchemaManager.getPerson.mockResolvedValue({
@@ -1316,7 +1324,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         const mockSchemaManager = mockEngine.getManager('SchemaManager');
         mockSchemaManager.getPerson.mockResolvedValue(null);
@@ -1333,7 +1341,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           displayName: 'Admin User',
           email: 'admin@example.com'
         });
-        mockUserManager.hasPermission.mockReturnValue(true);
+        mockPolicyDecisionPoint.permits.mockReturnValue(true);
 
         // #624: org records resolve through OrganizationManager.list() now;
         // the route's findOrganizationByName helper iterates list and matches
@@ -1392,7 +1400,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     test('should redirect unauthenticated users to login for protected routes', async () => {
       // Set mockUserContext to unauthenticated state - the middleware reads this on each request
       mockUserContext = ANONYMOUS_SUBJECT; // #1399: an anonymous caller is a real principal
-      mockUserManager.hasPermission.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false); // ...refused by POLICY, not by a missing user
 
       const response = await request(app).get('/profile');
       expect(response.status).toBe(302); // Should redirect to login

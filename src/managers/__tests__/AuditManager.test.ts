@@ -40,10 +40,11 @@ function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
     getBlockingConditions: () => [...blocking],
     getManager: vi.fn((name: string) => {
       if (name === 'ConfigurationManager') return cm;
-      // #1116: audit queries verify their caller against UserManager. The
-      // default harness grants 'root' admin-system so pre-gate tests keep
+      // #1116: audit queries verify their caller against the decision point.
+      // The default harness grants 'root' admin-system so pre-gate tests keep
       // exercising the delegation they were written for.
-      if (name === 'UserManager') {
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
         return {
           userHoldsPermission: vi.fn(async (username: string, permission: string) =>
             username === 'root' && permission === 'admin-system')
@@ -90,7 +91,7 @@ describe('AuditManager', () => {
   describe('initialize()', () => {
     test('#1197: drains the boot ledger once the sink is up — nothing recorded before it waits forever', async () => {
       resetBootActions();
-      const noSink = { getManager: (n: string) => (n === 'UserManager' ? { systemPrincipalName: () => 'svc' } : null) };
+      const noSink = { getManager: (n: string) => (n === 'PolicyInformationPoint' ? { systemPrincipalName: () => 'svc' } : null) };
       await recordSystemAction(noSink, systemContext(noSink, 'seed'), {
         eventType: 'page-create', action: 'create', resource: 'Welcome', resourceType: 'page', result: 'success', severity: 'low', metadata: {}
       });
@@ -479,14 +480,15 @@ describe('#1144 the on-failure key stands alone', () => {
 describe('#1116 audit queries refuse without an admin-system caller', () => {
   function makeEngineWithUsers(grants: Record<string, boolean>, configOverrides: Record<string, unknown> = {}) {
     const cm = makeConfigManager(configOverrides);
-    const um = {
+    // #1431 step 14: decisions are the PDP's.
+    const pdp = {
       userHoldsPermission: vi.fn(async (username: string, permission: string) =>
         permission === 'admin-system' && grants[username] === true)
     };
     return {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return cm;
-        if (name === 'UserManager') return um;
+        if (name === 'PolicyDecisionPoint') return pdp;
         return null;
       })
     } as unknown as WikiEngine;
@@ -522,7 +524,7 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
     await expect(am.searchAuditLogs({}, {}, { username: null })).rejects.toThrow(/admin-system/);
   });
 
-  test('no UserManager to verify against: fail closed', async () => {
+  test('no PolicyDecisionPoint to verify against: fail closed', async () => {
     const bareEngine = {
       getManager: vi.fn((name: string) =>
         name === 'ConfigurationManager' ? makeConfigManager() : null)

@@ -194,6 +194,14 @@ class WikiEngine extends Engine {
     this.registerManager('RoleManager', roleManager);
     await roleManager.initialize();
 
+    // #1431: the Policy Decision Point. One component answers "may this subject
+    // do this", with the delegation ceilings running once, inside it. Like the
+    // PIP it starts before UserManager (step 14): a permission asked during any
+    // later manager's start-up has the decider there, and it reads
+    // PolicyEvaluator and the PIP at the moment of each decision.
+    const policyDecisionPoint = new PolicyDecisionPoint(this);
+    this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
+
     // #1431 step 13: the PIP builds subjects — the system principal among them —
     // and UserManager's own start-up needs that (the default admin is created
     // under the system principal, and its name is reserved). It reads every
@@ -254,10 +262,6 @@ class WikiEngine extends Engine {
     const policyEvaluator = new PolicyEvaluator(this);
     this.registerManager('PolicyEvaluator', policyEvaluator);
 
-    // #1431: the Policy Decision Point. One component answers "may this subject
-    // do this", with the delegation ceilings running once, inside it.
-    const policyDecisionPoint = new PolicyDecisionPoint(this);
-    this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
     await policyEvaluator.initialize();
 
 

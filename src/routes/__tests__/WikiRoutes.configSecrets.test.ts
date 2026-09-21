@@ -71,8 +71,9 @@ function makeRoutes(opts: { canReveal?: boolean; secretKeys?: unknown } = {}) {
           getAllProperties: () => ({ ...CONFIG })
         };
       }
-      if (name === 'UserManager') {
-        return { hasPermission: vi.fn().mockResolvedValue(opts.canReveal ?? true) };
+      // #1431 step 14: decisions are the PDP's.
+      if (name === 'PolicyDecisionPoint') {
+        return { permits: vi.fn().mockResolvedValue(opts.canReveal ?? true) };
       }
       return null;
     })

@@ -234,25 +234,26 @@ describe('WikiContext', () => {
   // getPrincipals covers audience matching such as [{If role='…'}].
 
   describe('hasPermission', () => {
-    test('delegates to UserManager.hasPermission passing the resolved userContext (#637 fast path)', async () => {
-      const userManagerMock = {
-        hasPermission: vi.fn().mockResolvedValue(true)
+    test('delegates to PolicyDecisionPoint.permits passing the resolved userContext (#637 fast path)', async () => {
+      // #1431 step 14: decisions are the PDP's.
+      const pdpMock = {
+        permits: vi.fn().mockResolvedValue(true)
       };
-      const engineWithUser = {
+      const engineWithPdp = {
         getManager: vi.fn((name) => {
-          if (name === 'UserManager') return userManagerMock;
+          if (name === 'PolicyDecisionPoint') return pdpMock;
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithUser, {
+      const ctx = new WikiContext(engineWithPdp, {
         userContext: { username: 'alice', roles: ['editor'] }
       });
 
       const result = await ctx.hasPermission('admin-system');
 
-      // #637: pass-through userContext lets UserManager skip provider.getUser
+      // #637: pass-through userContext lets the PDP skip provider.getUser
       // + resolveUserRoles for callers that already have a resolved context.
-      expect(userManagerMock.hasPermission).toHaveBeenCalledWith(
+      expect(pdpMock.permits).toHaveBeenCalledWith(
         expect.objectContaining({ username: 'alice', roles: ['editor'] }),
         'admin-system'
       );
@@ -260,42 +261,42 @@ describe('WikiContext', () => {
     });
 
     test('forwards the anonymous principal it was given (#1173, #1399)', async () => {
-      const userManagerMock = {
-        hasPermission: vi.fn().mockResolvedValue(false)
+      const pdpMock = {
+        permits: vi.fn().mockResolvedValue(false)
       };
-      const engineWithUser = {
+      const engineWithPdp = {
         getManager: vi.fn((name) => {
-          if (name === 'UserManager') return userManagerMock;
+          if (name === 'PolicyDecisionPoint') return pdpMock;
           return mockEngine.getManager(name);
         })
       };
-      const ctx = new WikiContext(engineWithUser, { userContext: ANONYMOUS_SUBJECT });
+      const ctx = new WikiContext(engineWithPdp, { userContext: ANONYMOUS_SUBJECT });
 
       const result = await ctx.hasPermission('admin-system');
 
       // #1173: a named anonymous subject, not the username form — that form is
       // gone because it could not carry an agent token for the ceiling to read.
-      expect(userManagerMock.hasPermission).toHaveBeenCalledWith(
+      expect(pdpMock.permits).toHaveBeenCalledWith(
         expect.objectContaining({ username: 'Anonymous', isAuthenticated: false }),
         'admin-system'
       );
       expect(result).toBe(false);
     });
 
-    test('returns false when UserManager is not available', async () => {
+    test('returns false when the PolicyDecisionPoint is not available', async () => {
       const ctx = new WikiContext(mockEngine, {
         userContext: { username: 'alice', roles: ['admin'] }
       });
-      // mockEngine returns null for UserManager
+      // mockEngine returns null for PolicyDecisionPoint
       const result = await ctx.hasPermission('admin-system');
       expect(result).toBe(false);
     });
 
-    test('memoizes the result per action — repeat calls share one userManager invocation (#636)', async () => {
-      const userManagerMock = { hasPermission: vi.fn().mockResolvedValue(true) };
+    test('memoizes the result per action — repeat calls share one PDP invocation (#636)', async () => {
+      const pdpMock = { permits: vi.fn().mockResolvedValue(true) };
       const engine = {
         getManager: vi.fn((name) => {
-          if (name === 'UserManager') return userManagerMock;
+          if (name === 'PolicyDecisionPoint') return pdpMock;
           return mockEngine.getManager(name);
         })
       };
@@ -310,15 +311,15 @@ describe('WikiContext', () => {
       expect(r1).toBe(true);
       expect(r2).toBe(true);
       expect(r3).toBe(true);
-      // Three calls but only ONE userManager invocation thanks to memoization
-      expect(userManagerMock.hasPermission).toHaveBeenCalledTimes(1);
+      // Three calls but only ONE PDP invocation thanks to memoization
+      expect(pdpMock.permits).toHaveBeenCalledTimes(1);
     });
 
-    test('different actions cache independently — distinct userManager calls per action (#636)', async () => {
-      const userManagerMock = { hasPermission: vi.fn().mockResolvedValue(true) };
+    test('different actions cache independently — distinct PDP calls per action (#636)', async () => {
+      const pdpMock = { permits: vi.fn().mockResolvedValue(true) };
       const engine = {
         getManager: vi.fn((name) => {
-          if (name === 'UserManager') return userManagerMock;
+          if (name === 'PolicyDecisionPoint') return pdpMock;
           return mockEngine.getManager(name);
         })
       };
@@ -331,17 +332,17 @@ describe('WikiContext', () => {
       await ctx.hasPermission('admin-system'); // cached
       await ctx.hasPermission('user-edit');    // cached
 
-      expect(userManagerMock.hasPermission).toHaveBeenCalledTimes(2);
+      expect(pdpMock.permits).toHaveBeenCalledTimes(2);
     });
 
     test('concurrent calls share one in-flight Promise (#636 — Promise-level memoization)', async () => {
       let resolveFn: (v: boolean) => void = () => { /* set below */ };
-      const userManagerMock = {
-        hasPermission: vi.fn(() => new Promise<boolean>((resolve) => { resolveFn = resolve; }))
+      const pdpMock = {
+        permits: vi.fn(() => new Promise<boolean>((resolve) => { resolveFn = resolve; }))
       };
       const engine = {
         getManager: vi.fn((name) => {
-          if (name === 'UserManager') return userManagerMock;
+          if (name === 'PolicyDecisionPoint') return pdpMock;
           return mockEngine.getManager(name);
         })
       };
@@ -352,13 +353,13 @@ describe('WikiContext', () => {
       const p1 = ctx.hasPermission('admin-system');
       const p2 = ctx.hasPermission('admin-system');
       // Both calls dispatched before the first promise resolves
-      expect(userManagerMock.hasPermission).toHaveBeenCalledTimes(1);
+      expect(pdpMock.permits).toHaveBeenCalledTimes(1);
 
       resolveFn(true);
       const [r1, r2] = await Promise.all([p1, p2]);
       expect(r1).toBe(true);
       expect(r2).toBe(true);
-      expect(userManagerMock.hasPermission).toHaveBeenCalledTimes(1);
+      expect(pdpMock.permits).toHaveBeenCalledTimes(1);
     });
   });
 

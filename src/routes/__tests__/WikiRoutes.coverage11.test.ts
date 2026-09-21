@@ -32,7 +32,7 @@ vi.mock('../../context/WikiContext', async () => {
     return createMockWikiContext(options, {
       engine,
       fallbackUserContext: mockUserContext,
-      mockUserManager,
+      mockPolicyDecisionPoint,
       renderMarkdownReturn: '<p>ok</p>',
       toParseOptionsReturn: {}
     });
@@ -89,10 +89,8 @@ const mockCacheManager = {
 };
 
 const mockUserManager = {
-  hasPermission: vi.fn(),
   getUser: vi.fn(),
   getUsers: vi.fn(),
-  getUserPermissions: vi.fn(),
   searchUsers: vi.fn(),
   createSession: vi.fn(),
   authenticateUser: vi.fn(),
@@ -101,6 +99,12 @@ const mockUserManager = {
   getSession: vi.fn(),
   createUser: vi.fn(),
   deleteUser: vi.fn()
+};
+
+// #1431 step 14: decisions are the PDP's.
+const mockPolicyDecisionPoint = {
+  permits: vi.fn(),
+  getUserPermissions: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -209,6 +213,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
           NotificationManager: mockNotificationManager,
@@ -286,12 +291,12 @@ function resetMocks() {
   mockSearchManager.getPageSystemKeywords.mockResolvedValue([]);
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
-  mockUserManager.hasPermission.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
+  mockPolicyDecisionPoint.permits.mockImplementation(policyShaped);   // #1198: anonymous holds only the read trio
   mockUserManager.getUser.mockResolvedValue({
     username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {}
   });
   mockUserManager.getUsers.mockResolvedValue([{ username: 'testuser' }]);
-  mockUserManager.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
   mockUserManager.updateUser.mockResolvedValue(true);
@@ -387,7 +392,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/users (adminUsers)', () => {
     test('returns 403 when user lacks user-read permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/users');
       expect(res.status).toBe(403);
     });
@@ -400,7 +405,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/users/:username/edit (userEdit)', () => {
     test('returns 403 when user lacks user-read permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/users/testuser/edit');
       expect(res.status).toBe(403);
     });
@@ -419,7 +424,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('POST /admin/users (adminCreateUser)', () => {
     test('returns 403 when user lacks user-create permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/users')
         .set('x-csrf-token', 'test-csrf-token')
@@ -449,7 +454,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('PUT /admin/users/:username (adminUpdateUser)', () => {
     test('returns 403 when user lacks user-edit permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .put('/admin/users/testuser')
         .set('x-csrf-token', 'test-csrf-token')
@@ -469,7 +474,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('DELETE /admin/users/:username (adminDeleteUser)', () => {
     test('returns 403 when user lacks user-delete permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .delete('/admin/users/testuser')
         .set('x-csrf-token', 'test-csrf-token');
@@ -489,7 +494,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/roles (adminRoles)', () => {
     test('returns 403 when user lacks admin-roles permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/roles');
       expect(res.status).toBe(403);
     });
@@ -504,7 +509,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/configuration (adminConfiguration)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/configuration');
       expect(res.status).toBe(403);
     });
@@ -517,7 +522,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('POST /admin/configuration (adminUpdateConfiguration)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/configuration')
         .set('x-csrf-token', 'test-csrf-token')
@@ -638,7 +643,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('POST /admin/configuration/reset (adminResetConfiguration)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/configuration/reset')
         .set('x-csrf-token', 'test-csrf-token');
@@ -658,7 +663,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/settings (adminSettings)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/settings');
       expect(res.status).toBe(403);
     });
@@ -673,7 +678,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/variables (adminVariables)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/variables');
       expect(res.status).toBe(403);
     });
@@ -688,7 +693,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/logs (adminLogs)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/logs');
       expect(res.status).toBe(403);
     });
@@ -704,7 +709,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('GET /admin/interwiki (adminInterwiki)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app).get('/admin/interwiki');
       expect(res.status).toBe(403);
     });
@@ -719,7 +724,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('POST /admin/restart (adminRestart)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/restart')
         .set('x-csrf-token', 'test-csrf-token');
@@ -737,7 +742,7 @@ describe('WikiRoutes — coverage batch 11', () => {
 
   describe('POST /admin/reindex (adminReindex)', () => {
     test('returns 403 when user lacks admin-system permission', async () => {
-      mockUserManager.hasPermission.mockResolvedValue(false);
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
         .post('/admin/reindex')
         .set('x-csrf-token', 'test-csrf-token');

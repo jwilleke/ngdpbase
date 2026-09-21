@@ -28,13 +28,16 @@ function makeEngine(opts: {
     }
   };
   const users = {
-    getUsers: async () => (opts.users ?? ['root', 'jim', 'bob']).map((username) => ({ username })),
+    getUsers: async () => (opts.users ?? ['root', 'jim', 'bob']).map((username) => ({ username }))
+  };
+  // #1431 step 14: decisions are the PDP's.
+  const pdp = {
     userHoldsPermission: async (u: string, a: string) =>
       a === 'admin-system' && (opts.holders ?? ['root']).includes(u)
   };
+  const managers: Record<string, unknown> = { NotificationManager: notifications, UserManager: users, PolicyDecisionPoint: pdp };
   const engine = {
-    getManager: (name: string) =>
-      name === 'NotificationManager' ? notifications : name === 'UserManager' ? users : null
+    getManager: (name: string) => managers[name] ?? null
   };
   return { engine, created };
 }
