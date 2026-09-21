@@ -15,6 +15,7 @@
  * tier for tier.
  */
 import ACLManager from '../ACLManager';
+import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
 import type { ShareGrant } from '../../types/Share';
 
 type Meta = Record<string, unknown>;
@@ -61,11 +62,17 @@ function makeEngine() {
         return {
           getPageMetadata: async (name: string) => PAGES[name] ?? null,
           // The real one reads the index creator; mirror it from the fixture.
-          checkPrivatePageAccess: async (ctx: { userContext?: { username?: string }; hasRole?: (r: string) => boolean }, name: string) => {
+          // Mirrors PageManager.checkPrivatePageAccess by CALLING the rule it
+          // ends in, rather than restating it. This mock used to grant any
+          // admin, and asserted below that admins list other people's private
+          // pages — a bypass the real code does not have, and for an encrypted
+          // store cannot have: the store key is wrapped only by the owner's
+          // password and recovery words, so an admin holds nothing that opens
+          // it. A mock that restates a security rule is where the rule drifts.
+          checkPrivatePageAccess: async (ctx: { userContext?: unknown }, name: string) => {
             const md = PAGES[name]; if (!md || md.private !== true) return null;
-            const username = ctx.userContext?.username; if (!username) return false;
-            if (ctx.hasRole?.('admin')) return true;
-            return username === CREATORS[String(md.uuid)];
+            if (!ctx.userContext) return false;
+            return mayActInPrivateContainer(ctx.userContext, CREATORS[String(md.uuid)]);
           }
         };
       }
@@ -138,8 +145,11 @@ describe('filterAccessiblePages agrees with canUserAccessPage (#1219)', () => {
     expect(await acl.filterAccessiblePages(alice as never, 'view', candidates())).toEqual(['Public', 'EditorsOnly', 'Diary', 'Locked', 'Trip', 'SecretTrip']);
     // An audience or access list is a resource attribute and beats global
     // policy for everyone — an admin is not in `['editor']` either. The
-    // private bypass IS the admin's: Diary and SecretTrip are listed.
-    expect(await acl.filterAccessiblePages(admin as never, 'view', candidates())).toEqual(['Public', 'Diary', 'AdminPolicy', 'Locked', 'Trip', 'SecretTrip']);
+    // An admin does NOT see other people's private pages. Not by policy only:
+    // a sealed page's key is wrapped by its owner's password and recovery
+    // words and nothing else, so there is no key an admin could hold. Diary
+    // and SecretTrip are alice's, and are absent.
+    expect(await acl.filterAccessiblePages(admin as never, 'view', candidates())).toEqual(['Public', 'AdminPolicy', 'Locked', 'Trip']);
     expect(await acl.filterAccessiblePages(viaShare as never, 'view', candidates())).toEqual(['Trip']);
   });
 

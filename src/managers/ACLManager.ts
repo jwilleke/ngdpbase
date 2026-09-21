@@ -597,20 +597,17 @@ class ACLManager extends BaseManager {
     // context); the evaluator only reads pageName / userContext /
     // pageMetadata / context fields.
     //
-    // #1219: `hasRole` is carried. Tier 0 asks `wikiContext.hasRole('admin')`
-    // for the private-page bypass, and this shape never had it, so an admin
-    // was refused a private page through every cross-page check — the
-    // attachment owning-page check, linked media, `canAccess(action, other)` —
-    // while the same-page path allowed it. The two doors disagreed; a filter
-    // that has to agree with both made it visible.
-    const ctxRoles = userContext?.roles ?? [];
+    // No `hasRole` is carried. #1219 added one because Tier 0 once gave admins
+    // a private-page bypass; it no longer does — `checkPrivatePageAccess` ends
+    // in `mayActInPrivateContainer`, owner or delegate, never a role — and for
+    // an encrypted store there is no key an admin could hold anyway. Carrying
+    // a role lookup into Tier 0 only invited one to be used there again.
     const minimalCtx = {
       pageName,
       userContext: userContext ?? null,
       pageMetadata,
       content: null,
-      context: 'cross-page-check',
-      hasRole: (...names: string[]) => names.some((n) => ctxRoles.includes(n))
+      context: 'cross-page-check'
     };
     return this.checkPagePermissionWithContext(
       minimalCtx as unknown as WikiContext,
@@ -647,7 +644,6 @@ class ACLManager extends BaseManager {
     candidates: ReadonlyArray<{ title: string; metadata: PageFrontmatter | null | undefined }>
   ): Promise<string[]> {
     const policyAction = permissionForPageAction(action);
-    const roles = userContext?.roles ?? [];
     const username = userContext?.username ?? '';
     // #1431 step 7b: the author-lock override is `admin-system`, asked once
     // for the subject — it does not vary by page — and only for `edit`, the
@@ -669,8 +665,8 @@ class ACLManager extends BaseManager {
     const pageManager = this.engine.getManager<{
       checkPrivatePageAccess?: (ctx: WikiContext, name: string) => Promise<boolean | null>;
         }>('PageManager');
-    // Tier 0 reads `hasRole('admin')` off the context, as the decider's does.
-    const privateCtx = { userContext: userContext ?? null, hasRole: (r: string) => roles.includes(r) } as unknown as WikiContext;
+    // Tier 0 reads only the subject: owner or delegate, never a role.
+    const privateCtx = { userContext: userContext ?? null } as unknown as WikiContext;
     const decidePolicy = this.policyEvaluator?.compile(userContext ?? undefined, policyAction);
 
     const out: string[] = [];
