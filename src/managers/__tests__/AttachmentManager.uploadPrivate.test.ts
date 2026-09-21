@@ -61,7 +61,7 @@ function makeManager(opts: {
       if (name === 'PageManager') {
         return { getPrivatePageOwner: pageOwner };
       }
-      if (name === 'ACLManager') {
+      if (name === 'PolicyInformationPoint') {
         // ACL Tier 0 on the real container rule, for the page the harness names.
         return {
           canUserAccessPage: vi.fn(async (subject: ActorContext, pageName: string) => {

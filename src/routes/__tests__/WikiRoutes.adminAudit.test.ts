@@ -3,12 +3,12 @@
  *
  * Four handlers and views/admin-audit.ejs existed with no route registration
  * anywhere, so `/admin/audit` was a 404. They also called
- * `ACLManager.getAccessControlStats()` and `getAccessLog()`, which do not
+ * `PolicyInformationPoint.getAccessControlStats()` and `getAccessLog()`, which do not
  * exist: a local interface in WikiRoutes declared them so `tsc` passed, and a
  * test mock supplied them so the suite passed. Registering them as written
  * would have shipped 500s.
  *
- * ACLManager holding its own access log was a second door to "what happened".
+ * PolicyInformationPoint holding its own access log was a second door to "what happened".
  * AuditManager is the first, and two managers owning one resource means
  * neither is a chokepoint — so these read AuditManager.
  */

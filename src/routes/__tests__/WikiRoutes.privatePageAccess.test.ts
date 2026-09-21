@@ -12,7 +12,7 @@
  * - Owner → 200 (attachment served)
  * - Admin user → 403 (no role reaches a private container)
  * - Public attachment (isPrivate not set) → 200 without access check
- * - The decision is the file owner's, through ACLManager (recorded)
+ * - The decision is the file owner's, through PolicyInformationPoint (recorded)
  */
 
 import WikiRoutes from '../WikiRoutes';
@@ -85,10 +85,10 @@ function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {})
 
 /** Engine stub */
 /**
- * ACLManager stub used by `wikiContext.canAccess('view', pageName)`. #714
+ * PolicyInformationPoint stub used by `wikiContext.canAccess('view', pageName)`. #714
  * Slice C migrated `serveAttachment` from the legacy
  * `WikiRoutes.checkPrivatePageAccess` helper to the cross-page facade,
- * which routes through `ACLManager.canUserAccessPage(userContext, pageName, action)`.
+ * which routes through `PolicyInformationPoint.canUserAccessPage(userContext, pageName, action)`.
  *
  * The stub re-implements the private-attachment access rule in terms of
  * the new contract so the route-level tests can drive the same scenarios:
@@ -98,10 +98,10 @@ function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {})
  *   - else → deny
  * For a non-private page (location !== 'private'), allow.
  */
-function makeACLManagerStub() {
+function makePolicyInformationPointStub() {
   return {
     // The private-container decision for a file, on the real rule (#1382) —
-    // the stub only stands in for ACLManager's recording of a refusal.
+    // the stub only stands in for PolicyInformationPoint's recording of a refusal.
     canAccessPrivateContainer: vi.fn((userContext, owner, _resource, _action) =>
       Boolean(userContext && owner) && mayActInPrivateContainer(userContext, owner)),
     canUserAccessPage: vi.fn().mockResolvedValue(true),
@@ -109,12 +109,12 @@ function makeACLManagerStub() {
   };
 }
 
-function makeEngine(pageManager, attachmentManager, aclManager = makeACLManagerStub()) {
+function makeEngine(pageManager, attachmentManager, policyInformationPoint = makePolicyInformationPointStub()) {
   return {
     getManager: vi.fn((name) => {
       if (name === 'PageManager')       return pageManager;
       if (name === 'AttachmentManager') return attachmentManager;
-      if (name === 'ACLManager')        return aclManager;
+      if (name === 'PolicyInformationPoint')        return policyInformationPoint;
       // #1059: serveAttachment now gates on asset-read via
       // WikiContext.hasPermission → UserManager. Grant it — these tests
       // exercise the private-page ACL layer, not the capability gate.
@@ -242,15 +242,15 @@ describe('WikiRoutes — public attachment access (#122)', () => {
 // ---------------------------------------------------------------------------
 
 describe('WikiRoutes — private attachment — the file owner decides (#1382)', () => {
-  test('the decision is the file owner\'s, through ACLManager — not view access to a linked page', async () => {
+  test('the decision is the file owner\'s, through PolicyInformationPoint — not view access to a linked page', async () => {
     const attachmentManager = makeAttachmentManager({ isPrivate: false });
     // Linked from a public page that anyone may view; the file itself is carol's.
     attachmentManager.getAttachmentMetadata.mockResolvedValue({
       isPrivate: true, creator: 'carol', mentions: [{ name: 'PublicPage' }]
     });
     const pageManager = makePageManager(PAGE_UUID, 'pages');
-    const aclManager = makeACLManagerStub();
-    const wikiRoutes = new WikiRoutes(makeEngine(pageManager, attachmentManager, aclManager));
+    const policyInformationPoint = makePolicyInformationPointStub();
+    const wikiRoutes = new WikiRoutes(makeEngine(pageManager, attachmentManager, policyInformationPoint));
 
     const res = createRes();
     await wikiRoutes.serveAttachment(
@@ -259,8 +259,8 @@ describe('WikiRoutes — private attachment — the file owner decides (#1382)',
     );
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(aclManager.canUserAccessPage).not.toHaveBeenCalled();
-    const [, owner, resource, action] = aclManager.canAccessPrivateContainer.mock.calls[0];
+    expect(policyInformationPoint.canUserAccessPage).not.toHaveBeenCalled();
+    const [, owner, resource, action] = policyInformationPoint.canAccessPrivateContainer.mock.calls[0];
     expect(owner).toBe('carol');
     expect(resource).toBe('attachment:att-002');
     expect(action).toBe('view');

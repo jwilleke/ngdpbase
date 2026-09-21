@@ -1,6 +1,6 @@
-import BaseManager from './BaseManager.js';
-import { permissionForPageAction } from '../security/pageActions.js';
-import PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import BaseManager from '../managers/BaseManager.js';
+import { permissionForPageAction } from './pageActions.js';
+import PolicyDecisionPoint from './PolicyDecisionPoint.js';
 import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
@@ -9,11 +9,11 @@ import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
-import type ConfigurationManager from './ConfigurationManager.js';
-import type { AgentTokenGrant } from './UserManager.js';
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import type { AgentTokenGrant } from '../managers/UserManager.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
-import { ANONYMOUS_SUBJECT } from './UserManager.js';
-import type PolicyEvaluator from './PolicyEvaluator.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
+import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
@@ -71,39 +71,57 @@ interface AccessDecisionLog {
 }
 
 /**
- * ACLManager - Handles Access Control Lists and context-aware permissions
+ * PolicyInformationPoint — what a page decision needs to know about the page
+ * (#1431; was ACLManager until step 8).
  *
- * Implements JSPWiki-style access control with extensions for context-aware
- * permissions (time-based, location-based, etc.). Supports both page-level
- * ACLs embedded in page content and global policy-based access control.
+ * In the model the access subject follows (docs/managers/Manager-SOT.md):
  *
- * Key features:
- * - JSPWiki-style ACL markup parsing ([{ALLOW view Admin}])
- * - Context-aware permission evaluation
- * - Global policy-based access control
- * - Audit logging of access decisions
- * - Role-based permission checking
- * - Category-based access control
+ * - the __PEPs__ are the doors — routes, manager doors, the availability gate;
+ * - the __PDP__ (`PolicyDecisionPoint`) answers "may this subject do this", with
+ *   the delegation ceilings, over the policies;
+ * - __this__ supplies the page's own attributes and walks the page's own rules
+ *   in order, asking the PDP where global policy decides;
+ * - the __PAP__ is ConfigurationManager plus the admin screens.
  *
- * @class ACLManager
+ * What it holds, all of it about a PAGE (or a private container, or media
+ * linked to one):
+ *
+ * - `walkPageTiers` — the one implementation of the page's rules: private
+ *   (owner or delegate, never a role), author-lock (`edit` only; the override
+ *   is the `admin-system` permission), frontmatter `audience` / `access`, then
+ *   the share or global policy. Shared by every entry point below (#1431 7c).
+ * - `checkPagePermissionWithContext` / `evaluatePagePermission` — one page, for
+ *   a request that already holds it; the latter returns the reason.
+ * - `canUserAccessPage` — another page, loaded as this subject (cross-page:
+ *   inserts, includes, attachments).
+ * - `filterAccessiblePages` — many pages, over the index, with no per-page
+ *   disk read, log line or audit record; agrees with the single-page answer in
+ *   both directions (#1219).
+ * - `canUserAccessMediaItem` / `canAccessPrivateContainer` — media and store
+ *   files, by the same rules.
+ * - `logAccessDecision` — every single-page decision is recorded.
+ *
+ * What it no longer holds, so nobody goes looking: JSPWiki's page-body ACL
+ * markup (#1431 7a — imports convert it to audience terms, #1446); the
+ * availability checks (#1432); a policy cache (#1431 step 4); any role-name
+ * gate (#1431 7b).
+ *
+ * @class PolicyInformationPoint
  * @extends BaseManager
  *
- * @property {any} policyEvaluator - Policy evaluation engine
- *
- * @see {@link BaseManager} for base functionality
- * @see {@link PolicyEvaluator} for policy evaluation
- * @see {@link AuditManager} for audit logging
+ * @see {@link PolicyDecisionPoint} for the decision over the policies
+ * @see {@link PolicyEvaluator} for policy matching
+ * @see {@link AuditManager} for the access record
  *
  * @example
- * const aclManager = engine.getManager('ACLManager');
- * const canView = await aclManager.checkPermission('Main', 'view', userContext);
- * if (canView) console.log('User can view page');
+ * const pip = engine.getManager('PolicyInformationPoint');
+ * if (await pip.checkPagePermissionWithContext(wikiContext, 'edit')) { ... }
  */
-class ACLManager extends BaseManager {
+class PolicyInformationPoint extends BaseManager {
   private policyEvaluator: PolicyEvaluator | null = null;
 
   /**
-   * Creates a new ACLManager instance
+   * Creates a new PolicyInformationPoint instance
    *
    * @constructor
    * @param {WikiEngine} engine - The wiki engine instance
@@ -113,7 +131,7 @@ class ACLManager extends BaseManager {
   }
 
   /**
-   * Initializes the ACLManager by loading policies and configurations
+   * Initializes the PolicyInformationPoint by loading policies and configurations
    *
    * Loads access policies from configuration and initializes the policy
    * evaluator for context-aware permission evaluation.
@@ -122,16 +140,16 @@ class ACLManager extends BaseManager {
    * @returns {Promise<void>}
    *
    * @example
-   * await aclManager.initialize();
+   * await policyInformationPoint.initialize();
    * console.log('ACL system ready');
    */
   async initialize(): Promise<void> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) {
-      throw new Error('ACLManager requires ConfigurationManager');
+      throw new Error('PolicyInformationPoint requires ConfigurationManager');
     }
 
-    // #1431: ACLManager holds no policy cache. It used to read
+    // #1431: PolicyInformationPoint holds no policy cache. It used to read
     // `ngdpbase.access.policies` into a Map here and refill it in
     // loadAccessPolicies — written, logged, and read by nothing. The policies
     // belong to PolicyManager, and PolicyEvaluator asks it for them.
@@ -175,7 +193,7 @@ class ACLManager extends BaseManager {
   /**
    * The PDP this manager asks for the delegation ceilings and, in the next
    * step, for the policy decision itself. Registered on the engine; built here
-   * only when it is not, so tests that stand an ACLManager up alone still
+   * only when it is not, so tests that stand an PolicyInformationPoint up alone still
    * exercise the real ordering rather than skipping it (#1431).
    */
   private policyDecisionPoint(): PolicyDecisionPoint {
@@ -229,7 +247,7 @@ class ACLManager extends BaseManager {
    * @returns {Promise<boolean>} True if permission granted
    *
    * @example
-   * const canEdit = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
+   * const canEdit = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
    * if (canEdit) console.log('User can edit page');
    */
   async checkPagePermissionWithContext(wikiContext: WikiContext, action: string): Promise<boolean> {
@@ -248,7 +266,7 @@ class ACLManager extends BaseManager {
    */
   private async _runEvaluator(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }> {
     if (!wikiContext) {
-      throw new Error('ACLManager.checkPagePermissionWithContext requires a WikiContext');
+      throw new Error('PolicyInformationPoint.checkPagePermissionWithContext requires a WikiContext');
     }
 
     const pageName = wikiContext.pageName;
@@ -823,27 +841,9 @@ class ACLManager extends BaseManager {
     );
   }
 
-  /**
-   * Strip ACL markup from page content before rendering menus/partials.
-   * Supports common patterns: [{ALLOW ...}], [{DENY ...}], %%acl ... %%, (:acl ... :)
-   */
-  removeACLMarkup(content: string): string {
-    if (typeof content !== 'string' || !content) return content;
-    const pluginPattern = /\[\{\s*(ALLOW|DENY)\b[^}]*\}\]/gim;
-    const percentBlock = /%%acl[\s\S]*?%%/gim;
-    const directiveParen = /\(:\s*acl\b[^:]*:\)/gim;
-    return content.replace(pluginPattern, '').replace(percentBlock, '').replace(directiveParen, '');
-  }
-
-  // Alias for compatibility if other code calls stripACLMarkup
-  stripACLMarkup(content: string): string {
-    return this.removeACLMarkup(content);
-  }
-
-  // NOTE: ACLManager does not need backup/restore methods because:
+  // NOTE: PolicyInformationPoint does not need backup/restore methods because:
   // - All policies are loaded from ConfigurationManager (backed up by ConfigurationManager)
-  // - Per-page ACLs are embedded in page content (backed up by PageManager)
   // - It holds no policy cache of its own (#1431)
 }
 
-export default ACLManager;
+export default PolicyInformationPoint;

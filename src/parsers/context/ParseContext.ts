@@ -181,7 +181,7 @@ class StubContext extends BaseContext {
  * fixtures).
  *
  * - getPrincipals: pure function over the snapshot's roles array
- * - hasPermission / canAccess: delegate to the engine's UserManager / ACLManager
+ * - hasPermission / canAccess: delegate to the engine's UserManager / PolicyInformationPoint
  *   when registered, so legacy callers that wired up these managers (mostly
  *   tests) keep getting the same policy-evaluated answer they did before
  *   Pass 2. When neither manager is available the stub denies (conservative).
@@ -212,11 +212,11 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     hasPermission: (action: string): Promise<boolean> =>
       new StubContext(engine, (userContext ?? ANONYMOUS_SUBJECT)).hasPermission(action),
     canAccess: async (action: string): Promise<boolean> => {
-      const aclManager = engine.getManager<{
+      const policyInformationPoint = engine.getManager<{
         checkPagePermissionWithContext(ctx: unknown, action: string): Promise<boolean>;
-          }>('ACLManager');
-      if (!aclManager || !pageName || pageName === 'unknown') return false;
-      return aclManager.checkPagePermissionWithContext({
+          }>('PolicyInformationPoint');
+      if (!policyInformationPoint || !pageName || pageName === 'unknown') return false;
+      return policyInformationPoint.checkPagePermissionWithContext({
         pageName,
         content,
         userContext: userContext ?? undefined,

@@ -189,7 +189,7 @@ export default class ShareManager extends BaseManager {
    * (#1222, epic #1225): nobody, carrying what the issuer delegated.
    *
    * The routes hand this subject to the same doors as any request; there is
-   * no second evaluator. `hasPermission` and `ACLManager` read `viaShare` as
+   * no second evaluator. `hasPermission` and `PolicyInformationPoint` read `viaShare` as
    * a ceiling and re-check the issuer live. Null for an unknown, revoked or
    * expired token — the same three the routes must not tell apart.
    *

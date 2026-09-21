@@ -899,7 +899,7 @@ void (async (): Promise<void> => {
   // `ngdpbase.features.maintenance.enabled` key did not gate the site and only
   // the admin toggle (which mutated that object and never persisted it) could
   // turn maintenance on. It now resolves through the same helper as
-  // ACLManager, which is what makes one switch mean one state.
+  // PolicyInformationPoint, which is what makes one switch mean one state.
   //
   // Resolved per request rather than captured here, so the toggle takes effect
   // immediately and closing or reopening an instance needs no restart.

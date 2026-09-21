@@ -54,7 +54,7 @@ interface EvaluationResult {
  *
  * @see {@link BaseManager} for base functionality
  * @see {@link readPolicies} for how the policies are read
- * @see {@link ACLManager} for access control integration
+ * @see {@link PolicyInformationPoint} for access control integration
  *
  * @example
  * const evaluator = engine.getManager('PolicyEvaluator');

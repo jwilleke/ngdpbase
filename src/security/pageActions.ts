@@ -6,7 +6,7 @@
  * A door asks for a PERMISSION, and every permission name is declared in
  * `ngdpbase.permissions.definitions`. Page-level checks grew their own words
  * anyway — `canAccess('view')`, `canAccess('edit')` — which are declared
- * nowhere, and `ACLManager.checkDefaultPermission` invented a third set with
+ * nowhere, and `PolicyInformationPoint.checkDefaultPermission` invented a third set with
  * colons (`page:read`), declared nowhere either, so that check could only ever
  * deny ([#1174](https://github.com/jwilleke/ngdpbase/issues/1174)).
  *

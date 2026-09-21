@@ -81,7 +81,7 @@ const mockPageManager = {
   refreshPageList: vi.fn()
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   // #714 Slice F rich-return form. Tests can override per-scenario to
@@ -177,7 +177,7 @@ vi.mock('../../WikiEngine', () => {
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,
-          ACLManager: mockACLManager,
+          PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
           AuthManager: mockAuthManager,
@@ -240,10 +240,10 @@ function resetMocks() {
   mockPageManager.getPageUUID.mockReturnValue(null);
   mockPageManager.refreshPageList.mockResolvedValue(undefined);
 
-  mockACLManager.checkPagePermission.mockResolvedValue(true);
-  mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
-  mockACLManager.removeACLMarkup.mockImplementation((c: string) => c);
-  mockACLManager.parseACL.mockReturnValue({ permissions: [] });
+  mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
+  mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
+  mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 
   mockCacheManager.isInitialized.mockReturnValue(true);
   mockCacheManager.get.mockResolvedValue(null);
@@ -372,10 +372,10 @@ describe('WikiRoutes — coverage batch 2', () => {
     });
 
     test('returns 403 when ACL edit check fails', async () => {
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
       // #714 Slice F: editPage prefers evaluatePagePermission; mirror
       // the deny in the rich-return shape.
-      mockACLManager.evaluatePagePermission.mockResolvedValue({ allowed: false, reason: 'default_deny' });
+      mockPolicyInformationPoint.evaluatePagePermission.mockResolvedValue({ allowed: false, reason: 'default_deny' });
 
       const res = await request(app).get('/edit/TestPage');
 
@@ -394,8 +394,8 @@ describe('WikiRoutes — coverage batch 2', () => {
       // #714 Slice F: deny via the rich-return form with the
       // `author_lock_deny` reason — the route consumes it to render
       // the specific "This page is author-locked..." 403.
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
-      mockACLManager.evaluatePagePermission.mockResolvedValue({
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockPolicyInformationPoint.evaluatePagePermission.mockResolvedValue({
         allowed: false,
         reason: 'author_lock_deny'
       });
@@ -427,9 +427,9 @@ describe('WikiRoutes — coverage batch 2', () => {
     });
 
     test('returns 200 for authorised edit of existing page', async () => {
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
       // #714 Slice F: also surface allow via the rich-return form.
-      mockACLManager.evaluatePagePermission.mockResolvedValue({ allowed: true, reason: 'legacy_allow' });
+      mockPolicyInformationPoint.evaluatePagePermission.mockResolvedValue({ allowed: true, reason: 'legacy_allow' });
 
       const res = await request(app).get('/edit/TestPage');
 

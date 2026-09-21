@@ -20,7 +20,7 @@
  * So this is called only from the sites that have just proven existence by
  * loading the content: the view route and the edit route. The decider itself
  * cannot tell these cases apart, and denies without reporting (see
- * `ACLManager._runEvaluator`).
+ * `PolicyInformationPoint._runEvaluator`).
  *
  * __Who counts as an administrator here__ is whoever holds `admin-system`,
  * asked per user through the policy — the same permission the author-lock

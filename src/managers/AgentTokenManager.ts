@@ -19,7 +19,7 @@
  *    permissions resolve live from the user record at request time — so
  *    demoting or disabling a user immediately weakens every token they hold.
  *  - **Scopes only narrow.** Effective permission is owner ∩ scopes, enforced
- *    live by ACLManager and UserManager against `viaToken.scopes`.
+ *    live by PolicyInformationPoint and UserManager against `viaToken.scopes`.
  *
  * Store: `<FAST_STORAGE>/tokens/agent-tokens.json`, a map keyed by token id,
  * matching the map-not-array convention of `users.json`.

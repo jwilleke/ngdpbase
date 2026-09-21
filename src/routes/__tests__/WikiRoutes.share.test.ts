@@ -193,7 +193,7 @@ vi.mock('../../WikiEngine', () => {
             textToHTML: vi.fn().mockResolvedValue('<p>shared html</p>'),
             getReferringPages: vi.fn().mockReturnValue([])
           },
-          ACLManager: {
+          PolicyInformationPoint: {
             checkPagePermission: vi.fn().mockResolvedValue(true),
             // #1223: the page read gate. The share page and album routes ask
             // it per page; a refused page reads as not found.

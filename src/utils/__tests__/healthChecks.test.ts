@@ -3,7 +3,7 @@ import { buildReadinessReport, instanceDataFolderWritable, runReadinessChecks, t
 
 /**
  * #1079 — the container and k8s probes pointed at `/`, a full page render
- * through session lookup, AuthManager, ACLManager, the rendering pipeline and
+ * through session lookup, AuthManager, PolicyInformationPoint, the rendering pipeline and
  * the template layer, accepting 200 *or* 302.
  *
  * That is wrong in both directions: an instance that redirects everything

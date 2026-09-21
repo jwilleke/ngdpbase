@@ -260,7 +260,7 @@ When disabled, SearchManager skips provider loading and returns empty results.
 - [PageManager](PageManager.md) - Page content indexing
 - [ConfigurationManager](ConfigurationManager.md) - Search configuration
 - [CacheManager](CacheManager.md) - Search result caching
-- [ACLManager](ACLManager.md) - Permission filtering
+- [PolicyInformationPoint](PolicyInformationPoint.md) - Permission filtering
 
 ## Developer Documentation
 

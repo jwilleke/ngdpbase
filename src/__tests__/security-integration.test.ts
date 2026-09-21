@@ -5,7 +5,7 @@ const mockUserManager = {
   hasPermission: vi.fn()
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   checkAttachmentPermission: vi.fn(),
   isSystemAdminCategoryPage: vi.fn()
 };
@@ -26,7 +26,7 @@ const mockEngine = {
   getManager: vi.fn((name) => {
     switch (name) {
     case 'UserManager': return mockUserManager;
-    case 'ACLManager': return mockACLManager;
+    case 'PolicyInformationPoint': return mockPolicyInformationPoint;
     case 'AttachmentManager': return mockAttachmentManager;
     case 'PageManager': return mockPageManager;
     default: return null;
@@ -73,10 +73,10 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
 
       // Mock permissions
       mockUserManager.hasPermission.mockReturnValue(true);
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(true);
 
       // Test category check
-      mockACLManager.isSystemAdminCategoryPage.mockResolvedValue(true);
+      mockPolicyInformationPoint.isSystemAdminCategoryPage.mockResolvedValue(true);
 
       // Call the function to trigger the permission check
       mockUserManager.hasPermission('admin', 'admin:system');
@@ -85,11 +85,11 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
       expect(mockUserManager.hasPermission).toHaveBeenCalledWith('admin', 'admin:system');
 
       // Verify attachment permission check
-      const permissionResult = await mockACLManager.checkAttachmentPermission(adminUser, 'system-doc.pdf', 'view');
+      const permissionResult = await mockPolicyInformationPoint.checkAttachmentPermission(adminUser, 'system-doc.pdf', 'view');
       expect(permissionResult).toBe(true);
 
       // Verify category detection
-      const isSystemPage = await mockACLManager.isSystemAdminCategoryPage('AdminConfig');
+      const isSystemPage = await mockPolicyInformationPoint.isSystemAdminCategoryPage('AdminConfig');
       expect(isSystemPage).toBe(true);
     });
 
@@ -114,13 +114,13 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
 
       // Mock permissions - regular user doesn't have admin:system
       mockUserManager.hasPermission.mockReturnValue(false);
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(false);
 
       // Call the function to trigger the permission check
       mockUserManager.hasPermission('regularuser', 'admin:system');
 
       // Test permission check
-      const permissionResult = await mockACLManager.checkAttachmentPermission(regularUser, 'system-doc.pdf', 'view');
+      const permissionResult = await mockPolicyInformationPoint.checkAttachmentPermission(regularUser, 'system-doc.pdf', 'view');
       expect(permissionResult).toBe(false);
 
       // Verify admin permission was checked
@@ -148,10 +148,10 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
       mockAttachmentManager.getAttachment.mockReturnValue(regularAttachment);
 
       // Mock permissions
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(true);
 
       // Test permission check
-      const permissionResult = await mockACLManager.checkAttachmentPermission(regularUser, 'document.pdf', 'view');
+      const permissionResult = await mockPolicyInformationPoint.checkAttachmentPermission(regularUser, 'document.pdf', 'view');
       expect(permissionResult).toBe(true);
     });
 
@@ -170,10 +170,10 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
       mockAttachmentManager.getAttachment.mockReturnValue(publicAttachment);
 
       // Mock permissions
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(true);
 
       // Test anonymous access
-      const permissionResult = await mockACLManager.checkAttachmentPermission(null, 'public-doc.pdf', 'view');
+      const permissionResult = await mockPolicyInformationPoint.checkAttachmentPermission(null, 'public-doc.pdf', 'view');
       expect(permissionResult).toBe(true);
     });
   });
@@ -276,7 +276,7 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
       // "Security checks would deny access" where the check should have been.
       // Silencing the unused variable would have kept a test that proves
       // nothing, so it now performs the denial it claims to.
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(false);
 
       const anonymousUser = null;
       const systemAttachment = {
@@ -284,14 +284,14 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
         pageName: 'AdminGuide'
       };
 
-      const allowed = await mockACLManager.checkAttachmentPermission(
+      const allowed = await mockPolicyInformationPoint.checkAttachmentPermission(
         anonymousUser,
         systemAttachment.id,
         'view'
       );
 
       expect(allowed).toBe(false);
-      expect(mockACLManager.checkAttachmentPermission).toHaveBeenCalledWith(
+      expect(mockPolicyInformationPoint.checkAttachmentPermission).toHaveBeenCalledWith(
         null,
         'admin-manual.pdf',
         'view'
@@ -302,9 +302,9 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
   describe('Error Handling and Edge Cases', () => {
     test('should handle missing attachments gracefully', async () => {
       mockAttachmentManager.getAttachment.mockReturnValue(null);
-      mockACLManager.checkAttachmentPermission.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkAttachmentPermission.mockResolvedValue(false);
 
-      const result = await mockACLManager.checkAttachmentPermission(
+      const result = await mockPolicyInformationPoint.checkAttachmentPermission(
         { username: 'user', isAuthenticated: true },
         'nonexistent.pdf',
         'view'
@@ -315,9 +315,9 @@ describe('Security Integration Tests (Issue #22 + PR #18)', () => {
 
     test('should handle page lookup errors gracefully', async () => {
       mockPageManager.getPage.mockRejectedValue(new Error('Database error'));
-      mockACLManager.isSystemAdminCategoryPage.mockResolvedValue(false);
+      mockPolicyInformationPoint.isSystemAdminCategoryPage.mockResolvedValue(false);
 
-      const result = await mockACLManager.isSystemAdminCategoryPage('ErrorPage');
+      const result = await mockPolicyInformationPoint.isSystemAdminCategoryPage('ErrorPage');
 
       expect(result).toBe(false);
     });

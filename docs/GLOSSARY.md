@@ -447,7 +447,7 @@ metadata field `system-location: 'private'`; the page creator is stored in
 `page-creator` metadata. The page index entry records `location: 'private'`.
 
 Access is enforced in `WikiRoutes.checkPrivatePageAccess()` before rendering,
-and in `ACLManager` permission checks. Search results and media items linked
+and in `PolicyInformationPoint` permission checks. Search results and media items linked
 to private pages are filtered by user identity.
 
 Private attachments are stored separately in
@@ -482,7 +482,7 @@ Avoid: "service", "controller", "handler"
 Singleton engine components accessed via `engine.getManager('ManagerName')`.
 Manage a domain of wiki functionality and delegate storage operations to Providers.
 
-Key managers: `ACLManager`, `AttachmentManager`, `BackupManager`,
+Key managers: `PolicyInformationPoint`, `AttachmentManager`, `BackupManager`,
 `ConfigurationManager`, `MediaManager`, `PageManager`, `PluginManager`,
 `RenderingManager`, `SearchManager`, `UserManager`.
 

@@ -44,7 +44,7 @@ const mockRenderingManager = {
   textToHTML: vi.fn().mockResolvedValue('<p>Rendered</p>')
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   removeACLMarkup: vi.fn().mockReturnValue('Clean content'),
   checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
 };
@@ -63,7 +63,7 @@ const mockEngine = {
       'SchemaManager': mockSchemaManager,
       'PageManager': mockPageManager,
       'RenderingManager': mockRenderingManager,
-      'ACLManager': mockACLManager,
+      'PolicyInformationPoint': mockPolicyInformationPoint,
       'ConfigurationManager': mockConfigManager,
       'UserManager': mockUserManager
     };

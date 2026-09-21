@@ -1,5 +1,5 @@
 /**
- * ACLManager — share ceiling (#1222, epic #1225).
+ * PolicyInformationPoint — share ceiling (#1222, epic #1225).
  *
  * A share visit is an anonymous subject carrying `viaShare`. The evaluator
  * applies the share as a hard ceiling BEFORE every tier — action in the share,
@@ -10,7 +10,7 @@
  * what lets a share work on an instance whose policy gives anonymous nothing.
  */
 
-import ACLManager from '../ACLManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 import type { ShareGrant } from '../../types/Share';
 
 /** What jim holds live. Mutated to simulate a revoked role. */
@@ -77,13 +77,13 @@ function ctx(opts: { share?: Partial<ShareGrant>; noShare?: boolean; pageMetadat
   } as never;
 }
 
-describe('ACLManager share ceiling (#1222)', () => {
-  let acl: ACLManager;
+describe('PolicyInformationPoint share ceiling (#1222)', () => {
+  let acl: PolicyInformationPoint;
 
   beforeEach(async () => {
     issuerHolds = ['page-read', 'page-edit'];
     denials = [];
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 
@@ -126,13 +126,13 @@ describe('ACLManager share ceiling (#1222)', () => {
   });
 });
 
-describe('ACLManager share ceiling — the page\'s own rules still apply (#1222)', () => {
-  let acl: ACLManager;
+describe('PolicyInformationPoint share ceiling — the page\'s own rules still apply (#1222)', () => {
+  let acl: PolicyInformationPoint;
 
   beforeEach(async () => {
     issuerHolds = ['page-read'];
     denials = [];
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 
@@ -157,11 +157,11 @@ describe('ACLManager share ceiling — the page\'s own rules still apply (#1222)
   });
 });
 
-describe('ACLManager share ceiling — attribution (#1222)', () => {
+describe('PolicyInformationPoint share ceiling — attribution (#1222)', () => {
   test('a denial names the share and its issuer', async () => {
     issuerHolds = ['page-read'];
     denials = [];
-    const acl = new ACLManager(makeEngine());
+    const acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
     await acl.checkPagePermissionWithContext(ctx({}), 'edit');
     await new Promise((r) => setTimeout(r, 0));   // auditDenial is fire-and-forget

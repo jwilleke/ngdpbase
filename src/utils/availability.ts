@@ -8,7 +8,7 @@
  * a schedule such as business hours, and a holiday. They shared one property:
  * the configuration shipped switches for all of them and only maintenance was
  * ever enforced, so an operator could turn business hours on and nothing
- * happened. `ACLManager` carried the unreachable implementations
+ * happened. `PolicyInformationPoint` carried the unreachable implementations
  * (`checkBusinessHours`, `checkHolidayRestrictions`, `checkEnhancedTimeRestrictions`),
  * which is also the wrong manager for the question.
  *

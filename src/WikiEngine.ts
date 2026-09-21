@@ -11,7 +11,7 @@ import PluginManager from './managers/PluginManager.js';
 import RenderingManager from './managers/RenderingManager.js';
 import SearchManager from './managers/SearchManager.js';
 import UserManager from './managers/UserManager.js';
-import ACLManager from './managers/ACLManager.js';
+import PolicyInformationPoint from './security/PolicyInformationPoint.js';
 import SchemaManager from './managers/SchemaManager.js';
 import VariableManager from './managers/VariableManager.js';
 import ValidationManager from './managers/ValidationManager.js';
@@ -94,7 +94,7 @@ class WikiEngine extends Engine {
    * 5. PageManager - Page storage and retrieval
    * 6. TemplateManager - Template rendering
    * 7. PolicyValidator/PolicyEvaluator - Policy system (policies read live, #1431)
-   * 8. ACLManager - Access control (depends on PolicyEvaluator)
+   * 8. PolicyInformationPoint - Access control (depends on PolicyEvaluator)
    * 9. PluginManager - Plugin system
    * 10. MarkupParser - Markup parsing
    * 11. RenderingManager - Content rendering (depends on MarkupParser)
@@ -233,7 +233,7 @@ class WikiEngine extends Engine {
     this.registerManager('TemplateManager', templateManager);
     await templateManager.initialize();
 
-    // PolicyEvaluator BEFORE ACLManager, because ACLManager depends on it.
+    // PolicyEvaluator BEFORE PolicyInformationPoint, because PolicyInformationPoint depends on it.
     // #1431 step 10: there is no PolicyManager. It copied the policies at boot
     // and answered every decision from the copy, so a policy changed in
     // /admin/configuration was saved and audited but not enforced until a
@@ -253,9 +253,9 @@ class WikiEngine extends Engine {
     this.registerManager('PolicyDecisionPoint', policyDecisionPoint);
     await policyEvaluator.initialize();
 
-    const aclManager = new ACLManager(this);
-    this.registerManager('ACLManager', aclManager);
-    await aclManager.initialize();
+    const policyInformationPoint = new PolicyInformationPoint(this);
+    this.registerManager('PolicyInformationPoint', policyInformationPoint);
+    await policyInformationPoint.initialize();
 
     const pluginManager = new PluginManager(this);
     this.registerManager('PluginManager', pluginManager);

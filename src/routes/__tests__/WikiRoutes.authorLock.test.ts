@@ -57,7 +57,7 @@ function makePageManager(pageData) {
 }
 
 /**
- * Build an ACLManager mock with both the legacy boolean and #714 Slice F
+ * Build an PolicyInformationPoint mock with both the legacy boolean and #714 Slice F
  * rich-return forms.
  *
  * @param permitted  - allow / deny for the general edit gate
@@ -66,7 +66,7 @@ function makePageManager(pageData) {
  *                     `'author_lock_deny'`, matching the cases this
  *                     suite exercises).
  */
-function makeACLManager(permitted = true, denyReason = 'author_lock_deny') {
+function makePolicyInformationPoint(permitted = true, denyReason = 'author_lock_deny') {
   return {
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(permitted),
     evaluatePagePermission: vi.fn().mockResolvedValue(
@@ -92,20 +92,20 @@ function makeConfigManager() {
   };
 }
 
-function makeEngine({ pageManager = undefined, aclManager = undefined, configManager = undefined }: {
+function makeEngine({ pageManager = undefined, policyInformationPoint = undefined, configManager = undefined }: {
   pageManager?: ReturnType<typeof makePageManager>;
-  aclManager?: ReturnType<typeof makeACLManager>;
+  policyInformationPoint?: ReturnType<typeof makePolicyInformationPoint>;
   configManager?: ReturnType<typeof makeConfigManager>;
 } = {}) {
   const pm  = pageManager  ?? makePageManager(makePageData());
-  const acl = aclManager   ?? makeACLManager(true);
+  const acl = policyInformationPoint   ?? makePolicyInformationPoint(true);
   const cm  = configManager ?? makeConfigManager();
 
   return {
     getManager: vi.fn((name) => {
       switch (name) {
       case 'PageManager':          return pm;
-      case 'ACLManager':           return acl;
+      case 'PolicyInformationPoint':           return acl;
       case 'ConfigurationManager': return cm;
       default:                     return null;
       }
@@ -143,13 +143,13 @@ function createRes() {
  *
  * #714 Slice C: the `checkPrivatePageAccess` spy that previously sat here
  * was removed alongside the underlying private method on WikiRoutes (the
- * 5 route handlers now use either `aclManager.checkPagePermissionWithContext`
+ * 5 route handlers now use either `policyInformationPoint.checkPagePermissionWithContext`
  * directly or `wikiContext.canAccess(action, pageNameOverride?)` for
  * cross-page checks). These tests cover the route-layer author-lock branch
  * at WikiRoutes.editPage:~2338, which still exists during Slice C; Slice E
  * removes that branch and these route-level tests can be retired then.
  * The equivalent ACL-layer coverage is in `Tier 0.5 — author-lock (#714
- * Slice A)` describe block in `ACLManager.test.ts`.
+ * Slice A)` describe block in `PolicyInformationPoint.test.ts`.
  */
 function installSpies(wikiRoutes, userContext) {
   // #638 — use the shared mock fixture instead of an inline duck-typed object.
@@ -183,8 +183,8 @@ describe('WikiRoutes — author-lock enforcement in editPage()', () => {
       // deny for non-author non-admin edits now comes from ACL Tier 0.5
       // (added in Slice A) via `evaluatePagePermission` returning
       // `{ allowed: false, reason: 'author_lock_deny' }`. Mock the
-      // ACLManager to return that decision shape directly.
-      wikiRoutes = new WikiRoutes(makeEngine({ aclManager: makeACLManager(false, 'author_lock_deny') }));
+      // PolicyInformationPoint to return that decision shape directly.
+      wikiRoutes = new WikiRoutes(makeEngine({ policyInformationPoint: makePolicyInformationPoint(false, 'author_lock_deny') }));
     });
 
     test('non-author, non-admin receives 403', async () => {
@@ -251,7 +251,7 @@ describe('WikiRoutes — author-lock enforcement in editPage()', () => {
   describe('when page is BOTH author-locked AND private', () => {
     test('private bypasses author-lock; non-author non-admin not blocked by lock', async () => {
       // Private is the higher-priority rule (admin + creator only) and is
-      // enforced upstream by ACLManager Tier 0 / checkPrivatePageAccess.
+      // enforced upstream by PolicyInformationPoint Tier 0 / checkPrivatePageAccess.
       // The author-lock branch in editPage must skip when metadata.private
       // is true so the two rules don't double-enforce.
       //

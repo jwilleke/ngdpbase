@@ -112,7 +112,7 @@ data/
 
 ### "Private" is a visibility model, not encryption
 
-Routing a page with `private: true` to `pages/private/{author}/` is a __visibility / ACL convention__ enforced by ACLManager + the providers, not cryptographic privacy. Page bodies remain plaintext on disk, and several adjacent stores hold plaintext copies or denormalised metadata about private pages:
+Routing a page with `private: true` to `pages/private/{author}/` is a __visibility / ACL convention__ enforced by PolicyInformationPoint + the providers, not cryptographic privacy. Page bodies remain plaintext on disk, and several adjacent stores hold plaintext copies or denormalised metadata about private pages:
 
 | Surface | Path | What leaks |
 |---|---|---|

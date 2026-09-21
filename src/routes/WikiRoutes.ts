@@ -151,6 +151,7 @@ import type ValidationManager from '../managers/ValidationManager.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
+import { stripAclMarkup } from '../parsers/aclMarkup.js';
 import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
@@ -256,7 +257,7 @@ interface IUserManager {
    *
    * Narrowing it here makes the bypass a COMPILE ERROR in route code rather
    * than something a reviewer has to notice. `UserManager` still accepts a
-   * string for genuine "does user X hold Y" lookups (AuditManager, ACLManager);
+   * string for genuine "does user X hold Y" lookups (AuditManager, PolicyInformationPoint);
    * routes are authorising a request and must forward what the request carries.
    */
   hasPermission(subject: PermissionSubject, permission: string): Promise<boolean>;
@@ -376,12 +377,11 @@ interface IPageManager {
   validateAndFixAllFiles(options?: unknown): Promise<IValidationReport>;
 }
 
-interface IACLManager {
+interface IPolicyInformationPoint {
   checkPagePermissionWithContext(wikiContext: WikiContext, action: string): Promise<boolean>;
   /** #714 Slice F: rich-return form — `{ allowed, reason }`. Lets callers
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
-  removeACLMarkup(content: string): string;
   /** The private-container decision for a file in a store: owner or delegate, never a role (#1382). */
   canAccessPrivateContainer(userContext: WikiContext['userContext'], owner: string, resource: string, action: string): boolean;
 }
@@ -445,7 +445,7 @@ interface WikiEngine {
   getManager(name: 'UserManager'): IUserManager;
   getManager(name: 'ConfigurationManager'): IConfigManager;
   getManager(name: 'PageManager'): IPageManager;
-  getManager(name: 'ACLManager'): IACLManager;
+  getManager(name: 'PolicyInformationPoint'): IPolicyInformationPoint;
   getManager(name: 'SchemaManager'): ISchemaManager;
   getManager(name: 'OrganizationManager'): IOrganizationManager;
   getManager(name: 'SearchManager'): ISearchManager;
@@ -753,7 +753,7 @@ class WikiRoutes {
   // #714 Slice C/E: deleted the legacy `private checkPrivatePageAccess`
   // helper that previously sat here. Its 5 callers (viewPage, editPage,
   // deletePage, pageHistory, serveAttachment) have all migrated to
-  // either `aclManager.checkPagePermissionWithContext` (same-page checks,
+  // either `policyInformationPoint.checkPagePermissionWithContext` (same-page checks,
   // which already covers private via Tier 0 / #711) or
   // `wikiContext.canAccess('view', linkedPageName)` (cross-page checks,
   // via Slice B's `canUserAccessPage`).
@@ -945,7 +945,7 @@ class WikiRoutes {
    */
   async getCommonTemplateData(req: Request): Promise<TemplateData> {
     const userManager = this.engine.getManager('UserManager');
-    // #950: ACLManager is no longer needed here — site chrome is not
+    // #950: PolicyInformationPoint is no longer needed here — site chrome is not
     // permission-checked. Nothing else in this method consults it.
     const renderingManager = this.engine.getManager('RenderingManager');
     const configManager = this.engine.getManager('ConfigurationManager');
@@ -2429,7 +2429,7 @@ class WikiRoutes {
 
   /**
    * Re-save a page for an admin bulk keyword change. A private page is changed
-   * only when this request may edit it — decided by `canAccess` (ACLManager
+   * only when this request may edit it — decided by `canAccess` (PolicyInformationPoint
    * Tier 0: the owner or a delegate, never a role), which also records a
    * refusal. Another user's private page is left alone; the admin's own is
    * saved with the admin's context, which a store write requires.
@@ -2676,7 +2676,7 @@ ${panes}
       const userContext = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
-      const aclManager = this.engine.getManager('ACLManager');
+      const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       logger.info(
         `[VIEW] pageName=${pageName} user=${userContext?.username} roles=${(
@@ -2753,7 +2753,7 @@ ${panes}
       // `checkPagePermissionWithContext` (below) already delegates to
       // `PageManager.checkPrivatePageAccess` (per #711), so the legacy
       // route-layer helper was running the same logic twice.
-      const canView = await aclManager.checkPagePermissionWithContext(wikiContext, 'view');
+      const canView = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'view');
       logger.info(`[VIEW] ACL decision for ${pageName}: ${canView}`);
       if (!canView) {
         return await this.renderError(
@@ -2771,7 +2771,7 @@ ${panes}
       this.auditPageView(req, pageName, (metadata as { uuid?: string } | null)?.uuid);
 
       // Check if user can edit this page
-      const canEdit = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
+      const canEdit = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
 
       // Rendered-pages cache — keyed by UUID + sorted role set (#588)
       const cacheManager = this.engine.getManager('CacheManager');
@@ -3452,7 +3452,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
       const userManager = this.engine.getManager('UserManager');
-      const aclManager = this.engine.getManager('ACLManager');
+      const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // #1198: policy is the door. The page's own rules (private, audience,
       // author-lock) are evaluated below as before; this asks the capability.
@@ -3506,22 +3506,22 @@ ${panes}
           // when available so we can specialise the 403 message on
           // `reason === 'author_lock_deny'`. Restores the specific
           // "This page is author-locked..." message that Slice A
-          // temporarily lost when Tier 0.5 moved the check into ACLManager.
+          // temporarily lost when Tier 0.5 moved the check into PolicyInformationPoint.
           //
           // Defensive fallback: many existing test fixtures mock only
           // `checkPagePermissionWithContext` (the legacy boolean form).
           // Fall back to it when the rich form isn't on the mocked
-          // ACLManager — same allow/deny outcome, generic message.
+          // PolicyInformationPoint — same allow/deny outcome, generic message.
           //
           // #714 Slice E: the previous route-layer author-lock branch
           // that sat below this block is now deleted — the same check
           // lives at ACL Tier 0.5 (added in Slice A) and the rich-return
           // reason restores its specific 403 message at the route layer.
           let decision: { allowed: boolean; reason: string };
-          if (typeof aclManager.evaluatePagePermission === 'function') {
-            decision = await aclManager.evaluatePagePermission(wikiContext, 'edit');
+          if (typeof policyInformationPoint.evaluatePagePermission === 'function') {
+            decision = await policyInformationPoint.evaluatePagePermission(wikiContext, 'edit');
           } else {
-            const allowed = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
+            const allowed = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
             decision = { allowed, reason: allowed ? 'legacy_allow' : 'legacy_deny' };
           }
 
@@ -3584,8 +3584,9 @@ ${panes}
         pageData.content = '';
       }
 
-      // Remove ACL markup from content for editing
-      const cleanContent = aclManager.removeACLMarkup(pageData.content);
+      // Legacy ACL markup is dead text; drop it on the way into the editor so a
+      // re-save removes it. Escaped examples are kept (#1431 step 8).
+      const cleanContent = stripAclMarkup(pageData.content);
       pageData.content = cleanContent;
 
       // Section editing: if ?section=N is provided, edit only that section
@@ -3755,8 +3756,7 @@ ${panes}
           const pageManager0 = this.engine.getManager('PageManager');
           const fullPage = await pageManager0.getPage(pageName, req.userContext);
           if (fullPage?.content) {
-            const aclManager0 = this.engine.getManager('ACLManager');
-            const fullClean = aclManager0.removeACLMarkup(fullPage.content);
+            const fullClean = stripAclMarkup(fullPage.content);
             content = spliceSection(fullClean, sectionIdx, _rawContent);
           }
         }
@@ -3867,7 +3867,7 @@ ${panes}
       // honour the checkbox; otherwise preserve the existing top-level value.
       //
       // #712: the legacy `user-keywords: [private]` fallback was removed here.
-      // ACLManager dropped its parallel fallback in #639 Slice E (v3.7.0) once
+      // PolicyInformationPoint dropped its parallel fallback in #639 Slice E (v3.7.0) once
       // all datasets had migrated; the /save handler was the lone holdout still
       // honouring the legacy form. PageManager.savePageWithContext defensively
       // strips any stray `'private'` from `user-keywords` on every save, so
@@ -4539,7 +4539,7 @@ ${panes}
     }
 
     const allowed = await this.engine
-      .getManager('ACLManager')
+      .getManager('PolicyInformationPoint')
       ?.checkPagePermissionWithContext(wikiContext, action);
     if (!allowed) {
       res.status(403).json({ error: 'Access denied', message: `You do not have permission to ${action} this page` });
@@ -5195,7 +5195,7 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
       const userManager = this.engine.getManager('UserManager');
-      const aclManager = this.engine.getManager('ACLManager');
+      const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // Check if page exists
       const pageData = await pageManager.getPage(pageName, req.userContext);
@@ -5234,7 +5234,7 @@ ${panes}
         // Update WikiContext with page content for ACL checking
         (wikiContext as { content: string | null }).content = pageData.content;
 
-        const hasDeletePermission = await aclManager.checkPagePermissionWithContext(
+        const hasDeletePermission = await policyInformationPoint.checkPagePermissionWithContext(
           wikiContext,
           'delete'
         );
@@ -6045,13 +6045,13 @@ ${panes}
       // 🔒 PRIVACY: a private file lives in its owner's private container
       // (docs/planning/private-stores.md, Access). It is served to the owner, or
       // a delegate of the owner — never by role, and not to whoever may view a
-      // page that links it. The decision and its record are ACLManager's.
+      // page that links it. The decision and its record are PolicyInformationPoint's.
       const meta = await attachmentManager.getAttachmentMetadata(attachmentId);
       if (meta?.isPrivate) {
-        const aclManager = this.engine.getManager('ACLManager');
+        const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
         const owner = typeof meta.creator === 'string' ? meta.creator : '';
-        const allowed = aclManager
-          ? aclManager.canAccessPrivateContainer(wikiContext.userContext, owner, `attachment:${attachmentId}`, 'view')
+        const allowed = policyInformationPoint
+          ? policyInformationPoint.canAccessPrivateContainer(wikiContext.userContext, owner, `attachment:${attachmentId}`, 'view')
           : false;
         if (!allowed) {
           return res.status(403).render('error', {
@@ -6270,8 +6270,8 @@ ${panes}
     const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
     (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
 
-    const aclManager = this.engine.getManager('ACLManager');
-    const allowed = await aclManager.checkPagePermissionWithContext(wikiContext, 'view');
+    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    const allowed = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'view');
     return { allowed, metadata };
   }
 
@@ -9840,7 +9840,7 @@ ${panes}
         notifications: notifications,
         totalNotificationCount: totalNotificationCount,
         // #1147: read through the shared resolver, so the dashboard's toggle
-        // state matches what the gate and ACLManager are actually enforcing.
+        // state matches what the gate and PolicyInformationPoint are actually enforcing.
         maintenanceMode: resolveMaintenanceState(
           (key, fallback) =>
             this.engine.getManager('ConfigurationManager')?.getProperty?.(key, fallback)
@@ -9902,7 +9902,7 @@ ${panes}
       // most likely exactly when an operator is mid-migration. It now writes
       // the documented key through ConfigurationManager, which saves to
       // app-custom-config.json, and reads through the same resolver as the
-      // gate and ACLManager.
+      // gate and PolicyInformationPoint.
       const configManager = this.engine.getManager('ConfigurationManager');
       const current = resolveMaintenanceState(
         (key, fallback) => configManager?.getProperty?.(key, fallback)
@@ -13769,8 +13769,8 @@ ${panes}
     if (!wikiContext.userContext) return null;
     (wikiContext as unknown as { pageMetadata: unknown }).pageMetadata = page.metadata;
     (wikiContext as unknown as { content: string | null }).content = page.content;
-    const aclManager = this.engine.getManager('ACLManager');
-    const canEdit = await aclManager?.checkPagePermissionWithContext?.(wikiContext, 'edit');
+    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    const canEdit = await policyInformationPoint?.checkPagePermissionWithContext?.(wikiContext, 'edit');
     return canEdit ? wikiContext : null;
   }
 
@@ -15409,7 +15409,7 @@ ${panes}
   /**
    * Admin audit logs page (#1113).
    *
-   * Reads AuditManager. It previously read `ACLManager.getAccessControlStats()`
+   * Reads AuditManager. It previously read `PolicyInformationPoint.getAccessControlStats()`
    * and `getAccessLog()`, which do not exist — the handler compiled because a
    * local interface declared them and passed tests because a mock supplied
    * them. Those were a second door to "what happened"; AuditManager is the

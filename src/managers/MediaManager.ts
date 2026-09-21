@@ -26,7 +26,7 @@ import BaseMediaProvider, { MediaItem, ScanResult } from '../providers/BaseMedia
 import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/FileSystemMediaProvider.js';
 import { transformImage } from '../utils/imageTransform.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import type ACLManager from './ACLManager.js';
+import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
 import type {
   CatalogSource,
@@ -372,7 +372,7 @@ class MediaManager extends BaseManager implements CatalogSource {
 
     // #714 Slice D: was a private MediaManager.checkPrivatePageAccess
     // helper that re-implemented the legacy private-page rule. Migrated
-    // to ACLManager.canUserAccessPage (added in Slice B) — same evaluator
+    // to PolicyInformationPoint.canUserAccessPage (added in Slice B) — same evaluator
     // every other surface uses, no duplicated logic.
     //
     // Behavior shift: the legacy helper returned `true` (allow) for the
@@ -386,9 +386,9 @@ class MediaManager extends BaseManager implements CatalogSource {
     // the share ceiling on the item itself — so the share routes no longer
     // need a decision of their own.
     if (wikiContext) {
-      const aclManager = this.engine.getManager<ACLManager>('ACLManager');
-      if (aclManager) {
-        const allowed = await aclManager.canUserAccessMediaItem(wikiContext.userContext ?? null, item);
+      const policyInformationPoint = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+      if (policyInformationPoint) {
+        const allowed = await policyInformationPoint.canUserAccessMediaItem(wikiContext.userContext ?? null, item);
         if (!allowed) return null;
       }
     }
@@ -653,19 +653,19 @@ class MediaManager extends BaseManager implements CatalogSource {
     const results: MediaItem[] = [];
     // #714 Slice D: same migration as findByFilename — was a private
     // MediaManager.checkPrivatePageAccess helper; now delegates to
-    // ACLManager.canUserAccessPage. Same conservative-on-security shift.
-    const aclManager = this.engine.getManager<ACLManager>('ACLManager');
+    // PolicyInformationPoint.canUserAccessPage. Same conservative-on-security shift.
+    const policyInformationPoint = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
     for (const item of items) {
       if (item.linkedPageName) {
-        if (aclManager) {
-          const allowed = await aclManager.canUserAccessPage(
+        if (policyInformationPoint) {
+          const allowed = await policyInformationPoint.canUserAccessPage(
             wikiContext.userContext ?? null,
             item.linkedPageName,
             'view'
           );
           if (allowed) results.push(item);
         } else {
-          // No ACLManager (test fixture without mock) — preserve the
+          // No PolicyInformationPoint (test fixture without mock) — preserve the
           // legacy "no manager → allow" fallback so unmocked tests
           // don't all break.
           results.push(item);
@@ -679,7 +679,7 @@ class MediaManager extends BaseManager implements CatalogSource {
 
   // #714 Slice D: deleted the private `MediaManager.checkPrivatePageAccess`
   // helper that previously sat here. Its 2 call sites (findByFilename and
-  // listByYear above) now use `ACLManager.canUserAccessPage` directly —
+  // listByYear above) now use `PolicyInformationPoint.canUserAccessPage` directly —
   // same evaluator every other surface uses, no duplicated logic.
 }
 

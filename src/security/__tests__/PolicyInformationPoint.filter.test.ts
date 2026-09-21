@@ -14,7 +14,7 @@
  * went with the tier in #1431 step 7a, so the filter and the decider now agree
  * tier for tier.
  */
-import ACLManager from '../ACLManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 import { mayActInPrivateContainer } from '../../utils/privateStoreAccess';
 import type { ShareGrant } from '../../types/Share';
 
@@ -109,10 +109,10 @@ const candidates = () => Object.keys(PAGES).map((title) => ({ title, metadata: P
 let overrideGrants: Record<string, string[]> = {};
 
 describe('filterAccessiblePages agrees with canUserAccessPage (#1219)', () => {
-  let acl: ACLManager;
+  let acl: PolicyInformationPoint;
   beforeEach(async () => {
     issuerHolds = ['page-read'];
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 

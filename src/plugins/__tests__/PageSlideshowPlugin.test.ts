@@ -27,7 +27,7 @@ let denied: string[] = [];
 const makeEngine = (pageManager: unknown = null) => ({
   getManager: vi.fn((name: string) =>
     name === 'PageManager' ? pageManager
-      : name === 'ACLManager' ? { canUserAccessPage: vi.fn(async (_u: unknown, page: string) => !denied.includes(page)) }
+      : name === 'PolicyInformationPoint' ? { canUserAccessPage: vi.fn(async (_u: unknown, page: string) => !denied.includes(page)) }
         : null)
 });
 beforeEach(() => { denied = []; });

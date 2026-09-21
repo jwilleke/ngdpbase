@@ -70,7 +70,7 @@ const mockPageManager = {
   refreshPageList: vi.fn()
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
@@ -182,7 +182,7 @@ vi.mock('../../WikiEngine', () => {
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,
-          ACLManager: mockACLManager,
+          PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
           NotificationManager: mockNotificationManager,
@@ -245,10 +245,10 @@ function resetMocks() {
   mockPageManager.refreshPageList.mockResolvedValue(undefined);
 
   // ACL
-  mockACLManager.checkPagePermission.mockResolvedValue(true);
-  mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
-  mockACLManager.removeACLMarkup.mockImplementation((c: string) => c);
-  mockACLManager.parseACL.mockReturnValue({ permissions: [] });
+  mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
+  mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
+  mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 
   // Cache
   mockCacheManager.isInitialized.mockReturnValue(true);
@@ -383,7 +383,7 @@ describe('WikiRoutes — additional coverage', () => {
   describe('GET /view/:page — viewPage', () => {
     test('serves cached render on cache HIT (skips main-page textToHTML call)', async () => {
       mockCacheManager.get.mockResolvedValue({ html: '<p>cached</p>', tabSectionHtml: '' });
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
 
       const res = await request(app).get('/view/TestPage');
 
@@ -394,7 +394,7 @@ describe('WikiRoutes — additional coverage', () => {
     });
 
     test('returns 403 when ACL view check fails', async () => {
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
 
       const res = await request(app).get('/view/TestPage');
 
@@ -411,7 +411,7 @@ describe('WikiRoutes — additional coverage', () => {
 
     test('renders page on cache MISS and populates cache', async () => {
       mockCacheManager.get.mockResolvedValue(null);
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
 
       const res = await request(app).get('/view/TestPage');
 
@@ -465,7 +465,11 @@ describe('WikiRoutes — additional coverage', () => {
       mockPageManager.getPage.mockImplementation((name: string) => {
         if (['LeftMenu', 'Footer', 'left-menu-content'].includes(name)) return Promise.resolve(null);
         return Promise.resolve({
-          content: '== Section 1 ==\nOriginal text\n\n== Section 2 ==\nOther text',
+          // Markdown headings: spliceSection finds sections by them. This used
+          // `== Section 1 ==`, which it does not read as a heading at all, so
+          // the test never spliced anything — it passed by asserting a mock was
+          // called (#1431 step 8).
+          content: '## Section 1\nOriginal text\n\n## Section 2\nOther text',
           metadata: { title: 'TestPage', 'system-category': 'general', uuid: 'test-uuid-1', author: 'testuser' }
         });
       });
@@ -475,7 +479,13 @@ describe('WikiRoutes — additional coverage', () => {
         .send({ content: 'Updated section text', section: '0', 'system-category': 'general', _csrf: csrf });
 
       expect([200, 302]).toContain(res.status);
-      expect(mockACLManager.removeACLMarkup).toHaveBeenCalled();
+      // #1431 step 8: the scrub is a plain function now (stripAclMarkup), so
+      // this checks the outcome rather than a call on the manager — the edited
+      // section lands in the page and the untouched section survives.
+      const saved = (mockPageManager.savePageWithContext.mock.calls.at(-1)?.[0] as { content?: string } | undefined)?.content ?? '';
+      expect(saved).toContain('Updated section text');
+      expect(saved).not.toContain('Original text');
+      expect(saved).toContain('Other text');
     });
 
     test('saves successfully and redirects', async () => {
@@ -505,7 +515,7 @@ describe('WikiRoutes — additional coverage', () => {
 
     test('returns 403 when ACL delete check fails', async () => {
       mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', 'system-category': 'general' });
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
       mockUserManager.hasPermission.mockResolvedValue(false);
 
       const res = await request(app)
@@ -518,7 +528,7 @@ describe('WikiRoutes — additional coverage', () => {
 
     test('deletes page and returns JSON success', async () => {
       mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', 'system-category': 'general' });
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
       mockPageManager.deletePageWithContext.mockResolvedValue(true);
 
       const res = await request(app)

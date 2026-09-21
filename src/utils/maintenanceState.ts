@@ -8,7 +8,7 @@
  *     in-memory object that configuration never populates — `Engine.initialize`
  *     will not overwrite `this.config` once set (`core/Engine.ts:63`), and the
  *     constructor sets it to `{}`, so it stayed empty for the process lifetime
- *   - `ACLManager.checkContextRestrictions` read the documented keys through
+ *   - `PolicyInformationPoint.checkContextRestrictions` read the documented keys through
  *     `ConfigurationManager`
  *
  * So the shipped `ngdpbase.features.maintenance.enabled` key did not gate the

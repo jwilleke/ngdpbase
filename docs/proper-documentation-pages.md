@@ -269,7 +269,7 @@ When both `audience` and `access.view` are set, `access.view` wins for the `view
 
 ### Tier ordering reminder
 
-These frontmatter fields are evaluated at __Tier 1__ of the ACL ladder — see [`docs/managers/ACLManager.md`](managers/ACLManager.md) for the full order. The other tiers (private, author-lock, global policies) are independent dimensions.
+These frontmatter fields are evaluated at __Tier 1__ of the ACL ladder — see [`docs/managers/PolicyInformationPoint.md`](managers/PolicyInformationPoint.md) for the full order. The other tiers (private, author-lock, global policies) are independent dimensions.
 
 ### Do not use `[{ALLOW <action> <principals>}]` in page body
 

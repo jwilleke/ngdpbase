@@ -20,7 +20,7 @@ describe('Policy System Integration', () => {
   let policies: () => ReturnType<typeof readPolicies>;
   let policyEvaluator;
   let policyValidator;
-  let aclManager;
+  let policyInformationPoint;
 
   // Define test policies that will be loaded via ConfigurationManager
   const testPolicies = [
@@ -98,7 +98,7 @@ describe('Policy System Integration', () => {
 
     policyEvaluator = engine.getManager('PolicyEvaluator');
     policyValidator = engine.getManager('PolicyValidator');
-    aclManager = engine.getManager('ACLManager');
+    policyInformationPoint = engine.getManager('PolicyInformationPoint');
   });
 
   afterAll(async () => {
@@ -245,8 +245,8 @@ describe('Policy System Integration', () => {
     });
   });
 
-  describe('ACLManager Integration', () => {
-    test('should integrate with ACLManager for permission checks', async () => {
+  describe('PolicyInformationPoint Integration', () => {
+    test('should integrate with PolicyInformationPoint for permission checks', async () => {
       // #632: migrated from deprecated 4-arg `checkPagePermission` to the
       // canonical `checkPagePermissionWithContext`. Both routed through
       // PolicyEvaluator so the integration outcome is the same.
@@ -264,7 +264,7 @@ describe('Policy System Integration', () => {
         pageMetadata: { title: 'TestPage', uuid: 'test-page', lastModified: '' }
       };
 
-      const result = await aclManager.checkPagePermissionWithContext(wikiContext, 'edit');
+      const result = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
 
       expect(result).toBe(true);
     });

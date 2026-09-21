@@ -215,9 +215,9 @@ Full system backup: 1,190.76 KB → 235.17 KB compressed (19.7%)
 └─ AttachmentManager:        9.06 KB (attachments)
 ```
 
-### ACLManager Note
+### PolicyInformationPoint Note
 
-ACLManager does __not__ implement backup/restore because:
+PolicyInformationPoint does __not__ implement backup/restore because:
 
 - All policies are loaded from ConfigurationManager (already backed up)
 - Per-page ACLs are embedded in page content (backed up by PageManager)
@@ -1070,7 +1070,7 @@ The __BackupManager__ provides comprehensive backup and restore capabilities for
 | ConfigurationManager (383 properties) | ✅ Complete |
 | AttachmentManager | ✅ Complete |
 | SearchManager | ✅ Complete |
-| ACLManager | N/A (data in ConfigurationManager + PageManager) |
+| PolicyInformationPoint | N/A (data in ConfigurationManager + PageManager) |
 
 ---
 

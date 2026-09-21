@@ -145,7 +145,7 @@ Multiple addon paths are supported:
 engine.getManager<T>(name: string): T | undefined
 ```
 
-Core manager names: `ConfigurationManager`, `PageManager`, `UserManager`, `PluginManager`, `SearchManager`, `RenderingManager`, `ACLManager`, `NotificationManager`, `BackupManager`, `CacheManager`, `AuditManager`, `CatalogManager`, `TemplateManager`, `PolicyManager`, `ValidationManager`, `SchemaManager`, `ExportManager`, `AttachmentManager`, `ImportManager`, `AuthManager`, `EmailManager`, `MediaManager`, `AssetManager`, `MetricsManager`, `BackgroundJobManager`, `MarkupParser`, `AddonsManager`.
+Core manager names: `ConfigurationManager`, `PageManager`, `UserManager`, `PluginManager`, `SearchManager`, `RenderingManager`, `PolicyInformationPoint`, `NotificationManager`, `BackupManager`, `CacheManager`, `AuditManager`, `CatalogManager`, `TemplateManager`, `PolicyManager`, `ValidationManager`, `SchemaManager`, `ExportManager`, `AttachmentManager`, `ImportManager`, `AuthManager`, `EmailManager`, `MediaManager`, `AssetManager`, `MetricsManager`, `BackgroundJobManager`, `MarkupParser`, `AddonsManager`.
 
 ### Register a custom manager
 

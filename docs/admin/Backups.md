@@ -74,7 +74,7 @@ config/app-default-config.json - Added backup configuration properties
 - PolicyManager
 - PolicyValidator
 - PolicyEvaluator
-- ACLManager
+- PolicyInformationPoint
 - PluginManager
 - MarkupParser
 - RenderingManager
@@ -195,7 +195,7 @@ async restore(backupPath) {
 - AttachmentManager - Stores file attachments (delegates to provider)
 - PageManager - Stores wiki pages (likely delegates to provider)
 - UserManager - Stores user accounts and profiles
-- ACLManager - Stores access control lists
+- PolicyInformationPoint - Stores access control lists
 - SearchManager - Stores search indexes
 
 ### How Non-Data Managers Interact with BackupManager

@@ -2,7 +2,7 @@
  * The availability gate — is the instance open, and if not, why (#1432).
  *
  * Every case here is a thing the configuration could already say and that
- * nothing enforced: `ACLManager` held the implementations and no caller.
+ * nothing enforced: `PolicyInformationPoint` held the implementations and no caller.
  */
 import {
   resolveAvailability,

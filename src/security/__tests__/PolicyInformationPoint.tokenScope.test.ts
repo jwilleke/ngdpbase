@@ -1,5 +1,5 @@
 /**
- * ACLManager — agent-token scope ceiling (#946).
+ * PolicyInformationPoint — agent-token scope ceiling (#946).
  *
  * A delegated token may only exercise a SUBSET of its owner's rights, so the
  * scope check is a hard ceiling evaluated BEFORE every tier — not a tier of its
@@ -11,7 +11,7 @@
  * ordering.
  */
 
-import ACLManager from '../ACLManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 
 function makeEngine() {
   return {
@@ -58,11 +58,11 @@ function ctx(opts: {
   } as never;
 }
 
-describe('ACLManager agent-token scope ceiling (#946)', () => {
-  let acl: ACLManager;
+describe('PolicyInformationPoint agent-token scope ceiling (#946)', () => {
+  let acl: PolicyInformationPoint;
 
   beforeEach(async () => {
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 

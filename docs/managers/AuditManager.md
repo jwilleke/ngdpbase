@@ -554,7 +554,7 @@ decision that the trail was days old and may die.
 
 #### What is deliberately not recorded
 
-`authorization-allow` has an emitter but nothing reaches it: `ACLManager`
+`authorization-allow` has an emitter but nothing reaches it: `PolicyInformationPoint`
 records denials only. An allow fires on every page view, which is the
 read-volume `auditRegistry` exempts `page-read` for and that #334 was filed
 about. A denial is rare and is the half a security assessment asks about.

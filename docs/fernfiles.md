@@ -159,7 +159,7 @@ ngdpbase: `docs/SEMVER.md` still says v1.2.0 and references a deleted `scripts/v
 - __Per-request link index rebuild.__ Fernfiles rebuilds the whole link index per request (capped at 5,000 files) because it has no job runner to repair a stale one. ngdpbase's incremental in-memory `linkGraph` is the right design at 18k pages.
 - __`[[Name]]` link syntax.__ NCM `[Title]` with `PageNameMatcher` plural handling is already settled; do not reopen.
 - __Spec directories with numbered phases.__ Conflicts with the issue-per-step rule in AGENTS.md and the kit. Keep issues as the unit; borrow only the postmortem form.
-- __Sharing by identity with an FGA-shaped choke point.__ ngdpbase's role/policy/audience model is a superset; link-scoped shares with TTL already exist. Nothing to borrow except the sentence "every permission decision goes through `ACLManager`; expressing one anywhere else is a bug" — which ngdpbase already lives by.
+- __Sharing by identity with an FGA-shaped choke point.__ ngdpbase's role/policy/audience model is a superset; link-scoped shares with TTL already exist. Nothing to borrow except the sentence "every permission decision goes through `PolicyInformationPoint`; expressing one anywhere else is a bug" — which ngdpbase already lives by.
 - __No CLI, REST, or MCP.__ ngdpbase has all three. Fernfiles' planned OAuth device flow for agents is worth reading when agent tokens (#946) grow scopes, not before.
 
 ## Recommended issues, in order

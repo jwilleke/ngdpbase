@@ -571,7 +571,7 @@ class LunrSearchProvider extends BaseSearchProvider {
    * search() and the no-text advancedSearch branch. A private page lives in its
    * owner's private container: it is found only by its owner — no role, and no
    * frontmatter audience, reaches in (docs/planning/private-stores.md, Access;
-   * the same rule ACLManager applies at Tier 0).
+   * the same rule PolicyInformationPoint applies at Tier 0).
    */
   private isDocVisible(doc: LunrDocument, wikiContext?: SearchOptions['wikiContext']): boolean {
     if (!doc.isPrivate) return true;

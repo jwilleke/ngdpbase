@@ -69,7 +69,7 @@ vi.mock('../../WikiEngine', () => {
     textToHTML: vi.fn().mockResolvedValue('<p>Content</p>')
   };
 
-  const mockACLManager = {
+  const mockPolicyInformationPoint = {
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content')
@@ -127,7 +127,7 @@ vi.mock('../../WikiEngine', () => {
     UserManager: mockUserManager,
     PageManager: mockPageManager,
     RenderingManager: mockRenderingManager,
-    ACLManager: mockACLManager,
+    PolicyInformationPoint: mockPolicyInformationPoint,
     NotificationManager: mockNotificationManager,
     SearchManager: mockSearchManager,
     SchemaManager: mockSchemaManager,

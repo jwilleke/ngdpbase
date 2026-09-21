@@ -119,7 +119,7 @@ const mockUserManager = {
   getSession: vi.fn()
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
@@ -198,7 +198,7 @@ vi.mock('../../WikiEngine', () => {
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,
-          ACLManager: mockACLManager,
+          PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
           NotificationManager: mockNotificationManager,
@@ -263,10 +263,10 @@ function resetMocks() {
   mockPageManager.getPageUUID.mockReturnValue(null);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
 
-  mockACLManager.checkPagePermission.mockResolvedValue(true);
-  mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
-  mockACLManager.removeACLMarkup.mockImplementation((c: string) => c);
-  mockACLManager.parseACL.mockReturnValue({ permissions: [] });
+  mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
+  mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
+  mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 
   mockCacheManager.isInitialized.mockReturnValue(true);
   mockCacheManager.get.mockResolvedValue(null);
@@ -736,7 +736,7 @@ describe('WikiRoutes — coverage batch 4', () => {
     });
 
     test('returns 403 when ACL denies delete', async () => {
-      mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
       const res = await request(app)
         .post('/delete/TestPage')
         .set('x-csrf-token', 'test-csrf-token');

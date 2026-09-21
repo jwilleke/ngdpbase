@@ -31,7 +31,7 @@ __Generated API:__ [API Docs](../api/generated/src/managers/BaseManager/README.m
         ▼                ▼                ▼
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
 │  BaseManager  │ │  BaseManager  │ │  BaseManager  │
-│  (ACLManager) │ │ (PageManager) │ │ (UserManager) │
+│  (PolicyInformationPoint) │ │ (PageManager) │ │ (UserManager) │
 └───────────────┘ └───────────────┘ └───────────────┘
 ```
 

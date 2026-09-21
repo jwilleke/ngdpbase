@@ -21,7 +21,7 @@ WikiRoutes.savePage() / editPage()
     │  parse request body (title, content, metadata fields)
     │  build WikiContext with incoming content
     ▼
-ACLManager.checkPermission('edit', pageName, userContext)
+PolicyInformationPoint.checkPermission('edit', pageName, userContext)
     │  throws 403 if user lacks write permission
     ▼
 PageManager.savePageWithContext(wikiContext, metadata)
@@ -71,7 +71,7 @@ __Source__: `src/managers/PageManager.ts` `savePageWithContext()` ~line 420
 
 For `documentation` and `system` category pages with no logged-in user, `author` defaults to `"system"`.
 
-__Why__: `author` drives private-page ACL ownership in `ACLManager`. Changing it would break access control.
+__Why__: `author` drives private-page ACL ownership in `PolicyInformationPoint`. Changing it would break access control.
 
 ---
 
@@ -167,7 +167,7 @@ __Tracked in__: [#596 — FilterChain configured but filterChain.execute() never
 | Author immutability | Save | `PageManager.savePageWithContext()` |
 | Metadata sanitization | Save | `ValidationManager.sanitizeMetadata()` |
 | UUID / slug / title conflicts | Save | `ValidationManager.checkConflicts()` |
-| ACL / permission check | Save | `ACLManager.checkPermission()` |
+| ACL / permission check | Save | `PolicyInformationPoint.checkPermission()` |
 | Markup syntax validation | __Not run__ (#596) | `ValidationFilter` (dead code) |
 | HTML sanitization | __Not run__ (#596) | `SecurityFilter` (dead code) |
 | Spam detection | __Not run__ (#596) | `SpamFilter` (dead code) |
@@ -183,7 +183,7 @@ __Tracked in__: [#596 — FilterChain configured but filterChain.execute() never
 | `src/routes/WikiRoutes.ts` | HTTP entry points — `savePage()`, `editPage()`, `editPageIndex()` |
 | `src/managers/PageManager.ts` | `savePageWithContext()` — orchestrates save pipeline |
 | `src/managers/ValidationManager.ts` | `sanitizeMetadata()`, `checkConflicts()` |
-| `src/managers/ACLManager.ts` | `checkPermission()` — access control |
+| `src/managers/PolicyInformationPoint.ts` | `checkPermission()` — access control |
 | `src/providers/FileSystemProvider.ts` | Standard disk write |
 | `src/providers/VersioningFileProvider.ts` | Versioned disk write |
 | `src/managers/RenderingManager.ts` | `updatePageInLinkGraph()` — post-write link update |

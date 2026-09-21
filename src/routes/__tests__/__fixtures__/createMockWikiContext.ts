@@ -113,7 +113,7 @@ export function createMockWikiContext(
     renderingManager: (engine as { getManager?: (n: string) => unknown }).getManager?.('RenderingManager'),
     pluginManager: (engine as { getManager?: (n: string) => unknown }).getManager?.('PluginManager'),
     variableManager: (engine as { getManager?: (n: string) => unknown }).getManager?.('VariableManager'),
-    aclManager: (engine as { getManager?: (n: string) => unknown }).getManager?.('ACLManager')
+    policyInformationPoint: (engine as { getManager?: (n: string) => unknown }).getManager?.('PolicyInformationPoint')
   } : {};
 
   return {

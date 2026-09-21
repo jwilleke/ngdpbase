@@ -71,7 +71,7 @@ function makeRoutes(canView: boolean, granted: string[]) {
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'ExportManager') return exportManager;
-      if (name === 'ACLManager') {
+      if (name === 'PolicyInformationPoint') {
         return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(canView) };
       }
       if (name === 'PageManager') {

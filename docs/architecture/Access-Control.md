@@ -1,7 +1,7 @@
 # Access Control — Operational Guide
 
 __Status__: Production (as of 2026-05-03, post-v3.6.0)
-__Source__: `src/context/WikiContext.ts`, `src/parsers/context/ParseContext.ts`, `src/context/ApiContext.ts`, `src/managers/UserManager.ts`, `src/managers/ACLManager.ts`, `src/managers/PolicyEvaluator.ts`
+__Source__: `src/context/WikiContext.ts`, `src/parsers/context/ParseContext.ts`, `src/context/ApiContext.ts`, `src/managers/UserManager.ts`, `src/managers/PolicyInformationPoint.ts`, `src/managers/PolicyEvaluator.ts`
 __Related__: [policy-based-access-control-design.md](../design/policy-based-access-control-design.md) | [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md) | [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md)
 
 > __Superseded for allow and deny.__ Parts of this page predate [#1198](https://github.com/jwilleke/ngdpbase/issues/1198) and still show role-name gates. A role name is never an allow or a deny: follow [security-developer-guide.md](../guides/security-developer-guide.md) and [security-posture.md](../security-posture.md) P2 where this page disagrees.
@@ -16,7 +16,7 @@ How to do permission and role checks in ngdpbase code. One canonical method per 
 |---|---|---|---|
 | Does the user carry a role? | `wikiContext.hasRole(...names)` | `userContext.roles` array check | sync |
 | Is the user globally allowed to do action X? | `wikiContext.hasPermission(action)` | `UserManager.hasPermission` → `PolicyEvaluator` | async |
-| Is the user allowed to do action X __on this page__? | `wikiContext.canAccess(action)` | `ACLManager.checkPagePermissionWithContext` (3-tier) | async |
+| Is the user allowed to do action X __on this page__? | `wikiContext.canAccess(action)` | `PolicyInformationPoint.checkPagePermissionWithContext` (3-tier) | async |
 | What principals match this user for audience filters? | `wikiContext.getPrincipals()` | `[...roles, username]` | sync |
 | Hot-path role check, no WikiContext available? | `WikiContext.userHasRole(userContext, ...names)` | static helper | sync |
 
@@ -104,7 +104,7 @@ __On `ApiContext`__: `await ctx.hasPermission(action)`. Both `ApiContext` and `P
 
 ### 3. `canAccess(action)` — async, page-resource-aware 3-tier evaluator
 
-Returns `true` if the user is allowed to perform `action` __on the current page__. Delegates to `ACLManager.checkPagePermissionWithContext(wikiContext, action)`.
+Returns `true` if the user is allowed to perform `action` __on the current page__. Delegates to `PolicyInformationPoint.checkPagePermissionWithContext(wikiContext, action)`.
 
 The 3-tier evaluator runs in order; the first tier that decides wins:
 
@@ -119,9 +119,9 @@ if (!(await wikiContext.canAccess('edit'))) return res.status(403)...;
 if (!(await wikiContext.canAccess('view'))) return res.status(403)...;
 ```
 
-`canAccess('view')` is the canonical "can the user read this page?" gate. Action-name mapping inside ACLManager: `view` → `page-read`, `edit` → `page-edit`, `delete` → `page-delete`, `create` → `page-create`, `rename` → `page-rename`, `upload` → `asset-upload`.
+`canAccess('view')` is the canonical "can the user read this page?" gate. Action-name mapping inside PolicyInformationPoint: `view` → `page-read`, `edit` → `page-edit`, `delete` → `page-delete`, `create` → `page-create`, `rename` → `page-rename`, `upload` → `asset-upload`.
 
-__On `ParseContext`__: synthesizes a minimal WikiContext-shaped object from `pageName + originalContent + userContext + pageMetadata` and delegates to ACLManager. __Not on `ApiContext`__ — page-resource-aware checks belong to wiki-page rendering, not to API-route scope.
+__On `ParseContext`__: synthesizes a minimal WikiContext-shaped object from `pageName + originalContent + userContext + pageMetadata` and delegates to PolicyInformationPoint. __Not on `ApiContext`__ — page-resource-aware checks belong to wiki-page rendering, not to API-route scope.
 
 ### 4. `getPrincipals()` — sync, audience-filter principals
 
@@ -151,7 +151,7 @@ Used by `wikiContext.hasPermission()`, `apiContext.hasPermission()`, `parseConte
 
 The `pageName: '*'` argument means the evaluator skips per-page resource matching — this is for "can this user do action X anywhere?" gates.
 
-### `ACLManager.checkPagePermissionWithContext(wikiContext, action)` — per-page
+### `PolicyInformationPoint.checkPagePermissionWithContext(wikiContext, action)` — per-page
 
 Used by `wikiContext.canAccess()`, `parseContext.canAccess()`, and route handlers that need per-page checks. Runs the 3-tier evaluator described above. The ParseContext path synthesizes a minimal context shape; in tier-2 it falls through to `PolicyEvaluator` with the actual page name, getting glob-pattern resource matching for free.
 
@@ -159,7 +159,7 @@ Used by `wikiContext.canAccess()`, `parseContext.canAccess()`, and route handler
 
 Iterates registered policies in priority order. Each policy has `subjects` (roles), `resources` (page-name globs), `actions`, and `effect: 'allow' | 'deny'`. The first policy whose `subjects` + `resources` + `actions` all match decides. If no policy matches, default deny.
 
-You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through `UserManager` (for global) or `ACLManager` (for per-page) so the canonical role-expansion / 3-tier logic runs.
+You should __not__ call `PolicyEvaluator.evaluateAccess` directly from application code — go through `UserManager` (for global) or `PolicyInformationPoint` (for per-page) so the canonical role-expansion / 3-tier logic runs.
 
 ---
 
@@ -347,7 +347,7 @@ These caches (`src/providers/FileSystemProvider.ts`) are populated during `provi
 For a typical `wikiContext.canAccess('view')` call:
 
 1. __Route handler__ loads page metadata via `pageManager.getPageMetadata(pageName)` → in-memory Map hit, no disk I/O. Sets `wikiContext.pageMetadata`.
-2. __`canAccess('view')`__ delegates to `ACLManager.checkPagePermissionWithContext(this, 'view')`:
+2. __`canAccess('view')`__ delegates to `PolicyInformationPoint.checkPagePermissionWithContext(this, 'view')`:
    - __Tier 0__ (private user-keyword): reads `wikiContext.pageMetadata?.['user-keywords']` — already in memory.
    - __Tier 1__ (frontmatter audience/access): reads `wikiContext.pageMetadata?.audience` etc. — already in memory.
    - __Tier 2__ (PolicyEvaluator): iterates registered policies (in-memory list) and runs glob matches. No I/O.
@@ -404,5 +404,5 @@ The following remain open as separately-tracked follow-ups (none block typical a
 - [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md) — full WikiContext API + lifecycle
 - [policy-based-access-control-design.md](../design/policy-based-access-control-design.md) — JSON policy schema design (Issue #19)
 - [time-based-permissions-design.md](../design/time-based-permissions-design.md) — context-aware permission rules
-- [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md) — UserManager, ACLManager, PolicyManager, PolicyEvaluator roles
+- [MANAGERS-OVERVIEW.md](./MANAGERS-OVERVIEW.md) — UserManager, PolicyInformationPoint, PolicyManager, PolicyEvaluator roles
 - Issue history: #625 (consolidation), #609 (test isolation flake), #630 / #633 (Api / Parse hasPermission divergence)

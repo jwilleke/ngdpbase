@@ -7,12 +7,12 @@ import { resolveAvailability } from '../availability';
  * #1147 — "one switch, one state", made provable. #1432 — made structural.
  *
  * The original bug was not that either reader was wrong on its own: the gate
- * middleware and `ACLManager` read different sources, so the instance could be
+ * middleware and `PolicyInformationPoint` read different sources, so the instance could be
  * half in maintenance, and which half depended on how it was switched on.
  * These tests drove both readers from one configuration and asserted the same
  * verdict.
  *
- * `ACLManager` no longer reads maintenance at all — #1432 removed
+ * `PolicyInformationPoint` no longer reads maintenance at all — #1432 removed
  * `checkContextRestrictions` and its four companions, none of which had a
  * caller, and the availability question moved to `src/utils/availability.ts`
  * behind the gate middleware. So the disagreement is now impossible by
@@ -20,15 +20,15 @@ import { resolveAvailability } from '../availability';
  * reader exists, and it is the gate's.
  */
 const __dirname_ = path.dirname(fileURLToPath(import.meta.url));
-const aclSource = readFileSync(path.resolve(__dirname_, '../../managers/ACLManager.ts'), 'utf8');
+const aclSource = readFileSync(path.resolve(__dirname_, '../../security/PolicyInformationPoint.ts'), 'utf8');
 
 describe('#1147/#1432 — there is one reader of the maintenance switch', () => {
-  test('ACLManager does not read maintenance state', () => {
+  test('PolicyInformationPoint does not read maintenance state', () => {
     expect(aclSource).not.toContain('resolveMaintenanceState');
     expect(aclSource).not.toContain('maintenanceState');
   });
 
-  test('ACLManager holds none of the availability checks', () => {
+  test('PolicyInformationPoint holds none of the availability checks', () => {
     for (const gone of [
       'checkContextRestrictions',
       'checkMaintenanceMode',

@@ -435,5 +435,5 @@ app.get('/admin/notifications/stats', (req, res) => {
 ## Related Documentation
 
 - [NotificationManager.md](NotificationManager.md) - Quick reference
-- [ACLManager](ACLManager.md) - Access logging integration
+- [PolicyInformationPoint](PolicyInformationPoint.md) - Access logging integration
 - [ConfigurationManager](ConfigurationManager.md) - Settings

@@ -1,6 +1,6 @@
 ---
 name: PolicyEvaluator
-description: Tier-2 of ACLManager — evaluates role/permission policies against principals and resources
+description: Tier-2 of PolicyInformationPoint — evaluates role/permission policies against principals and resources
 dateModified: '2026-05-14'
 category: managers
 code: src/managers/PolicyEvaluator.ts
@@ -122,7 +122,7 @@ PolicyEvaluator is the __decision engine__ in ngdpbase's access control system. 
 
 ### `compile(userContext, action)`
 
-`evaluateAccess` with the subject and action fixed ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)). Drops the policies that cannot match this subject or action once, and returns `(pageName) => EvaluationResult` that matches resources only, in the same first-match-wins order, with no log line per call. `ACLManager.filterAccessiblePages` uses it to decide tier 2 for every page in a listing.
+`evaluateAccess` with the subject and action fixed ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)). Drops the policies that cannot match this subject or action once, and returns `(pageName) => EvaluationResult` that matches resources only, in the same first-match-wins order, with no log line per call. `PolicyInformationPoint.filterAccessiblePages` uses it to decide tier 2 for every page in a listing.
 
 ### `evaluateAccess(context)`
 

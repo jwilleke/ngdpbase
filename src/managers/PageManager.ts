@@ -1408,7 +1408,7 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     // author — immutable original creator, set on ALL pages, never changes.
-    // Used for both attribution display and private-page ACL ownership (see ACLManager).
+    // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
     // Preserve from the existing page — must never be overwritten on edit.
     // For documentation/system category pages, default to 'system' if no user is present.
     const existingPage = pageName ? await this.provider.getPage(pageName, saveContext) : null;
@@ -1941,7 +1941,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * stays for callers with no reader — indexing, link graphs, jobs, and admin
    * surfaces already gated by `admin-system`. Anything rendered to a request
    * goes through here, so the listing and `canAccess` are the same evaluator
-   * (`ACLManager.filterAccessiblePages`). Without an ACLManager nothing is
+   * (`PolicyInformationPoint.filterAccessiblePages`). Without an PolicyInformationPoint nothing is
    * listed — never the unfiltered index by accident.
    *
    * @param subject - The reader's own context, forwarded (viaToken / viaShare ride on it)
@@ -1953,9 +1953,9 @@ class PageManager extends BaseManager implements CatalogSource {
     }
     const acl = this.engine.getManager<{
       filterAccessiblePages(subject: PermissionSubject | null | undefined, action: string, candidates: Array<{ title: string; metadata: PageFrontmatter | null }>): Promise<string[]>;
-        }>('ACLManager');
+        }>('PolicyInformationPoint');
     if (!acl) {
-      logger.warn('[PageManager] listPagesFor: ACLManager unavailable — listing nothing');
+      logger.warn('[PageManager] listPagesFor: PolicyInformationPoint unavailable — listing nothing');
       return [];
     }
     const infos = await this.provider.getAllPageInfo();
@@ -2098,7 +2098,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * The private-container decision for a page (docs/planning/private-stores.md,
-   * Access). ACLManager's Tier 0 asks this, so every `canAccess` on a page —
+   * Access). PolicyInformationPoint's Tier 0 asks this, so every `canAccess` on a page —
    * view, edit, lists, the attachment door — reaches the same rule.
    *
    * `pages/private/{user}/` and every store below it is owned by that user.

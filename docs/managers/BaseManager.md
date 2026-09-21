@@ -72,7 +72,7 @@ class MyManager extends BaseManager {
 
 All managers in `src/managers/` extend BaseManager:
 
-- [ACLManager](ACLManager.md)
+- [PolicyInformationPoint](PolicyInformationPoint.md)
 - [AttachmentManager](AttachmentManager.md)
 - [AuditManager](AuditManager.md)
 - [CacheManager](CacheManager.md)

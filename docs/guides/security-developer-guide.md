@@ -3,7 +3,7 @@ name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
 dateModified: 2026-09-06
 category: guides
-relatedModules: [UserManager, PolicyEvaluator, ACLManager, WikiContext, ApiContext]
+relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
 
 # Security developer guide

@@ -87,7 +87,7 @@ Families with live emitters:
 - Administration: raw page edit, session revoke, clear-anonymous-sessions
 - The trail itself: `audit-chain-restart`
 
-`authorization-allow` and `policy-evaluate` have emitters on `AuditManager` (`logAccessDecision`, `logPolicyEvaluation`). Nothing in production calls them: `ACLManager` records denials only, and no caller reaches `logPolicyEvaluation`. They stay in the vocabulary because the methods exist and history may contain the names.
+`authorization-allow` and `policy-evaluate` have emitters on `AuditManager` (`logAccessDecision`, `logPolicyEvaluation`). Nothing in production calls them: `PolicyInformationPoint` records denials only, and no caller reaches `logPolicyEvaluation`. They stay in the vocabulary because the methods exist and history may contain the names.
 
 Attribution on a record: `user`, `ipAddress`, `viaTokenId`, `viaTokenName`. A request that authenticated with an agent token is distinguishable from the same username acting in a browser session.
 

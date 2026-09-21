@@ -244,7 +244,7 @@ acl:
   edit: [admin]
 ```
 
-`ACLManager` evaluates this at request time. Anonymous users are denied before the rendering pipeline runs.
+`PolicyInformationPoint` evaluates this at request time. Anonymous users are denied before the rendering pipeline runs.
 
 ### Policy layer
 

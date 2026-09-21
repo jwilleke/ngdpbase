@@ -32,7 +32,7 @@ No further configuration is required — unlike `authentik-bearer`, there is no 
 
 ## Scope enforcement
 
-`ACLManager.checkPagePermissionWithContext` applies the token's scopes as a __hard ceiling before every tier__:
+`PolicyInformationPoint.checkPagePermissionWithContext` applies the token's scopes as a __hard ceiling before every tier__:
 
 ```text
 scope gate  → deny if action ∉ token scopes   ← this provider's contribution

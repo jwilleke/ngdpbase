@@ -103,7 +103,7 @@ export interface PageFrontmatter {
   /**
    * Whether the page is private — accessible only to the page creator and admins.
    *
-   * Peer of `audience` and `author-lock`; canonical signal for ACLManager's tier-0
+   * Peer of `audience` and `author-lock`; canonical signal for PolicyInformationPoint's tier-0
    * private check. When true, all other per-page rules (audience, access, author-lock)
    * are bypassed and the page is stored in a separate per-creator location.
    *

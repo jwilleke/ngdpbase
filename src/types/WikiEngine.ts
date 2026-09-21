@@ -17,7 +17,7 @@ export type ManagerName =
   | 'ConfigurationManager'
   | 'PageManager'
   | 'UserManager'
-  | 'ACLManager'
+  | 'PolicyInformationPoint'
   | 'PluginManager'
   | 'RenderingManager'
   | 'SearchManager'

@@ -37,7 +37,7 @@ function makeValidationManager() {
   };
 }
 
-function makeACLManager(allowed = true) {
+function makePolicyInformationPoint(allowed = true) {
   return {
     checkAccess: vi.fn().mockResolvedValue({ allowed, reason: 'ok' })
   };
@@ -55,15 +55,15 @@ function makeConfigManager() {
   };
 }
 
-function makeEngine({ pageManager = undefined, validationManager = undefined, aclManager = undefined, configManager = undefined }: {
+function makeEngine({ pageManager = undefined, validationManager = undefined, policyInformationPoint = undefined, configManager = undefined }: {
   pageManager?: ReturnType<typeof makePageManager>;
   validationManager?: ReturnType<typeof makeValidationManager>;
-  aclManager?: ReturnType<typeof makeACLManager>;
+  policyInformationPoint?: ReturnType<typeof makePolicyInformationPoint>;
   configManager?: ReturnType<typeof makeConfigManager>;
 } = {}) {
   const pm = pageManager      ?? makePageManager();
   const vm = validationManager ?? makeValidationManager();
-  const acl = aclManager      ?? makeACLManager(true);
+  const acl = policyInformationPoint      ?? makePolicyInformationPoint(true);
   const cm = configManager    ?? makeConfigManager();
 
   return {
@@ -71,7 +71,7 @@ function makeEngine({ pageManager = undefined, validationManager = undefined, ac
       switch (name) {
       case 'PageManager':          return pm;
       case 'ValidationManager':    return vm;
-      case 'ACLManager':           return acl;
+      case 'PolicyInformationPoint':           return acl;
       case 'ConfigurationManager': return cm;
       default:                     return null;
       }

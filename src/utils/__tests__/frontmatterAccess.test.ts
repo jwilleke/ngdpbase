@@ -1,9 +1,9 @@
 /**
  * #1054 — the one implementation of ACL Tier 1.
  *
- * These cases are transcribed from ACLManager.checkFrontmatterAccess's actual
+ * These cases are transcribed from PolicyInformationPoint.checkFrontmatterAccess's actual
  * behaviour, not from what it looked like it did: the refactor is only safe if
- * this helper decides identically, and 32 existing ACLManager assertions are
+ * this helper decides identically, and 32 existing PolicyInformationPoint assertions are
  * the regression net behind it.
  */
 import { describe, test, expect } from 'vitest';
@@ -63,7 +63,7 @@ describe('decideFrontmatterAccess', () => {
   });
 
   test('allows a viewer matching by username', () => {
-    // ACLManager checks `userRoles.includes(p) || username === p`; a flat
+    // PolicyInformationPoint checks `userRoles.includes(p) || username === p`; a flat
     // principal list of [...roles, username] is the same test.
     expect(decideFrontmatterAccess({ audience: ['jim'] }, ['reader', 'jim'], 'view').allowed).toBe(true);
   });

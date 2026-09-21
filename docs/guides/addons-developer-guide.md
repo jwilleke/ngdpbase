@@ -219,7 +219,7 @@ const pageManager = engine.getManager('PageManager');
 const pages = await pageManager.getAllPages();
 ```
 
-Core manager names: `PageManager`, `UserManager`, `ACLManager`, `AttachmentManager`,
+Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
 `MediaManager` *(may be null if not enabled)*.

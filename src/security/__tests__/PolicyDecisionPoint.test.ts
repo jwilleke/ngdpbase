@@ -2,7 +2,7 @@
  * The Policy Decision Point (#1431).
  *
  * The ordering here IS the behaviour, and it used to exist twice — once in
- * `UserManager.hasPermission` and once in `ACLManager`'s page door — so these
+ * `UserManager.hasPermission` and once in `PolicyInformationPoint`'s page door — so these
  * pin it in the one place it now lives.
  */
 import PolicyDecisionPoint from '../PolicyDecisionPoint';

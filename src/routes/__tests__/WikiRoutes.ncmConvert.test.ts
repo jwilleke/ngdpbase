@@ -38,13 +38,13 @@ function makeRoutes(canEdit: boolean) {
     savePageWithContext,
     savePage
   };
-  const aclManager = {
+  const policyInformationPoint = {
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(canEdit)
   };
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'PageManager') return withRealPageConvert(pageManager);
-      if (name === 'ACLManager') return aclManager;
+      if (name === 'PolicyInformationPoint') return policyInformationPoint;
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
     })
@@ -54,15 +54,15 @@ function makeRoutes(canEdit: boolean) {
     () => ({ userContext: editor, hasPermission: vi.fn().mockResolvedValue(false) });
   (routes as unknown as { localizePageImages: (...a: unknown[]) => Promise<unknown> }).localizePageImages =
     async (content: unknown) => ({ content, warnings: [] });
-  return { routes, pageManager, aclManager, savePageWithContext, savePage };
+  return { routes, pageManager, policyInformationPoint, savePageWithContext, savePage };
 }
 
 describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
   test('a page-edit caller gets a preview', async () => {
-    const { routes, aclManager } = makeRoutes(true);
+    const { routes, policyInformationPoint } = makeRoutes(true);
     const res = makeRes();
     await routes.adminConvertPreview(makeReq({ page: 'Target' }), res);
-    expect(aclManager.checkPagePermissionWithContext).toHaveBeenCalledWith(expect.anything(), 'edit');
+    expect(policyInformationPoint.checkPagePermissionWithContext).toHaveBeenCalledWith(expect.anything(), 'edit');
     const payload = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
     expect(payload.success).toBe(true);
     expect(payload.changed).toBe(true);
@@ -115,7 +115,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     const engine = {
       getManager: vi.fn((name: string) => {
         if (name === 'PageManager') return withRealPageConvert(pageManager);
-        if (name === 'ACLManager') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
+        if (name === 'PolicyInformationPoint') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
         if (name === 'FootnoteManager') {
           return {
             isEnabled: () => true,

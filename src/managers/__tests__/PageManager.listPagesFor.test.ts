@@ -10,7 +10,7 @@ function makeManager(filtered: string[]) {
   const seen: unknown[] = [];
   const engine = {
     getManager: (n: string) => {
-      if (n === 'ACLManager') {
+      if (n === 'PolicyInformationPoint') {
         return {
           filterAccessiblePages: async (subject: unknown, action: string, candidates: Array<{ title: string }>) => {
             seen.push({ subject, action, titles: candidates.map((c) => c.title) });
@@ -49,7 +49,7 @@ describe('PageManager.listPagesFor (#1219)', () => {
     expect(seen[0]).toMatchObject({ subject: viaToken, action: 'edit' });
   });
 
-  test('no ACLManager: nothing is listed — never the unfiltered index', async () => {
+  test('no PolicyInformationPoint: nothing is listed — never the unfiltered index', async () => {
     const { pm } = makeManager(['Alpha']);
     (pm as unknown as { engine: { getManager: () => null } }).engine = { getManager: () => null };
     expect(await pm.listPagesFor(reader)).toEqual([]);

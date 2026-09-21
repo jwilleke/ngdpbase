@@ -18,7 +18,7 @@ import type PageManager from '../managers/PageManager.js';
 import type RenderingManager from '../managers/RenderingManager.js';
 import type PluginManager from '../managers/PluginManager.js';
 import type VariableManager from '../managers/VariableManager.js';
-import type ACLManager from '../managers/ACLManager.js';
+import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type MarkupParser from '../parsers/MarkupParser.js';
 import type { VariableContext } from '../managers/VariableManager.js';
 import { getThemeManager as getThemeManagerFor, type ThemeInfo } from '../managers/ThemeManager.js';
@@ -193,7 +193,7 @@ export interface ContextTypes {
  * @property {RenderingManager} renderingManager - Reference to RenderingManager
  * @property {PluginManager} pluginManager - Reference to PluginManager
  * @property {VariableManager} variableManager - Reference to VariableManager
- * @property {ACLManager} aclManager - Reference to ACLManager
+ * @property {PolicyInformationPoint} policyInformationPoint - Reference to PolicyInformationPoint
  * @property {MarkdownConverter} _fallbackConverter - Fallback markdown converter (#1273)
  *
  * @see {@link WikiEngine} for the main engine
@@ -269,8 +269,8 @@ class WikiContext extends BaseContext {
   /** Reference to VariableManager */
   public readonly variableManager: VariableManager;
 
-  /** Reference to ACLManager */
-  public readonly aclManager: ACLManager;
+  /** Reference to PolicyInformationPoint */
+  public readonly policyInformationPoint: PolicyInformationPoint;
 
   // Theme is resolved lazily — first read of `activeTheme` or `themeInfo` triggers
   // ConfigurationManager.getProperty('ngdpbase.theme.active') and ThemeManager
@@ -363,7 +363,7 @@ class WikiContext extends BaseContext {
     this.renderingManager = engine.getManager<RenderingManager>('RenderingManager')!;
     this.pluginManager = engine.getManager<PluginManager>('PluginManager')!;
     this.variableManager = engine.getManager<VariableManager>('VariableManager')!;
-    this.aclManager = engine.getManager<ACLManager>('ACLManager')!;
+    this.policyInformationPoint = engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')!;
 
     // Degraded path, when RenderingManager has no parser (#1273).
     this._fallbackConverter = createMarkdownConverter('fallback');
@@ -428,13 +428,13 @@ class WikiContext extends BaseContext {
    * passed (#714 Slice B, the cross-page check used by linked-page visibility
    * filters and serveAttachment's owning-page lookup).
    *
-   * Delegates to {@link ACLManager.checkPagePermissionWithContext} for the
-   * current page (the no-override fast path) and {@link ACLManager.canUserAccessPage}
+   * Delegates to {@link PolicyInformationPoint.checkPagePermissionWithContext} for the
+   * current page (the no-override fast path) and {@link PolicyInformationPoint.canUserAccessPage}
    * for cross-page checks (#714 Slice B — loads the target page's metadata
    * internally and runs the same evaluator).
    *
    * Returns false if the WikiContext has no pageName (and no override) or no
-   * ACLManager.
+   * PolicyInformationPoint.
    *
    * @param {string} action - Page action (e.g., 'view', 'edit', 'delete')
    * @param {string} [pageNameOverride] - When set, check access on this page
@@ -454,7 +454,7 @@ class WikiContext extends BaseContext {
    * }
    */
   async canAccess(action: string, pageNameOverride?: string): Promise<boolean> {
-    if (!this.aclManager) return false;
+    if (!this.policyInformationPoint) return false;
 
     // Resolve the page we're checking. When `pageNameOverride` is set, it
     // wins — that's the cross-page case. Otherwise use this.pageName (the
@@ -475,7 +475,7 @@ class WikiContext extends BaseContext {
       // Cross-page check — go through canUserAccessPage so the target's
       // metadata is loaded internally (the current WikiContext's
       // pageMetadata describes a DIFFERENT page).
-      promise = this.aclManager.canUserAccessPage(
+      promise = this.policyInformationPoint.canUserAccessPage(
         this.userContext,
         pageNameOverride,
         action
@@ -483,8 +483,8 @@ class WikiContext extends BaseContext {
     } else {
       // Same-page check — reuse the existing evaluator with this WikiContext
       // (its pageMetadata + content are already loaded for the current page).
-      promise = this.aclManager.checkPagePermissionWithContext(
-        this as unknown as Parameters<ACLManager['checkPagePermissionWithContext']>[0],
+      promise = this.policyInformationPoint.checkPagePermissionWithContext(
+        this as unknown as Parameters<PolicyInformationPoint['checkPagePermissionWithContext']>[0],
         action
       );
     }

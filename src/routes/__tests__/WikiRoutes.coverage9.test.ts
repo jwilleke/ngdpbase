@@ -116,7 +116,7 @@ const mockUserManager = {
   getSession: vi.fn()
 };
 
-const mockACLManager = {
+const mockPolicyInformationPoint = {
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
@@ -186,7 +186,7 @@ vi.mock('../../WikiEngine', () => {
           PageManager: mockPageManager,
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,
-          ACLManager: mockACLManager,
+          PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
           NotificationManager: mockNotificationManager,
@@ -264,10 +264,10 @@ function resetMocks() {
   });
   mockVersionProvider.restoreVersion.mockResolvedValue(3);
 
-  mockACLManager.checkPagePermission.mockResolvedValue(true);
-  mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
-  mockACLManager.removeACLMarkup.mockImplementation((c: string) => c);
-  mockACLManager.parseACL.mockReturnValue({ permissions: [] });
+  mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
+  mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
+  mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 
   mockCacheManager.isInitialized.mockReturnValue(true);
   mockCacheManager.get.mockResolvedValue(null);

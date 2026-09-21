@@ -519,13 +519,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       ? await this.engine.getManager<PageManager>('PageManager')?.getPrivatePageOwner(pageName, ctx) ?? null
       : null;
     // A private container is its owner's: nobody else writes into it unless the
-    // owner delegated. The decision is the page's own — ACLManager Tier 0 via
+    // owner delegated. The decision is the page's own — PolicyInformationPoint Tier 0 via
     // the cross-page check — so the rule has one home and a refusal is recorded
     // (authorization-deny). Refused before any bytes are stored.
     if (pageOwner && pageName) {
       const acl = this.engine.getManager<{
         canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
-          }>('ACLManager');
+          }>('PolicyInformationPoint');
       const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
       if (!acl || !(await acl.canUserAccessPage(subject, pageName, 'edit'))) {
         throw new Error('Permission denied: you cannot upload to this page');

@@ -565,7 +565,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
     // #633: prior implementation called PolicyManager.checkPermission (which the
     // class doesn't actually expose — broken at runtime) for anonymous users and
     // the deprecated two-arg ParseContext.hasPermission for authenticated users.
-    // Migrated to the canonical ACLManager 3-tier evaluator so anonymous and
+    // Migrated to the canonical PolicyInformationPoint 3-tier evaluator so anonymous and
     // authenticated paths share one code path. PolicyEvaluator's anonymous-role
     // expansion ('anonymous', 'All') makes the if-anonymous branch unnecessary.
     //
@@ -577,14 +577,14 @@ class WikiTagHandler extends BaseSyntaxHandler {
     // the target's metadata as this reader and runs every tier on it, the same
     // check `[{InsertPlugin}]` asks.
     //
-    // It also used to allow when ACLManager was missing, under a comment
+    // It also used to allow when PolicyInformationPoint was missing, under a comment
     // calling that "conservative". Allowing is the permissive direction;
     // without a decider there is no decision, so no include.
-    const aclManager = context.getManager('ACLManager') as {
+    const policyInformationPoint = context.getManager('PolicyInformationPoint') as {
       canUserAccessPage(userContext: unknown, pageName: string, action: string): Promise<boolean>;
     } | undefined;
-    if (!aclManager) return false;
-    return aclManager.canUserAccessPage(context.wikiContext?.userContext ?? null, pageName, 'view');
+    if (!policyInformationPoint) return false;
+    return policyInformationPoint.canUserAccessPage(context.wikiContext?.userContext ?? null, pageName, 'view');
   }
 
   /**

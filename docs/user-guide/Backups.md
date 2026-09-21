@@ -30,7 +30,7 @@ The server also retains the last 10 backup files in its backup directory (config
 |------|---------|--------|
 | Configuration settings | ConfigurationManager | ✅ Included |
 | User accounts and roles | UserManager | ✅ Included |
-| Access control lists | ACLManager | ✅ Included |
+| Access control lists | PolicyInformationPoint | ✅ Included |
 | Attachment metadata (filenames, hashes, page links) | AttachmentManager | ✅ Included |
 | Search index | SearchManager | ✅ Included |
 

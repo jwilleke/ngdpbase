@@ -30,7 +30,7 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 40 | 43 | Core system managers |
+| [Managers](#managers) | 39 | 44 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
 | [Providers](#providers) | 36 | 37 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
@@ -49,7 +49,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 <!-- AUTO:managers-table BEGIN -->
 | Module | Doc status | Description |
 | --- | --- | --- |
-| ACLManager | 📘 [doc](managers/ACLManager.md) + [guide](managers/ACLManager-Complete-Guide.md) | Per-page access control: private/author-lock/audience/role-policy evaluation via the canonical wikiContext.canAccess facade |
+| ACLManager | 📘 [doc](managers/ACLManager.md) + [guide](managers/ACLManager-Complete-Guide.md) | Renamed — ACLManager is now the PolicyInformationPoint (#1431 step 8) |
 | AddonsManager | ✅ [doc](managers/AddonsManager.md) | Discovery, registration, lifecycle, and dependency management for optional ngdpbase add-ons |
 | AgentTokenManager | ✅ [doc](managers/AgentTokenManager.md) | Mints, verifies and revokes user-delegated agent API tokens |
 | AssetManager | ✅ [doc](managers/AssetManager.md) | Provider registry for the unified Digital Asset Management framework — fans search/getById/getThumbnail across all registered AssetProviders |
@@ -78,7 +78,8 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | PageManager | 📘 [doc](managers/PageManager.md) + [guide](managers/PageManager-Complete-Guide.md) | Page CRUD and storage facade over the PageProvider registry |
 | PersonManager | ✅ [doc](managers/PersonManager.md) | Canonical Person records (#617) — decoupled from User authentication identity, shared across addons |
 | PluginManager | 📘 [doc](managers/PluginManager.md) + [guide](managers/PluginManager-Complete-Guide.md) | Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output |
-| PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of ACLManager — evaluates role/permission policies against principals and resources |
+| PolicyEvaluator | ✅ [doc](managers/PolicyEvaluator.md) | Tier-2 of PolicyInformationPoint — evaluates role/permission policies against principals and resources |
+| PolicyInformationPoint | ✅ [doc](managers/PolicyInformationPoint.md) | What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager) |
 | PolicyManager | ✅ [doc](managers/PolicyManager.md) | Removed in |
 | PolicyValidator | ✅ [doc](managers/PolicyValidator.md) | Schema validation for policy definitions; runs at startup to refuse malformed policies |
 | RenderingManager | 📘 [doc](managers/RenderingManager.md) + [guide](managers/RenderingManager-Complete-Guide.md) | Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation |
@@ -326,7 +327,7 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 40/40 with quick-reference docs (100%); 18 with Complete Guides.
+__Managers:__ 39/39 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 

@@ -6,7 +6,7 @@
  * One component answers "may this subject perform this action", and the
  * delegation ceilings run here, once. Before this, the capability path ran the
  * agent-token and share ceilings in `UserManager.hasPermission` and the page
- * path ran its own copies in `ACLManager` — the same protection implemented
+ * path ran its own copies in `PolicyInformationPoint` — the same protection implemented
  * twice, with nothing keeping the two in step.
  *
  * __This step moves no behaviour.__ The ordering below is exactly what
@@ -93,7 +93,7 @@ export class PolicyDecisionPoint extends BaseManager {
    * bound, and the answer is whatever policy says.
    *
    * The refusal reasons are the vocabulary already recorded by
-   * `ACLManager.logAccessDecision` — `token_scope_deny`, `share_action_deny`,
+   * `PolicyInformationPoint.logAccessDecision` — `token_scope_deny`, `share_action_deny`,
    * `share_expired`, `share_resource_deny`, `share_issuer_deny` — because they
    * land in the audit trail, and renaming one silently changes what an
    * assessor reads.

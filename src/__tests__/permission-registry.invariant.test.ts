@@ -51,7 +51,7 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
 ];
 
 /**
- * ACLManager translates a legacy action name to a permission via an
+ * PolicyInformationPoint translates a legacy action name to a permission via an
  * `actionMap`, so a permission reachable only that way is still enforced.
  *
  * Matched by locating the map and reading its values, NOT by a general

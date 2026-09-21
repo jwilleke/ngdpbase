@@ -792,7 +792,7 @@ Response shape:
   "regions": {
     "PageManager":   { "hits": 8000, "misses": 200, "hitRate": 0.976, "keys": 104 },
     "RenderingManager": { "hits": 3200, "misses": 350, "hitRate": 0.901, "keys": 87 },
-    "ACLManager":    { "hits": 800,  "misses": 80,  "hitRate": 0.909, "keys": 24 }
+    "PolicyInformationPoint":    { "hits": 800,  "misses": 80,  "hitRate": 0.909, "keys": 24 }
   },
   "config": { "provider": "NodeCacheProvider", "defaultTTL": 300, "maxKeys": 1000 }
 }
@@ -912,7 +912,7 @@ None of these are CacheManager regions; all are in-process structural caches.
                                      │                                         │
                                      │  PageManager:rendered-html              │
                                      │  RenderingManager:parsed-content        │
-                                     │  ACLManager:permission-decisions        │
+                                     │  PolicyInformationPoint:permission-decisions        │
                                      │  PolicyManager:evaluation-results       │
                                      │  ...                                    │
                                      │                                         │

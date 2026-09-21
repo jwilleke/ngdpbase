@@ -54,7 +54,7 @@ const PageSlideshowPlugin: SimplePlugin = {
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
     const pageManager = context.engine?.getManager('PageManager') as PageManagerLike | undefined;
-    const aclManager = context.engine?.getManager('ACLManager') as
+    const policyInformationPoint = context.engine?.getManager('PolicyInformationPoint') as
       { canUserAccessPage(user: unknown, page: string, action: string): Promise<boolean> } | undefined;
     const viewer = (context as { userContext?: unknown }).userContext ?? null;
     if (!pageManager) {
@@ -83,7 +83,7 @@ const PageSlideshowPlugin: SimplePlugin = {
       // #1219: `getPage` does not evaluate access — the comment that said
       // "null = no access" was wrong, and `pages=` named any page's excerpt
       // to any viewer. The decider says; a refused page is not a slide.
-      if (aclManager && !(await aclManager.canUserAccessPage(viewer, name, 'view'))) continue;
+      if (policyInformationPoint && !(await policyInformationPoint.canUserAccessPage(viewer, name, 'view'))) continue;
       const page = await pageManager.getPage(name, viewer);
       if (!page) continue;
 

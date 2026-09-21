@@ -147,7 +147,7 @@ await cacheManager.set('key', value, {
 | `users` | UserManager | 1800 | User session data |
 | `search` | SearchManager | 600 | Search results |
 | `metadata` | PageManager | 7200 | Page metadata |
-| `permissions` | ACLManager | 900 | Permission checks |
+| `permissions` | PolicyInformationPoint | 900 | Permission checks |
 | `plugins` | PluginManager | 3600 | Plugin output |
 
 ## Pattern Matching

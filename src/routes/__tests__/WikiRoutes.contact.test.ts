@@ -156,7 +156,7 @@ vi.mock('../../WikiEngine', () => {
             textToHTML: vi.fn().mockResolvedValue('<p>ok</p>'),
             getReferringPages: vi.fn().mockReturnValue([])
           },
-          ACLManager: {
+          PolicyInformationPoint: {
             checkPagePermission: vi.fn().mockResolvedValue(true),
             checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
             removeACLMarkup: vi.fn().mockImplementation((c: string) => c),

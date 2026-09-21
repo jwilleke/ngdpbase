@@ -16,10 +16,10 @@ class MockPageManager {
   }
 }
 
-// Mock ACLManager — #633 migrated from PolicyManager-direct to canonical
-// ACLManager.checkPagePermissionWithContext path. Mock returns the same
+// Mock PolicyInformationPoint — #633 migrated from PolicyManager-direct to canonical
+// PolicyInformationPoint.checkPagePermissionWithContext path. Mock returns the same
 // allow/deny semantics that MockPolicyManager.checkPermission used to.
-class MockACLManager {
+class MockPolicyInformationPoint {
   async checkPagePermissionWithContext(ctx, action) {
     const userContext = ctx?.userContext;
     if (action === 'read' || action === 'view') return true;
@@ -82,7 +82,7 @@ const createMockEngine = (userContext = null) => ({
   getManager: vi.fn((name) => {
     switch (name) {
     case 'PageManager': return new MockPageManager();
-    case 'ACLManager': return new MockACLManager();
+    case 'PolicyInformationPoint': return new MockPolicyInformationPoint();
     case 'VariableManager': return new MockVariableManager();
     case 'MarkupParser': return new MockMarkupParser();
     case 'UserManager': return new MockUserManager();
@@ -420,10 +420,10 @@ describe('WikiTagHandler', () => {
     });
 
     test('should prevent unauthorized includes', async () => {
-      // #633: was MockPolicyManager — migrated to ACLManager. Mock denies access.
+      // #633: was MockPolicyManager — migrated to PolicyInformationPoint. Mock denies access.
       const restrictiveEngine = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') {
+          if (name === 'PolicyInformationPoint') {
             return {
               checkPagePermissionWithContext: vi.fn().mockResolvedValue(false),
               canUserAccessPage: vi.fn().mockResolvedValue(false)

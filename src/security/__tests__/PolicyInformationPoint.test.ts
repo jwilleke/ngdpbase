@@ -1,7 +1,7 @@
 /**
- * ACLManager tests
+ * PolicyInformationPoint tests
  *
- * Tests ACLManager's core functionality:
+ * Tests PolicyInformationPoint's core functionality:
  * - JSPWiki-style ACL parsing
  * - Page permission checking
  * - Policy-based access control integration
@@ -9,7 +9,7 @@
  * @jest-environment jsdom
  */
 
-import ACLManager from '../ACLManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
 
 // Mock ConfigurationManager
@@ -34,7 +34,7 @@ const mockUserManager = {
 // Mock engine
 /**
  * #1431: the evaluator is reached through the ENGINE now, because the PDP asks
- * for it there — setting `aclManager.policyEvaluator` no longer changes what a
+ * for it there — setting `policyInformationPoint.policyEvaluator` no longer changes what a
  * decision sees. Tests that want a Tier 2 verdict set this.
  */
 let mockPolicyEvaluator: { evaluateAccess: (...args: unknown[]) => unknown } | null = null;
@@ -57,16 +57,16 @@ const mockEngine = {
 // #1174/#1431: the performStandardACLCheck and checkDefaultPermission suites
 // are gone with the methods. They were the seven mocked tests #1174 named as
 // keeping colon-separated permissions alive.
-describe('ACLManager', () => {
-  let aclManager;
+describe('PolicyInformationPoint', () => {
+  let policyInformationPoint;
 
   beforeEach(async () => {
     // Clear mocks
     vi.clearAllMocks();
     mockPolicyEvaluator = null;
 
-    aclManager = new ACLManager(mockEngine);
-    await aclManager.initialize();
+    policyInformationPoint = new PolicyInformationPoint(mockEngine);
+    await policyInformationPoint.initialize();
   });
 
   // #1431 step 7: the parsePageACL suite is gone with the method. JSPWiki's
@@ -105,7 +105,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('private: true + page-creator → allow', async () => {
@@ -113,7 +113,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
     test('private: true + non-creator non-admin → deny', async () => {
@@ -121,7 +121,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('private: true + audience: [bob] set → bob still denied (Tier 0 wins)', async () => {
@@ -129,7 +129,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice', audience: ['bob'] },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('private: false explicitly → tier 0 does NOT fire (falls through)', async () => {
@@ -141,7 +141,7 @@ describe('ACLManager', () => {
       // (no audience, no policies) the result depends on default policy. The
       // important assertion is that it's NOT denied with the private_deny reason.
       // Use a non-null result; we just check the type is boolean (no throw).
-      const result = await aclManager.checkPagePermissionWithContext(ctx, 'view');
+      const result = await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view');
       expect(typeof result).toBe('boolean');
     });
 
@@ -151,7 +151,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', 'user-keywords': ['private'], author: 'alice' },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('both signals present (migrated page with stale keyword) → tier 0 fires once', async () => {
@@ -163,14 +163,14 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
   });
 
   describe('canAccessPrivateContainer — a file in a private store (#1382)', () => {
     test('the owner passes; admin, another user and anonymous are refused and recorded', () => {
-      const logSpy = vi.spyOn(aclManager, 'logAccessDecision');
-      expect(aclManager.canAccessPrivateContainer(
+      const logSpy = vi.spyOn(policyInformationPoint, 'logAccessDecision');
+      expect(policyInformationPoint.canAccessPrivateContainer(
         { username: 'alice', roles: ['editor'], isAuthenticated: true }, 'alice', 'attachment:a1', 'view'
       )).toBe(true);
       expect(logSpy).not.toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe('ACLManager', () => {
         { username: 'bob', roles: ['editor'], isAuthenticated: true },
         null
       ]) {
-        expect(aclManager.canAccessPrivateContainer(who, 'alice', 'attachment:a1', 'view')).toBe(false);
+        expect(policyInformationPoint.canAccessPrivateContainer(who, 'alice', 'attachment:a1', 'view')).toBe(false);
       }
       expect(logSpy).toHaveBeenCalledTimes(3);
       expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({
@@ -189,7 +189,7 @@ describe('ACLManager', () => {
     });
 
     test('a file with no recorded owner is refused', () => {
-      expect(aclManager.canAccessPrivateContainer(
+      expect(policyInformationPoint.canAccessPrivateContainer(
         { username: 'alice', roles: [], isAuthenticated: true }, '', 'attachment:a2', 'view'
       )).toBe(false);
     });
@@ -218,7 +218,7 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
     test('edit + author-lock + page-author → falls through (Tier 1 access.edit decides allow)', async () => {
@@ -232,7 +232,7 @@ describe('ACLManager', () => {
       });
       // alice IS the author — Tier 0.5 doesn't deny her; Tier 1 access.edit
       // matches; allowed.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
     test('edit + author-lock + admin-system → falls through (Tier 1 access.edit decides allow)', async () => {
@@ -247,7 +247,7 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
       mockUserManager.hasPermission.mockReset();
     });
 
@@ -264,7 +264,7 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'bob', roles: ['admin'], isAuthenticated: true }
       });
-      expect(await aclManager.evaluatePagePermission(ctx, 'edit')).toMatchObject({ allowed: false, reason: 'author_lock_deny' });
+      expect(await policyInformationPoint.evaluatePagePermission(ctx, 'edit')).toMatchObject({ allowed: false, reason: 'author_lock_deny' });
       mockUserManager.hasPermission.mockReset();
     });
 
@@ -280,7 +280,7 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'carol', roles: ['operator'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
       mockUserManager.hasPermission.mockReset();
     });
 
@@ -296,7 +296,7 @@ describe('ACLManager', () => {
       });
       // Author-lock is a write constraint, not a read constraint. View
       // falls straight through to Tier 1; audience matches → allow.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
     test('edit + private:true + author-lock + non-creator → Tier 0 wins (deny by private; Tier 0.5 never consulted)', async () => {
@@ -311,7 +311,7 @@ describe('ACLManager', () => {
       // Tier 0 denies (private + not creator + not admin). Tier 0.5 would
       // also deny here, but the test fixture proves the precedence: Tier 0
       // fires first and returns before Tier 0.5 sees the request.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
     test('edit + private:true + author-lock + page-creator → Tier 0 wins (allow by private; Tier 0.5 never consulted)', async () => {
@@ -326,7 +326,7 @@ describe('ACLManager', () => {
       // The interesting precedence case: private grants alice access; we
       // don't want Tier 0.5 to then deny her because she "isn't admin".
       // Tier 0 returns early → allow.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
     test('edit + author-lock absent → Tier 0.5 does NOT fire (falls through)', async () => {
@@ -339,7 +339,7 @@ describe('ACLManager', () => {
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
       // No author-lock field → Tier 0.5 is a no-op; Tier 1 access.edit matches → allow.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 
     test('edit + author-lock:false (explicit) → Tier 0.5 does NOT fire', async () => {
@@ -351,7 +351,7 @@ describe('ACLManager', () => {
         },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
   });
 
@@ -368,7 +368,7 @@ describe('ACLManager', () => {
 
     test('returns false when pageName is empty string', async () => {
       const userContext = { username: 'alice', roles: ['editor'], isAuthenticated: true };
-      expect(await aclManager.canUserAccessPage(userContext, '', 'view')).toBe(false);
+      expect(await policyInformationPoint.canUserAccessPage(userContext, '', 'view')).toBe(false);
     });
 
     test('returns false when PageManager is unavailable (test fixture without mock)', async () => {
@@ -376,7 +376,7 @@ describe('ACLManager', () => {
       // Without a PageManager.getPageMetadata helper, we cannot load metadata,
       // so the conservative-on-security default kicks in.
       const userContext = { username: 'alice', roles: ['editor'], isAuthenticated: true };
-      expect(await aclManager.canUserAccessPage(userContext, 'SomePage', 'view')).toBe(false);
+      expect(await policyInformationPoint.canUserAccessPage(userContext, 'SomePage', 'view')).toBe(false);
     });
 
     test('returns false when PageManager returns null metadata (page does not exist)', async () => {
@@ -391,7 +391,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine);
+      const localACL = new PolicyInformationPoint(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Ghost', 'view')).toBe(false);
     });
@@ -412,7 +412,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine);
+      const localACL = new PolicyInformationPoint(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Other', 'view')).toBe(true);
     });
@@ -433,7 +433,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine);
+      const localACL = new PolicyInformationPoint(localEngine);
       await localACL.initialize();
       expect(await localACL.canUserAccessPage(userContext, 'Restricted', 'view')).toBe(false);
     });
@@ -452,7 +452,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine);
+      const localACL = new PolicyInformationPoint(localEngine);
       await localACL.initialize();
       // No audience / access set → falls through to Tier 2 / default. The
       // important assertion is that it doesn't throw on null userContext.
@@ -482,7 +482,7 @@ describe('ACLManager', () => {
           return null;
         })
       };
-      const localACL = new ACLManager(localEngine);
+      const localACL = new PolicyInformationPoint(localEngine);
       await localACL.initialize();
       // bob is not alice, not admin → Tier 0 denies.
       expect(await localACL.canUserAccessPage(userContext, 'Secret', 'view')).toBe(false);
@@ -495,7 +495,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'] },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
     test('audience: [editor, admin] + reader role → deny', async () => {
@@ -503,7 +503,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'] },
         userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('audience: [editor, admin] + anonymous → deny', async () => {
@@ -511,7 +511,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'] },
         userContext: { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('audience: [editor, alice] + username alice → allow (username match)', async () => {
@@ -519,7 +519,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'alice'] },
         userContext: { username: 'alice', roles: ['reader'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
     test('access.view: [admin] overrides audience for view', async () => {
@@ -528,7 +528,7 @@ describe('ACLManager', () => {
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
       // editor is in audience but access.view restricts to admin only
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('access.edit: [admin] blocks edit for editor; view via audience still works', async () => {
@@ -536,8 +536,8 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', audience: ['editor', 'admin'], access: { edit: ['admin'] } },
         userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
     });
 
     test('no audience/access → falls through, and body markup does not save it', async () => {
@@ -549,7 +549,7 @@ describe('ACLManager', () => {
       // No audience → Tier 1 declines; no policy spoke → default deny. The
       // `[{ALLOW view All}]` in the body used to grant here and no longer does
       // (#1431 step 7): a rule in the page BODY is not an access rule.
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('Tier 1.5 deny does NOT fall through to Tier 2 inline ACL', async () => {
@@ -559,15 +559,15 @@ describe('ACLManager', () => {
         userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true }
       });
       // audience restricts to admin, reader is denied — even though content has [{ALLOW view All}]
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
   });
 
   describe('Initialization', () => {
     test('should initialize without errors', async () => {
-      const newAclManager = new ACLManager(mockEngine);
+      const newPolicyInformationPoint = new PolicyInformationPoint(mockEngine);
 
-      await expect(newAclManager.initialize()).resolves.not.toThrow();
+      await expect(newPolicyInformationPoint.initialize()).resolves.not.toThrow();
     });
 
     test('should load policies from ConfigurationManager', async () => {
@@ -583,62 +583,22 @@ describe('ACLManager', () => {
         return defaultValue;
       });
 
-      const newAclManager = new ACLManager(mockEngine);
-      await newAclManager.initialize();
+      const newPolicyInformationPoint = new PolicyInformationPoint(mockEngine);
+      await newPolicyInformationPoint.initialize();
 
-      // #1431: ACLManager keeps no policy cache. The policies belong to
+      // #1431: PolicyInformationPoint keeps no policy cache. The policies belong to
       // PolicyManager, and PolicyEvaluator asks it for them — this manager
       // used to load a Map here that nothing ever read.
-      expect((newAclManager as unknown as { accessPolicies?: unknown }).accessPolicies).toBeUndefined();
-      expect(newAclManager.policyEvaluator).toBeDefined();
+      expect((newPolicyInformationPoint as unknown as { accessPolicies?: unknown }).accessPolicies).toBeUndefined();
+      expect(newPolicyInformationPoint.policyEvaluator).toBeDefined();
     });
   });
 
 
 
 
-  describe('removeACLMarkup() / stripACLMarkup()', () => {
-    test('removes [{ALLOW ...}] plugin syntax', () => {
-      const input = 'Content [{ALLOW view admin,editor}] more content';
-      const result = aclManager.removeACLMarkup(input);
-      expect(result).not.toContain('[{ALLOW');
-      expect(result).toContain('Content');
-      expect(result).toContain('more content');
-    });
-
-    test('removes [{DENY ...}] plugin syntax', () => {
-      const input = '[{DENY edit anonymous}] page text';
-      const result = aclManager.removeACLMarkup(input);
-      expect(result).not.toContain('[{DENY');
-      expect(result).toContain('page text');
-    });
-
-    test('returns input unchanged when no ACL markup present', () => {
-      const input = 'Just a regular page with no ACL markup here.';
-      expect(aclManager.removeACLMarkup(input)).toBe(input);
-    });
-
-    test('handles empty string', () => {
-      expect(aclManager.removeACLMarkup('')).toBe('');
-    });
-
-    test('handles null/undefined gracefully', () => {
-      expect(aclManager.removeACLMarkup(null)).toBe(null);
-    });
-
-    test('removes multiple ACL blocks in one pass', () => {
-      const input = '[{ALLOW view admin}] text [{ALLOW edit admin}] more';
-      const result = aclManager.removeACLMarkup(input);
-      expect(result).not.toContain('[{ALLOW');
-      expect(result).toContain('text');
-      expect(result).toContain('more');
-    });
-
-    test('stripACLMarkup is an alias for removeACLMarkup', () => {
-      const input = '[{ALLOW view admin}] content';
-      expect(aclManager.stripACLMarkup(input)).toBe(aclManager.removeACLMarkup(input));
-    });
-  });
+  // #1431 step 8: the ACL-markup scrubber moved to src/parsers/aclMarkup.ts
+  // with its tests — it is text handling, not access control.
 
 
 
@@ -647,17 +607,17 @@ describe('ACLManager', () => {
 
   describe('logAccessDecision()', () => {
     test('logs allowed decision with positional args', () => {
-      const user = { username: 'alice', roles: ['authenticated'] } as unknown as import('../ACLManager').default extends { logAccessDecision: infer F } ? Parameters<F>[0] : never;
-      aclManager.logAccessDecision(user as never, 'TestPage', 'view', true, 'acl_allow');
+      const user = { username: 'alice', roles: ['authenticated'] } as unknown as import('../PolicyInformationPoint').default extends { logAccessDecision: infer F } ? Parameters<F>[0] : never;
+      policyInformationPoint.logAccessDecision(user as never, 'TestPage', 'view', true, 'acl_allow');
     });
 
     test('logs denied decision with positional args', () => {
       const user = { username: 'bob', roles: ['guest'] } as never;
-      aclManager.logAccessDecision(user, 'PrivatePage', 'edit', false, 'acl_deny');
+      policyInformationPoint.logAccessDecision(user, 'PrivatePage', 'edit', false, 'acl_deny');
     });
 
     test('logs decision from object form', () => {
-      aclManager.logAccessDecision({
+      policyInformationPoint.logAccessDecision({
         user: { username: 'carol', roles: ['authenticated'] } as never,
         pageName: 'TestPage',
         action: 'view',
@@ -668,13 +628,13 @@ describe('ACLManager', () => {
     });
 
     test('handles anonymous user', () => {
-      aclManager.logAccessDecision(null, 'TestPage', 'view', false, 'no_user');
+      policyInformationPoint.logAccessDecision(null, 'TestPage', 'view', false, 'no_user');
     });
   });
 
   describe('checkPagePermissionWithContext() — additional branches', () => {
     test('throws when wikiContext is null', async () => {
-      await expect(aclManager.checkPagePermissionWithContext(null, 'view')).rejects.toThrow();
+      await expect(policyInformationPoint.checkPagePermissionWithContext(null, 'view')).rejects.toThrow();
     });
 
     // #1431 step 7: these two used to pass. They are kept, inverted, because
@@ -682,17 +642,17 @@ describe('ACLManager', () => {
     // access through its own body is exactly what stopped being possible.
     test('page-body ACL markup no longer grants by role', async () => {
       const ctx = makeWikiContext({ content: '[{ALLOW view editor}]', userContext: { username: 'bob', roles: ['editor'], isAuthenticated: true } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('page-body ACL markup no longer grants by username', async () => {
       const ctx = makeWikiContext({ content: '[{ALLOW edit alice}]', userContext: { username: 'alice', roles: ['reader'], isAuthenticated: true } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
     test('default deny when ACL has no match', async () => {
       const ctx = makeWikiContext({ content: '[{ALLOW view admin}]', userContext: { username: 'bob', roles: ['reader'], isAuthenticated: true } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
     test('Tier 2 — PolicyEvaluator grants access', async () => {
@@ -701,7 +661,7 @@ describe('ACLManager', () => {
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '' },
         userContext: { username: 'bob', roles: ['reader'] }
       });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(true);
       mockPolicyEvaluator = null;
     });
 
@@ -712,24 +672,24 @@ describe('ACLManager', () => {
       // audience-restricted page to readers outside its audience.
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
       const ctx = makeWikiContext({ pageMetadata: null, userContext: { username: 'bob', roles: ['reader'] } });
-      expect(await aclManager.evaluatePagePermission(ctx, 'view')).toEqual({ allowed: false, reason: 'no_page_metadata' });
-      expect(await aclManager.evaluatePagePermission(ctx, 'edit')).toEqual({ allowed: false, reason: 'no_page_metadata' });
+      expect(await policyInformationPoint.evaluatePagePermission(ctx, 'view')).toEqual({ allowed: false, reason: 'no_page_metadata' });
+      expect(await policyInformationPoint.evaluatePagePermission(ctx, 'edit')).toEqual({ allowed: false, reason: 'no_page_metadata' });
       mockPolicyEvaluator = null;
     });
 
     test('create is the exception — a new page has no metadata yet, so policy decides', async () => {
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: true, policyName: 'allow-policy' }) };
       const ctx = makeWikiContext({ pageMetadata: null, userContext: { username: 'bob', roles: ['editor'] } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'create')).toBe(true);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'create')).toBe(true);
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: false, policyName: 'deny-policy' }) };
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'create')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'create')).toBe(false);
       mockPolicyEvaluator = null;
     });
 
     test('Tier 2 — PolicyEvaluator denies access', async () => {
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockResolvedValue({ hasDecision: true, allowed: false, policyName: 'deny-policy' }) };
       const ctx = makeWikiContext({ userContext: { username: 'bob', roles: ['reader'] } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
       mockPolicyEvaluator = null;
     });
 
@@ -739,14 +699,14 @@ describe('ACLManager', () => {
       // tier gone the fault denies, which is the only safe direction (#1431).
       mockPolicyEvaluator = { evaluateAccess: vi.fn().mockRejectedValue(new Error('PE error')) };
       const ctx = makeWikiContext({ content: '[{ALLOW view All}]', userContext: { username: 'bob', roles: ['reader'] } });
-      expect(await aclManager.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
+      expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
       mockPolicyEvaluator = null;
     });
   });
 
 
   // #1432: notify() went with the availability checks — it existed only to
-  // announce a maintenance or holiday refusal, and ACLManager no longer makes
+  // announce a maintenance or holiday refusal, and PolicyInformationPoint no longer makes
   // those decisions.
 
 
@@ -755,7 +715,7 @@ describe('ACLManager', () => {
   describe('initializeAuditLogging()', () => {
     test('returns early when ConfigurationManager is not available', async () => {
       const noConfigEngine = { getManager: vi.fn(() => null) };
-      const mgr = new ACLManager(noConfigEngine);
+      const mgr = new PolicyInformationPoint(noConfigEngine);
       await expect(mgr.initializeAuditLogging()).resolves.not.toThrow();
     });
 
@@ -765,7 +725,7 @@ describe('ACLManager', () => {
         return dv;
       });
       (mockConfigurationManager as Record<string, unknown>).getResolvedDataPath = vi.fn().mockReturnValue('/tmp/test-acl-audit-logs');
-      await expect(aclManager.initializeAuditLogging()).resolves.not.toThrow();
+      await expect(policyInformationPoint.initializeAuditLogging()).resolves.not.toThrow();
       delete (mockConfigurationManager as Record<string, unknown>).getResolvedDataPath;
     });
   });

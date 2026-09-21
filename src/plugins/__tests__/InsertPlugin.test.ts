@@ -42,7 +42,7 @@ function makeContext(opts: {
     engine: {
       // #1198 / rule 10: visibility is the evaluator's answer. This stand-in
       // applies the private rule — owner or admin — the way the decider does.
-      getManager: (name: string) => managers[name] ?? (name === 'ACLManager' ? {
+      getManager: (name: string) => managers[name] ?? (name === 'PolicyInformationPoint' ? {
         canUserAccessPage: async (user: { username?: string; roles?: string[] } | null, page: string) => {
           const md = (managers.PageManager as { getPage?: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> } | undefined)?.getPage
             ? (await (managers.PageManager as { getPage: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> }).getPage(page))?.metadata ?? {}

@@ -7,10 +7,10 @@
  * `audience: [admin]` rendered into any page for any reader the global policy
  * lets view — and anyone who can edit one page can write the include.
  *
- * These run the REAL `ACLManager` behind the handler, because the defect was in
+ * These run the REAL `PolicyInformationPoint` behind the handler, because the defect was in
  * what the decider was handed, and a mocked decider cannot see that.
  */
-import ACLManager from '../../../managers/ACLManager';
+import PolicyInformationPoint from '../../../security/PolicyInformationPoint';
 import WikiTagHandler from '../WikiTagHandler';
 
 const PAGES: Record<string, Record<string, unknown>> = {
@@ -39,12 +39,12 @@ function makeEngine(withAcl = true) {
     getManager: (name: string): unknown => {
       if (name === 'PageManager') return pageManager;
       if (name === 'PolicyEvaluator') return evaluator;
-      if (name === 'ACLManager') return withAcl ? acl : null;
+      if (name === 'PolicyInformationPoint') return withAcl ? acl : null;
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
     }
   };
-  acl = new ACLManager(engine);
+  acl = new PolicyInformationPoint(engine);
   return engine;
 }
 
@@ -93,7 +93,7 @@ describe('#1431 <wiki:Include> honours the included page\'s audience', () => {
     expect(await include(handler, 'NoSuchPage', contextFor(engine, reader))).toBe(false);
   });
 
-  test('with no ACLManager, nothing is included — it used to allow', async () => {
+  test('with no PolicyInformationPoint, nothing is included — it used to allow', async () => {
     const engine = makeEngine(false);
     const handler = new WikiTagHandler(engine);
     expect(await include(handler, 'Public', contextFor(engine, reader))).toBe(false);

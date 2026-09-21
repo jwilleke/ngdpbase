@@ -88,7 +88,7 @@ class WikiContext {
     this.renderingManager = engine.getManager<RenderingManager>('RenderingManager')!;
     this.pluginManager = engine.getManager<PluginManager>('PluginManager')!;
     this.variableManager = engine.getManager<VariableManager>('VariableManager')!;
-    this.aclManager = engine.getManager<ACLManager>('ACLManager')!;
+    this.aclManager = engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')!;
   }
 }
 ```
@@ -268,7 +268,7 @@ wikiContext.pageManager         // PageManager
 wikiContext.renderingManager    // RenderingManager
 wikiContext.pluginManager       // PluginManager
 wikiContext.variableManager     // VariableManager
-wikiContext.aclManager          // ACLManager
+wikiContext.aclManager          // PolicyInformationPoint
 ```
 
 > __Immutability note__: all properties are `readonly`. If you need a different `pageName` with the same user context (e.g. in MediaManager), construct a new instance:
@@ -319,7 +319,7 @@ if (!(await wikiContext.hasPermission('admin-system'))) {
 
 ##### `async canAccess(action: string): Promise<boolean>`
 
-Page-resource-aware permission check. Delegates to `ACLManager.checkPagePermissionWithContext(this, action)`, which runs the 3-tier evaluator: tier 0 (private user-keyword), tier 1 (frontmatter audience/access), tier 2 (global policies via PolicyEvaluator). Returns `false` if `pageName` is null or ACLManager is unavailable.
+Page-resource-aware permission check. Delegates to `PolicyInformationPoint.checkPagePermissionWithContext(this, action)`, which runs the 3-tier evaluator: tier 0 (private user-keyword), tier 1 (frontmatter audience/access), tier 2 (global policies via PolicyEvaluator). Returns `false` if `pageName` is null or PolicyInformationPoint is unavailable.
 
 ```typescript
 if (!(await wikiContext.canAccess('edit'))) {
@@ -327,7 +327,7 @@ if (!(await wikiContext.canAccess('edit'))) {
 }
 ```
 
-Action-name mapping inside ACLManager: `view` → `page-read`, `edit` → `page-edit`, `delete` → `page-delete`, `create` → `page-create`, `rename` → `page-rename`, `upload` → `asset-upload`.
+Action-name mapping inside PolicyInformationPoint: `view` → `page-read`, `edit` → `page-edit`, `delete` → `page-delete`, `create` → `page-create`, `rename` → `page-rename`, `upload` → `asset-upload`.
 
 ##### `getPrincipals(): string[]`
 
@@ -546,7 +546,7 @@ app.use((req, res, next) => {
 });
 ```
 
-For the private-page check pattern (admin-OR-creator on private pages), use `wikiContext.canAccess('view')` — ACLManager's tier 0 handles `private: true` frontmatter natively (canonical since #639 Slice E / v3.7.0).
+For the private-page check pattern (admin-OR-creator on private pages), use `wikiContext.canAccess('view')` — PolicyInformationPoint's tier 0 handles `private: true` frontmatter natively (canonical since #639 Slice E / v3.7.0).
 
 See [Access-Control.md](architecture/Access-Control.md) for the full operational guide, including ParseContext / ApiContext patterns.
 
@@ -577,7 +577,7 @@ const mockEngine = {
     if (name === 'VariableManager') return mockVariableManager;
     if (name === 'PageManager') return mockPageManager;
     if (name === 'PluginManager') return mockPluginManager;
-    if (name === 'ACLManager') return mockAclManager;
+    if (name === 'PolicyInformationPoint') return mockAclManager;
     return null;
   }),
 };
@@ -659,9 +659,9 @@ if (parser) {
 }
 ```
 
-### ACLManager
+### PolicyInformationPoint
 
-Prefer `wikiContext.canAccess(action)` (post-#625) — it delegates to `ACLManager.checkPagePermissionWithContext` and returns `false` cleanly if `pageName` or ACLManager is missing.
+Prefer `wikiContext.canAccess(action)` (post-#625) — it delegates to `PolicyInformationPoint.checkPagePermissionWithContext` and returns `false` cleanly if `pageName` or PolicyInformationPoint is missing.
 
 ```typescript
 // Canonical (post-v3.6.0)
@@ -722,7 +722,7 @@ const mockEngine = {
     VariableManager: { expandVariables: jest.fn((s: string) => s) },
     PageManager: { getPage: jest.fn(), savePageWithContext: jest.fn() },
     PluginManager: { hasPlugin: jest.fn(() => false) },
-    ACLManager: { checkPagePermissionWithContext: jest.fn().mockResolvedValue(true) },
+    PolicyInformationPoint: { checkPagePermissionWithContext: jest.fn().mockResolvedValue(true) },
   }[name] ?? null)),
 };
 
@@ -743,7 +743,7 @@ const wikiContext = new WikiContext(mockEngine as unknown as WikiEngine, {
 | `getContext()` | Simple property access |
 | `hasRole(...)` | Set lookup over `userContext.roles` — sub-microsecond |
 | `hasPermission(...)` | Async — UserManager → PolicyEvaluator round-trip; cached at PolicyManager layer |
-| `canAccess(...)` | Async — ACLManager 3-tier evaluation; cheap unless tier-0 metadata fetch fires |
+| `canAccess(...)` | Async — PolicyInformationPoint 3-tier evaluation; cheap unless tier-0 metadata fetch fires |
 | `getPrincipals()` | Array spread + push — sub-microsecond |
 | `activeTheme` (first read) | ConfigurationManager.getProperty + cached ThemeManager lookup; subsequent reads are property access |
 | `themeInfo` (first read) | Triggers `activeTheme` lookup; reads cached ThemeManager paths |

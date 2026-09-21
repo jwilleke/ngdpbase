@@ -246,13 +246,13 @@ const InsertPlugin: SimplePlugin = {
     // inserted page — private, audience, access lists and policy alike. This
     // used to re-implement the private rule with an owner-or-`admin` role
     // test, which skipped every other tier and the token ceiling. Without an
-    // ACLManager (fixtures) a private page is refused and nothing else is.
+    // PolicyInformationPoint (fixtures) a private page is refused and nothing else is.
     const metadata = page.metadata ?? {};
     const viewer = ctx.userContext ?? ctx.currentUser ?? null;
-    const aclManager = ctx.engine?.getManager('ACLManager') as
+    const policyInformationPoint = ctx.engine?.getManager('PolicyInformationPoint') as
       { canUserAccessPage(user: unknown, page: string, action: string): Promise<boolean> } | undefined;
-    const visible = aclManager
-      ? await aclManager.canUserAccessPage(viewer, pageName, 'view')
+    const visible = policyInformationPoint
+      ? await policyInformationPoint.canUserAccessPage(viewer, pageName, 'view')
       : metadata.private !== true;
     if (!visible) {
       return renderPlaceholder(pageName, 'Insert: page not visible');

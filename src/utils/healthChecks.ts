@@ -3,7 +3,7 @@
  *
  * Before this, the container `HEALTHCHECK` and both k8s probes in
  * `docker/k8s/deployment.yaml` pointed at `/` and accepted 200 *or* 302 — a
- * full page render through session lookup, AuthManager, ACLManager, the
+ * full page render through session lookup, AuthManager, PolicyInformationPoint, the
  * rendering pipeline and the template layer, every 10 seconds per pod.
  *
  * That is wrong in both directions. An instance that redirects everything,

@@ -27,7 +27,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 const DESCRIPTIONS: Record<string, string> = {
   // Managers
-  'docs/managers/ACLManager.md': 'Per-page access control: private/author-lock/audience/role-policy evaluation via the canonical wikiContext.canAccess facade',
+  'docs/managers/PolicyInformationPoint.md': 'What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager)',
   'docs/managers/AssetService.md': 'Unified DAM search facade over the AssetProvider registry; called by SearchManager and the asset-picker',
   'docs/managers/AttachmentManager.md': 'File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication',
   'docs/managers/BackupManager.md': 'System-wide backup and restore — pages, attachments, config, search indices',
@@ -39,7 +39,7 @@ const DESCRIPTIONS: Record<string, string> = {
   'docs/managers/MetricsManager.md': 'OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios',
   'docs/managers/NotificationManager.md': 'System and per-user notifications — toast popups, persistent inbox, scheduled expiry',
   'docs/managers/PluginManager.md': 'Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output',
-  'docs/managers/PolicyEvaluator.md': 'Tier-2 of ACLManager — evaluates role/permission policies against principals and resources',
+  'docs/managers/PolicyEvaluator.md': 'Matches policies against subjects and resources — the PDP asks it, for the PolicyInformationPoint\'s tier 2',
   'docs/managers/PolicyManager.md': 'Policy CRUD and lookup — manages the role/permission ruleset that PolicyEvaluator applies',
   'docs/managers/PolicyValidator.md': 'Schema validation for policy definitions; runs at startup to refuse malformed policies',
   'docs/managers/RenderingManager.md': 'Markdown + JSPWiki-style markup rendering pipeline; orchestrates handlers and plugin invocation',

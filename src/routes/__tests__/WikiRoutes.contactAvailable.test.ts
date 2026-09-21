@@ -114,7 +114,7 @@ vi.mock('../../WikiEngine', () => {
             pageExists: vi.fn().mockReturnValue(false),
             getCurrentPageProvider: vi.fn().mockReturnValue(null)
           },
-          ACLManager: {
+          PolicyInformationPoint: {
             checkPagePermission: vi.fn().mockResolvedValue(true),
             checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
             removeACLMarkup: vi.fn().mockImplementation((c: string) => c),

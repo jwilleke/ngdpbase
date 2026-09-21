@@ -3,7 +3,7 @@
  *
  * Both loops re-save every page carrying a keyword. A private page lives in its
  * owner's private container: it is changed only when this request may edit it
- * (`canAccess('edit')` — ACLManager Tier 0: the owner or a delegate, never a
+ * (`canAccess('edit')` — PolicyInformationPoint Tier 0: the owner or a delegate, never a
  * role). Another user's private page is left alone; the admin's own private
  * page is saved with the admin's context; every page write states who is writing (#1179).
  */

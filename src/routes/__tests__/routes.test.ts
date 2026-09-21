@@ -36,7 +36,7 @@ vi.mock('../../context/WikiContext', () => {
       renderingManager: engine?.getManager?.('RenderingManager'),
       pluginManager: engine?.getManager?.('PluginManager'),
       variableManager: engine?.getManager?.('VariableManager'),
-      aclManager: engine?.getManager?.('ACLManager'),
+      policyInformationPoint: engine?.getManager?.('PolicyInformationPoint'),
       getContext: vi.fn().mockReturnValue(options.context || 'none'),
       renderMarkdown: vi.fn().mockResolvedValue('<p>Rendered content</p>'),
       toParseOptions: vi.fn().mockReturnValue({
@@ -234,7 +234,7 @@ vi.mock('../../WikiEngine', () => {
     set: vi.fn().mockResolvedValue(true)
   };
 
-  const mockACLManager = {
+  const mockPolicyInformationPoint = {
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content without ACL markup'),
@@ -328,7 +328,7 @@ vi.mock('../../WikiEngine', () => {
           RenderingManager: mockRenderingManager,
           SearchManager: mockSearchManager,
           TemplateManager: mockTemplateManager,
-          ACLManager: mockACLManager,
+          PolicyInformationPoint: mockPolicyInformationPoint,
           NotificationManager: mockNotificationManager,
           SchemaManager: mockSchemaManager,
           OrganizationManager: mockOrganizationManager,
@@ -359,7 +359,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
   let mockEngine;
   let mockUserManager;
   let mockPageManager;
-  let mockACLManager;
+  let mockPolicyInformationPoint;
   let mockNotificationManager;
   let mockSchemaManager;
   let mockRenderingManager;
@@ -459,7 +459,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     mockUserManager = mockEngine.getManager('UserManager');
     mockHolder.userManager = mockUserManager as never;
     mockPageManager = mockEngine.getManager('PageManager');
-    mockACLManager = mockEngine.getManager('ACLManager');
+    mockPolicyInformationPoint = mockEngine.getManager('PolicyInformationPoint');
     mockNotificationManager = mockEngine.getManager('NotificationManager');
     mockSchemaManager = mockEngine.getManager('SchemaManager');
     mockRenderingManager = mockEngine.getManager('RenderingManager');
@@ -541,13 +541,13 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       name: 'basic',  
       content: '# {{title}}\nTemplate content here'
     });
-    mockACLManager.checkPagePermission.mockResolvedValue(true);
+    mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
     // #632: LeftMenu / Footer / adminDashboard now use the canonical method;
     // reset it to the same default per test so tests that flip it for denial
     // don't bleed state into later tests.
-    mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
-    mockACLManager.removeACLMarkup.mockReturnValue('Content without ACL markup');
-    mockACLManager.parseACL.mockReturnValue({ permissions: [] });
+    mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+    mockPolicyInformationPoint.removeACLMarkup.mockReturnValue('Content without ACL markup');
+    mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
     mockNotificationManager.getNotifications.mockResolvedValue([]);
     mockNotificationManager.getAllNotifications.mockReturnValue([]);
     mockNotificationManager.getStats.mockResolvedValue({ total: 0, active: 0, expired: 0, byType: {}, byLevel: {} });
@@ -578,7 +578,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage' }
         });
-        mockACLManager.checkPagePermission.mockResolvedValue(true);
+        mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
 
         const response = await request(app).get('/view/TestPage');
         expect(response.status).toBe(200);
@@ -588,7 +588,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         // The owner's sealed pages resolve only through the context that
         // carries their session handle, so the route forwards req.userContext
         // itself — not nothing, and not a subject rebuilt from its fields.
-        mockACLManager.checkPagePermission.mockResolvedValue(true);
+        mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
 
         await request(app).get('/view/TestPage');
 
@@ -624,8 +624,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       });
 
       test('should return 403 for unauthorized user', async () => {
-        // editPage uses aclManager.checkPagePermissionWithContext for ACL check
-        mockACLManager.checkPagePermissionWithContext.mockResolvedValue(false);
+        // editPage uses policyInformationPoint.checkPagePermissionWithContext for ACL check
+        mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
 
         const response = await request(app).get('/edit/TestPage');
         expect(response.status).toBe(403);
@@ -911,7 +911,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         });
         mockPageManager.deletePageWithContext.mockResolvedValue(true);
         // ACL check must pass for delete permission
-        mockACLManager.checkPagePermissionWithContext.mockResolvedValue(true);
+        mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
 
         // JSON request returns JSON response
         const response = await request(app)

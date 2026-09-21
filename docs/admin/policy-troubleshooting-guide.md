@@ -19,7 +19,7 @@ Before diving into specific issues, use this checklist for rapid diagnosis:
 ### 2. System Integration
 
 - [ ] PolicyManager is properly initialized
-- [ ] ACLManager integration is working
+- [ ] PolicyInformationPoint integration is working
 - [ ] User context is correctly passed
 - [ ] Cache is functioning (if enabled)
 

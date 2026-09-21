@@ -26,7 +26,7 @@ Share links shown on `/shares` are built from `ngdpbase.application.base-url` (f
 
 ## How a share visit is evaluated
 
-A share is a delegation by the user who issued it, not a copy of their authority ([#1222](https://github.com/jwilleke/ngdpbase/issues/1222), epic [#1225](https://github.com/jwilleke/ngdpbase/issues/1225)). A request presenting a token resolves through `ShareManager.subjectFor(token)` to an anonymous subject carrying `viaShare` — the share id, the issuer, the delegated `actions` and `resources`, and the expiry — the same way an agent-token request carries `viaToken`. There is no second evaluator: `UserManager.hasPermission` and `ACLManager` read `viaShare` as a ceiling applied before every other rule, and refuse when any of these fails, in this order:
+A share is a delegation by the user who issued it, not a copy of their authority ([#1222](https://github.com/jwilleke/ngdpbase/issues/1222), epic [#1225](https://github.com/jwilleke/ngdpbase/issues/1225)). A request presenting a token resolves through `ShareManager.subjectFor(token)` to an anonymous subject carrying `viaShare` — the share id, the issuer, the delegated `actions` and `resources`, and the expiry — the same way an agent-token request carries `viaToken`. There is no second evaluator: `UserManager.hasPermission` and `PolicyInformationPoint` read `viaShare` as a ceiling applied before every other rule, and refuse when any of these fails, in this order:
 
 1. The action is not one the share delegates.
 2. The share has expired (re-read at every decision, not trusted from resolution).
@@ -35,7 +35,7 @@ A share is a delegation by the user who issued it, not a copy of their authority
 
 What passes the ceiling is then subject to the page's own rules exactly as any anonymous visitor is: `private: true`, a restricted `audience`, or a per-action `access` list refuses. Only after that does the share stand in for global policy, which is what lets a share work on an instance whose policy gives anonymous nothing.
 
-Media items go through the same evaluator: `ACLManager.canUserAccessMediaItem` applies the share ceiling to the item (`asset-read` delegated, unexpired, the item's EXIF/XMP keywords covered, not private, issuer live) and then the linked page's own rules. The `/share/*` routes contain no access decision of their own ([#1223](https://github.com/jwilleke/ngdpbase/issues/1223)): a resolver turns the token into the share subject, and every handler hands off to the door the content's own URL uses — the page read gate, `/media/file/:id`, `/media/thumb/:id`. The album lists the keyword's candidates filtered by those doors.
+Media items go through the same evaluator: `PolicyInformationPoint.canUserAccessMediaItem` applies the share ceiling to the item (`asset-read` delegated, unexpired, the item's EXIF/XMP keywords covered, not private, issuer live) and then the linked page's own rules. The `/share/*` routes contain no access decision of their own ([#1223](https://github.com/jwilleke/ngdpbase/issues/1223)): a resolver turns the token into the share subject, and every handler hands off to the door the content's own URL uses — the page read gate, `/media/file/:id`, `/media/thumb/:id`. The album lists the keyword's candidates filtered by those doors.
 
 Every denial a share visit produces is an `authorization-deny` record with `viaShareId` and `viaShareIssuer` in its metadata, so the trail reads "anonymous via share, issued by".
 

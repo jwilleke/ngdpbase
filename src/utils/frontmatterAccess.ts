@@ -5,7 +5,7 @@
  * or, for viewing, `audience`. Two subsystems needed that answer and each had
  * its own version of it, which is how they came to disagree:
  *
- *   - `ACLManager.checkFrontmatterAccess` decided a request, correctly.
+ *   - `PolicyInformationPoint.checkFrontmatterAccess` decided a request, correctly.
  *   - `VersioningFileProvider.getRecentChanges` decided a listing, and only
  *     consulted `audience` for pages already marked private — so every
  *     non-private page carrying an audience was listed to everyone, while

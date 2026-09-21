@@ -1,5 +1,5 @@
 /**
- * ACLManager.canUserAccessMediaItem (#1223, epic #1225).
+ * PolicyInformationPoint.canUserAccessMediaItem (#1223, epic #1225).
  *
  * The media door used to ask only one question — may this user view the
  * page the item is linked to — straight from MediaManager.getItem. The share
@@ -12,7 +12,7 @@
  * visitor. An ordinary session is unchanged: linked-page rule only.
  */
 
-import ACLManager from '../ACLManager';
+import PolicyInformationPoint from '../PolicyInformationPoint';
 import type { ShareGrant } from '../../types/Share';
 
 let issuerHolds: string[] = ['asset-read'];
@@ -64,11 +64,11 @@ const item = (over: Record<string, unknown> = {}) =>
   ({ id: 'm1', filePath: '/x/a.jpg', metadata: { keywords: ['trip'] }, ...over }) as never;
 
 describe('canUserAccessMediaItem — a share subject (#1223)', () => {
-  let acl: ACLManager;
+  let acl: PolicyInformationPoint;
   beforeEach(async () => {
     issuerHolds = ['asset-read'];
     denials = [];
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 
@@ -131,9 +131,9 @@ describe('canUserAccessMediaItem — a share subject (#1223)', () => {
 });
 
 describe('canUserAccessMediaItem — an ordinary subject is unchanged (#1223)', () => {
-  let acl: ACLManager;
+  let acl: PolicyInformationPoint;
   beforeEach(async () => {
-    acl = new ACLManager(makeEngine());
+    acl = new PolicyInformationPoint(makeEngine());
     await acl.initialize();
   });
 

@@ -22,7 +22,7 @@ WikiEngine registers managers in this sequence. Later managers may call `engine.
 | 10 | __TemplateManager__ | *(none)* |
 | 12 | __PolicyValidator__ | ConfigurationManager |
 | 13 | __PolicyEvaluator__ | ConfigurationManager, PolicyValidator |
-| 14 | __ACLManager__ | PolicyEvaluator |
+| 14 | __PolicyInformationPoint__ | PolicyEvaluator |
 | 15 | __PluginManager__ | ConfigurationManager |
 | 16 | __MarkupParser__ | ConfigurationManager, PluginManager |
 | 17 | __RenderingManager__ | ConfigurationManager, PageManager, PluginManager, MarkupParser, NotificationManager |
@@ -232,7 +232,7 @@ evaluate(context, action, resource)
 
 ---
 
-### ACLManager
+### PolicyInformationPoint
 
 Per-page `acl` frontmatter evaluation. Runs after PolicyEvaluator; provides the final allow/deny for `view` and `edit` actions on specific pages.
 
@@ -318,7 +318,7 @@ __Flow — page view (cache miss):__
 ```
 GET /view/:page
   → CacheManager.get(rendered-pages:<name>:<roles>)  → miss
-  → ACLManager.check(view, page, userContext)
+  → PolicyInformationPoint.check(view, page, userContext)
   → RenderingManager.textToHTML(wikiContext, content)
       → MarkupParser phases 1-7
           → PluginManager.execute() per plugin token
@@ -546,7 +546,7 @@ __Key API:__ `paths` getter → `ThemePaths`, `static listAvailable(themesDir)` 
 GET /view/:page
   ↓
 WikiRoutes.viewPage()
-  → ACLManager.isAllowed(view, page, userContext)
+  → PolicyInformationPoint.isAllowed(view, page, userContext)
   → PageManager.getPage(name)
   → CacheManager.get(rendered-pages:<name>:<roleSet>)   → miss
   → RenderingManager.textToHTML(ctx, content)
@@ -571,7 +571,7 @@ __See also:__ [Current-Rendering-Pipeline.md](./Current-Rendering-Pipeline.md)
 POST /save/:page
   ↓
 WikiRoutes.savePage()
-  → ACLManager.checkPermission(edit, page, userContext)
+  → PolicyInformationPoint.checkPermission(edit, page, userContext)
   → PageManager.savePageWithContext(wikiContext, metadata)
       → [1] Reject deprecated inline ACL markup [{ALLOW}/{DENY}]
       → [2] Preserve original author (immutable — never overwritten)
@@ -614,7 +614,7 @@ PolicyEvaluator.evaluate(ctx, action, resource)
   → apply first matching effect (allow/deny)
   → AuditManager.logAccessDecision(ctx, result, reason, policy)
   ↓
-ACLManager.evaluate(page.acl, action, userContext.roles)
+PolicyInformationPoint.evaluate(page.acl, action, userContext.roles)
   → return final Allow | Deny
 ```
 
@@ -625,7 +625,7 @@ GET /api/search?q=...
   ↓
 SearchManager.searchWithContext(wikiContext, query, opts)
   → provider.search(query, opts)               (Lunr or Elasticsearch)
-  → filter results: ACLManager.isAllowed(view, page, ctx) per result
+  → filter results: PolicyInformationPoint.isAllowed(view, page, ctx) per result
   → return SearchResult[]
 ```
 

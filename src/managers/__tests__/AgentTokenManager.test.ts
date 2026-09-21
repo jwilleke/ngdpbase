@@ -469,7 +469,7 @@ describe('AgentTokenManager hardening (#1108)', () => {
 
     test('widening the scopes of a returned record cannot widen the token', async () => {
       // AgentTokenAuthProvider puts these scopes into req.userContext, where
-      // ACLManager reads them as the permission ceiling. Sharing the stored
+      // PolicyInformationPoint reads them as the permission ceiling. Sharing the stored
       // array let anything downstream grant itself admin in place.
       const m = await makeManager();
       const { token, record } = await m.mint(subject('jim'), 'a', ['page-edit']);

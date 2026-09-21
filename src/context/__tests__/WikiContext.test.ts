@@ -24,7 +24,7 @@ const mockEngine = {
       return mockVariableManager;
     case 'PageManager':
     case 'PluginManager':
-    case 'ACLManager':
+    case 'PolicyInformationPoint':
       return null;
     default:
       return null;
@@ -363,13 +363,13 @@ describe('WikiContext', () => {
   });
 
   describe('canAccess', () => {
-    test('delegates to ACLManager.checkPagePermissionWithContext', async () => {
-      const aclManagerMock = {
+    test('delegates to PolicyInformationPoint.checkPagePermissionWithContext', async () => {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -380,17 +380,17 @@ describe('WikiContext', () => {
 
       const result = await ctx.canAccess('edit');
 
-      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalledWith(ctx, 'edit');
+      expect(policyInformationPointMock.checkPagePermissionWithContext).toHaveBeenCalledWith(ctx, 'edit');
       expect(result).toBe(true);
     });
 
     test('returns false when pageName is null', async () => {
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -400,12 +400,12 @@ describe('WikiContext', () => {
 
       const result = await ctx.canAccess('edit');
 
-      expect(aclManagerMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
+      expect(policyInformationPointMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
       expect(result).toBe(false);
     });
 
-    test('returns false when ACLManager is not available', async () => {
-      // mockEngine returns null for ACLManager
+    test('returns false when PolicyInformationPoint is not available', async () => {
+      // mockEngine returns null for PolicyInformationPoint
       const ctx = new WikiContext(mockEngine, {
         pageName: 'Main',
         userContext: { username: 'alice', roles: ['admin'] }
@@ -415,12 +415,12 @@ describe('WikiContext', () => {
     });
 
     test('memoizes the result per action+pageName — repeat calls share one ACL evaluation (#636)', async () => {
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true)
       };
       const engine = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -436,21 +436,21 @@ describe('WikiContext', () => {
       await ctx.canAccess('view');
 
       // 5 calls, 2 unique action+pageName combos → 2 ACL invocations
-      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(2);
+      expect(policyInformationPointMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(2);
     });
 
     // ─────────────────────────────────────────────────────────────────────
     // #714 Slice B — pageNameOverride for cross-page checks
     // ─────────────────────────────────────────────────────────────────────
 
-    test('Slice B — cross-page check routes through ACLManager.canUserAccessPage', async () => {
-      const aclManagerMock = {
+    test('Slice B — cross-page check routes through PolicyInformationPoint.canUserAccessPage', async () => {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
         canUserAccessPage: vi.fn().mockResolvedValue(true)
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -463,23 +463,23 @@ describe('WikiContext', () => {
 
       // Cross-page check goes through canUserAccessPage, NOT
       // checkPagePermissionWithContext.
-      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledWith(
+      expect(policyInformationPointMock.canUserAccessPage).toHaveBeenCalledWith(
         ctx.userContext,
         'OtherPage',
         'view'
       );
-      expect(aclManagerMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
+      expect(policyInformationPointMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
     test('Slice B — same-page override (override === this.pageName) uses fast path', async () => {
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
         canUserAccessPage: vi.fn().mockResolvedValue(true)
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -492,21 +492,21 @@ describe('WikiContext', () => {
       // (avoids a metadata reload).
       await ctx.canAccess('view', 'Main');
 
-      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalled();
-      expect(aclManagerMock.canUserAccessPage).not.toHaveBeenCalled();
+      expect(policyInformationPointMock.checkPagePermissionWithContext).toHaveBeenCalled();
+      expect(policyInformationPointMock.canUserAccessPage).not.toHaveBeenCalled();
     });
 
     test('Slice B — cache key incorporates the override (cross-page result is NOT memoized as same-page)', async () => {
       // The pre-#714 cache key was `${action}:${this.pageName}` — would
       // have returned the SAME-page memoized result for a different page.
       // Slice B fixes the key to use the resolved target.
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
         canUserAccessPage: vi.fn().mockResolvedValue(false)  // different result for other page!
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -526,18 +526,18 @@ describe('WikiContext', () => {
 
       // Both paths fired exactly once each — proves the cache didn't
       // erroneously short-circuit the second call.
-      expect(aclManagerMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(1);
-      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledTimes(1);
+      expect(policyInformationPointMock.checkPagePermissionWithContext).toHaveBeenCalledTimes(1);
+      expect(policyInformationPointMock.canUserAccessPage).toHaveBeenCalledTimes(1);
     });
 
     test('Slice B — cross-page memoization works (repeat cross-page calls share one evaluation)', async () => {
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
         canUserAccessPage: vi.fn().mockResolvedValue(true)
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -550,17 +550,17 @@ describe('WikiContext', () => {
       await ctx.canAccess('view', 'OtherPage');
       await ctx.canAccess('view', 'OtherPage');
 
-      expect(aclManagerMock.canUserAccessPage).toHaveBeenCalledTimes(1);
+      expect(policyInformationPointMock.canUserAccessPage).toHaveBeenCalledTimes(1);
     });
 
     test('Slice B — override with pageName=null and no current page → still returns false', async () => {
-      const aclManagerMock = {
+      const policyInformationPointMock = {
         checkPagePermissionWithContext: vi.fn(),
         canUserAccessPage: vi.fn()
       };
       const engineWithAcl = {
         getManager: vi.fn((name) => {
-          if (name === 'ACLManager') return aclManagerMock;
+          if (name === 'PolicyInformationPoint') return policyInformationPointMock;
           return mockEngine.getManager(name);
         })
       };
@@ -571,8 +571,8 @@ describe('WikiContext', () => {
 
       // No this.pageName and no override → still false (no target page).
       expect(await ctx.canAccess('view')).toBe(false);
-      expect(aclManagerMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
-      expect(aclManagerMock.canUserAccessPage).not.toHaveBeenCalled();
+      expect(policyInformationPointMock.checkPagePermissionWithContext).not.toHaveBeenCalled();
+      expect(policyInformationPointMock.canUserAccessPage).not.toHaveBeenCalled();
     });
   });
 

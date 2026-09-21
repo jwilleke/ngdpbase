@@ -71,7 +71,7 @@ describe('#1219 the kiosk renders only what the read gate allows', () => {
             getPageMetadata: vi.fn(async (n: string) => (pages[n] ? { title: n } : null))
           };
         }
-        if (name === 'ACLManager') {
+        if (name === 'PolicyInformationPoint') {
           return { checkPagePermissionWithContext: vi.fn(async (ctx: { pageName?: string }) => readable.includes(ctx.pageName ?? '')) };
         }
         if (name === 'RenderingManager') return { textToHTML: vi.fn(async (_c: unknown, md: string) => `<p>${md}</p>`) };

@@ -280,7 +280,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
   // audience frontmatter, 2 with a populated index entry), so the field the
   // check read was empty anyway.
   //
-  // Frontmatter is the source of truth here, matching ACLManager.
+  // Frontmatter is the source of truth here, matching PolicyInformationPoint.
   // ---------------------------------------------------------------------
   describe('#1054 — audience on a NON-private page', () => {
     const withMetadata = (meta: Record<string, unknown> | null) => {

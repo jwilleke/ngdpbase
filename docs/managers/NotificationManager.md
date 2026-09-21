@@ -68,7 +68,7 @@ await notifyManager.dismissNotification(id, 'alice');
 
 ## Related Managers
 
-- [ACLManager](ACLManager.md) - Sends access decision notifications
+- [PolicyInformationPoint](PolicyInformationPoint.md) - Sends access decision notifications
 - [ConfigurationManager](ConfigurationManager.md) - Notification settings
 
 ## Developer Documentation

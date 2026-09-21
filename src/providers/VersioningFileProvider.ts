@@ -932,7 +932,7 @@ class VersioningFileProvider extends FileSystemProvider {
       if (!idx.lastModified) continue;
       if (since && new Date(idx.lastModified) < since) continue;
 
-      // #635 / #1054: visibility filter — must agree with ACLManager, or this
+      // #635 / #1054: visibility filter — must agree with PolicyInformationPoint, or this
       // lists pages the viewer gets a 403 on.
       //
       // It did not. The audience test was nested inside `if (idx.isPrivate)`,
@@ -1110,7 +1110,7 @@ class VersioningFileProvider extends FileSystemProvider {
         || (idx.creator && principalSet.has(idx.creator))) continue;
 
       // A page is "shared with me" when frontmatter states a view rule AND the
-      // viewer matches it — `decided && allowed`. Same evaluator ACLManager and
+      // viewer matches it — `decided && allowed`. Same evaluator PolicyInformationPoint and
       // getRecentChanges use, so all three agree on what an audience means.
       const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
       const decision = decideFrontmatterAccess(md, principals, 'view');
