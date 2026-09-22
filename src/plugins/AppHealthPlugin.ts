@@ -47,7 +47,7 @@ interface RecentChange {
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
-  getRecentChanges?(options?: { principals?: string[]; limit?: number }): Promise<RecentChange[]>;
+  getRecentChanges?(ctx: unknown, options?: { principals?: string[]; limit?: number }): Promise<RecentChange[]>;
 }
 
 type LinkGraph = Record<string, string[]>;
@@ -145,16 +145,17 @@ const AppHealthPlugin: SimplePlugin = {
       // so an unnarrowed list here shows private page titles to whoever
       // loaded the page — the stale check did exactly that via
       // `includeAll: true`, and the orphans check via raw getAllPages().
-      // The provider derives the admin bypass from the principals, so an
-      // admin viewing still sees everything.
+      // No role bypasses the filter (#1456); an admin sees what any reader
+      // with the same audiences sees, plus their own private pages.
       const userContext = (context as { userContext?: { username?: string; roles?: string[] } }).userContext;
       const principals = [
         ...(userContext?.roles ?? []),
         ...(userContext?.username ? [userContext.username] : [])
       ];
       const canNarrow = typeof pageManager.getRecentChanges === 'function';
+      if (canNarrow && !userContext) throw new Error('AppHealthPlugin: no requester to list for');
       const visibleChanges = canNarrow && (selected.includes('orphans') || selected.includes('stale'))
-        ? await pageManager.getRecentChanges!({ principals, limit: Number.MAX_SAFE_INTEGER })
+        ? await pageManager.getRecentChanges!(userContext, { principals, limit: Number.MAX_SAFE_INTEGER })
         : [];
 
       if (selected.includes('orphans')) {

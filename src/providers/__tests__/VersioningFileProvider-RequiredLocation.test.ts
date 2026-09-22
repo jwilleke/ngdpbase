@@ -16,10 +16,12 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import ValidationManager from '../../managers/ValidationManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
+import { storePageIndexPath } from '../../utils/privateStorePath';
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
@@ -78,7 +80,12 @@ describe('required-category pages are stored like any other page (#1371)', () =>
       }),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+    // ValidationManager names a private page's slug (#1456); the rebuild test saves one.
+    const e: { getManager: (name: string) => unknown } = { getManager: () => null };
+    const validation = new ValidationManager(e);
+    e.getManager = vi.fn((name: string) =>
+      name === 'ConfigurationManager' ? configManager : name === 'ValidationManager' ? validation : null);
+    engine = e;
   });
 
   afterEach(async () => {
@@ -205,7 +212,7 @@ describe('required-category pages are stored like any other page (#1371)', () =>
     const UUID_C = '33333333-3333-4333-8333-333333333333';
     const PROBE = 'aa11bb22-cc33-dd44-ee55-ff6677889900';
 
-    test('corrects stale locations, drops entries with no file, adds unindexed pages, and survives a restart', async () => {
+    test('corrects stale locations, drops entries with no file, adds unindexed pages, leaves private pages to their store, and survives a restart', async () => {
       const provider = await newProvider();
       await provider.savePage('Agent Token Check', 'token text', { uuid: UUID_A, 'system-category': 'documentation' }, TEST_ACTOR);
       await provider.savePage('Diary', 'secret', { uuid: UUID_B, private: true, author: 'molly' }, TEST_ACTOR);
@@ -223,11 +230,14 @@ describe('required-category pages are stored like any other page (#1371)', () =>
 
       const rebuilt = await readIndex();
       expect(rebuilt.pages[UUID_A].location).toBe('pages');
-      expect(rebuilt.pages[UUID_B]).toMatchObject({ location: 'private', creator: 'molly' });
+      // #1456: a private page stays in its store's own index, never the rebuilt global one.
+      expect(rebuilt.pages[UUID_B]).toBeUndefined();
+      const store = JSON.parse(await fs.readFile(storePageIndexPath(pagesDir, 'molly', 'default'), 'utf8'));
+      expect(store.pages[UUID_B]).toMatchObject({ location: 'private', creator: 'molly', store: 'default' });
       expect(rebuilt.pages[UUID_C]).toMatchObject({ title: 'Synced Page', location: 'pages', filename: `${UUID_C}.md` });
       expect(rebuilt.pages[PROBE]).toBeUndefined();
       expect(result.removed).toEqual(['Reseed Probe']);
-      expect(rebuilt.pageCount).toBe(3);
+      expect(rebuilt.pageCount).toBe(2);
 
       const again = await newProvider();
       expect((await again.getPage('Agent Token Check'))?.content).toContain('token text');

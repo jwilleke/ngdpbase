@@ -113,7 +113,13 @@ import {
   userKeysExist,
   type StoreKind
 } from '../utils/privateStoreDoor.js';
-import { privateStoreLayoutFromConfig, type PrivateStoreLayout } from '../utils/privateStorePath.js';
+import {
+  formatPrivatePageName,
+  parsePrivatePageName,
+  privateStoreLayoutFromConfig,
+  type PrivateStoreLayout
+} from '../utils/privateStorePath.js';
+import { pageUrl, type PageAction } from '../utils/pageUrl.js';
 import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
@@ -294,10 +300,10 @@ interface IVersioningProvider {
   getDeletedPages?(): IDeletedPageEntry[];
   restoreDeletedPage?(uuid: string): Promise<RestoreResult>;
   purgeDeletedPage?(uuid: string): Promise<boolean>;
-  getVersionHistory?(name: string, limit?: number): Promise<IVersionEntry[]>;
-  compareVersions?(name: string, v1: number, v2: number): Promise<IComparisonResult | null>;
+  getVersionHistory?(name: string, ctx: ActorContext, limit?: number): Promise<IVersionEntry[]>;
+  compareVersions?(name: string, v1: number, v2: number, ctx: ActorContext): Promise<IComparisonResult | null>;
   restoreVersion?(name: string, version: number, ctx: ActorContext, options?: { author?: string; comment?: string }): Promise<number>;
-  getPageVersion?(name: string, version: number): Promise<{ content: string; metadata: unknown }>;
+  getPageVersion?(name: string, version: number, ctx: ActorContext): Promise<{ content: string; metadata: unknown }>;
   pageIndex?: { pages: Record<string, { location?: string; creator?: string }> } | null;
   invalidatePageCache?(identifier: string): string | null;
 }
@@ -340,6 +346,8 @@ interface IPageManager {
   allowShippedPage(sourceId: string, uuid: string, ctx: ActorContext): Promise<boolean>;
   declinedShippedPages(): Promise<Record<string, Record<string, { at: string; by: string; reason: string }>>>;
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
+  /** At unlock (#1456): sealed pages move into their stores' own indexes. */
+  adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string, ctx: ActorContext): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
@@ -364,6 +372,8 @@ interface IPolicyInformationPoint {
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
   /** The private-container decision for a file in a store: owner or delegate, never a role (#1382). */
   canAccessPrivateContainer(userContext: WikiContext['userContext'], owner: string, resource: string, action: string): boolean;
+  /** An active account as a subject, or null (#1431). */
+  subjectFor(username: string): Promise<UserContext | null>;
 }
 
 interface ISchemaManager {
@@ -1924,12 +1934,12 @@ class WikiRoutes {
     const username = actorOf(ctx).user;
     if (!username) return [];
     const pm = this.engine.getManager('PageManager') as {
-      getPagesByCreator?: (u: string, o?: { limit?: number; sortBy?: string }) => Promise<Array<{ title: string; lastModified: string }>>;
+      getPagesByCreator?: (u: string, ctx: ActorContext, o?: { limit?: number; sortBy?: string }) => Promise<Array<{ title: string; lastModified: string }>>;
       getPageMetadata?: (id: string, ctx: ActorContext) => Promise<Record<string, unknown> | null>;
     } | undefined;
     if (!pm?.getPagesByCreator || !pm?.getPageMetadata) return [];
     try {
-      const recent = await pm.getPagesByCreator(username, { limit: 20, sortBy: 'lastModified-desc' });
+      const recent = await pm.getPagesByCreator(username, ctx, { limit: 20, sortBy: 'lastModified-desc' });
       const pages: RecentPageKeywords[] = [];
       for (const entry of recent) {
         if (excludeTitle && entry.title === excludeTitle) continue;
@@ -2436,19 +2446,10 @@ class WikiRoutes {
     return true;
   }
 
-  private async _isPagePrivate(pageName: string, ctx: ActorContext): Promise<boolean> {
-    try {
-      const pageManager = this.engine.getManager('PageManager');
-      if (!pageManager) return false;
-      const meta = await pageManager.getPageMetadata(pageName, ctx);
-      if (!meta?.uuid) return false;
-      const provider = pageManager.getCurrentPageProvider?.() ?? (pageManager).provider;
-      const pageIndex = provider?.pageIndex as { pages: Record<string, { location?: string }> } | null;
-      const entry = pageIndex?.pages[meta.uuid];
-      return entry?.location === 'private';
-    } catch {
-      return false;
-    }
+  private _isPagePrivate(pageName: string): boolean {
+    // #1456: a private page is named by its path — private whether or not it
+    // exists yet, and never found in the global index.
+    return parsePrivatePageName(pageName) !== null;
   }
 
   /**
@@ -2833,7 +2834,7 @@ ${panes}
       const provider = pageManager.provider;
       if (provider && typeof provider.getVersionHistory === 'function') {
         try {
-          const versions = await provider.getVersionHistory(pageName);
+          const versions = await provider.getVersionHistory(pageName, req.userContext);
           if (versions && versions.length > 0) {
             const latestVersion = versions[0]; // Versions are returned newest first
             versionInfo = {
@@ -2972,7 +2973,7 @@ ${panes}
       // dead markup that invites the reader to think it can be shared.
       const _seoEnabled = this.engine.getManager('ConfigurationManager')
         ?.getProperty?.('ngdpbase.seo.enabled', false) === true;
-      const _pageIsPrivate = await this._isPagePrivate(pageName, req.userContext);
+      const _pageIsPrivate = this._isPagePrivate(pageName);
       const socialMeta = (_seoEnabled && !_pageIsPrivate)
         ? buildSocialMeta({
           pageName,
@@ -3632,7 +3633,7 @@ ${panes}
         pageName: pageName,
         content: pageData.content,
         metadata: pageData.metadata,
-        pageIsPrivate: await this._isPagePrivate(pageName, req.userContext),
+        pageIsPrivate: this._isPagePrivate(pageName),
         systemCategories: systemCategories,
         selectedCategories: selectedCategories,
         userKeywords: userKeywords,
@@ -3855,7 +3856,9 @@ ${panes}
       // honouring the legacy form. PageManager.savePageWithContext defensively
       // strips any stray `'private'` from `user-keywords` on every save, so
       // dead legacy data can't reappear and slip past this read.
-      const existingPrivate = existingPage?.metadata?.private === true;
+      // #1456: a page at a private name is private until its box is unticked.
+      const privateName = parsePrivatePageName(pageName);
+      const existingPrivate = privateName !== null || existingPage?.metadata?.private === true;
       const privateFlag: boolean = req.body['private-present'] === '1'
         ? req.body['private'] === 'true'
         : existingPrivate;
@@ -3864,6 +3867,27 @@ ${panes}
       // #1354: the author is the creator — kept on an edit, never filled in by
       // one. Only a new page takes the saving user as its author.
       const pageAuthor = existingPage ? existingPage.metadata?.author : (currentUser?.username || 'anonymous');
+
+      // #1456: the Private box moves a page into its owner's default store, or
+      // out of its store to the public space — the owner's move alone. Where
+      // the page lands is its name after the save.
+      const movesStore = privateName ? !privateFlag : privateFlag;
+      const pageOwner = privateName?.owner ?? pageAuthor;
+      if (movesStore && existingPage && currentUser?.username !== pageOwner) {
+        return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
+      }
+      const newTitle = (typeof title === 'string' && title) || privateName?.title || pageName;
+      const configForStores = this.engine.getManager('ConfigurationManager');
+      const landedName = !privateFlag
+        ? newTitle
+        : privateName
+          ? formatPrivatePageName(privateName.owner, privateName.store, newTitle)
+          : formatPrivatePageName(
+            String(pageOwner),
+            privateStoreLayoutFromConfig((key, def) => configForStores.getProperty(key, def)).defaultStoreId,
+            newTitle
+          );
+      const landsPrivate = parsePrivatePageName(landedName) !== null;
 
       // #1017: system-keywords is the automation/provenance bucket (#893) — no
       // editor posts it, so an edit must PRESERVE what is on disk. Without this,
@@ -3902,13 +3926,14 @@ ${panes}
 
       // Prepare metadata ONCE, preserving UUID if editing
       // Use matchedCategory (properly capitalized) instead of submitted systemCategory
-      const metadata = this.buildNewPageMetadata(title || pageName, {
+      const metadata = this.buildNewPageMetadata(newTitle, {
         'system-category': matchedCategory,
         'user-keywords': userKeywordsArray,
         ...(preservedSystemKeywords ? { 'system-keywords': preservedSystemKeywords } : {}),
         ...(audienceArray.length ? { audience: audienceArray } : {}),
         ...(authorLock ? { 'author-lock': true } : {}),
-        ...(privateFlag ? { private: true } : {}),
+        // #1456: an unticked box on a private page is the move out — sent as false.
+        ...(privateFlag ? { private: true } : privateName ? { private: false } : {}),
         ...(statusValue ? { status: statusValue } : {}),
         author: pageAuthor,
         uuid: existingPage?.metadata?.uuid || undefined
@@ -4105,20 +4130,39 @@ ${panes}
 
       // Sync attachment mentions — fire-and-forget so a metadata write failure never blocks save.
       // Replaces the per-render lazy attachToPage() with a deterministic save-time scan. #405 Phase 4
+      // #1456: a private page is in no shared index — mentions, assets, the
+      // link graph and the search index hold public pages only.
       const attachmentManager = this.engine.getManager('AttachmentManager');
-      if (attachmentManager?.syncPageMentions) {
-        attachmentManager.syncPageMentions(pageName, content).catch(() => {});
+      if (!landsPrivate && attachmentManager?.syncPageMentions) {
+        attachmentManager.syncPageMentions(landedName, content).catch(() => {});
       }
       // Sync pageAssets reverse index. #438
       const assetManager = this.engine.getManager('AssetManager');
-      if (assetManager?.syncPageAssets) {
-        assetManager.syncPageAssets(pageName, content).catch(() => {});
+      if (!landsPrivate && assetManager?.syncPageAssets) {
+        assetManager.syncPageAssets(landedName, content).catch(() => {});
       }
 
-      // Use incremental updates instead of full rebuilds for performance
-      const isNewPage = !existingPage;
+      // Use incremental updates instead of full rebuilds for performance.
+      // #1456: a page that came out of a store is new to the public space.
+      const isNewPage = !existingPage || privateName !== null;
       const finalTitle = (metadata.title as string) || pageName;
       const isRename = !isNewPage && pageName !== finalTitle;
+      if (landsPrivate) {
+        if (!isNewPage) {
+          // It left the public space: nothing shared may still name it.
+          renderingManager.removePageFromLinkGraph(pageName);
+          await searchManager.removePageFromIndex(pageName);
+        }
+        const privateCache = this.engine.getManager('CacheManager');
+        const savedUuid = pageManager?.getPageUUID?.(landedName, req.userContext);
+        if (privateCache?.isInitialized?.() && savedUuid) {
+          await privateCache.clear(undefined, `rendered-pages:${savedUuid}:*`);
+        }
+        this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
+        const privateTarget = pageUrl(landedName);
+        if (wantsJson) return res.json({ ok: true, redirect: privateTarget });
+        return res.redirect(privateTarget);
+      }
 
       // Capture old referring pages BEFORE removing from link graph (used for cache invalidation)
       const oldReferringPages = isRename ? renderingManager.getReferringPages(pageName) : [];
@@ -5737,6 +5781,16 @@ ${panes}
     ctx: ActorContext
   ): Promise<void> {
     const pageManager = this.engine.getManager('PageManager');
+    const cacheManager = this.engine.getManager('CacheManager');
+    const clearRendered = async (): Promise<void> => {
+      if (cacheManager?.isInitialized?.()) {
+        const uuid = pageManager?.getPageUUID?.(pageName, ctx) ?? pageName;
+        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
+      }
+    };
+    // #1456: a private page is in no shared index — mentions, assets, the link
+    // graph and search hold public pages only.
+    if (parsePrivatePageName(pageName)) return clearRendered();
     const attachmentManager = this.engine.getManager('AttachmentManager');
     if (attachmentManager?.syncPageMentions) attachmentManager.syncPageMentions(pageName, content).catch(() => {});
     const assetManager = this.engine.getManager('AssetManager');
@@ -5750,11 +5804,7 @@ ${panes}
       content,
       metadata
     });
-    const cacheManager = this.engine.getManager('CacheManager');
-    if (cacheManager?.isInitialized?.()) {
-      const uuid = pageManager?.getPageUUID?.(pageName, ctx) ?? pageName;
-      await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-    }
+    await clearRendered();
   }
 
   // ---------------------------------------------------------------------
@@ -5877,7 +5927,23 @@ ${panes}
       const entry = lines.join('\n');
 
       const pageManager = this.engine.getManager('PageManager');
-      const existing = await pageManager.getPage(pageName, req.userContext);
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
+      // #1456: a private page is named by its path. The day's page is the
+      // capturer's own private page of that title when there is one, else a
+      // public page of that title; a new one is private (in the capturer's
+      // default store) unless captures are configured public.
+      const privateTarget = parsePrivatePageName(pageName)
+        ? pageName
+        : formatPrivatePageName(
+          String(currentUser.username),
+          privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId,
+          pageName
+        );
+      const ownPrivate = await pageManager.getPage(privateTarget, req.userContext);
+      const publicPage = ownPrivate || parsePrivatePageName(pageName) ? null : await pageManager.getPage(pageName, req.userContext);
+      const existing = ownPrivate ?? publicPage;
+      const targetName = ownPrivate || (!publicPage && capturePrivate) ? privateTarget : pageName;
       const permission = existing ? 'page-edit' : 'page-create';
       if (!(await wikiContext0.hasPermission(permission))) {
         return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
@@ -5898,12 +5964,10 @@ ${panes}
       // to keep their own keywords and privacy untouched.
       // #893 (Slice 1 of #869): capture is machine provenance, so the flow now
       // writes system-keywords (the automation bucket), not user-keywords.
-      const configManager = this.engine.getManager('ConfigurationManager');
       const captureKeywords = this.getCaptureKeywords();
-      const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
       const metadata = existing
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
-        : this.buildNewPageMetadata(pageName, {
+        : this.buildNewPageMetadata(parsePrivatePageName(targetName)?.title ?? targetName, {
           author: currentUser.username,
           'system-keywords': captureKeywords,
           ...(capturePrivate ? { private: true } : {})
@@ -5912,18 +5976,18 @@ ${panes}
 
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.EDIT,
-        pageName,
+        pageName: targetName,
         content: newContent,
         response: res
       });
       await pageManager.savePageWithContext(wikiContext, metadata);
-      await this.syncAfterProgrammaticSave(pageName, newContent, metadata, req.userContext);
+      await this.syncAfterProgrammaticSave(targetName, newContent, metadata, req.userContext);
 
       return res.render('capture', {
         pageName, url, pageTitle: title, text: '',
         csrfToken: req.session?.csrfToken || '',
         success: true,
-        viewUrl: `/view/${encodeURIComponent(pageName)}`,
+        viewUrl: pageUrl(targetName),
         error: ''
       });
     } catch (err: unknown) {
@@ -6808,6 +6872,7 @@ ${panes}
               password,
               pagesDirectory
             });
+            await this.adoptSealedPages(result.username || username, privateStoreHandle);
           }
         } catch {
           logger.warn('[private-store] could not unlock stores after login');
@@ -7832,7 +7897,7 @@ ${panes}
 
       // #640: contributions counts for the "My Contributions" card
       const contributions = currentUser.username
-        ? await this.getMyContributionsCounts(currentUser.username, freshUser)
+        ? await this.getMyContributionsCounts(currentUser.username, freshUser, currentUser)
         : { pages: undefined, private: undefined, journal: undefined, links: undefined };
 
       // #534: addon-contributed profile sections.
@@ -7903,7 +7968,8 @@ ${panes}
    */
   private async getMyContributionsCounts(
     username: string,
-    user: { preferences?: Record<string, unknown>; roles?: string[] } | null
+    user: { preferences?: Record<string, unknown>; roles?: string[] } | null,
+    ctx: ActorContext
   ): Promise<{
     pages: number | undefined;
     private: number | undefined;
@@ -7925,24 +7991,25 @@ ${panes}
 
     try {
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
-        getPagesByEditor?: (u: string) => Promise<unknown[]>;
+        getPagesByCreator?: (u: string, ctx: ActorContext, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
+        getPagesByEditor?: (u: string, ctx: ActorContext) => Promise<unknown[]>;
         getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
       };
       if (pageManager?.getPagesByCreator) {
-        const all = await pageManager.getPagesByCreator(username);
-        const privateOnly = await pageManager.getPagesByCreator(username, { onlyPrivate: true });
+        // #1456: private pages are counted from the user's own stores.
+        const all = await pageManager.getPagesByCreator(username, ctx);
+        const privateOnly = await pageManager.getPagesByCreator(username, ctx, { onlyPrivate: true });
         counts.pages = all.length;
         counts.private = privateOnly.length;
         // #1004: only counted when capture is enabled — the card row is hidden
         // otherwise, and an unused count is a wasted index scan on every profile view.
         if (this.isCaptureEnabled()) {
-          const captures = await pageManager.getPagesByCreator(username, { systemKeywords: this.getCaptureKeywords() });
+          const captures = await pageManager.getPagesByCreator(username, ctx, { systemKeywords: this.getCaptureKeywords() });
           counts.captures = captures.length;
         }
       }
       if (pageManager?.getPagesByEditor) {
-        const edits = await pageManager.getPagesByEditor(username);
+        const edits = await pageManager.getPagesByEditor(username, ctx);
         counts.edits = edits.length;
       }
       if (pageManager?.getPagesSharedWith) {
@@ -8266,12 +8333,62 @@ ${panes}
         password,
         pagesDirectory: state.pagesDirectory
       });
+      await this.adoptSealedPages(state.username, handle);
       await this.auditAuthentication(req, state.username, 'success', 'private store unlocked');
       return res.redirect(next);
     } catch (err) {
       logger.error('[private-store] unlock failed:', err);
       return this.renderError(req, res, 500, 'Error', 'The private store could not be unlocked. Nothing was changed.');
     }
+  }
+
+  /**
+   * After an unlock (#1456): the owner's sealed pages move from their
+   * user-level catalog into each encrypted store's own page index, through
+   * the page door and as the owner — the only context that holds the keys.
+   */
+  private async adoptSealedPages(username: string, handle: string): Promise<void> {
+    const pip = this.engine.getManager('PolicyInformationPoint');
+    const pageManager = this.engine.getManager('PageManager');
+    const subject = await pip.subjectFor(username);
+    if (!subject) throw new Error(`No active account '${username}' to unlock stores for`);
+    await pageManager.adoptUserPageCatalog({ ...subject, privateStoreHandle: handle });
+  }
+
+  /**
+   * The gate in front of every action on a private page (#1456). The page is
+   * named by its path; the owner in it decides, through the PIP — owner or
+   * delegate, never a role. Anyone else gets the same 404 as a page that does
+   * not exist, so a refusal never tells them it does.
+   */
+  private async privatePageRoute(req: Request, res: Response, action: PageAction, handler: () => Promise<unknown>): Promise<unknown> {
+    const { owner, store, title } = req.params;
+    const name = parsePrivatePageName(formatPrivatePageName(owner, store, title));
+    if (!name) {
+      return this.renderError(req, res, 404, 'Not Found', 'The page does not exist.');
+    }
+    const pageName = formatPrivatePageName(name.owner, name.store, name.title);
+    const pip = this.engine.getManager('PolicyInformationPoint');
+    const subject = req.userContext ?? (await pip.currentSubject(req));
+    if (!pip.canAccessPrivateContainer(subject, name.owner, `page:${pageName}`, action)) {
+      return this.renderError(req, res, 404, 'Not Found', `The page '${pageName}' does not exist.`);
+    }
+    req.params.page = pageName;
+    return handler();
+  }
+
+  /**
+   * A public action route handed a private page's name (an old link, or a
+   * form rendered before #1456) goes through the private gate; a public name
+   * goes straight to its handler.
+   */
+  private publicPageRoute(req: Request, res: Response, action: PageAction, handler: () => Promise<unknown>): Promise<unknown> {
+    const name = parsePrivatePageName(req.params.page);
+    if (!name) return handler();
+    req.params.owner = name.owner;
+    req.params.store = name.store;
+    req.params.title = name.title;
+    return this.privatePageRoute(req, res, action, handler);
   }
 
   /** GET /stores/:kind/confirm — type the words back. Never shows them. */
@@ -8363,12 +8480,13 @@ ${panes}
       // Policy allowed but there is nobody to act as — refuse, never fall through silently.
       if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<Array<{
+        getPagesByCreator?: (u: string, ctx: ActorContext, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<Array<{
           title: string; uuid: string; lastModified: string; isPrivate?: boolean; editor?: string
         }>>;
       };
       const items = pageManager?.getPagesByCreator
-        ? await pageManager.getPagesByCreator(currentUser.username, {
+        // #1456: the user's private pages are read from their own stores.
+        ? await pageManager.getPagesByCreator(currentUser.username, currentUser, {
           onlyPrivate: spec.onlyPrivate,
           ...(spec.systemKeywords ? { systemKeywords: spec.systemKeywords } : {})
         })
@@ -8402,12 +8520,12 @@ ${panes}
       // Policy allowed but there is nobody to act as — refuse, never fall through silently.
       if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
       const pageManager = this.engine.getManager('PageManager') as unknown as {
-        getPagesByEditor?: (u: string) => Promise<Array<{
+        getPagesByEditor?: (u: string, ctx: ActorContext) => Promise<Array<{
           title: string; uuid: string; lastModified: string; isPrivate?: boolean; editor?: string
         }>>;
       };
       const items = pageManager?.getPagesByEditor
-        ? await pageManager.getPagesByEditor(currentUser.username)
+        ? await pageManager.getPagesByEditor(currentUser.username, currentUser)
         : [];
       const commonData = await this.getCommonTemplateData(req);
       const pagedList = this.pageOfList(items, req, 25, 'List pagination');
@@ -8481,6 +8599,8 @@ ${panes}
       // surface at compile time.
       interface JournalIndexEntryShape {
         uuid: string;
+        /** The page's name — a private entry is `private/{user}/{store}/{title}` (#1456). */
+        name: string;
         slug: string;
         title: string;
         author: string;
@@ -8491,16 +8611,17 @@ ${panes}
         lastModified: string;
       }
       const journalManager = this.engine.getManager('JournalDataManager') as {
-        listByAuthor?: (u: string, o?: { limit?: number; offset?: number }) => Promise<JournalIndexEntryShape[]>;
+        listByAuthor?: (u: string, ctx: ActorContext, o?: { limit?: number; offset?: number }) => Promise<JournalIndexEntryShape[]>;
       };
       const addonsManager = this.engine.getManager('AddonsManager');
       const journalEnabled = addonsManager?.isEnabled?.('journal') ?? false;
       const entries: JournalIndexEntryShape[] = journalManager?.listByAuthor
-        ? await journalManager.listByAuthor(currentUser.username, { limit: 1000, offset: 0 })
+        ? await journalManager.listByAuthor(currentUser.username, currentUser, { limit: 1000, offset: 0 })
         : [];
       // Adapt journal entries to the my-list shape so we can reuse the view.
       const items = entries.map(e => ({
         title: e.title,
+        name: e.name,
         uuid: e.slug,
         lastModified: e.journalDate
       }));
@@ -14327,19 +14448,35 @@ ${panes}
     app.get('/sitemap.xml', (req: Request, res: Response) => this.sitemap(req, res));
     app.get('/sitemap-:page.xml', (req: Request, res: Response) => this.sitemap(req, res));
     app.get('/', (req: Request, res: Response) => this.homePage(req, res));
-    app.get('/view/:page', (req: Request, res: Response) => this.viewPage(req, res));
+    // #1456: a private page's name is its path; its canonical URL is under
+    // /private/. An old /view/private%2F… link is sent there.
+    app.get('/view/:page', (req: Request, res: Response) => {
+      if (parsePrivatePageName(req.params.page)) {
+        const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+        return res.redirect(301, pageUrl(req.params.page) + query);
+      }
+      return this.viewPage(req, res);
+    });
+    // #1456: a private page's own URL space — every action on it lives here,
+    // behind one gate that answers 404 to anyone who may not reach it.
+    app.get('/private/:owner/:store/:title', (req: Request, res: Response) => this.privatePageRoute(req, res, 'view', () => this.viewPage(req, res)));
+    app.get('/private/:owner/:store/:title/edit', (req: Request, res: Response) => this.privatePageRoute(req, res, 'edit', () => this.editPage(req, res)));
+    app.post('/private/:owner/:store/:title/save', (req: Request, res: Response) => this.privatePageRoute(req, res, 'save', () => this.savePage(req, res)));
+    app.post('/private/:owner/:store/:title/delete', (req: Request, res: Response) => this.privatePageRoute(req, res, 'delete', () => this.deletePage(req, res)));
+    app.get('/private/:owner/:store/:title/history', (req: Request, res: Response) => this.privatePageRoute(req, res, 'history', () => this.pageHistory(req, res)));
+    app.get('/private/:owner/:store/:title/diff', (req: Request, res: Response) => this.privatePageRoute(req, res, 'diff', () => this.pageDiff(req, res)));
     // Backward-compatible redirect: /wiki/:page → /view/:page
     app.get('/wiki/:page', (req: Request, res: Response) => {
       const target = '/view/' + req.params.page + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
       res.redirect(301, target);
     });
-    app.get('/edit/:page', (req: Request, res: Response) => this.editPage(req, res));
-    app.post('/save/:page', (req: Request, res: Response) => this.savePage(req, res));
+    app.get('/edit/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'edit', () => this.editPage(req, res)));
+    app.post('/save/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'save', () => this.savePage(req, res)));
     app.get('/admin/edit-raw/:page', (req: Request, res: Response) => void this.adminEditRaw(req, res));
     app.post('/admin/edit-raw/:page', (req: Request, res: Response) => void this.adminSaveRaw(req, res));
     app.get('/create', (req: Request, res: Response) => this.createPage(req, res));
     app.post('/create', (req: Request, res: Response) => this.createPageFromTemplate(req, res));
-    app.post('/delete/:page', (req: Request, res: Response) => this.deletePage(req, res));
+    app.post('/delete/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'delete', () => this.deletePage(req, res)));
     app.get('/search', (req: Request, res: Response) => this.searchPages(req, res));
     app.get('/api/keywords/related', (req: Request, res: Response) => this.relatedKeywords(req, res));
     app.get('/kiosk', (req: Request, res: Response) => this.kiosk(req, res));
@@ -14419,8 +14556,8 @@ ${panes}
     app.delete('/deleteExport/:filename', (req: Request, res: Response) => this.deleteExport(req, res));
 
     // Version management view routes (Phase 6)
-    app.get('/history/:page', (req: Request, res: Response) => this.pageHistory(req, res));
-    app.get('/diff/:page', (req: Request, res: Response) => this.pageDiff(req, res));
+    app.get('/history/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'history', () => this.pageHistory(req, res)));
+    app.get('/diff/:page', (req: Request, res: Response) => this.publicPageRoute(req, res, 'diff', () => this.pageDiff(req, res)));
 
     // Admin routes
     app.get('/admin', (req: Request, res: Response) => this.adminDashboard(req, res));
@@ -15516,7 +15653,7 @@ ${panes}
       try {
         const provider = pageManager.provider;
         if (provider && typeof provider.getVersionHistory === 'function') {
-          const versions = await provider.getVersionHistory(pageName);
+          const versions = await provider.getVersionHistory(pageName, req.userContext);
           if (versions && versions.length > 0) {
             const currentVersion = versions[0]; // Most recent version is first
             versionInfo = {
@@ -15762,7 +15899,7 @@ ${panes}
       }
 
       // Get version history
-      const versions = await provider.getVersionHistory(identifier);
+      const versions = await provider.getVersionHistory(identifier, req.userContext);
 
       return res.json({
         success: true,
@@ -15821,7 +15958,7 @@ ${panes}
       }
 
       // Get version content
-      const versionData = await provider.getPageVersion(identifier, versionNum);
+      const versionData = await provider.getPageVersion(identifier, versionNum, req.userContext);
 
       return res.json({
         success: true,
@@ -15889,7 +16026,7 @@ ${panes}
       }
 
       // Compare versions
-      const comparison = await provider.compareVersions(identifier, version1, version2);
+      const comparison = await provider.compareVersions(identifier, version1, version2, req.userContext);
 
       return res.json({
         success: true,
@@ -16260,7 +16397,7 @@ ${panes}
       logger.info(`[pageHistory] Fetching version history for: "${pageName}"`);
       let versions: IVersionEntry[];
       try {
-        versions = await provider.getVersionHistory(pageName);
+        versions = await provider.getVersionHistory(pageName, req.userContext);
       } catch {
         return this.renderError(req, res, 501, 'Not Implemented', 'Page versioning is not enabled. Please configure VersioningFileProvider.');
       }
@@ -16355,7 +16492,7 @@ ${panes}
       const pageMetadata = await pageManager.getPageMetadata(pageName, req.userContext);
 
       // Compare versions
-      const comparison = (await provider.compareVersions(pageName, v1, v2)) ?? {};
+      const comparison = (await provider.compareVersions(pageName, v1, v2, req.userContext)) ?? {};
 
       // Get common template data (includes theme paths, user, pages, etc.)
       const templateData = await this.getCommonTemplateData(req);

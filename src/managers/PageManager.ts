@@ -28,8 +28,7 @@ import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/in
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { DEFAULT_PRIVATE_STORE, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { userIndexFor } from '../utils/privateStoreUnlock.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -1600,7 +1599,9 @@ class PageManager extends BaseManager implements CatalogSource {
       ...(keywordsHadPrivate || keywordsHadLifecycle || keywordsHadCapture || keywordsDeduped ? { 'user-keywords': normalizedKeywords } : {}),
       ...(vocabChanged && (systemHadLifecycle || keywordsHadCapture) ? { 'system-keywords': normalizedSystemKeywords } : {}),
       ...(migratedStatus !== undefined ? { status: migratedStatus } : {}),
-      ...(wantsPrivate ? { private: true } : {})
+      // #1456: an unticked Private box on a private page is a move out of its
+      // store, so the provider must see the explicit false.
+      ...(wantsPrivate ? { private: true } : rawMetadata.private === false ? { private: false } : {})
     };
 
     // Sanitize all string fields — trims Unicode whitespace and decodes percent-encoded
@@ -1618,15 +1619,6 @@ class PageManager extends BaseManager implements CatalogSource {
       const conflict = await validationManager.checkConflicts(uuid, pageName, slug, saveContext);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
-      }
-    }
-
-    // If the page is private and the author changed (shouldn't happen normally), move the file.
-    if (wantsPrivate && originalAuthor) {
-      const incomingAuthor = (enrichedMetadata as Record<string, unknown>).author as string | undefined ?? '';
-      if (incomingAuthor && incomingAuthor !== originalAuthor) {
-        const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';
-        if (uuid) await this.provider.movePrivatePage(uuid, originalAuthor, incomingAuthor);
       }
     }
 
@@ -1867,12 +1859,12 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * Such an index is built as the anonymous subject (docs/planning/
    * private-stores.md, Context): the question is asked with that subject
-   * stated, not with a default. A page in an encrypted store resolves only
-   * through its owner's session, so it never qualifies. Every other page does,
-   * private ones included — their readers are filtered when the index is read.
+   * stated, not with a default. A private page never qualifies (#1456): it
+   * is listed only in its own store's indexes, encrypted or not.
    */
   isSharedIndexable(identifier: string): boolean {
-    return this.pageExists(identifier, ANONYMOUS_SUBJECT);
+    // #1456: a private page is in no shared index, whether or not its store is sealed.
+    return parsePrivatePageName(identifier) === null && this.pageExists(identifier, ANONYMOUS_SUBJECT);
   }
 
   /**
@@ -2030,11 +2022,11 @@ class PageManager extends BaseManager implements CatalogSource {
    * Used by RecentChangesPlugin and any other consumer that needs a "recent edits"
    * feed. New code should prefer this over enumerating getAllPages().
    */
-  async getRecentChanges(options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
+  async getRecentChanges(ctx: ActorContext, options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getRecentChanges(options);
+    return this.provider.getRecentChanges(ctx, options);
   }
 
   /**
@@ -2068,21 +2060,21 @@ class PageManager extends BaseManager implements CatalogSource {
    * another). The provider does not enforce this — it filters by `author` /
    * `creator` only.
    */
-  async getPagesByCreator(username: string, options: GetPagesByCreatorOptions = {}): Promise<RecentChangeEntry[]> {
+  async getPagesByCreator(username: string, ctx: ActorContext, options: GetPagesByCreatorOptions = {}): Promise<RecentChangeEntry[]> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPagesByCreator(username, options);
+    return this.provider.getPagesByCreator(username, ctx, options);
   }
 
   /**
    * Pages most recently edited by a user (#640 Phase 2).
    */
-  async getPagesByEditor(username: string, options: PagesScanOptions = {}): Promise<RecentChangeEntry[]> {
+  async getPagesByEditor(username: string, ctx: ActorContext, options: PagesScanOptions = {}): Promise<RecentChangeEntry[]> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
-    return this.provider.getPagesByEditor(username, options);
+    return this.provider.getPagesByEditor(username, ctx, options);
   }
 
   /**
@@ -2106,83 +2098,45 @@ class PageManager extends BaseManager implements CatalogSource {
    * issued, once the store's Share switch exists — #1388). No role reaches in,
    * admin included (security-posture P2: no `hasRole` as an allow).
    *
-   * Owner is the page-index `creator` (sticky), not frontmatter `author`, so
-   * reassigning `author` cannot move ownership (#711).
+   * The owner is the one in the page's name (#1456), not frontmatter
+   * `author`, so reassigning `author` cannot move ownership (#711).
    *
    * Returns:
-   *   - `null`  — the page is not private (or does not exist); the caller
-   *               falls through to its next tier
-   *   - `true`  — private, and the caller is the owner or the owner's delegate
-   *   - `false` — private, and the caller is neither; also when privacy
-   *               cannot be established (conservative, the #714 convention)
+   *   - `null`  — a public name; the caller falls through to its next tier
+   *   - `true`  — a private name, and the caller is the owner or the owner's delegate
+   *   - `false` — a private name, and the caller is neither — whether or not
+   *               the page exists
    */
   async checkPrivatePageAccess(wikiContext: WikiContext, pageNameOrUuid: string): Promise<boolean | null> {
-    try {
-      if (!this.provider) return null;
-      const subject = wikiContext.userContext as ActorContext | undefined;
-      const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, subject ?? ANONYMOUS_SUBJECT);
-      if (!pageMetadata?.uuid) return null;
-
-      const owner = subject
-        ? await this.getPrivatePageOwner(pageNameOrUuid, subject)
-        : await this.getPrivatePageOwner(pageNameOrUuid, ANONYMOUS_SUBJECT);
-      // Defensive: frontmatter says private but no owner is known — refuse.
-      if (!owner) return (pageMetadata as Record<string, unknown>).private === true ? false : null;
-      if (!subject) return false;
-      return mayActInPrivateContainer(subject, owner.creator);
-    } catch (err) {
-      logger.warn(`[PageManager] private-access check failed for '${pageNameOrUuid}' — refusing: ${String(err)}`);
-      return false;
-    }
+    // #1456: a private page is named by its path, and the path names its
+    // owner — decided from the name alone, so a refusal never depends on
+    // whether the page exists. A plain name is a public page.
+    const name = parsePrivatePageName(pageNameOrUuid);
+    if (!name) return null;
+    const subject = wikiContext.userContext as ActorContext | undefined;
+    if (!subject) return false;
+    return mayActInPrivateContainer(subject, name.owner);
   }
 
   /**
    * Owner and store of a private page, or `null` when the page is not private
-   * or does not exist (#1398). The author owns the page and every attachment
+   * or does not exist (#1398). The owner owns the page and every attachment
    * uploaded onto it, so AttachmentManager uses this to route a new upload into
-   * that author's store.
+   * that owner's store.
    *
-   * Owner is the page-index `creator` (sticky), not frontmatter `author`.
-   * Unlocked sealed-store pages are not in the global index; they come from the
-   * caller's session catalog, through `ctx` (#1385). Frontmatter is the last
-   * resort for a provider without a page index.
+   * #1456: both come from the page's name, `private/{owner}/{store}/{title}`;
+   * the page is looked up in that store through `ctx` only to confirm it exists.
    */
   async getPrivatePageOwner(
     pageNameOrUuid: string,
     ctx: ActorContext
   ): Promise<{ creator: string; store: string } | null> {
     if (!this.provider) return null;
+    const name = parsePrivatePageName(pageNameOrUuid);
+    if (!name) return null;
     const pageMetadata = await this.provider.getPageMetadata(pageNameOrUuid, ctx);
     if (!pageMetadata?.uuid) return null;
-
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const defaultStoreId = configManager
-      ? privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)).defaultStoreId
-      : DEFAULT_PRIVATE_STORE;
-
-    const provider = this.provider as unknown as {
-      pageIndex?: { pages: Record<string, { location?: string; creator?: string; store?: string }> }
-    };
-    const entry = provider.pageIndex?.pages[pageMetadata.uuid];
-    if (entry?.location === 'private' && entry.creator) {
-      return { creator: entry.creator, store: entry.store ?? defaultStoreId };
-    }
-
-    // An unlocked sealed page is in the caller's own session catalog, reached
-    // through the context it was given — never an ambient session (P1).
-    const sealed = userIndexFor(ctx)?.pages[pageMetadata.uuid];
-    if (sealed) {
-      return { creator: sealed.creator, store: sealed.store };
-    }
-
-    const md = pageMetadata as Record<string, unknown>;
-    if (!entry && md.private === true && typeof md.author === 'string' && md.author) {
-      return {
-        creator: md.author,
-        store: typeof md.store === 'string' && md.store ? md.store : defaultStoreId
-      };
-    }
-    return null;
+    return { creator: name.owner, store: name.store };
   }
 
   async refreshPageList(): Promise<void> {
@@ -2203,6 +2157,17 @@ class PageManager extends BaseManager implements CatalogSource {
     } | null;
     if (!provider || typeof provider.rebuildPageIndexFromDisk !== 'function') return null;
     return provider.rebuildPageIndexFromDisk();
+  }
+
+  /**
+   * At unlock (#1456): the owner's sealed pages move from their user-level
+   * catalog into each encrypted store's own page index. Idempotent.
+   *
+   * @param ctx - The owner's context, holding the unlocked store keys
+   */
+  async adoptUserPageCatalog(ctx: ActorContext): Promise<number> {
+    if (!this.provider?.adoptUserPageCatalog) return 0;
+    return this.provider.adoptUserPageCatalog(ctx);
   }
 
   /**

@@ -60,7 +60,7 @@
         <div class="row g-2">
           <% attachments.forEach(function(att) { %>
             <div class="col-auto">
-              <a href="/attachments/<%= encodeURIComponent(entry.slug) %>/<%= encodeURIComponent(att.filename) %>"
+              <a href="/attachments/<%= encodeURIComponent(entry.name) %>/<%= encodeURIComponent(att.filename) %>"
                  class="btn btn-sm btn-outline-secondary" target="_blank">
                 <i class="fas fa-paperclip"></i> <%= att.filename %>
               </a>

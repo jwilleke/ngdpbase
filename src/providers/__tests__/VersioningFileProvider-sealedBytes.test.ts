@@ -1,7 +1,9 @@
 /**
  * An encrypted private store is ciphertext at rest (#1415, epic #1382): the
  * live page, its version blobs and its manifest — every byte under
- * `private/{user}/{store}/` except `store.json`.
+ * `private/{user}/{store}/` except `store.json`. Since #1456 that includes the
+ * store's own page index; a sealed page is named by its path and is in no
+ * global index.
  */
 
 vi.unmock('../VersioningFileProvider');
@@ -10,12 +12,19 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import ValidationManager from '../../managers/ValidationManager';
 import { actor } from '../../test-support/actors';
 import DeltaStorage, { type DiffTuple } from '../../utils/DeltaStorage';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath';
+import {
+  formatPrivatePageName,
+  privateUserIndexPath,
+  privateUserKeysPath,
+  storeMetaPath,
+  storePageIndexPath
+} from '../../utils/privateStorePath';
 import {
   TEST_PRIVATE_STORE_KDF,
   createEncryptedStore,
@@ -36,6 +45,8 @@ const SEALED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const STORE = 'yourphr';
 const SECRET_V1 = 'first-secret-body';
 const SECRET_V2 = 'second-secret-body';
+/** #1456: a private page is named by its path. */
+const NAME = formatPrivatePageName('molly', STORE, 'Sealed Diary');
 const kdf = TEST_PRIVATE_STORE_KDF;
 
 /** Every regular file under `dir`, recursively. */
@@ -76,11 +87,10 @@ describe('sealed store bytes at rest (#1415)', () => {
   };
 
   beforeEach(async () => {
-    testDir = path.join(os.tmpdir(), `vfp-sealed-bytes-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vfp-sealed-bytes-'));
     pagesDir = path.join(testDir, 'pages');
     requiredDir = path.join(testDir, 'required-pages');
     indexPath = path.join(testDir, 'data', 'page-index.json');
-    await fs.ensureDir(testDir);
     const configManager = {
       getProperty: vi.fn((key: string, def: unknown) => (config()[key] !== undefined ? config()[key] : def)),
       getResolvedDataPath: vi.fn((key: string, def: unknown) => {
@@ -91,7 +101,16 @@ describe('sealed store bytes at rest (#1415)', () => {
       }),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+    // #1456: a private page's slug comes from ValidationManager.
+    let validation: unknown = null;
+    engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return configManager;
+        if (name === 'ValidationManager') return validation;
+        return null;
+      })
+    };
+    validation = new ValidationManager(engine);
 
     const created = createUserKeys('pw', { kdf });
     kek = created.kek;
@@ -110,9 +129,8 @@ describe('sealed store bytes at rest (#1415)', () => {
   });
 
   const saveTwice = async (provider: VersioningFileProvider): Promise<void> => {
-    const meta = { uuid: SEALED, private: true, author: 'molly', store: STORE };
-    await provider.savePage('Sealed Diary', SECRET_V1, meta, MOLLY);
-    await provider.savePage('Sealed Diary', SECRET_V2, meta, MOLLY);
+    await provider.savePage(NAME, SECRET_V1, { uuid: SEALED }, MOLLY);
+    await provider.savePage(NAME, SECRET_V2, { uuid: SEALED }, MOLLY);
   };
 
   test('no file under pages/ holds a sealed page\'s text, title or history in the clear', async () => {
@@ -127,6 +145,10 @@ describe('sealed store bytes at rest (#1415)', () => {
       }
     }
     expect(leaks).toEqual([]);
+    // Nor the global page index, which is outside pages/ (#1456).
+    const globalIndex = await fs.readFile(indexPath, 'utf8');
+    expect(globalIndex).not.toContain(SEALED);
+    expect(globalIndex).not.toContain('Sealed Diary');
   });
 
   test('the page and its history live in the owner\'s store, nowhere else', async () => {
@@ -137,10 +159,14 @@ describe('sealed store bytes at rest (#1415)', () => {
     const outside = (await filesUnder(path.join(pagesDir, 'private')))
       .filter(f => !f.startsWith(storeRoot + path.sep))
       .map(f => path.relative(pagesDir, f))
-      // The user-level key envelope and catalogues are the only files beside the store.
+      // The user-level key envelope is the only file beside the store.
       .filter(rel => path.dirname(rel) !== path.join('private', 'molly'));
     expect(outside).toEqual([]);
     expect(await fs.pathExists(path.join(storeRoot, 'versions', SEALED, 'manifest.json'))).toBe(true);
+    // #1456: the page is listed in the store's own index; the superseded
+    // user-level catalogue is not written.
+    expect(await fs.pathExists(storePageIndexPath(pagesDir, 'molly', STORE))).toBe(true);
+    expect(await fs.pathExists(privateUserIndexPath(pagesDir, 'molly'))).toBe(false);
   });
 
   test('every file in the store except store.json is sealed, and opens with the DEK', async () => {
@@ -151,6 +177,8 @@ describe('sealed store bytes at rest (#1415)', () => {
     const dek = unwrapDek(kek, await fs.readJson(storeMetaPath(pagesDir, 'molly', STORE)));
     const files = (await filesUnder(storeRoot)).filter(f => path.basename(f) !== 'store.json');
     expect(files.length).toBeGreaterThan(0);
+    // The store's own page index is among them (#1456).
+    expect(files).toContain(storePageIndexPath(pagesDir, 'molly', STORE));
     for (const file of files) {
       const bytes = await fs.readFile(file);
       expect(isSealedBytes(bytes)).toBe(true);
@@ -172,15 +200,17 @@ describe('sealed store bytes at rest (#1415)', () => {
     expect(await open('v1/content.md')).toBe(SECRET_V1);
     const diff = JSON.parse(await open('v2/content.diff')) as DiffTuple[];
     expect(DeltaStorage.applyDiff(SECRET_V1, diff)).toBe(SECRET_V2);
+
+    // The owner reaches both versions by the page's name, through their context.
+    expect(await provider.getVersionHistory(NAME, MOLLY)).toHaveLength(2);
+    expect((await provider.getPageVersion(NAME, 1, MOLLY)).content).toBe(SECRET_V1);
   });
 
   test('a save without the store key is refused and writes nothing', async () => {
     const provider = await newProvider();
     lockPrivateStores('sid');
 
-    await expect(provider.savePage('Sealed Diary', SECRET_V1, {
-      uuid: SEALED, private: true, author: 'molly', store: STORE
-    }, MOLLY)).rejects.toThrow(/locked/);
+    await expect(provider.savePage(NAME, SECRET_V1, { uuid: SEALED }, MOLLY)).rejects.toThrow(/locked/);
 
     const storeRoot = path.join(pagesDir, 'private', 'molly', STORE);
     const written = (await filesUnder(storeRoot)).filter(f => path.basename(f) !== 'store.json');
@@ -191,10 +221,13 @@ describe('sealed store bytes at rest (#1415)', () => {
     const provider = await newProvider();
     await saveTwice(provider);
 
-    expect((await provider.getPage('Sealed Diary', MOLLY))?.content).toContain(SECRET_V2);
+    expect((await provider.getPage(NAME, MOLLY))?.content).toContain(SECRET_V2);
+    // A plain title names a public page only (#1456).
+    expect(await provider.getPage('Sealed Diary', MOLLY)).toBeNull();
 
     lockPrivateStores('sid');
+    expect(await provider.getPage(NAME, MOLLY)).toBeNull();
     const fresh = await newProvider();
-    expect(await fresh.getPage('Sealed Diary', MOLLY)).toBeNull();
+    expect(await fresh.getPage(NAME, MOLLY)).toBeNull();
   });
 });

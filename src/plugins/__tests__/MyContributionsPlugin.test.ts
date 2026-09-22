@@ -12,6 +12,7 @@
 
 import { describe, expect, test, vi } from 'vitest';
 import MyContributionsPlugin from '../MyContributionsPlugin';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
 function makeContext(opts: {
   username?: string;
@@ -54,7 +55,8 @@ function makeContext(opts: {
         roles: opts.roles ?? [],
         preferences: opts.preferences ?? {}
       }
-      : undefined
+      // #1456: an anonymous visitor carries the anonymous subject, never nothing.
+      : ANONYMOUS_SUBJECT
   };
 }
 
@@ -92,6 +94,19 @@ describe('MyContributionsPlugin', () => {
       expect(result).not.toContain('Private Pages');
       expect(result).not.toContain('My Links');
       expect(result).not.toContain('Pages Shared With Me');
+    });
+
+    test('counts are read as the anonymous requester (#1456)', async () => {
+      const ctx = makeContext();
+      await MyContributionsPlugin.execute!(ctx, { username: 'alice' });
+      const pm = ctx.engine.getManager('PageManager') as { getPagesByCreator: ReturnType<typeof vi.fn>; getPagesByEditor: ReturnType<typeof vi.fn> };
+      expect(pm.getPagesByCreator).toHaveBeenCalledWith('alice', ANONYMOUS_SUBJECT);
+      expect(pm.getPagesByEditor).toHaveBeenCalledWith('alice', ANONYMOUS_SUBJECT);
+    });
+
+    test('no requester at all is a failure, not an anonymous read (#1456)', async () => {
+      const ctx = { ...makeContext(), userContext: undefined };
+      await expect(MyContributionsPlugin.execute!(ctx, { username: 'alice' })).rejects.toThrow(/no requester/);
     });
   });
 
@@ -305,7 +320,7 @@ describe('MyContributionsPlugin', () => {
       captureCount?: number;
     }) {
       const getPagesByCreator = vi.fn().mockImplementation(
-        async (_u: string, o?: { systemKeywords?: string[]; onlyPrivate?: boolean }) =>
+        async (_u: string, _requester: unknown, o?: { systemKeywords?: string[]; onlyPrivate?: boolean }) =>
           o?.systemKeywords
             ? new Array(opts.captureCount ?? 2).fill({})
             : [{}, {}, {}]
@@ -345,7 +360,7 @@ describe('MyContributionsPlugin', () => {
       expect(result).toContain('My Contributions');
       expect(result).not.toContain('/my/captures');
       // and does not pay for a scan it will not display
-      expect(getPagesByCreator).not.toHaveBeenCalledWith('alice', expect.objectContaining({
+      expect(getPagesByCreator).not.toHaveBeenCalledWith('alice', expect.anything(), expect.objectContaining({
         systemKeywords: expect.anything()
       }));
     });
@@ -353,7 +368,7 @@ describe('MyContributionsPlugin', () => {
     test('passes the instance\'s configured keywords through', async () => {
       const { ctx, getPagesByCreator } = withCapture({ enabled: true, keywords: ['clipping'] });
       await MyContributionsPlugin.execute!(ctx, {});
-      expect(getPagesByCreator).toHaveBeenCalledWith('alice', expect.objectContaining({
+      expect(getPagesByCreator).toHaveBeenCalledWith('alice', ctx.userContext, expect.objectContaining({
         systemKeywords: ['clipping']
       }));
     });

@@ -12,6 +12,7 @@ import {
   storePageIndexPath,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
+import { readStoreTextSync } from '../utils/privateStoreFiles.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import type { ActorContext } from '../context/ActorContext.js';
 
@@ -181,6 +182,38 @@ abstract class BasePageProvider extends BaseProvider {
   }
 
   /**
+   * A store's pages, read synchronously as `ctx` may: null when the store is
+   * encrypted and `ctx` does not hold its key. Page lookups are synchronous,
+   * and the index is one small file (#1456).
+   */
+  protected readStorePagesSync(
+    pagesDirectory: string,
+    owner: string,
+    store: string,
+    ctx: ActorContext | undefined
+  ): Record<string, StorePageEntry> | null {
+    const text = readStoreTextSync(ctx, {
+      pagesDirectory,
+      owner,
+      store,
+      file: storePageIndexPath(pagesDirectory, owner, store, this.privateStoreLayout),
+      layout: this.privateStoreLayout
+    });
+    if (text === null) return null;
+    const parsed = JSON.parse(text) as { pages?: Record<string, StorePageEntry> };
+    return parsed && typeof parsed.pages === 'object' && parsed.pages ? parsed.pages : {};
+  }
+
+  /** One entry of a store's pages by uuid, title or slug (case-insensitive for the last two). */
+  protected static findInStorePages(pages: Record<string, StorePageEntry>, key: string): StorePageEntry | null {
+    if (pages[key]) return pages[key];
+    const lower = key.toLowerCase();
+    return Object.values(pages).find((p) =>
+      p.title.toLowerCase() === lower || (p.slug != null && p.slug.toLowerCase() === lower)
+    ) ?? null;
+  }
+
+  /**
    * One page of a store, by uuid, title or slug (case-insensitive for the
    * last two) — titles are unique within a store, never across the site.
    */
@@ -189,12 +222,7 @@ abstract class BasePageProvider extends BaseProvider {
     location: StoreFileLocation,
     key: string
   ): Promise<StorePageEntry | null> {
-    const pages = await this.readStorePages(pagesDirectory, location);
-    if (pages[key]) return pages[key];
-    const lower = key.toLowerCase();
-    return Object.values(pages).find((p) =>
-      p.title.toLowerCase() === lower || (p.slug != null && p.slug.toLowerCase() === lower)
-    ) ?? null;
+    return BasePageProvider.findInStorePages(await this.readStorePages(pagesDirectory, location), key);
   }
 
   /**
@@ -274,16 +302,6 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<boolean>} True if deleted, false if not found
    */
   abstract deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
-
-  /**
-   * Move a private page from one creator's directory to another's.
-   * Called by PageManager when a private page's author changes.
-   * Providers that use creator-keyed directories must override this.
-   * Default: no-op (providers without creator directories do nothing).
-   */
-  async movePrivatePage(_uuid: string, _oldCreator: string, _newCreator: string): Promise<void> {
-    // no-op default — override in file-based providers
-  }
 
   invalidatePageCache(_identifier: string): string | null {
     return null; // no-op default — override in providers with in-memory caches
@@ -387,7 +405,7 @@ abstract class BasePageProvider extends BaseProvider {
    *   }
    * ]
    */
-  getVersionHistory(_identifier: string, _limit?: number): Promise<VersionHistoryEntry[]> {
+  getVersionHistory(_identifier: string, _ctx: ActorContext, _limit?: number): Promise<VersionHistoryEntry[]> {
     throw new Error('getVersionHistory() must be implemented by versioning providers');
   }
 
@@ -402,7 +420,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @returns {Promise<VersionContent>} Version content and metadata
    * @throws {Error} If version does not exist
    */
-  getPageVersion(_identifier: string, _version: number): Promise<VersionContent> {
+  getPageVersion(_identifier: string, _version: number, _ctx: ActorContext): Promise<VersionContent> {
     throw new Error('getPageVersion() must be implemented by versioning providers');
   }
 
@@ -432,7 +450,7 @@ abstract class BasePageProvider extends BaseProvider {
    * @param {number} v2 - Second version number (newer)
    * @returns {Promise<VersionDiff>} Diff data structure
    */
-  compareVersions(_identifier: string, _v1: number, _v2: number): Promise<VersionDiff> {
+  compareVersions(_identifier: string, _v1: number, _v2: number, _ctx: ActorContext): Promise<VersionDiff> {
     throw new Error('compareVersions() must be implemented by versioning providers');
   }
 

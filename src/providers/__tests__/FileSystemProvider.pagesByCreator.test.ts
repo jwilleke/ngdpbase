@@ -14,6 +14,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import FileSystemProvider from '../FileSystemProvider';
+import { TEST_ACTOR } from '../../test-support/actors';
 
 function makeProvider() {
   const engine = {
@@ -62,7 +63,7 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
   });
 
@@ -71,7 +72,7 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u1', title: 'A', systemKeywords: ['Capture'] },
       { uuid: 'u2', title: 'B', systemKeywords: ['general'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['CAPTURE'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['CAPTURE'] });
     expect(result.map(e => e.uuid)).toEqual(['u1']);
   });
 
@@ -81,7 +82,7 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u2', title: 'B', systemKeywords: ['clipping'] },
       { uuid: 'u3', title: 'C', systemKeywords: ['general'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture', 'clipping'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture', 'clipping'] });
     expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u2']);
   });
 
@@ -90,7 +91,7 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u1', title: 'A', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'B' }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.uuid)).toEqual(['u1']);
   });
 
@@ -99,8 +100,8 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u1', title: 'A', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'B' }
     ]);
-    expect(await p.getPagesByCreator('alice')).toHaveLength(2);
-    expect(await p.getPagesByCreator('alice', { systemKeywords: [] })).toHaveLength(2);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR)).toHaveLength(2);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: [] })).toHaveLength(2);
   });
 
   test('does not leak another user\'s captures', async () => {
@@ -108,7 +109,7 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u1', title: 'AliceCapture', author: 'alice', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'BobCapture', author: 'bob', systemKeywords: ['capture'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.title)).toEqual(['AliceCapture']);
   });
 
@@ -117,8 +118,8 @@ describe('FileSystemProvider.getPagesByCreator systemKeywords filter (#1004)', (
       { uuid: 'u1', title: 'PublicCapture', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'PrivateCapture', systemKeywords: ['capture'], isPrivate: true }
     ]);
-    expect(await p.getPagesByCreator('alice', { systemKeywords: ['capture'] })).toHaveLength(2);
-    const privateOnly = await p.getPagesByCreator('alice', { systemKeywords: ['capture'], onlyPrivate: true });
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] })).toHaveLength(2);
+    const privateOnly = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'], onlyPrivate: true });
     expect(privateOnly.map(e => e.title)).toEqual(['PrivateCapture']);
   });
 });

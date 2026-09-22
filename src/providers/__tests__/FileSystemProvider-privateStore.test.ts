@@ -6,17 +6,20 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import FileSystemProvider from '../FileSystemProvider';
+import ValidationManager from '../../managers/ValidationManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePath';
+import { DEFAULT_PRIVATE_STORE, formatPrivatePageName, storeMetaPath, storePageIndexPath } from '../../utils/privateStorePath';
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys } from '../../utils/privateStoreCrypto';
 import { clearUnlockedPrivateStores } from '../../utils/privateStoreUnlock';
 
 const UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 // The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
 const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
+// #1456: a private page is named by its path, which names its owner and store.
+const DIARY = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Diary');
 
 
 describe('FileSystemProvider encrypt-on write (#1394)', () => {
@@ -40,7 +43,16 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
       ),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    const engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+    // A private page's slug is ValidationManager's to make (#1456).
+    let validationManager: unknown = null;
+    const engine = {
+      getManager: vi.fn((name: string) => {
+        if (name === 'ConfigurationManager') return configManager;
+        if (name === 'ValidationManager') return validationManager;
+        return null;
+      })
+    };
+    validationManager = new ValidationManager(engine);
     const p = new FileSystemProvider(engine);
     await p.initialize();
     return p;
@@ -59,10 +71,57 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     await fs.remove(testDir);
   });
 
+  const storePages = async (owner = 'molly', store = DEFAULT_PRIVATE_STORE): Promise<Record<string, { title: string; slug?: string }>> => {
+    const file = storePageIndexPath(pagesDir, owner, store);
+    return (await fs.pathExists(file)) ? ((await fs.readJson(file)) as { pages: Record<string, { title: string }> }).pages : {};
+  };
+
   test('missing store.json (default encrypt off) still saves', async () => {
     const provider = await newProvider();
-    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+    await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    // Listed in the store's own index, never in the global one (#1456).
+    expect((await storePages())[UUID]).toMatchObject({ title: 'Diary', slug: 'private--molly-default-diary' });
+    expect(await provider.getAllPages()).not.toContain('Diary');
+    await expect(provider.getPageMetadata(DIARY, MOLLY)).resolves.toMatchObject({ uuid: UUID, private: true });
+    await expect(provider.getPageMetadata('Diary', MOLLY)).resolves.toBeNull();
+  });
+
+  test('the owner comes from the name, never from frontmatter author (#1456)', async () => {
+    const provider = await newProvider();
+    await provider.savePage(DIARY, 'secret', { uuid: UUID, author: 'bob' }, MOLLY);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'private', 'bob'))).toBe(false);
+    const raw = await fs.readFile(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`), 'utf8');
+    expect(raw).toMatch(/^author: molly$/m);
+    expect(raw).toMatch(/^private: true$/m);
+  });
+
+  test('a public page never carries `private` in its frontmatter, even when the save says false (#1456)', async () => {
+    const provider = await newProvider();
+    await provider.savePage('Notes', 'body', { uuid: UUID, private: false, author: 'molly' }, MOLLY);
+    const raw = await fs.readFile(path.join(pagesDir, `${UUID}.md`), 'utf8');
+    expect(raw).not.toMatch(/^private:/m);
+    expect(await fs.pathExists(path.join(pagesDir, 'private'))).toBe(false);
+  });
+
+  test('a page moved out of its store takes a public slug, and one moved in a private slug (#1456)', async () => {
+    const provider = await newProvider();
+    await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
+    // The editor carries the stored slug forward; the provider re-derives it.
+    await provider.savePage(DIARY, 'now public', { uuid: UUID, private: false, slug: 'private--molly-default-diary' }, MOLLY);
+    const publicRaw = await fs.readFile(path.join(pagesDir, `${UUID}.md`), 'utf8');
+    expect(publicRaw).toMatch(/^slug: diary$/m);
+    await provider.savePage('Diary', 'private again', { uuid: UUID, private: true, author: 'molly', slug: 'diary' }, MOLLY);
+    expect(Object.values(await storePages('molly', DEFAULT_PRIVATE_STORE)).map((p) => p.slug)).toEqual(['private--molly-default-diary']);
+    expect(await fs.pathExists(path.join(pagesDir, `${UUID}.md`))).toBe(false);
+  });
+
+  test('a private page cannot be named without ValidationManager (#1456)', async () => {
+    const provider = await newProvider();
+    (provider as unknown as { engine: { getManager: (n: string) => unknown } }).engine.getManager =
+      vi.fn(() => null);
+    await expect(provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY)).rejects.toThrow(/ValidationManager/);
   });
 
   test('encrypt-on save refuses without a session DEK', async () => {
@@ -99,10 +158,14 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     );
 
     const provider = await newProvider();
+    // #1456: store pages are listed in each store's own index, built from the
+    // store's page files — never from its attachments — and never globally.
+    await provider.indexPlainStorePages();
+    expect(Object.values(await storePages()).map((p) => p.title)).toEqual(['Diary']);
+    expect(Object.values(await storePages('attachments')).map((p) => p.title)).toEqual(['Odd User Page']);
     const titles = await provider.getAllPages();
-    expect(titles).toContain('Diary');
-    expect(titles).toContain('Odd User Page');
     expect(titles).not.toContain('Uploaded Notes');
+    expect(titles).not.toContain('Diary');
   });
 
   test('a page file under private/ that is not at a store page path is skipped, never listed as a page', async () => {
@@ -120,6 +183,8 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     );
 
     const provider = await newProvider();
+    await provider.indexPlainStorePages();
+    expect(await storePages()).toEqual({});
     const titles = await provider.getAllPages();
     expect(titles).not.toContain('Stray Note');
     expect(titles).not.toContain('Bad Store Page');
@@ -129,7 +194,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     const provider = await newProvider({
       'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
     });
-    await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+    await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });

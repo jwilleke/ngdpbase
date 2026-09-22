@@ -6,8 +6,8 @@
  * Endpoints:
  *   GET  /journal/settings      — user preferences form
  *   POST /journal/settings      — save user preferences
- *   GET  /journal/new           — auto-creates today's stub entry, redirects to /edit/<slug>
- *   GET  /journal/:slug/edit    — redirects to /edit/<slug>
+ *   GET  /journal/new           — auto-creates today's stub entry, redirects to its editor
+ *   GET  /journal/:slug/edit    — redirects to the entry's editor (/edit/… or /private/…/edit, #1456)
  *   POST /journal/:slug/delete  — delete entry
  *
  * #799 / EPIC #790 retired the parallel POST /journal/new + POST /journal/:slug/edit
@@ -19,8 +19,6 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
-import { v4 as uuidv4 } from 'uuid';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
 import WikiContext from '../../../dist/src/context/WikiContext.js';
@@ -28,8 +26,8 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
-import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
-import { getLeftMenu, journalPageName, findJournalEntrySlug } from './helpers.js';
+import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
+import { getLeftMenu, findJournalEntryName, createJournalEntry } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -152,71 +150,10 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           ? req.query['date']
           : new Date().toISOString().slice(0, 10);
 
-        const p = pm();
-        if (!p) { res.status(503).send('PageManager not available'); return; }
-
-        // If entry already exists for today, go straight to the standard editor
-        const existingSlug = await findJournalEntrySlug(p, date, username, ctx.subject ?? ANONYMOUS_SUBJECT);
-        if (existingSlug) {
-          res.redirect(`/edit/${encodeURIComponent(existingSlug)}`);
-          return;
-        }
-
-        // Create stub entry with journal frontmatter
-        const uuid = uuidv4();
-        // #1329: title and slug are the same per-user name (#789 kept users apart).
-        const slug = journalPageName(date, username);
-        const title = slug;
-        // #802 — Default Journal Visibility:
-        //   1. user pref `journal.defaultPrivate` (if set, wins)
-        //   2. deployment-wide `config.defaultPrivate` (fleet fallback)
-        //   3. true (privacy-first hard default)
-        const userManager = um();
-        const freshUser = userManager ? await userManager.getUser(username) : null;
-        const userPref = (freshUser?.preferences)?.['journal.defaultPrivate'];
-        const fleetDefaultPrivate = config['defaultPrivate'] !== false;
-        const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
-        const defaultAuthorLock = config['defaultAuthorLock'] !== false;
-
-        const metadata: Record<string, unknown> = {
-          title,
-          uuid,
-          slug,
-          'system-category': 'journal',
-          'journal-date':    date,
-          author:            username,
-          lastModified:      new Date().toISOString(),
-          ...(defaultAuthorLock ? { 'author-lock': true } : {}),
-          // #802 — canonical semantic flag (replaces legacy `system-location: 'private'`)
-          ...(defaultPrivate    ? { private: true }       : {})
-        };
-
-        // #1328: empty, not ' ' — the author's first keystroke starts the line.
-        const wikiCtx = new WikiContext(engine, {
-          context:     WikiContext.CONTEXT.EDIT,
-          pageName:    slug,
-          content:     '',
-          userContext: await resolveUserContext(req)
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        await p.savePageWithContext(wikiCtx as any, metadata);
-
-        // Index in sidecar
-        const indexEntry: JournalIndexEntry = {
-          uuid,
-          slug,
-          title,
-          author: username,
-          journalDate: date,
-          mood: undefined,
-          tags: [],
-          isPrivate: defaultPrivate,
-          lastModified: new Date().toISOString()
-        };
-        await jdm()?.indexEntry(indexEntry);
-
-        res.redirect(`/edit/${encodeURIComponent(slug)}`);
+        // If there is an entry for the date already, go straight to its editor.
+        const name = await findJournalEntryName(engine, date, username, req.userContext)
+          ?? await createJournalEntry(engine, config, req.userContext, date);
+        res.redirect(pageUrl(name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }
@@ -227,10 +164,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
   // Redirect to the standard page editor so preview, user preferences, and all
   // /edit features are available. (#540)
   //
-  // #804 — Existence + ownership check goes through PageManager (the canonical
-  // source) rather than JournalDataManager. JDM.getBySlug reads the search
-  // index, which PageManager.savePageWithContext does not update; bouncing
-  // through /api/journal/new → here would 404 on a just-created entry.
+  // #1456: /journal/new now opens a new entry's editor directly, so an entry
+  // reached here has been saved through the editor and is listed.
   router.get('/:slug/edit', (req: Request, res: Response) => {
     void (async () => {
       try {
@@ -238,18 +173,17 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         ctx.requireAuthenticated();
 
         const slug = sp(req.params['slug']);
-        const p = pm();
-        if (!p) { res.status(503).send('PageManager not available'); return; }
+        // #1456: found among the entries this requester may list, public or
+        // their own private ones, and opened by the entry's page name.
+        const entry = await jdm()?.getBySlug(slug, req.userContext);
+        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
-        const page = await p.getPageBySlug(slug, ctx.subject ?? ANONYMOUS_SUBJECT);
-        if (!page) { res.status(404).send('Journal entry not found.'); return; }
-
-        const author = (page.metadata as Record<string, unknown>)?.['author'] as string | undefined;
+        const author = entry.author;
         const isOwner = author === ctx.username;
         const isAdmin = (ctx.roles ?? []).includes('admin');
         if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
-        res.redirect(`/edit/${encodeURIComponent(slug)}`);
+        res.redirect(pageUrl(entry.name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }
@@ -257,7 +191,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
   });
 
   // ── POST /journal/:slug/delete ───────────────────────────────────────────────
-  // #804 — Same fix as GET /:slug/edit: resolve via PageManager, not JDM.
   router.post('/:slug/delete', (req: Request, res: Response) => {
     void (async () => {
       try {
@@ -268,19 +201,19 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const p = pm();
         if (!p) { res.status(503).send('PageManager not available'); return; }
 
-        const page = await p.getPageBySlug(slug, ctx.subject ?? ANONYMOUS_SUBJECT);
-        if (!page) { res.status(404).send('Journal entry not found.'); return; }
+        // #1456: found among the entries this requester may list, and deleted by its page name.
+        const entry = await jdm()?.getBySlug(slug, req.userContext);
+        if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
-        const meta = (page.metadata ?? {}) as Record<string, unknown>;
-        const author = meta['author'] as string | undefined;
-        const uuid   = meta['uuid']   as string | undefined;
+        const author = entry.author;
+        const uuid   = entry.uuid;
         const isOwner = author === ctx.username;
         const isAdmin = (ctx.roles ?? []).includes('admin');
         if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
         const wikiCtx = new WikiContext(engine, {
           context:     WikiContext.CONTEXT.EDIT,
-          pageName:    slug,
+          pageName:    entry.name,
           content:     ' ',
           userContext: await resolveUserContext(req)
         });

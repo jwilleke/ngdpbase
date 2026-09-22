@@ -10,6 +10,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import DeltaStorage from '../../utils/DeltaStorage';
+import { storePageIndexPath } from '../../utils/privateStorePath';
 
 // The repo's own required-pages/versions must be left exactly as found. A test
 // whose config fell back to the default requiredpagesdir (./required-pages)
@@ -228,16 +229,19 @@ describe('VersioningFileProvider', () => {
       const p2 = new VersioningFileProvider(engine);
       await p2.initialize();
 
-      // All three pages must be in the rebuilt index.
+      // Both public pages must be in the rebuilt index.
       const idx = p2.pageIndex;
       expect(Object.keys(idx.pages)).toEqual(
         expect.arrayContaining([
           'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-          'cccccccc-cccc-cccc-cccc-cccccccccccc'
+          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
         ])
       );
-      expect(idx.pageCount).toBeGreaterThanOrEqual(3);
+      expect(idx.pageCount).toBeGreaterThanOrEqual(2);
+      // #1456: the private page is listed in its store's own index, not the global one.
+      expect(idx.pages['cccccccc-cccc-cccc-cccc-cccccccccccc']).toBeUndefined();
+      const store = await fs.readJson(storePageIndexPath(p2.pagesDirectory, 'alice', 'default'));
+      expect(store.pages['cccccccc-cccc-cccc-cccc-cccccccccccc']).toMatchObject({ title: 'Alice Private' });
     });
 
     test('rebuilt entries include slug and filename fields (#806 missing-fields bug)', async () => {
@@ -260,7 +264,7 @@ describe('VersioningFileProvider', () => {
       expect(entry.filename).toBe('11111111-1111-1111-1111-111111111111.md');
     });
 
-    test('rebuilt entries set location correctly for private pages (and capture creator)', async () => {
+    test('a private page on disk is listed in its store\'s own index (location, creator, store), not the rebuilt global index', async () => {
       await provider.initialize();
 
       await writeRawPage(provider, 'private', '22222222-2222-2222-2222-222222222222',
@@ -274,7 +278,10 @@ describe('VersioningFileProvider', () => {
       const p2 = new VersioningFileProvider(engine);
       await p2.initialize();
 
-      const entry = p2.pageIndex.pages['22222222-2222-2222-2222-222222222222'];
+      // #1456: private pages are never in the global index.
+      expect(p2.pageIndex.pages['22222222-2222-2222-2222-222222222222']).toBeUndefined();
+      const store = await fs.readJson(storePageIndexPath(p2.pagesDirectory, 'bob', 'default'));
+      const entry = store.pages['22222222-2222-2222-2222-222222222222'];
       expect(entry).toBeDefined();
       expect(entry.location).toBe('private');
       expect(entry.creator).toBe('bob');
@@ -412,7 +419,7 @@ describe('VersioningFileProvider', () => {
       // phantom version artifact is left behind: no v2, and v1 is untouched.
       expect(await fs.pathExists(path.join(provider.pagesVersionsDir, uuid, 'v2'))).toBe(false);
       expect(await fs.readFile(v1ContentPath, 'utf8')).toBe('content A');
-      expect((await provider.getVersionHistory('About')).length).toBe(1);
+      expect((await provider.getVersionHistory('About', TEST_ACTOR)).length).toBe(1);
     });
 
     test('should create manifest.json for new page', async () => {
@@ -879,7 +886,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' }, TEST_ACTOR);
 
       // Get history by title
-      const history = await provider.getVersionHistory(pageName);
+      const history = await provider.getVersionHistory(pageName, TEST_ACTOR);
 
       expect(history.length).toBe(3);
       // Newest first
@@ -899,7 +906,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'v2', { uuid, author: 'admin' }, TEST_ACTOR);
 
       // Get history by UUID
-      const history = await provider.getVersionHistory(uuid);
+      const history = await provider.getVersionHistory(uuid, TEST_ACTOR);
 
       expect(history.length).toBe(2);
       expect(history[0].version).toBe(2);
@@ -916,14 +923,14 @@ describe('VersioningFileProvider', () => {
         location: 'pages'
       };
 
-      const history = await provider.getVersionHistory('no-versions-uuid');
+      const history = await provider.getVersionHistory('no-versions-uuid', TEST_ACTOR);
       expect(history).toEqual([]);
     });
 
     test('should throw error for non-existent page', async () => {
       await provider.initialize();
 
-      await expect(provider.getVersionHistory('NonExistent')).rejects.toThrow('Page not found');
+      await expect(provider.getVersionHistory('NonExistent', TEST_ACTOR)).rejects.toThrow('Page not found');
     });
 
     test('should include all version metadata fields', async () => {
@@ -935,7 +942,7 @@ describe('VersioningFileProvider', () => {
         comment: 'Initial commit'
       }, TEST_ACTOR);
 
-      const history = await provider.getVersionHistory('Meta Test');
+      const history = await provider.getVersionHistory('Meta Test', TEST_ACTOR);
 
       expect(history[0]).toHaveProperty('version');
       expect(history[0]).toHaveProperty('timestamp'); // dateCreated is mapped to 'timestamp'
@@ -953,7 +960,7 @@ describe('VersioningFileProvider', () => {
       const content = 'Original content for v1';
       await provider.savePage('Test', content, { uuid: 'version-uuid-1', author: 'admin' }, TEST_ACTOR);
 
-      const { content: retrieved, metadata } = await provider.getPageVersion('Test', 1);
+      const { content: retrieved, metadata } = await provider.getPageVersion('Test', 1, TEST_ACTOR);
 
       expect(retrieved).toBe(content);
       expect(metadata.version).toBe(1);
@@ -973,11 +980,11 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', v3, { uuid, author: 'user3' }, TEST_ACTOR);
 
       // Retrieve v2 (should reconstruct from v1 + diff)
-      const { content: v2Content } = await provider.getPageVersion('Test', 2);
+      const { content: v2Content } = await provider.getPageVersion('Test', 2, TEST_ACTOR);
       expect(v2Content).toBe(v2);
 
       // Retrieve v3 (should reconstruct from v1 + diff2 + diff3)
-      const { content: v3Content } = await provider.getPageVersion('Test', 3);
+      const { content: v3Content } = await provider.getPageVersion('Test', 3, TEST_ACTOR);
       expect(v3Content).toBe(v3);
     });
 
@@ -988,7 +995,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'content v1', { uuid }, TEST_ACTOR);
       await provider.savePage('Test', 'content v2', { uuid }, TEST_ACTOR);
 
-      const { content } = await provider.getPageVersion(uuid, 1);
+      const { content } = await provider.getPageVersion(uuid, 1, TEST_ACTOR);
       expect(content).toBe('content v1');
     });
 
@@ -997,9 +1004,9 @@ describe('VersioningFileProvider', () => {
 
       await provider.savePage('Test', 'content', { uuid: 'version-uuid-4' }, TEST_ACTOR);
 
-      await expect(provider.getPageVersion('Test', 0)).rejects.toThrow('Invalid version number');
-      await expect(provider.getPageVersion('Test', -1)).rejects.toThrow('Invalid version number');
-      await expect(provider.getPageVersion('Test', 'invalid')).rejects.toThrow('Invalid version number');
+      await expect(provider.getPageVersion('Test', 0, TEST_ACTOR)).rejects.toThrow('Invalid version number');
+      await expect(provider.getPageVersion('Test', -1, TEST_ACTOR)).rejects.toThrow('Invalid version number');
+      await expect(provider.getPageVersion('Test', 'invalid', TEST_ACTOR)).rejects.toThrow('Invalid version number');
     });
 
     test('should throw error for version that does not exist', async () => {
@@ -1007,13 +1014,13 @@ describe('VersioningFileProvider', () => {
 
       await provider.savePage('Test', 'content', { uuid: 'version-uuid-5' }, TEST_ACTOR);
 
-      await expect(provider.getPageVersion('Test', 99)).rejects.toThrow('does not exist');
+      await expect(provider.getPageVersion('Test', 99, TEST_ACTOR)).rejects.toThrow('does not exist');
     });
 
     test('should throw error for non-existent page', async () => {
       await provider.initialize();
 
-      await expect(provider.getPageVersion('NonExistent', 1)).rejects.toThrow('Page not found');
+      await expect(provider.getPageVersion('NonExistent', 1, TEST_ACTOR)).rejects.toThrow('Page not found');
     });
 
     test('should handle large version chains efficiently', async () => {
@@ -1029,7 +1036,7 @@ describe('VersioningFileProvider', () => {
 
       // Retrieve v10 (should reconstruct through 9 diffs)
       const startTime = Date.now();
-      const { content } = await provider.getPageVersion(pageName, 10);
+      const { content } = await provider.getPageVersion(pageName, 10, TEST_ACTOR);
       const duration = Date.now() - startTime;
 
       expect(content).toBe('Content version 10');
@@ -1053,11 +1060,11 @@ describe('VersioningFileProvider', () => {
       await provider.restoreVersion(pageName, 1, TEST_ACTOR);
 
       // Should create v4 with v1's content
-      const { content } = await provider.getPageVersion(pageName, 4);
+      const { content } = await provider.getPageVersion(pageName, 4, TEST_ACTOR);
       expect(content).toBe('v1 content');
 
       // Verify metadata
-      const history = await provider.getVersionHistory(pageName);
+      const history = await provider.getVersionHistory(pageName, TEST_ACTOR);
       expect(history[0].version).toBe(4);
       expect(history[0].changeType).toBe('restored');
       expect(history[0].message).toContain('Restored from v1'); // comment maps to 'message'
@@ -1075,11 +1082,11 @@ describe('VersioningFileProvider', () => {
       await provider.restoreVersion('Test', 2, TEST_ACTOR);
 
       // All original versions should still exist
-      const history = await provider.getVersionHistory('Test');
+      const history = await provider.getVersionHistory('Test', TEST_ACTOR);
       expect(history.length).toBe(4); // v1, v2, v3, v4(restored)
 
       // Can still retrieve v3
-      const { content: v3Content } = await provider.getPageVersion('Test', 3);
+      const { content: v3Content } = await provider.getPageVersion('Test', 3, TEST_ACTOR);
       expect(v3Content).toBe('v3');
     });
 
@@ -1094,7 +1101,7 @@ describe('VersioningFileProvider', () => {
       // literal 'system'; the comment stays 'Restored from v{N}'.
       await provider.restoreVersion('Test', 1, actor('molly'));
 
-      const history = await provider.getVersionHistory('Test');
+      const history = await provider.getVersionHistory('Test', TEST_ACTOR);
       expect(history[0].author).toBe('molly');
       expect(history[0].message).toContain('Restored from v1');
     });
@@ -1108,7 +1115,7 @@ describe('VersioningFileProvider', () => {
 
       // restoreVersion returns void; verify via version count
       await provider.restoreVersion(uuid, 1, TEST_ACTOR);
-      const history = await provider.getVersionHistory(uuid);
+      const history = await provider.getVersionHistory(uuid, TEST_ACTOR);
       expect(history[0].version).toBe(3);
     });
 
@@ -1136,7 +1143,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'Hello ngdpbase', { uuid, author: 'user2' }, TEST_ACTOR);
 
       // compareVersions returns { fromVersion, toVersion, fromMetadata, toMetadata, diff, stats }
-      const comparison = await provider.compareVersions('Test', 1, 2);
+      const comparison = await provider.compareVersions('Test', 1, 2, TEST_ACTOR);
 
       expect(comparison.fromVersion).toBe(1);
       expect(comparison.fromMetadata.version).toBe(1);
@@ -1162,12 +1169,12 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'ccc', { uuid }, TEST_ACTOR);
 
       // Compare v1 to v3
-      const forward = await provider.compareVersions('Test', 1, 3);
+      const forward = await provider.compareVersions('Test', 1, 3, TEST_ACTOR);
       expect(forward.fromVersion).toBe(1);
       expect(forward.toVersion).toBe(3);
 
       // Compare v3 to v1 (reverse)
-      const backward = await provider.compareVersions('Test', 3, 1);
+      const backward = await provider.compareVersions('Test', 3, 1, TEST_ACTOR);
       expect(backward.fromVersion).toBe(3);
       expect(backward.toVersion).toBe(1);
     });
@@ -1179,7 +1186,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
       await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
 
-      const comparison = await provider.compareVersions(uuid, 1, 2);
+      const comparison = await provider.compareVersions(uuid, 1, 2, TEST_ACTOR);
       expect(comparison.fromVersion).toBe(1);
     });
 
@@ -1192,7 +1199,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Test', 'other content', { uuid }, TEST_ACTOR);
       await provider.savePage('Test', 'same content', { uuid }, TEST_ACTOR);
 
-      const comparison = await provider.compareVersions('Test', 1, 3);
+      const comparison = await provider.compareVersions('Test', 1, 3, TEST_ACTOR);
 
       expect(comparison.stats.additions).toBe(0);
       expect(comparison.stats.deletions).toBe(0);
@@ -1207,7 +1214,7 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Unchanged', 'body text', { uuid, editor: 'system' }, TEST_ACTOR);
       await provider.savePage('Unchanged', 'body text', { uuid, 'required-source-hash': 'abc' }, TEST_ACTOR);
 
-      const history = await provider.getVersionHistory('Unchanged');
+      const history = await provider.getVersionHistory('Unchanged', TEST_ACTOR);
       expect(history).toHaveLength(1);
       const versionDir = provider._getVersionDirectory(uuid, 'pages');
       expect((await fs.readdir(versionDir)).sort()).toEqual(['manifest.json', 'v1']);
@@ -1228,9 +1235,9 @@ describe('VersioningFileProvider', () => {
 
       await provider.savePage('No History', 'Shipped body.\n', { uuid, 'required-source-hash': 'abc' }, TEST_ACTOR);
 
-      const history = await provider.getVersionHistory('No History');
+      const history = await provider.getVersionHistory('No History', TEST_ACTOR);
       expect(history).toHaveLength(1);
-      expect((await provider.getPageVersion('No History', 1)).content).toContain('Shipped body.');
+      expect((await provider.getPageVersion('No History', 1, TEST_ACTOR)).content).toContain('Shipped body.');
       expect(error).not.toHaveBeenCalled();
       error.mockRestore();
     });
@@ -1254,9 +1261,9 @@ describe('VersioningFileProvider', () => {
       await provider.savePage('Changing', 'first', { uuid }, TEST_ACTOR);
       await provider.savePage('Changing', 'second', { uuid }, TEST_ACTOR);
 
-      const history = await provider.getVersionHistory('Changing');
+      const history = await provider.getVersionHistory('Changing', TEST_ACTOR);
       expect(history).toHaveLength(2);
-      const v2 = await provider.getPageVersion('Changing', 2);
+      const v2 = await provider.getPageVersion('Changing', 2, TEST_ACTOR);
       expect(v2.content).toContain('second');
     });
 
@@ -1265,8 +1272,8 @@ describe('VersioningFileProvider', () => {
 
       await provider.savePage('Test', 'content', { uuid: 'compare-uuid-5' }, TEST_ACTOR);
 
-      await expect(provider.compareVersions('Test', 'invalid', 1)).rejects.toThrow('must be integers');
-      await expect(provider.compareVersions('Test', 1, 0)).rejects.toThrow('must be >= 1');
+      await expect(provider.compareVersions('Test', 'invalid', 1, TEST_ACTOR)).rejects.toThrow('must be integers');
+      await expect(provider.compareVersions('Test', 1, 0, TEST_ACTOR)).rejects.toThrow('must be >= 1');
     });
 
     test('should throw error for non-existent versions', async () => {
@@ -1274,7 +1281,7 @@ describe('VersioningFileProvider', () => {
 
       await provider.savePage('Test', 'content', { uuid: 'compare-uuid-6' }, TEST_ACTOR);
 
-      await expect(provider.compareVersions('Test', 1, 99)).rejects.toThrow();
+      await expect(provider.compareVersions('Test', 1, 99, TEST_ACTOR)).rejects.toThrow();
     });
   });
 

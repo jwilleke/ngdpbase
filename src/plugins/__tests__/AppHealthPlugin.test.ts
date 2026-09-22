@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import AppHealthPlugin from '../../plugins/AppHealthPlugin';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
 type LinkGraph = Record<string, string[]>;
 
@@ -37,6 +38,8 @@ function makeContext(
       }
     },
     pageName: 'TestPage',
+    // #1456: every list read carries who is asking — here an anonymous visitor.
+    userContext: ANONYMOUS_SUBJECT,
     linkGraph
   };
 }
@@ -136,15 +139,18 @@ describe('AppHealthPlugin', () => {
 describe('#1116 stale check supplies viewer facts, not an includeAll conclusion', () => {
   function makeSpyContext(userContext?: { username?: string; roles?: string[] }) {
     const calls: Array<Record<string, unknown>> = [];
+    const requesters: unknown[] = [];
     return {
       calls,
+      requesters,
       ctx: {
         engine: {
           getManager: (name: string) =>
             name === 'PageManager'
               ? {
                 getAllPages: async () => ['A'],
-                getRecentChanges: async (opts: Record<string, unknown>) => {
+                getRecentChanges: async (requester: unknown, opts: Record<string, unknown>) => {
+                  requesters.push(requester);
                   calls.push(opts);
                   return [];
                 }
@@ -162,17 +168,28 @@ describe('#1116 stale check supplies viewer facts, not an includeAll conclusion'
     // The plugin renders inside a page any viewer can reach, so the stale
     // list must be narrowed to what THAT viewer may see. includeAll: true
     // here listed private page titles to whoever loaded the page.
-    const { ctx, calls } = makeSpyContext({ username: 'alice', roles: ['user'] });
+    const { ctx, calls, requesters } = makeSpyContext({ username: 'alice', roles: ['user'] });
     await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
     expect(calls).toHaveLength(1);
+    // #1456: the viewer's own context is the requester, so their private
+    // pages come from their stores and nobody else's do.
+    expect(requesters[0]).toBe(ctx.userContext);
     expect(calls[0].principals).toEqual(['user', 'alice']);
     expect('includeAll' in calls[0]).toBe(false);
   });
 
-  it('anonymous viewer: empty principals', async () => {
-    const { ctx, calls } = makeSpyContext();
+  it('anonymous viewer: only the anonymous subject\'s principals', async () => {
+    const { ctx, calls, requesters } = makeSpyContext(ANONYMOUS_SUBJECT);
     await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
-    expect(calls[0].principals).toEqual([]);
+    expect(requesters[0]).toBe(ANONYMOUS_SUBJECT);
+    expect(calls[0].principals).toEqual([...ANONYMOUS_SUBJECT.roles, ANONYMOUS_SUBJECT.username]);
+  });
+
+  it('an admin gets no bypass — principals are facts, not an unfiltered list (#1456)', async () => {
+    const { ctx, calls } = makeSpyContext({ username: 'root', roles: ['admin'] });
+    await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
+    expect(calls[0].principals).toEqual(['admin', 'root']);
+    expect('includeAll' in calls[0]).toBe(false);
   });
 });
 
@@ -190,6 +207,12 @@ describe('#1116 orphans are narrowed to what the viewer may see', () => {
     expect(html).toContain('Orphan pages (1)');
     expect(html).toContain('>Public</a>');
     expect(html).not.toContain('Secret');
+  });
+
+  it('with no requester the plugin fails rather than listing for nobody (#1456)', async () => {
+    const ctx = { ...makeContext(['A'], {}), userContext: undefined };
+    const html = await AppHealthPlugin.execute!(ctx, { checks: 'stale' });
+    expect(html).toContain('no requester');
   });
 
   it('without a narrowing-capable provider the orphans check reports nothing', async () => {

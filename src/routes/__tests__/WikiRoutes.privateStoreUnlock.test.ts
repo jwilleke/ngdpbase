@@ -37,6 +37,7 @@ describe('private store unlock door (#1448)', () => {
   let authenticate: ReturnType<typeof vi.fn>;
   let auditAuthentication: ReturnType<typeof vi.fn>;
   let throttle: { check: ReturnType<typeof vi.fn>; recordFailure: ReturnType<typeof vi.fn> } | null;
+  let adoptUserPageCatalog: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -68,6 +69,7 @@ describe('private store unlock door (#1448)', () => {
     await fs.ensureDir(pagesDir);
     clearUnlockedPrivateStores();
     authenticate = vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' }));
+    adoptUserPageCatalog = vi.fn(async () => 0);
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -75,7 +77,12 @@ describe('private store unlock door (#1448)', () => {
         getResolvedDataPath: () => pagesDir
       },
       AuditManager: { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => {}) },
-      AuthManager: { authenticate }
+      AuthManager: { authenticate },
+      // #1456: an unlock moves the owner's sealed pages into their stores' own indexes.
+      PolicyInformationPoint: {
+        subjectFor: vi.fn(async (username: string) => ({ username, roles: ['Authenticated'], isAuthenticated: true }))
+      },
+      PageManager: { adoptUserPageCatalog }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);
@@ -107,6 +114,8 @@ describe('private store unlock door (#1448)', () => {
     // The session's existing handle was reused — the restart case.
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
     expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked');
+    // The owner's sealed pages are adopted as the owner, through the unlocked session.
+    expect(adoptUserPageCatalog).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
   });
 
   test('a wrong password leaves it locked and says so', async () => {

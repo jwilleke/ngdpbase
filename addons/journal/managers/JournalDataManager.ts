@@ -1,16 +1,22 @@
 
 import { existsSync } from 'fs';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import path from 'path';
 import BaseManager from '../../../dist/src/managers/BaseManager.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type SearchManager from '../../../dist/src/managers/SearchManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface JournalIndexEntry {
   uuid: string;
+  /**
+   * The page's name — what it is opened, saved and deleted by. A public entry
+   * is named by its title; a private one by its path,
+   * `private/{user}/{store}/{title}` (#1456).
+   */
+  name: string;
   slug: string;
   title: string;
   author: string;
@@ -36,7 +42,11 @@ export interface JournalQueryOptions {
  * #800 / EPIC #790 retired the legacy on-disk `journal-index.json` sidecar.
  * All read methods now query the canonical sources on demand:
  *
- *   SearchManager.searchByCategory('journal')  →  PageManager.getPage(slug)
+ *   SearchManager.searchByCategory('journal')  →  PageManager.getPage(name)
+ *   PageManager.getPagesByCreator(requester)    →  the requester's private entries
+ *
+ * #1456: a private entry is in no shared index — it is listed only from its
+ * owner's stores, so every read names who is asking.
  *
  * The sidecar's only purpose was caching pre-extracted frontmatter; that's
  * already what SearchManager + PageManager.getPage produce. `indexEntry` /
@@ -88,56 +98,69 @@ class JournalDataManager extends BaseManager {
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   /**
-   * Load every journal-categorised page and project to JournalIndexEntry.
-   * Filters out pages without a journal-date (defensive — system-category
-   * could be set without the journal addon having seeded the entry).
+   * Every journal entry this requester may list: the public ones, from the
+   * shared search index, and the requester's own private ones, from their
+   * stores (#1456). Pages without a journal-date are left out (defensive —
+   * system-category could be set without the journal addon seeding the entry).
    */
-  private async loadAllEntries(): Promise<JournalIndexEntry[]> {
+  private async loadAllEntries(ctx: ActorContext): Promise<JournalIndexEntry[]> {
     const sm = this.engine.getManager<SearchManager>('SearchManager');
     const pm = this.engine.getManager<PageManager>('PageManager');
     if (!sm || !pm) return [];
 
-    const results = await sm.searchByCategory('journal');
-    // The journal index is built from the public page index; a sealed page is not in it.
-    const pages = await Promise.all(results.map(r => pm.getPage(r.name, ANONYMOUS_SUBJECT)));
+    const publicNames = (await sm.searchByCategory('journal')).map(r => r.name);
+    const ownPrivateNames = ctx.username
+      ? (await pm.getPagesByCreator(ctx.username, ctx)).flatMap(e => (e.isPrivate && e.name ? [e.name] : []))
+      : [];
+    const pages = await Promise.all([...publicNames, ...ownPrivateNames].map(async name => ({
+      name,
+      page: await pm.getPage(name, ctx)
+    })));
 
     return pages
-      .filter((p): p is NonNullable<typeof p> => p != null)
-      .map(p => {
+      .flatMap(({ name, page: p }) => {
+        if (!p) return [];
         const m = (p.metadata ?? {}) as Record<string, unknown>;
+        // A private page reached by its path is a journal entry only if it says so.
+        const category = m['system-category'];
+        if (typeof category !== 'string' || category.toLowerCase() !== 'journal') return [];
         const uk = m['user-keywords'];
-        return {
+        return [{
           uuid:         (m['uuid'] as string | undefined) ?? '',
+          name,
           slug:         (m['slug'] as string | undefined) ?? p.title ?? '',
           title:        (m['title'] as string | undefined) ?? p.title ?? '',
           author:       (m['author'] as string | undefined) ?? '',
           journalDate:  (m['journal-date'] as string | undefined) ?? '',
           mood:         m['mood'] as string | undefined,
           // #799 — tags source from user-keywords (the legacy `journal-tags`
-          // field is retired). Branch is implicitly journal-categorised because
-          // it reached here via searchByCategory('journal').
+          // field is retired).
           tags:         Array.isArray(uk) ? (uk as unknown[]).map(String) : [],
-          // #802 Slice 4: `private:true` is the sole privacy signal; legacy
-          // `system-location` fallback retired after the migration.
+          // #802 Slice 4: `private:true` is the sole privacy signal.
           isPrivate:    m['private'] === true,
           lastModified: (m['lastModified'] as string | undefined) ?? ''
-        } satisfies JournalIndexEntry;
+        } satisfies JournalIndexEntry];
       })
       .filter(e => e.journalDate);
   }
 
   // ── Read operations ──────────────────────────────────────────────────────────
 
-  async count(): Promise<number> {
-    return (await this.loadAllEntries()).length;
+  async count(ctx: ActorContext): Promise<number> {
+    return (await this.loadAllEntries(ctx)).length;
   }
 
-  async getBySlug(slug: string): Promise<JournalIndexEntry | undefined> {
-    return (await this.loadAllEntries()).find(e => e.slug === slug);
+  /**
+   * An entry by its slug, title or page name, among those this requester may
+   * list. A private entry's slug is `private--…` (#1456); its title is still
+   * the `{date}-1-journal-{user}` name journal links were made with.
+   */
+  async getBySlug(slug: string, ctx: ActorContext): Promise<JournalIndexEntry | undefined> {
+    return (await this.loadAllEntries(ctx)).find(e => e.slug === slug || e.title === slug || e.name === slug);
   }
 
-  async listByAuthor(author: string, opts: JournalQueryOptions = {}): Promise<JournalIndexEntry[]> {
-    let results = (await this.loadAllEntries()).filter(e => e.author === author);
+  async listByAuthor(author: string, ctx: ActorContext, opts: JournalQueryOptions = {}): Promise<JournalIndexEntry[]> {
+    let results = (await this.loadAllEntries(ctx)).filter(e => e.author === author);
 
     if (opts.tag) {
       results = results.filter(e => e.tags.includes(opts.tag!));
@@ -153,23 +176,23 @@ class JournalDataManager extends BaseManager {
     return results.slice(offset, offset + limit);
   }
 
-  async listAll(opts: JournalQueryOptions = {}): Promise<JournalIndexEntry[]> {
-    const results = await this.loadAllEntries();
+  async listAll(ctx: ActorContext, opts: JournalQueryOptions = {}): Promise<JournalIndexEntry[]> {
+    const results = await this.loadAllEntries(ctx);
     results.sort((a, b) => b.journalDate.localeCompare(a.journalDate));
     const offset = opts.offset ?? 0;
     const limit  = opts.limit ?? results.length;
     return results.slice(offset, offset + limit);
   }
 
-  async countByAuthor(author: string): Promise<number> {
-    return (await this.loadAllEntries()).filter(e => e.author === author).length;
+  async countByAuthor(author: string, ctx: ActorContext): Promise<number> {
+    return (await this.loadAllEntries(ctx)).filter(e => e.author === author).length;
   }
 
-  async getOnThisDay(author: string, date?: string): Promise<JournalIndexEntry[]> {
+  async getOnThisDay(author: string, ctx: ActorContext, date?: string): Promise<JournalIndexEntry[]> {
     const today = date ?? new Date().toISOString().slice(0, 10);
     const mmdd  = today.slice(5);
     const year  = today.slice(0, 4);
-    return (await this.loadAllEntries())
+    return (await this.loadAllEntries(ctx))
       .filter(e =>
         e.author === author &&
         e.journalDate.slice(5)    === mmdd &&
@@ -178,8 +201,8 @@ class JournalDataManager extends BaseManager {
       .sort((a, b) => b.journalDate.localeCompare(a.journalDate));
   }
 
-  async computeStreak(author: string): Promise<number> {
-    const entries = (await this.loadAllEntries()).filter(e => e.author === author);
+  async computeStreak(author: string, ctx: ActorContext): Promise<number> {
+    const entries = (await this.loadAllEntries(ctx)).filter(e => e.author === author);
     const dates = [...new Set(entries.map(e => e.journalDate))].sort().reverse();
 
     if (dates.length === 0) return 0;
@@ -199,8 +222,8 @@ class JournalDataManager extends BaseManager {
     return streak;
   }
 
-  async getMoodFacets(author: string): Promise<Array<{ mood: string; count: number }>> {
-    const entries = (await this.loadAllEntries()).filter(e => e.author === author);
+  async getMoodFacets(author: string, ctx: ActorContext): Promise<Array<{ mood: string; count: number }>> {
+    const entries = (await this.loadAllEntries(ctx)).filter(e => e.author === author);
     const counts = new Map<string, number>();
     for (const e of entries) {
       if (e.mood) counts.set(e.mood, (counts.get(e.mood) ?? 0) + 1);
@@ -210,8 +233,8 @@ class JournalDataManager extends BaseManager {
       .sort((a, b) => b.count - a.count);
   }
 
-  async getTagFacets(author: string): Promise<Array<{ tag: string; count: number }>> {
-    const entries = (await this.loadAllEntries()).filter(e => e.author === author);
+  async getTagFacets(author: string, ctx: ActorContext): Promise<Array<{ tag: string; count: number }>> {
+    const entries = (await this.loadAllEntries(ctx)).filter(e => e.author === author);
     const counts = new Map<string, number>();
     for (const e of entries) {
       for (const tag of e.tags) {
@@ -225,9 +248,18 @@ class JournalDataManager extends BaseManager {
 
   // ── BaseManager overrides ────────────────────────────────────────────────────
 
+  /**
+   * How many public entries the shared index holds. Private entries are in
+   * their owners' stores only (#1456), so no count without a requester sees them.
+   */
+  async publicCount(): Promise<number> {
+    const sm = this.engine.getManager<SearchManager>('SearchManager');
+    return sm ? (await sm.searchByCategory('journal')).length : 0;
+  }
+
   async toMarqueeText(): Promise<string> {
-    const total = await this.count();
-    return `Journal: ${total} entr${total === 1 ? 'y' : 'ies'} indexed`;
+    const total = await this.publicCount();
+    return `Journal: ${total} public entr${total === 1 ? 'y' : 'ies'} indexed`;
   }
 }
 

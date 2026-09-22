@@ -4,7 +4,7 @@
  * Mounted at /api/journal in register().
  *
  * Endpoints:
- *   GET  /api/journal/new               — bootstrap a new entry page + redirect to /journal/:slug/edit
+ *   GET  /api/journal/new               — the date's entry (created if new), redirect to its editor
  *   GET  /api/journal/entries           — JSON list of own entries (paginated)
  *   GET  /api/journal/on-this-day       — JSON: same MM-DD entries from prior years
  *   GET  /api/journal/streak            — JSON: { streak: N, total: N }
@@ -13,16 +13,12 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
-import { v4 as uuidv4 } from 'uuid';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
-import WikiContext from '../../../dist/src/context/WikiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
-import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
-import type { JournalIndexEntry } from '../managers/JournalDataManager.js';
-import { journalPageName, findJournalEntrySlug } from './helpers.js';
+import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
+import { findJournalEntryName, createJournalEntry } from './helpers.js';
 
 export default function apiRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -35,18 +31,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     return engine.getManager<JournalDataManager>('JournalDataManager');
   }
 
-  function um(): UserManager | undefined {
-    return engine.getManager<UserManager>('UserManager');
-  }
-
   function qs(v: unknown): string | undefined {
     return typeof v === 'string' ? v : undefined;
-  }
-
-  function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
-    // #1418: the session middleware writes req.userContext on every request;
-    // forward it — never look the user up a second way (security-posture P1).
-    return Promise.resolve(req.userContext);
   }
 
   function handleError(err: unknown, res: Response): void {
@@ -67,73 +53,11 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
         const username = ctx.username!;
         const date = qs(req.query['date']) ?? new Date().toISOString().slice(0, 10);
-        const p = pm();
-        if (!p) { res.status(503).json({ error: 'PageManager not available' }); return; }
 
-        // Redirect to existing entry if one already exists for this date
-        const existingSlug = await findJournalEntrySlug(p, date, username, ctx.subject ?? ANONYMOUS_SUBJECT);
-        if (existingSlug) {
-          res.redirect(`/journal/${encodeURIComponent(existingSlug)}/edit`);
-          return;
-        }
-
-        // #802 — Default Journal Visibility:
-        //   1. user pref `journal.defaultPrivate` (if set, wins)
-        //   2. deployment-wide `config.defaultPrivate` (fleet fallback)
-        //   3. true (privacy-first hard default)
-        const userManager = um();
-        const freshUser = userManager ? await userManager.getUser(username) : null;
-        const userPref = (freshUser?.preferences)?.['journal.defaultPrivate'];
-        const fleetDefaultPrivate = config['defaultPrivate'] !== false;
-        const defaultPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
-        const defaultAuthorLock = config['defaultAuthorLock'] !== false;
-        const uuid = uuidv4();
-        // #1329: title and slug are the same per-user name (#789 kept users apart).
-        const slug = journalPageName(date, username);
-        const title = slug;
-        const now = new Date().toISOString();
-
-        const metadata: Record<string, unknown> = {
-          title,
-          uuid,
-          slug,
-          'system-category': 'journal',
-          'journal-date':    date,
-          author:            username,
-          lastModified:      now,
-          ...(defaultAuthorLock ? { 'author-lock': true } : {}),
-          // #802 — canonical semantic flag (replaces legacy `system-location: 'private'`)
-          ...(defaultPrivate ? { private: true } : {})
-        };
-
-        // #1328: empty, not ' ' — the author's first keystroke starts the line.
-        const wikiContext = new WikiContext(engine, {
-          context:     WikiContext.CONTEXT.EDIT,
-          pageName:    slug,
-          content:     '',
-          userContext: await resolveUserContext(req)
-        });
-
-        // WikiContext imported in addon and the one PageManager was compiled against are structurally
-        // identical but treated as different module instances by TypeScript's type checker.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        await p.savePageWithContext(wikiContext as any, metadata);
-
-        // Index in sidecar
-        const indexEntry: JournalIndexEntry = {
-          uuid,
-          slug,
-          title,
-          author: username,
-          journalDate: date,
-          mood: undefined,
-          tags: [],
-          isPrivate: defaultPrivate,
-          lastModified: now
-        };
-        await jdm()?.indexEntry(indexEntry);
-
-        res.redirect(`/journal/${encodeURIComponent(slug)}/edit`);
+        // The entry for the date if there is one, else a new one — then its editor.
+        const name = await findJournalEntryName(engine, date, username, req.userContext)
+          ?? await createJournalEntry(engine, config, req.userContext, date);
+        res.redirect(pageUrl(name, 'edit'));
       } catch (err) {
         handleError(err, res);
       }
@@ -151,8 +75,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const offset = parseInt(qs(req.query['offset']) ?? '0',  10) || 0;
 
         const m       = jdm();
-        const total   = m ? await m.countByAuthor(ctx.username!) : 0;
-        const entries = m ? await m.listByAuthor(ctx.username!, { limit, offset }) : [];
+        const total   = m ? await m.countByAuthor(ctx.username!, req.userContext) : 0;
+        const entries = m ? await m.listByAuthor(ctx.username!, req.userContext, { limit, offset }) : [];
 
         res.json({ entries, total, offset, limit });
       } catch (err) {
@@ -170,7 +94,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
         const today   = new Date().toISOString().slice(0, 10);
         const m       = jdm();
-        const entries = m ? await m.getOnThisDay(ctx.username!) : [];
+        const entries = m ? await m.getOnThisDay(ctx.username!, req.userContext) : [];
 
         res.json({ entries, today });
       } catch (err) {
@@ -187,8 +111,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         ctx.requireAuthenticated();
 
         const m      = jdm();
-        const streak = m ? await m.computeStreak(ctx.username!) : 0;
-        const total  = m ? await m.countByAuthor(ctx.username!) : 0;
+        const streak = m ? await m.computeStreak(ctx.username!, req.userContext) : 0;
+        const total  = m ? await m.countByAuthor(ctx.username!, req.userContext) : 0;
 
         res.json({ streak, total });
       } catch (err) {
@@ -210,11 +134,11 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         }
 
         const m = jdm();
-        const entries = m ? await m.listByAuthor(ctx.username!) : [];
+        const entries = m ? await m.listByAuthor(ctx.username!, req.userContext) : [];
         const p = pm();
 
         const exportData = await Promise.all(entries.map(async (e) => {
-          const page = p ? await p.getPage(e.slug, ctx.subject ?? ANONYMOUS_SUBJECT) : null;
+          const page = p ? await p.getPage(e.name, req.userContext) : null;
           return {
             slug:         e.slug,
             title:        e.title,
@@ -250,13 +174,13 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         }
 
         const m = jdm();
-        const entries = m ? await m.listByAuthor(ctx.username!) : [];
+        const entries = m ? await m.listByAuthor(ctx.username!, req.userContext) : [];
         const p = pm();
 
         const sections: string[] = [`# Journal — ${ctx.username!}\n`];
 
         for (const e of entries) {
-          const page = p ? await p.getPage(e.slug, ctx.subject ?? ANONYMOUS_SUBJECT) : null;
+          const page = p ? await p.getPage(e.name, req.userContext) : null;
           const meta: string[] = [`Date: ${e.journalDate}`];
           if (e.mood)        meta.push(`Mood: ${e.mood}`);
           if (e.tags.length) meta.push(`Tags: ${e.tags.join(', ')}`);

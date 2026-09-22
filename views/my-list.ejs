@@ -31,7 +31,7 @@
             <ul class="list-group">
               <% items.forEach(function(item) { %>
                 <li class="list-group-item">
-                  <a href="/view/<%= encodeURIComponent(item.uuid) %>" class="wikipage"><%= item.title %></a>
+                  <a href="<%= item.name ? pageUrl(item.name) : '/view/' + encodeURIComponent(item.uuid) %>" class="wikipage"><%= item.title %></a>
                   <small class="text-muted ms-2"><%= item.lastModified %></small>
                   <% if (item.preview) { %>
                     <div class="small text-muted mt-1"><%= item.preview %></div>
@@ -53,7 +53,7 @@
                 <tbody>
                   <% items.forEach(function(item) { %>
                     <tr>
-                      <td><a class="wikipage" href="/view/<%= encodeURIComponent(item.title) %>"><%= item.title %></a></td>
+                      <td><a class="wikipage" href="<%= pageUrl(item.name || item.title) %>"><%= item.title %></a></td>
                       <td><small class="text-muted"><%= item.lastModified ? new Date(item.lastModified).toLocaleString() : '-' %></small></td>
                       <td><small><%= item.editor || '-' %></small></td>
                       <td>

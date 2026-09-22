@@ -14,9 +14,10 @@
  */
 
 import type { PluginContext, PluginParams } from '../../../dist/src/managers/PluginManager.js';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
-import type SearchManager from '../../../dist/src/managers/SearchManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
+import type { UserContext } from '../../../dist/src/context/WikiContext.js';
+import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
+import type JournalDataManager from '../managers/JournalDataManager.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,8 @@ function excerpt(content: string, maxLen = 120): string {
 // ── Streak calculator (from sidecar-free index) ──────────────────────────────
 
 interface JournalEntry {
-  slug: string;
+  /** The page's name: its title, or `private/{user}/{store}/{title}` (#1456). */
+  name: string;
   title: string;
   journalDate: string;
   mood?: string;
@@ -94,7 +96,7 @@ function renderTimeline(entries: JournalEntry[], limit: number): string {
   const cards = shown.map(e => `
     <div class="journal-card">
       <div class="journal-card-date">${escHtml(formatDate(e.journalDate))}</div>
-      <div class="journal-card-title"><a href="/view/${escHtml(e.slug)}">${escHtml(e.title)}</a></div>
+      <div class="journal-card-title"><a href="${escHtml(pageUrl(e.name))}">${escHtml(e.title)}</a></div>
       ${e.mood ? `<span class="journal-mood">${escHtml(e.mood)}</span>` : ''}
       ${e.tags && e.tags.length > 0 ? `<div class="journal-tags">${e.tags.map(t => `<span class="journal-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
       ${e.content ? `<p class="journal-excerpt">${escHtml(excerpt(e.content))}</p>` : ''}
@@ -123,7 +125,7 @@ function renderOnThisDay(entries: JournalEntry[]): string {
   const items = entries.map(e => `
     <div class="journal-otd-item">
       <span class="journal-otd-year">${escHtml(e.journalDate.slice(0, 4))}</span>
-      <a href="/view/${escHtml(e.slug)}">${escHtml(e.title)}</a>
+      <a href="${escHtml(pageUrl(e.name))}">${escHtml(e.title)}</a>
     </div>`).join('');
   return `<div class="journal-on-this-day">
     <h4 class="journal-otd-heading">On This Day</h4>
@@ -137,52 +139,33 @@ const JournalPlugin = {
   name: 'Journal',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
-    const userContext = context['userContext'] as { username?: string } | undefined;
+    const userContext = context['userContext'] as UserContext | undefined;
     const username = userContext?.username;
-    if (!username) {
+    if (!userContext || !username) {
       return '<p class="plugin-error journal-error">Journal: sign in to view your journal.</p>';
     }
 
     const view  = String(params.view  ?? 'timeline');
     const limit = parseInt(String(params.limit ?? '10'), 10) || 10;
 
-    const sm = context.engine.getManager<SearchManager>('SearchManager');
+    const jdm = context.engine.getManager<JournalDataManager>('JournalDataManager');
     const pm = context.engine.getManager<PageManager>('PageManager');
-    if (!sm || !pm) {
+    if (!jdm || !pm) {
       return '<p class="plugin-error journal-error">Journal: required managers unavailable.</p>';
     }
 
     try {
-      // 1. Get all journal category pages from search index
-      const results = await sm.searchByCategory('journal');
-
-      // 2. Load full page data (frontmatter + content) for author filtering
-      // The plugin lists from the public page index; the viewer's own sealed
-      // pages are not in it, and the plugin has no full subject to read them with.
-      const pages = await Promise.all(results.map(r => pm.getPage(r.name, ANONYMOUS_SUBJECT)));
-
-      // 3. Filter to this user's entries only, sort newest first
-      const entries: JournalEntry[] = pages
-        .filter(p => p && (p.metadata as Record<string, unknown>)?.['author'] === username)
-        .map(p => {
-          const m = p!.metadata as Record<string, unknown>;
-          return {
-            slug:        ((m['slug'] as string | undefined) ?? p!.title) ?? '',
-            title:       ((m['title'] as string | undefined) ?? p!.title) ?? '',
-            journalDate: (m['journal-date'] as string | undefined) ?? '',
-            mood:        m['mood'] != null ? (m['mood'] as string) : undefined,
-            // #799 — tags now sourced from `user-keywords` (the page-wide keyword
-            // field every page has). The legacy `journal-tags` field is retired
-            // — see EPIC #790. Filtering to system-category=journal is implicit
-            // because this branch reached here via searchByCategory('journal').
-            tags:        Array.isArray(m['user-keywords'])
-              ? (m['user-keywords'] as unknown[]).map(String)
-              : undefined,
-            content:     p!.content ?? undefined
-          };
-        })
-        .filter(e => e.journalDate)
-        .sort((a, b) => b.journalDate.localeCompare(a.journalDate));
+      // #1456: the viewer's entries — public ones and their own private ones,
+      // read through their context. Newest first.
+      const listed = await jdm.listByAuthor(username, userContext);
+      const entries: JournalEntry[] = await Promise.all(listed.map(async e => ({
+        name:        e.name,
+        title:       e.title,
+        journalDate: e.journalDate,
+        mood:        e.mood,
+        tags:        e.tags,
+        content:     (await pm.getPage(e.name, userContext))?.content ?? undefined
+      })));
 
       if (view === 'streak') {
         return renderStreak(computeStreak(entries), entries.length);

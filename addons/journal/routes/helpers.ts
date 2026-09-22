@@ -3,6 +3,13 @@ import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
+import type UserManager from '../../../dist/src/managers/UserManager.js';
+import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
+import WikiContext, { type UserContext } from '../../../dist/src/context/WikiContext.js';
+import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../dist/src/utils/privateStorePath.js';
+import { v4 as uuidv4 } from 'uuid';
+import type JournalDataManager from '../managers/JournalDataManager.js';
 
 /**
  * Title and slug of a user's journal entry for a date (#1329).
@@ -22,22 +29,95 @@ export function legacyJournalSlug(date: string, username: string): string {
   return `journal-${username}-${date}`;
 }
 
+/** A journal title as the user's private page, in their default store (#1456). */
+function privateJournalName(engine: WikiEngine, username: string, title: string): string {
+  const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
+  if (!configManager) throw new Error('ConfigurationManager not available');
+  return formatPrivatePageName(
+    username,
+    privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId,
+    title
+  );
+}
+
 /**
- * Slug of the user's existing entry for a date, or null.
- *
- * Looks under the legacy slug too: an entry started before the rename must be
- * found and reopened, not duplicated under the new name.
+ * The page name of the user's existing entry for a date, or null — public or
+ * private (#1456). Listed entries first; then the entry's own names directly,
+ * because a just-created entry is not in the search index until its first
+ * save through the editor (#804). Entries started under the legacy slug are
+ * found too, not duplicated under the new name.
  */
-export async function findJournalEntrySlug(
-  pm: Pick<PageManager, 'getPageBySlug'>,
+export async function findJournalEntryName(
+  engine: WikiEngine,
   date: string,
   username: string,
-  ctx: import('../../../dist/src/context/ActorContext.js').ActorContext
+  ctx: ActorContext
 ): Promise<string | null> {
-  for (const slug of [journalPageName(date, username), legacyJournalSlug(date, username)]) {
-    if (await pm.getPageBySlug(slug, ctx)) return slug;
-  }
-  return null;
+  const jdm = engine.getManager<JournalDataManager>('JournalDataManager');
+  const listed = jdm ? (await jdm.listByAuthor(username, ctx)).find(e => e.journalDate === date) : undefined;
+  if (listed) return listed.name;
+  const pm = engine.getManager<PageManager>('PageManager');
+  if (!pm) return null;
+  const title = journalPageName(date, username);
+  const privateName = privateJournalName(engine, username, title);
+  if (await pm.getPage(privateName, ctx)) return privateName;
+  if (await pm.getPage(title, ctx)) return title;
+  const legacy = await pm.getPageBySlug(legacyJournalSlug(date, username), ctx);
+  return legacy?.title ?? null;
+}
+
+/**
+ * Create the user's empty entry for a date and return its page name (#540).
+ *
+ * Visibility (#802): the user's `journal.defaultPrivate` preference if set,
+ * else the deployment's `defaultPrivate`, else private. A private entry is
+ * named by its path in the user's default store (#1456); a public one by its
+ * title. Title and slug are the same per-user name (#1329, #789).
+ */
+export async function createJournalEntry(
+  engine: WikiEngine,
+  config: Record<string, unknown>,
+  userContext: UserContext,
+  date: string
+): Promise<string> {
+  const pm = engine.getManager<PageManager>('PageManager');
+  if (!pm) throw new Error('PageManager not available');
+  const username = userContext.username;
+  if (!username) throw new Error('A journal entry needs its author');
+
+  const freshUser = await engine.getManager<UserManager>('UserManager')?.getUser(username);
+  const userPref = freshUser?.preferences?.['journal.defaultPrivate'];
+  const fleetDefaultPrivate = config['defaultPrivate'] !== false;
+  const isPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
+  const defaultAuthorLock = config['defaultAuthorLock'] !== false;
+
+  const title = journalPageName(date, username);
+  const name = isPrivate ? privateJournalName(engine, username, title) : title;
+
+  const metadata: Record<string, unknown> = {
+    title,
+    uuid:              uuidv4(),
+    slug:              title,
+    'system-category': 'journal',
+    'journal-date':    date,
+    author:            username,
+    lastModified:      new Date().toISOString(),
+    ...(defaultAuthorLock ? { 'author-lock': true } : {}),
+    ...(isPrivate ? { private: true } : {})
+  };
+
+  // #1328: empty, not ' ' — the author's first keystroke starts the line.
+  const wikiContext = new WikiContext(engine, {
+    context:     WikiContext.CONTEXT.EDIT,
+    pageName:    name,
+    content:     '',
+    userContext
+  });
+  // WikiContext imported in the addon and the one PageManager was compiled
+  // against are structurally identical but distinct module instances to tsc.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+  await pm.savePageWithContext(wikiContext as any, metadata);
+  return name;
 }
 
 function formatLeftMenuContent(content: string): string {

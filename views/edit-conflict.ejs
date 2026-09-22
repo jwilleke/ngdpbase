@@ -46,11 +46,11 @@
             <dd class="col-sm-9"><%= conflictLastModified || 'unknown' %></dd>
             <dt class="col-sm-3">Their version</dt>
             <dd class="col-sm-9">
-              <a href="/view/<%= encodeURIComponent(pageName) %>" target="_blank" rel="noopener">
+              <a href="<%= pageUrl(pageName) %>" target="_blank" rel="noopener">
                 Open the current page in a new tab
               </a>
               &middot;
-              <a href="/history/<%= encodeURIComponent(pageName) %>" target="_blank" rel="noopener">
+              <a href="<%= pageUrl(pageName, 'history') %>" target="_blank" rel="noopener">
                 Page history
               </a>
             </dd>
@@ -64,7 +64,7 @@
         history either way.
       </p>
 
-      <form id="conflictForm" action="/save/<%= encodeURIComponent(pageName) %>" method="POST">
+      <form id="conflictForm" action="<%= pageUrl(pageName, 'save') %>" method="POST">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <%# Reissued from the page as it stands NOW, so this save is not stale in turn. %>
         <input type="hidden" name="baseLastModified" value="<%= currentBaseToken %>">
@@ -90,7 +90,7 @@
           <button type="submit" class="btn btn-primary">
             <i class="fas fa-save"></i> Save my version
           </button>
-          <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-outline-secondary">
+          <a href="<%= pageUrl(pageName) %>" class="btn btn-outline-secondary">
             Discard mine and keep theirs
           </a>
         </div>

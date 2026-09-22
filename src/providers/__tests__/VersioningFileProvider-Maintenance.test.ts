@@ -125,7 +125,7 @@ describe('VersioningFileProvider - Maintenance', () => {
       expect(result.versionsRemoved).toBe(15);
 
       // Verify versions still exist (dry run should not delete)
-      const history = await provider.getVersionHistory(uuid);
+      const history = await provider.getVersionHistory(uuid, TEST_ACTOR);
       expect(history.length).toBe(20);
     });
 
@@ -178,7 +178,7 @@ describe('VersioningFileProvider - Maintenance', () => {
 
       // Retrieve v48 (should use v40 checkpoint, not v1)
       const start = Date.now();
-      const { content } = await provider.getPageVersion(uuid, 48);
+      const { content } = await provider.getPageVersion(uuid, 48, TEST_ACTOR);
       const duration = Date.now() - start;
 
       expect(content).toBe('Content version 48');
@@ -229,7 +229,7 @@ describe('VersioningFileProvider - Maintenance', () => {
       expect(report.versionsRemoved).toBe(15);
 
       // Verify nothing was actually deleted
-      const history = await provider.getVersionHistory('uuid-1');
+      const history = await provider.getVersionHistory('uuid-1', TEST_ACTOR);
       expect(history.length).toBe(20);
     });
   });
@@ -313,11 +313,11 @@ describe('VersioningFileProvider - Maintenance', () => {
       expect(cleanupReport.versionsRemoved).toBe(30); // Active page: 50 - 20 = 30
 
       // Verify pages still accessible
-      const history = await provider.getVersionHistory('active-1');
+      const history = await provider.getVersionHistory('active-1', TEST_ACTOR);
       expect(history.length).toBe(20);
 
       // Verify kept versions are accessible (v31-v50 should remain)
-      const { content } = await provider.getPageVersion('active-1', 40);
+      const { content } = await provider.getPageVersion('active-1', 40, TEST_ACTOR);
       expect(content).toContain('Content version 40');
     });
   });

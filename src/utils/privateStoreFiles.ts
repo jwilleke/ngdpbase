@@ -17,7 +17,7 @@ import path from 'path';
 import { writeFileAtomic } from './atomicWrite.js';
 import { assertEncryptedStoreWritable, openBytes, sealBytes } from './privateStoreCrypto.js';
 import { readStoreMeta } from './privateStoreMeta.js';
-import { parsePrivateStoreRel, type PrivateStoreLayoutOverrides } from './privateStorePath.js';
+import { parsePrivateStoreRel, storeMetaPath, type PrivateStoreLayoutOverrides } from './privateStorePath.js';
 import { dekFor } from './privateStoreUnlock.js';
 import type { ActorContext } from '../context/ActorContext.js';
 
@@ -75,6 +75,34 @@ export async function storeFileIO(ctx: ActorContext | undefined, args: {
   const dek = dekFor(ctx, args.owner, args.store);
   assertEncryptedStoreWritable({ encrypt: true, dek });
   return sealedFileIO(dek as Buffer);
+}
+
+/**
+ * Read one text file of `owner`'s `store` synchronously, as this context may:
+ * plain for a store that is not encrypted, opened with the store DEK when it
+ * is. Null when the file does not exist, or the store is encrypted and this
+ * context does not hold its DEK — a locked store reads as nothing, never in
+ * the clear (#1456: a store's page index is small, and page lookups are
+ * synchronous).
+ */
+export function readStoreTextSync(ctx: ActorContext | undefined, args: {
+  pagesDirectory: string;
+  owner: string;
+  store: string;
+  file: string;
+  layout?: PrivateStoreLayoutOverrides;
+}): string | null {
+  if (!fs.existsSync(args.file)) return null;
+  let encrypt = false;
+  const metaFile = storeMetaPath(args.pagesDirectory, args.owner, args.store, args.layout);
+  if (fs.existsSync(metaFile)) {
+    const meta = fs.readJsonSync(metaFile, { throws: false }) as { encrypt?: unknown } | null;
+    encrypt = meta?.encrypt === true;
+  }
+  if (!encrypt) return fs.readFileSync(args.file, 'utf8');
+  const dek = dekFor(ctx, args.owner, args.store);
+  if (!dek) return null;
+  return openBytes(dek, fs.readFileSync(args.file)).toString('utf8');
 }
 
 /** The I/O for whichever store holds `file`; plain for a file in no store. */

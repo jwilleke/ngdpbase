@@ -8,11 +8,17 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import ValidationManager from '../../managers/ValidationManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import { DEFAULT_PRIVATE_STORE, storeMetaPath } from '../../utils/privateStorePath';
+import {
+  DEFAULT_PRIVATE_STORE,
+  formatPrivatePageName,
+  storeMetaPath,
+  storePageIndexPath
+} from '../../utils/privateStorePath';
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek } from '../../utils/privateStoreCrypto';
 import {
   clearUnlockedPrivateStores,
@@ -23,6 +29,8 @@ import {
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 // The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
 const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
+// #1456: a private page is named by its path.
+const DIARY = formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Diary');
 
 
 describe('private store default/ (#1383)', () => {
@@ -52,6 +60,19 @@ describe('private store default/ (#1383)', () => {
   };
 
   const readIndex = async () => JSON.parse(await fs.readFile(indexPath, 'utf8'));
+  // #1456: each store keeps its own page index; private pages are never in page-index.json.
+  const readStoreIndex = async (store: string = DEFAULT_PRIVATE_STORE) =>
+    JSON.parse(await fs.readFile(storePageIndexPath(pagesDir, 'molly', store), 'utf8'));
+
+  // The engine a private save needs: config, and ValidationManager to name the
+  // page's slug (#1456 — FileSystemProvider has no fallback).
+  const engineWith = (configManager: unknown): { getManager: (name: string) => unknown } => {
+    const e: { getManager: (name: string) => unknown } = { getManager: () => null };
+    const validation = new ValidationManager(e);
+    e.getManager = vi.fn((name: string) =>
+      name === 'ConfigurationManager' ? configManager : name === 'ValidationManager' ? validation : null);
+    return e;
+  };
 
   beforeEach(async () => {
     testDir = path.join(os.tmpdir(), `vfp-priv-store-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -69,7 +90,7 @@ describe('private store default/ (#1383)', () => {
       }),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+    engine = engineWith(configManager);
   });
 
   afterEach(async () => {
@@ -77,17 +98,22 @@ describe('private store default/ (#1383)', () => {
     await fs.remove(testDir);
   });
 
-  test('a private save writes private/{author}/default/{uuid}.md and records store default', async () => {
+  test('a private save writes private/{author}/default/{uuid}.md and records it in the store\'s own index, not the global one', async () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
 
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', `${UUID}.md`))).toBe(false);
-    expect((await readIndex()).pages[UUID]).toMatchObject({
+    expect((await readIndex()).pages[UUID]).toBeUndefined();
+    expect((await readStoreIndex()).pages[UUID]).toMatchObject({
+      title: 'Diary',
       location: 'private',
       creator: 'molly',
       store: DEFAULT_PRIVATE_STORE
     });
+    // Found by its private name only; a plain title is a public page (#1456).
+    expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
+    expect(await provider.getPage('Diary', MOLLY)).toBeNull();
   });
 
   test('boot moves a legacy private/{user}/{uuid}.md into default/ and still loads the page', async () => {
@@ -101,37 +127,43 @@ describe('private store default/ (#1383)', () => {
     const provider = await newProvider();
     expect(await fs.pathExists(legacy)).toBe(false);
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', `${UUID}.md`))).toBe(true);
-    expect((await provider.getPage('Diary'))?.content).toContain('secret');
-    expect((await readIndex()).pages[UUID]).toMatchObject({
+    expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
+    expect((await readIndex()).pages[UUID]).toBeUndefined();
+    expect((await readStoreIndex()).pages[UUID]).toMatchObject({
+      title: 'Diary',
       location: 'private',
       creator: 'molly',
       store: DEFAULT_PRIVATE_STORE
     });
   });
 
-  test('rebuild records store default and does not invent a page named default', async () => {
+  test('rebuild leaves a private page to its store\'s index and does not invent a page named default', async () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
     await provider.refreshPageList();
     const result = await provider.rebuildPageIndexFromDisk();
 
     const rebuilt = await readIndex();
-    expect(rebuilt.pages[UUID]).toMatchObject({
+    expect(rebuilt.pages[UUID]).toBeUndefined();
+    expect(Object.values(rebuilt.pages).some((p: { title?: string }) => p.title === 'default')).toBe(false);
+    expect(result.pages).toBe(0);
+    expect((await readStoreIndex()).pages[UUID]).toMatchObject({
       location: 'private',
       creator: 'molly',
       store: DEFAULT_PRIVATE_STORE
     });
-    expect(Object.values(rebuilt.pages).some((p: { title?: string }) => p.title === 'default')).toBe(false);
-    expect(result.pages).toBe(1);
+    expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
   });
 
   test('version history lives under the store, not pages/versions/private/{uuid}', async () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
-    await provider.savePage('Diary', 'v2', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+    await provider.savePage(DIARY, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
 
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
     expect(await fs.pathExists(path.join(pagesDir, 'versions', 'private', UUID))).toBe(false);
+    expect(await provider.getVersionHistory(DIARY, TEST_ACTOR)).toHaveLength(2);
+    expect((await readStoreIndex()).pages[UUID]).toMatchObject({ currentVersion: 2, hasVersions: true });
   });
 
   test('boot moves pages/versions/private/{uuid} into the store', async () => {
@@ -183,6 +215,10 @@ describe('private store default/ (#1383)', () => {
     );
 
     expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    // The store's index is sealed with its DEK (#1456) — never in the clear, never global.
+    expect((await readIndex()).pages[UUID]).toBeUndefined();
+    expect((await fs.readFile(storePageIndexPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE))).toString('utf8')).not.toContain('Diary');
+    expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
   });
 
   test('config privateroot sealed joins versions as versions/sealed and writes under sealed/', async () => {
@@ -202,7 +238,7 @@ describe('private store default/ (#1383)', () => {
       }),
       getInstanceDataFolder: vi.fn(() => testDir)
     };
-    engine = { getManager: vi.fn((name: string) => (name === 'ConfigurationManager' ? configManager : null)) };
+    engine = engineWith(configManager);
 
     const provider = await newProvider();
     await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
@@ -217,27 +253,33 @@ describe('private store default/ (#1383)', () => {
     const storeFile = (store: string) => path.join(pagesDir, 'private', 'molly', store, `${UUID}.md`);
     const storeHistory = (store: string) => path.join(pagesDir, 'private', 'molly', store, 'versions', UUID);
 
+    // #1456: the private name names the store.
+    const LABS = formatPrivatePageName('molly', 'yourphr', 'Labs');
+
     test('a save naming a store puts the page and its history in that store, and history survives a restart', async () => {
       const provider = await newProvider();
-      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' }, MOLLY);
-      await provider.savePage('Labs', 'v2', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' }, MOLLY);
+      await provider.savePage(LABS, 'v1', { uuid: UUID, author: 'molly' }, MOLLY);
+      await provider.savePage(LABS, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
 
       expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
       expect(await fs.pathExists(storeHistory('yourphr'))).toBe(true);
       expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default'))).toBe(false);
-      expect((await readIndex()).pages[UUID].store).toBe('yourphr');
+      expect((await readIndex()).pages[UUID]).toBeUndefined();
+      expect((await readStoreIndex('yourphr')).pages[UUID].store).toBe('yourphr');
 
       const restarted = await newProvider();
-      expect(await restarted.getVersionHistory('Labs')).toHaveLength(2);
-      expect((await readIndex()).pages[UUID].store).toBe('yourphr');
+      expect(await restarted.getVersionHistory(LABS, TEST_ACTOR)).toHaveLength(2);
+      expect((await readStoreIndex('yourphr')).pages[UUID].store).toBe('yourphr');
+      expect((await readIndex()).pages[UUID]).toBeUndefined();
     });
 
-    test('a later save that names no store keeps the page in its store', async () => {
+    test('a later save to the page\'s name that names no store and no private flag keeps the page in its store', async () => {
       const provider = await newProvider();
       await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' }, MOLLY);
-      await provider.savePage('Labs', 'v2', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      await provider.savePage(LABS, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
       expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
       expect(await fs.pathExists(storeFile('default'))).toBe(false);
+      expect(await fs.readFile(storeFile('yourphr'), 'utf8')).toContain('v2');
     });
 
     test('the store is placement: it is not written into the page frontmatter', async () => {
@@ -269,12 +311,17 @@ describe('private store default/ (#1383)', () => {
 
     test('making a named-store page public moves it out of its own store — no stale private copy', async () => {
       const provider = await newProvider();
-      await provider.savePage('Labs', 'v1', { uuid: UUID, private: true, author: 'molly', store: 'yourphr' }, MOLLY);
-      await provider.savePage('Labs', 'v2', { uuid: UUID, private: false, author: 'molly' }, MOLLY);
+      await provider.savePage(LABS, 'v1', { uuid: UUID, author: 'molly' }, MOLLY);
+      // The Private box unticked on a private page: a move out to the public space (#1456).
+      await provider.savePage(LABS, 'v2', { uuid: UUID, private: false, author: 'molly' }, MOLLY);
       expect(await fs.pathExists(storeFile('yourphr'))).toBe(false);
       expect(await fs.pathExists(path.join(pagesDir, `${UUID}.md`))).toBe(true);
       expect(await fs.pathExists(storeHistory('yourphr'))).toBe(false);
       expect(await fs.pathExists(path.join(pagesDir, 'versions', UUID))).toBe(true);
+      expect((await readStoreIndex('yourphr')).pages[UUID]).toBeUndefined();
+      expect((await readIndex()).pages[UUID]).toMatchObject({ title: 'Labs', location: 'pages' });
+      expect((await provider.getPage('Labs', MOLLY))?.content).toContain('v2');
+      expect(await provider.getPage(LABS, MOLLY)).toBeNull();
     });
   });
 });

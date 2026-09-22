@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
     );
     headings.forEach(function (h, i) {
         var a = document.createElement('a');
-        a.href = '/edit/<%= encodeURIComponent(pageName) %>?section=' + i;
+        a.href = '<%= pageUrl(pageName, 'edit') %>?section=' + i;
         a.className = 'section-edit-link';
         a.title = 'Edit this section';
         a.innerHTML = '<i class="fas fa-pencil-alt"></i>';

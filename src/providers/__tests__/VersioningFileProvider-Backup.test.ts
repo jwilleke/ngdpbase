@@ -14,6 +14,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -91,9 +92,9 @@ describe('VersioningFileProvider - backup carries version history (#1380)', () =
     await fs.remove(path.join(testDir, 'pages', 'versions', uuid));
     await provider.restore(backup);
 
-    const versions = await provider.getVersionHistory('Metrics');
+    const versions = await provider.getVersionHistory('Metrics', TEST_ACTOR);
     expect(versions.map((v: { version: number }) => v.version)).toEqual([2, 1]);
-    expect(await provider.getPageVersion('Metrics', 1)).toMatchObject({ content: 'first body' });
+    expect(await provider.getPageVersion('Metrics', 1, TEST_ACTOR)).toMatchObject({ content: 'first body' });
   });
 
   test('restore refuses a path that leaves the versions folder', async () => {

@@ -7,7 +7,8 @@
  *  - parameter validation (since, format)
  *  - empty result list → "No changes" message
  *  - compact + full format rendering
- *  - principals + admin flags forwarded to pageManager.getRecentChanges
+ *  - requester context + principals forwarded to pageManager.getRecentChanges
+ *    (no admin bypass, #1456); a missing requester is an error
  *  - error path when getRecentChanges throws
  *
  * Note: The plugin no longer reads disk or calls fs.stat; tests mock the
@@ -17,6 +18,11 @@
  */
 
 import RecentChangesPlugin from '../RecentChangesPlugin';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+
+// #1456: every render carries a requester; an anonymous visitor is the
+// anonymous subject, never a missing one.
+const ANON = ANONYMOUS_SUBJECT;
 
 interface RecentChange {
   title: string;
@@ -98,14 +104,14 @@ describe('RecentChangesPlugin', () => {
   describe('empty results', () => {
     test('renders "No changes" message when getRecentChanges returns empty', async () => {
       const pm = makePageManager([]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       const result = await RecentChangesPlugin.execute!(context, { since: '7' });
       expect(result).toContain('No changes in the last 7 days');
     });
 
     test('singular "day" when since=1', async () => {
       const pm = makePageManager([]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       const result = await RecentChangesPlugin.execute!(context, { since: '1' });
       expect(result).toContain('No changes in the last 1 day.');
     });
@@ -116,7 +122,7 @@ describe('RecentChangesPlugin', () => {
       const pm = makePageManager([
         { title: 'RecentPage', uuid: 'u-1', lastModified: new Date().toISOString(), editor: 'alice' }
       ]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       const result = await RecentChangesPlugin.execute!(context, { since: '7', format: 'compact' });
       expect(result).toContain('recent-changes-compact');
       expect(result).toContain('RecentPage');
@@ -127,7 +133,7 @@ describe('RecentChangesPlugin', () => {
       const pm = makePageManager([
         { title: 'SomePage', uuid: 'u', lastModified: new Date().toISOString() }
       ]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       const result = await RecentChangesPlugin.execute!(context, {});
       expect(result).toContain('recent-changes-compact');
     });
@@ -144,7 +150,7 @@ describe('RecentChangesPlugin', () => {
           currentVersion: 3
         }
       ]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       const result = await RecentChangesPlugin.execute!(context, { since: '30', format: 'full' });
       expect(result).toContain('recent-changes-full');
       expect(result).toContain('FullPage');
@@ -154,14 +160,22 @@ describe('RecentChangesPlugin', () => {
     });
   });
 
-  describe('visibility — principals + admin forwarding', () => {
-    test('anonymous request: principals empty', async () => {
+  describe('visibility — requester + principals forwarding', () => {
+    test('anonymous request: principals are only the anonymous subject\'s facts', async () => {
+      const pm = makePageManager([]);
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
+      await RecentChangesPlugin.execute!(context, {});
+      expect(pm.getRecentChanges).toHaveBeenCalledWith(ANON, expect.objectContaining({
+        principals: [...ANON.roles, ANON.username]
+      }));
+    });
+
+    test('no requester at all is a failure, not an anonymous read (#1456)', async () => {
       const pm = makePageManager([]);
       const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
-      await RecentChangesPlugin.execute!(context, {});
-      expect(pm.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({
-        principals: []
-      }));
+      const result = await RecentChangesPlugin.execute!(context, {});
+      expect(result).toContain('Error displaying recent changes');
+      expect(pm.getRecentChanges).not.toHaveBeenCalled();
     });
 
     test('authenticated non-admin: principals = roles + username', async () => {
@@ -173,15 +187,14 @@ describe('RecentChangesPlugin', () => {
         userContext: { username: 'alice', roles: ['user', 'editor'] }
       };
       await RecentChangesPlugin.execute!(context, {});
-      expect(pm.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({
+      expect(pm.getRecentChanges).toHaveBeenCalledWith(context.userContext, expect.objectContaining({
         principals: ['user', 'editor', 'alice']
       }));
     });
 
-    test('admin user: supplies facts only — no includeAll conclusion (#1116)', async () => {
-      // The provider derives the bypass from the admin principal. The plugin
-      // no longer decides; a caller that cannot be wrong beats one that must
-      // be right.
+    test('admin user: supplies facts only — no includeAll, no bypass (#1116, #1456)', async () => {
+      // A role never decides access: the admin's principals are forwarded as
+      // facts like anyone else's, and nothing asks for an unfiltered list.
       const pm = makePageManager([]);
       const context = {
         engine: makeEngine(pm),
@@ -190,16 +203,17 @@ describe('RecentChangesPlugin', () => {
         userContext: { username: 'root', roles: ['admin'] }
       };
       await RecentChangesPlugin.execute!(context, {});
-      const call = pm.getRecentChanges.mock.calls[0][0];
+      expect(pm.getRecentChanges.mock.calls[0][0]).toBe(context.userContext);
+      const call = pm.getRecentChanges.mock.calls[0][1];
       expect(call.principals).toEqual(['admin', 'root']);
       expect('includeAll' in call).toBe(false);
     });
 
     test('cutoff date forwarded as `since`', async () => {
       const pm = makePageManager([]);
-      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {} };
+      const context = { engine: makeEngine(pm), pageName: 'X', linkGraph: {}, userContext: ANON };
       await RecentChangesPlugin.execute!(context, { since: '7' });
-      const call = pm.getRecentChanges.mock.calls[0][0];
+      const call = pm.getRecentChanges.mock.calls[0][1];
       expect(call.since).toBeInstanceOf(Date);
     });
   });
@@ -234,7 +248,7 @@ describe('#1305 recent changes are bounded', () => {
   const run = async (params: Record<string, unknown>, count = 120, query?: Record<string, string>) => {
     const pageManager = makePageManager(changes(count));
     const html = await RecentChangesPlugin.execute(
-      { engine: makeEngine(pageManager), pageName: 'Recent Changes', query },
+      { engine: makeEngine(pageManager), pageName: 'Recent Changes', query, userContext: ANON },
       params
     );
     return { html, pageManager };
@@ -249,7 +263,7 @@ describe('#1305 recent changes are bounded', () => {
     // Rendering 5 of 8,000 rows the manager already built and returned is a
     // cap on the output, not on the work.
     const { pageManager } = await run({ limit: '20' });
-    expect(pageManager.getRecentChanges).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+    expect(pageManager.getRecentChanges).toHaveBeenCalledWith(ANON, expect.objectContaining({ limit: 20 }));
   });
 
   test('an unbounded call still does not render everything', async () => {
@@ -323,27 +337,27 @@ describe('#1312 since=all', () => {
 
   test('passes no cutoff to the manager', async () => {
     const { pageManager, engine } = one([change()]);
-    await RecentChangesPlugin.execute({ engine }, { since: 'all' });
-    const args = pageManager.getRecentChanges.mock.calls[0][0];
+    await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'all' });
+    const args = pageManager.getRecentChanges.mock.calls[0][1];
     expect(args.since).toBeUndefined();
   });
 
   test('is case-insensitive, because a page author types what reads naturally', async () => {
     const { pageManager, engine } = one([change()]);
-    await RecentChangesPlugin.execute({ engine }, { since: 'All' });
-    expect(pageManager.getRecentChanges.mock.calls[0][0].since).toBeUndefined();
+    await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'All' });
+    expect(pageManager.getRecentChanges.mock.calls[0][1].since).toBeUndefined();
   });
 
   test('says so in the heading rather than claiming a number of days', async () => {
     const { engine } = one([change()]);
-    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    const html = await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'all' }) as string;
     expect(html).toContain('all time');
     expect(html).not.toMatch(/Last \d+ day/);
   });
 
   test('the empty case does not talk about days either', async () => {
     const { engine } = one([]);
-    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    const html = await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'all' }) as string;
     expect(html).not.toMatch(/last \d+ day/i);
   });
 
@@ -352,7 +366,7 @@ describe('#1312 since=all', () => {
       title: `Page ${i}`, uuid: `u${i}`, lastModified: new Date().toISOString(), editor: 'jim', currentVersion: 1
     }));
     const { engine } = one(many);
-    const html = await RecentChangesPlugin.execute({ engine }, { since: 'all' }) as string;
+    const html = await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'all' }) as string;
     expect((html.match(/href="\/view\//g) ?? []).length).toBe(50);
   });
 
@@ -360,13 +374,13 @@ describe('#1312 since=all', () => {
     // Moving 0 to mean "all" would silently widen the window under any page
     // already using it.
     const { pageManager, engine } = one([change()]);
-    await RecentChangesPlugin.execute({ engine }, { since: '0' });
-    expect(pageManager.getRecentChanges.mock.calls[0][0].since).toBeInstanceOf(Date);
+    await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: '0' });
+    expect(pageManager.getRecentChanges.mock.calls[0][1].since).toBeInstanceOf(Date);
   });
 
   test('a word that is not "all" is still refused', async () => {
     const { engine } = one([change()]);
-    const html = await RecentChangesPlugin.execute({ engine }, { since: 'forever' }) as string;
+    const html = await RecentChangesPlugin.execute({ engine, userContext: ANON }, { since: 'forever' }) as string;
     expect(html).toContain('error');
     expect(html).toContain('since');
   });

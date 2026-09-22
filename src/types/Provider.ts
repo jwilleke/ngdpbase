@@ -150,6 +150,11 @@ export interface RecentChangeEntry {
   hasVersions?: boolean;
   isPrivate?: boolean;
   creator?: string;
+  /**
+   * The page's name, where it is not its title: a private page's
+   * `private/{owner}/{store}/{title}` (#1456). Link with it.
+   */
+  name?: string;
 }
 
 /**
@@ -206,11 +211,11 @@ export interface PageProvider extends BaseProvider {
   deletePage(identifier: string, ctx: ActorContext): Promise<boolean>;
 
   /**
-   * Move a private page from one creator's directory to another's.
-   * Called by PageManager when a private page's author changes.
-   * Providers without creator-keyed directories may implement as a no-op.
+   * At unlock (#1456): move the owner's sealed pages from the user-level
+   * catalog into each encrypted store's own page index. Optional capability —
+   * only a provider that keeps private stores has one.
    */
-  movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void>;
+  adoptUserPageCatalog?(ctx: ActorContext): Promise<number>;
 
   /**
    * Read a page's file exactly as stored — frontmatter and body, unparsed and
@@ -326,7 +331,7 @@ export interface PageProvider extends BaseProvider {
    * Source-of-truth: providers MUST read from in-memory state (e.g., pageIndex /
    * pageCache) — direct disk reads were what motivated this API.
    */
-  getRecentChanges(options?: RecentChangesOptions): Promise<RecentChangeEntry[]>;
+  getRecentChanges(ctx: ActorContext, options?: RecentChangesOptions): Promise<RecentChangeEntry[]>;
 
   /**
    * Return pages owned by the given user (#640).
@@ -340,7 +345,7 @@ export interface PageProvider extends BaseProvider {
    * pageCache). Reuses {@link RecentChangeEntry} shape since the relevant fields
    * overlap.
    */
-  getPagesByCreator(username: string, options?: GetPagesByCreatorOptions): Promise<RecentChangeEntry[]>;
+  getPagesByCreator(username: string, ctx: ActorContext, options?: GetPagesByCreatorOptions): Promise<RecentChangeEntry[]>;
 
   /**
    * Return pages most recently edited by the given user (#640 Phase 2).
@@ -348,7 +353,7 @@ export interface PageProvider extends BaseProvider {
    * editor but not author. Visibility filter NOT applied (caller asks about
    * own activity).
    */
-  getPagesByEditor(username: string, options?: PagesScanOptions): Promise<RecentChangeEntry[]>;
+  getPagesByEditor(username: string, ctx: ActorContext, options?: PagesScanOptions): Promise<RecentChangeEntry[]>;
 
   /**
    * Return pages whose frontmatter audience contains any of the given
@@ -370,7 +375,7 @@ export interface VersioningPageProvider extends PageProvider {
    * @param limit - Maximum number of versions to return
    * @returns Array of version history entries
    */
-  getVersionHistory(identifier: string, limit?: number): Promise<VersionHistoryEntry[]>;
+  getVersionHistory(identifier: string, ctx: ActorContext, limit?: number): Promise<VersionHistoryEntry[]>;
 
   /**
    * Get specific version content
@@ -394,7 +399,7 @@ export interface VersioningPageProvider extends PageProvider {
    * @param toVersion - New version number
    * @returns Version diff object
    */
-  compareVersions(identifier: string, fromVersion: number, toVersion: number): Promise<VersionDiff | null>;
+  compareVersions(identifier: string, fromVersion: number, toVersion: number, ctx: ActorContext): Promise<VersionDiff | null>;
 
   /**
    * Delete old versions based on retention policy

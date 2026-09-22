@@ -40,8 +40,7 @@ describe('PageManager.savePageWithContext writes the text as typed (#1332)', () 
   function makeSaver() {
     const provider = {
       getPage: vi.fn(async () => null),
-      savePage: vi.fn(async () => {}),
-      movePrivatePage: vi.fn(async () => {})
+      savePage: vi.fn(async () => {})
     };
     const pm = new PageManager(makeEngine());
     (pm as unknown as { provider: unknown }).provider = provider;

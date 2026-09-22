@@ -856,6 +856,17 @@ class ValidationManager extends BaseManager {
       .replace(/-+/g, '-');
   }
 
+  /**
+   * The slug of a private page (#1456, operator 2026-09-22):
+   * `private--{owner}-{store}-{title}`. The `private--` prefix is reserved —
+   * {@link generateSlug} collapses dash runs, so no public slug can contain
+   * `--`, and a public save never has to consult private slugs. A clash among
+   * one owner's stores is resolved by the caller, in that owner's stores only.
+   */
+  generatePrivateSlug(owner: string, store: string, title: string): string {
+    return `private--${this.generateSlug(owner)}-${store}-${this.generateSlug(title)}`;
+  }
+
   /** Transliteration table for common non-ASCII characters (#295). */
   private static readonly UNICODE_MAP: Record<string, string> = {
     // Greek lowercase

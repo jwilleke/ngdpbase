@@ -21,6 +21,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR } from '../../test-support/actors';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,7 +91,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
   test('returns [] when pageIndex is null', async () => {
     const p = makeProvider();
     p.pageIndex = null;
-    const result = await p.getRecentChanges();
+    const result = await p.getRecentChanges(TEST_ACTOR);
     expect(result).toEqual([]);
   });
 
@@ -106,7 +107,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
         u3: baseEntry({ uuid: 'u3', title: 'Mid', lastModified: '2026-03-01T00:00:00.000Z' })
       }
     };
-    const result = await p.getRecentChanges();
+    const result = await p.getRecentChanges(TEST_ACTOR);
     expect(result.map(e => e.title)).toEqual(['New', 'Mid', 'Old']);
   });
 
@@ -124,7 +125,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
         u5: baseEntry({ uuid: 'u5', lastModified: '2026-05-01' })
       }
     };
-    const result = await p.getRecentChanges({ limit: 2 });
+    const result = await p.getRecentChanges(TEST_ACTOR, { limit: 2 });
     expect(result).toHaveLength(2);
     expect(result.map(e => e.uuid)).toEqual(['u1', 'u2']);
   });
@@ -139,7 +140,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
         u3: baseEntry({ uuid: 'u3', lastModified: '2026-03-01' })
       }
     };
-    const result = await p.getRecentChanges({ since: '2026-04-15' });
+    const result = await p.getRecentChanges(TEST_ACTOR, { since: '2026-04-15' });
     expect(result.map(e => e.uuid)).toEqual(['u2']);
   });
 
@@ -152,7 +153,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
         u2: baseEntry({ uuid: 'u2', lastModified: '2026-05-01' })
       }
     };
-    const result = await p.getRecentChanges();
+    const result = await p.getRecentChanges(TEST_ACTOR);
     expect(result.map(e => e.uuid)).toEqual(['u2']);
   });
 
@@ -166,7 +167,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv: baseEntry({ uuid: 'priv', title: 'Private', isPrivate: true, creator: 'alice' })
         }
       };
-      const result = await p.getRecentChanges();
+      const result = await p.getRecentChanges(TEST_ACTOR);
       expect(result.map(e => e.title)).toEqual(['Public']);
     });
 
@@ -178,7 +179,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv: baseEntry({ uuid: 'priv', title: 'AlicesSecret', isPrivate: true, creator: 'alice' })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['user', 'bob'] });
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['user', 'bob'] });
       expect(result).toEqual([]);
     });
 
@@ -190,7 +191,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv: baseEntry({ uuid: 'priv', title: 'AlicesSecret', isPrivate: true, creator: 'alice' })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['user', 'alice'] });
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['user', 'alice'] });
       expect(result.map(e => e.title)).toEqual(['AlicesSecret']);
     });
 
@@ -205,7 +206,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['user', 'bob'] });
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['user', 'bob'] });
       expect(result.map(e => e.title)).toEqual(['Shared']);
     });
 
@@ -220,14 +221,13 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['editor', 'dave'] });
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['editor', 'dave'] });
       expect(result.map(e => e.title)).toEqual(['EditorOnly']);
     });
 
-    test('an admin principal bypasses the visibility filter (#1116)', async () => {
-      // The caller supplies FACTS (its principals); the provider draws the
-      // conclusion. The old `includeAll` boolean was the conclusion handed
-      // over, and any caller could pass it.
+    test('an admin principal does not bypass the visibility filter (#1456)', async () => {
+      // A role never decides access. #1116 moved the bypass from a caller's
+      // `includeAll` flag to the `admin` principal; #1456 removed it.
       const p = makeProvider();
       p.pageIndex = {
         version: '1', lastUpdated: '', pageCount: 2,
@@ -236,8 +236,8 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv2: baseEntry({ uuid: 'priv2', title: 'Bobs', isPrivate: true, creator: 'bob' })
         }
       };
-      const result = await p.getRecentChanges({ principals: ['admin'] });
-      expect(result.map(e => e.title).sort()).toEqual(['Alices', 'Bobs']);
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['admin'] });
+      expect(result).toEqual([]);
     });
 
     test('a stray includeAll from a legacy caller is ignored (#1116)', async () => {
@@ -248,9 +248,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
           priv1: baseEntry({ uuid: 'priv1', title: 'Alices', isPrivate: true, creator: 'alice' })
         }
       };
-      const result = await p.getRecentChanges(
-        { principals: ['mallory'], includeAll: true }
-      );
+      const result = await p.getRecentChanges(TEST_ACTOR, { principals: ['mallory'], includeAll: true });
       expect(result).toEqual([]);
     });
   });
@@ -263,7 +261,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
         u1: baseEntry({ uuid: 'u1', title: 'Foo', editor: 'alice', currentVersion: 5, hasVersions: true })
       }
     };
-    const result = await p.getRecentChanges();
+    const result = await p.getRecentChanges(TEST_ACTOR);
     expect(result[0]).toMatchObject({
       title: 'Foo', uuid: 'u1', editor: 'alice', currentVersion: 5, hasVersions: true
     });
@@ -300,7 +298,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       // isPrivate deliberately falsy — the exact shape that leaked.
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      const out = await p.getRecentChanges({ principals: ['anonymous'] });
+      const out = await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] });
       expect(out).toEqual([]);
     });
 
@@ -308,7 +306,7 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       const p = withMetadata({ audience: ['jim'] });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      const out = await p.getRecentChanges({ principals: ['reader', 'jim'] });
+      const out = await p.getRecentChanges(TEST_ACTOR, { principals: ['reader', 'jim'] });
       expect(out).toHaveLength(1);
     });
 
@@ -316,8 +314,8 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       const p = withMetadata({ access: { view: ['editor'] } });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toEqual([]);
-      expect(await p.getRecentChanges({ principals: ['editor'] })).toHaveLength(1);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toEqual([]);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['editor'] })).toHaveLength(1);
     });
 
     test('an edit-only rule does not hide a publicly readable page', async () => {
@@ -325,14 +323,14 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       const p = withMetadata({ access: { edit: ['admin'] } });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toHaveLength(1);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toHaveLength(1);
     });
 
     test('an unrestricted page is unaffected', async () => {
       const p = withMetadata({});
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toHaveLength(1);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toHaveLength(1);
     });
 
     test('stale audienceRoles in the index does not make it visible', async () => {
@@ -341,15 +339,15 @@ describe('VersioningFileProvider.getRecentChanges', () => {
       const p = withMetadata({ audience: ['jim'] });
       p.pageIndex = indexWith({ isPrivate: undefined, audienceRoles: [] });
 
-      expect(await p.getRecentChanges({ principals: ['anonymous'] })).toEqual([]);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['anonymous'] })).toEqual([]);
     });
 
-    test('an admin principal still bypasses the filter (#1116)', async () => {
+    test('an admin principal is not in the audience, so the page is not listed (#1456)', async () => {
       const p = withMetadata({ audience: ['jim'] });
       p.pageIndex = indexWith({ isPrivate: undefined });
 
-      expect(await p.getRecentChanges({ principals: ['admin'] }))
-        .toHaveLength(1);
+      expect(await p.getRecentChanges(TEST_ACTOR, { principals: ['admin'] }))
+        .toHaveLength(0);
     });
   });
 });

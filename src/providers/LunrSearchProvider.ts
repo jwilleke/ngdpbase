@@ -446,7 +446,10 @@ class LunrSearchProvider extends BaseSearchProvider {
       // is not shared-indexable now; the page list is in memory, no NAS read.
       const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
       if (pageManager) {
-        const sealed = Object.keys(this.documents).filter((name) => !pageManager.isSharedIndexable(name));
+        // #1456: a document written for a private page, before private pages
+        // left the shared indexes, goes too — even when a public page now has its title.
+        const sealed = Object.keys(this.documents).filter((name) =>
+          this.documents[name].isPrivate === true || !pageManager.isSharedIndexable(name));
         for (const name of sealed) delete this.documents[name];
         if (sealed.length > 0) {
           logger.info(`[LunrSearchProvider] Dropped ${sealed.length} persisted document(s) that may not be in a shared index`);

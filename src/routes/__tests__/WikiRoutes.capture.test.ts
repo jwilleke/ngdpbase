@@ -40,7 +40,12 @@ describe('WikiRoutes capture (#881)', () => {
   let mockSaveWithContext;
   let mockPermits;
   let mockUpdatePageInIndex;
+  let mockUpdatePageInLinkGraph;
+  let mockAddPageToCache;
+  let mockSyncPageMentions;
+  let mockSyncPageAssets;
   let mockEngine;
+  let captureConfig: Record<string, unknown>;
 
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
@@ -50,6 +55,11 @@ describe('WikiRoutes capture (#881)', () => {
     // anonymous, which is what this models.
     mockPermits = vi.fn(async (subject) => subject?.isAuthenticated === true);
     mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
+    mockUpdatePageInLinkGraph = vi.fn();
+    mockAddPageToCache = vi.fn();
+    mockSyncPageMentions = vi.fn().mockResolvedValue(undefined);
+    mockSyncPageAssets = vi.fn().mockResolvedValue(undefined);
+    captureConfig = { 'ngdpbase.capture.enabled': true };
 
     mockEngine = {
       getManager: vi.fn((name) => {
@@ -62,14 +72,15 @@ describe('WikiRoutes capture (#881)', () => {
         }
         // #1431 step 14: decisions are the PDP's.
         if (name === 'PolicyDecisionPoint') return { permits: mockPermits };
-        if (name === 'RenderingManager') return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
+        if (name === 'RenderingManager') return { addPageToCache: mockAddPageToCache, updatePageInLinkGraph: mockUpdatePageInLinkGraph };
         if (name === 'SearchManager') return { updatePageInIndex: mockUpdatePageInIndex };
         if (name === 'CacheManager') return { isInitialized: () => false };
-        if (name === 'AttachmentManager') return { syncPageMentions: vi.fn().mockResolvedValue(undefined) };
-        if (name === 'AssetManager') return { syncPageAssets: vi.fn().mockResolvedValue(undefined) };
+        if (name === 'AttachmentManager') return { syncPageMentions: mockSyncPageMentions };
+        if (name === 'AssetManager') return { syncPageAssets: mockSyncPageAssets };
         if (name === 'ConfigurationManager') {
-          // Feature is default-off; these tests run with it enabled.
-          return { getProperty: vi.fn((key, def) => (key === 'ngdpbase.capture.enabled' ? true : def)) };
+          // Feature is default-off; these tests run with it enabled. Every other
+          // key (private-store layout, capture.private) resolves to its default.
+          return { getProperty: vi.fn((key, def) => (key in captureConfig ? captureConfig[key] : def)) };
         }
         if (name === 'ValidationManager') return null;
         return null;
@@ -119,7 +130,10 @@ describe('WikiRoutes capture (#881)', () => {
       expect(savedContext.content).toContain('line two');
       expect(savedContext.content).toContain("[An Article|https://example.com/article|target='_blank']");
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
-      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
+      // #1456: a new capture page is private by default, so it is saved under
+      // its private name and kept out of the shared search index.
+      expect(savedContext.pageName).toBe(`private/jim/default/${body.pageName}`);
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
     });
 
@@ -305,6 +319,114 @@ describe('WikiRoutes capture (#881)', () => {
     });
   });
 
+  // ── #1456 — a private page is named by its path ────────────────────────────
+
+  describe('POST /capture — private and public day pages (#1456)', () => {
+    const body = {
+      pageName: 'Captures — 2026-07-21',
+      url: 'https://example.com/article',
+      title: 'An Article',
+      text: 'line one'
+    };
+    const privateName = `private/jim/default/${body.pageName}`;
+    const pageAt = (name: string, content: string, metadata: Record<string, unknown> = {}) =>
+      mockGetPage.mockImplementation(async (n: string) => (n === name
+        ? { name, content, metadata: { title: body.pageName, uuid: 'uuid-1', author: 'jim', ...metadata } }
+        : null));
+
+    test('a new day page is created under private/jim/default/<pageName> and linked there', async () => {
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
+
+      expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
+      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedContext.pageName).toBe(privateName);
+      // The page's title is the plain name; only its name carries the path.
+      expect(savedMetadata.title).toBe(body.pageName);
+      expect(savedMetadata.private).toBe(true);
+      expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
+      expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
+        success: true,
+        viewUrl: '/private/jim/default/' + encodeURIComponent(body.pageName)
+      }));
+    });
+
+    test('the new page goes into the configured default store', async () => {
+      captureConfig['ngdpbase.page.provider.filesystem.defaultstoreid'] = 'clippings';
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
+      expect(mockSaveWithContext.mock.calls[0][0].pageName).toBe(`private/jim/clippings/${body.pageName}`);
+    });
+
+    test('a private target touches no mentions, assets, link graph or search index', async () => {
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
+      expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+      expect(mockUpdatePageInLinkGraph).not.toHaveBeenCalled();
+      expect(mockAddPageToCache).not.toHaveBeenCalled();
+      expect(mockSyncPageMentions).not.toHaveBeenCalled();
+      expect(mockSyncPageAssets).not.toHaveBeenCalled();
+    });
+
+    test('appends to the capturer\'s existing private page', async () => {
+      pageAt(privateName, '# Mine\n\nOld private capture\n', { private: true });
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
+
+      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedContext.pageName).toBe(privateName);
+      expect(savedContext.content).toContain('Old private capture');
+      expect(savedContext.content.indexOf('Old private capture')).toBeLessThan(savedContext.content.indexOf('line one'));
+      expect(savedMetadata.private).toBe(true);
+      expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
+      // The public page of that title is not consulted once the private one is found.
+      expect(mockGetPage).not.toHaveBeenCalledWith(body.pageName, expect.anything());
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+      expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
+        viewUrl: '/private/jim/default/' + encodeURIComponent(body.pageName)
+      }));
+    });
+
+    test('appends to an existing public page when there is no private one', async () => {
+      pageAt(body.pageName, '# Shared\n\nOld public capture\n');
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
+
+      expect(mockGetPage).toHaveBeenCalledWith(privateName, expect.anything());
+      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedContext.pageName).toBe(body.pageName);
+      expect(savedContext.content).toContain('Old public capture');
+      expect(savedMetadata.private).toBeUndefined();
+      expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
+      // A public page stays in the shared indexes.
+      expect(mockUpdatePageInIndex).toHaveBeenCalledWith(body.pageName, expect.objectContaining({ name: body.pageName }));
+      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledWith(body.pageName, savedContext.content);
+      expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
+        viewUrl: '/view/' + encodeURIComponent(body.pageName)
+      }));
+    });
+
+    test('a new page is public, under its plain name, when capture.private is false', async () => {
+      captureConfig['ngdpbase.capture.private'] = false;
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
+
+      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedContext.pageName).toBe(body.pageName);
+      expect(savedMetadata.private).toBeUndefined();
+      expect(mockUpdatePageInIndex).toHaveBeenCalledWith(body.pageName, expect.anything());
+      expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
+        viewUrl: '/view/' + encodeURIComponent(body.pageName)
+      }));
+    });
+
+    test('an existing private page is still used when capture.private is false', async () => {
+      captureConfig['ngdpbase.capture.private'] = false;
+      pageAt(privateName, '# Mine\n', { private: true });
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
+      expect(mockSaveWithContext.mock.calls[0][0].pageName).toBe(privateName);
+    });
+  });
+
   describe('feature gate — disabled by default', () => {
     let gatedRoutes;
 
@@ -375,6 +497,10 @@ describe('WikiRoutes capture (#881)', () => {
       return new WikiRoutes(engine);
     };
 
+    // #1456: the caller's own context rides along, so their private pages
+    // are read from their stores.
+    const callerCtx = expect.objectContaining({ username: 'jim', isAuthenticated: true });
+
     const myReq = (userContext = authedUser) => ({
       ...createMockReq(userContext),
       path: '/my/captures',
@@ -391,7 +517,7 @@ describe('WikiRoutes capture (#881)', () => {
     test('scopes the query to the caller and filters by the capture keyword', async () => {
       const res = createMockRes();
       await capturesRoutes().myCapturesPage(myReq(), res);
-      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', callerCtx, expect.objectContaining({
         systemKeywords: ['capture']
       }));
     });
@@ -400,7 +526,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await capturesRoutes({ 'ngdpbase.capture.keywords': ['clipping', 'inbox'] })
         .myCapturesPage(myReq(), res);
-      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', callerCtx, expect.objectContaining({
         systemKeywords: ['clipping', 'inbox']
       }));
     });
@@ -408,7 +534,7 @@ describe('WikiRoutes capture (#881)', () => {
     test('falls back to ["capture"] when the config value is empty or malformed', async () => {
       const res = createMockRes();
       await capturesRoutes({ 'ngdpbase.capture.keywords': [] }).myCapturesPage(myReq(), res);
-      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', callerCtx, expect.objectContaining({
         systemKeywords: ['capture']
       }));
     });
@@ -416,7 +542,7 @@ describe('WikiRoutes capture (#881)', () => {
     test('does NOT restrict to private pages — capture.private may be false', async () => {
       const res = createMockRes();
       await capturesRoutes().myCapturesPage(myReq(), res);
-      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', expect.objectContaining({
+      expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', callerCtx, expect.objectContaining({
         onlyPrivate: false
       }));
     });

@@ -3,12 +3,18 @@ import type { ActorContext } from '../context/ActorContext.js';
 import {
   isPrivateStoreAttachmentsRel,
   isUnderPrivateRoot,
+  formatPrivatePageName,
+  isSafePathSegment,
+  isValidStoreId,
+  parsePrivatePageName,
   parsePrivatePageRel,
-  privatePageFilePath
+  privatePageFilePath,
+  privateUserCatalogPath,
+  privateUserDir,
+  type PrivatePageName
 } from '../utils/privateStorePath.js';
-import { kekFor, putUserIndexPageFor, replaceUserCatalogFor, userIndexFor } from '../utils/privateStoreUnlock.js';
-import { upsertUserIndexPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import type { StoreFileLocation, StorePageEntry } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
   storeFileIO,
@@ -16,6 +22,7 @@ import {
   type StoreFileIO
 } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
+import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
@@ -36,8 +43,11 @@ interface PageCacheInfo {
   uuid: string;
   filePath: string;
   metadata: PageFrontmatter;
-  /** Overlay from the session user-index; never write into process caches. #1385 */
-  fromSessionCatalog?: boolean;
+  /**
+   * The page lives in a private store and was found in that store's own index
+   * (#1456) — never cached in, or looked up through, the process caches.
+   */
+  fromStore?: { owner: string; store: string };
 }
 
 /**
@@ -201,6 +211,7 @@ class FileSystemProvider extends BasePageProvider {
     logger.info(`[FileSystemProvider] Page directory: ${this.pagesDirectory}`);
 
     await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
+    await this.listPrivatePagesInStores();
 
     // Load all pages into cache
     await this.refreshPageList();
@@ -240,24 +251,6 @@ class FileSystemProvider extends BasePageProvider {
       file,
       layout: this.privateStoreLayout
     });
-  }
-
-  /**
-   * Record a sealed page in its owner's encrypted catalogue and in the session
-   * that wrote it (#1385, #1420). A sealed page is in no other index, so every
-   * page provider needs this — it lives here, not in one subclass. Refused
-   * when the context holds no user KEK: a sealed write already required the
-   * store's DEK, so a missing KEK is a fault, never a reason to fall back to
-   * the global index.
-   */
-  protected async putSealedCatalogPage(ctx: ActorContext, page: UserCatalogPage): Promise<void> {
-    const kek = kekFor(ctx);
-    if (!this.pagesDirectory || !kek) {
-      throw new Error('encrypted store is locked: missing KEK');
-    }
-    const catalog = await upsertUserIndexPage(this.pagesDirectory, page.creator, kek, page);
-    replaceUserCatalogFor(ctx, 'index', catalog);
-    putUserIndexPageFor(ctx, page);
   }
 
   private isScannablePageFile(filePath: string): boolean {
@@ -377,6 +370,10 @@ class FileSystemProvider extends BasePageProvider {
           // a tombstoned file left in place would silently resurrect itself on
           // the next restart, index flag or not.
           if (entry.name === this.privateStoreLayout.deletedDir) continue;
+          // #1456: private stores are self-contained — their pages are listed in
+          // each store's own index, never in the process caches or the global
+          // index, so the private root is not walked at all.
+          if (this.pagesDirectory && dir === this.pagesDirectory && entry.name === this.privateStoreLayout.privateRoot) continue;
           // #1386: a store's files are attachments, never pages — an uploaded
           // `{sha256}.md` there must not scan as a page.
           if (this.pagesDirectory && isPrivateStoreAttachmentsRel(
@@ -412,6 +409,11 @@ class FileSystemProvider extends BasePageProvider {
   protected resolvePageInfo(identifier: string, ctx?: ActorContext): PageCacheInfo | null {
     if (!identifier || typeof identifier !== 'string') return null;
 
+    // #1456: a private page is named by its path and found in its store's own
+    // index. A plain title is always a public page.
+    const privateName = parsePrivatePageName(identifier);
+    if (privateName) return this.resolvePrivatePageInfo(privateName, ctx);
+
     // 1. Try UUID index first
     let canonicalKey = this.uuidIndex.get(identifier);
     if (canonicalKey) {
@@ -443,44 +445,33 @@ class FileSystemProvider extends BasePageProvider {
       }
     }
 
-    return ctx ? this.resolveSessionCatalogPage(identifier, ctx) : null;
+    return null;
   }
 
   /**
-   * Unlocked sealed-store titles live in the session bag, not pageCache. #1385
+   * A private page from its store's own index (#1456), read as `ctx` may: an
+   * encrypted store whose key `ctx` does not hold yields nothing. Access is not
+   * decided here — the page door and the PIP decide who may act on it.
    */
-  private resolveSessionCatalogPage(identifier: string, ctx: ActorContext): PageCacheInfo | null {
+  private resolvePrivatePageInfo(name: PrivatePageName, ctx?: ActorContext): PageCacheInfo | null {
     if (!this.pagesDirectory) return null;
-    const catalog = userIndexFor(ctx);
-    if (!catalog) return null;
-    const idLower = identifier.toLowerCase();
-    const page = catalog.pages[identifier]
-      ?? Object.values(catalog.pages).find((p) =>
-        p.uuid === identifier
-        || p.title.toLowerCase() === idLower
-        || (p.slug != null && p.slug.toLowerCase() === idLower)
-      );
-    if (!page) return null;
+    const pages = this.readStorePagesSync(this.pagesDirectory, name.owner, name.store, ctx);
+    if (!pages) return null;
+    const entry = BasePageProvider.findInStorePages(pages, name.title);
+    if (!entry) return null;
     return {
-      title: page.title,
-      uuid: page.uuid,
-      filePath: privatePageFilePath(
-        this.pagesDirectory,
-        page.creator,
-        page.filename ?? page.uuid,
-        page.store,
-        this.privateStoreLayout
-      ),
+      title: entry.title,
+      uuid: entry.uuid,
+      filePath: privatePageFilePath(this.pagesDirectory, name.owner, entry.filename ?? entry.uuid, name.store, this.privateStoreLayout),
       metadata: {
-        title: page.title,
-        uuid: page.uuid,
+        title: entry.title,
+        uuid: entry.uuid,
         private: true,
-        author: page.creator,
-        // #1420: a re-save keeps the page's creation date and slug.
-        ...(page.created ? { created: page.created } : {}),
-        ...(page.slug ? { slug: page.slug } : {})
+        author: entry.author ?? name.owner,
+        ...(entry.created ? { created: entry.created } : {}),
+        ...(entry.slug ? { slug: entry.slug } : {})
       } as PageFrontmatter,
-      fromSessionCatalog: true
+      fromStore: { owner: name.owner, store: name.store }
     };
   }
 
@@ -495,8 +486,9 @@ class FileSystemProvider extends BasePageProvider {
       return null;
     }
 
-    // Check content cache first (populated during initialization)
-    const cachedContent = this.contentCache.get(info.title);
+    // Check content cache first (populated during initialization). A store
+    // page is never in it — and its title may equal a public page's (#1456).
+    const cachedContent = info.fromStore ? undefined : this.contentCache.get(info.title);
     if (cachedContent !== undefined) {
       return {
         content: cachedContent,
@@ -513,7 +505,7 @@ class FileSystemProvider extends BasePageProvider {
       const fullContent = await io.readText(info.filePath, this.encoding);
       const { content, data: metadata } = parsePageFrontmatter(fullContent);
 
-      if (!info.fromSessionCatalog) {
+      if (!info.fromStore) {
         // Update caches for future requests — store full metadata so subsequent
         // getPage() calls (e.g. AJAX metadata requests) return complete frontmatter
         // instead of the stub { title, uuid } populated during fast-init.
@@ -582,8 +574,8 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error(`Page '${identifier}' not found.`);
     }
 
-    // Check content cache first
-    const cachedContent = this.contentCache.get(info.title);
+    // Check content cache first — never for a store page (#1456)
+    const cachedContent = info.fromStore ? undefined : this.contentCache.get(info.title);
     if (cachedContent !== undefined) {
       logger.info(`[FileSystemProvider] Loaded ${info.title} from cache (${cachedContent.length} bytes)`);
       return cachedContent;
@@ -595,7 +587,7 @@ class FileSystemProvider extends BasePageProvider {
       const fullContent = await io.readText(info.filePath, this.encoding);
       const { content } = matter(fullContent);
 
-      if (!info.fromSessionCatalog) {
+      if (!info.fromStore) {
         this.contentCache.set(info.title, content);
       }
 
@@ -618,9 +610,12 @@ class FileSystemProvider extends BasePageProvider {
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<PageFrontmatter|null>} The page metadata, or null if not found
    */
-  getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
+  async getPageMetadata(identifier: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
     const info = this.resolvePageInfo(identifier, ctx);
-    return Promise.resolve(info ? info.metadata : null);
+    if (!info) return null;
+    // A store page's full frontmatter is in its file, not in any cache (#1456).
+    if (info.fromStore) return (await this.getPage(identifier, ctx))?.metadata ?? info.metadata;
+    return info.metadata;
   }
 
   /**
@@ -671,20 +666,6 @@ class FileSystemProvider extends BasePageProvider {
     return this.resolvePageInfo(identifier, ctx)?.uuid ?? null;
   }
 
-  async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
-    if (!this.pagesDirectory || oldCreator === newCreator) return;
-    // The page keeps its store; only the owner folder changes.
-    const store = this.privateStoreOf(this.resolvePageInfo(uuid)?.filePath)
-      ?? this.privateStoreLayout.defaultStoreId;
-    const fromPath = privatePageFilePath(this.pagesDirectory, oldCreator, uuid, store, this.privateStoreLayout);
-    const toPath = privatePageFilePath(this.pagesDirectory, newCreator, uuid, store, this.privateStoreLayout);
-    if (await fs.pathExists(fromPath)) {
-      await fs.ensureDir(path.dirname(toPath));
-      await fs.move(fromPath, toPath, { overwrite: true });
-      logger.info(`[FileSystemProvider] Moved private page ${uuid}: ${oldCreator} → ${newCreator}`);
-    }
-  }
-
   /**
    * Saves content to a wiki page, creating it if it doesn't exist.
    * Determines storage location based on system-category metadata.
@@ -706,9 +687,11 @@ class FileSystemProvider extends BasePageProvider {
     // #1381: a caller may hand over metadata parsed with YAML's own types — a
     // boolean or Date title would reach toLowerCase() below and throw.
     metadata = namesAsText({ ...metadata });
-    // #1420: through the caller's context, so the owner's sealed page is found
-    // and saved in place rather than duplicated under a new UUID.
-    const uuid = metadata.uuid || this.resolvePageInfo(pageName, ctx)?.uuid || uuidv4();
+    // #1456: a private page is named by its path; resolving through the
+    // caller's context finds it in its store's own index (sealed ones included)
+    // so it is saved in place rather than duplicated under a new UUID.
+    const oldPageInfo = this.resolvePageInfo(pageName, ctx);
+    const uuid = metadata.uuid || oldPageInfo?.uuid || uuidv4();
 
     if (!this.pagesDirectory || !this.requiredPagesDirectory) {
       throw new Error('FileSystemProvider not initialized - directories not set');
@@ -733,15 +716,15 @@ class FileSystemProvider extends BasePageProvider {
     // `system-location:'private'` storage hint was retired after the second
     // migration pass stripped it from every page on disk.
     const md = metadata as Record<string, unknown>;
-    const isPrivate = md.private === true;
-    const pageCreator = md.author as string | undefined;
-    const oldPageInfo = this.resolvePageInfo(pageName, ctx);
-    // One store rule for every page provider (BasePageProvider): the store the
-    // save names, else the store the page is in now, else the default. A save
-    // that names a different store for an existing page is refused.
-    const pageStore = isPrivate
-      ? this.resolvePrivatePageStore(md.store, this.privateStoreOf(oldPageInfo?.filePath))
-      : undefined;
+    // #1456: a save to a private name keeps the page private unless the
+    // Private box was unticked (a move to the public space); a save to a plain
+    // name is public unless the box was ticked (a move into the author's
+    // default store). The owner is the path's, never frontmatter's.
+    const privateName = parsePrivatePageName(pageName);
+    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx);
+    const isPrivate = placement !== null;
+    const pageCreator = placement?.owner;
+    const pageStore = placement?.store;
     // #1384: encrypt-on write uses the session DEK from the process bag.
     if (isPrivate && pageCreator && pageStore) {
       await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, pageCreator, pageStore);
@@ -769,11 +752,18 @@ class FileSystemProvider extends BasePageProvider {
     const now = (options?.preserveLastModified && metadata.lastModified)
       ? metadata.lastModified
       : new Date().toISOString();
-    // Use metadata.title if provided (for renames), otherwise use pageName
-    const finalTitle = metadata.title || pageName;
+    // Use metadata.title if provided (for renames), otherwise the page's name
+    const finalTitle = metadata.title || privateName?.title || pageName;
+    const storeLocation: StoreFileLocation | null = isPrivate && pageCreator && pageStore
+      ? { owner: pageCreator, store: pageStore, io }
+      : null;
 
-    // Check for duplicate title (different page already has this title)
-    if (this.titleExistsForDifferentPage(finalTitle, uuid)) {
+    // A private title is unique within its store; a public one among public pages (#1456).
+    const storePages = storeLocation ? await this.readStorePages(this.pagesDirectory, storeLocation) : null;
+    if (storePages) {
+      const clash = Object.values(storePages).find((p) => p.uuid !== uuid && p.title.toLowerCase() === finalTitle.toLowerCase());
+      if (clash) throw new Error(`Title "${finalTitle}" is already in use in this store`);
+    } else if (this.titleExistsForDifferentPage(finalTitle, uuid)) {
       const conflictKey = this.titleIndex.get(finalTitle.toLowerCase());
       const conflictInfo = conflictKey ? this.pageCache.get(conflictKey) : null;
       throw new Error(`Title "${finalTitle}" is already in use by page ${conflictInfo?.uuid || 'unknown'}`);
@@ -783,9 +773,13 @@ class FileSystemProvider extends BasePageProvider {
     // Use the old title (from oldPageInfo) for exclusion since on rename the UUID
     // is still mapped to the old title in the index
     const existingTitleForUuid = oldPageInfo?.title || finalTitle;
-    if (this.uuidExistsForDifferentPage(uuid, existingTitleForUuid)) {
+    if (!storeLocation && this.uuidExistsForDifferentPage(uuid, existingTitleForUuid)) {
       const conflictTitle = this.uuidIndex.get(uuid);
       throw new Error(`UUID "${uuid}" is already assigned to page "${conflictTitle || 'unknown'}"`);
+    }
+    // A private save may take a public page's uuid only by moving that page (#1456).
+    if (storeLocation && oldPageInfo?.uuid !== uuid && this.uuidIndex.has(uuid)) {
+      throw new Error(`UUID "${uuid}" is already assigned to page "${this.uuidIndex.get(uuid)}"`);
     }
     // `created` (#754): set once on first save, preserved on every update.
     // Priority: explicit metadata.created (migration) > existing frontmatter `created` > now.
@@ -796,13 +790,24 @@ class FileSystemProvider extends BasePageProvider {
 
     // The store is placement, and the path records it. A copy in frontmatter
     // could disagree with where the file is, so it is never written there.
-    const { store: _placement, ...frontmatter } = metadata as Partial<PageFrontmatter> & { store?: unknown };
+    // `private` is written only on a private page (#1456); a public page carries none.
+    const { store: _placement, private: _private, ...frontmatter } = metadata as Partial<PageFrontmatter> & { store?: unknown };
     const updatedMetadata: Partial<PageFrontmatter> = {
       ...frontmatter,
       title: finalTitle, // Ensure title is set after spread
       uuid: uuid,
       lastModified: now,
-      created
+      created,
+      // #1456: a private page's slug is `private--{owner}-{store}-{title}`,
+      // unique among its owner's stores; the owner is the path's.
+      ...(storeLocation ? {
+        private: true,
+        author: storeLocation.owner,
+        slug: this.privateSlugFor(storeLocation, finalTitle, uuid, ctx)
+      } : oldPageInfo?.fromStore ? {
+        // Out of a store into the public space: a public slug again.
+        slug: this.publicSlugFor(finalTitle)
+      } : {})
     };
 
     const fileContent = matter.stringify(content, updatedMetadata);
@@ -811,25 +816,32 @@ class FileSystemProvider extends BasePageProvider {
     // killed on deploy, OOM and eviction, so this is routine rather than rare.
     await io.writeText(filePath, fileContent, this.encoding);
 
-    // #1385: sealed titles stay in the session overlay, not the process cache.
-    if (sealed) {
-      await this.putSealedCatalogPage(ctx, {
+    // #1456: a page that moved — between the public space and a store, or
+    // between stores — leaves nothing behind where it was.
+    await this.releasePreviousLocation(oldPageInfo, filePath, storeLocation, ctx);
+
+    // #1456: a private page is listed in its store's own index — sealed when the
+    // store is encrypted — and never in the process caches or a global index.
+    if (storeLocation && storePages) {
+      const previous = storePages[uuid];
+      const entry: StorePageEntry = {
         title: finalTitle,
         uuid,
-        slug: updatedMetadata.slug ? String(updatedMetadata.slug) : undefined,
+        slug: String(updatedMetadata.slug),
         filename: `${uuid}.md`,
-        currentVersion: 0,
+        currentVersion: previous?.currentVersion ?? 0,
         location: 'private',
-        creator: pageCreator as string,
-        store: pageStore as string,
+        creator: storeLocation.owner,
+        store: storeLocation.store,
         lastModified: String(now),
         created: String(created),
         editor: String(updatedMetadata.editor ?? updatedMetadata.author ?? 'unknown'),
-        author: updatedMetadata.author ? String(updatedMetadata.author) : undefined,
-        hasVersions: false,
+        author: storeLocation.owner,
+        hasVersions: previous?.hasVersions ?? false,
         isPrivate: true
-      });
-      logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to sealed store (not cached).`);
+      };
+      await this.putStorePage(this.pagesDirectory, storeLocation, entry);
+      logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to ${storeLocation.owner}'s store '${storeLocation.store}'${sealed ? ' (sealed)' : ''}.`);
       return;
     }
 
@@ -874,6 +886,255 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
+   * Where a save puts a private page (#1456), or null for a public one. A page
+   * at a private name is private until the save says `private: false`; a plain
+   * name is public until it says `private: true` (the Private box — a move into
+   * the author's store). The owner is the name's, else the author. The store
+   * follows the one rule every page provider shares
+   * ({@link BasePageProvider.resolvePrivatePageStore}): the store named — by the
+   * page's name, else the save — else the store the page is in now, else the
+   * default. "Now" is found by uuid among the owner's stores, so a save under
+   * another name cannot leave a second copy of the page in a second store.
+   */
+  protected privatePlacement(
+    pageName: string,
+    md: Record<string, unknown>,
+    uuid: string,
+    previous: PageCacheInfo | null,
+    ctx: ActorContext
+  ): { owner: string; store: string } | null {
+    const privateName = parsePrivatePageName(pageName);
+    const isPrivate = md.private === true || (privateName !== null && md.private !== false);
+    if (!isPrivate) return null;
+    const owner = privateName?.owner ?? (typeof md.author === 'string' && md.author ? md.author : undefined);
+    if (!owner) throw new Error('A private page needs an owner');
+    if (privateName && typeof md.store === 'string' && md.store && md.store !== privateName.store) {
+      throw new Error(`Cannot save '${pageName}' into private store '${md.store}': a private page's store is in its name`);
+    }
+    const existing = previous?.fromStore?.owner === owner
+      ? previous.fromStore.store
+      : this.storeHoldingPage(owner, uuid, ctx);
+    return { owner, store: this.resolvePrivatePageStore(privateName?.store ?? md.store, existing) };
+  }
+
+  /** The owner's stores this context can read, with their page indexes (#1456). */
+  protected readableStoresOf(owner: string, ctx: ActorContext): Array<{ store: string; pages: Record<string, StorePageEntry> }> {
+    if (!this.pagesDirectory) return [];
+    let stores: string[];
+    try {
+      stores = fs.readdirSync(privateUserDir(this.pagesDirectory, owner, this.privateStoreLayout), { withFileTypes: true })
+        .filter((d) => d.isDirectory() && isValidStoreId(d.name))
+        .map((d) => d.name);
+    } catch {
+      return [];
+    }
+    const out: Array<{ store: string; pages: Record<string, StorePageEntry> }> = [];
+    for (const store of stores) {
+      const pages = this.readStorePagesSync(this.pagesDirectory, owner, store, ctx);
+      if (pages) out.push({ store, pages });
+    }
+    return out;
+  }
+
+  /**
+   * The requester's own private pages, from their stores' indexes (#1456), as
+   * list entries — for the lists that show a user their own pages beside the
+   * public ones. Only the stores this context can read; none without one.
+   */
+  protected storeEntriesFor(ctx: ActorContext | undefined): RecentChangeEntry[] {
+    const owner = ctx?.username;
+    if (!ctx || !owner) return [];
+    return this.readableStoresOf(owner, ctx).flatMap(({ store, pages }) => Object.values(pages).map((p) => ({
+      title: p.title,
+      name: formatPrivatePageName(owner, store, p.title),
+      uuid: p.uuid,
+      lastModified: p.lastModified,
+      author: p.author,
+      editor: p.editor,
+      currentVersion: p.currentVersion,
+      hasVersions: p.hasVersions,
+      isPrivate: true,
+      creator: owner
+    })));
+  }
+
+  /** Which of the owner's readable stores lists the page `uuid`, if any. */
+  private storeHoldingPage(owner: string, uuid: string, ctx: ActorContext): string | undefined {
+    return this.readableStoresOf(owner, ctx).find((s) => s.pages[uuid])?.store;
+  }
+
+  /** A public page's slug, by the one rule ValidationManager holds (#1456). */
+  private publicSlugFor(title: string): string {
+    interface SlugMaker { generateSlug(title: string): string }
+    const maker = this.engine.getManager<SlugMaker>('ValidationManager');
+    if (!maker) throw new Error('FileSystemProvider needs ValidationManager to name a page');
+    return maker.generateSlug(title);
+  }
+
+  /**
+   * A private page's slug (#1456): `private--{owner}-{store}-{title}`, with
+   * `-2`, `-3`… when another page among the owner's readable stores already
+   * has it. Only the owner's own stores are consulted, so nothing about any
+   * other user is revealed; a locked store is not readable and not consulted.
+   */
+  private privateSlugFor(location: StoreFileLocation, title: string, uuid: string, ctx: ActorContext): string {
+    interface SlugMaker { generatePrivateSlug(owner: string, store: string, title: string): string }
+    const maker = this.engine.getManager<SlugMaker>('ValidationManager');
+    if (!maker) throw new Error('FileSystemProvider needs ValidationManager to name a private page');
+    const base = maker.generatePrivateSlug(location.owner, location.store, title);
+    const taken = new Set<string>();
+    for (const { pages } of this.readableStoresOf(location.owner, ctx)) {
+      for (const p of Object.values(pages)) {
+        if (p.uuid !== uuid && p.slug) taken.add(p.slug);
+      }
+    }
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n++) {
+      if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+    }
+  }
+
+  /**
+   * Start-up (#1456): every private page is listed in its store's own index.
+   * VersioningFileProvider does this itself once its page index is loaded, so
+   * the version counts the global index held are carried over.
+   */
+  protected async listPrivatePagesInStores(): Promise<void> {
+    await this.indexPlainStorePages();
+  }
+
+  /**
+   * Start-up migration (#1456), idempotent: every page file in an unencrypted
+   * store is listed in that store's own page index, whether it was in the
+   * global index before or in none. Entries already listed are kept as they
+   * are. An encrypted store cannot be read here; its pages move in at their
+   * owner's unlock ({@link adoptUserPageCatalog}).
+   *
+   * @param known - What the global index said about private pages, by uuid;
+   *   used for the version count, which is not in the page file
+   * @returns How many entries were added
+   */
+  async indexPlainStorePages(known: Record<string, Partial<StorePageEntry>> = {}): Promise<number> {
+    if (!this.pagesDirectory) return 0;
+    const root = path.join(this.pagesDirectory, this.privateStoreLayout.privateRoot);
+    if (!(await fs.pathExists(root))) return 0;
+    let added = 0;
+    for (const user of await fs.readdir(root, { withFileTypes: true })) {
+      if (!user.isDirectory() || !isSafePathSegment(user.name)) continue;
+      const userDir = path.join(root, user.name);
+      for (const store of await fs.readdir(userDir, { withFileTypes: true })) {
+        if (!store.isDirectory() || !isValidStoreId(store.name)) continue;
+        if (await storeDirectoryIsEncrypted(path.join(userDir, store.name), this.privateStoreLayout.files.storemeta)) continue;
+        const where: StoreFileLocation = { owner: user.name, store: store.name, io: PLAIN_FILE_IO };
+        const pages = await this.readStorePages(this.pagesDirectory, where);
+        const files = (await fs.readdir(path.join(userDir, store.name))).filter((f) => f.endsWith('.md'));
+        let changed = false;
+        for (const file of files) {
+          const md = parsePageFrontmatter(await fs.readFile(path.join(userDir, store.name, file), this.encoding)).data;
+          // YAML hands back dates as Date; everything else is read as text or not at all.
+          const text = (v: unknown): string | undefined =>
+            typeof v === 'string' && v ? v : v instanceof Date ? v.toISOString() : undefined;
+          const uuid = text(md.uuid) ?? file.replace(/\.md$/, '');
+          if (pages[uuid]) continue;
+          const was = known[uuid] ?? {};
+          const slug = text(md.slug);
+          const created = text(md.created);
+          pages[uuid] = {
+            title: text(md.title) ?? was.title ?? uuid,
+            uuid,
+            ...(slug ? { slug } : {}),
+            filename: file,
+            currentVersion: was.currentVersion ?? 0,
+            location: 'private',
+            creator: user.name,
+            store: store.name,
+            lastModified: text(md.lastModified) ?? was.lastModified ?? new Date().toISOString(),
+            ...(created ? { created } : {}),
+            editor: text(md.editor) ?? was.editor ?? user.name,
+            author: user.name,
+            hasVersions: was.hasVersions ?? false,
+            isPrivate: true
+          };
+          changed = true;
+          added++;
+        }
+        if (changed) await this.writeStorePages(this.pagesDirectory, where, pages);
+      }
+    }
+    if (added) logger.info(`[FileSystemProvider] Listed ${added} private page(s) in their stores' own indexes (#1456)`);
+    return added;
+  }
+
+  /**
+   * At unlock (#1456): the owner's sealed pages move from the user-level
+   * catalog (`user-index.json`, #1385) into each encrypted store's own sealed
+   * page index. Idempotent; the catalog file is removed once every entry whose
+   * page still exists is in its store's index.
+   *
+   * @param ctx - The owner's context, holding the unlocked store keys
+   * @returns How many entries were moved
+   */
+  async adoptUserPageCatalog(ctx: ActorContext): Promise<number> {
+    const catalog = userIndexFor(ctx);
+    const owner = ctx.username;
+    if (!catalog || !owner || !this.pagesDirectory) return 0;
+    let moved = 0;
+    let left = 0;
+    for (const page of Object.values(catalog.pages)) {
+      if (page.creator !== owner || !isValidStoreId(page.store)) continue;
+      const file = privatePageFilePath(this.pagesDirectory, owner, page.filename ?? page.uuid, page.store, this.privateStoreLayout);
+      if (!(await fs.pathExists(file))) continue;
+      let io: StoreFileIO;
+      try {
+        io = await storeFileIO(ctx, { pagesDirectory: this.pagesDirectory, owner, store: page.store, layout: this.privateStoreLayout });
+      } catch {
+        left++;
+        continue;
+      }
+      const where: StoreFileLocation = { owner, store: page.store, io };
+      if (await this.findStorePage(this.pagesDirectory, where, page.uuid)) continue;
+      await this.putStorePage(this.pagesDirectory, where, { ...page, location: 'private', isPrivate: true });
+      moved++;
+    }
+    if (left === 0) {
+      await fs.remove(privateUserCatalogPath(this.pagesDirectory, owner, 'index', this.privateStoreLayout));
+    }
+    if (moved) logger.info(`[FileSystemProvider] Moved ${moved} sealed page(s) into their stores' own indexes (#1456)`);
+    return moved;
+  }
+
+  /**
+   * After a save that moved a page (#1456): remove the file it left behind,
+   * its store-index entry when it was private, and its cache entries when it
+   * was public. A save in place leaves everything as it is.
+   */
+  private async releasePreviousLocation(
+    previous: PageCacheInfo | null,
+    newFilePath: string,
+    newStore: StoreFileLocation | null,
+    ctx: ActorContext
+  ): Promise<void> {
+    if (!previous || !this.pagesDirectory) return;
+    const sameStore = previous.fromStore && newStore
+      && previous.fromStore.owner === newStore.owner && previous.fromStore.store === newStore.store;
+    if (previous.filePath === newFilePath && (sameStore || (!previous.fromStore && !newStore))) return;
+    if (previous.filePath !== newFilePath) {
+      await fs.remove(previous.filePath);
+    }
+    if (previous.fromStore && !sameStore) {
+      const io = await storeFileIO(ctx, {
+        pagesDirectory: this.pagesDirectory,
+        owner: previous.fromStore.owner,
+        store: previous.fromStore.store,
+        layout: this.privateStoreLayout
+      });
+      await this.dropStorePage(this.pagesDirectory, { ...previous.fromStore, io }, previous.uuid);
+    } else if (!previous.fromStore && newStore) {
+      this.evictFromCaches(previous);
+    }
+  }
+
+  /**
    * Delete a page
    * @param {string} identifier - Page UUID or title
    * @returns {Promise<boolean>} True if deleted, false if not found
@@ -893,6 +1154,19 @@ class FileSystemProvider extends BasePageProvider {
       // Delete the file
       logger.debug(`[FileSystemProvider] Deleting file: ${info.filePath}`);
       await fs.unlink(info.filePath);
+
+      // #1456: a private page leaves its store's own index; it was never cached.
+      if (info.fromStore && this.pagesDirectory) {
+        const io = await storeFileIO(ctx, {
+          pagesDirectory: this.pagesDirectory,
+          owner: info.fromStore.owner,
+          store: info.fromStore.store,
+          layout: this.privateStoreLayout
+        });
+        await this.dropStorePage(this.pagesDirectory, { ...info.fromStore, io }, info.uuid);
+        logger.info(`[FileSystemProvider] Deleted page '${info.title}' (${info.uuid}) from ${info.fromStore.owner}'s store '${info.fromStore.store}'`);
+        return true;
+      }
 
       // Remove from all caches and indexes
       this.evictFromCaches(info);
@@ -1082,12 +1356,10 @@ class FileSystemProvider extends BasePageProvider {
    * #635: replaces the disk-read + per-page fs.stat() the RecentChangesPlugin
    * was doing. Honors private-page visibility based on the caller's principals.
    */
-  async getRecentChanges(options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
+  async getRecentChanges(ctx: ActorContext, options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 50;
     const since = options.since ? new Date(options.since) : null;
     const principals = options.principals ?? [];
-    // #1116: derived from the caller's principals, never accepted as a flag.
-    const includeAll = principals.includes('admin');
 
     const entries: RecentChangeEntry[] = [];
     for (const info of this.pageCache.values()) {
@@ -1103,7 +1375,8 @@ class FileSystemProvider extends BasePageProvider {
       // `system-location:'private'` fallback retired after migration.
       const isPrivate = (md as { private?: boolean }).private === true;
 
-      if (!includeAll && isPrivate) {
+      // #1456: no role bypasses this — a role never decides access.
+      if (isPrivate) {
         const creator = (md as { creator?: string }).creator
           ?? (md as { author?: string }).author;
         const audienceRaw = (md as { audience?: unknown }).audience;
@@ -1122,6 +1395,11 @@ class FileSystemProvider extends BasePageProvider {
         isPrivate: isPrivate || undefined,
         creator: (md as { creator?: string }).creator
       });
+    }
+
+    // #1456: the requester's own private pages, from their stores.
+    for (const entry of this.storeEntriesFor(ctx)) {
+      if (!since || new Date(entry.lastModified) >= since) entries.push(entry);
     }
 
     entries.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
@@ -1164,6 +1442,7 @@ class FileSystemProvider extends BasePageProvider {
    */
   async getPagesByCreator(
     username: string,
+    ctx: ActorContext,
     options: import('../types/Provider.js').GetPagesByCreatorOptions = {}
   ): Promise<RecentChangeEntry[]> {
     if (!username) return [];
@@ -1203,6 +1482,17 @@ class FileSystemProvider extends BasePageProvider {
       });
     }
 
+    // #1456: the creator's private pages, when the requester is the creator.
+    if (ctx.username === username) {
+      for (const entry of this.storeEntriesFor(ctx)) {
+        if (wantedSystemKeywords) {
+          const md = await this.getPageMetadata(entry.name ?? entry.uuid, ctx);
+          if (!FileSystemProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
+        }
+        entries.push(entry);
+      }
+    }
+
     if (sortBy === 'title-asc') {
       entries.sort((a, b) => a.title.localeCompare(b.title));
     } else {
@@ -1218,6 +1508,7 @@ class FileSystemProvider extends BasePageProvider {
    */
   async getPagesByEditor(
     username: string,
+    ctx: ActorContext,
     options: import('../types/Provider.js').PagesScanOptions = {}
   ): Promise<RecentChangeEntry[]> {
     if (!username) return [];
@@ -1238,6 +1529,11 @@ class FileSystemProvider extends BasePageProvider {
         isPrivate: (md as { private?: boolean }).private === true || undefined,
         creator: (md as { creator?: string }).creator
       });
+    }
+
+    // #1456: the editor's own private pages, when the requester is the editor.
+    if (ctx.username === username) {
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
     }
 
     if (sortBy === 'title-asc') {

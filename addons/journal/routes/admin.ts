@@ -33,13 +33,15 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
         // Build per-author stats for the leaderboard / counts table
         let userStats: Array<{ author: string; count: number; streak: number }> = [];
         if (m) {
-          const allEntries = await m.listAll();
+          // #1456: as this admin may list them — public entries and their own
+          // private ones. Other users' private entries are in no shared index.
+          const allEntries = await m.listAll(req.userContext);
           const authorSet = [...new Set(allEntries.map(e => e.author))];
           userStats = await Promise.all(
             authorSet.map(async author => ({
               author,
-              count:  await m.countByAuthor(author),
-              streak: showStreakLeaderboard ? await m.computeStreak(author) : 0
+              count:  await m.countByAuthor(author, req.userContext),
+              streak: showStreakLeaderboard ? await m.computeStreak(author, req.userContext) : 0
             }))
           );
           userStats.sort((a, b) => b.count - a.count);
@@ -63,7 +65,7 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
             showStreakLeaderboard
           },
           userStats,
-          totalEntries:     m ? await m.count() : 0,
+          totalEntries:     m ? await m.count(req.userContext) : 0,
           csrfToken:        req.session?.csrfToken,
           successMessage:   req.query['success'] ?? null,
           errorMessage:     req.query['error']   ?? null

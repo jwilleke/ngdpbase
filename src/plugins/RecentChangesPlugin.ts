@@ -19,6 +19,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import { pageUrl } from '../utils/pageUrl.js';
 import {
   escapeHtml,
   formatDateTime,
@@ -52,6 +53,8 @@ const DEFAULT_RECENT_CHANGES_LIMIT = 50;
 
 interface RecentChange {
   title: string;
+  /** A private page's name, where it is not its title (#1456). */
+  name?: string;
   uuid: string;
   lastModified: string;
   editor?: string;
@@ -60,11 +63,10 @@ interface RecentChange {
 }
 
 interface PageManager {
-  getRecentChanges(options?: {
+  getRecentChanges(ctx: unknown, options?: {
     limit?: number;
     since?: Date | string;
     principals?: string[];
-    includeAll?: boolean;
   }): Promise<RecentChange[]>;
 }
 
@@ -128,7 +130,7 @@ function generateFullFormat(pages: RecentChange[], since: number | null, total: 
     const formattedDateStr = formatDateTime(new Date(page.lastModified));
 
     html += '    <tr>\n';
-    html += `      <td><a class="wikipage" href="/view/${encodeURIComponent(page.title)}">${escapeHtml(page.title)}</a></td>\n`;
+    html += `      <td><a class="wikipage" href="${pageUrl(page.name ?? page.title)}">${escapeHtml(page.title)}</a></td>\n`;
     html += `      <td><span class="text-muted">${formattedDateStr}</span></td>\n`;
     html += `      <td><small>${escapeHtml(editor)}</small></td>\n`;
     html += `      <td><span class="badge bg-secondary">v${escapeHtml(String(version))}</span></td>\n`;
@@ -157,7 +159,7 @@ function generateCompactFormat(pages: RecentChange[], since: number | null, tota
     const formattedDateStr = formatRelativeTime(new Date(page.lastModified));
 
     html += '  <li class="mb-1">\n';
-    html += `    <a class="wikipage" href="/view/${encodeURIComponent(page.title)}">${escapeHtml(page.title)}</a> `;
+    html += `    <a class="wikipage" href="${pageUrl(page.name ?? page.title)}">${escapeHtml(page.title)}</a> `;
     html += `<small class="text-muted">(${formattedDateStr})</small>\n`;
     html += '  </li>\n';
   }
@@ -220,9 +222,10 @@ const RecentChangesPlugin: SimplePlugin = {
         cutoffDate.setHours(0, 0, 0, 0);
       }
 
-      // #635/#1116: principals are FACTS about the caller — the provider
-      // derives the admin bypass from them. Anonymous (no userContext) →
-      // empty principals → only public pages returned.
+      // #635/#1116: principals are FACTS about the caller; no role bypasses
+      // the visibility filter (#1456). The caller's own private pages come
+      // from their stores, through their context — so there must be one: an
+      // anonymous visitor carries the anonymous subject, and none is a failure.
       const userContext = context.userContext as {
         username?: string;
         roles?: string[];
@@ -234,7 +237,8 @@ const RecentChangesPlugin: SimplePlugin = {
       // A page of rows is still a slice of what the manager returns, but the
       // flat cap is applied at the source: rendering 50 of 8,000 rows the
       // manager already built bounds the output, not the work.
-      const recentChanges = await pageManager.getRecentChanges({
+      if (!context.userContext) throw new Error('RecentChangesPlugin: no requester to list for');
+      const recentChanges = await pageManager.getRecentChanges(context.userContext, {
         ...(cutoffDate ? { since: cutoffDate } : {}),
         principals,
         ...(pageSize > 0 ? {} : { limit })

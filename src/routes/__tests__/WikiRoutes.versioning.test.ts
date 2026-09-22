@@ -110,7 +110,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(response.body.identifier).toBe('TestPage');
       expect(response.body.versionCount).toBe(3);
       expect(response.body.versions).toEqual(mockVersions);
-      expect(mockProvider.getVersionHistory).toHaveBeenCalledWith('TestPage');
+      expect(mockProvider.getVersionHistory).toHaveBeenCalledWith('TestPage', expect.objectContaining({ username: 'testuser' }));
     });
 
     it('should return 404 for non-existent page', async () => {
@@ -177,7 +177,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(response.body.version).toBe(2);
       expect(response.body.content).toBe(mockVersionData.content);
       expect(response.body.metadata).toEqual(mockVersionData.metadata);
-      expect(mockProvider.getPageVersion).toHaveBeenCalledWith('TestPage', 2);
+      expect(mockProvider.getPageVersion).toHaveBeenCalledWith('TestPage', 2, expect.objectContaining({ username: 'testuser' }));
     });
 
     it('should return 400 for invalid version number', async () => {
@@ -265,7 +265,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.identifier).toBe('TestPage');
       expect(response.body.comparison).toEqual(mockComparison);
-      expect(mockProvider.compareVersions).toHaveBeenCalledWith('TestPage', 1, 2);
+      expect(mockProvider.compareVersions).toHaveBeenCalledWith('TestPage', 1, 2, expect.objectContaining({ username: 'testuser' }));
     });
 
     it('should return 400 for invalid version numbers', async () => {
@@ -480,7 +480,8 @@ describe('WikiRoutes - Version Management API', () => {
         .expect(200);
 
       expect(mockProvider.getVersionHistory).toHaveBeenCalledWith(
-        'Test Page & More'
+        'Test Page & More',
+        expect.objectContaining({ username: 'testuser' })
       );
     });
 
@@ -492,7 +493,7 @@ describe('WikiRoutes - Version Management API', () => {
         .get(`/api/page/${uuid}/versions`)
         .expect(200);
 
-      expect(mockProvider.getVersionHistory).toHaveBeenCalledWith(uuid);
+      expect(mockProvider.getVersionHistory).toHaveBeenCalledWith(uuid, expect.objectContaining({ username: 'testuser' }));
     });
 
     it('should handle very large version numbers', async () => {

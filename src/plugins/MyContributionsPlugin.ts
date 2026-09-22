@@ -38,8 +38,8 @@ interface ExtendedPluginContext extends PluginContext {
 }
 
 interface PageManagerLike {
-  getPagesByCreator?: (u: string, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
-  getPagesByEditor?: (u: string) => Promise<unknown[]>;
+  getPagesByCreator?: (u: string, ctx: unknown, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
+  getPagesByEditor?: (u: string, ctx: unknown) => Promise<unknown[]>;
   getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
 }
 
@@ -109,7 +109,10 @@ const MyContributionsPlugin: SimplePlugin = {
       }
     }
 
-    const counts = await getContributionCounts(ctx, target, isSelfView ? viewer : undefined);
+    // Every list read carries who is asking (#1456): a private page is
+    // counted only from the requester's own stores.
+    if (!viewer) throw new Error('MyContributionsPlugin: no requester to count for');
+    const counts = await getContributionCounts(ctx, target, viewer, isSelfView ? viewer : undefined);
 
     return renderCard(target, counts, isSelfView);
   },
@@ -131,6 +134,7 @@ const MyContributionsPlugin: SimplePlugin = {
 async function getContributionCounts(
   ctx: ExtendedPluginContext,
   target: string,
+  requester: UserContext,
   viewerForSelfView: UserContext | undefined
 ): Promise<ContributionCounts> {
   const counts: ContributionCounts = {};
@@ -139,10 +143,11 @@ async function getContributionCounts(
   try {
     const pageManager = engine?.getManager('PageManager') as PageManagerLike | undefined;
     if (pageManager?.getPagesByCreator) {
-      const all = await pageManager.getPagesByCreator(target);
+      // #1456: on a self-view the viewer's private pages are counted from their stores.
+      const all = await pageManager.getPagesByCreator(target, requester);
       counts.pages = all.length;
       if (viewerForSelfView) {
-        const privateOnly = await pageManager.getPagesByCreator(target, { onlyPrivate: true });
+        const privateOnly = await pageManager.getPagesByCreator(target, requester, { onlyPrivate: true });
         counts.private = privateOnly.length;
 
         // #1004: captures are personal clippings, so the row is self-view only
@@ -154,13 +159,13 @@ async function getContributionCounts(
         if (configManager?.getProperty('ngdpbase.capture.enabled', false) === true) {
           const configured = configManager.getProperty('ngdpbase.capture.keywords', ['capture']) as string[] | undefined;
           const systemKeywords = Array.isArray(configured) && configured.length > 0 ? configured : ['capture'];
-          const captures = await pageManager.getPagesByCreator(target, { systemKeywords });
+          const captures = await pageManager.getPagesByCreator(target, requester, { systemKeywords });
           counts.captures = captures.length;
         }
       }
     }
     if (pageManager?.getPagesByEditor) {
-      const edits = await pageManager.getPagesByEditor(target);
+      const edits = await pageManager.getPagesByEditor(target, requester);
       counts.edits = edits.length;
     }
     if (pageManager?.getPagesSharedWith && viewerForSelfView) {

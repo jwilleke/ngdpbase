@@ -22,6 +22,7 @@ import { promises as fs } from 'fs';
 import fse from 'fs-extra';
 import matter from 'gray-matter';
 import { pageSourceHash, REQUIRED_SOURCE_HASH_KEY } from '../../utils/addonPageSync';
+import { TEST_ACTOR } from '../../test-support/actors';
 import { SEEDED_SHIPPED_PAGES_FILE, SeededShippedPages } from '../../utils/seededShippedPages';
 
 vi.mock('../../utils/logger', () => ({
@@ -449,7 +450,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       await pm.seedRequiredPages();
       await pm.savePage('Alpha', 'Second version.', { ...(await liveOf(1)).data }, ADMIN);
       expect(await pm.deletePage(uuid(1), ADMIN)).toBe(true);
-      const provider = (pm as unknown as { provider: { isPageDeleted(u: string): boolean; getVersionHistory(n: string): Promise<unknown[]> } }).provider;
+      const provider = (pm as unknown as { provider: { isPageDeleted(u: string): boolean; getVersionHistory(n: string, ctx: unknown): Promise<unknown[]> } }).provider;
       expect(provider.isPageDeleted(uuid(1))).toBe(true);
 
       const report = await pm.syncShippedPages(pm.requiredPagesSource(), [uuid(1)], { force: true }, ADMIN);
@@ -458,7 +459,7 @@ describe('PageManager.seedRequiredPages() — seeded once per site (#1405)', () 
       expect(provider.isPageDeleted(uuid(1))).toBe(false);
       expect(await fse.pathExists(path.join(pagesDir, 'deleted', `${uuid(1)}.md`))).toBe(false);
       // v1 seed, v2 local edit, v3 the source saved over the restored page
-      expect(await provider.getVersionHistory('Alpha')).toHaveLength(3);
+      expect(await provider.getVersionHistory('Alpha', TEST_ACTOR)).toHaveLength(3);
     });
 
     test('a uuid the source does not ship is reported missing', async () => {

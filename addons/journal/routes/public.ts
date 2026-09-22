@@ -11,9 +11,9 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
+import type { UserContext } from '../../../dist/src/context/WikiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 import type AttachmentManager from '../../../dist/src/managers/AttachmentManager.js';
@@ -53,14 +53,14 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
   // #800 — read methods are now async (query SearchManager + PageManager on
   // demand; the legacy on-disk sidecar is retired). Helper composes the four
   // sidebar-data queries in parallel; route handlers `await buildSidebarData(...)`.
-  async function buildSidebarData(username: string, streakVisible = true): Promise<{ moodFacets: Array<{mood: string; count: number}>; tagFacets: Array<{tag: string; count: number}>; streak: number; total: number; streakVisible: boolean }> {
+  async function buildSidebarData(username: string, requester: UserContext, streakVisible = true): Promise<{ moodFacets: Array<{mood: string; count: number}>; tagFacets: Array<{tag: string; count: number}>; streak: number; total: number; streakVisible: boolean }> {
     const m = jdm();
     if (!m) return { moodFacets: [], tagFacets: [], streak: 0, total: 0, streakVisible };
     const [moodFacets, tagFacets, streak, total] = await Promise.all([
-      m.getMoodFacets(username),
-      m.getTagFacets(username),
-      m.computeStreak(username),
-      m.countByAuthor(username)
+      m.getMoodFacets(username, requester),
+      m.getTagFacets(username, requester),
+      m.computeStreak(username, requester),
+      m.countByAuthor(username, requester)
     ]);
     return { moodFacets, tagFacets, streak, total, streakVisible };
   }
@@ -76,12 +76,12 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const username = ctx.username!;
         const limit    = parseInt((req.query['limit']  as string | undefined) ?? '20', 10) || 20;
         const offset   = parseInt((req.query['offset'] as string | undefined) ?? '0',  10) || 0;
-        const total    = m ? await m.countByAuthor(username) : 0;
-        const entries  = m ? await m.listByAuthor(username, { limit, offset }) : [];
+        const total    = m ? await m.countByAuthor(username, req.userContext) : 0;
+        const entries  = m ? await m.listByAuthor(username, req.userContext, { limit, offset }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
-        const sidebar  = await buildSidebarData(username, streakVisible);
-        const onThisDay = m ? await m.getOnThisDay(username) : [];
+        const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
+        const onThisDay = m ? await m.getOnThisDay(username, req.userContext) : [];
 
         res.render('journal-home', {
           currentUser: req.userContext,
@@ -113,10 +113,10 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const m        = jdm();
         const username = ctx.username!;
         const tag      = sp(req.params['tag']);
-        const entries  = m ? await m.listByAuthor(username, { tag }) : [];
+        const entries  = m ? await m.listByAuthor(username, req.userContext, { tag }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
-        const sidebar  = await buildSidebarData(username, streakVisible);
+        const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
 
         res.render('journal-by-tag', {
           currentUser:  req.userContext,
@@ -142,10 +142,10 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const m        = jdm();
         const username = ctx.username!;
         const mood     = sp(req.params['mood']);
-        const entries  = m ? await m.listByAuthor(username, { mood }) : [];
+        const entries  = m ? await m.listByAuthor(username, req.userContext, { mood }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
-        const sidebar  = await buildSidebarData(username, streakVisible);
+        const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
 
         res.render('journal-by-mood', {
           currentUser: req.userContext,
@@ -170,7 +170,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
 
         const slug = sp(req.params['slug']);
         const m    = jdm();
-        const entry = await m?.getBySlug(slug);
+        const entry = await m?.getBySlug(slug, req.userContext);
 
         if (!entry) {
           res.status(404).send('Journal entry not found.');
@@ -186,7 +186,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         }
 
         const pm = engine.getManager<PageManager>('PageManager');
-        const page = pm ? await pm.getPage(entry.slug, req.userContext ?? ANONYMOUS_SUBJECT) : null;
+        const page = pm ? await pm.getPage(entry.name, req.userContext) : null;
         if (!page) {
           res.status(404).send('Journal entry page not found.');
           return;
@@ -195,16 +195,16 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         // Render markdown content
         const rm = engine.getManager<RenderingManager>('RenderingManager');
         const renderedContent = rm
-          ? await rm.renderMarkdown(page.content ?? '', entry.slug, req.userContext ?? null)
+          ? await rm.renderMarkdown(page.content ?? '', entry.name, req.userContext ?? null)
           : `<pre>${page.content ?? ''}</pre>`;
 
         // Attachments
         const am = engine.getManager<AttachmentManager>('AttachmentManager');
-        const attachments = am ? await am.getAttachmentsForPage(entry.slug) : [];
+        const attachments = am ? await am.getAttachmentsForPage(entry.name) : [];
 
         const streakVisible = await getUserPref<boolean>(entry.author, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
-        const sidebar  = await buildSidebarData(entry.author, streakVisible);
+        const sidebar  = await buildSidebarData(entry.author, req.userContext, streakVisible);
 
         res.render('journal-entry', {
           currentUser:     req.userContext,

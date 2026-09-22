@@ -103,7 +103,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     const { uuid, title } = await seedPage();
     const versionDir = provider._getVersionDirectory(uuid, 'pages');
 
-    expect(await provider.getVersionHistory(title)).toHaveLength(3);
+    expect(await provider.getVersionHistory(title, TEST_ACTOR)).toHaveLength(3);
 
     await provider.deletePage(title, actor('jim'));
 
@@ -208,7 +208,7 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     const page = await provider.getPage(title);
     expect(page).not.toBeNull();
     expect(page.content).toContain('v3 content');
-    expect(await provider.getVersionHistory(title)).toHaveLength(3);
+    expect(await provider.getVersionHistory(title, TEST_ACTOR)).toHaveLength(3);
     expect(provider['pageIndex'].pages[uuid]).toBeDefined();
     expect(provider['pageIndex'].deletedPages[uuid]).toBeUndefined();
   });

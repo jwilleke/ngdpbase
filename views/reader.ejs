@@ -214,7 +214,7 @@
 <body>
     <!-- Reader View Actions -->
     <div class="reader-actions">
-        <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-sm btn-outline-primary" title="Exit Reader View">
+        <a href="<%= pageUrl(pageName) %>" class="btn btn-sm btn-outline-primary" title="Exit Reader View">
             <i class="fas fa-times"></i>
         </a>
         <button onclick="window.print()" class="btn btn-sm btn-outline-secondary" title="Print">
@@ -270,7 +270,7 @@
         document.addEventListener('keydown', function(e) {
             // Escape key to exit reader view
             if (e.key === 'Escape') {
-                window.location.href = '/view/<%= encodeURIComponent(pageName) %>';
+                window.location.href = '<%= pageUrl(pageName) %>';
             }
             // Ctrl/Cmd + P to print
             if ((e.ctrlKey || e.metaKey) && e.key === 'p') {

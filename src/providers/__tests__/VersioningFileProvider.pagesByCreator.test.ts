@@ -11,6 +11,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
+import { TEST_ACTOR } from '../../test-support/actors';
 
 function makeEngine() {
   return {
@@ -70,7 +71,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
   test('returns [] when pageIndex is null', async () => {
     const p = makeProvider();
     p.pageIndex = null;
-    expect(await p.getPagesByCreator('alice')).toEqual([]);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR)).toEqual([]);
   });
 
   test('returns [] when username is empty', async () => {
@@ -79,7 +80,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
       version: '1', lastUpdated: '', pageCount: 1,
       pages: { u1: baseEntry({ uuid: 'u1', author: 'alice' }) }
     };
-    expect(await p.getPagesByCreator('')).toEqual([]);
+    expect(await p.getPagesByCreator('', TEST_ACTOR)).toEqual([]);
   });
 
   test('matches by author field', async () => {
@@ -92,7 +93,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u3: baseEntry({ uuid: 'u3', title: 'AlicePage2', author: 'alice' })
       }
     };
-    const result = await p.getPagesByCreator('alice');
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR);
     expect(result.map(e => e.title).sort()).toEqual(['AlicePage', 'AlicePage2']);
   });
 
@@ -105,8 +106,8 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u2: baseEntry({ uuid: 'u2', title: 'AdminCreatedForBob', author: 'admin', creator: 'bob', isPrivate: true })
       }
     };
-    const aliceResult = await p.getPagesByCreator('alice');
-    const bobResult = await p.getPagesByCreator('bob');
+    const aliceResult = await p.getPagesByCreator('alice', TEST_ACTOR);
+    const bobResult = await p.getPagesByCreator('bob', TEST_ACTOR);
     expect(aliceResult.map(e => e.title)).toEqual(['PrivAlice']);
     expect(bobResult.map(e => e.title)).toEqual(['AdminCreatedForBob']);
   });
@@ -121,8 +122,8 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u3: baseEntry({ uuid: 'u3', title: 'PublicAlice2', author: 'alice' })
       }
     };
-    const all = await p.getPagesByCreator('alice');
-    const onlyPrivate = await p.getPagesByCreator('alice', { onlyPrivate: true });
+    const all = await p.getPagesByCreator('alice', TEST_ACTOR);
+    const onlyPrivate = await p.getPagesByCreator('alice', TEST_ACTOR, { onlyPrivate: true });
     expect(all).toHaveLength(3);
     expect(onlyPrivate).toHaveLength(1);
     expect(onlyPrivate[0].title).toBe('PrivateAlice');
@@ -138,7 +139,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u3: baseEntry({ uuid: 'u3', title: 'Mid', author: 'alice', lastModified: '2026-03-01' })
       }
     };
-    const result = await p.getPagesByCreator('alice');
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR);
     expect(result.map(e => e.title)).toEqual(['New', 'Mid', 'Old']);
   });
 
@@ -152,7 +153,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u3: baseEntry({ uuid: 'u3', title: 'Bravo', author: 'alice' })
       }
     };
-    const result = await p.getPagesByCreator('alice', { sortBy: 'title-asc' });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { sortBy: 'title-asc' });
     expect(result.map(e => e.title)).toEqual(['Alpha', 'Bravo', 'Charlie']);
   });
 
@@ -168,7 +169,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         u5: baseEntry({ uuid: 'u5', author: 'alice', lastModified: '2026-05-01' })
       }
     };
-    const result = await p.getPagesByCreator('alice', { limit: 2 });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { limit: 2 });
     expect(result).toHaveLength(2);
     expect(result.map(e => e.uuid)).toEqual(['u1', 'u2']);
   });
@@ -189,7 +190,7 @@ describe('VersioningFileProvider.getPagesByCreator (#640)', () => {
         })
       }
     };
-    const result = await p.getPagesByCreator('alice');
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR);
     expect(result.map(e => e.title)).toEqual(['AliceSecret']);
   });
 });
@@ -239,7 +240,7 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
   });
 
@@ -251,7 +252,7 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['CAPTURE'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['CAPTURE'] });
     expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
   });
 
@@ -263,7 +264,7 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u2', title: 'Ordinary Page', systemKeywords: ['general'] },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['clipping'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture', 'clipping'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture', 'clipping'] });
     expect(result.map(e => e.uuid).sort()).toEqual(['u1', 'u3']);
   });
 
@@ -275,7 +276,7 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u2', title: 'Ordinary Page' },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27' }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.uuid)).toEqual(['u1']);
   });
 
@@ -287,9 +288,9 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u2', title: 'Ordinary Page' },
       { uuid: 'u3', title: 'Captures — alice — 2026-07-27', systemKeywords: ['capture'] }
     ]);
-    expect(await p.getPagesByCreator('alice')).toHaveLength(3);
-    expect(await p.getPagesByCreator('alice', { systemKeywords: [] })).toHaveLength(3);
-    expect(await p.getPagesByCreator('alice', { systemKeywords: ['  '] })).toHaveLength(3);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR)).toHaveLength(3);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: [] })).toHaveLength(3);
+    expect(await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['  '] })).toHaveLength(3);
   });
 
   test('does not leak another user\'s captures', async () => {
@@ -305,7 +306,7 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u1', title: 'AliceCapture', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'BobCapture', systemKeywords: ['capture'] }
     ]);
-    const result = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
+    const result = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
     expect(result.map(e => e.title)).toEqual(['AliceCapture']);
   });
 
@@ -322,8 +323,8 @@ describe('VersioningFileProvider.getPagesByCreator systemKeywords filter (#1004)
       { uuid: 'u1', title: 'PublicCapture', systemKeywords: ['capture'] },
       { uuid: 'u2', title: 'PrivateCapture', systemKeywords: ['capture'] }
     ]);
-    const both = await p.getPagesByCreator('alice', { systemKeywords: ['capture'] });
-    const privateOnly = await p.getPagesByCreator('alice', { systemKeywords: ['capture'], onlyPrivate: true });
+    const both = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'] });
+    const privateOnly = await p.getPagesByCreator('alice', TEST_ACTOR, { systemKeywords: ['capture'], onlyPrivate: true });
     expect(both).toHaveLength(2);
     expect(privateOnly.map(e => e.title)).toEqual(['PrivateCapture']);
   });
@@ -361,7 +362,7 @@ describe('VersioningFileProvider.getPagesByEditor (#640 Phase 2)', () => {
   test('returns [] when pageIndex is null or username empty', async () => {
     const p = makeProvider();
     p.pageIndex = null;
-    expect(await (p as unknown as { getPagesByEditor: (u: string) => Promise<unknown[]> }).getPagesByEditor('alice')).toEqual([]);
+    expect(await (p as unknown as { getPagesByEditor: (u: string) => Promise<unknown[]> }).getPagesByEditor('alice', TEST_ACTOR)).toEqual([]);
   });
 
   test('matches by editor field', async () => {
@@ -370,7 +371,7 @@ describe('VersioningFileProvider.getPagesByEditor (#640 Phase 2)', () => {
       u2: baseEntry({ uuid: 'u2', title: 'EditedByBob', author: 'bob', editor: 'bob' }),
       u3: baseEntry({ uuid: 'u3', title: 'AliceEditedAgain', author: 'carol', editor: 'alice' })
     });
-    const result = await (p as unknown as { getPagesByEditor: (u: string) => Promise<{ title: string }[]> }).getPagesByEditor('alice');
+    const result = await (p as unknown as { getPagesByEditor: (u: string) => Promise<{ title: string }[]> }).getPagesByEditor('alice', TEST_ACTOR);
     expect(result.map(e => e.title).sort()).toEqual(['AliceEditedAgain', 'EditedByAlice']);
   });
 
@@ -380,7 +381,7 @@ describe('VersioningFileProvider.getPagesByEditor (#640 Phase 2)', () => {
       pages[`u${i}`] = baseEntry({ uuid: `u${i}`, editor: 'alice', lastModified: `2026-05-0${i + 1}` });
     }
     const p = makeProviderWith(pages);
-    const result = await (p as unknown as { getPagesByEditor: (u: string, o?: { limit?: number }) => Promise<unknown[]> }).getPagesByEditor('alice', { limit: 2 });
+    const result = await (p as unknown as { getPagesByEditor: (u: string, o?: { limit?: number }) => Promise<unknown[]> }).getPagesByEditor('alice', TEST_ACTOR, { limit: 2 });
     expect(result).toHaveLength(2);
   });
 });

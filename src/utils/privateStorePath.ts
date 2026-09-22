@@ -119,6 +119,35 @@ export function isValidStoreId(store: string): boolean {
   return STORE_ID_PATTERN.test(store);
 }
 
+/**
+ * A private page's name (#1456, operator 2026-09-22): `private/{owner}/{store}/{title}` —
+ * the same string as its URL without the leading slash. Wherever the system
+ * passes a page name, a private page is named this way; a plain title always
+ * means a public page. Titles never contain `/` (#1455), so the parts are
+ * unambiguous.
+ */
+export const PRIVATE_PAGE_NAME_PREFIX = 'private/';
+
+export interface PrivatePageName {
+  owner: string;
+  store: string;
+  title: string;
+}
+
+export function formatPrivatePageName(owner: string, store: string, title: string): string {
+  return `${PRIVATE_PAGE_NAME_PREFIX}${owner}/${store}/${title}`;
+}
+
+/** The parts of a private page name, or null when `name` is not one. */
+export function parsePrivatePageName(name: unknown): PrivatePageName | null {
+  if (typeof name !== 'string' || !name.startsWith(PRIVATE_PAGE_NAME_PREFIX)) return null;
+  const parts = name.slice(PRIVATE_PAGE_NAME_PREFIX.length).split('/');
+  if (parts.length !== 3) return null;
+  const [owner, store, title] = parts;
+  if (!owner || !isSafePathSegment(owner) || !isValidStoreId(store) || !title.trim()) return null;
+  return { owner, store, title };
+}
+
 /** Refuse a store id that is not a plain slug. Every join below runs it. */
 export function assertStoreId(store: string): string {
   if (!isValidStoreId(store)) {

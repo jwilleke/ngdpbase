@@ -26,8 +26,7 @@ function makeManager(existing: StoredPage[] = []) {
   const provider = {
     getPage: vi.fn(async (title: string) => byTitle.get(title) ?? null),
     getPageMetadata: vi.fn(async (title: string) => byTitle.get(title)?.metadata ?? null),
-    savePage: vi.fn(async () => {}),
-    movePrivatePage: vi.fn(async () => {})
+    savePage: vi.fn(async () => {})
   };
 
   const auditManager = {

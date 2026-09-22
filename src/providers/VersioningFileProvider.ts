@@ -21,11 +21,12 @@ import {
 import { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
-import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
+import type { RecentChangesOptions, RecentChangeEntry, StorePageEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
+  parsePrivatePageName,
   legacyPrivatePageFilePath,
   legacyPrivateVersionsRoot,
   parsePrivatePageRel,
@@ -33,12 +34,6 @@ import {
   privatePageFilePath,
   privateVersionDirectory
 } from '../utils/privateStorePath.js';
-import {
-  kekFor,
-  replaceUserCatalogFor,
-  userIndexFor
-} from '../utils/privateStoreUnlock.js';
-import { upsertUserVersionsPage, type UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { PLAIN_FILE_IO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
@@ -368,6 +363,8 @@ class VersioningFileProvider extends FileSystemProvider {
       await this.loadOrCreatePageIndex();
     }
 
+    await this.movePrivatePagesToStores();
+
     // #947: expire tombstones past the retention window — once at boot, then
     // on an hourly tick so a long-running server does not sit on expired
     // tombstones until someone restarts it.
@@ -379,6 +376,32 @@ class VersioningFileProvider extends FileSystemProvider {
     logger.info(`[VersioningFileProvider] Compression: ${this.compressionEnabled ? 'enabled' : 'disabled'}`);
     logger.info(`[VersioningFileProvider] Max versions: ${this.maxVersions}, Retention: ${this.retentionDays} days`);
     logger.info(`[VersioningFileProvider] Deleted-page retention: ${this.deleteRetentionDays > 0 ? `${this.deleteRetentionDays} days` : 'kept forever'}`);
+  }
+
+  /**
+   * Start-up migration (#1456), idempotent: private pages leave the global
+   * page index. Every unencrypted store lists its pages in its own index
+   * (carrying over the version count the global entry had); the global entries
+   * are then removed. Sealed pages were never here — they move from the
+   * owner's user-level catalog at unlock.
+   */
+  protected listPrivatePagesInStores(): Promise<void> {
+    // Done by movePrivatePagesToStores, after the page index is loaded.
+    return Promise.resolve();
+  }
+
+  private async movePrivatePagesToStores(): Promise<void> {
+    const known: Record<string, PageIndexEntry> = {};
+    for (const [uuid, entry] of Object.entries(this.pageIndex?.pages ?? {})) {
+      if (entry.location === 'private') known[uuid] = entry;
+    }
+    await this.indexPlainStorePages(known as Record<string, Partial<StorePageEntry>>);
+    if (this.pageIndex && Object.keys(known).length > 0) {
+      for (const uuid of Object.keys(known)) delete this.pageIndex.pages[uuid];
+      this.pageIndex.pageCount = Object.keys(this.pageIndex.pages).length;
+      await this.savePageIndex();
+      logger.info(`[VersioningFileProvider] Removed ${Object.keys(known).length} private page(s) from the global page index (#1456)`);
+    }
   }
 
   /**
@@ -506,6 +529,9 @@ class VersioningFileProvider extends FileSystemProvider {
     const seenTitles = new Map<string, string>(); // titleLower → uuid
     const staleUuids: string[] = [];
     for (const entry of entries) {
+      // #1456: a private page is listed in its store's own index, never the
+      // process caches; any left in the global index move out after start-up.
+      if (entry.location === 'private') continue;
       const baseDir = entry.location === 'required-pages'
         ? this.requiredPagesDirectory
         : this.pagesDirectory;
@@ -530,30 +556,7 @@ class VersioningFileProvider extends FileSystemProvider {
         continue;
       }
 
-      // Private pages live under {storagedir}/{privateroot}/{creator}/{store}/
-      let filePath: string;
-      if (entry.location === 'private' && entry.creator) {
-        const meta = await readStoreMeta(
-          baseDir,
-          entry.creator,
-          entry.store ?? this.privateStoreLayout.defaultStoreId,
-          this.privateStoreLayout
-        );
-        if (meta.encrypt) {
-          staleUuids.push(entry.uuid);
-          skippedCount++;
-          continue;
-        }
-        filePath = privatePageFilePath(
-          baseDir,
-          entry.creator,
-          basename,
-          entry.store ?? this.privateStoreLayout.defaultStoreId,
-          this.privateStoreLayout
-        );
-      } else {
-        filePath = path.join(baseDir, basename);
-      }
+      let filePath = path.join(baseDir, basename);
       // #1371: a 'required-pages' entry is a page whose history is still in the
       // required-pages folder (the #1375 repair moves it) — its live file is in
       // the pages directory, where every save writes. The live copy always wins
@@ -914,7 +917,7 @@ class VersioningFileProvider extends FileSystemProvider {
     return true;
   }
 
-  async getRecentChanges(options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
+  async getRecentChanges(ctx: ActorContext, options: RecentChangesOptions = {}): Promise<RecentChangeEntry[]> {
     if (!this.pageIndex) {
       return [];
     }
@@ -922,10 +925,6 @@ class VersioningFileProvider extends FileSystemProvider {
     const limit = typeof options.limit === 'number' && options.limit > 0 ? options.limit : 50;
     const since = options.since ? new Date(options.since) : null;
     const principals = options.principals ?? [];
-    // #1116: the bypass is DERIVED from a fact the caller supplies, never
-    // accepted as a flag. `includeAll: true` used to return every private
-    // page to whoever passed it, with nothing asking who was calling.
-    const includeAll = principals.includes('admin');
 
     const entries: RecentChangeEntry[] = [];
     for (const idx of Object.values(this.pageIndex.pages)) {
@@ -947,26 +946,26 @@ class VersioningFileProvider extends FileSystemProvider {
       // getPageMetadata resolves from the in-memory page cache — a map lookup,
       // not a disk read (same basis as the #1004 keyword filter above) — so
       // this stays affordable on a path that runs per page render.
-      if (!includeAll) {
-        const isCreator = idx.creator !== undefined && principals.includes(idx.creator);
-        // Lists read the public index; a sealed page is not in it.
-        const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
-        const tier1 = decideFrontmatterAccess(md, principals, 'view');
+      // #1456: no role bypasses this — a role never decides access. The
+      // `admin` principal used to list every private page (#1116 kept it).
+      const isCreator = idx.creator !== undefined && principals.includes(idx.creator);
+      // Lists read the public index; a sealed page is not in it.
+      const md = await this.getPageMetadata(idx.uuid, ANONYMOUS_SUBJECT);
+      const tier1 = decideFrontmatterAccess(md, principals, 'view');
 
-        if (tier1.decided) {
-          // Frontmatter states a rule, so it decides — including granting a
-          // private page to an audience member, and denying a non-private one
-          // to everybody else. That second half is the leak this fixes.
-          if (!tier1.allowed) continue;
-        } else if (idx.isPrivate) {
-          // No readable frontmatter rule. Private remains a hard constraint,
-          // and the index's denormalised copy is the fallback so an audience
-          // grant still works where metadata is unavailable. Only a FALLBACK:
-          // trusting it first is what made the listing disagree with the ACL.
-          const audience = idx.audienceRoles ?? [];
-          const inAudience = audience.length > 0 && principals.some(p => audience.includes(p));
-          if (!isCreator && !inAudience) continue;
-        }
+      if (tier1.decided) {
+        // Frontmatter states a rule, so it decides — including granting a
+        // private page to an audience member, and denying a non-private one
+        // to everybody else. That second half is the leak this fixes.
+        if (!tier1.allowed) continue;
+      } else if (idx.isPrivate) {
+        // No readable frontmatter rule. Private remains a hard constraint,
+        // and the index's denormalised copy is the fallback so an audience
+        // grant still works where metadata is unavailable. Only a FALLBACK:
+        // trusting it first is what made the listing disagree with the ACL.
+        const audience = idx.audienceRoles ?? [];
+        const inAudience = audience.length > 0 && principals.some(p => audience.includes(p));
+        if (!isCreator && !inAudience) continue;
       }
 
       entries.push({
@@ -982,6 +981,11 @@ class VersioningFileProvider extends FileSystemProvider {
       });
     }
 
+    // #1456: the requester's own private pages, from their stores.
+    for (const entry of this.storeEntriesFor(ctx)) {
+      if (!since || new Date(entry.lastModified) >= since) entries.push(entry);
+    }
+
     entries.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
     return entries.slice(0, limit);
   }
@@ -994,6 +998,7 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   async getPagesByCreator(
     username: string,
+    ctx: ActorContext,
     options: import('../types/Provider.js').GetPagesByCreatorOptions = {}
   ): Promise<RecentChangeEntry[]> {
     if (!this.pageIndex || !username) {
@@ -1034,6 +1039,17 @@ class VersioningFileProvider extends FileSystemProvider {
       });
     }
 
+    // #1456: the creator's private pages, when the requester is the creator.
+    if (ctx.username === username) {
+      for (const entry of this.storeEntriesFor(ctx)) {
+        if (wantedSystemKeywords) {
+          const md = await this.getPageMetadata(entry.name ?? entry.uuid, ctx);
+          if (!VersioningFileProvider.hasAnySystemKeyword(md, wantedSystemKeywords)) continue;
+        }
+        entries.push(entry);
+      }
+    }
+
     if (sortBy === 'title-asc') {
       entries.sort((a, b) => a.title.localeCompare(b.title));
     } else {
@@ -1047,6 +1063,7 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   async getPagesByEditor(
     username: string,
+    ctx: ActorContext,
     options: import('../types/Provider.js').PagesScanOptions = {}
   ): Promise<RecentChangeEntry[]> {
     if (!this.pageIndex || !username) return [];
@@ -1067,6 +1084,11 @@ class VersioningFileProvider extends FileSystemProvider {
         isPrivate: idx.isPrivate || undefined,
         creator: idx.creator
       });
+    }
+
+    // #1456: the editor's own private pages, when the requester is the editor.
+    if (ctx.username === username) {
+      entries.push(...this.storeEntriesFor(ctx).filter((e) => e.editor === username));
     }
 
     if (sortBy === 'title-asc') {
@@ -1773,7 +1795,10 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /** Public alias for external tools (VersioningAnalytics) */
-  public _resolveIdentifier(identifier: string, ctx: ActorContext = ANONYMOUS_SUBJECT): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
+  public _resolveIdentifier(
+    identifier: string,
+    ctx: ActorContext = ANONYMOUS_SUBJECT
+  ): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private'; owner?: string; store?: string } | null> {
     return this.resolveIdentifier(identifier, ctx);
   }
 
@@ -1781,18 +1806,21 @@ class VersioningFileProvider extends FileSystemProvider {
     uuid: string,
     location: 'pages' | 'required-pages' | 'private' = 'pages',
     creator?: string,
-    store?: string,
-    ctx?: ActorContext
+    store?: string
   ): string {
     if (location === 'private') {
       if (!this.pagesDirectory) {
         throw new Error('FileSystemProvider not initialized - directories not set');
       }
+      // #1456: a private page's owner and store come from its name (or the
+      // caller who knows them) — never guessed. The global index holds no
+      // private page, and 'anonymous/default' put history in the wrong place.
       const entry = this.pageIndex?.pages[uuid];
-      // An unlocked sealed page is in the caller's own session catalog (#1382).
-      const overlay = ctx ? userIndexFor(ctx)?.pages[uuid] : undefined;
-      const who = creator ?? entry?.creator ?? overlay?.creator ?? 'anonymous';
-      const bag = store ?? entry?.store ?? overlay?.store ?? this.privateStoreLayout.defaultStoreId;
+      const who = creator ?? entry?.creator;
+      const bag = store ?? entry?.store;
+      if (!who || !bag) {
+        throw new Error(`A private page's history needs its owner and store (${uuid})`);
+      }
       return privateVersionDirectory(
         this.pagesDirectory,
         who,
@@ -1827,7 +1855,7 @@ class VersioningFileProvider extends FileSystemProvider {
     creator?: string,
     store?: string
   ): Promise<VersionTarget> {
-    const dir = this.getVersionDirectory(uuid, location, creator, store, ctx);
+    const dir = this.getVersionDirectory(uuid, location, creator, store);
     if (location !== 'private') return { dir, io: PLAIN_FILE_IO };
     return { dir, io: await this.fileIOFor(ctx, dir) };
   }
@@ -1967,53 +1995,40 @@ class VersioningFileProvider extends FileSystemProvider {
     // Deriving 'required-pages' from the category put history and deleted
     // records into the required-pages folder (the git working tree on a dev
     // install, the image on Docker) and made pages 404 after a restart.
-    const isPrivate = metadata.private === true;
-    const newCreator = metadata.author || 'anonymous';
+    // #1456: the same rule as FileSystemProvider.savePage — a private page is
+    // named by its path, which gives its owner and store; the Private box moves
+    // a page into (ticked) or out of (unticked) a store.
+    const md = metadata as Record<string, unknown>;
+    const privateName = parsePrivatePageName(pageName);
+    // Where the page is now: its store (found through the caller's context) or
+    // the public index. The global index holds no private page.
+    const previous = this.resolvePageInfo(pageName, ctx);
+    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx);
+    const isPrivate = placement !== null;
+    const newCreator = placement?.owner;
     const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';
-    const currentEntry = this.pageIndex?.pages[uuid];
+    const currentEntry = previous?.fromStore ? undefined : this.pageIndex?.pages[uuid];
+    const from = previous?.fromStore
+      ? { location: 'private' as const, creator: previous.fromStore.owner, store: previous.fromStore.store }
+      : currentEntry ? { location: currentEntry.location, creator: undefined, store: undefined } : null;
     // The store is decided once, here, and handed to FileSystemProvider below —
     // so the page file, its history and the encryption check name one store.
-    // An unlocked sealed page is in the session catalog, not the global index.
-    const sessionEntry = (() => {
-      return userIndexFor(ctx)?.pages[uuid];
-    })();
-    const existingStore = currentEntry?.location === 'private'
-      ? (currentEntry.store ?? this.privateStoreLayout.defaultStoreId)
-      : sessionEntry?.store;
-    const store = isPrivate
-      ? this.resolvePrivatePageStore((metadata as Record<string, unknown>).store, existingStore)
-      : undefined;
-    const sealedStore = store && this.pagesDirectory
-      && (await readStoreMeta(this.pagesDirectory, newCreator, store, this.privateStoreLayout)).encrypt === true
-      ? store
-      : undefined;
+    const store = placement?.store;
 
-    if (store && this.pagesDirectory) {
+    if (store && newCreator && this.pagesDirectory) {
       await this.assertPrivateStoreWritable(ctx, this.pagesDirectory, newCreator, store);
     }
 
-    // Detect location change (e.g. private → public or public → private) and move files
-    if (currentEntry && currentEntry.location !== location) {
-      const currentCreator = currentEntry.creator;
+    // A page that changes place takes its history with it. The page file is
+    // moved by FileSystemProvider.savePage (#1456).
+    const to = { location, creator: isPrivate ? newCreator : undefined, store };
+    if (from && (from.location !== to.location || from.creator !== to.creator || from.store !== to.store)) {
       try {
-        const fromStore = currentEntry.location === 'private'
-          ? (currentEntry.store ?? this.privateStoreLayout.defaultStoreId)
-          : undefined;
-        await this.movePageFile(
-          uuid,
-          { location: currentEntry.location, creator: currentCreator, store: fromStore },
-          { location, creator: location === 'private' ? newCreator : undefined, store }
-        );
-        await this.moveVersionDirectory(
-          uuid,
-          { location: currentEntry.location, creator: currentEntry.creator, store: fromStore },
-          { location, creator: location === 'private' ? newCreator : undefined, store }
-        );
-        logger.info(`[VersioningFileProvider] Moved page '${pageName}' (${uuid}) from '${currentEntry.location}' to '${location}'`);
+        await this.moveVersionDirectory(uuid, from, to);
+        logger.info(`[VersioningFileProvider] Moved history of '${pageName}' (${uuid}) from '${from.location}' to '${location}'`);
       } catch (moveError) {
         const errorMessage = moveError instanceof Error ? moveError.message : String(moveError);
-        logger.error(`[VersioningFileProvider] Failed to move page files for '${pageName}':`, errorMessage);
-        // Continue to save current content even if move fails
+        logger.error(`[VersioningFileProvider] Failed to move history for '${pageName}':`, errorMessage);
       }
     }
 
@@ -2036,28 +2051,6 @@ class VersioningFileProvider extends FileSystemProvider {
     // `preserveLastModified` for the on-disk frontmatter; dropping it here meant
     // a migration could not keep a page's date.
     await super.savePage(pageName, content, { ...metadata, uuid, created, ...(store ? { store } : {}) }, ctx, options);
-
-    // #1383: getVersionDirectory for a new private page reads creator/store
-    // from the index. Stamp them before the first version is written.
-    // #1385/#1420: a sealed page was already recorded in its owner's encrypted
-    // catalogue by FileSystemProvider.savePage above; it never touches the
-    // global page-index.json.
-    if (!sealedStore && location === 'private' && this.pageIndex) {
-      const prev = this.pageIndex.pages[uuid];
-      this.pageIndex.pages[uuid] = {
-        ...(prev ?? {
-          title: (metadata.title as string) || pageName,
-          uuid,
-          currentVersion: 0,
-          location: 'private' as const,
-          lastModified: new Date().toISOString(),
-          editor: 'unknown',
-          hasVersions: false
-        }),
-        creator: newCreator || prev?.creator || 'anonymous',
-        store: store ?? this.privateStoreLayout.defaultStoreId
-      };
-    }
 
     // #1415: the history goes to the page's own store, named here rather than
     // looked up — a sealed page is in no global index entry to look it up
@@ -2086,120 +2079,52 @@ class VersioningFileProvider extends FileSystemProvider {
       // Page content is already persisted; a versioning failure is non-fatal.
     }
 
-    // Update page index — always store filename so fast init uses the correct path
-    const creator = location === 'private'
-      ? (newCreator || currentEntry?.creator || 'anonymous')
-      : currentEntry?.creator;
-    const ar = (metadata.access as Record<string, unknown> | undefined)?.['view'] ?? metadata.audience;
-    // #639 Slice E: read top-level `private: true` only; user-keywords
-    // back-compat fallback dropped post-migration (Slices A–D, v3.7.0).
-    const isPrivateFlag = (metadata as Record<string, unknown>).private === true;
-    const indexPayload = {
-      title: (metadata.title as string) || pageName,
-      uuid: uuid,
-      slug: metadata.slug ? String(metadata.slug) : undefined,
-      filename: `${uuid}.md`,
-      currentVersion: await this.getCurrentVersion(uuid, location, versions),
-      location: location,
-      creator: creator,
-      lastModified: options?.preserveLastModified && metadata.lastModified
-        ? String(metadata.lastModified)
-        : new Date().toISOString(),
-      created,
-      editor: metadata.editor || metadata.author || 'unknown',
-      author: metadata.author ? String(metadata.author) : undefined,
-      hasVersions: true,
-      audienceRoles: Array.isArray(ar) && ar.length ? (ar as string[]) : undefined,
-      isPrivate: isPrivateFlag,
-      addon: typeof (metadata as Record<string, unknown>).addon === 'string'
-        ? ((metadata as Record<string, unknown>).addon as string)
-        : undefined,
-      ...(location === 'private' ? { store: store ?? this.privateStoreLayout.defaultStoreId } : {})
-    };
-    if (sealedStore) {
-      // Never the global index for a sealed page — refuse instead (#1419/#1420).
-      const kek = kekFor(ctx);
-      if (!kek || !this.pagesDirectory) throw new Error('encrypted store is locked: missing KEK');
-      const versionsPage: UserCatalogPage = {
-        ...indexPayload,
-        location: 'private',
-        creator: newCreator || 'anonymous',
-        store: sealedStore,
-        isPrivate: true,
-        hasVersions: true
-      };
-      const versionsCatalog = await upsertUserVersionsPage(
-        this.pagesDirectory,
-        versionsPage.creator,
-        kek,
-        versionsPage
-      );
-      replaceUserCatalogFor(ctx, 'versions', versionsCatalog);
-      // The index entry now carries the version count.
-      await this.putSealedCatalogPage(ctx, versionsPage);
+    const currentVersion = await this.getCurrentVersion(uuid, location, versions);
+    if (isPrivate && store && newCreator && this.pagesDirectory) {
+      // #1456: a private page's entry is in its store's own index — written
+      // there by FileSystemProvider.savePage; here it gains its version count.
+      // A page that came from the public space leaves the global index.
+      const where = { owner: newCreator, store, io: versions.io };
+      const saved = await this.findStorePage(this.pagesDirectory, where, uuid);
+      if (saved) {
+        await this.putStorePage(this.pagesDirectory, where, { ...saved, currentVersion, hasVersions: true });
+      }
+      if (this.pageIndex?.pages[uuid]) {
+        delete this.pageIndex.pages[uuid];
+        this.pageIndex.pageCount = Object.keys(this.pageIndex.pages).length;
+        await this.savePageIndex();
+      }
     } else {
-      await this.updatePageInIndex(uuid, indexPayload);
+      // Update page index — always store filename so fast init uses the correct path
+      const ar = (metadata.access as Record<string, unknown> | undefined)?.['view'] ?? metadata.audience;
+      await this.updatePageInIndex(uuid, {
+        title: (metadata.title as string) || privateName?.title || pageName,
+        uuid: uuid,
+        slug: metadata.slug ? String(metadata.slug) : undefined,
+        filename: `${uuid}.md`,
+        currentVersion,
+        location: location,
+        creator: currentEntry?.creator,
+        lastModified: options?.preserveLastModified && metadata.lastModified
+          ? String(metadata.lastModified)
+          : new Date().toISOString(),
+        created,
+        editor: metadata.editor || metadata.author || 'unknown',
+        author: metadata.author ? String(metadata.author) : undefined,
+        hasVersions: true,
+        audienceRoles: Array.isArray(ar) && ar.length ? (ar as string[]) : undefined,
+        isPrivate: false,
+        addon: typeof md.addon === 'string' ? md.addon : undefined
+      });
     }
 
     logger.info(`[VersioningFileProvider] Saved page '${pageName}' with versioning`);
   }
 
   /**
-   * Move a page file from one location to another.
-   * Used when the page's privacy status changes (e.g. public → private or private → public).
-   */
-  async movePrivatePage(uuid: string, oldCreator: string, newCreator: string): Promise<void> {
-    await super.movePrivatePage(uuid, oldCreator, newCreator); // moves the .md file
-    const store = this.pageIndex?.pages[uuid]?.store ?? this.privateStoreLayout.defaultStoreId;
-    await this.moveVersionDirectory(
-      uuid,
-      { location: 'private', creator: oldCreator, store },
-      { location: 'private', creator: newCreator, store }
-    );
-    if (this.pageIndex?.pages[uuid]) {
-      this.pageIndex.pages[uuid].creator = newCreator;
-      this.pageIndex.pages[uuid].store = store;
-    }
-    logger.info(`[VersioningFileProvider] movePrivatePage complete: ${uuid} ${oldCreator} → ${newCreator}`);
-  }
-
-  private async movePageFile(
-    uuid: string,
-    from: PagePlacement,
-    to: PagePlacement
-  ): Promise<void> {
-    if (!this.pagesDirectory) return;
-
-    const fromPath = this.placementFilePath(uuid, from);
-    const toPath = this.placementFilePath(uuid, to);
-
-    if (fromPath === toPath) return;
-
-    if (await fs.pathExists(fromPath)) {
-      await fs.ensureDir(path.dirname(toPath));
-      await fs.move(fromPath, toPath, { overwrite: true });
-      logger.info(`[VersioningFileProvider] Moved page file: ${fromPath} → ${toPath}`);
-    }
-  }
-
-  /**
    * Move a version directory from one location to another.
    * Used when the page's privacy status changes.
    */
-  /** Live page file for a placement; private pages use their own store, never an assumed default. */
-  private placementFilePath(uuid: string, placement: PagePlacement): string {
-    if (!this.pagesDirectory) throw new Error('FileSystemProvider not initialized - directories not set');
-    return placement.location === 'private' && placement.creator
-      ? privatePageFilePath(
-        this.pagesDirectory,
-        placement.creator,
-        uuid,
-        placement.store ?? this.privateStoreLayout.defaultStoreId,
-        this.privateStoreLayout
-      )
-      : path.join(this.pagesDirectory, `${uuid}.md`);
-  }
-
   private async moveVersionDirectory(
     uuid: string,
     from: PagePlacement,
@@ -2515,7 +2440,7 @@ class VersioningFileProvider extends FileSystemProvider {
           'its version history belongs to the live page and is kept (#1403)'
         );
       } else {
-        await fs.remove(this.getVersionDirectory(uuid, entry.location));
+        await fs.remove(this.getVersionDirectory(uuid, entry.location, entry.creator, entry.store));
       }
       delete this.pageIndex.deletedPages?.[uuid];
       await this.savePageIndex();
@@ -2869,7 +2794,20 @@ class VersioningFileProvider extends FileSystemProvider {
    * @param identifier - Page UUID or title
    * @returns UUID and location, or null if not found
    */
-  private resolveIdentifier(identifier: string, ctx: ActorContext = ANONYMOUS_SUBJECT): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private' } | null> {
+  private resolveIdentifier(
+    identifier: string,
+    ctx: ActorContext = ANONYMOUS_SUBJECT
+  ): Promise<{ uuid: string; location: 'pages' | 'required-pages' | 'private'; owner?: string; store?: string } | null> {
+    // #1456: a private page is named by its path; its owner and store come
+    // from the name, and it is found in its store's own index.
+    const privateName = parsePrivatePageName(identifier);
+    if (privateName) {
+      const info = this.resolvePageInfo(identifier, ctx);
+      return Promise.resolve(info
+        ? { uuid: info.uuid, location: 'private', owner: privateName.owner, store: privateName.store }
+        : null);
+    }
+
     // Check if identifier is already a UUID (in page index)
     if (this.pageIndex && this.pageIndex.pages[identifier]) {
       return Promise.resolve({
@@ -2938,17 +2876,19 @@ class VersioningFileProvider extends FileSystemProvider {
    * //   { version: 1, timestamp: '2024-01-01T...', author: 'admin', ... }
    * // ]
    */
-  async getVersionHistory(identifier: string, limit?: number): Promise<VersionHistoryEntry[]> {
+  async getVersionHistory(identifier: string, ctx: ActorContext, limit?: number): Promise<VersionHistoryEntry[]> {
     // Resolve identifier to UUID and location
-    const resolved = await this.resolveIdentifier(identifier);
+    const resolved = await this.resolveIdentifier(identifier, ctx);
     if (!resolved) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
     const { uuid, location } = resolved;
 
-    // Load manifest
-    const manifest = await this.loadManifest(uuid, location);
+    // Load manifest — a private page's history is in its store (#1456)
+    const manifest = await this.loadManifest(
+      uuid, location, await this.versionTarget(uuid, location, ctx, resolved.owner, resolved.store)
+    );
     if (!manifest || !manifest.versions || manifest.versions.length === 0) {
       return [];
     }
@@ -2989,19 +2929,19 @@ class VersioningFileProvider extends FileSystemProvider {
    * console.log(content); // Content at version 2
    * console.log(metadata.author); // Editor of version 2
    */
-  async getPageVersion(identifier: string, version: number): Promise<VersionContent> {
+  async getPageVersion(identifier: string, version: number, ctx: ActorContext): Promise<VersionContent> {
     if (typeof version !== 'number' || version < 1) {
       throw new Error(`Invalid version number: ${version}`);
     }
 
     // Resolve identifier to UUID and location
-    const resolved = await this.resolveIdentifier(identifier);
+    const resolved = await this.resolveIdentifier(identifier, ctx);
     if (!resolved) {
       throw new Error(`Page not found: ${identifier}`);
     }
 
     const { uuid, location } = resolved;
-    const versions = await this.versionTarget(uuid, location);
+    const versions = await this.versionTarget(uuid, location, ctx, resolved.owner, resolved.store);
 
     // Load manifest
     const manifest = await this.loadManifest(uuid, location, versions);
@@ -3070,7 +3010,7 @@ class VersioningFileProvider extends FileSystemProvider {
    */
   async restoreVersion(identifier: string, version: number, ctx: ActorContext): Promise<void> {
     // Get the content from the target version
-    const { content, metadata: _versionMetadata } = await this.getPageVersion(identifier, version);
+    const { content, metadata: _versionMetadata } = await this.getPageVersion(identifier, version, ctx);
 
     // Resolve identifier to get current page info
     const resolved = await this.resolveIdentifier(identifier, ctx);
@@ -3122,7 +3062,7 @@ class VersioningFileProvider extends FileSystemProvider {
    * console.log(comparison.stats); // { additions: 10, deletions: 3, unchanged: 100 }
    * console.log(comparison.diff); // Array of diff operations
    */
-  async compareVersions(identifier: string, v1: number, v2: number): Promise<VersionDiff> {
+  async compareVersions(identifier: string, v1: number, v2: number, ctx: ActorContext): Promise<VersionDiff> {
     if (typeof v1 !== 'number' || typeof v2 !== 'number') {
       throw new Error('Version numbers must be integers');
     }
@@ -3132,8 +3072,8 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     // Get content for both versions
-    const version1Data = await this.getPageVersion(identifier, v1);
-    const version2Data = await this.getPageVersion(identifier, v2);
+    const version1Data = await this.getPageVersion(identifier, v1, ctx);
+    const version2Data = await this.getPageVersion(identifier, v2, ctx);
 
     // Calculate diff from version1 to version2
     const diff = DeltaStorage.createDiff(version1Data.content, version2Data.content);
@@ -3182,9 +3122,10 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const { uuid, location } = resolved;
+    const target = await this.versionTarget(uuid, location, undefined, resolved.owner, resolved.store);
 
     // Load manifest
-    const manifest = await this.loadManifest(uuid, location);
+    const manifest = await this.loadManifest(uuid, location, target);
     if (!manifest || manifest.versions.length === 0) {
       return { versionsRemoved: 0, versionsPurged: [], dryRun, spaceFreed: 0, message: 'No versions meet purge criteria' };
     }
@@ -3193,7 +3134,7 @@ class VersioningFileProvider extends FileSystemProvider {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
-    const versionDir = this.getVersionDirectory(uuid, location);
+    const versionDir = target.dir;
     const versionsToPurge: number[] = [];
 
     // Determine which versions to purge

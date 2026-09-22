@@ -10,11 +10,6 @@ import PageManager from '../PageManager';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import { ANONYMOUS_SUBJECT } from '../UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
-import {
-  clearUnlockedPrivateStores,
-  putUserIndexPageFor,
-  unlockPrivateStores
-} from '../../utils/privateStoreUnlock';
 
 // Mock ConfigurationManager
 const mockConfigurationManager = {
@@ -361,7 +356,7 @@ describe('PageManager', () => {
       expect(saved['user-keywords']).toEqual(['notes']); // unchanged
     });
 
-    test('savePageWithContext() — incoming private:false strips it cleanly (no top-level private in saved metadata)', async () => {
+    test('savePageWithContext() — incoming private:false reaches the provider as the move-out signal, adding nothing else (#1456)', async () => {
       pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
 
       const wikiContext = {
@@ -370,9 +365,13 @@ describe('PageManager', () => {
       };
       await pageManager.savePageWithContext(wikiContext, { private: false });
 
+      // An unticked Private box on a private page moves it out of its store,
+      // so the provider must see the explicit false (it strips `private` from
+      // a public page's frontmatter itself — FileSystemProvider-privateStore).
       const saved = pageManager.provider.savePage.mock.calls[0][2];
-      expect(saved.private).toBeUndefined();
+      expect(saved.private).toBe(false);
       expect(saved['system-location']).toBeUndefined();
+      expect(saved['user-keywords'] ?? []).not.toContain('private');
     });
 
     test('savePageWithContext() — leaves user-keywords untouched when no `private` to strip', async () => {
@@ -835,54 +834,46 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
     return pm;
   };
 
-  afterEach(() => {
-    clearUnlockedPrivateStores();
+  test('private page: owner and store come from the name, not frontmatter author (#1456)', async () => {
+    const getPageMetadata = vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed', store: 'other' });
+    const pm = withProvider({ getPageMetadata });
+    await expect(pm.getPrivatePageOwner('private/alice/yourphr/Diary', OWNER_CTX))
+      .resolves.toEqual({ creator: 'alice', store: 'yourphr' });
+    expect(getPageMetadata).toHaveBeenCalledWith('private/alice/yourphr/Diary', OWNER_CTX);
   });
 
-  test('private page: owner is the page-index creator and store, not frontmatter author', async () => {
-    const pm = withProvider({
-      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed' }),
-      pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'yourphr' } } }
-    });
-    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-  });
-
-  test('private entry without a store id uses the configured default store', async () => {
-    const pm = withProvider({
-      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1' }),
-      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
-    });
-    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toEqual({ creator: 'alice', store: 'default' });
+  test('a private name whose page does not exist: null', async () => {
+    const pm = withProvider({ getPageMetadata: vi.fn().mockResolvedValue(null) });
+    await expect(pm.getPrivatePageOwner('private/alice/default/Nope', OWNER_CTX)).resolves.toBeNull();
   });
 
   test('public or missing page: null', async () => {
     const pm = withProvider({
       getPageMetadata: vi.fn()
         .mockResolvedValueOnce({ uuid: 'u2' })
-        .mockResolvedValueOnce(null),
-      pageIndex: { pages: { u2: { location: 'pages', creator: 'alice' } } }
+        .mockResolvedValueOnce(null)
     });
     await expect(pm.getPrivatePageOwner('Main', OWNER_CTX)).resolves.toBeNull();
     await expect(pm.getPrivatePageOwner('Nope', OWNER_CTX)).resolves.toBeNull();
   });
 
-  test('unlocked sealed-store page comes from the session user catalog', async () => {
-    unlockPrivateStores('sid-1', 'alice', Buffer.alloc(32, 1));
-    putUserIndexPageFor({ ...OWNER_CTX, privateStoreHandle: 'sid-1' }, {
-      title: 'Labs', uuid: 'u3', currentVersion: 1, location: 'private', creator: 'alice',
-      store: 'yourphr', lastModified: '2026-09-15T00:00:00Z', editor: 'alice', hasVersions: false
-    });
+  test('a public page with private frontmatter is still public: null', async () => {
     const pm = withProvider({
-      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u3' }),
-      pageIndex: { pages: {} }
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u4', private: true, author: 'alice' })
     });
-    // Reached through the context's handle — not an ambient session (P1).
+    await expect(pm.getPrivatePageOwner('Diary', OWNER_CTX)).resolves.toBeNull();
+  });
+
+  test('the page is confirmed through the caller\'s context, not an ambient session', async () => {
+    // A sealed store's page is found only by a context holding its handle (P1).
+    const pm = withProvider({
+      getPageMetadata: vi.fn((_name: string, ctx: { privateStoreHandle?: string }) =>
+        Promise.resolve(ctx.privateStoreHandle === 'sid-1' ? { uuid: 'u3' } : null))
+    });
     await expect(
-      pm.getPrivatePageOwner('Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
+      pm.getPrivatePageOwner('private/alice/yourphr/Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
     ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-    // A context without the handle does not see the sealed page. There is no
-    // ambient session to fall back on any more (#1382 step 4b).
-    await expect(pm.getPrivatePageOwner('Labs', OWNER_CTX)).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('private/alice/yourphr/Labs', OWNER_CTX)).resolves.toBeNull();
   });
 });
 
@@ -892,15 +883,15 @@ describe('PageManager.checkPrivatePageAccess — the private container rule (#13
     (pm as unknown as { provider: unknown }).provider = provider;
     return pm;
   };
+  const DIARY = 'private/alice/default/Diary';
   const privatePage = () => withProvider({
-    getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'alice' }),
-    pageIndex: { pages: { u1: { location: 'private', creator: 'alice', store: 'default' } } }
+    getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'alice' })
   });
-  const ctx = (userContext: Record<string, unknown> | undefined) => ({ pageName: 'Diary', content: '', userContext });
+  const ctx = (userContext: Record<string, unknown> | undefined) => ({ pageName: DIARY, content: '', userContext });
 
   test('the owner is allowed', async () => {
     await expect(privatePage().checkPrivatePageAccess(
-      ctx({ username: 'alice', roles: ['editor'], isAuthenticated: true }), 'Diary'
+      ctx({ username: 'alice', roles: ['editor'], isAuthenticated: true }), DIARY
     )).resolves.toBe(true);
   });
 
@@ -911,32 +902,38 @@ describe('PageManager.checkPrivatePageAccess — the private container rule (#13
       { username: 'bob', roles: ['editor'], isAuthenticated: true },
       undefined
     ]) {
-      await expect(pm.checkPrivatePageAccess(ctx(who), 'Diary')).resolves.toBe(false);
+      await expect(pm.checkPrivatePageAccess(ctx(who), DIARY)).resolves.toBe(false);
     }
   });
 
-  test('ownership is the page-index creator, not frontmatter author', async () => {
+  test('ownership is the owner in the name, not frontmatter author (#1456)', async () => {
     const pm = withProvider({
-      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'mallory' }),
-      pageIndex: { pages: { u1: { location: 'private', creator: 'alice' } } }
+      getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'mallory' })
     });
-    await expect(pm.checkPrivatePageAccess(ctx({ username: 'mallory', roles: [], isAuthenticated: true }), 'Diary')).resolves.toBe(false);
+    await expect(pm.checkPrivatePageAccess(ctx({ username: 'mallory', roles: [], isAuthenticated: true }), DIARY)).resolves.toBe(false);
+    await expect(pm.checkPrivatePageAccess(ctx({ username: 'alice', roles: [], isAuthenticated: true }), DIARY)).resolves.toBe(true);
   });
 
   test('a public or missing page is not decided here (null)', async () => {
     const pm = withProvider({
-      getPageMetadata: vi.fn().mockResolvedValueOnce({ uuid: 'u2' }).mockResolvedValueOnce(null),
-      pageIndex: { pages: { u2: { location: 'pages' } } }
+      getPageMetadata: vi.fn().mockResolvedValueOnce({ uuid: 'u2' }).mockResolvedValueOnce(null)
     });
     const who = ctx({ username: 'bob', roles: [], isAuthenticated: true });
     await expect(pm.checkPrivatePageAccess(who, 'Main')).resolves.toBeNull();
     await expect(pm.checkPrivatePageAccess(who, 'Nope')).resolves.toBeNull();
   });
 
-  test('when privacy cannot be established it refuses (fails closed)', async () => {
-    const throwing = withProvider({ getPageMetadata: vi.fn().mockRejectedValue(new Error('disk')) });
-    await expect(throwing.checkPrivatePageAccess(
-      ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'Diary'
-    )).resolves.toBe(false);
+  test('decided from the name alone, so a refusal never reveals whether the page exists (#1456)', async () => {
+    // Neither a missing page nor a failing store changes the answer.
+    for (const getPageMetadata of [vi.fn().mockResolvedValue(null), vi.fn().mockRejectedValue(new Error('disk'))]) {
+      const pm = withProvider({ getPageMetadata });
+      await expect(pm.checkPrivatePageAccess(
+        ctx({ username: 'bob', roles: [], isAuthenticated: true }), 'private/alice/default/Nope'
+      )).resolves.toBe(false);
+      await expect(pm.checkPrivatePageAccess(
+        ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'private/alice/default/Nope'
+      )).resolves.toBe(true);
+      expect(getPageMetadata).not.toHaveBeenCalled();
+    }
   });
 });

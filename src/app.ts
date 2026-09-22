@@ -45,6 +45,7 @@ import InstallService from './services/InstallService.js';
 import { ThemeManager } from './managers/ThemeManager.js';
 import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
+import { pageUrl } from './utils/pageUrl.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -190,6 +191,9 @@ void (async (): Promise<void> => {
   app.set('views', path.join(projectRoot, 'views'));
   app.set('view engine', 'ejs');
   app.set('view cache', false);
+  // #1456: every view builds a page's links with the function the routes use —
+  // a private page's actions live under /private/.
+  app.locals.pageUrl = pageUrl;
   app.use(express.static(path.join(projectRoot, 'public')));
   app.use('/themes', express.static(path.join(projectRoot, 'themes')));
   app.use('/addons', express.static(path.join(projectRoot, 'addons')));

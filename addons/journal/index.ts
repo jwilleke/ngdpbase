@@ -48,6 +48,7 @@ import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
+import type PolicyInformationPoint from '../../dist/src/security/PolicyInformationPoint.js';
 import JournalDataManager from './managers/JournalDataManager.js';
 import JournalPlugin from './plugins/JournalPlugin.js';
 import apiRoutes from './routes/api.js';
@@ -153,8 +154,15 @@ const journalAddon = {
         const jd = dataManager;
         if (!nm || !jd) return;
         const today = new Date().toISOString().slice(0, 10);
+        const pip = engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+        if (!pip) return;
         for (const user of reminderUsers) {
-          const hasEntry = (await jd.listByAuthor(user)).some(e => e.journalDate === today);
+          // #1456: the user's own entries are listed as the user. A job holds no
+          // session keys, so an entry in an encrypted store is not seen and the
+          // reminder is sent anyway — a nudge, never a disclosure.
+          const subject = await pip.subjectFor(user);
+          if (!subject) continue;
+          const hasEntry = (await jd.listByAuthor(user, subject)).some(e => e.journalDate === today);
           if (!hasEntry) {
             await nm.createNotification({
               type:        'user',
@@ -189,11 +197,11 @@ const journalAddon = {
 
    
   async status(): Promise<AddonStatusDetails> {
-    const total = dataManager ? await dataManager.count() : 0;
+    const total = dataManager ? await dataManager.publicCount() : 0;
     return {
       healthy: true,
       records: total,
-      message: `Journal addon active — ${total} entr${total === 1 ? 'y' : 'ies'} indexed`
+      message: `Journal addon active — ${total} public entr${total === 1 ? 'y' : 'ies'} indexed`
     };
   },
 

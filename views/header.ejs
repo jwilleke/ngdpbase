@@ -250,7 +250,7 @@
                             <button type="button" class="btn btn-outline-success btn-sm me-2" onclick="saveEditForm()">
                                 <i class="fas fa-save"></i> Save Page
                             </button>
-                            <a href="/view/<%= encodeURIComponent(pageName) %>" class="btn btn-outline-secondary btn-sm me-2">
+                            <a href="<%= pageUrl(pageName) %>" class="btn btn-outline-secondary btn-sm me-2">
                                 <i class="fas fa-times"></i> Cancel
                             </a>
                             <button type="button" class="btn btn-outline-danger btn-sm me-2" onclick="deletePageFromNavbar()">
@@ -285,7 +285,7 @@
                         <!-- Edit Button -->
                         <% if (typeof pageName !== 'undefined' && pageName && typeof canEdit !== 'undefined' && canEdit) { %>
                             <div class="btn-group me-2" role="group">
-                                <a href="/edit/<%= encodeURIComponent(pageName) %>" class="btn btn-sm btn-outline-primary">
+                                <a href="<%= pageUrl(pageName, 'edit') %>" class="btn btn-sm btn-outline-primary">
                                     <i class="fas fa-edit"></i> Edit
                                 </a>
                             </div>
@@ -335,7 +335,7 @@
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
                                 <% if (typeof pageName !== 'undefined' && pageName) { %>
-                                    <li><a class="dropdown-item" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
+                                    <li><a class="dropdown-item" href="<%= pageUrl(pageName) %>?view=reader">
                                         <i class="fas fa-book-reader"></i> Show Reader View
                                     </a></li>
                                     <% if ((typeof can === 'function' && can('page-edit'))) { %>
@@ -357,7 +357,7 @@
                                     const _myPinned = (currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
                                     const _hasPageHere = typeof pageName !== 'undefined' && pageName;
                                     const _pinUrl = _hasPageHere
-                                        ? '/view/' + encodeURIComponent(pageName)
+                                        ? pageUrl(pageName)
                                         : (typeof currentUrl !== 'undefined' && currentUrl ? currentUrl : (typeof req !== 'undefined' && req && req.originalUrl ? req.originalUrl : ''));
                                     const _pinTitle = (typeof title !== 'undefined' && title) ? title : (_hasPageHere ? pageName : _pinUrl);
                                     const _isPinned = !!_pinUrl && _myPinned.some(function(p) {
@@ -417,7 +417,7 @@
               // route so /my/journal, /profile, /search?q=foo, etc. are bookmarkable.
               const _myPinned = (_authed && currentUser.preferences && Array.isArray(currentUser.preferences['nav.pinnedPages'])) ? currentUser.preferences['nav.pinnedPages'] : [];
               const _pinUrl = _hasPage
-                  ? '/view/' + encodeURIComponent(pageName)
+                  ? pageUrl(pageName)
                   : (typeof currentUrl !== 'undefined' && currentUrl ? currentUrl : '');
               const _pinTitle = (typeof title !== 'undefined' && title) ? title : (_hasPage ? pageName : _pinUrl);
               const _isPinned = _authed && !!_pinUrl && _myPinned.some(function(p) {
@@ -439,7 +439,7 @@
                 </a>
                 <% } %>
                 <% if (_hasPage && typeof canEdit !== 'undefined' && canEdit) { %>
-                <a class="nav-link py-2" href="/edit/<%= encodeURIComponent(pageName) %>">
+                <a class="nav-link py-2" href="<%= pageUrl(pageName, 'edit') %>">
                     <i class="fas fa-edit me-2"></i> Edit Page
                 </a>
                 <% } %>
@@ -472,7 +472,7 @@
                 <a class="nav-link py-2" href="#" onclick="showPageStats(); <%- _hideOC %> return false;">
                     <i class="fas fa-chart-bar me-2"></i> Page Statistics
                 </a>
-                <a class="nav-link py-2" href="/view/<%= encodeURIComponent(pageName) %>?view=reader">
+                <a class="nav-link py-2" href="<%= pageUrl(pageName) %>?view=reader">
                     <i class="fas fa-book-reader me-2"></i> Reader View
                 </a>
                 <% } %>
@@ -573,6 +573,35 @@
 <% } %>
 
 <script>
+    // #1456: the current page's name and its action URLs, from the server — a
+    // private page lives under /private/, so neither can be read off /view/.
+    window.ngdpPageName = <%- JSON.stringify((typeof pageName !== 'undefined' && pageName) ? pageName : null).replace(/</g, '\\u003c') %>;
+    window.ngdpPageUrls = window.ngdpPageName ? <%- JSON.stringify((typeof pageName !== 'undefined' && pageName) ? { view: pageUrl(pageName), edit: pageUrl(pageName, 'edit'), history: pageUrl(pageName, 'history'), delete: pageUrl(pageName, 'delete') } : null) %> : null;
+
+    /**
+     * The current page's name, URL-encoded, when this document is that page's
+     * view (or, with `includeEdit`, its editor); else the name read off a
+     * /view/ or /edit/ path as before (a slug or former title still works).
+     */
+    function ngdpCurrentPageRaw(includeEdit) {
+        const p = window.location.pathname;
+        const u = window.ngdpPageUrls;
+        if (u && window.ngdpPageName) {
+            const here = decodeURIComponent(p);
+            if (here === decodeURIComponent(u.view) || (includeEdit && here === decodeURIComponent(u.edit))) {
+                return encodeURIComponent(window.ngdpPageName);
+            }
+        }
+        return p.split('/view/')[1] || (includeEdit ? p.split('/edit/')[1] : undefined);
+    }
+
+    /** True on a page's editor — /edit/… or a private page's …/edit (#1456). */
+    function ngdpOnEditPage() {
+        const p = window.location.pathname;
+        const u = window.ngdpPageUrls;
+        return p.startsWith('/edit/') || Boolean(u && decodeURIComponent(p) === decodeURIComponent(u.edit));
+    }
+
     /**
      * Copy text to clipboard. Uses the async Clipboard API where available,
      * falls back to execCommand for HTTP (non-secure) contexts.
@@ -622,7 +651,7 @@
             return;
         }
 
-        const currentPage = window.location.pathname.split('/view/')[1];
+        const currentPage = ngdpCurrentPageRaw(false);
         if (!currentPage) {
             alert('No page selected for information');
             return;
@@ -1085,7 +1114,7 @@
     }
     
     function showPageHistory() {
-        const currentPage = window.location.pathname.split('/view/')[1] || window.location.pathname.split('/edit/')[1];
+        const currentPage = ngdpCurrentPageRaw(true);
         if (!currentPage) {
             alert('No page selected for history view');
             return;
@@ -1094,7 +1123,7 @@
     }
     
     function showPageStats() {
-        const currentPage = window.location.pathname.split('/view/')[1];
+        const currentPage = ngdpCurrentPageRaw(false);
         if (!currentPage) {
             alert('No page selected for statistics');
             return;
@@ -1224,7 +1253,7 @@
     
     // View Page Source functionality
     function showPageSource() {
-        const currentPage = window.location.pathname.split('/view/')[1];
+        const currentPage = ngdpCurrentPageRaw(false);
         if (!currentPage) {
             alert('No page selected for source view');
             return;
@@ -1620,7 +1649,7 @@ function updateTrailDropdown() {
     dropdown.innerHTML = '';
     
     // Get current page to exclude it from trail
-    const currentPage = window.location.pathname.split('/view/')[1];
+    const currentPage = ngdpCurrentPageRaw(false);
     const currentPageDecoded = currentPage ? decodeURIComponent(currentPage) : null;
     
     // Show only trail items (excluding current page)
@@ -1675,7 +1704,7 @@ function updateTrailDropdown() {
 
 // Initialize trail on page load
 function initializeTrail() {
-    const currentPage = window.location.pathname.split('/view/')[1];
+    const currentPage = ngdpCurrentPageRaw(false);
     if (!currentPage) {
         updateTrailDropdown();
         return;
@@ -1729,10 +1758,10 @@ function saveEditForm() {
 function deletePageFromNavbar() {
     if (confirm('Are you sure you want to delete this page? This action cannot be undone.')) {
         // Check if we're on an edit page by looking at the URL path
-        const path = window.location.pathname;
+        const raw = ngdpOnEditPage() ? ngdpCurrentPageRaw(true) : undefined;
 
-        if (path.startsWith('/edit/')) {
-            const pageName = decodeURIComponent(path.replace('/edit/', ''));
+        if (raw) {
+            const pageName = decodeURIComponent(raw);
 
             // Use POST request as required by the route
             csrfFetch('/delete/' + encodeURIComponent(pageName), {
@@ -1759,7 +1788,7 @@ function deletePageFromNavbar() {
 }
 
 function openBrowseAttachments() {
-    if (window.location.pathname.startsWith('/edit/') && typeof window.openAssetPicker === 'function') {
+    if (ngdpOnEditPage() && typeof window.openAssetPicker === 'function') {
         window.openAssetPicker();
     } else {
         window.location.href = '/attachments/browse';
@@ -1769,7 +1798,7 @@ function openBrowseAttachments() {
 // #1127: Convert-to-NCM from the More menu — preview, confirm, apply.
 // Reuses the /admin/convert endpoints, now gated on the page's edit ACL.
 function ngdpNcmConvertOpen() {
-    const raw = window.location.pathname.split('/view/')[1] || window.location.pathname.split('/edit/')[1];
+    const raw = ngdpCurrentPageRaw(true);
     const page = raw ? decodeURIComponent(raw) : null;
     if (!page) { alert('No page in context to convert.'); return; }
 
@@ -1818,7 +1847,7 @@ function ngdpNcmConvertOpen() {
                 data.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul></div>';
         }
         html += '<pre class="border rounded p-2" style="max-height:50vh;overflow:auto;white-space:pre-wrap;">' + esc(data.proposed) + '</pre>';
-        if (window.location.pathname.startsWith('/edit/')) {
+        if (ngdpOnEditPage()) {
             html += '<div class="alert alert-info mb-0">Applying converts the <em>saved</em> page — unsaved editor changes are not included, and the editor reloads afterwards.</div>';
         }
         body.innerHTML = html;
@@ -1852,9 +1881,7 @@ function showUploadAttachment(pageName) {
     // pageName may be passed directly (from asset picker) or inferred from URL
     const inferredFromUrl = !pageName;
     if (!pageName) {
-        const viewPart = window.location.pathname.split('/view/')[1];
-        const editPart = window.location.pathname.split('/edit/')[1];
-        const raw = viewPart || editPart;
+        const raw = ngdpCurrentPageRaw(true);
         pageName = raw ? decodeURIComponent(raw) : null;
     }
     // #1398: an upload onto a private page is always private and belongs to the
