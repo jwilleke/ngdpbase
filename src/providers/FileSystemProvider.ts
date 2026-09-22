@@ -591,14 +591,15 @@ class FileSystemProvider extends BasePageProvider {
         this.contentCache.set(info.title, content);
       }
 
-      logger.info(`[FileSystemProvider] Loaded ${info.title} from ${path.basename(info.filePath)} (${content.length} bytes)`);
+      // #1461: a store page is logged by its uuid — its title is its owner's.
+      logger.info(`[FileSystemProvider] Loaded ${info.fromStore ? info.uuid : info.title} from ${path.basename(info.filePath)} (${content.length} bytes)`);
       return content;
     } catch (err: unknown) {
       if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
         // File not found at expected path — stale cache entry (e.g. from fast init
         // using an incorrect path for a legacy page). Treat as page not found so the
         // caller can handle it gracefully rather than rendering a 500 error.
-        logger.warn(`[FileSystemProvider] Page file missing (stale cache path?): ${info.title} at ${info.filePath}`);
+        logger.warn(`[FileSystemProvider] Page file missing (stale cache path?): ${info.fromStore ? info.uuid : info.title} at ${info.filePath}`);
         throw new Error(`Page '${identifier}' not found.`, { cause: err });
       }
       throw err;
@@ -762,7 +763,8 @@ class FileSystemProvider extends BasePageProvider {
     const storePages = storeLocation ? await this.readStorePages(this.pagesDirectory, storeLocation) : null;
     if (storePages) {
       const clash = Object.values(storePages).find((p) => p.uuid !== uuid && p.title.toLowerCase() === finalTitle.toLowerCase());
-      if (clash) throw new Error(`Title "${finalTitle}" is already in use in this store`);
+      // #1461: the message reaches logs, so it names no private title.
+      if (clash) throw new Error('A page with this title is already in use in this store');
     } else if (this.titleExistsForDifferentPage(finalTitle, uuid)) {
       const conflictKey = this.titleIndex.get(finalTitle.toLowerCase());
       const conflictInfo = conflictKey ? this.pageCache.get(conflictKey) : null;
@@ -841,7 +843,8 @@ class FileSystemProvider extends BasePageProvider {
         isPrivate: true
       };
       await this.putStorePage(this.pagesDirectory, storeLocation, entry);
-      logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to ${storeLocation.owner}'s store '${storeLocation.store}'${sealed ? ' (sealed)' : ''}.`);
+      // #1461: a store page is logged by its uuid — its title is its owner's.
+      logger.info(`[FileSystemProvider] Page ${uuid} saved to ${storeLocation.owner}'s store '${storeLocation.store}'${sealed ? ' (sealed)' : ''}.`);
       return { name: formatPrivatePageName(storeLocation.owner, storeLocation.store, finalTitle), uuid };
     }
 
@@ -1165,7 +1168,7 @@ class FileSystemProvider extends BasePageProvider {
           layout: this.privateStoreLayout
         });
         await this.dropStorePage(this.pagesDirectory, { ...info.fromStore, io }, info.uuid);
-        logger.info(`[FileSystemProvider] Deleted page '${info.title}' (${info.uuid}) from ${info.fromStore.owner}'s store '${info.fromStore.store}'`);
+        logger.info(`[FileSystemProvider] Deleted page ${info.uuid} from ${info.fromStore.owner}'s store '${info.fromStore.store}'`);
         return true;
       }
 

@@ -19,6 +19,7 @@ import BaseLoggingProvider, {
   LoggingProviderInfo
 } from './BaseLoggingProvider.js';
 import { redactSecretsFormat } from '../utils/redactSecrets.js';
+import { redactPrivateNamesFormat } from '../utils/redactPrivateNames.js';
 
 /** Fallback when maxSize is unset or unparseable (1MB) */
 const DEFAULT_MAX_SIZE = 1048576;
@@ -54,6 +55,8 @@ class FileLoggingProvider extends BaseLoggingProvider {
       // The table is empty until WikiEngine fills it — see redactSecrets.ts for
       // why it cannot be read from config at this point.
       redactSecretsFormat(),
+      // #1461: private page titles never reach a log line or /admin/logs.
+      redactPrivateNamesFormat(),
       format.printf((info) => {
         const ts = typeof info.timestamp === 'string' ? info.timestamp : JSON.stringify(info.timestamp);
         const msg = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);

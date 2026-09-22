@@ -74,6 +74,36 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     expect(events[0]).toMatchObject({ eventType: 'page-edit' });
   });
 
+  test('saving a private page under its own title is an edit, not a rename (#1456)', async () => {
+    const name = 'private/jim/default/Diary';
+    const { manager, events } = makeManager([
+      { title: name, content: 'old', metadata: { title: 'Diary', author: 'jim', private: true } }
+    ]);
+    await manager.savePage(name, 'body', { title: 'Diary' }, JIM);
+    await settle();
+
+    expect(events[0]).toMatchObject({ eventType: 'page-edit' });
+  });
+
+  test('a renamed private page is named by its new path, not its bare title (#1456)', async () => {
+    const name = 'private/jim/default/Diary';
+    const { manager, events } = makeManager([
+      { title: name, content: 'old', metadata: { title: 'Diary', author: 'jim', private: true } }
+    ]);
+    await manager.savePage(name, 'body', { title: 'Journal' }, JIM);
+    await settle();
+
+    // The title is struck on the way into the audit trail (#1461,
+    // AuditManager.logAuditEvent) — what the door owes is the page's own name.
+    expect(events[0]).toMatchObject({
+      eventType: 'page-rename',
+      metadata: expect.objectContaining({
+        pageName: 'private/jim/default/Journal',
+        fromPageName: 'private/jim/default/Diary'
+      })
+    });
+  });
+
   test('a changed title emits page-rename naming both titles', async () => {
     const { manager, events } = makeManager([
       { title: 'Old Name', content: 'old', metadata: { title: 'Old Name', author: 'jim' } }

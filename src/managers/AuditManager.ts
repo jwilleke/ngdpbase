@@ -52,6 +52,7 @@ import { recordAuditEvent, type AuditEventSink, type AuditRecordOutcome } from '
 import { resolveTlsConfig } from '../utils/tlsConfig.js';
 import { resolvePosture } from '../utils/securityPosture.js';
 import { flattenPosture, diffPostures, describePostureDiff, type FlatPosture } from '../utils/postureRecord.js';
+import { redactPrivateNamesDeep } from '../utils/redactPrivateNames.js';
 
 /**
  * Base audit event structure
@@ -544,7 +545,9 @@ class AuditManager extends BaseManager {
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
-    return await this.provider.logAuditEvent(auditEvent);
+    // #1461: every audit write comes through here; a private page is recorded
+    // with its owner and store, never its title.
+    return await this.provider.logAuditEvent(redactPrivateNamesDeep(auditEvent));
   }
 
   /**

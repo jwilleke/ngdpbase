@@ -177,6 +177,24 @@ describe('AuditManager', () => {
       expect(typeof eventId).toBe('string');
     });
 
+    test('a private page is recorded with its owner and store, never its title (#1461)', async () => {
+      const am = makeManagerWithMockProvider();
+      await am.logAuditEvent({
+        eventType: 'page.save',
+        user: 'molly',
+        resource: 'private/molly/default/Merger notes',
+        resourceType: 'page',
+        action: 'save',
+        result: 'success',
+        severity: 'low',
+        metadata: { pageName: 'private/molly/default/Merger notes', requestPath: '/private/molly/default/Merger%20notes/save' }
+      });
+      const provider = (am as unknown as { provider: { logAuditEvent: ReturnType<typeof vi.fn> } }).provider;
+      const recorded = JSON.stringify(provider.logAuditEvent.mock.calls[0][0]);
+      expect(recorded).not.toContain('Merger');
+      expect(recorded).toContain('private/molly/default/[redacted]');
+    });
+
     test('throws when provider not initialized', async () => {
       const engine = makeEngine();
       const am = new AuditManager(engine);

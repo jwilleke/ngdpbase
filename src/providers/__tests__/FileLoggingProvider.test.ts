@@ -71,6 +71,15 @@ describe('FileLoggingProvider', () => {
       return String((out as Record<symbol | string, unknown>)[Symbol.for('message')] ?? '');
     };
 
+    test('a private page title never reaches the line — message or metadata (#1461)', () => {
+      const line = render({
+        message: '[VIEW] pageName=private/molly/default/Merger notes user=molly',
+        pageName: 'private/molly/default/Merger notes'
+      });
+      expect(line).not.toContain('Merger');
+      expect(line).toContain('pageName=private/molly/default/[redacted] user=molly');
+    });
+
     test('a plain message still renders as before', () => {
       const line = render({ message: 'hello' });
       expect(line).toContain('[error]: hello');

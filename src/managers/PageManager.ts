@@ -28,7 +28,7 @@ import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/in
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { parsePrivatePageName } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -1495,7 +1495,8 @@ class PageManager extends BaseManager implements CatalogSource {
     const formerTitles = computeFormerTitles(
       (existingPage?.metadata as Record<string, unknown> | undefined)?.formerTitles,
       previousTitle,
-      (rawMetadata.title) ?? pageName
+      // #1456: a private page's name is its path; its title is the last part.
+      (rawMetadata.title) ?? parsePrivatePageName(pageName)?.title ?? pageName
     );
     if (formerTitles) {
       (rawMetadata as Record<string, unknown>).formerTitles = formerTitles;
@@ -1748,10 +1749,15 @@ class PageManager extends BaseManager implements CatalogSource {
     // carry-forward, the title change for #1105 formerTitles), so the routes
     // are not trusted to classify their own writes either.
     if (!options.audit?.skip) {
-      const finalTitle = (enrichedMetadata as Record<string, unknown>).title as string | undefined || pageName;
+      // #1456: a private page's name is its path — compare titles, and name a
+      // renamed private page by its new path, never its bare title (#1461).
+      const privateName = parsePrivatePageName(pageName);
+      const currentTitle = privateName?.title ?? pageName;
+      const finalTitle = (enrichedMetadata as Record<string, unknown>).title as string | undefined || currentTitle;
+      const renamedTo = privateName ? formatPrivatePageName(privateName.owner, privateName.store, finalTitle) : finalTitle;
       const derivedOp: PageMutationOp = !existingPage
         ? 'create'
-        : finalTitle !== pageName ? 'rename' : 'edit';
+        : finalTitle !== currentTitle ? 'rename' : 'edit';
       const op = options.audit?.op ?? derivedOp;
 
       void recordAuditEvent(
@@ -1760,7 +1766,7 @@ class PageManager extends BaseManager implements CatalogSource {
           op,
           username: actingUser,
           ipAddress: options.audit?.ipAddress,
-          pageName: op === 'rename' ? finalTitle : pageName,
+          pageName: op === 'rename' ? renamedTo : pageName,
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
           fromPageName: op === 'rename' ? pageName : null,
           rewriteOf: options.audit?.rewriteOf ?? null,
