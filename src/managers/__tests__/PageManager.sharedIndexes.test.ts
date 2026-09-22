@@ -129,9 +129,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
 
   it('a delete takes the page out of the shared indexes and clears its referrers\' rendered pages', async () => {
     const d = makeDoor({ Doc: { content: 'body', metadata: { title: 'Doc', uuid: 'uuid-doc' } } }, { Doc: ['Alpha'] });
-    const deleted = await d.pm.deletePageWithContext(
-      { pageName: 'Doc', userContext: { username: 'jim', isAuthenticated: true } }
-    );
+    const deleted = await d.pm.deletePage('Doc', { username: 'jim', isAuthenticated: true });
 
     expect(deleted).toBe(true);
     expect(d.rendering.removePageFromLinkGraph).toHaveBeenCalledWith('Doc');

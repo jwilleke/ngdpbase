@@ -79,7 +79,6 @@ const mockPageManager = {
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
   isSharedIndexable: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | { getVersionHistory?: unknown; compareVersions?: unknown; pageIndex?: unknown }
 };
 
@@ -264,8 +263,7 @@ function resetMocks() {
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
   mockPageManager.isSharedIndexable.mockReturnValue(true);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);

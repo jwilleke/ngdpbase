@@ -5,7 +5,7 @@ vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
 import VersioningFileProvider from '../VersioningFileProvider';
-import { TEST_ACTOR, actor } from '../../test-support/actors';
+import { TEST_ACTOR } from '../../test-support/actors';
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
@@ -1044,95 +1044,11 @@ describe('VersioningFileProvider', () => {
     });
   });
 
-  describe('Version Retrieval - restoreVersion()', () => {
-    test('should restore page to previous version', async () => {
-      await provider.initialize();
-
-      const uuid = 'restore-uuid-1';
-      const pageName = 'Restore Test';
-
-      // Create 3 versions
-      await provider.savePage(pageName, 'v1 content', { uuid, author: 'user1' }, TEST_ACTOR);
-      await provider.savePage(pageName, 'v2 content', { uuid, author: 'user2' }, TEST_ACTOR);
-      await provider.savePage(pageName, 'v3 content', { uuid, author: 'user3' }, TEST_ACTOR);
-
-      // Restore to v1 (returns void - new version number found via history)
-      await provider.restoreVersion(pageName, 1, TEST_ACTOR);
-
-      // Should create v4 with v1's content
-      const { content } = await provider.getPageVersion(pageName, 4, TEST_ACTOR);
-      expect(content).toBe('v1 content');
-
-      // Verify metadata
-      const history = await provider.getVersionHistory(pageName, TEST_ACTOR);
-      expect(history[0].version).toBe(4);
-      expect(history[0].changeType).toBe('restored');
-      expect(history[0].message).toContain('Restored from v1'); // comment maps to 'message'
-    });
-
-    test('should preserve all original versions after restore', async () => {
-      await provider.initialize();
-
-      const uuid = 'restore-uuid-2';
-      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
-      await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
-      await provider.savePage('Test', 'v3', { uuid }, TEST_ACTOR);
-
-      // Restore to v2
-      await provider.restoreVersion('Test', 2, TEST_ACTOR);
-
-      // All original versions should still exist
-      const history = await provider.getVersionHistory('Test', TEST_ACTOR);
-      expect(history.length).toBe(4); // v1, v2, v3, v4(restored)
-
-      // Can still retrieve v3
-      const { content: v3Content } = await provider.getPageVersion('Test', 3, TEST_ACTOR);
-      expect(v3Content).toBe('v3');
-    });
-
-    test('should accept custom author and comment', async () => {
-      await provider.initialize();
-
-      const uuid = 'restore-uuid-3';
-      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
-      await provider.savePage('Test', 'v2 bad content', { uuid }, TEST_ACTOR);
-
-      // #1179: the restore is attributed to whoever asked for it, not to a
-      // literal 'system'; the comment stays 'Restored from v{N}'.
-      await provider.restoreVersion('Test', 1, actor('molly'));
-
-      const history = await provider.getVersionHistory('Test', TEST_ACTOR);
-      expect(history[0].author).toBe('molly');
-      expect(history[0].message).toContain('Restored from v1');
-    });
-
-    test('should restore by UUID', async () => {
-      await provider.initialize();
-
-      const uuid = 'restore-uuid-4';
-      await provider.savePage('Test', 'v1', { uuid }, TEST_ACTOR);
-      await provider.savePage('Test', 'v2', { uuid }, TEST_ACTOR);
-
-      // restoreVersion returns void; verify via version count
-      await provider.restoreVersion(uuid, 1, TEST_ACTOR);
-      const history = await provider.getVersionHistory(uuid, TEST_ACTOR);
-      expect(history[0].version).toBe(3);
-    });
-
-    test('should throw error for non-existent page', async () => {
-      await provider.initialize();
-
-      await expect(provider.restoreVersion('NonExistent', 1)).rejects.toThrow();
-    });
-
-    test('should throw error for non-existent version', async () => {
-      await provider.initialize();
-
-      await provider.savePage('Test', 'v1', { uuid: 'restore-uuid-5' }, TEST_ACTOR);
-
-      await expect(provider.restoreVersion('Test', 99)).rejects.toThrow();
-    });
-  });
+  // #1462 slice 3: restoreVersion is no longer a provider method. A restore is
+  // a save, so it goes through the page door — see
+  // src/managers/__tests__/PageManager.writeDoors.test.ts, which carries this
+  // coverage (old body back, history preserved, restore by uuid, attribution)
+  // plus the index and audit work the provider-level restore never did.
 
   describe('Version Retrieval - compareVersions()', () => {
     test('should compare two versions and return diff', async () => {

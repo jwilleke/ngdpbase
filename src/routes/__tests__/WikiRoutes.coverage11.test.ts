@@ -75,7 +75,6 @@ const mockPageManager = {
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | Record<string, unknown>
 };
 
@@ -271,8 +270,7 @@ function resetMocks() {
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);

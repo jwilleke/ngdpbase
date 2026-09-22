@@ -962,9 +962,10 @@ describe('WikiRoutes — coverage batch 3', () => {
     });
 
     test('restores page and returns new version number', async () => {
-      mockPageManager.provider = {
-        restoreVersion: vi.fn().mockResolvedValue(3)
-      };
+      // #1462 slice 3: the provider only says it HAS history; the restore is
+      // the page door's.
+      mockPageManager.provider = { getPageVersion: vi.fn() };
+      mockPageManager.restoreVersion = vi.fn().mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 3 });
 
       const res = await request(app)
         .post('/api/page/TestPage/restore/1')
@@ -1021,9 +1022,8 @@ describe('WikiRoutes — coverage batch 3', () => {
 
     test('restorePageVersion returns 404 on "not found" error', async () => {
       const csrf = 'test-csrf-token';
-      mockPageManager.provider = {
-        restoreVersion: vi.fn().mockRejectedValue(new Error('Page not found'))
-      };
+      mockPageManager.provider = { getPageVersion: vi.fn() };
+      mockPageManager.restoreVersion = vi.fn().mockRejectedValue(new Error('Page not found'));
 
       const res = await request(app)
         .post('/api/page/MissingPage/restore/1')

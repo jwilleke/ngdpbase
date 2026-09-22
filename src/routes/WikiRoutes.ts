@@ -302,7 +302,6 @@ interface IVersioningProvider {
   purgeDeletedPage?(uuid: string): Promise<boolean>;
   getVersionHistory?(name: string, ctx: ActorContext, limit?: number): Promise<IVersionEntry[]>;
   compareVersions?(name: string, v1: number, v2: number, ctx: ActorContext): Promise<IComparisonResult | null>;
-  restoreVersion?(name: string, version: number, ctx: ActorContext, options?: { author?: string; comment?: string }): Promise<number>;
   getPageVersion?(name: string, version: number, ctx: ActorContext): Promise<{ content: string; metadata: unknown }>;
   pageIndex?: { pages: Record<string, { location?: string; creator?: string }> } | null;
   invalidatePageCache?(identifier: string): string | null;
@@ -340,8 +339,14 @@ interface IPageManager {
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
+  /** #1462 slice 3: one delete door, with the context mandatory and positional. */
   deletePage(name: string, ctx: ActorContext): Promise<boolean>;
-  deletePageWithContext(wikiContext: unknown): Promise<boolean>;
+  /** #1462 slice 3: a version restore is a save — validated, audited, indexed. */
+  restoreVersion(name: string, version: number, ctx: ActorContext): Promise<PageSaveResult & { version: number | null }>;
+  /** #1462 slice 3: out of the trash and back into the shared indexes. */
+  restoreDeletedPage(uuid: string, ctx: ActorContext): Promise<{ ok: true; title: string } | { ok: false; reason: string; detail?: string }>;
+  /** #689: the admin raw editor's save, through the door with its opt-outs stated. */
+  saveRawPageWithAdminOverride(name: string, raw: string, ctx: ActorContext): Promise<PageSaveResult>;
   /** #1406: the shared shipped-page seeder behind Required Pages Sync */
   requiredPagesSource(): ShippedPageSource;
   addonPagesSource(addonName: string, pagesDir: string): ShippedPageSource;
@@ -4180,10 +4185,15 @@ ${panes}
 
   /**
    * #689 — admin-only raw page editor (POST). Persists the textarea bytes
-   * via PageManager.saveRawPageWithAdminOverride (which skips validation
-   * and conflict-check but preserves versioning, indexing, and cache
-   * invalidation). The admin's identity is NOT written to the `editor`
-   * field — captured in the audit log instead.
+   * via PageManager.saveRawPageWithAdminOverride, which goes through the page
+   * door (#1462 slice 3) with validation, the conflict check and frontmatter
+   * normalisation opted out — so it still versions, keeps the shared indexes
+   * in step and is audited. The admin's identity is NOT written to the
+   * `editor` field — captured in the audit log instead.
+   *
+   * The `page.raw-edit` record below stays: the door's own `page.edit` event
+   * names who wrote which page, but not that this was an admin override, nor
+   * the file written or its byte count — the facts this record exists for.
    */
   async adminSaveRaw(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
@@ -4207,7 +4217,7 @@ ${panes}
         return;
       }
       const pageManager = this.engine.getManager('PageManager') as {
-        saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<void>;
+        saveRawPageWithAdminOverride?: (name: string, raw: string, ctx: ActorContext) => Promise<PageSaveResult>;
         getRawPageContent?: (id: string) => Promise<{ filePath: string; content: string } | null>;
       } | null;
       if (!pageManager?.saveRawPageWithAdminOverride) {
@@ -4494,7 +4504,7 @@ ${panes}
         return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
       }
 
-      const deleted = await this.engine.getManager('PageManager')?.deletePageWithContext(wikiContext);
+      const deleted = await this.engine.getManager('PageManager')?.deletePage(pageName, req.userContext);
       if (!deleted) {
         return res.status(500).json({ error: 'Delete failed', pageName });
       }
@@ -5076,8 +5086,9 @@ ${panes}
         return res.status(503).json({ error: 'Page not deleted — the audit record could not be written', pageName });
       }
 
-      // Delete the page using WikiContext (includes audit logging with user info)
-      const deleteResult = await pageManager.deletePageWithContext(wikiContext);
+      // #1462 slice 3: one delete door — the page name and the requester's
+      // subject, not a WikiContext built to carry them.
+      const deleteResult = await pageManager.deletePage(pageName, req.userContext);
       logger.debug(`🗑️ Delete result: ${deleteResult}`);
 
       if (deleteResult) {
@@ -11705,9 +11716,8 @@ ${panes}
           // delete). It carries the same title, so saving the canonical page
           // first would be refused as a duplicate title.
           if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid, req.userContext)) {
-            const oldContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName: liveUuid });
-            await this.auditPageDelete(req, oldContext, liveUuid, liveUuid);
-            await syncPageManager.deletePageWithContext(oldContext);
+            await this.auditPageDelete(req, wikiContext, liveUuid, liveUuid);
+            await syncPageManager.deletePage(liveUuid, req.userContext);
           }
           synced.push(...await syncFrom(requiredSource, [sourceUuid], true));
         }
@@ -15788,25 +15798,21 @@ ${panes}
         return res.status(500).json({ error: 'PageManager not available' });
       }
 
+      // Check if provider supports versioning. The restore itself goes through
+      // the page door (#1462 slice 3) — this only asks whether there is any
+      // history to restore FROM on this deployment.
       const provider = pageManager.provider;
-
-      // Check if provider supports versioning
-      if (!provider || typeof provider.restoreVersion !== 'function') {
+      if (!provider || typeof provider.getPageVersion !== 'function') {
         return res.status(501).json({
           error: 'Versioning not supported',
           message: 'Current page provider does not support version restoration'
         });
       }
 
-      // Get restore options from request body
-      const { comment } = req.body || {};
-
-      // Restore version
+      // #1462 slice 3: a restore is a save — validated, audited, and followed
+      // by the shared-index work, because it goes through PageManager.
       const restoredBy = req.userContext?.username || 'unknown';
-      const newVersion = await provider.restoreVersion(identifier, versionNum, restoreContext.userContext, {
-        author: restoredBy,
-        comment: comment || `Restored from v${versionNum}`
-      });
+      const { version: newVersion } = await pageManager.restoreVersion(identifier, versionNum, restoreContext.userContext);
 
       logger.info(`[WikiRoutes] User ${restoredBy} restored page ${identifier} to v${versionNum}, created v${newVersion}`);
 
@@ -15985,7 +15991,14 @@ ${panes}
       if (!provider) return;
 
       const { uuid } = req.params;
-      const result = await provider.restoreDeletedPage!(uuid);
+      // #1462 slice 3: through the page door, which puts the page back into
+      // the shared indexes — the link graph, search, mentions, assets and the
+      // rendered cache — not just the two this route used to touch itself.
+      const pageManager = this.engine.getManager('PageManager');
+      if (!pageManager) {
+        return res.status(500).json({ error: 'PageManager not available' });
+      }
+      const result = await pageManager.restoreDeletedPage(uuid, req.userContext);
 
       if (!result.ok) {
         // A name collision is the caller's to resolve, not ours to paper over:
@@ -15998,20 +16011,6 @@ ${panes}
           error: result.reason,
           detail: result.detail
         });
-      }
-
-      // Bring the derived indexes back in step with the restored page. Delete
-      // pulled it out of the search index and the link graph; without this the
-      // page is readable but unfindable until the next full rebuild.
-      const pageManager = this.engine.getManager('PageManager');
-      const restored = await pageManager?.getPage(result.title, req.userContext);
-      if (restored) {
-        await this.engine.getManager('SearchManager')?.updatePageInIndex(result.title, {
-          name: result.title,
-          content: restored.content,
-          metadata: restored.metadata
-        });
-        this.engine.getManager('RenderingManager')?.updatePageInLinkGraph?.(result.title, restored.content);
       }
 
       logger.info(`[WikiRoutes] User ${req.userContext.username} restored deleted page ${uuid} ('${result.title}')`);

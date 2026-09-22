@@ -267,15 +267,10 @@ describe('PageManager Storage Integration', () => {
       expect(page.metadata.category).toBe('Context');
     });
 
-    test('should delete page using WikiContext', async () => {
+    test('should delete page as the subject it was given', async () => {
       await pageManager.savePage('Context Delete', '# Content', {}, TEST_ACTOR);
 
-      const wikiContext = {
-        pageName: 'Context Delete',
-        userContext: { username: 'admin' }
-      };
-
-      await pageManager.deletePageWithContext(wikiContext);
+      await pageManager.deletePage('Context Delete', { username: 'admin' });
 
       expect(pageManager.pageExists('Context Delete')).toBe(false);
     });

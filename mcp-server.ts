@@ -269,7 +269,8 @@ interface PageManagerType {
   getPage(identifier: string, ctx: unknown): Promise<WikiPage>;
   getPageMetadata(identifier: string, ctx: unknown): Promise<PageMetadata>;
   getAllPages(): Promise<string[]>;
-  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown): Promise<void>;
+  /** #1462: the page door answers where the page landed; this server ignores it. */
+  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown): Promise<unknown>;
   deletePage(identifier: string, ctx: unknown): Promise<boolean>;
   /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
   convertPageToNcm(raw: string): NcmResult;

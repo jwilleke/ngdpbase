@@ -21,7 +21,6 @@
 import { Router, type Request, type Response } from 'express';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
-import WikiContext from '../../../dist/src/context/WikiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
@@ -50,12 +49,6 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
   function sp(v: string | string[] | undefined): string {
     return Array.isArray(v) ? (v[0] ?? '') : (v ?? '');
-  }
-
-  function resolveUserContext(req: Request): Promise<import('../../../dist/src/context/WikiContext.js').UserContext> {
-    // #1418: the session middleware writes req.userContext on every request;
-    // forward it — never look the user up a second way (security-posture P1).
-    return Promise.resolve(req.userContext);
   }
 
   function handleError(err: unknown, res: Response): void {
@@ -211,15 +204,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const isAdmin = (ctx.roles ?? []).includes('admin');
         if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
 
-        const wikiCtx = new WikiContext(engine, {
-          context:     WikiContext.CONTEXT.EDIT,
-          pageName:    entry.name,
-          content:     ' ',
-          userContext: await resolveUserContext(req)
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        await p.deletePageWithContext(wikiCtx as any);
+        // #1462 slice 3: one delete door — the entry's page name and the
+        // requester's own subject, with no WikiContext built to carry them.
+        await p.deletePage(entry.name, req.userContext);
         if (uuid) await jdm()?.removeEntry(uuid);
 
         res.redirect('/journal');

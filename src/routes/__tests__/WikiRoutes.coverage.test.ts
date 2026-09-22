@@ -62,7 +62,6 @@ const mockPageManager = {
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
   deletePage: vi.fn(),
-  deletePageWithContext: vi.fn(),
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
@@ -243,7 +242,6 @@ function resetMocks() {
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
@@ -532,8 +530,7 @@ describe('WikiRoutes — additional coverage', () => {
     test('deletes page and returns JSON success', async () => {
       mockPageManager.getPageMetadata.mockResolvedValue({ title: 'TestPage', 'system-category': 'general' });
       mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
-      mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+      
       const res = await request(app)
         .post('/delete/TestPage')
         .set('Accept', 'application/json')

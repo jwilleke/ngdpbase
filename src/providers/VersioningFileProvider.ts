@@ -3016,57 +3016,6 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
-   * Restore page to a specific version
-   *
-   * Creates a new version with the content from the specified version.
-   * This does NOT delete newer versions - it creates a new version with old content.
-   *
-   * @param identifier - Page UUID or title
-   * @param version - Version number to restore to
-   * @throws {Error} If page/version not found or restore fails
-   * @example
-   * await provider.restoreVersion('Main', 5);
-   * console.log(`Restored to v5`);
-   */
-  async restoreVersion(identifier: string, version: number, ctx: ActorContext): Promise<void> {
-    // Get the content from the target version
-    const { content, metadata: _versionMetadata } = await this.getPageVersion(identifier, version, ctx);
-
-    // Resolve identifier to get current page info
-    const resolved = await this.resolveIdentifier(identifier, ctx);
-    if (!resolved) {
-      throw new Error(`Page not found: ${identifier}`);
-    }
-
-    const { uuid } = resolved;
-
-    // Get current page to get title
-    const currentPage = await this.getPage(identifier, ctx);
-    if (!currentPage) {
-      throw new Error(`Page not found: ${identifier}`);
-    }
-    const pageName = currentPage.title || identifier;
-
-    // Save as new version with restore metadata. The restore is attributed to
-    // whoever asked for it (#1179), not to a literal 'system'.
-    const editor = actorOf(ctx).user;
-    const comment = `Restored from v${version}`;
-
-    await this.savePage(pageName, content, {
-      uuid: uuid,
-      editor: editor,
-      comment: comment,
-      changeType: 'restored'
-    }, ctx);
-
-    // Get the new version number for logging
-    const location = this.pageIndex?.pages[uuid]?.location || 'pages';
-    const newVersion = await this.getCurrentVersion(uuid, location);
-
-    logger.info(`[VersioningFileProvider] Restored page '${pageName}' to v${version}, created v${newVersion}`);
-  }
-
-  /**
    * Compare two versions of a page
    *
    * Returns a diff showing changes between two versions.

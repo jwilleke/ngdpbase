@@ -72,7 +72,6 @@ const mockPageManager = {
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | Record<string, unknown>
 };
 
@@ -266,8 +265,7 @@ function resetMocks() {
   mockPageManager.pageExists.mockReturnValue(false);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
@@ -1033,10 +1031,9 @@ describe('WikiRoutes — coverage batch 14', () => {
     });
 
     test('returns 200 when version is restored', async () => {
-      const mockProvider = {
-        restoreVersion: vi.fn().mockResolvedValue(5)
-      };
-      mockPageManager.provider = mockProvider;
+      // #1462 slice 3: the provider only says it HAS history; the door restores.
+      mockPageManager.provider = { getPageVersion: vi.fn() };
+      mockPageManager.restoreVersion = vi.fn().mockResolvedValue({ name: 'test-page', uuid: 'u1', version: 5 });
       const res = await request(app)
         .post('/api/page/test-page/restore/3')
         .set('x-csrf-token', 'test-csrf-token')

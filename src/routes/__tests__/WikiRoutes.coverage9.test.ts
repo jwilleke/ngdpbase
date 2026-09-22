@@ -71,8 +71,7 @@ vi.mock('../../context/ApiContext', () => ({
 const mockVersionProvider = {
   getVersionHistory: vi.fn(),
   getPageVersion: vi.fn(),
-  compareVersions: vi.fn(),
-  restoreVersion: vi.fn()
+  compareVersions: vi.fn()
 };
 
 const mockPageManager = {
@@ -84,10 +83,10 @@ const mockPageManager = {
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
   deletePage: vi.fn(),
+  restoreVersion: vi.fn(),
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | typeof mockVersionProvider
 };
 
@@ -252,8 +251,7 @@ function resetMocks() {
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue('test-uuid-1');
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockVersionProvider.getVersionHistory.mockResolvedValue([
     { version: 2, timestamp: '2025-01-01T02:00:00Z', author: 'testuser', comment: 'Edit 2' },
     { version: 1, timestamp: '2025-01-01T01:00:00Z', author: 'testuser', comment: 'Initial' }
@@ -267,7 +265,7 @@ function resetMocks() {
     diff: [{ type: 'add', value: 'new line' }],
     stats: { additions: 1, deletions: 0 }
   });
-  mockVersionProvider.restoreVersion.mockResolvedValue(3);
+  mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 3 });
 
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);

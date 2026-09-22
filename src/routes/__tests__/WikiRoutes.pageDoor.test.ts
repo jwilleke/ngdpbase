@@ -21,6 +21,8 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
   let attachments: Record<string, ReturnType<typeof vi.fn>>;
   let assets: Record<string, ReturnType<typeof vi.fn>>;
   let cache: Record<string, ReturnType<typeof vi.fn>>;
+  let auditManager: any;
+  let auditEvents: Array<Record<string, unknown>>;
   const page = { content: 'see [Other]', metadata: { title: 'Old Title', uuid: 'uuid-old', 'system-keywords': [] as string[] } };
 
   const req = (params: Record<string, string>, body: Record<string, unknown> = {}): any => ({
@@ -55,6 +57,12 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     attachments = { syncPageMentions: vi.fn(async () => {}) };
     assets = { syncPageAssets: vi.fn(async () => {}) };
     cache = { clear: vi.fn(async () => {}) };
+    auditEvents = [];
+    auditManager = {
+      logAuditEvent: vi.fn(async (e: Record<string, unknown>) => { auditEvents.push(e); return 'id'; }),
+      // page-delete refuses without a durable sink (#1121), so the mock has one.
+      flushAuditQueue: vi.fn(async () => {})
+    };
 
     pageManager = {
       getPage: vi.fn(async (name: string) => (name === 'Old Title' ? page : null)),
@@ -62,7 +70,14 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
       getPageUUID: vi.fn(() => 'uuid-old'),
       savePage: vi.fn(async (pageName: string, content: string, metadata?: Record<string, unknown>) =>
         doorSaveResult(pageName, content, metadata, { name: 'Old Title', referrers: ['Alpha', 'Beta'] })),
-      deletePageWithContext: vi.fn(async () => true)
+      deletePage: vi.fn(async () => true),
+      // #1462 slice 3: the restores are the door's too.
+      restoreVersion: vi.fn(async () => ({ name: 'Old Title', uuid: 'uuid-old', version: 7 })),
+      restoreDeletedPage: vi.fn(async () => ({ ok: true, title: 'Old Title' })),
+      // #689: the admin raw editor's save is the door's as well.
+      saveRawPageWithAdminOverride: vi.fn(async () => ({ name: 'Old Title', uuid: 'uuid-old', previousName: 'Old Title', previousReferrers: [], content: 'body' })),
+      getRawPageContent: vi.fn(async () => ({ filePath: '/pages/uuid-old.md', content: 'raw' })),
+      provider: { getDeletedPages: vi.fn(() => []), getPageVersion: vi.fn() }
     };
 
     const engine = {
@@ -75,6 +90,7 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
         case 'AssetManager': return assets;
         case 'CacheManager': return { isInitialized: () => true, ...cache };
         case 'PolicyInformationPoint': return { checkPagePermissionWithContext: vi.fn(async () => true) };
+        case 'AuditManager': return auditManager;
         case 'ConfigurationManager': return { getProperty: (_k: string, d: unknown) => d };
         default: return null;
         }
@@ -105,7 +121,52 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     await routes.apiDeletePage(req({ identifier: 'Old Title' }), r);
 
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, pageName: 'Old Title' }));
-    expect(pageManager.deletePageWithContext).toHaveBeenCalledTimes(1);
+    // #1462 slice 3: one delete door — the page name and the requester's subject.
+    expect(pageManager.deletePage).toHaveBeenCalledTimes(1);
+    expect(pageManager.deletePage).toHaveBeenCalledWith('Old Title', expect.objectContaining({ username: expect.any(String) }));
+    expectNoRouteIndexWork();
+  });
+
+  it('a version restore goes through the door and the route reindexes nothing', async () => {
+    const r = res();
+    await routes.restorePageVersion(req({ identifier: 'Old Title', version: '3' }, { comment: 'ignored' }), r);
+
+    expect(pageManager.restoreVersion).toHaveBeenCalledWith('Old Title', 3, expect.objectContaining({ username: 'jim' }));
+    expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, restoredFromVersion: 3, newVersion: 7 }));
+    expectNoRouteIndexWork();
+  });
+
+  it('a trash restore goes through the door and the route reindexes nothing', async () => {
+    const r = res();
+    await routes.restoreDeletedPage(req({ uuid: 'uuid-old' }), r);
+
+    expect(pageManager.restoreDeletedPage).toHaveBeenCalledWith('uuid-old', expect.objectContaining({ username: 'jim' }));
+    expect(r.json).toHaveBeenCalledWith({ success: true, uuid: 'uuid-old', title: 'Old Title' });
+    // The route used to update the search index and the link graph itself.
+    expectNoRouteIndexWork();
+  });
+
+  it('a raw admin save goes through the door, and the route keeps the record the door cannot carry (#689)', async () => {
+    const r = res();
+    r.redirect = vi.fn(() => r);
+    const rawReq = req({ page: 'Old%20Title' }, { rawContent: '---\ntitle: Old Title\n---\n\nbody' });
+    rawReq.userContext.isAuthenticated = true;
+    await routes.adminSaveRaw(rawReq, r);
+
+    expect(pageManager.saveRawPageWithAdminOverride).toHaveBeenCalledWith(
+      'Old Title',
+      '---\ntitle: Old Title\n---\n\nbody',
+      expect.objectContaining({ username: 'jim' })
+    );
+    expect(r.redirect).toHaveBeenCalledWith('/view/Old%20Title');
+    // The door audits the write; this record says it was an admin override,
+    // which file it wrote and how many bytes — facts the door has not got.
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      eventType: 'page-raw-edit',
+      user: 'jim',
+      metadata: expect.objectContaining({ adminOverride: true, bytes: 30, filePath: '/pages/uuid-old.md' })
+    });
     expectNoRouteIndexWork();
   });
 

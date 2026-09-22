@@ -85,10 +85,10 @@ const mockPageManager = {
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
+  deletePage: vi.fn(),
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | { getVersionHistory?: unknown; compareVersions?: unknown }
 };
 
@@ -263,11 +263,11 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
+  mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
@@ -735,7 +735,7 @@ describe('WikiRoutes — coverage batch 4', () => {
         .post('/delete/TestPage')
         .set('x-csrf-token', 'test-csrf-token');
       expect([200, 302]).toContain(res.status);
-      expect(mockPageManager.deletePageWithContext).toHaveBeenCalled();
+      expect(mockPageManager.deletePage).toHaveBeenCalled();
     });
 
     test('returns 403 when ACL denies delete', async () => {

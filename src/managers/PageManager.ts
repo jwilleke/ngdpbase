@@ -52,6 +52,29 @@ export interface PageSaveOptions {
   /** Attributed to the validation log line; purely diagnostic. */
   userName?: string;
   /**
+   * Skip the uniqueness check (#510) for a write whose whole purpose is to
+   * repair what that check refuses: the admin raw editor (#689) exists to fix
+   * duplicate slugs and duplicate uuids, and the gate would block the very
+   * edit being attempted. Never for an ordinary save.
+   */
+  skipConflictCheck?: boolean;
+  /**
+   * Write the frontmatter EXACTLY as given — no sanitisation (#296), no
+   * author/editor stamping (#1354), no provenance (#946), no former titles
+   * (#1105), no keyword, status or privacy normalisation (#893, #915, #639).
+   *
+   * For the admin raw editor (#689) and nothing else: there the textarea IS
+   * the page's bytes, and the admin is repairing frontmatter the normal path
+   * would rewrite — corrupt YAML, a duplicate slug, a stale uuid. Stamping
+   * the admin as `editor` would also be wrong: they are fixing a file, not
+   * authoring a revision, and the audit log is where that act is recorded.
+   *
+   * It also lifts the inline ACL-markup refusal, because a page still
+   * carrying legacy `[{ALLOW}]` markup is one of the things the raw editor
+   * exists to repair.
+   */
+  rawFrontmatter?: boolean;
+  /**
    * Keep the page's `lastModified` from the metadata passed in. For a write
    * that changes no content a reader cares about — e.g. stamping a shipped
    * page's source hash (#1408) — so the page does not jump to the top of
@@ -1236,38 +1259,38 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Admin-override save (#689): parse the raw file content (frontmatter +
-   * body) with gray-matter and persist via provider.savePage, bypassing
-   * ValidationManager.sanitizeMetadata and checkConflicts entirely. Used
-   * by the admin "Edit raw" UI to fix pages where those gates would block
-   * the very edit being attempted (corrupted YAML, duplicate-slug repairs,
-   * etc.). The admin's identity does NOT propagate to the `editor` /
-   * `lastModifiedBy` fields — that's audit-log territory (recorded by the
-   * route handler, not here). The textarea is the source of truth.
+   * Admin-override save (#689): the admin "Edit raw" textarea, split into
+   * frontmatter and body and written through the door (#1462).
    *
-   * Versioning fires in provider.savePage; the shared indexes are brought in
-   * step here, as for every save (#1462). Throws if the textarea content
-   * isn't parseable YAML.
+   * It goes through `savePage` like every other write — so it versions, keeps
+   * the shared indexes in step and is audited — with the three opt-outs that
+   * make raw editing what it is, stated at this one call site:
+   *
+   *   rawFrontmatter    the file's bytes are the point: no sanitisation, no
+   *                     stamping. The admin is repairing a file, not authoring
+   *                     a revision, so they do NOT become its `editor`.
+   *   skipConflictCheck a duplicate slug or uuid is what it was opened to fix.
+   *   skipValidation    so is content a filter rule refuses.
+   *
+   * The audit op is pinned to `edit`: the raw editor writes an existing file
+   * in place, and the identifier in its URL may be a uuid, so a difference
+   * between it and the frontmatter title is not a rename. The route adds its
+   * own `page.raw-edit` record, which carries what this one cannot — the
+   * admin override, the file path and the byte count.
+   *
+   * Throws if the textarea content isn't parseable YAML.
    */
   async saveRawPageWithAdminOverride(
     pageName: string,
     rawFileContent: string,
     ctx: ActorContext
-  ): Promise<void> {
-    if (!this.provider) throw new Error('PageManager: Provider not initialized');
+  ): Promise<PageSaveResult> {
     const parsed = parsePageFrontmatter(rawFileContent);
-    const metadata = parsed.data as Partial<PageFrontmatter>;
-    const content = parsed.content;
-    const before = await this.provider.getPage(pageName, ctx).catch(() => null);
-    const saved = await this.provider.savePage(pageName, content, metadata, ctx);
-    // #1462: the shared indexes follow the save here, and nowhere else.
-    await this.reconcileSharedIndexes({
-      ctx,
-      name: saved.name,
-      uuid: saved.uuid,
-      previousName: before ? this.nameOf(pageName, before) : null,
-      content,
-      metadata: metadata
+    return this.savePage(pageName, parsed.content, parsed.data, ctx, {
+      rawFrontmatter: true,
+      skipConflictCheck: true,
+      skipValidation: true,
+      audit: { op: 'edit' }
     });
   }
 
@@ -1372,72 +1395,34 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Save a page — the one door every write goes through (#1462 slice 2).
+   * The frontmatter a save writes, from the frontmatter it was given (#1462).
    *
-   * Creates a page or updates one, and owns everything a write must not be
-   * able to forget: content validation (#1037), the ACL-markup refusal,
-   * author preservation and the editor of record (#1354), agent provenance
-   * (#946), former titles (#1105), the privacy and vocabulary rules (#639,
-   * #893, #915), metadata sanitisation (#296), the uniqueness check (#510),
-   * the shared indexes (#1462) and the audit event (#1121).
+   * Everything a write must not be able to forget about metadata, in one
+   * place: author preservation and the editor of record (#1354), agent
+   * provenance (#946), former titles (#1105), the privacy and vocabulary
+   * rules (#639, #893, #915) and sanitisation (#296).
    *
-   * `ctx` is mandatory and positional: the save acts as the caller's subject
-   * (#1179), a private-store write reaches that session's keys through it
-   * (#1382), and the audit record names it. A caller forwards the context it
-   * was given — a request's subject, or the job's for boot and scheduled
-   * work — and never invents one.
+   * Only the admin raw editor skips it (`rawFrontmatter`, #689): there the
+   * file's bytes are the point, and every rule here would rewrite them.
    *
-   * @param pageName - The page to write: its title, or a private path (#1456)
-   * @param content - The body, written exactly as given — a save never rewrites it (#1332)
-   * @param metadata - Frontmatter; server-owned fields in it are discarded, not merged
-   * @param ctx - Who is acting (#1179)
-   * @param options - Validation opt-out, `preserveLastModified`, audit enrichment
-   * @returns Where the page landed, and what it was called before
-   *
-   * @example
-   * await pageManager.savePage('New Page', '# Hello World', { 'user-keywords': ['tutorial'] }, req.userContext);
+   * @param pageName - The page being written: its title, or a private path
+   * @param metadata - The frontmatter as the caller gave it
+   * @param existingPage - The page as stored, or null when this save creates it
+   * @param actingUser - Who is writing this revision, from the context (#1164)
+   * @param viaToken - The agent token this write came through (#946), if any
+   * @returns The frontmatter to hand the provider
    */
-  async savePage(
+  private async normalizeSaveMetadata(
     pageName: string,
-    content: string,
-    metadata: Partial<PageFrontmatter> = {},
-    ctx: ActorContext,
-    options: PageSaveOptions = {}
-  ): Promise<PageSaveResult> {
-    if (!this.provider) {
-      throw new Error('PageManager: Provider not initialized');
-    }
-    if (!ctx) {
-      throw new Error('PageManager.savePage requires an ActorContext');
-    }
-
-    // The save acts as the caller's subject (#1179); a store write reaches
-    // this session's keys through it (#1382), and the provider, the conflict
-    // check and the index work are all handed the very context given here.
-    //
-    // Who is writing this revision, read from the context and never guessed
-    // (#1164). A job context answers with its principal, so a context-free
-    // system write is still named rather than falling back to a literal.
-    const actingUser = actorOf(ctx).user;
-
-    await this.assertContentPasses(pageName, content, {
-      userName: actingUser,
-      ...options
-    });
-
-    // Reject deprecated inline ACL markup — authors must use the audience front matter field instead
-    if (content && /\[\{\s*(ALLOW|DENY)\b[^}]*\}\]/i.test(content)) {
-      throw new Error(
-        'Inline [{ALLOW}] / [{DENY}] markup is no longer supported. ' +
-        'Use the Audience field in the page editor to control access.'
-      );
-    }
-
+    metadata: Partial<PageFrontmatter>,
+    existingPage: WikiPage | null,
+    actingUser: string,
+    viaToken: { name: string } | undefined
+  ): Promise<Partial<PageFrontmatter>> {
     // author — immutable original creator, set on ALL pages, never changes.
     // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
     // Preserve from the existing page — must never be overwritten on edit.
     // For documentation/system category pages, default to 'system' if no user is present.
-    const existingPage = pageName ? await this.provider.getPage(pageName, ctx) : null;
     const originalAuthor = existingPage?.metadata?.author;
 
     const incomingCategory = ((metadata as Record<string, unknown>)['system-category'] as string | undefined)
@@ -1458,7 +1443,6 @@ class PageManager extends BaseManager implements CatalogSource {
     // Both are server-owned: any value supplied by the caller is discarded,
     // never merged. A provenance marker a user can forge or strip is not a
     // provenance marker. (Same rule as `addon` — see docs/planning/addons.md.)
-    const viaToken = (ctx as { viaToken?: { name: string } }).viaToken;
     const existingCreatedVia = (existingPage?.metadata as Record<string, unknown> | undefined)?.['created-via-token'];
 
     // #1354: the author is the page's creator. An edit keeps it, and never
@@ -1637,10 +1621,92 @@ class PageManager extends BaseManager implements CatalogSource {
     const enrichedMetadata = validationManager
       ? validationManager.sanitizeMetadata(metadataWithLocation) as Partial<PageFrontmatter>
       : metadataWithLocation;
+    return enrichedMetadata;
+  }
+
+  /**
+   * Save a page — the one door every write goes through (#1462 slice 2).
+   *
+   * Creates a page or updates one, and owns everything a write must not be
+   * able to forget: content validation (#1037), the ACL-markup refusal,
+   * author preservation and the editor of record (#1354), agent provenance
+   * (#946), former titles (#1105), the privacy and vocabulary rules (#639,
+   * #893, #915), metadata sanitisation (#296), the uniqueness check (#510),
+   * the shared indexes (#1462) and the audit event (#1121).
+   *
+   * `ctx` is mandatory and positional: the save acts as the caller's subject
+   * (#1179), a private-store write reaches that session's keys through it
+   * (#1382), and the audit record names it. A caller forwards the context it
+   * was given — a request's subject, or the job's for boot and scheduled
+   * work — and never invents one.
+   *
+   * @param pageName - The page to write: its title, or a private path (#1456)
+   * @param content - The body, written exactly as given — a save never rewrites it (#1332)
+   * @param metadata - Frontmatter; server-owned fields in it are discarded, not merged
+   * @param ctx - Who is acting (#1179)
+   * @param options - Validation and conflict-check opt-outs, `rawFrontmatter` (#689),
+   *   `preserveLastModified`, audit enrichment
+   * @returns Where the page landed, and what it was called before
+   *
+   * @example
+   * await pageManager.savePage('New Page', '# Hello World', { 'user-keywords': ['tutorial'] }, req.userContext);
+   */
+  async savePage(
+    pageName: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
+    options: PageSaveOptions = {}
+  ): Promise<PageSaveResult> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    if (!ctx) {
+      throw new Error('PageManager.savePage requires an ActorContext');
+    }
+
+    // The save acts as the caller's subject (#1179); a store write reaches
+    // this session's keys through it (#1382), and the provider, the conflict
+    // check and the index work are all handed the very context given here.
+    //
+    // Who is writing this revision, read from the context and never guessed
+    // (#1164). A job context answers with its principal, so a context-free
+    // system write is still named rather than falling back to a literal.
+    const actingUser = actorOf(ctx).user;
+
+    await this.assertContentPasses(pageName, content, {
+      userName: actingUser,
+      ...options
+    });
+
+    // Reject deprecated inline ACL markup — authors must use the audience front matter field instead.
+    // `rawFrontmatter` lifts it: repairing a page that still carries the legacy
+    // markup is exactly what the admin raw editor is for (#689).
+    if (!options.rawFrontmatter && content && /\[\{\s*(ALLOW|DENY)\b[^}]*\}\]/i.test(content)) {
+      throw new Error(
+        'Inline [{ALLOW}] / [{DENY}] markup is no longer supported. ' +
+        'Use the Audience field in the page editor to control access.'
+      );
+    }
+
+    const existingPage = pageName ? await this.provider.getPage(pageName, ctx) : null;
+
+    // #946: the agent this write came through, if any — stamped on the page by
+    // the normalisation below and named in the audit record at the end.
+    const viaToken = (ctx as { viaToken?: { name: string } }).viaToken;
+
+    // #689: the raw editor's textarea IS the file — its frontmatter is written
+    // exactly as typed, with none of the stamping or normalisation below.
+    const enrichedMetadata = options.rawFrontmatter
+      ? metadata
+      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, actingUser, viaToken);
 
     // Enforce uniqueness before delegating to provider — PageManager is the single
-    // authority on uuid/title/slug uniqueness across the system (#510 architecture)
-    if (validationManager) {
+    // authority on uuid/title/slug uniqueness across the system (#510 architecture).
+    // `skipConflictCheck` is the raw editor's repair path (#689): the duplicate
+    // is what it was opened to fix.
+    const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
+    if (validationManager && !options.skipConflictCheck) {
       const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
       const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
@@ -1708,6 +1774,121 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Put an old version's body back, as a new version (#1462 slice 3).
+   *
+   * A restore is a save: it writes the page. It used to call the provider's
+   * own `restoreVersion`, which saved underneath the door — no content
+   * validation, no uniqueness check, no audit record and no shared-index
+   * work, so a restored page kept the RESTORED body on disk while search, the
+   * link graph and the rendered cache still described the one it replaced.
+   * Here the version is read and the body goes back through `savePage`.
+   *
+   * Nothing is destroyed: the newer versions stay in the history, and the
+   * restore is simply the newest one.
+   *
+   * @param identifier - Page UUID, title or slug
+   * @param version - The version whose body to restore
+   * @param ctx - Who is acting (#1179); the restore is attributed to them
+   * @returns Where the page landed, and the version number this created
+   * @throws When the page, the version or the provider's history is missing
+   */
+  async restoreVersion(
+    identifier: string,
+    version: number,
+    ctx: ActorContext
+  ): Promise<PageSaveResult & { version: number | null }> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    if (!ctx) {
+      throw new Error('PageManager.restoreVersion requires an ActorContext');
+    }
+    // Version history is an optional provider capability — feature-detect it,
+    // as `getRawPageContent` does, never assume.
+    const provider = this.provider as PageProvider & {
+      getPageVersion?(identifier: string, version: number, ctx: ActorContext): Promise<{ content: string }>;
+      getVersionHistory?(identifier: string, ctx: ActorContext, limit?: number): Promise<Array<{ version: number }>>;
+    };
+    if (!provider.getPageVersion) {
+      throw new Error('PageManager: this page provider keeps no version history');
+    }
+
+    const past = await provider.getPageVersion(identifier, version, ctx);
+    const current = await provider.getPage(identifier, ctx);
+    if (!current) {
+      throw new Error(`Page not found: ${identifier}`);
+    }
+    const pageName = current.title || identifier;
+
+    // The same metadata the provider-level restore wrote: the page's uuid, the
+    // restorer as editor (#1179), and the version note the history shows.
+    const saved = await this.savePage(pageName, past.content, {
+      uuid: current.uuid,
+      editor: actorOf(ctx).user,
+      comment: `Restored from v${version}`,
+      changeType: 'restored'
+    }, ctx);
+
+    // The version this restore created, for the caller to report.
+    let newVersion: number | null = null;
+    try {
+      const history = await provider.getVersionHistory?.(current.uuid || identifier, ctx, 1);
+      newVersion = history?.[0]?.version ?? null;
+    } catch (err) {
+      logger.warn(`[PageManager] Restored '${pageName}' but could not read its new version number: ${String(err)}`);
+    }
+
+    logger.info(
+      `[PageManager] Restored page '${pageName}' to v${version} as v${newVersion ?? '?'} by ${actorOf(ctx).user}`
+    );
+    return { ...saved, version: newVersion };
+  }
+
+  /**
+   * Bring a page back from the trash (#947), and back into the shared
+   * indexes (#1462 slice 3).
+   *
+   * The provider moves the file and its history back; a restore is then a
+   * save-shaped change — the page is there again, under its restored title —
+   * so the link graph, search, mentions, assets and the rendered cache are
+   * brought in step here, where every other write has them done. The route
+   * used to do a partial job of this itself (search and the link graph only).
+   *
+   * @param uuid - The trashed page's UUID
+   * @param ctx - Who is acting (#1179); the restored page is read as them
+   * @returns The provider's result, unchanged — `ok`, or why not
+   */
+  async restoreDeletedPage(
+    uuid: string,
+    ctx: ActorContext
+  ): Promise<{ ok: true; title: string } | { ok: false; reason: string; detail?: string }> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    if (!ctx) {
+      throw new Error('PageManager.restoreDeletedPage requires an ActorContext');
+    }
+    if (!this.provider.restoreDeletedPage) {
+      throw new Error('PageManager: this page provider has no trash');
+    }
+
+    const result = await this.provider.restoreDeletedPage(uuid);
+    if (!result.ok) return result;
+
+    const restored = await this.provider.getPage(result.title, ctx).catch(() => null);
+    await this.reconcileSharedIndexes({
+      ctx,
+      name: result.title,
+      uuid,
+      // It is back where it was, under the name it had: nothing to take out.
+      previousName: null,
+      content: restored?.content,
+      metadata: restored?.metadata
+    });
+    return result;
+  }
+
+  /**
    * Convert a stored page (frontmatter + body) to NCM, with every fix step
    * (#1332) — the one implementation behind Convert to NCM, agent ingest and
    * the MCP create/update tools.
@@ -1761,51 +1942,24 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Delete a page using WikiContext
+   * Delete a page — the one door every delete goes through (#1462 slice 3).
    *
-   * Removes a page from storage using WikiContext as the single source of truth.
-   * Extracts the page name from the context.
+   * There were two: this one and `deletePageWithContext`, which took a whole
+   * WikiContext to read two fields off it and, when the context carried no
+   * user, deleted as the anonymous subject — a caller that HAD a subject could
+   * lose it on the way in. The context is mandatory and positional here, as it
+   * is for a save.
    *
-   * @async
-   * @param {WikiContext} wikiContext - The wiki context containing page info
-   * @returns {Promise<boolean>} True if deleted, false if not found
+   * The delete is soft (#947): the page goes to the trash with its history,
+   * and the context names who put it there. Afterwards the page is taken out
+   * of every shared index, here and nowhere else (#1462).
    *
-   * @example
-   * const deleted = await pageManager.deletePageWithContext(wikiContext);
-   * if (deleted) console.log('Page removed');
-   */
-  async deletePageWithContext(wikiContext: WikiContext): Promise<boolean> {
-    if (!wikiContext) {
-      throw new Error('PageManager.deletePageWithContext requires a WikiContext');
-    }
-
-    if (!this.provider) {
-      throw new Error('PageManager: Provider not initialized');
-    }
-
-    const identifier = wikiContext.pageName;
-    const deletedBy = wikiContext.userContext?.username || 'anonymous';
-
-    logger.info(`[PageManager] Deleting page: ${identifier} by user: ${deletedBy}`);
-
-    // #947: the context names who deleted the page on the tombstone (#1179).
-    const ctx = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
-    return this.deleteThroughDoor(identifier, ctx);
-  }
-
-  /**
-   * Delete a page
-   *
-   * Removes a page from storage. The page can be identified by UUID, title, or slug.
-   *
-   * @async
-   * @param {string} identifier - Page UUID, title, or slug
-   * @returns {Promise<boolean>} True if deleted, false if not found
-   * @deprecated Use deletePageWithContext() with WikiContext instead
+   * @param identifier - Page UUID, title, or slug
+   * @param ctx - Who is acting (#1179)
+   * @returns True if deleted, false if not found
    *
    * @example
-   * const deleted = await pageManager.deletePage('Old Page');
-   * if (deleted) console.log('Page removed');
+   * const deleted = await pageManager.deletePage('Old Page', req.userContext);
    */
   async deletePage(identifier: string, ctx: ActorContext): Promise<boolean> {
     if (!this.provider) {
@@ -1814,12 +1968,8 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!ctx) {
       throw new Error('PageManager.deletePage requires an ActorContext');
     }
-    return this.deleteThroughDoor(identifier, ctx);
-  }
+    logger.info(`[PageManager] Deleting page: ${identifier} by user: ${actorOf(ctx).user}`);
 
-  /** Delete, then take the page out of every shared index (#1462). */
-  private async deleteThroughDoor(identifier: string, ctx: ActorContext): Promise<boolean> {
-    if (!this.provider) throw new Error('PageManager: Provider not initialized');
     const before = await this.provider.getPage(identifier, ctx).catch(() => null);
     const deleted = await this.provider.deletePage(identifier, ctx);
     if (deleted && before) {

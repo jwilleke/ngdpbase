@@ -86,7 +86,6 @@ const mockPageManager = {
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
-  deletePageWithContext: vi.fn(),
   provider: null as null | Record<string, unknown>
 };
 
@@ -280,8 +279,7 @@ function resetMocks() {
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
-
+  
   mockMediaManager.getYears.mockResolvedValue([2024, 2023]);
   mockMediaManager.listByYear.mockResolvedValue([]);
   mockMediaManager.listByKeyword.mockResolvedValue([]);

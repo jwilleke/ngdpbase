@@ -461,21 +461,17 @@ describe('PageManager', () => {
       expect(saved['system-keywords']).toEqual(['general']);
     });
 
-    test('deletePageWithContext() should require WikiContext', async () => {
-      await expect(pageManager.deletePageWithContext(null)).rejects.toThrow(
-        'PageManager.deletePageWithContext requires a WikiContext'
+    // #1462 slice 3: one delete door, and the context is mandatory on it.
+    test('deletePage() should require an ActorContext', async () => {
+      await expect(pageManager.deletePage('Test Page', null)).rejects.toThrow(
+        'PageManager.deletePage requires an ActorContext'
       );
     });
 
-    test('deletePageWithContext() should extract pageName from WikiContext', async () => {
+    test('deletePage() deletes as the subject it was given', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(undefined);
 
-      const wikiContext = {
-        pageName: 'Test Page',
-        userContext: { username: 'testuser' }
-      };
-
-      await pageManager.deletePageWithContext(wikiContext);
+      await pageManager.deletePage('Test Page', { username: 'testuser' });
 
       // #947: the acting user is passed through so the tombstone records who deleted it
       expect(pageManager.provider.deletePage).toHaveBeenCalledWith(
@@ -719,23 +715,19 @@ describe('PageManager', () => {
     });
   });
 
-  describe('deletePageWithContext() anonymous user logging', () => {
-    test('uses anonymous when userContext has no username', async () => {
+  describe('deletePage() acting user', () => {
+    test('a subject with no username still deletes', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(true);
-      const ctx = {
-        pageName: 'TestPage',
-        userContext: { roles: [] } // no username field
-      };
-      await expect(pageManager.deletePageWithContext(ctx)).resolves.toBe(true);
+      await expect(pageManager.deletePage('TestPage', { roles: [] })).resolves.toBe(true);
     });
 
-    test('uses provided username in log', async () => {
+    test('the subject given is the one handed to the provider', async () => {
       pageManager.provider.deletePage = vi.fn().mockResolvedValue(true);
-      const ctx = {
-        pageName: 'TestPage',
-        userContext: { username: 'alice' }
-      };
-      await expect(pageManager.deletePageWithContext(ctx)).resolves.toBe(true);
+      await expect(pageManager.deletePage('TestPage', { username: 'alice' })).resolves.toBe(true);
+      expect(pageManager.provider.deletePage).toHaveBeenCalledWith(
+        'TestPage',
+        expect.objectContaining({ username: 'alice' })
+      );
     });
   });
 

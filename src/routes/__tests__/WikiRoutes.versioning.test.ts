@@ -20,15 +20,16 @@ describe('WikiRoutes - Version Management API', () => {
     mockProvider = {
       getVersionHistory: vi.fn(),
       getPageVersion: vi.fn(),
-      compareVersions: vi.fn(),
-      restoreVersion: vi.fn()
+      compareVersions: vi.fn()
     };
 
-    // Mock PageManager
+    // Mock PageManager. #1462 slice 3: the restore itself is the manager's —
+    // the provider is only asked whether there is any history to restore from.
     mockPageManager = {
       provider: mockProvider,
       pageExists: vi.fn(),
-      getPage: vi.fn()
+      getPage: vi.fn(),
+      restoreVersion: vi.fn()
     };
 
     // Mock WikiEngine
@@ -313,7 +314,7 @@ describe('WikiRoutes - Version Management API', () => {
 
   describe('POST /api/page/:identifier/restore/:version', () => {
     it('should restore version successfully', async () => {
-      mockProvider.restoreVersion.mockResolvedValue(4); // New version number
+      mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 4 });
 
       const response = await request(app)
         .post('/api/page/TestPage/restore/2')
@@ -324,34 +325,13 @@ describe('WikiRoutes - Version Management API', () => {
       expect(response.body.identifier).toBe('TestPage');
       expect(response.body.restoredFromVersion).toBe(2);
       expect(response.body.newVersion).toBe(4);
-      expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
+      // #1462 slice 3: through the page door, as the request's subject (#1179).
+      expect(mockPageManager.restoreVersion).toHaveBeenCalledWith(
         'TestPage',
         2,
-        // #1179: the restore acts as the request's subject.
-        expect.objectContaining({ username: 'testuser' }),
-        expect.objectContaining({
-          author: 'testuser',
-          comment: 'Restoring to version 2'
-        })
+        expect.objectContaining({ username: 'testuser' })
       );
-    });
-
-    it('should use default comment if not provided', async () => {
-      mockProvider.restoreVersion.mockResolvedValue(4);
-
-      await request(app)
-        .post('/api/page/TestPage/restore/2')
-        .send({})
-        .expect(200);
-
-      expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
-        'TestPage',
-        2,
-        expect.objectContaining({ username: expect.any(String) }),
-        expect.objectContaining({
-          comment: 'Restored from v2'
-        })
-      );
+      expect(mockProvider.restoreVersion).toBeUndefined();
     });
 
     it('should return 401 if user not authenticated', async () => {
@@ -386,7 +366,7 @@ describe('WikiRoutes - Version Management API', () => {
     });
 
     it('should return 404 for non-existent page or version', async () => {
-      mockProvider.restoreVersion.mockRejectedValue(
+      mockPageManager.restoreVersion.mockRejectedValue(
         new Error('Page not found: TestPage')
       );
 
@@ -399,7 +379,8 @@ describe('WikiRoutes - Version Management API', () => {
     });
 
     it('should return 501 when versioning not supported', async () => {
-      delete mockProvider.restoreVersion;
+      // No history to restore FROM on this deployment.
+      delete mockProvider.getPageVersion;
 
       const response = await request(app)
         .post('/api/page/TestPage/restore/2')
@@ -456,7 +437,7 @@ describe('WikiRoutes - Version Management API', () => {
       expect(compareResponse.body.comparison.stats.additions).toBe(1);
 
       // Step 4: Restore version
-      mockProvider.restoreVersion.mockResolvedValue(3);
+      mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 3 });
 
       const restoreResponse = await request(app)
         .post('/api/page/TestPage/restore/1')
@@ -527,33 +508,34 @@ describe('WikiRoutes - Version Management API', () => {
 
   describe('Security', () => {
     it('should track author correctly on restore', async () => {
-      mockProvider.restoreVersion.mockResolvedValue(5);
+      mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 5 });
 
       await request(app)
         .post('/api/page/TestPage/restore/2')
         .send({})
         .expect(200);
 
-      expect(mockProvider.restoreVersion).toHaveBeenCalledWith(
+      // #1179: the restore acts as the request's subject, and the door reads
+      // the editor of record off it — the route never names an author.
+      expect(mockPageManager.restoreVersion).toHaveBeenCalledWith(
         'TestPage',
         2,
-        expect.objectContaining({ username: 'testuser' }),
-        expect.objectContaining({
-          author: 'testuser'
-        })
+        expect.objectContaining({ username: 'testuser' })
       );
     });
 
-    it('should sanitize user input in comments', async () => {
-      mockProvider.restoreVersion.mockResolvedValue(5);
+    it('takes nothing from the request body into the write', async () => {
+      mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 5 });
 
       await request(app)
         .post('/api/page/TestPage/restore/2')
         .send({ comment: '<script>alert("xss")</script>' })
         .expect(200);
 
-      // Comment should be passed as-is (sanitization happens at storage level)
-      expect(mockProvider.restoreVersion).toHaveBeenCalled();
+      // The version note is the door's ('Restored from v2'); a client comment
+      // is not forwarded, so it cannot reach the page's history.
+      expect(mockPageManager.restoreVersion).toHaveBeenCalledWith('TestPage', 2, expect.anything());
+      expect(mockPageManager.restoreVersion.mock.calls[0]).toHaveLength(3);
     });
   });
 });

@@ -425,21 +425,6 @@ abstract class BasePageProvider extends BaseProvider {
   }
 
   /**
-   * Restore a page to a specific version
-   *
-   * Creates a new version by restoring content from an older version.
-   * The restoration itself becomes a new version in the history.
-   *
-   * @param {string} identifier - Page UUID or title
-   * @param {number} version - Version number to restore to
-   * @returns {Promise<void>}
-   * @throws {Error} If version does not exist or restoration fails
-   */
-  restoreVersion(_identifier: string, _version: number, _ctx: ActorContext): Promise<void> {
-    throw new Error('restoreVersion() must be implemented by versioning providers');
-  }
-
-  /**
    * Compare two versions of a page
    *
    * Generates a diff between two versions showing what changed.

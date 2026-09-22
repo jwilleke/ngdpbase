@@ -68,7 +68,6 @@ const mockPageManager = {
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
   deletePage: vi.fn(),
-  deletePageWithContext: vi.fn(),
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
   getPageUUID: vi.fn(),
@@ -266,7 +265,6 @@ function resetMocks() {
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
-  mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
   mockPageManager.getPageUUID.mockReturnValue(null);
@@ -956,7 +954,7 @@ describe('WikiRoutes — coverage batch 15', () => {
         .post('/delete/TestPage')
         .set('x-csrf-token', 'test-csrf-token');
       expect(res.status).toBe(302);
-      expect(mockPageManager.deletePageWithContext).toHaveBeenCalledTimes(1);
+      expect(mockPageManager.deletePage).toHaveBeenCalledTimes(1);
       expectNoRouteIndexWork();
     });
   });
@@ -998,7 +996,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('returns 500 when delete fails', async () => {
-      mockPageManager.deletePageWithContext.mockResolvedValue(false);
+      mockPageManager.deletePage.mockResolvedValue(false);
       const res = await request(app)
         .post('/delete/TestPage')
         .set('x-csrf-token', 'test-csrf-token');

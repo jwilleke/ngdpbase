@@ -83,7 +83,7 @@ const REDECLARED_ALLOWED: Record<string, string> = {
 /** `file` → why a parameter of an identity type is deliberately unused there. */
 const DISCARDED_ALLOWED: Record<string, string> = {
   'src/providers/BasePageProvider.ts':
-    'unimplemented base-class stubs — getPageUUID and restoreVersion exist for providers that do not support them and throw or return null',
+    'an unimplemented base-class stub — getPageUUID exists for providers that do not support it and returns null',
   'src/managers/PageManager.ts':
     'KNOWN, tracked by #1399: isPageDeleted takes ctx and asks provider.isPageDeleted(uuid), which has no context parameter to forward it to. A sealed page\'s trash entry lives in the owner\'s own user-trash catalogue, so the provider door has to take a context before this one can pass it on'
 };

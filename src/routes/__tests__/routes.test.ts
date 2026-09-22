@@ -157,7 +157,6 @@ vi.mock('../../WikiEngine', () => {
     }),
     savePage: vi.fn().mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
     deletePage: vi.fn().mockResolvedValue(true),
-    deletePageWithContext: vi.fn().mockResolvedValue(true),
     getPageContent: vi.fn().mockImplementation((pageName) => {
       if (pageName === 'Footer' || pageName === 'LeftMenu' || pageName === 'NonExistentPage') {
         return Promise.reject(new Error(`Page "${pageName}" not found`));
@@ -896,7 +895,6 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           content: '# Test Page\nThis is a test page.',
           metadata: { title: 'TestPage', 'system-category': 'General' }
         });
-        mockPageManager.deletePageWithContext.mockResolvedValue(true);
         // ACL check must pass for delete permission
         mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
 

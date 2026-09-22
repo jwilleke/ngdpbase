@@ -114,16 +114,17 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
   const invalidatePageCache = vi.spyOn(pageManager, 'invalidatePageCache');
   if (overrides.invalidatePageCache) invalidatePageCache.mockImplementation(overrides.invalidatePageCache);
   const refreshPageList = vi.spyOn(pageManager, 'refreshPageList');
-  const deletePageWithContext = vi.spyOn(pageManager, 'deletePageWithContext').mockImplementation(async (ctx: unknown) => {
-    const name = (ctx as { pageName: string }).pageName;
-    order.push(`delete ${name}`);
-    return pageManager.deletePage(name, { origin: 'test', user: 'admin' });
+  // #1462 slice 3: one delete door — spied here for its order among the writes.
+  const deletePage = vi.spyOn(pageManager, 'deletePage');
+  deletePage.mockImplementation(async function (this: PageManager, ...args: Parameters<PageManager['deletePage']>) {
+    order.push(`delete ${args[0]}`);
+    return PageManager.prototype.deletePage.apply(pageManager, args);
   });
 
   const routes = new WikiRoutes(engine) as unknown as {
     adminSyncRequiredPages(req: unknown, res: unknown): Promise<void>;
   };
-  return { routes, pageManager, invalidatePageCache, refreshPageList, savePage, deletePageWithContext, order };
+  return { routes, pageManager, invalidatePageCache, refreshPageList, savePage, deletePage, order };
 }
 
 /** The identifiers passed to invalidatePageCache, in call order. */
@@ -270,13 +271,13 @@ describe('Required Pages Sync invalidates the caches it invalidates nothing of (
   test('reconcile deletes the old-UUID page through PageManager before saving the canonical one (#1376)', async () => {
     await fs.writeFile(path.join(dirs.requiredDir, `${UUID}.md`), page('canonical body'), 'utf8');
 
-    const { routes, pageManager, order, deletePageWithContext } = await makeRoutes(dirs);
+    const { routes, pageManager, order, deletePage } = await makeRoutes(dirs);
     // The site holds the same page under the old uuid.
     await pageManager.savePage('Using Current Time Plugin', 'old body', { uuid: OTHER_UUID }, { origin: 'test', user: 'admin' });
     order.length = 0;
     await routes.adminSyncRequiredPages(createMockReq({ reconcile: [{ sourceUuid: UUID, liveUuid: OTHER_UUID }] }), createMockRes());
 
-    expect(deletePageWithContext).toHaveBeenCalledWith(expect.objectContaining({ pageName: OTHER_UUID }));
+    expect(deletePage).toHaveBeenCalledWith(OTHER_UUID, expect.objectContaining({ username: 'admin' }));
     expect(order).toEqual([`delete ${OTHER_UUID}`, `save ${UUID}`]);
   });
 });
