@@ -27,6 +27,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   parsePrivatePageName,
+  privateDeletedDirectory,
   legacyPrivatePageFilePath,
   legacyPrivateVersionsRoot,
   parsePrivatePageRel,
@@ -35,7 +36,7 @@ import {
   privateVersionDirectory
 } from '../utils/privateStorePath.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
-import { PLAIN_FILE_IO, type StoreFileIO } from '../utils/privateStoreFiles.js';
+import { PLAIN_FILE_IO, storeFileIO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
 
 /**
@@ -2183,17 +2184,35 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     const uuid = pageData.uuid;
-    // #1371: the deleted record goes beside the live file — private pages to the
-    // private trash, everything else to the pages trash. Never the required-pages
-    // folder, whatever a stale index entry or the category says.
-    const location: 'pages' | 'private' =
-      this.pageIndex?.pages[uuid]?.location === 'private' ? 'private' : 'pages';
+    // #1371: the deleted record goes beside the live file. Never the
+    // required-pages folder, whatever a stale index entry or the category says.
+    const location = 'pages' as const;
 
     try {
       const info = this.resolvePageInfo(identifier, ctx);
       if (!info) {
         logger.warn(`[VersioningFileProvider] Cannot delete - unresolvable: ${identifier}`);
         return false;
+      }
+
+      // #1456: a private page's deleted file stays in its own store, and it
+      // leaves the store's page index. Nothing about it enters the shared
+      // trash or page index; the store's own trash listing is #1459.
+      if (info.fromStore && this.pagesDirectory) {
+        const storeTrash = privateDeletedDirectory(
+          this.pagesDirectory, info.fromStore.owner, info.fromStore.store, this.privateStoreLayout
+        );
+        await fs.ensureDir(storeTrash);
+        await fs.move(info.filePath, path.join(storeTrash, `${uuid}.md`), { overwrite: true });
+        const io = await storeFileIO(ctx, {
+          pagesDirectory: this.pagesDirectory,
+          owner: info.fromStore.owner,
+          store: info.fromStore.store,
+          layout: this.privateStoreLayout
+        });
+        await this.dropStorePage(this.pagesDirectory, { ...info.fromStore, io }, uuid);
+        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deletedBy}; kept in its store's trash`);
+        return true;
       }
 
       const sourcePath = info.filePath;

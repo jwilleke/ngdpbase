@@ -155,6 +155,21 @@ describe('private store default/ (#1383)', () => {
     expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
   });
 
+  test('deleting a private page keeps it in its own store\'s trash and drops it from the store index (#1456)', async () => {
+    const provider = await newProvider();
+    await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
+    expect(await provider.deletePage(DIARY, MOLLY)).toBe(true);
+
+    const storeRoot = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    expect(await fs.pathExists(path.join(storeRoot, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(storeRoot, 'deleted', `${UUID}.md`))).toBe(true);
+    expect((await readStoreIndex()).pages[UUID]).toBeUndefined();
+    expect(await provider.getPage(DIARY, MOLLY)).toBeNull();
+    // Nothing about it enters the shared trash or page index.
+    expect(await fs.pathExists(path.join(pagesDir, 'deleted', `${UUID}.md`))).toBe(false);
+    expect((await readIndex()).deletedPages?.[UUID]).toBeUndefined();
+  });
+
   test('version history lives under the store, not pages/versions/private/{uuid}', async () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
