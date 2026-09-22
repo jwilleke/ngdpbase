@@ -49,6 +49,12 @@ npm run lint:gates --silent
 # is accepted and discarded (`_ctx`), plus any ambient AsyncLocalStorage. Cheap.
 npm run lint:context --silent
 
+# Page door (#1462) — one code path saves a page. Fails on a page write that
+# reaches past PageManager, a shared-index update outside the manager that owns
+# it, or a route writing a page's bytes itself. Each was everywhere before, and
+# every copy was slightly different. Cheap.
+npm run lint:page-door --silent
+
 # Permission types (#1431) — the registry is a TypeScript union, generated from
 # config. This fails when the two have drifted, i.e. someone added a permission
 # and did not run `npm run generate:permissions`. Cheap.

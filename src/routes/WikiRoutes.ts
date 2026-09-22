@@ -11311,11 +11311,19 @@ ${panes}
             comparison.push({ source: 'required-pages', uuid, title, slug, lastModified, status, userModified, liveUuid, titleDrift, liveTitle, affectedLinks });
             continue;
           }
-          // Auto-heal System/Admin → system (invalid legacy category)
+          // Auto-heal System/Admin → system (invalid legacy category).
+          // #1462: through the page door, as every page write is — the repair
+          // is a save, so it is versioned, audited and reindexed like one. The
+          // frontmatter is written as it is: this fixes one field and must not
+          // restamp the rest (#689's rule, same reason).
           if ((destData['system-category'] as string | undefined)?.toLowerCase() === 'system/admin') {
             destData['system-category'] = 'system';
-            const healed = matter.stringify(destContent.replace(/^---[\s\S]*?---\n?/, ''), destData);
-            await fse.writeFile(destPath, healed, 'utf8');
+            await this.engine.getManager('PageManager').savePage(uuid, destBody, destData, currentUser, {
+              rawFrontmatter: true,
+              skipConflictCheck: true,
+              skipValidation: true,
+              audit: { op: 'edit' }
+            });
             logger.info(`auto-healed system-category System/Admin → system for ${uuid}`);
           }
           // #1395: bodies and the stamp decide, as for addon pages (#931). The
@@ -11728,6 +11736,11 @@ ${panes}
       // Falls back to required-pages/{liveUuid}.md if not found in data/pages/ (stale copy).
       // Also always removes stale required-pages/{liveUuid}.md copies when found.
       const adoptedUuids: Array<{ sourceUuid: string; liveUuid: string }> = [];
+      // page-door-ignore: KNOWN, tracked by #1464. Adopting re-identifies a
+      // page — a new uuid, the same title, slug and history — which the door
+      // cannot express: the provider derives a page's uuid rather than taking
+      // one, and no door moves a history tree. The file writes below stay
+      // until that door exists.
       for (const { sourceUuid, liveUuid } of adoptItems) {
         const oldDataPath = path.join(pagesDirResolved, `${liveUuid}.md`);
         const oldRequiredPath = path.join(requiredDirResolved, `${liveUuid}.md`);
@@ -11751,6 +11764,7 @@ ${panes}
           parsed.data.uuid = sourceUuid;
           const updatedContent: string = matter.stringify(parsed.content, parsed.data);
           await fse.ensureDir(pagesDirResolved);
+          // page-door-ignore: #1464 — part of adopting a uuid.
           await fse.writeFile(canonicalPath, updatedContent, 'utf8');
           if (liveUuid !== sourceUuid) {
             // #1107: version history is stored per-UUID, so it must travel with
@@ -11774,11 +11788,13 @@ ${panes}
                   '— a version tree already exists at the destination; both left in place'
                 );
               } else {
+                // page-door-ignore: #1464 — part of adopting a uuid.
                 await fse.move(oldVersionsDir, newVersionsDir);
                 const manifestPath = path.join(newVersionsDir, 'manifest.json');
                 try {
                   const manifest = await fse.readJson(manifestPath) as Record<string, unknown>;
                   manifest.pageId = sourceUuid;
+                  // page-door-ignore: #1464 — part of adopting a uuid.
                   await fse.writeJson(manifestPath, manifest, { spaces: 2 });
                 } catch (err) {
                   // The tree moved; a manifest we could not rewrite still points
@@ -11794,6 +11810,7 @@ ${panes}
 
             // Remove old NAS file if it existed there
             if (removeOldData) {
+              // page-door-ignore: #1464 — part of adopting a uuid.
               await fse.remove(oldDataPath);
               // #1107: this step destroys data and used to be silent, while the
               // cosmetic required-pages cleanup below was logged.
@@ -11801,6 +11818,7 @@ ${panes}
             }
             // Always clean up stale required-pages copy (may exist alongside a NAS copy)
             if (await fse.pathExists(oldRequiredPath)) {
+              // page-door-ignore: #1464 — part of adopting a uuid.
               await fse.remove(oldRequiredPath);
               logger.info(`Adopt UUID: removed stale required-pages copy ${liveUuid}`);
             }
@@ -11825,6 +11843,8 @@ ${panes}
           // #1395: the stamp describes this instance's live copy, not the source.
           delete parsed.data[REQUIRED_SOURCE_HASH_KEY];
           const cleaned: string = matter.stringify(parsed.content, parsed.data);
+          // page-door-ignore: the required-pages SOURCE copy, not a live page —
+          // push-to-source writes the file this instance seeds FROM (#1395).
           await fse.writeFile(sourcePath, cleaned, 'utf8');
           synced.push(uuid);
           logger.info(`Required pages push-to-source: ${uuid} by ${currentUser.username}`);
