@@ -25,8 +25,8 @@ function makeEngine(opts: EngineOpts = {}) {
   const names = new Set(opts.names ?? []);
   const getPage = vi.fn(async (name: string) => (names.has(name) ? { name, content: '', metadata: {} } : null));
   const getPageBySlug = vi.fn(async (slug: string) => (opts.slugs && slug in opts.slugs ? { title: opts.slugs[slug] } : null));
-  const savePageWithContext = vi.fn(async (wikiContext: { pageName: string }) => {
-    names.add(wikiContext.pageName);
+  const savePage = vi.fn(async (name: string) => {
+    names.add(name);
   });
   const listByAuthor = vi.fn(async () => opts.listed ?? []);
   const getUser = vi.fn(async () => (opts.userPref === undefined
@@ -35,14 +35,14 @@ function makeEngine(opts: EngineOpts = {}) {
   const getProperty = vi.fn((key: string, def: unknown) => (opts.config && key in opts.config ? opts.config[key] : def));
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'PageManager') return { getPage, getPageBySlug, savePageWithContext };
+      if (name === 'PageManager') return { getPage, getPageBySlug, savePage };
       if (name === 'JournalDataManager') return { listByAuthor };
       if (name === 'UserManager') return { getUser };
       if (name === 'ConfigurationManager') return { getProperty };
       return undefined;
     })
   } as never;
-  return { engine, getPage, getPageBySlug, savePageWithContext, listByAuthor };
+  return { engine, getPage, getPageBySlug, savePage, listByAuthor };
 }
 
 describe('journalPageName', () => {
@@ -111,14 +111,17 @@ describe('findJournalEntryName', () => {
 
 describe('createJournalEntry', () => {
   it('saves a private entry under the user\'s default store and returns that name', async () => {
-    const { engine, savePageWithContext } = makeEngine();
+    const { engine, savePage } = makeEngine();
     const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
     expect(name).toBe('private/jim/default/2026-09-10-1-journal-jim');
-    expect(savePageWithContext).toHaveBeenCalledTimes(1);
-    const [wikiContext, metadata] = savePageWithContext.mock.calls[0] as unknown as [{ pageName: string; content: string }, Record<string, unknown>];
-    expect(wikiContext.pageName).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    expect(savePage).toHaveBeenCalledTimes(1);
+    const [pageName, content, metadata, ctx] = savePage.mock.calls[0] as unknown as
+      [string, string, Record<string, unknown>, unknown];
+    expect(pageName).toBe('private/jim/default/2026-09-10-1-journal-jim');
     // #1328: empty, not ' '.
-    expect(wikiContext.content).toBe('');
+    expect(content).toBe('');
+    // #1462 slice 2: the door is handed the entry's author, never a rebuilt actor.
+    expect(ctx).toBe(jim);
     expect(metadata).toMatchObject({
       title: '2026-09-10-1-journal-jim',
       slug: '2026-09-10-1-journal-jim',
@@ -131,11 +134,11 @@ describe('createJournalEntry', () => {
   });
 
   it('saves a public entry under its plain title when the deployment defaults to public', async () => {
-    const { engine, savePageWithContext } = makeEngine();
+    const { engine, savePage } = makeEngine();
     const name = await createJournalEntry(engine, { defaultPrivate: false }, jim, '2026-09-10');
     expect(name).toBe('2026-09-10-1-journal-jim');
-    const [wikiContext, metadata] = savePageWithContext.mock.calls[0] as unknown as [{ pageName: string }, Record<string, unknown>];
-    expect(wikiContext.pageName).toBe('2026-09-10-1-journal-jim');
+    const [pageName, , metadata] = savePage.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
+    expect(pageName).toBe('2026-09-10-1-journal-jim');
     expect(metadata.private).toBeUndefined();
     expect(metadata.title).toBe('2026-09-10-1-journal-jim');
   });
@@ -150,9 +153,9 @@ describe('createJournalEntry', () => {
   });
 
   it('leaves out the author lock when the deployment turns it off', async () => {
-    const { engine, savePageWithContext } = makeEngine();
+    const { engine, savePage } = makeEngine();
     await createJournalEntry(engine, { defaultAuthorLock: false }, jim, '2026-09-10');
-    const metadata = savePageWithContext.mock.calls[0][1] as unknown as Record<string, unknown>;
+    const metadata = savePage.mock.calls[0][2] as unknown as Record<string, unknown>;
     expect(metadata['author-lock']).toBeUndefined();
   });
 
@@ -164,8 +167,8 @@ describe('createJournalEntry', () => {
   });
 
   it('refuses an entry with no author', async () => {
-    const { engine, savePageWithContext } = makeEngine();
+    const { engine, savePage } = makeEngine();
     await expect(createJournalEntry(engine, {}, { username: '' } as never, '2026-09-10')).rejects.toThrow(/author/);
-    expect(savePageWithContext).not.toHaveBeenCalled();
+    expect(savePage).not.toHaveBeenCalled();
   });
 });

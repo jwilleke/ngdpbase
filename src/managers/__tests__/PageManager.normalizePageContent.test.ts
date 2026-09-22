@@ -36,7 +36,7 @@ describe('PageManager.normalizePageContent', () => {
 });
 
 // 2026-09-12 decision: conversion lives in the NCM funnel only; saves stay fast (#1333).
-describe('PageManager.savePageWithContext writes the text as typed (#1332)', () => {
+describe('PageManager.savePage writes the text as typed (#1332)', () => {
   function makeSaver() {
     const provider = {
       getPage: vi.fn(async () => null),
@@ -44,21 +44,21 @@ describe('PageManager.savePageWithContext writes the text as typed (#1332)', () 
     };
     const pm = new PageManager(makeEngine());
     (pm as unknown as { provider: unknown }).provider = provider;
-    const ctx = (content: string | null) => ({ pageName: 'P', content, userContext: { username: 'jim' } }) as unknown;
-    return { pm, provider, ctx };
+    const jim = { username: 'jim' } as never;
+    return { pm, provider, jim };
   }
 
   it('saves JSPWiki syntax unchanged', async () => {
-    const { pm, provider, ctx } = makeSaver();
+    const { pm, provider, jim } = makeSaver();
     const md = '* Tests:\n** Skin\n\n{{{\ncode\n}}}\n\n* Other';
-    const r = await pm.savePageWithContext(ctx(md), { title: 'P' });
+    const r = await pm.savePage('P', md, { title: 'P' }, jim);
     expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything(), expect.anything());
     expect(r).toEqual({ content: md, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
   });
 
   it('leaves a metadata-only save alone', async () => {
-    const { pm, provider, ctx } = makeSaver();
-    const r = await pm.savePageWithContext(ctx(null), { title: 'P' });
+    const { pm, provider, jim } = makeSaver();
+    const r = await pm.savePage('P', null, { title: 'P' }, jim);
     expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything(), expect.anything());
     expect(r).toEqual({ content: null, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
   });

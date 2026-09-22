@@ -38,8 +38,8 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
 
     mockPageManager = {
       getPage: vi.fn(async (name: string) => pages.get(name) ?? null),
-      savePageWithContext: vi.fn(async (ctx: any) => {
-        saves.push({ pageName: ctx.pageName, content: ctx.content });
+      savePage: vi.fn(async (pageName: string, content: string) => {
+        saves.push({ pageName, content });
       })
     };
 
@@ -96,7 +96,7 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
 
     it('does not change the page title', async () => {
       await run(['Alpha']);
-      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1];
+      const metadata = mockPageManager.savePage.mock.calls[0][2];
       expect(metadata.title).toBe('Alpha');
     });
   });
@@ -115,7 +115,7 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
       pages.set('Alpha', page('Alpha', '[Old Title]'));
       await run(['Alpha']);
 
-      const options = mockPageManager.savePageWithContext.mock.calls[0][2];
+      const options = mockPageManager.savePage.mock.calls[0][4];
       expect(options?.audit).toMatchObject({
         op: 'link-rewrite',
         rewriteOf: { from: OLD, to: NEW }
@@ -168,7 +168,7 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
 
       await run(['Racy']);
       expect(saves).toHaveLength(0);
-      expect(mockPageManager.savePageWithContext).not.toHaveBeenCalled();
+      expect(mockPageManager.savePage).not.toHaveBeenCalled();
     });
   });
 
@@ -176,9 +176,9 @@ describe('WikiRoutes.rewriteInboundLinksAfterRename()', () => {
     it('survives a save that throws, and still processes the other pages', async () => {
       pages.set('Bad', page('Bad', '[Old Title]'));
       pages.set('Good', page('Good', '[Old Title]'));
-      mockPageManager.savePageWithContext = vi.fn(async (ctx: any) => {
-        if (ctx.pageName === 'Bad') throw new Error('validation failed');
-        saves.push({ pageName: ctx.pageName, content: ctx.content });
+      mockPageManager.savePage = vi.fn(async (pageName: string, content: string) => {
+        if (pageName === 'Bad') throw new Error('validation failed');
+        saves.push({ pageName, content });
       });
 
       await expect(run(['Bad', 'Good'])).resolves.toBeUndefined();

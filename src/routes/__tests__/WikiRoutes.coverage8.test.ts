@@ -69,7 +69,6 @@ const mockPageManager = {
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
-  savePageWithContext: vi.fn(),
   deletePage: vi.fn(),
   pageExists: vi.fn(),
   getCurrentPageProvider: vi.fn(),
@@ -261,8 +260,7 @@ function resetMocks() {
   mockPageManager.getAllPages.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
-  mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+  mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);
@@ -450,8 +448,8 @@ describe('WikiRoutes — coverage batch 8', () => {
       expect(res.status).toBe(403);
     });
 
-    test('returns 500 when savePageWithContext throws', async () => {
-      mockPageManager.savePageWithContext.mockRejectedValue(new Error('disk full'));
+    test('returns 500 when savePage throws', async () => {
+      mockPageManager.savePage.mockRejectedValue(new Error('disk full'));
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -549,7 +547,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'LockedNew'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -557,8 +555,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'LockedNew', templateName: 'blank', 'system-category': 'general', 'author-lock': 'true' });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata['author-lock']).toBe(true);
     });
 
@@ -567,7 +565,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PrivateNew'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -575,8 +573,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'PrivateNew', templateName: 'blank', 'system-category': 'general', private: 'true' });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata.private).toBe(true);
     });
 
@@ -585,7 +583,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageA'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -593,8 +591,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'AudPageA', templateName: 'blank', 'system-category': 'general', audience: 'editor' });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata.audience).toEqual(['editor']);
     });
 
@@ -603,7 +601,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageB'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -611,8 +609,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'AudPageB', templateName: 'blank', 'system-category': 'general', audience: ['editor', 'contributor'] });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata.audience).toEqual(['editor', 'contributor']);
     });
 
@@ -621,7 +619,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'AudPageC'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -629,8 +627,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'AudPageC', templateName: 'blank', 'system-category': 'general' });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata.audience).toBeUndefined();
     });
 
@@ -639,7 +637,7 @@ describe('WikiRoutes — coverage batch 8', () => {
         if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PlainNew'].includes(name)) return Promise.resolve(null);
         return Promise.resolve(existingPageData);
       });
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
 
       const res = await request(app)
         .post('/create')
@@ -647,8 +645,8 @@ describe('WikiRoutes — coverage batch 8', () => {
         .send({ pageName: 'PlainNew', templateName: 'blank', 'system-category': 'general' });
 
       expect(res.status).toBe(302);
-      const callArgs = mockPageManager.savePageWithContext.mock.calls[0];
-      const savedMetadata = callArgs[1] as Record<string, unknown>;
+      const callArgs = mockPageManager.savePage.mock.calls[0];
+      const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata['author-lock']).toBeUndefined();
       expect(savedMetadata.private).toBeUndefined();
     });

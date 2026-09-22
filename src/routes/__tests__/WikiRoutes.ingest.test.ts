@@ -4,7 +4,7 @@
  * Strategy mirrors the authorLock suite: spy createWikiContext (via the shared
  * mock fixture) so hasPermission is controllable, and mock the engine managers
  * the handler touches. The NCM conversion (PageManager.convertPageToNcm) runs
- * for real so we exercise the actual Markdown→NCM path; savePageWithContext is
+ * for real so we exercise the actual Markdown→NCM path; savePage is
  * mocked (its author-attribution logic is covered in PageManager tests).
  *
  * Covers:
@@ -148,20 +148,20 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
   });
 
   test('403 when caller lacks permission', async () => {
-    const pm = { getPage: vi.fn().mockResolvedValue(null), savePageWithContext: vi.fn(), getPageUUID: vi.fn() };
+    const pm = { getPage: vi.fn().mockResolvedValue(null), savePage: vi.fn(), getPageUUID: vi.fn() };
     const routes = new WikiRoutes(makeEngine(pm));
     installContextSpy(routes, false);
     const res = createRes();
     await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'My Doc', markdown: '# Hi' }), res);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(pm.savePageWithContext).not.toHaveBeenCalled();
+    expect(pm.savePage).not.toHaveBeenCalled();
   });
 
   test('create happy path → 201, action "created", NCM stamped, saved through the door', async () => {
     const saved = makeSavedPage();
     const pm = {
       getPage: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(saved),
-      savePageWithContext: vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
+      savePage: vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     };
     const engine = makeEngine(pm);
@@ -181,8 +181,8 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       author: 'jim',
       url: 'https://jimstest.example/view/My%20Doc'
     }));
-    // savePageWithContext got NCM-normalized frontmatter (ncmVersion stamped).
-    const [, savedMeta] = pm.savePageWithContext.mock.calls[0];
+    // savePage got NCM-normalized frontmatter (ncmVersion stamped).
+    const [, , savedMeta] = pm.savePage.mock.calls[0];
     expect(savedMeta).toHaveProperty('ncmVersion');
     // #1462: the page door indexes the page; the route does not.
     expect(engine._searchManager.updatePageInIndex).not.toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
     const saved = makeSavedPage({ author: 'jim' });
     const pm = {
       getPage: vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(saved),
-      savePageWithContext: vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
+      savePage: vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     };
     const routes = new WikiRoutes(makeEngine(pm));
@@ -207,7 +207,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, action: 'updated' }));
-    expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+    expect(pm.savePage).toHaveBeenCalledTimes(1);
   });
 
   // #1081: optimistic concurrency reaches this endpoint too. It did not
@@ -220,7 +220,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
 
     const pmWith = (existing: unknown) => ({
       getPage: vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(makeSavedPage()),
-      savePageWithContext: vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
+      savePage: vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     });
 
@@ -242,7 +242,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       expect(res.status).toHaveBeenCalledWith(409);
       // Nothing written is the point — a 409 that still saved would be worse
       // than no check at all.
-      expect(pm.savePageWithContext).not.toHaveBeenCalled();
+      expect(pm.savePage).not.toHaveBeenCalled();
     });
 
     test('the 409 hands back the current token and content so the caller can merge', async () => {
@@ -286,7 +286,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       );
 
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+      expect(pm.savePage).toHaveBeenCalledTimes(1);
     });
 
     test('writes when no token is supplied — the feature is opt-in', async () => {
@@ -304,7 +304,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       );
 
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+      expect(pm.savePage).toHaveBeenCalledTimes(1);
     });
 
     test('creates normally when there is no existing page to conflict with', async () => {
@@ -323,7 +323,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       );
 
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+      expect(pm.savePage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -334,7 +334,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
   describe('save-time validation', () => {
     const freshPm = () => ({
       getPage: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(makeSavedPage()),
-      savePageWithContext: vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
+      savePage: vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
       getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
     });
 
@@ -360,7 +360,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
         validationErrors: [expect.objectContaining({ rule: 'no-script-tags' })]
       }));
       // The point of blocking: nothing reaches disk.
-      expect(pm.savePageWithContext).not.toHaveBeenCalled();
+      expect(pm.savePage).not.toHaveBeenCalled();
     });
 
     test('validates the NORMALISED content, not the raw input', async () => {
@@ -398,7 +398,7 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
       );
 
       expect(engine._validationManager.collectContentErrors).toHaveBeenCalled();
-      expect(pm.savePageWithContext).toHaveBeenCalledTimes(1);
+      expect(pm.savePage).toHaveBeenCalledTimes(1);
     });
   });
 });

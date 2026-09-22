@@ -50,7 +50,7 @@ describe('WikiRoutes capture (#881)', () => {
 
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
-    mockSaveWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+    mockSaveWithContext = vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
     // #1399: an anonymous caller is a real subject now, so a refusal has to come
     // from POLICY rather than from a missing user. page-create is not granted to
     // anonymous, which is what this models.
@@ -67,7 +67,7 @@ describe('WikiRoutes capture (#881)', () => {
         if (name === 'PageManager') {
           return {
             getPage: mockGetPage,
-            savePageWithContext: mockSaveWithContext,
+            savePage: mockSaveWithContext,
             getPageUUID: vi.fn().mockReturnValue('uuid-1')
           };
         }
@@ -126,14 +126,14 @@ describe('WikiRoutes capture (#881)', () => {
       await wikiRoutes.captureSubmit(req, res);
 
       expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
-      const savedContext = mockSaveWithContext.mock.calls[0][0];
-      expect(savedContext.content).toContain('line one');
-      expect(savedContext.content).toContain('line two');
-      expect(savedContext.content).toContain("[An Article|https://example.com/article|target='_blank']");
+      const [savedName, savedContent] = mockSaveWithContext.mock.calls[0];
+      expect(savedContent).toContain('line one');
+      expect(savedContent).toContain('line two');
+      expect(savedContent).toContain("[An Article|https://example.com/article|target='_blank']");
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
       // #1456: a new capture page is private by default, so it is saved under
       // its private name and kept out of the shared search index.
-      expect(savedContext.pageName).toBe(`private/jim/default/${body.pageName}`);
+      expect(savedName).toBe(`private/jim/default/${body.pageName}`);
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
     });
@@ -145,7 +145,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       expect(content).not.toContain('> line one');
       expect(content).not.toContain('> line two');
       expect(content).toMatch(/^line one$/m);
@@ -157,7 +157,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       expect(content).toContain("## [An Article|https://example.com/article|target='_blank']");
       expect(content).not.toContain('— [An Article');
     });
@@ -167,7 +167,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       expect(content).toMatch(/\*\(captured \d{4}-\d{2}-\d{2}\)\*\n?$/);
       // The date must no longer ride along on the source-link line.
       expect(content).not.toMatch(/target='_blank'\].*captured/);
@@ -180,7 +180,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       // Separator goes BEFORE each entry except the first, so a fresh page has
       // none at all — and never ends on a dangling rule.
       expect(content).not.toMatch(/^----$/m);
@@ -198,7 +198,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       // Two entries, exactly one rule, and it sits between them.
       expect((content.match(/^----$/gm) ?? [])).toHaveLength(1);
       const sep = content.indexOf('\n----\n');
@@ -219,7 +219,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       // A line of dashes directly beneath text makes that text a setext H2, so
       // without the blank line the previous entry's date would become a heading
       // and no rule would be drawn at all.
@@ -238,7 +238,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const content = mockSaveWithContext.mock.calls[0][0].content as string;
+      const content = mockSaveWithContext.mock.calls[0][1] as string;
       expect(content).toContain('## Just a title');
       expect(content).toContain('some selection');
       expect(content).toMatch(/\*\(captured \d{4}-\d{2}-\d{2}\)\*\n?$/);
@@ -250,7 +250,7 @@ describe('WikiRoutes capture (#881)', () => {
       let req = createMockReq(authedUser, {}, body);
       let res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
-      let savedMetadata = mockSaveWithContext.mock.calls[0][1];
+      let savedMetadata = mockSaveWithContext.mock.calls[0][2];
       expect(savedMetadata['system-keywords']).toEqual(['capture']);
       expect(savedMetadata['user-keywords']).toEqual([]);
       expect(savedMetadata.private).toBe(true);
@@ -265,7 +265,7 @@ describe('WikiRoutes capture (#881)', () => {
       req = createMockReq(authedUser, {}, body);
       res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
-      savedMetadata = mockSaveWithContext.mock.calls[0][1];
+      savedMetadata = mockSaveWithContext.mock.calls[0][2];
       expect(savedMetadata['user-keywords']).toEqual(['journal']);
       expect(savedMetadata.private).toBeUndefined();
     });
@@ -280,9 +280,9 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
 
-      const savedContext = mockSaveWithContext.mock.calls[0][0];
-      expect(savedContext.content).toContain('Old capture');
-      expect(savedContext.content.indexOf('Old capture')).toBeLessThan(savedContext.content.indexOf('line one'));
+      const [, savedContent] = mockSaveWithContext.mock.calls[0];
+      expect(savedContent).toContain('Old capture');
+      expect(savedContent.indexOf('Old capture')).toBeLessThan(savedContent.indexOf('line one'));
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
     });
 
@@ -290,8 +290,8 @@ describe('WikiRoutes capture (#881)', () => {
       const req = createMockReq(authedUser, {}, { ...body, title: 'Bad | [label] here' });
       const res = createMockRes();
       await wikiRoutes.captureSubmit(req, res);
-      const savedContext = mockSaveWithContext.mock.calls[0][0];
-      expect(savedContext.content).toContain("[Bad label here|https://example.com/article|target='_blank']");
+      const [, savedContent] = mockSaveWithContext.mock.calls[0];
+      expect(savedContent).toContain("[Bad label here|https://example.com/article|target='_blank']");
     });
 
     test('rejects non-http URLs', async () => {
@@ -340,8 +340,8 @@ describe('WikiRoutes capture (#881)', () => {
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
 
       expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
-      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
-      expect(savedContext.pageName).toBe(privateName);
+      const [savedName, , savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(privateName);
       // The page's title is the plain name; only its name carries the path.
       expect(savedMetadata.title).toBe(body.pageName);
       expect(savedMetadata.private).toBe(true);
@@ -355,7 +355,7 @@ describe('WikiRoutes capture (#881)', () => {
     test('the new page goes into the configured default store', async () => {
       captureConfig['ngdpbase.page.provider.filesystem.defaultstoreid'] = 'clippings';
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
-      expect(mockSaveWithContext.mock.calls[0][0].pageName).toBe(`private/jim/clippings/${body.pageName}`);
+      expect(mockSaveWithContext.mock.calls[0][0]).toBe(`private/jim/clippings/${body.pageName}`);
     });
 
     test('a private target touches no mentions, assets, link graph or search index', async () => {
@@ -373,10 +373,10 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
 
-      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
-      expect(savedContext.pageName).toBe(privateName);
-      expect(savedContext.content).toContain('Old private capture');
-      expect(savedContext.content.indexOf('Old private capture')).toBeLessThan(savedContext.content.indexOf('line one'));
+      const [savedName, savedContent, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(privateName);
+      expect(savedContent).toContain('Old private capture');
+      expect(savedContent.indexOf('Old private capture')).toBeLessThan(savedContent.indexOf('line one'));
       expect(savedMetadata.private).toBe(true);
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
       // The public page of that title is not consulted once the private one is found.
@@ -393,9 +393,9 @@ describe('WikiRoutes capture (#881)', () => {
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
 
       expect(mockGetPage).toHaveBeenCalledWith(privateName, expect.anything());
-      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
-      expect(savedContext.pageName).toBe(body.pageName);
-      expect(savedContext.content).toContain('Old public capture');
+      const [savedName, savedContent, savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(body.pageName);
+      expect(savedContent).toContain('Old public capture');
       expect(savedMetadata.private).toBeUndefined();
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
       // #1462: a public page is indexed by the page door, not by the route.
@@ -411,8 +411,8 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
 
-      const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
-      expect(savedContext.pageName).toBe(body.pageName);
+      const [savedName, , savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(body.pageName);
       expect(savedMetadata.private).toBeUndefined();
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled(); // #1462: the door indexes it
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
@@ -424,7 +424,7 @@ describe('WikiRoutes capture (#881)', () => {
       captureConfig['ngdpbase.capture.private'] = false;
       pageAt(privateName, '# Mine\n', { private: true });
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
-      expect(mockSaveWithContext.mock.calls[0][0].pageName).toBe(privateName);
+      expect(mockSaveWithContext.mock.calls[0][0]).toBe(privateName);
     });
   });
 

@@ -710,8 +710,16 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Create a user page for a new user
+   * Create a user page for a new user.
+   *
+   * The page is written AS the new user (#1462): it is their page, and the
+   * door takes a new page's author from who is acting. Written as the admin
+   * who created the account — or as whoever ran self-registration — the
+   * profile would be authored by them, and `author-lock` would leave the
+   * account's own owner unable to edit it.
+   *
    * @param {User} user - User object
+   * @param ctx - Who created the account, for the log line only
    * @returns {Promise<boolean>} True if user page was created successfully
    */
   async createUserPage(user: User, ctx: ActorContext): Promise<boolean> {
@@ -762,9 +770,16 @@ class UserManager extends BaseManager {
         badge: `Profile ${user.displayName}`
       });
 
-      // Save the user page
-      await pageManager.savePage(profileTitle, populatedContent, metadata, ctx, { skipValidation: true });
-      logger.info(`✅ Created user page for ${user.displayName}`);
+      // The new account's own subject — never a rebuilt or ambient one (#1399).
+      const owner = await this.policyInformationPoint().subjectFor(user.username);
+      if (!owner) {
+        logger.warn(`Cannot create a user page for ${user.username}: the account is not active`);
+        return false;
+      }
+
+      // Save the user page, as its owner
+      await pageManager.savePage(profileTitle, populatedContent, metadata, owner, { skipValidation: true });
+      logger.info(`✅ Created user page for ${user.displayName} by ${actorOf(ctx).user}`);
       return true;
     } catch (error) {
       logger.error(`❌ Error creating user page for ${user.displayName}:`, error);

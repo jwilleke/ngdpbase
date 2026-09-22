@@ -40,28 +40,23 @@ function makeManager(existing: StoredPage[] = []) {
     getManager: vi.fn((name: string) => (name === 'AuditManager' ? auditManager : null))
   }) as unknown as {
     provider: unknown;
-    savePageWithContext: (ctx: unknown, meta?: unknown, opts?: unknown) => Promise<unknown>;
+    savePage: (name: string, content: string, meta?: unknown, ctx?: unknown, opts?: unknown) => Promise<unknown>;
   };
   manager.provider = provider;
 
   return { manager, provider, events };
 }
 
-function context(pageName: string, content = 'body', username: string | undefined = 'jim') {
-  return {
-    pageName,
-    content,
-    userContext: username ? { username } : null
-  };
-}
+/** The acting subject for these saves (#1462 slice 2: the door takes one, positionally). */
+const JIM = { username: 'jim' };
 
 /** The emission is deliberately not awaited by the save path. */
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
+describe('PageManager.savePage() audit emission (#1121)', () => {
   test('a new page emits page-create', async () => {
     const { manager, events } = makeManager();
-    await manager.savePageWithContext(context('Brand New'), { title: 'Brand New' });
+    await manager.savePage('Brand New', 'body', { title: 'Brand New' }, JIM);
     await settle();
 
     expect(events).toHaveLength(1);
@@ -72,7 +67,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     const { manager, events } = makeManager([
       { title: 'Existing', content: 'old', metadata: { title: 'Existing', author: 'jim' } }
     ]);
-    await manager.savePageWithContext(context('Existing'), { title: 'Existing' });
+    await manager.savePage('Existing', 'body', { title: 'Existing' }, JIM);
     await settle();
 
     expect(events).toHaveLength(1);
@@ -83,7 +78,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     const { manager, events } = makeManager([
       { title: 'Old Name', content: 'old', metadata: { title: 'Old Name', author: 'jim' } }
     ]);
-    await manager.savePageWithContext(context('Old Name'), { title: 'New Name' });
+    await manager.savePage('Old Name', 'body', { title: 'New Name' }, JIM);
     await settle();
 
     expect(events).toHaveLength(1);
@@ -99,7 +94,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     const { manager, events } = makeManager([
       { title: 'Old Name', content: 'old', metadata: { title: 'Old Name', author: 'jim' } }
     ]);
-    await manager.savePageWithContext(context('Old Name'), { title: 'New Name' }, {});
+    await manager.savePage('Old Name', 'body', { title: 'New Name' }, JIM, {});
     await settle();
     expect(events[0]).toMatchObject({ eventType: 'page-rename' });
   });
@@ -110,7 +105,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     const { manager, events } = makeManager([
       { title: 'Alpha', content: '[Old]', metadata: { title: 'Alpha', author: 'jim' } }
     ]);
-    await manager.savePageWithContext(context('Alpha', '[New]'), { title: 'Alpha' }, {
+    await manager.savePage('Alpha', '[New]', { title: 'Alpha' }, JIM, {
       audit: { op: 'link-rewrite', rewriteOf: { from: 'Old', to: 'New' } }
     });
     await settle();
@@ -123,7 +118,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
 
   test('carries the client IP when the caller supplies one', async () => {
     const { manager, events } = makeManager();
-    await manager.savePageWithContext(context('Ip Page'), { title: 'Ip Page' }, {
+    await manager.savePage('Ip Page', 'body', { title: 'Ip Page' }, JIM, {
       audit: { ipAddress: '10.0.0.7' }
     });
     await settle();
@@ -134,19 +129,15 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     // The whole point of the move. Four route paths forgot; forgetting is no
     // longer possible.
     const { manager, events } = makeManager();
-    await manager.savePageWithContext(context('Forgetful'), { title: 'Forgetful' });
+    await manager.savePage('Forgetful', 'body', { title: 'Forgetful' }, JIM);
     await settle();
     expect(events).toHaveLength(1);
   });
 
   test('an agent write carries the token, so the page traces to the agent', async () => {
     const { manager, events } = makeManager();
-    const ctx = {
-      pageName: 'Agent Page',
-      content: 'body',
-      userContext: { username: 'jim', viaToken: { id: 'tok_1', name: 'ingest-bot' } }
-    };
-    await manager.savePageWithContext(ctx, { title: 'Agent Page' });
+    const ctx = { username: 'jim', viaToken: { id: 'tok_1', name: 'ingest-bot' } };
+    await manager.savePage('Agent Page', 'body', { title: 'Agent Page' }, ctx);
     await settle();
 
     expect(events[0]).toMatchObject({
@@ -166,10 +157,10 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
           ? { logAuditEvent: vi.fn(async () => { throw new Error('audit down'); }) }
           : null
       )
-    }) as unknown as { provider: unknown; savePageWithContext: (c: unknown, m?: unknown) => Promise<unknown> };
+    }) as unknown as { provider: unknown; savePage: (n: string, c: string, m?: unknown, ctx?: unknown) => Promise<unknown> };
     broken.provider = provider;
 
-    await expect(broken.savePageWithContext(context('Still Saves'), { title: 'Still Saves' }))
+    await expect(broken.savePage('Still Saves', 'body', { title: 'Still Saves' }, JIM))
       .resolves.toEqual({ content: 'body', name: 'Still Saves', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
     await settle();
     expect(provider.savePage).toHaveBeenCalled();
@@ -177,7 +168,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
 
   test('audit.skip suppresses the record', async () => {
     const { manager, events } = makeManager();
-    await manager.savePageWithContext(context('Quiet'), { title: 'Quiet' }, {
+    await manager.savePage('Quiet', 'body', { title: 'Quiet' }, JIM, {
       audit: { skip: true }
     });
     await settle();

@@ -5,8 +5,8 @@
  * surfaces it per-page. Converting IS an edit — anyone who may edit the page
  * could paste the converted text by hand — so the gate moves from
  * admin-system to the page's own edit ACL, checked per page inside the
- * handler. The execute path saves through savePageWithContext so the audit
- * record names the USER who converted, not 'system'.
+ * handler. The execute path saves through the page door WITH the converting
+ * user's context, so the audit record names them and not 'system'.
  */
 import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
@@ -28,15 +28,13 @@ const makeRes = () => ({
 });
 
 function makeRoutes(canEdit: boolean) {
-  const savePageWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
-  const savePage = vi.fn().mockResolvedValue(undefined);
+  const savePage = vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   const pageManager = {
     getPage: vi.fn().mockResolvedValue({
       // A CommonMark link the normalizer rewrites, so `changed` is true.
       content: 'See [the docs](https://example.org/docs) here.',
       metadata: { title: 'Target', uuid: 'uuid-t', 'system-category': 'general' }
     }),
-    savePageWithContext,
     savePage
   };
   const policyInformationPoint = {
@@ -55,7 +53,7 @@ function makeRoutes(canEdit: boolean) {
     () => ({ userContext: editor, hasPermission: vi.fn().mockResolvedValue(false) });
   (routes as unknown as { localizePageImages: (...a: unknown[]) => Promise<unknown> }).localizePageImages =
     async (content: unknown) => ({ content, warnings: [] });
-  return { routes, pageManager, policyInformationPoint, savePageWithContext, savePage };
+  return { routes, pageManager, policyInformationPoint, savePage };
 }
 
 describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
@@ -77,23 +75,25 @@ describe('#1127 convert-to-NCM is gated on the page edit ACL', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test('execute saves through savePageWithContext — the audit names the user', async () => {
-    const { routes, savePageWithContext, savePage } = makeRoutes(true);
+  test('execute saves through the page door as the converting user — the audit names them', async () => {
+    const { routes, savePage } = makeRoutes(true);
     const res = makeRes();
     await routes.adminConvertExecute(makeReq({ page: 'Target' }), res);
-    expect(savePageWithContext).toHaveBeenCalledOnce();
-    expect(savePage).not.toHaveBeenCalled();
-    const [, metadata, options] = savePageWithContext.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
+    expect(savePage).toHaveBeenCalledOnce();
+    const [name, , metadata, ctx, options] = savePage.mock.calls[0] as unknown as
+      [string, string, Record<string, unknown>, Record<string, unknown>, Record<string, unknown>];
+    expect(name).toBe('Target');
     expect(metadata.uuid).toBe('uuid-t');
+    // #1462 slice 2: the door is given the user, never a rebuilt or system actor.
+    expect(ctx).toBe(editor);
     expect(options).toMatchObject({ audit: { ipAddress: '10.0.0.9' } });
   });
 
   test('execute without page-edit is refused before any save', async () => {
-    const { routes, savePageWithContext, savePage } = makeRoutes(false);
+    const { routes, savePage } = makeRoutes(false);
     const res = makeRes();
     await routes.adminConvertExecute(makeReq({ page: 'Target' }), res);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(savePageWithContext).not.toHaveBeenCalled();
     expect(savePage).not.toHaveBeenCalled();
   });
 });
@@ -105,13 +105,13 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     // importFootnote spy so the assertions below still pin per-definition
     // behaviour (ids preserved, caller as author, collision keeps body def).
     const importFootnote = vi.fn().mockResolvedValue(true);
-    const savePageWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+    const savePage = vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
     const pageManager = {
       getPage: vi.fn().mockResolvedValue({
         content: 'A claim[^1] and another[^src].\n\n[^1]: Supporting note.\n\n[^src]: https://example.org/paper\n',
         metadata: { title: 'Noted', uuid: 'uuid-n', 'system-category': 'general' }
       }),
-      savePageWithContext
+      savePage
     };
     const engine = {
       getManager: vi.fn((name: string) => {
@@ -146,7 +146,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
       () => ({ userContext: editor, hasPermission: vi.fn().mockResolvedValue(false) });
     (routes as unknown as { localizePageImages: (...a: unknown[]) => Promise<unknown> }).localizePageImages =
       async (content: unknown) => ({ content, warnings: [] });
-    return { routes, importFootnote, savePageWithContext };
+    return { routes, importFootnote, savePage };
   }
 
   test('preview reports the transfer, removes defs from the proposed body, writes nothing', async () => {
@@ -165,13 +165,13 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
   });
 
   test('execute imports each definition with its id preserved and the caller as author', async () => {
-    const { routes, importFootnote, savePageWithContext } = makeFootnoteRoutes();
+    const { routes, importFootnote, savePage } = makeFootnoteRoutes();
     const res = makeRes();
     await routes.adminConvertExecute(makeReq({ page: 'Noted' }), res);
     expect(importFootnote).toHaveBeenCalledTimes(2);
     expect(importFootnote).toHaveBeenCalledWith('uuid-n', '1', expect.objectContaining({ note: 'Supporting note.' }), expect.objectContaining({ username: 'alice' }));
     expect(importFootnote).toHaveBeenCalledWith('uuid-n', 'src', expect.objectContaining({ url: 'https://example.org/paper' }), expect.objectContaining({ username: 'alice' }));
-    expect(savePageWithContext).toHaveBeenCalledOnce();
+    expect(savePage).toHaveBeenCalledOnce();
   });
 
   test('a sidecar collision keeps the body definition and warns', async () => {

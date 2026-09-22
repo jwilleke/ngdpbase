@@ -82,7 +82,12 @@ async function makeRoutes(dirs: { requiredDir: string; pagesDir: string; instanc
       if (name === 'UserManager') return { hasPermission: vi.fn().mockResolvedValue(true) };
       if (name === 'ConfigurationManager') return configManager;
       if (name === 'ValidationManager') {
-        return { checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }), getCategoryStorageLocation: () => 'regular' };
+        return {
+          checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }),
+          // #1462 slice 2: every save goes through the one door, which sanitises.
+          sanitizeMetadata: (m: unknown) => m,
+          getCategoryStorageLocation: () => 'regular'
+        };
       }
       if (name === 'PageManager') return holder.pageManager;
       if (name === 'SearchManager') return { rebuildIndex: vi.fn().mockResolvedValue(undefined) };

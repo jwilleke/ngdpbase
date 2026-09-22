@@ -1091,8 +1091,9 @@ class AddonsManager extends BaseManager {
         ...(reseedAccess ? { access: reseedAccess } : {}),
         'addon-source-hash': srcHash
       };
-      // #1197: savePage records page-edit under `metadata.editor`; the
-      // system principal, not a literal, is who reseeded it.
+      // #1197: the system principal, not a literal, is who reseeded it. The
+      // door reads that from `seedContext` (#1462 slice 2) — the same name —
+      // and this keeps it in the page's own frontmatter too.
       reseedMetadata.editor = systemPrincipalOf(this.engine);
       await pageManager.savePage(existingSlug, parsed.content, reseedMetadata, seedContext, { skipValidation: true });
       this.lastReseedCount++;

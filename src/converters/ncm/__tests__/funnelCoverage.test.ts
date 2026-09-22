@@ -82,7 +82,7 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
   // 2026-09-12 decision: conversion lives in the NCM funnel only. An ordinary
   // save writes what was typed — no fix steps, no normalizer (#1333: saves stay fast).
   test('a save never converts page text (#1332)', () => {
-    const save = region(pageManager, '  async savePageWithContext(', '\n  }\n');
+    const save = region(pageManager, '  async savePage(', '\n  }\n');
     expect(save).not.toContain('normalizePageContent(');
     expect(save).not.toContain('runFixes(');
     expect(save).not.toContain('normalizeExistingPageToNcm(');

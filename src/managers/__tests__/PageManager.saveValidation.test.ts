@@ -23,10 +23,15 @@ const ERROR = {
 };
 
 function makeManager(errors: unknown[] = []) {
-  const provider = { savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' })) };
+  const provider = {
+    // #1462 slice 2: the one door reads the page before it writes it.
+    getPage: vi.fn(async () => null),
+    savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }))
+  };
   const validationManager = {
     collectContentErrors: vi.fn().mockResolvedValue(errors),
-    checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false })
+    checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }),
+    sanitizeMetadata: vi.fn((m: unknown) => m)
   };
   const auditManager = { logSecurityEvent: vi.fn().mockResolvedValue('evt-1') };
   const manager = new PageManager({
@@ -111,7 +116,8 @@ describe('validation failures never become save failures (#1037)', () => {
         n === 'ValidationManager'
           ? {
             collectContentErrors: vi.fn().mockRejectedValue(new Error('boom')),
-            checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false })
+            checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false }),
+            sanitizeMetadata: vi.fn((m: unknown) => m)
           }
           : null
     };
@@ -122,7 +128,11 @@ describe('validation failures never become save failures (#1037)', () => {
   });
 
   test('no ValidationManager at all is not an error', async () => {
-    const provider = { savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' })) };
+    const provider = {
+      // #1462 slice 2: the one door reads the page before it writes it.
+      getPage: vi.fn(async () => null),
+      savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }))
+    };
     const manager = new PageManager({ getManager: () => null });
     (manager as unknown as { provider: unknown }).provider = provider;
 

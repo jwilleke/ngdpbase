@@ -68,7 +68,7 @@ export interface PageFrontmatter {
   /**
    * Editorial lifecycle state (#893, Slice 1 of #869): 'draft' | 'review' |
    * 'published'. Absent means 'published'. Replaces the lifecycle terms that
-   * previously lived in user-keywords / system-keywords; savePageWithContext
+   * previously lived in user-keywords / system-keywords; the page door
    * migrates them here on save.
    */
   status?: string;

@@ -322,14 +322,17 @@ interface IPageManager {
   pageExists(name: string, ctx: ActorContext): boolean;
   /** #1419: may this page go in an index or cache every reader shares? False for a sealed page. */
   isSharedIndexable?(identifier: string): boolean;
-  savePage(name: string, content: string, metadata: Partial<PageFrontmatter> | undefined, ctx: ActorContext, options?: unknown): Promise<void>;
   // #1121: the options argument is NOT `unknown` on purpose. This local
   // interface is a claim about code this file does not own, and a claim loose
   // enough to accept anything would have let the audit enrichment below be
   // silently wrong — the same shape of defect the audit work kept finding.
-  savePageWithContext(
-    wikiContext: unknown,
-    metadata?: Partial<PageFrontmatter>,
+  // #1462 slice 2: one door — `savePage` IS the full save, and says where the
+  // page landed.
+  savePage(
+    name: string,
+    content: string,
+    metadata: Partial<PageFrontmatter> | undefined,
+    ctx: ActorContext,
     options?: PageSaveOptions
   ): Promise<PageSaveResult>;
   /** #1332: NCM conversion with every fix step — Convert to NCM and ingest go through here. */
@@ -3363,7 +3366,7 @@ ${panes}
       });
 
       // #1462: the door brings the shared indexes in step with the new page.
-      await pageManager.savePageWithContext(wikiContext, metadata);
+      await pageManager.savePage(pageName, content, metadata, currentUser);
 
       // Redirect to edit the new page
       res.redirect(`/edit/${pageName}`);
@@ -3817,7 +3820,7 @@ ${panes}
       // #712: the legacy `user-keywords: [private]` fallback was removed here.
       // PolicyInformationPoint dropped its parallel fallback in #639 Slice E (v3.7.0) once
       // all datasets had migrated; the /save handler was the lone holdout still
-      // honouring the legacy form. PageManager.savePageWithContext defensively
+      // honouring the legacy form. PageManager.savePage defensively
       // strips any stray `'private'` from `user-keywords` on every save, so
       // dead legacy data can't reappear and slip past this read.
       // #1456: a page at a private name is private until its box is unticked.
@@ -4051,7 +4054,7 @@ ${panes}
       // #1332: the manager may fix JSPWiki `**` bullets on the way in. What it
       // wrote is what the link graph and search index below must see, and
       // the author is told on the page they land on.
-      const saved = await pageManager.savePageWithContext(wikiContext, metadata, {
+      const saved = await pageManager.savePage(pageName, content, metadata, currentUser, {
         audit: { ipAddress: req.ip }
       });
       content = saved.content ?? content;
@@ -4545,10 +4548,8 @@ ${panes}
       const systemKeywords = [...existing, 'test-artifact'];
       const metadata = { ...(pageData.metadata ?? {}), 'system-keywords': systemKeywords };
 
-      const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName, response: res });
-      (wikiContext as { content: string | null }).content = pageData.content;
       // #1462: the door reindexes the page.
-      await pageManager.savePageWithContext(wikiContext, metadata, { audit: { ipAddress: req.ip } });
+      await pageManager.savePage(pageName, pageData.content, metadata, req.userContext, { audit: { ipAddress: req.ip } });
 
       return res.json({ success: true, pageName, changed: true, systemKeywords });
     } catch (error) {
@@ -4574,7 +4575,7 @@ ${panes}
     try {
       const prepared = await this.prepareApiPageMutation(req, res, 'rename');
       if (!prepared) return;
-      const { pageData, wikiContext, pageName } = prepared;
+      const { pageData, pageName } = prepared;
 
       const newTitle = typeof req.body?.newTitle === 'string' ? req.body.newTitle.trim() : '';
       if (!newTitle) {
@@ -4598,12 +4599,11 @@ ${panes}
 
       const metadata = { ...(pageData.metadata ?? {}), title: newTitle };
 
-      (wikiContext as { content: string | null }).content = pageData.content;
       // #1121: the rename audit event comes from PageManager, which derives
       // `rename` from the title change — the same derivation for both rename
       // paths, rather than each route classifying its own write.
       // #1462: the door moves the page to its new title in every shared index.
-      const saved = await pageManager.savePageWithContext(wikiContext, metadata, {
+      const saved = await pageManager.savePage(pageName, pageData.content, metadata, req.userContext, {
         audit: { ipAddress: req.ip }
       });
 
@@ -4779,7 +4779,7 @@ ${panes}
       // #1121: `link-rewrite` is the one op PageManager cannot infer — from
       // inside the manager this is an ordinary edit — so the route declares it.
       // #1462: the door reindexes the rewritten page.
-      await pageManager.savePageWithContext(wikiContext, { ...page.metadata }, {
+      await pageManager.savePage(refPage, result.content, { ...page.metadata }, req.userContext, {
         audit: {
           op: 'link-rewrite',
           ipAddress: req.ip,
@@ -5471,7 +5471,7 @@ ${panes}
       let attachNote: string | undefined;
       const wantsAttach = pageName && req.body.attachToPage !== 'false';
       if (wantsAttach) {
-        attachNote = await this.appendAttachDirective(req, res, pageName, req.file.originalname);
+        attachNote = await this.appendAttachDirective(req, pageName, req.file.originalname);
         attachedToPage = attachNote === undefined;
       }
 
@@ -5510,7 +5510,6 @@ ${panes}
    */
   private async appendAttachDirective(
     req: Request,
-    res: Response,
     pageName: string,
     filename: string
   ): Promise<string | undefined> {
@@ -5532,16 +5531,10 @@ ${panes}
       }
 
       const newContent = `${page.content.replace(/\s*$/, '')}\n\n[{ATTACH src='${filename}'}]\n`;
-      const wikiContext = this.createWikiContext(req, {
-        context: WikiContext.CONTEXT.EDIT,
-        pageName,
-        content: newContent,
-        response: res
-      });
       const metadata = { ...(page.metadata as Record<string, unknown>) };
       metadata.editor = permContext.userContext?.username || 'unknown';
       // #1462: the door brings the shared indexes in step.
-      await pageManager.savePageWithContext(wikiContext, metadata);
+      await pageManager.savePage(pageName, newContent, metadata, req.userContext);
       return undefined;
     } catch (err) {
       logger.error(`Error attaching upload to page "${pageName}":`, err);
@@ -5716,14 +5709,8 @@ ${panes}
         });
       if (!existing) metadata.editor = currentUser.username;
 
-      const wikiContext = this.createWikiContext(req, {
-        context: WikiContext.CONTEXT.EDIT,
-        pageName: targetName,
-        content: newContent,
-        response: res
-      });
       // #1462: the door brings the shared indexes in step.
-      const saved = await pageManager.savePageWithContext(wikiContext, metadata);
+      const saved = await pageManager.savePage(targetName, newContent, metadata, currentUser);
 
       return res.render('capture', {
         pageName, url, pageTitle: title, text: '',
@@ -9142,7 +9129,7 @@ ${panes}
       metadata.editor = currentUser.username;
 
       // Normalize Markdown → NCM (links + table up-convert + ncmVersion stamp),
-      // mirroring the MCP create path. savePageWithContext then sets `author`
+      // mirroring the MCP create path. The page door then sets `author`
       // from the WikiContext user (immutable across edits — decision A).
       const ncm = pageManager.convertPageToNcm(matter.stringify(markdown, metadata));
       const ncmDoc = matter(ncm.content);
@@ -9216,14 +9203,8 @@ ${panes}
       const finalDoc = fn.warnings.length > 0 ? matter(fn.content) : ncmDoc;
       ncmWarnings.push(...fn.warnings);
 
-      const wikiContext = this.createWikiContext(req, {
-        context: WikiContext.CONTEXT.EDIT,
-        pageName,
-        content: finalDoc.content,
-        response: res
-      });
       // #1462: the door brings the shared indexes in step.
-      await pageManager.savePageWithContext(wikiContext, finalDoc.data);
+      await pageManager.savePage(pageName, finalDoc.content, finalDoc.data, currentUser);
 
       // The page as saved, for the response.
       const saved = await pageManager.getPage(pageName, req.userContext);
@@ -13398,10 +13379,11 @@ ${panes}
       // #1127: through the door WITH the user — savePage would audit this
       // write as 'system', and the person who converted is exactly what the
       // record is for.
-      (wikiContext as unknown as { content: string | null }).content = split.content;
-      await pageManager.savePageWithContext(
-        wikiContext as unknown as Parameters<NonNullable<typeof pageManager>['savePageWithContext']>[0],
+      await pageManager.savePage(
+        pageName,
+        split.content,
         split.data,
+        wikiContext.userContext,
         { audit: { ipAddress: req.ip } }
       );
       return res.json({

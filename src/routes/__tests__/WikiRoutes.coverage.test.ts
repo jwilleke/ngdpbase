@@ -61,7 +61,6 @@ const mockPageManager = {
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
-  savePageWithContext: vi.fn(),
   deletePage: vi.fn(),
   deletePageWithContext: vi.fn(),
   pageExists: vi.fn(),
@@ -242,8 +241,7 @@ function resetMocks() {
   mockPageManager.getAllPages.mockResolvedValue([]);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
-  mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+  mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(true);
@@ -487,7 +485,7 @@ describe('WikiRoutes — additional coverage', () => {
       // #1431 step 8: the scrub is a plain function now (stripAclMarkup), so
       // this checks the outcome rather than a call on the manager — the edited
       // section lands in the page and the untouched section survives.
-      const saved = (mockPageManager.savePageWithContext.mock.calls.at(-1)?.[0] as { content?: string } | undefined)?.content ?? '';
+      const saved = (mockPageManager.savePage.mock.calls.at(-1)?.[1] as string | undefined) ?? '';
       expect(saved).toContain('Updated section text');
       expect(saved).not.toContain('Original text');
       expect(saved).toContain('Other text');

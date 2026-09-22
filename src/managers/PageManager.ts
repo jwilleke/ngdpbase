@@ -87,7 +87,7 @@ export interface PageSaveOptions {
   };
 }
 
-/** What {@link PageManager.savePageWithContext} wrote. */
+/** What {@link PageManager.savePage} wrote. */
 export interface PageSaveResult {
   /** The body as saved — always the caller's text: a save never rewrites it (#1332). */
   content: string;
@@ -1272,23 +1272,6 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Save page content and metadata using WikiContext
-   *
-   * Creates a new page or updates an existing one using WikiContext as the
-   * single source of truth. Extracts page name, content, and author from context.
-   *
-   * @async
-   * @param {WikiContext} wikiContext - The wiki context containing page and user info
-   * @param {Partial<PageFrontmatter>} [metadata={}] - Additional frontmatter metadata
-   * @returns {Promise<void>}
-   *
-   * @example
-   * await pageManager.savePageWithContext(wikiContext, {
-   *   tags: ['tutorial']
-   * });
-   */
-
-  /**
    * Refuse a save whose content breaks a filter rule (#1037).
    *
    * Lives here, not in the route handlers, because that is where it kept
@@ -1388,33 +1371,57 @@ class PageManager extends BaseManager implements CatalogSource {
     throw new PageContentValidationError(pageName, errors);
   }
 
-  async savePageWithContext(
-    wikiContext: WikiContext,
+  /**
+   * Save a page — the one door every write goes through (#1462 slice 2).
+   *
+   * Creates a page or updates one, and owns everything a write must not be
+   * able to forget: content validation (#1037), the ACL-markup refusal,
+   * author preservation and the editor of record (#1354), agent provenance
+   * (#946), former titles (#1105), the privacy and vocabulary rules (#639,
+   * #893, #915), metadata sanitisation (#296), the uniqueness check (#510),
+   * the shared indexes (#1462) and the audit event (#1121).
+   *
+   * `ctx` is mandatory and positional: the save acts as the caller's subject
+   * (#1179), a private-store write reaches that session's keys through it
+   * (#1382), and the audit record names it. A caller forwards the context it
+   * was given — a request's subject, or the job's for boot and scheduled
+   * work — and never invents one.
+   *
+   * @param pageName - The page to write: its title, or a private path (#1456)
+   * @param content - The body, written exactly as given — a save never rewrites it (#1332)
+   * @param metadata - Frontmatter; server-owned fields in it are discarded, not merged
+   * @param ctx - Who is acting (#1179)
+   * @param options - Validation opt-out, `preserveLastModified`, audit enrichment
+   * @returns Where the page landed, and what it was called before
+   *
+   * @example
+   * await pageManager.savePage('New Page', '# Hello World', { 'user-keywords': ['tutorial'] }, req.userContext);
+   */
+  async savePage(
+    pageName: string,
+    content: string,
     metadata: Partial<PageFrontmatter> = {},
+    ctx: ActorContext,
     options: PageSaveOptions = {}
   ): Promise<PageSaveResult> {
-    if (!wikiContext) {
-      throw new Error('PageManager.savePageWithContext requires a WikiContext');
-    }
-
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
     }
+    if (!ctx) {
+      throw new Error('PageManager.savePage requires an ActorContext');
+    }
 
-    // The save acts as the request's subject (#1179); a store write reaches
-    // this session's keys through it (#1382).
-    const saveContext = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
-
-    const pageName = wikiContext.pageName;
-
-    // #1332: a save writes exactly what was typed. Converting page text —
-    // JSPWiki syntax included — happens only in the NCM funnel (import,
-    // ingest, Convert to NCM, migrations), never here: saves must stay fast
-    // (#1333) and conversion has one owner.
-    const content = wikiContext.content;
+    // The save acts as the caller's subject (#1179); a store write reaches
+    // this session's keys through it (#1382), and the provider, the conflict
+    // check and the index work are all handed the very context given here.
+    //
+    // Who is writing this revision, read from the context and never guessed
+    // (#1164). A job context answers with its principal, so a context-free
+    // system write is still named rather than falling back to a literal.
+    const actingUser = actorOf(ctx).user;
 
     await this.assertContentPasses(pageName, content, {
-      userName: (wikiContext as unknown as { userContext?: { username?: string } }).userContext?.username,
+      userName: actingUser,
       ...options
     });
 
@@ -1430,7 +1437,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
     // Preserve from the existing page — must never be overwritten on edit.
     // For documentation/system category pages, default to 'system' if no user is present.
-    const existingPage = pageName ? await this.provider.getPage(pageName, saveContext) : null;
+    const existingPage = pageName ? await this.provider.getPage(pageName, ctx) : null;
     const originalAuthor = existingPage?.metadata?.author;
 
     const incomingCategory = ((metadata as Record<string, unknown>)['system-category'] as string | undefined)
@@ -1451,7 +1458,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // Both are server-owned: any value supplied by the caller is discarded,
     // never merged. A provenance marker a user can forge or strip is not a
     // provenance marker. (Same rule as `addon` — see docs/planning/addons.md.)
-    const viaToken = (wikiContext.userContext as { viaToken?: { name: string } } | undefined)?.viaToken;
+    const viaToken = (ctx as { viaToken?: { name: string } }).viaToken;
     const existingCreatedVia = (existingPage?.metadata as Record<string, unknown> | undefined)?.['created-via-token'];
 
     // #1354: the author is the page's creator. An edit keeps it, and never
@@ -1461,7 +1468,7 @@ class PageManager extends BaseManager implements CatalogSource {
       ...metadata,
       author: existingPage
         ? originalAuthor
-        : (wikiContext.userContext?.username || metadata.author || defaultAuthor)
+        : (actingUser || metadata.author || defaultAuthor)
     };
     if (!rawMetadata.author) delete rawMetadata.author;
 
@@ -1471,7 +1478,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // (the save route's #803 step), and a stored `editor: system` from one
     // migration was stamped on every later human edit. A caller's own value is
     // used only when the context has no user (a system job).
-    rawMetadata.editor = wikiContext.userContext?.username || metadata.editor || rawMetadata.author;
+    rawMetadata.editor = actingUser || metadata.editor || rawMetadata.author;
 
     // Strip caller-supplied provenance before stamping our own.
     delete (rawMetadata as Record<string, unknown>)['via-token'];
@@ -1492,7 +1499,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
     // #1105: record the outgoing title so the page stays reachable by its old
     // name. Both rename paths — the editor form and POST /api/page/:id/rename —
-    // pass the OLD name as wikiContext.pageName with the new one in
+    // pass the OLD name as `pageName` with the new one in
     // metadata.title, so detecting it here covers both without either knowing.
     //
     // Frontmatter is the store on purpose: the page is its own durable record,
@@ -1636,18 +1643,23 @@ class PageManager extends BaseManager implements CatalogSource {
     if (validationManager) {
       const uuid = (enrichedMetadata as Record<string, unknown>).uuid as string | undefined ?? '';
       const slug = (enrichedMetadata as Record<string, unknown>).slug as string | undefined ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, saveContext);
+      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
       if (conflict.hasConflict) {
         throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
       }
     }
 
-    const saved = await this.provider.savePage(pageName, content, enrichedMetadata, saveContext);
+    // `preserveLastModified` reaches the provider: a metadata-only write, such
+    // as stamping a shipped page's source hash (#1408), must not push the page
+    // to the top of Recent Changes.
+    const saved = options.preserveLastModified
+      ? await this.provider.savePage(pageName, content, enrichedMetadata, ctx, { preserveLastModified: true })
+      : await this.provider.savePage(pageName, content, enrichedMetadata, ctx);
 
     // #1462: the shared indexes follow the save here, and nowhere else.
     const previousName = existingPage ? this.nameOf(pageName, existingPage) : null;
     const previousReferrers = await this.reconcileSharedIndexes({
-      ctx: saveContext,
+      ctx,
       name: saved.name,
       uuid: saved.uuid,
       previousName,
@@ -1680,7 +1692,7 @@ class PageManager extends BaseManager implements CatalogSource {
         this.engine.getManager('AuditManager'),
         buildPageMutationAuditEvent({
           op,
-          username: wikiContext.userContext?.username,
+          username: actingUser,
           ipAddress: options.audit?.ipAddress,
           pageName: op === 'rename' ? finalTitle : pageName,
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
@@ -1746,94 +1758,6 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   normalizePageContent(content: string, options: RunFixesOptions = {}): FixResult {
     return runFixes(content, options);
-  }
-
-  /**
-   * Save page content and metadata
-   *
-   * Creates a new page or updates an existing one. Handles UUID generation
-   * for new pages and version management automatically.
-   *
-   * @async
-   * @param {string} pageName - Page title
-   * @param {string} content - Markdown content
-   * @param {Partial<PageFrontmatter>} [metadata={}] - Frontmatter metadata
-   * @returns {Promise<void>}
-   * @deprecated Use savePageWithContext() with WikiContext instead
-   *
-   * @example
-   * await pageManager.savePage('New Page', '# Hello World', {
-   *   author: 'admin',
-   *   tags: ['tutorial']
-   * });
-   */
-  async savePage(
-    pageName: string,
-    content: string,
-    metadata: Partial<PageFrontmatter> = {},
-    ctx: ActorContext,
-    options: PageSaveOptions = {}
-  ): Promise<void> {
-    if (!this.provider) {
-      throw new Error('PageManager: Provider not initialized');
-    }
-    if (!ctx) {
-      throw new Error('PageManager.savePage requires an ActorContext');
-    }
-    await this.assertContentPasses(pageName, content, options);
-    const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
-    if (validationManager) {
-      const uuid = (metadata as Record<string, unknown>).uuid as string ?? '';
-      const slug = (metadata as Record<string, unknown>).slug as string ?? '';
-      const conflict = await validationManager.checkConflicts(uuid, pageName, slug, ctx);
-      if (conflict.hasConflict) {
-        throw new Error(conflict.message ?? `Page conflict: ${conflict.conflictType}`);
-      }
-    }
-
-    // Best-effort create-vs-edit. A provider without getPage, or a read that
-    // fails, must not break the save — the distinction is a nicety and the
-    // record is worth more than the accuracy of one field.
-    const existed = typeof this.provider.getPage === 'function'
-      ? Boolean(await this.provider.getPage(pageName, ctx).catch(() => null))
-      : true;
-
-    const before = typeof this.provider.getPage === 'function'
-      ? await this.provider.getPage(pageName, ctx).catch(() => null)
-      : null;
-    const saved = options.preserveLastModified
-      ? await this.provider.savePage(pageName, content, metadata, ctx, { preserveLastModified: true })
-      : await this.provider.savePage(pageName, content, metadata, ctx);
-    // #1462: the shared indexes follow the save here, and nowhere else.
-    await this.reconcileSharedIndexes({
-      ctx,
-      name: saved.name,
-      uuid: saved.uuid,
-      previousName: before ? this.nameOf(pageName, before) : null,
-      content,
-      metadata: metadata
-    });
-
-    // #1121 gap C: this path produces NO audit event from the route layer,
-    // because it has no request to audit from. Five callers use it —
-    // UserManager profile pages, ImportManager, AddonsManager seeding — and
-    // every one of them wrote content that appeared in no audit log at all.
-    //
-    // Emitted from the MANAGER rather than the caller, which is the point of
-    // the gap: a record written here cannot be forgotten by the next caller.
-    // The actor is 'system' because there is no user behind these, which is a
-    // fact worth recording rather than a reason to record nothing.
-    void recordAuditEvent(
-      this.engine.getManager('AuditManager'),
-      buildPageMutationAuditEvent({
-        op: existed ? 'edit' : 'create',
-        username: (metadata as Record<string, unknown>).editor as string | undefined ?? 'system',
-        ipAddress: undefined,
-        pageName,
-        uuid: (metadata as Record<string, unknown>).uuid as string | undefined ?? null
-      }),
-      (err) => logger.warn(`[PageManager] Audit log failed for a system page write of '${pageName}':`, err)
-    );
   }
 
   /**

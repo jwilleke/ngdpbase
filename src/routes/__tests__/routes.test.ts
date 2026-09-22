@@ -155,8 +155,7 @@ vi.mock('../../WikiEngine', () => {
         metadata: { title: 'TestPage' }
       });
     }),
-    savePage: vi.fn().mockResolvedValue(true),
-    savePageWithContext: vi.fn().mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
+    savePage: vi.fn().mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
     deletePage: vi.fn().mockResolvedValue(true),
     deletePageWithContext: vi.fn().mockResolvedValue(true),
     getPageContent: vi.fn().mockImplementation((pageName) => {
@@ -626,8 +625,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       test('should save page successfully', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockPolicyDecisionPoint.permits.mockReturnValue(true);
-        mockPageManager.savePage.mockResolvedValue(true);
-        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+        mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
         // Mock existing page for the save operation
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',
@@ -650,7 +648,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         // slug check refused the second save.
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockPolicyDecisionPoint.permits.mockReturnValue(true);
-        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+        mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',
           metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }
@@ -683,7 +681,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           metadata: { title: 'OldTitle', 'system-category': 'general', uuid: 'uuid-old' }
         });
         // Provider throws when the new title is already taken by another page
-        mockPageManager.savePageWithContext.mockRejectedValueOnce(
+        mockPageManager.savePage.mockRejectedValueOnce(
           new Error('Title "Existing Title" is already in use by page uuid-other')
         );
 
@@ -706,7 +704,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
           content: '# Page A',
           metadata: { title: 'PageA', 'system-category': 'general', uuid: 'shared-uuid' }
         });
-        mockPageManager.savePageWithContext.mockRejectedValueOnce(
+        mockPageManager.savePage.mockRejectedValueOnce(
           new Error('UUID "shared-uuid" is already assigned to page "PageB"')
         );
 
@@ -727,7 +725,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         test('a save answers { ok, redirect } instead of a 302', async () => {
           mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
           mockPolicyDecisionPoint.permits.mockReturnValue(true);
-          mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+          mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
           mockPageManager.getPage.mockResolvedValue({
             content: '# Test Page',
             metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }
@@ -749,7 +747,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
             content: '# Old Title',
             metadata: { title: 'OldTitle', 'system-category': 'general', uuid: 'uuid-old' }
           });
-          mockPageManager.savePageWithContext.mockRejectedValueOnce(
+          mockPageManager.savePage.mockRejectedValueOnce(
             new Error('Title "Existing Title" is already in use by page uuid-other')
           );
 
@@ -783,7 +781,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ success: true, pageName: 'NGDPBASE-test-X', changed: true, systemKeywords: ['general', 'test-artifact'] });
-        const [, metadata] = mockPageManager.savePageWithContext.mock.calls.at(-1);
+        const [, , metadata] = mockPageManager.savePage.mock.calls.at(-1);
         expect(metadata['system-keywords']).toEqual(['general', 'test-artifact']);
         expect(metadata.title).toBe('NGDPBASE-test-X');
       });
@@ -794,13 +792,13 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         mockPageManager.getPage.mockResolvedValue({
           content: 'body', metadata: { title: 'NGDPBASE-test-Y', 'system-keywords': ['test-artifact'] }
         });
-        mockPageManager.savePageWithContext.mockClear();
+        mockPageManager.savePage.mockClear();
 
         const res = await post('NGDPBASE-test-Y');
 
         expect(res.status).toBe(200);
         expect(res.body.changed).toBe(false);
-        expect(mockPageManager.savePageWithContext).not.toHaveBeenCalled();
+        expect(mockPageManager.savePage).not.toHaveBeenCalled();
       });
 
       test('a non-admin is refused before the page is even looked up', async () => {
@@ -837,7 +835,6 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
       test('should create page successfully', async () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockPolicyDecisionPoint.permits.mockReturnValue(true);
-        mockPageManager.savePage.mockResolvedValue(true);
         // Make sure the new page doesn't exist
         mockPageManager.getPage.mockImplementation((pageName) => {
           if (pageName === 'NewPage') return Promise.resolve(null);

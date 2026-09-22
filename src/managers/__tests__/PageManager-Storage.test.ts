@@ -106,7 +106,9 @@ describe('PageManager Storage Integration', () => {
       expect(page.title).toBe('Test Page');
       expect(page.content).toContain('Hello World');
       expect(page.metadata.category).toBe('General');
-      expect(page.metadata.author).toBe('testuser');
+      // #1462 slice 2: one door — a new page's author is who ACTED, read from
+      // the context, not a name the caller put in the metadata (#1354).
+      expect(page.metadata.author).toBe(TEST_ACTOR.username);
     });
 
     test('should save page and retrieve content only', async () => {
@@ -173,22 +175,14 @@ describe('PageManager Storage Integration', () => {
   });
 
   describe('Agent provenance stamping (#946)', () => {
-    const agentCtx = (pageName, content) => ({
-      pageName,
-      content,
-      userContext: {
-        username: 'jim',
-        viaToken: { id: 'tok_1', name: 'claude-laptop', scopes: ['page-create', 'page-edit'] }
-      }
-    });
-    const humanCtx = (pageName, content) => ({
-      pageName,
-      content,
-      userContext: { username: 'sarah' }
-    });
+    const AGENT = {
+      username: 'jim',
+      viaToken: { id: 'tok_1', name: 'claude-laptop', scopes: ['page-create', 'page-edit'] }
+    };
+    const HUMAN = { username: 'sarah' };
 
     test('an agent-created page records BOTH created-via-token and via-token', async () => {
-      await pageManager.savePageWithContext(agentCtx('Agent Made', '# One'), {});
+      await pageManager.savePage('Agent Made', '# One', {}, AGENT);
       const page = await pageManager.getPage('Agent Made');
       expect(page.metadata['created-via-token']).toBe('claude-laptop');
       expect(page.metadata['via-token']).toBe('claude-laptop');
@@ -197,8 +191,8 @@ describe('PageManager Storage Integration', () => {
 
     test('a human edit CLEARS via-token but keeps created-via-token', async () => {
       // The whole point of two fields: origin is permanent, current state is not.
-      await pageManager.savePageWithContext(agentCtx('Handover', '# One'), {});
-      await pageManager.savePageWithContext(humanCtx('Handover', '# Two'), {});
+      await pageManager.savePage('Handover', '# One', {}, AGENT);
+      await pageManager.savePage('Handover', '# Two', {}, HUMAN);
 
       const page = await pageManager.getPage('Handover');
       expect(page.metadata['created-via-token']).toBe('claude-laptop');
@@ -208,8 +202,8 @@ describe('PageManager Storage Integration', () => {
     });
 
     test('a human-created page never gains created-via-token from a later agent edit', async () => {
-      await pageManager.savePageWithContext(humanCtx('Human Made', '# One'), {});
-      await pageManager.savePageWithContext(agentCtx('Human Made', '# Two'), {});
+      await pageManager.savePage('Human Made', '# One', {}, HUMAN);
+      await pageManager.savePage('Human Made', '# Two', {}, AGENT);
 
       const page = await pageManager.getPage('Human Made');
       expect(page.metadata['created-via-token']).toBeUndefined();
@@ -218,26 +212,26 @@ describe('PageManager Storage Integration', () => {
 
     test('caller-supplied provenance is discarded, not merged', async () => {
       // A forgeable provenance marker is not a provenance marker.
-      await pageManager.savePageWithContext(humanCtx('Forgery', '# One'), {
+      await pageManager.savePage('Forgery', '# One', {
         'via-token': 'not-a-real-token',
         'created-via-token': 'also-fake'
-      });
+      }, HUMAN);
       const page = await pageManager.getPage('Forgery');
       expect(page.metadata['via-token']).toBeUndefined();
       expect(page.metadata['created-via-token']).toBeUndefined();
     });
 
     test('a caller cannot overwrite a real creation stamp', async () => {
-      await pageManager.savePageWithContext(agentCtx('Locked Origin', '# One'), {});
-      await pageManager.savePageWithContext(humanCtx('Locked Origin', '# Two'), {
+      await pageManager.savePage('Locked Origin', '# One', {}, AGENT);
+      await pageManager.savePage('Locked Origin', '# Two', {
         'created-via-token': 'spoofed'
-      });
+      }, HUMAN);
       const page = await pageManager.getPage('Locked Origin');
       expect(page.metadata['created-via-token']).toBe('claude-laptop');
     });
 
     test('an ordinary human page carries neither field', async () => {
-      await pageManager.savePageWithContext(humanCtx('Plain', '# One'), {});
+      await pageManager.savePage('Plain', '# One', {}, HUMAN);
       const page = await pageManager.getPage('Plain');
       expect(page.metadata['via-token']).toBeUndefined();
       expect(page.metadata['created-via-token']).toBeUndefined();
@@ -263,14 +257,8 @@ describe('PageManager Storage Integration', () => {
   });
 
   describe('WikiContext Integration', () => {
-    test('should save page using WikiContext', async () => {
-      const wikiContext = {
-        pageName: 'Context Page',
-        content: '# WikiContext Content',
-        userContext: { username: 'contextuser' }
-      };
-
-      await pageManager.savePageWithContext(wikiContext, { category: 'Context' });
+    test('should save page as the acting subject', async () => {
+      await pageManager.savePage('Context Page', '# WikiContext Content', { category: 'Context' }, { username: 'contextuser' });
 
       const page = await pageManager.getPage('Context Page');
       expect(page).toBeDefined();

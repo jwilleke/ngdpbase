@@ -1,7 +1,7 @@
 /**
  * #1128 — one save, one audit record.
  *
- * #1121 gap C made PageManager.savePageWithContext the single emission point
+ * #1121 gap C made the page door (PageManager.savePage) the single emission point
  * for page.* mutation events, and the /save handler passes the client IP down
  * via `audit: { ipAddress }`. The route-level emission from #1080 was left in
  * place, so every create/edit/rename through /save was recorded twice —

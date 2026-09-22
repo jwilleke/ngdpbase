@@ -142,7 +142,13 @@ describe('PageManager', () => {
 
       await pageManager.savePage('Test', '# Content', { category: 'General' }, TEST_ACTOR);
 
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('Test', '# Content', { category: 'General' }, TEST_ACTOR);
+      // #1462 slice 2: one door — the save also stamps who wrote it.
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith(
+        'Test',
+        '# Content',
+        { category: 'General', author: TEST_ACTOR.username, editor: TEST_ACTOR.username },
+        TEST_ACTOR
+      );
     });
 
     test('deletePage() should delegate to provider', async () => {
@@ -181,23 +187,17 @@ describe('PageManager', () => {
     });
   });
 
-  describe('WikiContext Methods', () => {
-    test('savePageWithContext() should require WikiContext', async () => {
-      await expect(pageManager.savePageWithContext(null)).rejects.toThrow(
-        'PageManager.savePageWithContext requires a WikiContext'
+  describe('The page door (#1462)', () => {
+    test('savePage() should require an ActorContext', async () => {
+      await expect(pageManager.savePage('Test Page', 'body', {}, null)).rejects.toThrow(
+        'PageManager.savePage requires an ActorContext'
       );
     });
 
-    test('savePageWithContext() should extract data from WikiContext', async () => {
+    test('savePage() stamps author and editor from the acting context', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'Test Page',
-        content: '# Test Content',
-        userContext: { username: 'testuser' }
-      };
-
-      await pageManager.savePageWithContext(wikiContext, { category: 'General' });
+      await pageManager.savePage('Test Page', '# Test Content', { category: 'General' }, { username: 'testuser' });
 
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Test Page',
@@ -212,63 +212,55 @@ describe('PageManager', () => {
       );
     });
 
-    test('savePageWithContext() should use anonymous if no user', async () => {
+    test('savePage() names the anonymous subject when that is who acted', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'Test Page',
-        content: '# Test Content'
-      };
-
-      await pageManager.savePageWithContext(wikiContext, {});
+      await pageManager.savePage('Test Page', '# Test Content', {}, ANONYMOUS_SUBJECT);
 
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Test Page',
         '# Test Content',
-        { author: 'anonymous', editor: 'anonymous' },
-        // No subject on the context: the save acts as the anonymous subject.
-        expect.objectContaining({ username: expect.any(String) })
+        { author: ANONYMOUS_SUBJECT.username, editor: ANONYMOUS_SUBJECT.username },
+        // #1462 slice 2: the subject the caller named, never one invented here.
+        ANONYMOUS_SUBJECT
       );
     });
 
     // #1354: `editor` is who made this version, from the save's context.
-    test('savePageWithContext() records the signed-in user as editor, not the stored editor (#1354)', async () => {
+    test('savePage() records the signed-in user as editor, not the stored editor (#1354)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       pageManager.provider.getPage = vi.fn().mockResolvedValue({
         content: 'old', metadata: { title: 'Cell', author: 'jim', editor: 'system' }
       });
 
       // The save route carries the stored frontmatter forward, editor included.
-      await pageManager.savePageWithContext(
-        { pageName: 'Cell', content: 'new', userContext: { username: 'alice' } },
-        { title: 'Cell', editor: 'system' }
-      );
+      await pageManager.savePage('Cell', 'new', { title: 'Cell', editor: 'system' }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.editor).toBe('alice');
       expect(saved.author).toBe('jim');
     });
 
-    test('savePageWithContext() never makes the editor the author of a page that has none (#1354)', async () => {
+    test('savePage() never makes the editor the author of a page that has none (#1354)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       pageManager.provider.getPage = vi.fn().mockResolvedValue({
         content: 'old', metadata: { title: 'Year 1925' }
       });
 
-      await pageManager.savePageWithContext(
-        { pageName: 'Year 1925', content: 'new', userContext: { username: 'alice' } },
-        { title: 'Year 1925', author: 'alice' }
-      );
+      await pageManager.savePage('Year 1925', 'new', { title: 'Year 1925', author: 'alice' }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved).not.toHaveProperty('author');
       expect(saved.editor).toBe('alice');
     });
 
-    test('savePageWithContext() keeps the caller\'s editor when the context has no user (#1354)', async () => {
+    test('savePage() takes the editor from a system job\'s own context (#1354)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      await pageManager.savePageWithContext({ pageName: 'Migrated', content: 'x' }, { editor: 'system' });
+      // A context-free system write is a JobContext: it names its principal,
+      // so the editor comes from it rather than from the caller's metadata.
+      const job = { username: 'system', origin: 'boot', requestedAt: new Date().toISOString(), reason: 'migration' };
+      await pageManager.savePage('Migrated', 'x', { editor: 'somebody-else' }, job);
 
       expect(pageManager.provider.savePage.mock.calls[0][2].editor).toBe('system');
     });
@@ -277,7 +269,7 @@ describe('PageManager', () => {
     // #639 Slice B: privacy normalization on save
     // ---------------------------------------------------------------------
 
-    test('savePageWithContext() — top-level private:true → emits private:true only (#802 Slice 4: system-location retired)', async () => {
+    test('savePage() — top-level private:true → emits private:true only (#802 Slice 4: system-location retired)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.user-keywords') return { private: { storageLocation: 'private' } };
@@ -285,11 +277,7 @@ describe('PageManager', () => {
         return dv;
       });
 
-      const wikiContext = {
-        pageName: 'Secret', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, { private: true });
+      await pageManager.savePage('Secret', 'body', { private: true }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
@@ -299,7 +287,7 @@ describe('PageManager', () => {
       expect(saved['system-location']).toBeUndefined();
     });
 
-    test('savePageWithContext() — stray user-keywords:[private] is stripped defensively but no longer triggers privacy (#639 Slice E)', async () => {
+    test('savePage() — stray user-keywords:[private] is stripped defensively but no longer triggers privacy (#639 Slice E)', async () => {
       // Slice E removed the back-compat that treated 'private' in user-keywords
       // as a privacy signal. The defensive strip remains — if external authoring
       // tools or hand-edits introduce a stray 'private' it gets cleaned out on
@@ -307,11 +295,7 @@ describe('PageManager', () => {
       // `private: true` field does.
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'P', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['private', 'notes'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['private', 'notes'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBeUndefined();          // not promoted to private
@@ -319,7 +303,7 @@ describe('PageManager', () => {
       expect(saved['user-keywords']).toEqual(['notes']); // 'private' stripped defensively
     });
 
-    test('savePageWithContext() — both signals present → strips keyword, keeps top-level', async () => {
+    test('savePage() — both signals present → strips keyword, keeps top-level', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.user-keywords') return { private: { storageLocation: 'private' } };
@@ -327,28 +311,20 @@ describe('PageManager', () => {
         return dv;
       });
 
-      const wikiContext = {
-        pageName: 'P', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, {
+      await pageManager.savePage('P', 'body', {
         private: true,
         'user-keywords': ['private', 'notes']
-      });
+      }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBe(true);
       expect(saved['user-keywords']).toEqual(['notes']);
     });
 
-    test('savePageWithContext() — non-private save does NOT add private or system-location', async () => {
+    test('savePage() — non-private save does NOT add private or system-location', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'Public', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['notes'] });
+      await pageManager.savePage('Public', 'body', { 'user-keywords': ['notes'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.private).toBeUndefined();
@@ -356,14 +332,10 @@ describe('PageManager', () => {
       expect(saved['user-keywords']).toEqual(['notes']); // unchanged
     });
 
-    test('savePageWithContext() — incoming private:false reaches the provider as the move-out signal, adding nothing else (#1456)', async () => {
+    test('savePage() — incoming private:false reaches the provider as the move-out signal, adding nothing else (#1456)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'P', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, { private: false });
+      await pageManager.savePage('P', 'body', { private: false }, { username: 'alice' });
 
       // An unticked Private box on a private page moves it out of its store,
       // so the provider must see the explicit false (it strips `private` from
@@ -374,14 +346,10 @@ describe('PageManager', () => {
       expect(saved['user-keywords'] ?? []).not.toContain('private');
     });
 
-    test('savePageWithContext() — leaves user-keywords untouched when no `private` to strip', async () => {
+    test('savePage() — leaves user-keywords untouched when no `private` to strip', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
-      const wikiContext = {
-        pageName: 'P', content: 'body',
-        userContext: { username: 'alice' }
-      };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['notes', 'wip'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['notes', 'wip'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved['user-keywords']).toEqual(['notes', 'wip']);
@@ -391,23 +359,21 @@ describe('PageManager', () => {
     // #893 (Slice 1 of #869): vocabulary-bucket normalization on save
     // ---------------------------------------------------------------------
 
-    test('savePageWithContext() — lifecycle keyword in user-keywords becomes status field (#893)', async () => {
+    test('savePage() — lifecycle keyword in user-keywords becomes status field (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft', 'travel'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['draft', 'travel'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBe('draft');
       expect(saved['user-keywords']).toEqual(['travel']);
     });
 
-    test('savePageWithContext() — highest lifecycle state wins across both keyword arrays (#893)', async () => {
+    test('savePage() — highest lifecycle state wins across both keyword arrays (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, {
+      await pageManager.savePage('P', 'body', {
         'user-keywords': ['draft'],
         'system-keywords': ['review', 'general']
-      });
+      }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBe('review');
@@ -415,23 +381,21 @@ describe('PageManager', () => {
       expect(saved['system-keywords']).toEqual(['general']);
     });
 
-    test('savePageWithContext() — explicit status wins over keyword-derived lifecycle (#893)', async () => {
+    test('savePage() — explicit status wins over keyword-derived lifecycle (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, {
+      await pageManager.savePage('P', 'body', {
         status: 'review',
         'user-keywords': ['published']
-      });
+      }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBe('review');
       expect(saved['user-keywords']).toEqual([]);
     });
 
-    test('savePageWithContext() — capture moves user-keywords → system-keywords (#893)', async () => {
+    test('savePage() — capture moves user-keywords → system-keywords (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['capture', 'travel'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['capture', 'travel'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved['user-keywords']).toEqual(['travel']);
@@ -439,30 +403,28 @@ describe('PageManager', () => {
       expect(saved.status).toBeUndefined();
     });
 
-    test('savePageWithContext() — capture does not duplicate in system-keywords (#893)', async () => {
+    test('savePage() — capture does not duplicate in system-keywords (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, {
+      await pageManager.savePage('P', 'body', {
         'user-keywords': ['capture'],
         'system-keywords': ['capture']
-      });
+      }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved['system-keywords']).toEqual(['capture']);
       expect(saved['user-keywords']).toEqual([]);
     });
 
-    test('savePageWithContext() — explicit default status (published) maps to absence (#893)', async () => {
+    test('savePage() — explicit default status (published) maps to absence (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, { status: 'published', 'user-keywords': ['travel'] });
+      await pageManager.savePage('P', 'body', { status: 'published', 'user-keywords': ['travel'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBeUndefined();
       expect(saved['user-keywords']).toEqual(['travel']);
     });
 
-    test('savePageWithContext() — status catalog is config-driven: custom order wins (#893)', async () => {
+    test('savePage() — status catalog is config-driven: custom order wins (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.status') {
@@ -474,26 +436,24 @@ describe('PageManager', () => {
         if (key === 'ngdpbase.system-category') return {};
         return dv;
       });
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['idea', 'travel'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['idea', 'travel'] }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBe('idea');
       expect(saved['user-keywords']).toEqual(['travel']);
       // 'draft' is NOT in the custom catalog — stays an ordinary keyword
       pageManager.provider.savePage.mockClear();
-      await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft'] });
+      await pageManager.savePage('P', 'body', { 'user-keywords': ['draft'] }, { username: 'alice' });
       expect(pageManager.provider.savePage.mock.calls[0][2]['user-keywords']).toEqual(['draft']);
     });
 
-    test('savePageWithContext() — clean vocabulary passes through untouched (#893)', async () => {
+    test('savePage() — clean vocabulary passes through untouched (#893)', async () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
-      const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
-      await pageManager.savePageWithContext(wikiContext, {
+      await pageManager.savePage('P', 'body', {
         status: 'draft',
         'user-keywords': ['travel'],
         'system-keywords': ['general']
-      });
+      }, { username: 'alice' });
 
       const saved = pageManager.provider.savePage.mock.calls[0][2];
       expect(saved.status).toBe('draft');
@@ -681,7 +641,7 @@ describe('PageManager', () => {
       });
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts };
+        if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts, sanitizeMetadata: (m: unknown) => m };
         return null;
       });
 
@@ -697,14 +657,19 @@ describe('PageManager', () => {
       pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
-        if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts };
+        if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts, sanitizeMetadata: (m: unknown) => m };
         return null;
       });
 
       await pageManager.savePage('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
 
       expect(mockCheckConflicts).toHaveBeenCalled();
-      expect(pageManager.provider.savePage).toHaveBeenCalledWith('New Page', '# Hello', { uuid: 'new-uuid' }, TEST_ACTOR);
+      expect(pageManager.provider.savePage).toHaveBeenCalledWith(
+        'New Page',
+        '# Hello',
+        { uuid: 'new-uuid', author: TEST_ACTOR.username, editor: TEST_ACTOR.username },
+        TEST_ACTOR
+      );
     });
   });
 
@@ -819,7 +784,7 @@ describe('PageManager', () => {
       expect(pageManager.provider.savePage).toHaveBeenCalledWith(
         'Diary',
         '# secret',
-        { private: true, author: 'molly' },
+        { private: true, author: 'molly', editor: 'molly' },
         molly
       );
     });

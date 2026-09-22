@@ -67,7 +67,6 @@ const mockPageManager = {
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
-  savePageWithContext: vi.fn(),
   deletePage: vi.fn(),
   deletePageWithContext: vi.fn(),
   pageExists: vi.fn(),
@@ -265,8 +264,7 @@ function resetMocks() {
   mockPageManager.getAllPages.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
-  mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+  mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
@@ -660,7 +658,7 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', userKeywords: ['tech', 'science'] });
       expect(res.status).toBe(302);
-      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      const saved = mockPageManager.savePage.mock.calls[0][2];
       expect(saved['user-keywords']).toEqual(['tech', 'science']);
     });
 
@@ -670,7 +668,7 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'user-keywords': ' travel,  ohio , travel, , grow system ' });
       expect(res.status).toBe(302);
-      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      const saved = mockPageManager.savePage.mock.calls[0][2];
       expect(saved['user-keywords']).toEqual(['travel', 'ohio', 'grow system']);
     });
 
@@ -681,12 +679,12 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'user-keywords': many });
       expect(res.status).toBe(302);
-      const saved = mockPageManager.savePageWithContext.mock.calls[0][1];
+      const saved = mockPageManager.savePage.mock.calls[0][2];
       expect(saved['user-keywords']).toHaveLength(12);
     });
 
     test('handles save error gracefully', async () => {
-      mockPageManager.savePageWithContext.mockRejectedValue(new Error('Save failed'));
+      mockPageManager.savePage.mockRejectedValue(new Error('Save failed'));
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -695,7 +693,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('handles duplicate title conflict with 409', async () => {
-      mockPageManager.savePageWithContext.mockRejectedValue(new Error('UUID is already in use'));
+      mockPageManager.savePage.mockRejectedValue(new Error('UUID is already in use'));
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -714,7 +712,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     // ── #803 — Unified /save preserves unknown frontmatter fields ──────────
 
     test('#803 — preserves unknown form fields (mood, journal-date) into metadata', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -726,14 +724,14 @@ describe('WikiRoutes — coverage batch 15', () => {
           'journal-date': '2026-05-26'
         });
       expect(res.status).toBe(302);
-      expect(mockPageManager.savePageWithContext).toHaveBeenCalled();
-      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      expect(mockPageManager.savePage).toHaveBeenCalled();
+      const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
       expect(metadata['mood']).toBe('curious');
       expect(metadata['journal-date']).toBe('2026-05-26');
     });
 
     test('#803 — preserves existing on-disk frontmatter when form omits the field', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       // existingPageData.metadata default includes 'mood: tired' for this test
       mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve({
         content: '# Existing',
@@ -749,13 +747,13 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
       expect(res.status).toBe(302);
-      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
       // Existing mood survives because the form didn't post a mood field
       expect(metadata['mood']).toBe('tired');
     });
 
     test('#803 — req.body unknown field overrides existing frontmatter', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve({
         content: '# Existing',
         metadata: {
@@ -770,13 +768,13 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', mood: 'happy' });
       expect(res.status).toBe(302);
-      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
       // Form-posted mood wins over existing
       expect(metadata['mood']).toBe('happy');
     });
 
     test('#803 — form-internal markers do not leak into metadata', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -792,7 +790,7 @@ describe('WikiRoutes — coverage batch 15', () => {
           userKeywords: 'tech'
         });
       expect(res.status).toBe(302);
-      const metadata = mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
       // None of the form-internal markers should appear in the saved frontmatter
       expect(metadata).not.toHaveProperty('_csrf');
       expect(metadata).not.toHaveProperty('private-present');
@@ -829,11 +827,11 @@ describe('WikiRoutes — coverage batch 15', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
       expect(res.status).toBe(302);
-      return mockPageManager.savePageWithContext.mock.calls[0][1] as Record<string, unknown>;
+      return mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
     }
 
     test('#1017 — existing system-keywords survive an edit that does not post them', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords(['capture']));
       const metadata = await saveAndReadMetadata();
       // The regression: this used to come back as ['general'], losing the capture mark.
@@ -841,7 +839,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('#1017 — every existing system keyword survives, not just the first', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(
         existingPageWithSystemKeywords(['general', 'capture', 'auto-tagged'])
       );
@@ -850,7 +848,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('#1017 — an existing EMPTY array is preserved, not re-seeded with the default', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords([]));
       const metadata = await saveAndReadMetadata();
       // Empty is a real state a page can be in — re-seeding 'general' here would
@@ -859,7 +857,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('#1017 — a scalar on-disk value is coerced to an array, not dropped', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       // JSPWiki imports can store keyword fields as space/comma-separated scalars;
       // the view path coerces the same way.
       mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords('capture general'));
@@ -868,14 +866,14 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('#1017 — an existing page with no system-keywords field still gets the catalog default', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(existingPageWithSystemKeywords(undefined));
       const metadata = await saveAndReadMetadata();
       expect(metadata['system-keywords']).toEqual(['general']);
     });
 
     test('#1017 — a NEW page still gets the catalog default', async () => {
-      mockPageManager.savePageWithContext.mockClear();
+      mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve(null));
       const metadata = await saveAndReadMetadata();
       expect(metadata['system-keywords']).toEqual(['general']);
@@ -907,14 +905,14 @@ describe('WikiRoutes — coverage batch 15', () => {
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/view/TestPage');
-      expect(mockPageManager.savePageWithContext).toHaveBeenCalledTimes(1);
+      expect(mockPageManager.savePage).toHaveBeenCalledTimes(1);
       expectNoRouteIndexWork();
     });
 
     test('a page the door put in a store redirects to where the door says it landed', async () => {
       const landed = 'private/adminuser/notes/TestPage';
-      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
-        ({ ...doorSaveResult(ctx, metadata, { name: 'TestPage' }), name: landed }));
+      mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) =>
+        ({ ...doorSaveResult(name, content, metadata, { name: 'TestPage' }), name: landed }));
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -927,8 +925,8 @@ describe('WikiRoutes — coverage batch 15', () => {
     test('a rename rewrites the referrers the door read before the old title left the link graph', async () => {
       const rewrite = vi.spyOn(WikiRoutes.prototype as unknown as { rewriteInboundLinksAfterRename: () => Promise<void> }, 'rewriteInboundLinksAfterRename')
         .mockResolvedValue(undefined);
-      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
-        doorSaveResult(ctx, metadata, { name: 'TestPage', referrers: ['Alpha', 'Beta'] }));
+      mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) =>
+        doorSaveResult(name, content, metadata, { name: 'TestPage', referrers: ['Alpha', 'Beta'] }));
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')
@@ -943,8 +941,8 @@ describe('WikiRoutes — coverage batch 15', () => {
     test('an edit that keeps its title rewrites nothing', async () => {
       const rewrite = vi.spyOn(WikiRoutes.prototype as unknown as { rewriteInboundLinksAfterRename: () => Promise<void> }, 'rewriteInboundLinksAfterRename')
         .mockResolvedValue(undefined);
-      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
-        doorSaveResult(ctx, metadata, { name: 'TestPage', referrers: ['Alpha'] }));
+      mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) =>
+        doorSaveResult(name, content, metadata, { name: 'TestPage', referrers: ['Alpha'] }));
       await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')

@@ -6,7 +6,7 @@ import type RenderingManager from '../../../dist/src/managers/RenderingManager.j
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
-import WikiContext, { type UserContext } from '../../../dist/src/context/WikiContext.js';
+import { type UserContext } from '../../../dist/src/context/WikiContext.js';
 import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../dist/src/utils/privateStorePath.js';
 import { v4 as uuidv4 } from 'uuid';
 import type JournalDataManager from '../managers/JournalDataManager.js';
@@ -107,16 +107,8 @@ export async function createJournalEntry(
   };
 
   // #1328: empty, not ' ' — the author's first keystroke starts the line.
-  const wikiContext = new WikiContext(engine, {
-    context:     WikiContext.CONTEXT.EDIT,
-    pageName:    name,
-    content:     '',
-    userContext
-  });
-  // WikiContext imported in the addon and the one PageManager was compiled
-  // against are structurally identical but distinct module instances to tsc.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-  await pm.savePageWithContext(wikiContext as any, metadata);
+  // #1462 slice 2: straight through the page door, as the entry's author.
+  await pm.savePage(name, '', metadata, userContext);
   return name;
 }
 

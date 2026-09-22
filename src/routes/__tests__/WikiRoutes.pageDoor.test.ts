@@ -60,8 +60,8 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
       getPage: vi.fn(async (name: string) => (name === 'Old Title' ? page : null)),
       getPageMetadata: vi.fn(async () => page.metadata),
       getPageUUID: vi.fn(() => 'uuid-old'),
-      savePageWithContext: vi.fn(async (ctx: { content: string; pageName?: string }, metadata?: Record<string, unknown>) =>
-        doorSaveResult(ctx, metadata, { name: 'Old Title', referrers: ['Alpha', 'Beta'] })),
+      savePage: vi.fn(async (pageName: string, content: string, metadata?: Record<string, unknown>) =>
+        doorSaveResult(pageName, content, metadata, { name: 'Old Title', referrers: ['Alpha', 'Beta'] })),
       deletePageWithContext: vi.fn(async () => true)
     };
 
@@ -94,7 +94,7 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     await routes.apiRenamePage(req({ identifier: 'Old Title' }, { newTitle: 'New Title' }), r);
 
     expect(r.json).toHaveBeenCalledWith({ success: true, from: 'Old Title', to: 'New Title' });
-    expect(pageManager.savePageWithContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'New Title' }), expect.anything());
+    expect(pageManager.savePage).toHaveBeenCalledWith('Old Title', expect.any(String), expect.objectContaining({ title: 'New Title' }), expect.anything(), expect.anything());
     // The door's referrers — not a link-graph read the route made itself.
     expect(rewrite).toHaveBeenCalledWith(expect.anything(), ['Alpha', 'Beta'], 'Old Title', 'New Title');
     expectNoRouteIndexWork();
@@ -114,7 +114,7 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     await routes.apiMarkTestArtifact(req({ identifier: 'Old Title' }), r);
 
     expect(r.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, changed: true }));
-    expect(pageManager.savePageWithContext).toHaveBeenCalledTimes(1);
+    expect(pageManager.savePage).toHaveBeenCalledTimes(1);
     expectNoRouteIndexWork();
   });
 });

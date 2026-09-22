@@ -53,16 +53,15 @@ function makeDoor(existing: Record<string, StoredPage> = {}, links: Record<strin
   };
   const pm = new PageManager({ getManager: vi.fn((name: string) => managers[name] ?? null) });
   (pm as unknown as { provider: unknown }).provider = provider;
-  const ctx = (pageName: string, content: string | null) =>
-    ({ pageName, content, userContext: { username: 'jim', isAuthenticated: true } }) as unknown;
+  const jim = { username: 'jim', isAuthenticated: true } as never;
   const cleared = () => cache.clear.mock.calls.map((c: unknown[]) => c[1]).sort();
-  return { pm, provider, rendering, search, attachments, assets, cache, ctx, cleared };
+  return { pm, provider, rendering, search, attachments, assets, cache, jim, cleared };
 }
 
 describe('PageManager — the page door keeps the shared indexes (#1462)', () => {
   it('a new public page goes into every shared index, and its referrers\' rendered pages are cleared', async () => {
     const d = makeDoor({}, { 'New Page': ['Alpha'] });
-    const saved = await d.pm.savePageWithContext(d.ctx('New Page', 'see [Beta]'), { title: 'New Page', uuid: 'uuid-new' });
+    const saved = await d.pm.savePage('New Page', 'see [Beta]', { title: 'New Page', uuid: 'uuid-new' }, d.jim);
 
     expect(saved).toEqual({ content: 'see [Beta]', name: 'New Page', uuid: 'uuid-new', previousName: null, previousReferrers: [] });
     expect(d.rendering.addPageToCache).toHaveBeenCalledWith('New Page');
@@ -77,7 +76,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
 
   it('an edit reindexes the page under its name without re-adding it', async () => {
     const d = makeDoor({ Doc: { content: 'old', metadata: { title: 'Doc', uuid: 'uuid-doc' } } });
-    await d.pm.savePageWithContext(d.ctx('Doc', 'new'), { title: 'Doc', uuid: 'uuid-doc' });
+    await d.pm.savePage('Doc', 'new', { title: 'Doc', uuid: 'uuid-doc' }, d.jim);
 
     expect(d.rendering.addPageToCache).not.toHaveBeenCalled();
     expect(d.rendering.updatePageInLinkGraph).toHaveBeenCalledWith('Doc', 'new');
@@ -90,7 +89,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
       { 'Old Title': { content: 'body', metadata: { title: 'Old Title', uuid: 'uuid-doc' } } },
       { 'Old Title': ['Alpha', 'Beta'] }
     );
-    const saved = await d.pm.savePageWithContext(d.ctx('Old Title', 'body'), { title: 'New Title', uuid: 'uuid-doc' });
+    const saved = await d.pm.savePage('Old Title', 'body', { title: 'New Title', uuid: 'uuid-doc' }, d.jim);
 
     expect(saved.previousName).toBe('Old Title');
     expect(saved.name).toBe('New Title');
@@ -106,7 +105,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
   it('a private page is kept out of every shared index; only its own rendered page is cleared', async () => {
     const d = makeDoor();
     d.provider.savePage.mockResolvedValueOnce({ name: 'private/jim/default/Diary', uuid: 'uuid-diary' });
-    const saved = await d.pm.savePageWithContext(d.ctx('private/jim/default/Diary', 'secret'), { title: 'Diary', uuid: 'uuid-diary', private: true });
+    const saved = await d.pm.savePage('private/jim/default/Diary', 'secret', { title: 'Diary', uuid: 'uuid-diary', private: true }, d.jim);
 
     expect(saved.name).toBe('private/jim/default/Diary');
     for (const fn of [d.rendering.addPageToCache, d.rendering.updatePageInLinkGraph, d.rendering.removePageFromLinkGraph,
@@ -119,7 +118,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
   it('a public page moved into a store leaves the shared indexes under its old name', async () => {
     const d = makeDoor({ Doc: { content: 'body', metadata: { title: 'Doc', uuid: 'uuid-doc' } } }, { Doc: ['Gamma'] });
     d.provider.savePage.mockResolvedValueOnce({ name: 'private/jim/default/Doc', uuid: 'uuid-doc' });
-    await d.pm.savePageWithContext(d.ctx('Doc', 'body'), { title: 'Doc', uuid: 'uuid-doc', private: true });
+    await d.pm.savePage('Doc', 'body', { title: 'Doc', uuid: 'uuid-doc', private: true }, d.jim);
 
     expect(d.rendering.removePageFromLinkGraph).toHaveBeenCalledWith('Doc');
     expect(d.search.removePageFromIndex).toHaveBeenCalledWith('Doc');
@@ -141,7 +140,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.cleared()).toEqual(['rendered-pages:uuid-alpha:*', 'rendered-pages:uuid-doc:*']);
   });
 
-  it('the context-free savePage door — import, addon and shipped-page seeding — indexes too', async () => {
+  it('a system write — import, addon and shipped-page seeding — indexes too', async () => {
     const d = makeDoor();
     await d.pm.savePage('Seeded', 'hello', { title: 'Seeded', uuid: 'uuid-seeded' }, { username: 'system' }, { skipValidation: true });
 
@@ -154,7 +153,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
   it('a failing index step is logged, not thrown — the page is already saved', async () => {
     const d = makeDoor();
     d.search.updatePageInIndex.mockRejectedValueOnce(new Error('index down'));
-    await expect(d.pm.savePageWithContext(d.ctx('P', 'x'), { title: 'P', uuid: 'uuid-p' })).resolves.toMatchObject({ name: 'P' });
+    await expect(d.pm.savePage('P', 'x', { title: 'P', uuid: 'uuid-p' }, d.jim)).resolves.toMatchObject({ name: 'P' });
     expect(d.attachments.syncPageMentions).toHaveBeenCalled();
   });
 });

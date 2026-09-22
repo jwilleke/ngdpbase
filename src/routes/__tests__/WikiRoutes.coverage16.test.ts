@@ -99,7 +99,6 @@ const mockPageManager = {
   getPageNames: vi.fn(),
   getAllPageNames: vi.fn(),
   savePage: vi.fn(),
-  savePageWithContext: vi.fn(),
   deletePage: vi.fn(),
   deletePageWithContext: vi.fn(),
   pageExists: vi.fn(),
@@ -340,8 +339,7 @@ function resetMocks() {
   mockPageManager.getAllPages.mockResolvedValue([]);
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
-  mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+  mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);

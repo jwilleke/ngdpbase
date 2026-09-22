@@ -470,7 +470,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     const pdfFile = { buffer: Buffer.from('pdf'), originalname: 'report.pdf', mimetype: 'application/pdf', size: 3 };
 
     beforeEach(() => {
-      mockSaveWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
+      mockSaveWithContext = vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata));
       mockGetPage = vi.fn().mockResolvedValue({
         name: 'Journal — jim — 2026-06-22',
         content: '# Entry\n\nSome text\n',
@@ -493,7 +493,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
         if (name === 'PageManager') {
           return {
             getPage: mockGetPage,
-            savePageWithContext: mockSaveWithContext,
+            savePage: mockSaveWithContext,
             getPageUUID: vi.fn().mockReturnValue('page-uuid-1')
           };
         }
@@ -524,9 +524,10 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       await wikiRoutes.uploadAttachment(mockReq, mockRes);
 
       expect(mockSaveWithContext).toHaveBeenCalledTimes(1);
-      const savedContext = mockSaveWithContext.mock.calls[0][0];
-      expect(savedContext.content).toContain("[{ATTACH src='report.pdf'}]");
-      expect(savedContext.content).toContain('Some text');
+      const [savedName, savedContent] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe('Journal — jim — 2026-06-22');
+      expect(savedContent).toContain("[{ATTACH src='report.pdf'}]");
+      expect(savedContent).toContain('Some text');
       // #1462: the page door reindexes the page; the route does not.
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       const jsonArg = mockRes.json.mock.calls[0][0];
