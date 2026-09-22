@@ -1,4 +1,5 @@
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
+import type { UserCatalogPage } from '../utils/privateStoreCatalogs.js';
 import type { ActorContext } from '../context/ActorContext.js';
 /**
  * Provider type definitions for ngdpbase
@@ -574,6 +575,13 @@ export interface StoreFileEntry {
   /** Pages the file was uploaded onto. */
   mentions: string[];
 }
+
+/**
+ * A page in a private store (#1456): its entry in the store's OWN page index,
+ * beside `store.json` — never in the global `page-index.json`. The same shape
+ * the user-level sealed catalogue used (#1385), which the store index replaces.
+ */
+export type StorePageEntry = UserCatalogPage;
 
 /**
  * A private store as the attachment provider is handed it: whose it is, which

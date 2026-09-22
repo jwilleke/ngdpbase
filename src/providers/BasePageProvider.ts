@@ -1,5 +1,7 @@
 import logger from '../utils/logger.js';
-import type { ProviderInfo } from '../types/Provider.js';
+import type { ProviderInfo, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
+import fs from 'fs-extra';
+import path from 'path';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import { VersionHistoryEntry, VersionContent, VersionDiff } from '../types/index.js';
 import BaseProvider from './BaseProvider.js';
@@ -7,6 +9,7 @@ import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
   assertStoreId,
   privateStoreLayoutFromConfig,
+  storePageIndexPath,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
@@ -130,6 +133,68 @@ abstract class BasePageProvider extends BaseProvider {
       store,
       layout: this.privateStoreLayout
     });
+  }
+
+  // ── A store's own page index (#1456) ──────────────────────────────────────
+  //
+  // A store is self-contained (docs/planning/private-stores.md): its pages are
+  // listed in `{store}/pages-index.json`, never in the global page index or a
+  // process cache. It is read and written through the location's I/O, so an
+  // encrypted store's index is sealed without this provider deciding it, and
+  // read when a request needs it — never copied (operator, 2026-09-22).
+
+  /** A store's pages, keyed by uuid. A store with no pages yet has none. */
+  protected async readStorePages(
+    pagesDirectory: string,
+    location: StoreFileLocation
+  ): Promise<Record<string, StorePageEntry>> {
+    const file = storePageIndexPath(pagesDirectory, location.owner, location.store, this.privateStoreLayout);
+    if (!await fs.pathExists(file)) return {};
+    const parsed = JSON.parse(await location.io.readText(file)) as { version?: number; pages?: Record<string, StorePageEntry> };
+    return parsed && typeof parsed.pages === 'object' && parsed.pages ? parsed.pages : {};
+  }
+
+  protected async writeStorePages(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    pages: Record<string, StorePageEntry>
+  ): Promise<void> {
+    const file = storePageIndexPath(pagesDirectory, location.owner, location.store, this.privateStoreLayout);
+    await fs.ensureDir(path.dirname(file));
+    await location.io.writeText(file, JSON.stringify({ version: 1, pages }));
+  }
+
+  /** Add or replace one page in its store's index. */
+  protected async putStorePage(pagesDirectory: string, location: StoreFileLocation, entry: StorePageEntry): Promise<void> {
+    const pages = await this.readStorePages(pagesDirectory, location);
+    pages[entry.uuid] = entry;
+    await this.writeStorePages(pagesDirectory, location, pages);
+  }
+
+  /** Remove one page from its store's index; false when it was not listed. */
+  protected async dropStorePage(pagesDirectory: string, location: StoreFileLocation, uuid: string): Promise<boolean> {
+    const pages = await this.readStorePages(pagesDirectory, location);
+    if (!(uuid in pages)) return false;
+    delete pages[uuid];
+    await this.writeStorePages(pagesDirectory, location, pages);
+    return true;
+  }
+
+  /**
+   * One page of a store, by uuid, title or slug (case-insensitive for the
+   * last two) — titles are unique within a store, never across the site.
+   */
+  protected async findStorePage(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    key: string
+  ): Promise<StorePageEntry | null> {
+    const pages = await this.readStorePages(pagesDirectory, location);
+    if (pages[key]) return pages[key];
+    const lower = key.toLowerCase();
+    return Object.values(pages).find((p) =>
+      p.title.toLowerCase() === lower || (p.slug != null && p.slug.toLowerCase() === lower)
+    ) ?? null;
   }
 
   /**
