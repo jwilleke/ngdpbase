@@ -1,7 +1,7 @@
 ---
 title: Private stores
 status: design ratified
-lastModified: 2026-09-15
+lastModified: 2026-09-22
 epic: 1382
 ---
 
@@ -21,22 +21,33 @@ Predecessor: [plan-private-folder.md](./plan-private-folder.md) (shipped the `pr
 
 ```text
 pages/private/{user}/user-keys.json        # wrapped user KEK (password + recovery)
-pages/private/{user}/user-index.json       # catalog of encrypted-store pages (user KEK)
-pages/private/{user}/user-versions.json    # history catalog (user KEK)
-pages/private/{user}/user-trash.json       # trash catalog (user KEK)
-pages/private/{user}/{store}/              # one store
+pages/private/{user}/{store}/              # one store — fully self-contained
 pages/private/{user}/{store}/store.json    # kind, encrypt, created; wrapped DEK if encrypt on
+pages/private/{user}/{store}/…             # the store's own indexes: pages, files, versions, trash
+                                           #   (sealed with the store DEK when encrypt is on)
 pages/private/{user}/{store}/{uuid}.md     # live pages
 pages/private/{user}/{store}/versions/     # page version blobs
 pages/private/{user}/{store}/deleted/      # trash blobs
-pages/private/{user}/{store}/attachments/  # every non-page file: {sha256}.ext
+pages/private/{user}/{store}/attachments/  # every non-page file: {uuid}.ext
 ```
+
+The user-level catalogs (`user-index.json`, `user-versions.json`, `user-trash.json`) that shipped with [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) are superseded by per-store indexes — see "Stores are self-contained" below. Index file names are settled in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (files) and [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) (pages, versions, trash, search).
 
 This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). Folder names and catalog filenames are `ngdpbase.page.provider.filesystem.*` keys in [app-default-config.json](../../config/app-default-config.json). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
 
 - Today's private pages migrate to store id `default`.
 - Named stores use the __addon slug__ (`yourphr` → `private/{user}/yourphr/`). `default` is core, not an addon.
-- Nothing except store directories and the user-level catalogs lives directly in `private/{user}/`.
+- Nothing except store directories and `user-keys.json` lives directly in `private/{user}/`.
+
+### Stores are self-contained (2026-09-22)
+
+Decided by the operator while planning [#1400](https://github.com/jwilleke/ngdpbase/issues/1400): __a store must be fully self-contained.__ Backing it up, deleting it or sharing it carries everything about it — including its indexes.
+
+- __Every private store, encrypted or not, keeps its own indexes inside its own folder.__ Sealed with the store DEK when the store is encrypted, plain JSON when it is not. No index mixes sealed and plain entries.
+- __The global indexes hold public items only.__ `page-index.json`, `attachment-metadata.json` and the shared search index never list a private item. This supersedes "Unencrypted `default/` stays in global `page-index.json`" (Keys) and the user-level catalogs of [#1385](https://github.com/jwilleke/ngdpbase/issues/1385).
+- __At login__ the owner's session reads its stores' indexes and merges them in memory with the global ones; __logout drops the merge__. Search inside a store runs through its owner's session, so the owner can full-text search even an encrypted store — which the shared index never could.
+- The effect: nobody sees a private item except its owner (or a delegate, or a share the owner issued), and that is __structural__, not a filter — the shared files contain nothing to leak.
+- Work: files in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400); pages, versions, trash and search in [#1454](https://github.com/jwilleke/ngdpbase/issues/1454).
 
 ## Access
 
@@ -54,10 +65,12 @@ Decided 2026-09-15. `pages/private/{user}/` and every store below it is a __secu
 
 | Switch | Meaning |
 |---|---|
-| Encrypt | Off: plaintext files (today's private pages). On: whole store ciphertext, one store DEK. |
+| Encrypt | Off: plaintext files (today's private pages). On: every file's contents ciphertext, one store DEK. |
 | Share | Off: nothing leaves except that user. On: existing __token-share__ only, minted by that user. |
 
 The two are independent. The whole store is encrypted or it is not — no per-file and no field-level encryption of global `page-index.json`.
+
+__What "encrypted" hides, and what it does not (2026-09-22).__ Encryption is __per file__: each file's contents are sealed with the store DEK. It is not a single encrypted container — the store is still an ordinary folder, so anyone with disk or backup access can list it and see __how many__ items it holds, their __sizes__ and __dates__, never their contents. Names say nothing: pages are `{uuid}.md` and files `{uuid}.ext`, so a name cannot be used to confirm that a known document is present (a content-hash name could). A container per store would hide the count and sizes too; it was considered and not chosen — every write rewrites or patches one large blob, concurrent writes need locking, large files (DICOM) become slow, and one corruption loses the whole store.
 
 PHR-style addons should __default encrypt on__ and warn at least once if the user turns it off. `default` may stay off so existing private pages do not silently require a mnemonic.
 
@@ -233,12 +246,12 @@ Do not encrypt the folder with the login password. Password change and recovery 
 
 | Key | Role |
 |---|---|
-| User KEK | From the login password; 12-word BIP39 wrap is recovery for this. Encrypts `user-index.json` / version / trash catalogs and wraps each encrypted store's DEK. |
-| Store DEK | Only if that store has encrypt on. Encrypts every byte in `private/{user}/{store}/`. |
+| User KEK | From the login password; 12-word BIP39 wrap is recovery for this. Wraps each encrypted store's DEK. (It also encrypted the user-level `user-index.json` / version / trash catalogs; those move into the stores — see "Stores are self-contained".) |
+| Store DEK | Only if that store has encrypt on. Encrypts the contents of every file in `private/{user}/{store}/`, the store's own indexes included — per file, not a container (see Per-store switches). |
 
-Login unwraps the user KEK, decrypts the user catalogs, merges them __in memory__ with global `page-index.json`. Never write decrypted private titles back to the global file. Logout drops the merge.
+Login unwraps the user KEK, reads each of the user's stores' indexes (unsealing an encrypted store's with its DEK) and merges them __in memory__ with the global indexes. Never write decrypted private titles back to a global file. Logout drops the merge.
 
-Unencrypted `default/` stays in global `page-index.json` as today.
+~~Unencrypted `default/` stays in global `page-index.json` as today.~~ Superseded 2026-09-22: the global indexes hold public items only ("Stores are self-contained").
 
 Twelve-word recovery is the user's property: copy, download, print, paste into email (including to a lawyer). Warn __at least once__ whenever the words are shown; __do not obstruct__. The app never emails the words itself. Never log password, words, DEK, or KEK.
 
@@ -304,13 +317,21 @@ Decided 2026-09-15 ([#1386](https://github.com/jwilleke/ngdpbase/issues/1386)):
 
 - Files live in `{store}/attachments/`, never loose in the store root beside `{uuid}.md`. An uploaded `.md` file in the root would be scanned as a page.
 - The page scan skips `attachments/` as it skips `versions/` and `deleted/`.
-- Flat and content-addressed (`{sha256}.ext`), same as the public pool. No per-type folders (`images/`, `dicom/`, `json/`); type is attachment metadata (`encodingFormat`).
+- Flat. ~~Content-addressed (`{sha256}.ext`), same as the public pool.~~ Superseded 2026-09-22 (below): `{uuid}.ext`. No per-type folders (`images/`, `dicom/`, `json/`); type is attachment metadata (`encodingFormat`).
 - The name is `attachments/`, not `blobs/` — it matches `AttachmentManager` and the public pool, and "blobs" already means version/trash content here.
 - Anything an addon owns that is not an attachment (e.g. a later database file) gets its own sibling folder through that addon's provider.
 
 - The folder name is config key `ngdpbase.page.provider.filesystem.attachmentsdir` (default `attachments`), beside `versionsdir` / `deleteddir` (approved 2026-09-15).
 
-Global `attachment-metadata.json` must not list names of files in a __sealed__ store.
+~~Global `attachment-metadata.json` must not list names of files in a __sealed__ store.~~ Widened 2026-09-22: it lists __no__ private file, encrypted or not ("Stores are self-contained").
+
+### File names and duplicates (2026-09-22)
+
+Decided by the operator while planning [#1400](https://github.com/jwilleke/ngdpbase/issues/1400).
+
+- __A file in a private store is `{uuid}.ext`__ — a random UUID, like a page's `{uuid}.md`. The UUID is the file's id and its name on disk. Content-hash naming (`{sha256}.ext`) stays for the __public pool only__. Reason: in an encrypted store the contents are sealed, but a content-hash name would still let anyone with disk or backup access confirm that the store holds a known file, by hashing their own copy. A random name says only that a file exists.
+- Applies to __all private stores__, encrypted or not. Nothing to migrate: encrypted stores held no readable files before #1400, and existing unencrypted private files keep their names.
+- __Duplicate detection is per store.__ The content fingerprint (SHA-256) lives in the __store's own file index__ (sealed when the store is encrypted), not in the file name. An upload whose fingerprint is already in that store returns the existing file. It never matches another store or the public pool — which also fixes a private upload silently returning the public copy of identical bytes and never landing in the store.
 
 ### When an attachment is private
 
@@ -372,5 +393,7 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK (PageManager + AttachmentManager doors; relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
 | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) | Explicit `private` / `store` on `uploadAttachment` | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
 | [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) | Upload dialog Private checkbox; new upload onto a private page is forced private | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) |
+| [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) | Files in a private store: per-store file index, `{uuid}.ext`, sealed bytes, per-store duplicates | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
+| [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) | Private stores leave the shared indexes: per-store page, version, trash index and search | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (index format) |
 
 Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.
