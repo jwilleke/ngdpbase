@@ -61,6 +61,18 @@ Decided 2026-09-15. `pages/private/{user}/` and every store below it is a __secu
 - Allow and deny go through the one door ([security-posture.md](../security-posture.md) P2): `canAccess` on the page, decided at ACLManager's private-page check (Tier 0, `PageManager.checkPrivatePageAccess`), with the capability from `hasPermission`. A refusal is recorded as `authorization-deny` like every other. A file in a store, which is not a page, gets the same rule through `ACLManager.canAccessPrivateContainer`. The rule itself is one function, `mayActInPrivateContainer` (`src/utils/privateStoreAccess.ts`): an authenticated session of the owner, a job acting for the owner, or a share the owner issued once the store's Share switch is on.
 - Where it applies: page views and edits, page lists, both search providers (a private page's frontmatter `audience` grants nothing), uploads onto a private page, private-file serving (the file's `creator`, not whoever may view a linked page), and admin bulk keyword changes (another user's private page is left unchanged). When privacy cannot be established, the check refuses.
 
+### Private URL space, names, titles and slugs (2026-09-22)
+
+Decided by the operator while planning [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) / [#1456](https://github.com/jwilleke/ngdpbase/issues/1456) / [#1457](https://github.com/jwilleke/ngdpbase/issues/1457).
+
+- __Private pages have their own URL space.__ `/view/…` is public pages only. A private page is `/private/{owner}/{store}/{title}`, and __every__ action on it lives under that path (`…/edit`, `…/history`, save, delete, uploads onto it). The same form serves the owner, a delegate and a share visitor. A caller who may not open it gets the same 404 as a missing page — never 403.
+- __Internal name = path.__ Wherever the system passes a page name (`getPage(name, ctx)`, a context's `pageName`, cache keys, logs), a private page is `private/{owner}/{store}/{title}`. A plain title always means a public page. The page still displays its plain title.
+- __Titles__ are unique within their store (public titles among public pages).
+- __Slugs__ of private pages are `private--{owner}-{store}-{title-slug}` (e.g. `private--jim-default-diary`). The `private--` prefix is reserved: a public slug can never contain `--`, so a public save never consults private slugs. A clash among one owner's stores is checked in that owner's stores and suffixed `-2`; a clash between two owners is possible in theory, undetected (it would mean reading other users' stores) and harmless — the URL keeps every address unique. A move between spaces regenerates the slug.
+- __Links:__ `[Title]` is always public; `[store/Title]` is the page owner's store. Typeahead shows the owner their own `store/Title` entries. Existing links are migrated once; `/view/{title}` redirects the owner to their private page ([#1457](https://github.com/jwilleke/ngdpbase/issues/1457)).
+- __The Private checkbox moves a page__ between the public space and its author's __default__ store (only the owner may). A move that would collide with a destination title is refused. Other stores are reached by creating the page there.
+- __Search:__ each store keeps its own saved search index, sealed when the store is encrypted ([#1458](https://github.com/jwilleke/ngdpbase/issues/1458)).
+
 ## Per-store switches
 
 | Switch | Meaning |
