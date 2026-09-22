@@ -47,7 +47,7 @@ Decided by the operator while planning [#1400](https://github.com/jwilleke/ngdpb
 - __The global indexes hold public items only.__ `page-index.json`, `attachment-metadata.json` and the shared search index never list a private item. This supersedes "Unencrypted `default/` stays in global `page-index.json`" (Keys) and the user-level catalogs of [#1385](https://github.com/jwilleke/ngdpbase/issues/1385).
 - __At login__ the owner's session reads its stores' indexes and merges them in memory with the global ones; __logout drops the merge__. Search inside a store runs through its owner's session, so the owner can full-text search even an encrypted store — which the shared index never could.
 - The effect: nobody sees a private item except its owner (or a delegate, or a share the owner issued), and that is __structural__, not a filter — the shared files contain nothing to leak.
-- Work: files in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400); pages, versions, trash and search in [#1454](https://github.com/jwilleke/ngdpbase/issues/1454).
+- Work: files in __encrypted__ stores in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400); unencrypted private files, pages, versions, trash and search in [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) — so the global indexes are emptied of private items in one place, and nothing that works for unencrypted files today breaks in between (operator, 2026-09-22).
 
 ## Access
 
@@ -330,7 +330,7 @@ Decided 2026-09-15 ([#1386](https://github.com/jwilleke/ngdpbase/issues/1386)):
 Decided by the operator while planning [#1400](https://github.com/jwilleke/ngdpbase/issues/1400).
 
 - __A file in a private store is `{uuid}.ext`__ — a random UUID, like a page's `{uuid}.md`. The UUID is the file's id and its name on disk. Content-hash naming (`{sha256}.ext`) stays for the __public pool only__. Reason: in an encrypted store the contents are sealed, but a content-hash name would still let anyone with disk or backup access confirm that the store holds a known file, by hashing their own copy. A random name says only that a file exists.
-- Applies to __all private stores__, encrypted or not. Nothing to migrate: encrypted stores held no readable files before #1400, and existing unencrypted private files keep their names.
+- Applies to __all private stores__, encrypted or not — encrypted stores in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400), unencrypted ones in [#1454](https://github.com/jwilleke/ngdpbase/issues/1454). Nothing to migrate: encrypted stores held no readable files before #1400, and existing unencrypted private files keep their names.
 - __Duplicate detection is per store.__ The content fingerprint (SHA-256) lives in the __store's own file index__ (sealed when the store is encrypted), not in the file name. An upload whose fingerprint is already in that store returns the existing file. It never matches another store or the public pool — which also fixes a private upload silently returning the public copy of identical bytes and never landing in the store.
 
 ### When an attachment is private
@@ -393,7 +393,7 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1394](https://github.com/jwilleke/ngdpbase/issues/1394) | Refuse sealed-store write without DEK (PageManager + AttachmentManager doors; relates to [#1391](https://github.com/jwilleke/ngdpbase/issues/1391)) | [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) |
 | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) | Explicit `private` / `store` on `uploadAttachment` | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
 | [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) | Upload dialog Private checkbox; new upload onto a private page is forced private | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) |
-| [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) | Files in a private store: per-store file index, `{uuid}.ext`, sealed bytes, per-store duplicates | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
-| [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) | Private stores leave the shared indexes: per-store page, version, trash index and search | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (index format) |
+| [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) | Files in an __encrypted__ store: per-store file index, `{uuid}.ext`, sealed bytes, per-store duplicates; upload, serve, page attached files, delete | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
+| [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) | Private stores leave the shared indexes: unencrypted private files, per-store page, version, trash index and search | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (index format) |
 
 Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.
