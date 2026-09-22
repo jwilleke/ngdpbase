@@ -3,6 +3,7 @@ import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 import { type MockInstance } from 'vitest';
 
 // Mock LocaleUtils
@@ -155,7 +156,7 @@ vi.mock('../../WikiEngine', () => {
       });
     }),
     savePage: vi.fn().mockResolvedValue(true),
-    savePageWithContext: vi.fn().mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content })),
+    savePageWithContext: vi.fn().mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata)),
     deletePage: vi.fn().mockResolvedValue(true),
     deletePageWithContext: vi.fn().mockResolvedValue(true),
     getPageContent: vi.fn().mockImplementation((pageName) => {
@@ -626,7 +627,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockPolicyDecisionPoint.permits.mockReturnValue(true);
         mockPageManager.savePage.mockResolvedValue(true);
-        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
         // Mock existing page for the save operation
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',
@@ -649,7 +650,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         // slug check refused the second save.
         mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
         mockPolicyDecisionPoint.permits.mockReturnValue(true);
-        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+        mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
         mockPageManager.getPage.mockResolvedValue({
           content: '# Test Page',
           metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }
@@ -726,7 +727,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
         test('a save answers { ok, redirect } instead of a 302', async () => {
           mockPolicyInformationPoint.currentSubject.mockResolvedValue(createUserContext());
           mockPolicyDecisionPoint.permits.mockReturnValue(true);
-          mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+          mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
           mockPageManager.getPage.mockResolvedValue({
             content: '# Test Page',
             metadata: { title: 'TestPage', 'system-category': 'General', uuid: 'test-uuid' }

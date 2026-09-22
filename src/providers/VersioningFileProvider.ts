@@ -21,7 +21,7 @@ import {
 import { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
-import type { RecentChangesOptions, RecentChangeEntry, StorePageEntry } from '../types/Provider.js';
+import type { RecentChangesOptions, RecentChangeEntry, SavedPage, StorePageEntry } from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
@@ -1968,7 +1968,7 @@ class VersioningFileProvider extends FileSystemProvider {
     metadata: Partial<PageFrontmatter> = {},
     ctx: ActorContext,
     options?: PageSaveOptions
-  ): Promise<void> {
+  ): Promise<SavedPage> {
     // Check if page exists using public method. #1415: through the caller's
     // context, so the owner's unlocked sealed page is found in their session
     // catalog — without it every save of a sealed page looked like a new page.
@@ -2051,7 +2051,7 @@ class VersioningFileProvider extends FileSystemProvider {
     // #1325: pass options through — FileSystemProvider already honours
     // `preserveLastModified` for the on-disk frontmatter; dropping it here meant
     // a migration could not keep a page's date.
-    await super.savePage(pageName, content, { ...metadata, uuid, created, ...(store ? { store } : {}) }, ctx, options);
+    const saved = await super.savePage(pageName, content, { ...metadata, uuid, created, ...(store ? { store } : {}) }, ctx, options);
 
     // #1415: the history goes to the page's own store, named here rather than
     // looked up — a sealed page is in no global index entry to look it up
@@ -2120,6 +2120,7 @@ class VersioningFileProvider extends FileSystemProvider {
     }
 
     logger.info(`[VersioningFileProvider] Saved page '${pageName}' with versioning`);
+    return saved;
   }
 
   /**

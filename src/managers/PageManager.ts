@@ -91,6 +91,13 @@ export interface PageSaveOptions {
 export interface PageSaveResult {
   /** The body as saved — always the caller's text: a save never rewrites it (#1332). */
   content: string;
+  /** Where the page landed (#1462): its title, or its private path (#1456). */
+  name: string;
+  uuid: string;
+  /** The name it had before this save; null for a new page. */
+  previousName: string | null;
+  /** Pages that linked to the old name, read before a rename took it out of the link graph (#1094). */
+  previousReferrers: string[];
 }
 
 /** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
@@ -110,6 +117,11 @@ export class PageContentValidationError extends Error {
 import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type NotificationManager from './NotificationManager.js';
+import type RenderingManager from './RenderingManager.js';
+import type SearchManager from './SearchManager.js';
+import type AttachmentManager from './AttachmentManager.js';
+import type AssetManager from './AssetManager.js';
+import type CacheManager from './CacheManager.js';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -896,11 +908,8 @@ class PageManager extends BaseManager implements CatalogSource {
     };
     delete metadata['user-modified'];
 
+    // #1462: the save indexes the page, as every save does.
     await this.savePage(saveAs, parsed.content, metadata, ctx, { skipValidation: true });
-
-    const searchManager = this.engine.getManager<{ updatePageInIndex?: (name: string, data: Record<string, unknown>) => Promise<void> }>('SearchManager');
-    await searchManager?.updatePageInIndex?.(saveAs, { name: saveAs, content: parsed.content, metadata })
-      .catch((err: unknown) => logger.warn(`[PageManager] Saved '${saveAs}' but could not index it for search:`, err));
   }
 
   /**
@@ -1236,8 +1245,9 @@ class PageManager extends BaseManager implements CatalogSource {
    * `lastModifiedBy` fields — that's audit-log territory (recorded by the
    * route handler, not here). The textarea is the source of truth.
    *
-   * Versioning, indexing, and cache invalidation still fire via
-   * provider.savePage. Throws if the textarea content isn't parseable YAML.
+   * Versioning fires in provider.savePage; the shared indexes are brought in
+   * step here, as for every save (#1462). Throws if the textarea content
+   * isn't parseable YAML.
    */
   async saveRawPageWithAdminOverride(
     pageName: string,
@@ -1248,7 +1258,17 @@ class PageManager extends BaseManager implements CatalogSource {
     const parsed = parsePageFrontmatter(rawFileContent);
     const metadata = parsed.data as Partial<PageFrontmatter>;
     const content = parsed.content;
-    return this.provider.savePage(pageName, content, metadata, ctx);
+    const before = await this.provider.getPage(pageName, ctx).catch(() => null);
+    const saved = await this.provider.savePage(pageName, content, metadata, ctx);
+    // #1462: the shared indexes follow the save here, and nowhere else.
+    await this.reconcileSharedIndexes({
+      ctx,
+      name: saved.name,
+      uuid: saved.uuid,
+      previousName: before ? this.nameOf(pageName, before) : null,
+      content,
+      metadata: metadata
+    });
   }
 
   /**
@@ -1622,7 +1642,18 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
 
-    await this.provider.savePage(pageName, content, enrichedMetadata, saveContext);
+    const saved = await this.provider.savePage(pageName, content, enrichedMetadata, saveContext);
+
+    // #1462: the shared indexes follow the save here, and nowhere else.
+    const previousName = existingPage ? this.nameOf(pageName, existingPage) : null;
+    const previousReferrers = await this.reconcileSharedIndexes({
+      ctx: saveContext,
+      name: saved.name,
+      uuid: saved.uuid,
+      previousName,
+      content,
+      metadata: enrichedMetadata
+    });
 
     // #1121 gap C: audit at the DOOR, not at the caller.
     //
@@ -1661,7 +1692,7 @@ class PageManager extends BaseManager implements CatalogSource {
       );
     }
 
-    return { content };
+    return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers };
   }
 
   /**
@@ -1767,11 +1798,21 @@ class PageManager extends BaseManager implements CatalogSource {
       ? Boolean(await this.provider.getPage(pageName, ctx).catch(() => null))
       : true;
 
-    if (options.preserveLastModified) {
-      await this.provider.savePage(pageName, content, metadata, ctx, { preserveLastModified: true });
-    } else {
-      await this.provider.savePage(pageName, content, metadata, ctx);
-    }
+    const before = typeof this.provider.getPage === 'function'
+      ? await this.provider.getPage(pageName, ctx).catch(() => null)
+      : null;
+    const saved = options.preserveLastModified
+      ? await this.provider.savePage(pageName, content, metadata, ctx, { preserveLastModified: true })
+      : await this.provider.savePage(pageName, content, metadata, ctx);
+    // #1462: the shared indexes follow the save here, and nowhere else.
+    await this.reconcileSharedIndexes({
+      ctx,
+      name: saved.name,
+      uuid: saved.uuid,
+      previousName: before ? this.nameOf(pageName, before) : null,
+      content,
+      metadata: metadata
+    });
 
     // #1121 gap C: this path produces NO audit event from the route layer,
     // because it has no request to audit from. Five callers use it —
@@ -1825,7 +1866,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
     // #947: the context names who deleted the page on the tombstone (#1179).
     const ctx = (wikiContext.userContext as ActorContext | undefined) ?? ANONYMOUS_SUBJECT;
-    return this.provider.deletePage(identifier, ctx);
+    return this.deleteThroughDoor(identifier, ctx);
   }
 
   /**
@@ -1849,7 +1890,101 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!ctx) {
       throw new Error('PageManager.deletePage requires an ActorContext');
     }
-    return this.provider.deletePage(identifier, ctx);
+    return this.deleteThroughDoor(identifier, ctx);
+  }
+
+  /** Delete, then take the page out of every shared index (#1462). */
+  private async deleteThroughDoor(identifier: string, ctx: ActorContext): Promise<boolean> {
+    if (!this.provider) throw new Error('PageManager: Provider not initialized');
+    const before = await this.provider.getPage(identifier, ctx).catch(() => null);
+    const deleted = await this.provider.deletePage(identifier, ctx);
+    if (deleted && before) {
+      await this.reconcileSharedIndexes({
+        ctx,
+        name: null,
+        uuid: before.uuid,
+        previousName: this.nameOf(identifier, before)
+      });
+    }
+    return deleted;
+  }
+
+  /**
+   * The name a page was reached by, as the shared indexes key it: a private
+   * page's path (#1456), else its title — the caller may have used a uuid or
+   * slug.
+   */
+  private nameOf(identifier: string, page: { title?: string }): string {
+    return parsePrivatePageName(identifier) ? identifier : (page.title ?? identifier);
+  }
+
+  /**
+   * The shared indexes after a page changed (#1462) — the one place they are
+   * kept in step: the link graph, search, attachment mentions, page assets,
+   * and the rendered-page cache of the page and of the pages linking to it.
+   * A private page (#1456) is in none of them; a page that left the public
+   * space, or was deleted or renamed, is taken out under its old name.
+   *
+   * A failure here is logged, not thrown: the page is already saved, and the
+   * indexes are rebuilt by the reindex job. It is never silent.
+   *
+   * @returns the pages that linked to the old name, read before it left the
+   *   link graph — what a rename rewrites (#1094)
+   */
+  private async reconcileSharedIndexes(change: {
+    ctx: ActorContext;
+    /** The page's name after the change; null when it was deleted. */
+    name: string | null;
+    uuid?: string;
+    /** Its name before the change, when it existed. */
+    previousName: string | null;
+    content?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<string[]> {
+    const rendering = this.engine.getManager<RenderingManager>('RenderingManager');
+    const search = this.engine.getManager<SearchManager>('SearchManager');
+    const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    const assets = this.engine.getManager<AssetManager>('AssetManager');
+    const cache = this.engine.getManager<CacheManager>('CacheManager');
+    const { name, previousName } = change;
+    const isPublic = (n: string | null): n is string => n !== null && parsePrivatePageName(n) === null;
+    const step = async (what: string, run: () => unknown): Promise<void> => {
+      try {
+        await run();
+      } catch (err) {
+        logger.error(`[PageManager] Shared index step '${what}' failed after a page change: ${String(err)}`);
+      }
+    };
+
+    const referrers = new Set<string>();
+    const previousReferrers = isPublic(previousName) ? (rendering?.getReferringPages(previousName) ?? []) : [];
+    previousReferrers.forEach((r) => referrers.add(r));
+
+    // Out under the old name: deleted, renamed, or moved into a store.
+    if (isPublic(previousName) && previousName !== name) {
+      await step('link graph remove', () => rendering?.removePageFromLinkGraph(previousName));
+      await step('search remove', () => search?.removePageFromIndex(previousName));
+    }
+
+    // In under the new name — a public page only.
+    if (isPublic(name) && change.content !== undefined) {
+      const content = change.content;
+      if (previousName !== name) await step('link graph add', () => rendering?.addPageToCache(name));
+      await step('link graph', () => rendering?.updatePageInLinkGraph(name, content));
+      await step('search', () => search?.updatePageInIndex(name, { name, content, metadata: change.metadata ?? {} }));
+      await step('mentions', () => attachments?.syncPageMentions(name, content));
+      await step('assets', () => assets?.syncPageAssets(name, content));
+      (rendering?.getReferringPages(name) ?? []).forEach((r) => referrers.add(r));
+    }
+
+    // The rendered page, and every page whose links to it changed colour or target.
+    if (cache?.isInitialized?.()) {
+      const uuids = new Set<string>();
+      if (change.uuid) uuids.add(change.uuid);
+      for (const r of referrers) uuids.add(this.getPageUUID(r, change.ctx) ?? r);
+      for (const uuid of uuids) await step('rendered cache', () => cache.clear(undefined, `rendered-pages:${uuid}:*`));
+    }
+    return previousReferrers;
   }
 
   /**

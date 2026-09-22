@@ -889,11 +889,15 @@ See [OtherPage] for more.`;
       expect(savedMetadata.importedFrom).toBe('conflict-test');
     });
 
-    it('updates search index and link graph in-band after overwrite', async () => {
+    // #1462: the page door (PageManager.savePage) indexes the page — see
+    // PageManager.sharedIndexes.test.ts. The import saves through it and does
+    // no index work of its own.
+    it('overwrites through the page door and leaves the indexes to it', async () => {
       await importOne({ dryRun: false, conflictPolicy: 'overwrite', actorContext: IMPORTER_USER });
-      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
-      expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Existing Page');
-      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
+      expect(mockSavePage).toHaveBeenCalledTimes(1);
+      expect(mockSavePage.mock.calls[0][0]).toBe('Existing Page');
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+      expect(mockUpdatePageInLinkGraph).not.toHaveBeenCalled();
     });
 
     it('reports would-overwrite on dry run without saving', async () => {
@@ -1052,11 +1056,13 @@ See [OtherPage] for more.`;
       expect(savedMetadata.importedFrom).toBe('pipeline-test');
     });
 
-    it('updates search index and link graph in-band for new pages', async () => {
+    // #1462: the page door indexes the new page; the import does not.
+    it('creates through the page door and leaves the indexes to it', async () => {
       await importNew({ dryRun: false, actorContext: IMPORTER_USER });
-      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
-      expect(mockUpdatePageInIndex.mock.calls[0][0]).toBe('Brand New Page');
-      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledTimes(1);
+      expect(mockSavePage).toHaveBeenCalledTimes(1);
+      expect(mockSavePage.mock.calls[0][0]).toBe('Brand New Page');
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+      expect(mockUpdatePageInLinkGraph).not.toHaveBeenCalled();
     });
 
     it('does not raw-write a file when the pipeline path is used', async () => {

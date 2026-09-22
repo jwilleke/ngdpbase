@@ -9,6 +9,7 @@
  * record names the USER who converted, not 'system'.
  */
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 import { withRealPageConvert } from './__fixtures__/realPageConvert';
 
 const editor = { username: 'alice', isAuthenticated: true, roles: ['editor'] };
@@ -27,7 +28,7 @@ const makeRes = () => ({
 });
 
 function makeRoutes(canEdit: boolean) {
-  const savePageWithContext = vi.fn().mockResolvedValue(undefined);
+  const savePageWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
   const savePage = vi.fn().mockResolvedValue(undefined);
   const pageManager = {
     getPage: vi.fn().mockResolvedValue({
@@ -104,7 +105,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     // importFootnote spy so the assertions below still pin per-definition
     // behaviour (ids preserved, caller as author, collision keeps body def).
     const importFootnote = vi.fn().mockResolvedValue(true);
-    const savePageWithContext = vi.fn().mockResolvedValue(undefined);
+    const savePageWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
     const pageManager = {
       getPage: vi.fn().mockResolvedValue({
         content: 'A claim[^1] and another[^src].\n\n[^1]: Supporting note.\n\n[^src]: https://example.org/paper\n',

@@ -5,6 +5,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
 
@@ -49,7 +50,7 @@ describe('WikiRoutes capture (#881)', () => {
 
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
-    mockSaveWithContext = vi.fn().mockResolvedValue(undefined);
+    mockSaveWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
     // #1399: an anonymous caller is a real subject now, so a refusal has to come
     // from POLICY rather than from a missing user. page-create is not granted to
     // anonymous, which is what this models.
@@ -397,9 +398,9 @@ describe('WikiRoutes capture (#881)', () => {
       expect(savedContext.content).toContain('Old public capture');
       expect(savedMetadata.private).toBeUndefined();
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
-      // A public page stays in the shared indexes.
-      expect(mockUpdatePageInIndex).toHaveBeenCalledWith(body.pageName, expect.objectContaining({ name: body.pageName }));
-      expect(mockUpdatePageInLinkGraph).toHaveBeenCalledWith(body.pageName, savedContext.content);
+      // #1462: a public page is indexed by the page door, not by the route.
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
+      expect(mockUpdatePageInLinkGraph).not.toHaveBeenCalled();
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
         viewUrl: '/view/' + encodeURIComponent(body.pageName)
       }));
@@ -413,7 +414,7 @@ describe('WikiRoutes capture (#881)', () => {
       const [savedContext, savedMetadata] = mockSaveWithContext.mock.calls[0];
       expect(savedContext.pageName).toBe(body.pageName);
       expect(savedMetadata.private).toBeUndefined();
-      expect(mockUpdatePageInIndex).toHaveBeenCalledWith(body.pageName, expect.anything());
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled(); // #1462: the door indexes it
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
         viewUrl: '/view/' + encodeURIComponent(body.pageName)
       }));

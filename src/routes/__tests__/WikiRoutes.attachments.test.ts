@@ -1,4 +1,5 @@
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import { policyShaped } from './__fixtures__/policyShaped';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -469,7 +470,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     const pdfFile = { buffer: Buffer.from('pdf'), originalname: 'report.pdf', mimetype: 'application/pdf', size: 3 };
 
     beforeEach(() => {
-      mockSaveWithContext = vi.fn().mockResolvedValue(undefined);
+      mockSaveWithContext = vi.fn(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
       mockGetPage = vi.fn().mockResolvedValue({
         name: 'Journal — jim — 2026-06-22',
         content: '# Entry\n\nSome text\n',
@@ -526,7 +527,8 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       const savedContext = mockSaveWithContext.mock.calls[0][0];
       expect(savedContext.content).toContain("[{ATTACH src='report.pdf'}]");
       expect(savedContext.content).toContain('Some text');
-      expect(mockUpdatePageInIndex).toHaveBeenCalledTimes(1);
+      // #1462: the page door reindexes the page; the route does not.
+      expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       const jsonArg = mockRes.json.mock.calls[0][0];
       expect(jsonArg.success).toBe(true);
       expect(jsonArg.attachedToPage).toBe(true);

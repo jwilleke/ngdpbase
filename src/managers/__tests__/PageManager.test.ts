@@ -138,7 +138,7 @@ describe('PageManager', () => {
     });
 
     test('savePage() should delegate to provider', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       await pageManager.savePage('Test', '# Content', { category: 'General' }, TEST_ACTOR);
 
@@ -189,7 +189,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() should extract data from WikiContext', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'Test Page',
@@ -213,7 +213,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() should use anonymous if no user', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'Test Page',
@@ -233,7 +233,7 @@ describe('PageManager', () => {
 
     // #1354: `editor` is who made this version, from the save's context.
     test('savePageWithContext() records the signed-in user as editor, not the stored editor (#1354)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       pageManager.provider.getPage = vi.fn().mockResolvedValue({
         content: 'old', metadata: { title: 'Cell', author: 'jim', editor: 'system' }
       });
@@ -250,7 +250,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() never makes the editor the author of a page that has none (#1354)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       pageManager.provider.getPage = vi.fn().mockResolvedValue({
         content: 'old', metadata: { title: 'Year 1925' }
       });
@@ -266,7 +266,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() keeps the caller\'s editor when the context has no user (#1354)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       await pageManager.savePageWithContext({ pageName: 'Migrated', content: 'x' }, { editor: 'system' });
 
@@ -278,7 +278,7 @@ describe('PageManager', () => {
     // ---------------------------------------------------------------------
 
     test('savePageWithContext() — top-level private:true → emits private:true only (#802 Slice 4: system-location retired)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.user-keywords') return { private: { storageLocation: 'private' } };
         if (key === 'ngdpbase.system-category') return {};
@@ -305,7 +305,7 @@ describe('PageManager', () => {
       // tools or hand-edits introduce a stray 'private' it gets cleaned out on
       // save. But it does NOT make the page private; only the top-level
       // `private: true` field does.
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'P', content: 'body',
@@ -320,7 +320,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — both signals present → strips keyword, keeps top-level', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.user-keywords') return { private: { storageLocation: 'private' } };
         if (key === 'ngdpbase.system-category') return {};
@@ -342,7 +342,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — non-private save does NOT add private or system-location', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'Public', content: 'body',
@@ -357,7 +357,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — incoming private:false reaches the provider as the move-out signal, adding nothing else (#1456)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'P', content: 'body',
@@ -375,7 +375,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — leaves user-keywords untouched when no `private` to strip', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       const wikiContext = {
         pageName: 'P', content: 'body',
@@ -392,7 +392,7 @@ describe('PageManager', () => {
     // ---------------------------------------------------------------------
 
     test('savePageWithContext() — lifecycle keyword in user-keywords becomes status field (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['draft', 'travel'] });
 
@@ -402,7 +402,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — highest lifecycle state wins across both keyword arrays (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, {
         'user-keywords': ['draft'],
@@ -416,7 +416,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — explicit status wins over keyword-derived lifecycle (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, {
         status: 'review',
@@ -429,7 +429,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — capture moves user-keywords → system-keywords (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, { 'user-keywords': ['capture', 'travel'] });
 
@@ -440,7 +440,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — capture does not duplicate in system-keywords (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, {
         'user-keywords': ['capture'],
@@ -453,7 +453,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — explicit default status (published) maps to absence (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, { status: 'published', 'user-keywords': ['travel'] });
 
@@ -463,7 +463,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — status catalog is config-driven: custom order wins (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockConfigurationManager.getProperty.mockImplementation((key, dv) => {
         if (key === 'ngdpbase.status') {
           return {
@@ -487,7 +487,7 @@ describe('PageManager', () => {
     });
 
     test('savePageWithContext() — clean vocabulary passes through untouched (#893)', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       const wikiContext = { pageName: 'P', content: 'body', userContext: { username: 'alice' } };
       await pageManager.savePageWithContext(wikiContext, {
         status: 'draft',
@@ -694,7 +694,7 @@ describe('PageManager', () => {
 
     test('should proceed normally when no conflict', async () => {
       const mockCheckConflicts = vi.fn().mockResolvedValue({ hasConflict: false, conflictType: null });
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       mockEngine.getManager.mockImplementation((name) => {
         if (name === 'ConfigurationManager') return mockConfigurationManager;
         if (name === 'ValidationManager') return { checkConflicts: mockCheckConflicts };
@@ -800,7 +800,7 @@ describe('PageManager', () => {
     // #1179/#1382: the context is mandatory and positional — not an option bag
     // a caller can leave out — and the provider is handed the one it was given.
     test('savePage refuses without a context', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
 
       await expect(
         pageManager.savePage('Diary', '# secret', { private: true, author: 'molly' }, undefined)
@@ -810,7 +810,7 @@ describe('PageManager', () => {
     });
 
     test('a store write forwards the caller\'s context to the provider', async () => {
-      pageManager.provider.savePage = vi.fn().mockResolvedValue(undefined);
+      pageManager.provider.savePage = vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }));
       pageManager.provider.getPage = vi.fn().mockResolvedValue(null);
       const molly = actor('molly');
 

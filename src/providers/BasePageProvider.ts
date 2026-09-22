@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js';
-import type { ProviderInfo, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
+import type { ProviderInfo, SavedPage, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
 import fs from 'fs-extra';
 import path from 'path';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
@@ -293,7 +293,7 @@ abstract class BasePageProvider extends BaseProvider {
     metadata: Partial<PageFrontmatter> | undefined,
     ctx: ActorContext,
     options?: PageSaveOptions
-  ): Promise<void>;
+  ): Promise<SavedPage>;
 
   /**
    * Delete a page

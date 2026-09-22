@@ -48,9 +48,6 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
-import type RenderingManager from './RenderingManager.js';
-import type SearchManager from './SearchManager.js';
-import type CacheManager from './CacheManager.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -908,8 +905,8 @@ class ImportManager extends BaseManager {
       merged.private = true;
       if (options.store) merged.store = options.store;
     }
+    // #1462: the door indexes the page.
     await pageManager.savePage(pageTitle, content, merged, options.actorContext);
-    await this.indexImportedPage(pageTitle, (merged.uuid as string) || pageTitle, options.actorContext);
   }
 
   /**
@@ -942,37 +939,8 @@ class ImportManager extends BaseManager {
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];
     }
+    // #1462: the door indexes the page.
     await pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext);
-    await this.indexImportedPage(pageTitle, (metadata.uuid as string) || pageTitle, actorContext);
-  }
-
-  /**
-   * In-band index/link-graph/render-cache update after an import save —
-   * same contract as the ingest API. Failures are logged, not fatal: the
-   * page is saved; a manual reindex can recover the index.
-   */
-  private async indexImportedPage(pageTitle: string, uuid: string, ctx: ActorContext): Promise<void> {
-    try {
-      const pageManager = this.engine.getManager<PageManager>('PageManager');
-      const saved = await pageManager?.getPage(pageTitle, ctx);
-      if (saved) {
-        const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
-        const searchManager = this.engine.getManager<SearchManager>('SearchManager');
-        renderingManager?.addPageToCache(pageTitle);
-        renderingManager?.updatePageInLinkGraph(pageTitle, saved.content);
-        await searchManager?.updatePageInIndex(pageTitle, {
-          name: pageTitle,
-          content: saved.content,
-          metadata: saved.metadata
-        });
-        const cacheManager = this.engine.getManager<CacheManager>('CacheManager');
-        if (cacheManager?.isInitialized()) {
-          await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-        }
-      }
-    } catch (err) {
-      logger.warn(`[ImportManager] Post-import index update failed for "${pageTitle}":`, err);
-    }
   }
 
   /**

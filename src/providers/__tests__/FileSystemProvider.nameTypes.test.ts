@@ -83,7 +83,7 @@ describe('FileSystemProvider: page names YAML reads as other types (#1381)', () 
     await expect(provider.savePage('2024-11-21T00:00:00.000Z', 'Edited', {
       uuid: 'u-iso',
       title: new Date('2024-11-21T00:00:00.000Z') as unknown as string
-    })).resolves.toBeUndefined();
+    })).resolves.toEqual({ name: '2024-11-21T00:00:00.000Z', uuid: 'u-iso' });
 
     const raw = await fs.readFile(path.join(PAGES, 'u-iso.md'), 'utf8');
     expect(matter(raw).data.title).toBe('2024-11-21T00:00:00.000Z');

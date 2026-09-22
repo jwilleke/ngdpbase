@@ -7,6 +7,8 @@ import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
+import { pageUrl } from '../../utils/pageUrl';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -264,7 +266,7 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }) => ({ content: ctx.content }));
+  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(false);
@@ -881,6 +883,85 @@ describe('WikiRoutes — coverage batch 15', () => {
   });
 
   // ── deletePage ────────────────────────────────────────────────────────────────
+
+  // #1462: the page door does the shared-index work; the form routes do none,
+  // and act on what the door answers.
+  describe('POST /save and /delete leave the shared indexes to the door (#1462)', () => {
+    const expectNoRouteIndexWork = () => {
+      expect(mockRenderingManager.addPageToCache).not.toHaveBeenCalled();
+      expect(mockRenderingManager.updatePageInLinkGraph).not.toHaveBeenCalled();
+      expect(mockRenderingManager.removePageFromLinkGraph).not.toHaveBeenCalled();
+      expect(mockRenderingManager.getReferringPages).not.toHaveBeenCalled();
+      expect(mockSearchManager.updatePageInIndex).not.toHaveBeenCalled();
+      expect(mockSearchManager.removePageFromIndex).not.toHaveBeenCalled();
+      expect(mockCacheManager.clear).not.toHaveBeenCalled();
+    };
+    beforeEach(() => {
+      mockCacheManager.isInitialized.mockReturnValue(true);
+    });
+
+    test('a public save redirects to the page and reindexes nothing itself', async () => {
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/view/TestPage');
+      expect(mockPageManager.savePageWithContext).toHaveBeenCalledTimes(1);
+      expectNoRouteIndexWork();
+    });
+
+    test('a page the door put in a store redirects to where the door says it landed', async () => {
+      const landed = 'private/adminuser/notes/TestPage';
+      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
+        ({ ...doorSaveResult(ctx, metadata, { name: 'TestPage' }), name: landed }));
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'true' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(pageUrl(landed));
+      expectNoRouteIndexWork();
+    });
+
+    test('a rename rewrites the referrers the door read before the old title left the link graph', async () => {
+      const rewrite = vi.spyOn(WikiRoutes.prototype as unknown as { rewriteInboundLinksAfterRename: () => Promise<void> }, 'rewriteInboundLinksAfterRename')
+        .mockResolvedValue(undefined);
+      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
+        doorSaveResult(ctx, metadata, { name: 'TestPage', referrers: ['Alpha', 'Beta'] }));
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'Renamed Page', 'system-category': 'general' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/view/Renamed%20Page');
+      expect(rewrite).toHaveBeenCalledWith(expect.anything(), ['Alpha', 'Beta'], 'TestPage', 'Renamed Page');
+      expectNoRouteIndexWork();
+      rewrite.mockRestore();
+    });
+
+    test('an edit that keeps its title rewrites nothing', async () => {
+      const rewrite = vi.spyOn(WikiRoutes.prototype as unknown as { rewriteInboundLinksAfterRename: () => Promise<void> }, 'rewriteInboundLinksAfterRename')
+        .mockResolvedValue(undefined);
+      mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) =>
+        doorSaveResult(ctx, metadata, { name: 'TestPage', referrers: ['Alpha'] }));
+      await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general' });
+      expect(rewrite).not.toHaveBeenCalled();
+      rewrite.mockRestore();
+    });
+
+    test('a delete goes through the door and reindexes nothing itself', async () => {
+      const res = await request(app)
+        .post('/delete/TestPage')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(302);
+      expect(mockPageManager.deletePageWithContext).toHaveBeenCalledTimes(1);
+      expectNoRouteIndexWork();
+    });
+  });
 
   describe('POST /delete/:page (deletePage)', () => {
     test('returns 404 when page does not exist', async () => {

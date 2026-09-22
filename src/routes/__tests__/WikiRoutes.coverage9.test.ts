@@ -16,6 +16,7 @@ import express from 'express';
 import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 import { buildTestApp } from './__fixtures__/buildTestApp';
 import { csrfTestHeaders } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 
@@ -248,7 +249,7 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockResolvedValue(true);
+  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(true);
   mockPageManager.getCurrentPageProvider.mockReturnValue(null);

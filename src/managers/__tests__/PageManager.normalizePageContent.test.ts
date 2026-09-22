@@ -40,7 +40,7 @@ describe('PageManager.savePageWithContext writes the text as typed (#1332)', () 
   function makeSaver() {
     const provider = {
       getPage: vi.fn(async () => null),
-      savePage: vi.fn(async () => {})
+      savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }))
     };
     const pm = new PageManager(makeEngine());
     (pm as unknown as { provider: unknown }).provider = provider;
@@ -53,14 +53,14 @@ describe('PageManager.savePageWithContext writes the text as typed (#1332)', () 
     const md = '* Tests:\n** Skin\n\n{{{\ncode\n}}}\n\n* Other';
     const r = await pm.savePageWithContext(ctx(md), { title: 'P' });
     expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything(), expect.anything());
-    expect(r).toEqual({ content: md });
+    expect(r).toEqual({ content: md, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
   });
 
   it('leaves a metadata-only save alone', async () => {
     const { pm, provider, ctx } = makeSaver();
     const r = await pm.savePageWithContext(ctx(null), { title: 'P' });
     expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything(), expect.anything());
-    expect(r).toEqual({ content: null });
+    expect(r).toEqual({ content: null, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
   });
 });
 

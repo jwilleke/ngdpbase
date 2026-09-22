@@ -31,7 +31,6 @@ import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
-import type SearchManager from './SearchManager.js';
 import logger from '../utils/logger.js';
 import type { User } from '../types/User.js';
 
@@ -1106,23 +1105,7 @@ class AddonsManager extends BaseManager {
       logger.debug(`[AddonsManager] Page '${existingSlug}' already seeded — skipping (${addonName})`);
     }
 
-    // Keep the search index fresh regardless (page may predate a rebuild).
-    const searchManager = this.engine.getManager<SearchManager>('SearchManager');
-    if (searchManager) {
-      const refreshed = await pageManager.getPage(existingSlug, seedContext);
-      if (refreshed) {
-        // #1406: keyed by title, as the editor's save and the shared seeder
-        // index pages — a slug key left a second entry for the same page.
-        const indexName = typeof refreshed.metadata?.title === 'string' && refreshed.metadata.title
-          ? refreshed.metadata.title
-          : existingSlug;
-        await searchManager.updatePageInIndex(indexName, {
-          name: indexName,
-          content: refreshed.content,
-          metadata: refreshed.metadata
-        });
-      }
-    }
+    // #1462: each save above went through the page door, which indexes it.
   }
 
   private getInstanceThemesDir(): string {

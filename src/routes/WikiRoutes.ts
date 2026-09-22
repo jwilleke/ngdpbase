@@ -3362,42 +3362,8 @@ ${panes}
         ...(audienceArray.length ? { audience: audienceArray } : {})
       });
 
+      // #1462: the door brings the shared indexes in step with the new page.
       await pageManager.savePageWithContext(wikiContext, metadata);
-
-      // Sync attachment mentions for any references in the new page content. #405 Phase 4
-      const _am1 = this.engine.getManager('AttachmentManager');
-      if (_am1?.syncPageMentions) _am1.syncPageMentions(pageName, content).catch(() => {});
-      // Sync pageAssets reverse index. #438
-      const _asm1 = this.engine.getManager('AssetManager');
-      if (_asm1?.syncPageAssets) _asm1.syncPageAssets(pageName, content).catch(() => {});
-
-      // Use incremental updates instead of full rebuilds for performance (#245)
-      const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
-
-      // Add to page cache and update link graph incrementally
-      renderingManager.addPageToCache(pageName);
-      renderingManager.updatePageInLinkGraph(pageName, content);
-
-      // Update search index for just this page
-      await searchManager.updatePageInIndex(pageName, {
-        name: pageName,
-        content: content,
-        metadata: metadata
-      });
-
-      // Clear rendered cache for this page and pages that might link to it
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        const referringPages = renderingManager.getReferringPages(pageName);
-        const _uuid1 = pageManager?.getPageUUID?.(pageName, req.userContext) ?? pageName;
-        await cacheManager.clear(undefined, `rendered-pages:${_uuid1}:*`);
-        for (const refPage of referringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
-          await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-        }
-        logger.debug(`🗑️  Cleared rendered cache for ${pageName} and ${referringPages.length} referring pages`);
-      }
 
       // Redirect to edit the new page
       res.redirect(`/edit/${pageName}`);
@@ -3756,8 +3722,6 @@ ${panes}
       });
 
       const pageManager = this.engine.getManager('PageManager');
-      const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
 
       // Get user context from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
@@ -3877,17 +3841,6 @@ ${panes}
         return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
       }
       const newTitle = (typeof title === 'string' && title) || privateName?.title || pageName;
-      const configForStores = this.engine.getManager('ConfigurationManager');
-      const landedName = !privateFlag
-        ? newTitle
-        : privateName
-          ? formatPrivatePageName(privateName.owner, privateName.store, newTitle)
-          : formatPrivatePageName(
-            String(pageOwner),
-            privateStoreLayoutFromConfig((key, def) => configForStores.getProperty(key, def)).defaultStoreId,
-            newTitle
-          );
-      const landsPrivate = parsePrivatePageName(landedName) !== null;
 
       // #1017: system-keywords is the automation/provenance bucket (#893) — no
       // editor posts it, so an edit must PRESERVE what is on disk. Without this,
@@ -4128,91 +4081,23 @@ ${panes}
         });
       }
 
-      // Sync attachment mentions — fire-and-forget so a metadata write failure never blocks save.
-      // Replaces the per-render lazy attachToPage() with a deterministic save-time scan. #405 Phase 4
-      // #1456: a private page is in no shared index — mentions, assets, the
-      // link graph and the search index hold public pages only.
-      const attachmentManager = this.engine.getManager('AttachmentManager');
-      if (!landsPrivate && attachmentManager?.syncPageMentions) {
-        attachmentManager.syncPageMentions(landedName, content).catch(() => {});
-      }
-      // Sync pageAssets reverse index. #438
-      const assetManager = this.engine.getManager('AssetManager');
-      if (!landsPrivate && assetManager?.syncPageAssets) {
-        assetManager.syncPageAssets(landedName, content).catch(() => {});
-      }
-
-      // Use incremental updates instead of full rebuilds for performance.
-      // #1456: a page that came out of a store is new to the public space.
-      const isNewPage = !existingPage || privateName !== null;
-      const finalTitle = (metadata.title as string) || pageName;
-      const isRename = !isNewPage && pageName !== finalTitle;
-      if (landsPrivate) {
-        if (!isNewPage) {
-          // It left the public space: nothing shared may still name it.
-          renderingManager.removePageFromLinkGraph(pageName);
-          await searchManager.removePageFromIndex(pageName);
-        }
-        const privateCache = this.engine.getManager('CacheManager');
-        const savedUuid = pageManager?.getPageUUID?.(landedName, req.userContext);
-        if (privateCache?.isInitialized?.() && savedUuid) {
-          await privateCache.clear(undefined, `rendered-pages:${savedUuid}:*`);
-        }
+      // #1462: the door brought every shared index in step with the save —
+      // link graph, search, mentions, assets, the rendered cache of the page
+      // and its referrers — and kept a private page (#1456) out of them all.
+      // Where the page landed is the door's answer, not a guess made here.
+      if (parsePrivatePageName(saved.name) !== null) {
         this.engine.getManager('MetricsManager')?.recordPageSave?.(Date.now() - _metricsStart);
-        const privateTarget = pageUrl(landedName);
+        const privateTarget = pageUrl(saved.name);
         if (wantsJson) return res.json({ ok: true, redirect: privateTarget });
         return res.redirect(privateTarget);
       }
 
-      // Capture old referring pages BEFORE removing from link graph (used for cache invalidation)
-      const oldReferringPages = isRename ? renderingManager.getReferringPages(pageName) : [];
-
-      // Update link graph incrementally (much faster than full rebuild)
-      if (isNewPage) {
-        renderingManager.addPageToCache(finalTitle);
-      } else if (isRename) {
-        // Remove old title from link graph and register new title
-        renderingManager.removePageFromLinkGraph(pageName);
-        renderingManager.addPageToCache(finalTitle);
-        // #1082: remember the old title so existing [Old Title] links keep
-        // resolving instead of turning into red links.
-        // #1094: rewrite `[Old Title]` in the pages that referred to it, so the
-        // content becomes correct rather than depending on the map above.
-        // Not awaited — see rewriteInboundLinksAfterRename.
-        void this.rewriteInboundLinksAfterRename(req, oldReferringPages, pageName, finalTitle);
-        logger.info(`[WikiRoutes] Page renamed: '${pageName}' → '${finalTitle}', link graph updated`);
-      }
-      renderingManager.updatePageInLinkGraph(finalTitle, content);
-
-      // Update search index — on rename, remove old title entry first
-      if (isRename) {
-        await searchManager.removePageFromIndex(pageName);
-      }
-      await searchManager.updatePageInIndex(finalTitle, {
-        name: finalTitle,
-        content: content,
-        metadata: metadata
-      });
-
-      // Clear rendered cache for this page and pages that link to it
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        const referringPages = renderingManager.getReferringPages(finalTitle);
-        // UUID is stable across renames — one clear covers both old and new title
-        const _uuid3 = pageManager?.getPageUUID?.(finalTitle, req.userContext) ?? finalTitle;
-        await cacheManager.clear(undefined, `rendered-pages:${_uuid3}:*`);
-        for (const refPage of referringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
-          await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-        }
-        if (isRename) {
-          for (const refPage of oldReferringPages) {
-            const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
-            await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-          }
-          logger.debug(`🗑️  Cleared rendered cache for old title '${pageName}' and ${oldReferringPages.length} referring pages`);
-        }
-        logger.debug(`🗑️  Cleared rendered cache for ${finalTitle} and ${referringPages.length} referring pages`);
+      // #1082/#1094: a rename rewrites `[Old Title]` in the pages that referred
+      // to it — the referrers the door read before the old name left the link
+      // graph. Not awaited — see rewriteInboundLinksAfterRename.
+      if (saved.previousName !== null && saved.previousName !== saved.name && privateName === null) {
+        void this.rewriteInboundLinksAfterRename(req, saved.previousReferrers, saved.previousName, saved.name);
+        logger.info(`[WikiRoutes] Page renamed: '${saved.previousName}' → '${saved.name}'`);
       }
 
       // Redirect to the updated page title if it changed (fallback to original name)
@@ -4596,7 +4481,6 @@ ${panes}
       const { pageData, wikiContext, pageName } = prepared;
 
       const uuid = (pageData.metadata as { uuid?: string } | undefined)?.uuid ?? pageName;
-      const referringPages = this.engine.getManager('RenderingManager')?.getReferringPages(pageName) ?? [];
 
       try {
         await this.auditPageDelete(req, wikiContext, pageName, uuid);
@@ -4612,7 +4496,7 @@ ${panes}
         return res.status(500).json({ error: 'Delete failed', pageName });
       }
 
-      await this.reconcileIndexesAfterDelete(pageName, uuid, referringPages, req.userContext);
+      // #1462: the door took the page out of every shared index.
       this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
 
       logger.info(`[WikiRoutes] API delete of '${pageName}' (${uuid}) by ${req.userContext.username}`);
@@ -4663,13 +4547,8 @@ ${panes}
 
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.NONE, pageName, response: res });
       (wikiContext as { content: string | null }).content = pageData.content;
+      // #1462: the door reindexes the page.
       await pageManager.savePageWithContext(wikiContext, metadata, { audit: { ipAddress: req.ip } });
-
-      await this.engine.getManager('SearchManager')?.updatePageInIndex(pageName, {
-        name: pageName,
-        content: pageData.content,
-        metadata
-      });
 
       return res.json({ success: true, pageName, changed: true, systemKeywords });
     } catch (error) {
@@ -4717,45 +4596,20 @@ ${panes}
         });
       }
 
-      const oldReferringPages = this.engine.getManager('RenderingManager')?.getReferringPages(pageName) ?? [];
       const metadata = { ...(pageData.metadata ?? {}), title: newTitle };
 
       (wikiContext as { content: string | null }).content = pageData.content;
       // #1121: the rename audit event comes from PageManager, which derives
       // `rename` from the title change — the same derivation for both rename
       // paths, rather than each route classifying its own write.
-      await pageManager.savePageWithContext(wikiContext, metadata, {
+      // #1462: the door moves the page to its new title in every shared index.
+      const saved = await pageManager.savePageWithContext(wikiContext, metadata, {
         audit: { ipAddress: req.ip }
       });
 
-      // Same index reconciliation the form save performs on a rename.
-      const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
-      renderingManager?.removePageFromLinkGraph(pageName);
-      renderingManager?.addPageToCache(newTitle);
-      // #1082: same former-title record the form save makes, so a rename
-      // behaves identically however it was invoked.
-      // #1094: same content rewrite the form-save rename performs, so a rename
-      // behaves identically however it was invoked.
-      void this.rewriteInboundLinksAfterRename(req, oldReferringPages, pageName, newTitle);
-      renderingManager?.updatePageInLinkGraph(newTitle, pageData.content);
-      await searchManager?.removePageFromIndex(pageName);
-      await searchManager?.updatePageInIndex(newTitle, {
-        name: newTitle,
-        content: pageData.content,
-        metadata
-      });
-
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        // The uuid is stable across a rename, so one clear covers both titles.
-        const uuid = pageManager?.getPageUUID?.(newTitle, req.userContext) ?? newTitle;
-        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-        for (const refPage of oldReferringPages) {
-          const refUUID = pageManager?.getPageUUID?.(refPage, req.userContext) ?? refPage;
-          await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-        }
-      }
+      // #1082/#1094: same content rewrite the form-save rename performs, fed
+      // the referrers the door read before the old title left the link graph.
+      void this.rewriteInboundLinksAfterRename(req, saved.previousReferrers, saved.previousName ?? pageName, saved.name);
 
       logger.info(`[WikiRoutes] API rename '${pageName}' → '${newTitle}' by ${req.userContext.username}`);
       return res.json({ success: true, from: pageName, to: newTitle });
@@ -4924,6 +4778,7 @@ ${panes}
       // Title is untouched: this page was not renamed, its links were.
       // #1121: `link-rewrite` is the one op PageManager cannot infer — from
       // inside the manager this is an ordinary edit — so the route declares it.
+      // #1462: the door reindexes the rewritten page.
       await pageManager.savePageWithContext(wikiContext, { ...page.metadata }, {
         audit: {
           op: 'link-rewrite',
@@ -4931,80 +4786,10 @@ ${panes}
           rewriteOf: { from: oldTitle, to: newTitle }
         }
       });
-
-      const uuid = (page.metadata as { uuid?: string } | undefined)?.uuid;
-
-      await this.reconcileIndexesAfterRewrite(refPage, result.content, page.metadata, uuid);
       return 'rewritten';
     }
 
     return 'conflict';
-  }
-
-  /**
-   * Bring the derived indexes back in line after a link rewrite.
-   *
-   * The same reconciliation an ordinary edit performs — the page's content
-   * changed, so the link graph, the search index and the rendered cache are all
-   * stale. Best-effort throughout: the write has landed, and a failure to
-   * reindex must not be reported as a failed rewrite.
-   */
-  private async reconcileIndexesAfterRewrite(
-    pageName: string,
-    content: string,
-    metadata: unknown,
-    uuid: string | undefined
-  ): Promise<void> {
-    try {
-      this.engine.getManager('RenderingManager')?.updatePageInLinkGraph(pageName, content);
-      await this.engine.getManager('SearchManager')?.updatePageInIndex(pageName, {
-        name: pageName,
-        content,
-        metadata: metadata as Record<string, unknown>
-      });
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        await cacheManager.clear(undefined, `rendered-pages:${uuid ?? pageName}:*`);
-      }
-    } catch (err: unknown) {
-      logger.warn(
-        `[WikiRoutes] Reindex after link rewrite of '${pageName}' failed: ${getErrorMessage(err)}`
-      );
-    }
-  }
-
-  /**
-   * Drop a deleted page from every derived index and cache (#946 slice 2).
-   *
-   * Extracted from {@link deletePage} so the JSON API delete performs exactly
-   * the same reconciliation. Two copies of this would drift, and the symptom of
-   * drift is a deleted page that still appears in search — silent and slow to
-   * notice.
-   *
-   * @param pageName - Title the page was deleted under
-   * @param uuid - Page uuid, captured before deletion emptied the cache
-   * @param referringPages - Pages that linked to it, captured before the link graph entry went
-   */
-  private async reconcileIndexesAfterDelete(
-    pageName: string,
-    uuid: string,
-    referringPages: string[],
-    ctx: ActorContext
-  ): Promise<void> {
-    logger.debug('🔄 Updating indexes after deletion...');
-    const pageManager = this.engine.getManager('PageManager');
-    this.engine.getManager('RenderingManager')?.removePageFromLinkGraph(pageName);
-    await this.engine.getManager('SearchManager')?.removePageFromIndex(pageName);
-
-    // Clear rendered cache for deleted page and any pages that linked to it
-    const cacheManager = this.engine.getManager('CacheManager');
-    if (cacheManager?.isInitialized?.()) {
-      await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-      for (const refPage of referringPages) {
-        const refUUID = pageManager?.getPageUUID?.(refPage, ctx) ?? refPage;
-        await cacheManager.clear(undefined, `rendered-pages:${refUUID}:*`);
-      }
-    }
   }
 
   /**
@@ -5220,7 +5005,6 @@ ${panes}
       // Extract user from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
-      const renderingManager = this.engine.getManager('RenderingManager');
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // Check if page exists
@@ -5280,8 +5064,6 @@ ${panes}
 
       // Capture UUID before deletion — pageCache entry is removed by deletePage
       const _deleteUUID = (pageData.metadata as { uuid?: string } | undefined)?.uuid ?? pageName;
-      // Capture referring pages before deletion removes the link graph entry
-      const _deleteRefPages = renderingManager.getReferringPages(pageName);
 
       // Audit BEFORE the delete executes (#946 slice 2). Writing it afterwards
       // would lose the page name and uuid on any path where the delete
@@ -5299,8 +5081,7 @@ ${panes}
       logger.debug(`🗑️ Delete result: ${deleteResult}`);
 
       if (deleteResult) {
-        await this.reconcileIndexesAfterDelete(pageName, _deleteUUID, _deleteRefPages, req.userContext);
-
+        // #1462: the door took the page out of every shared index.
         logger.debug(`✅ Page deleted successfully: ${pageName}`);
         this.engine.getManager('MetricsManager')?.recordPageDelete?.(Date.now() - _metricsStart);
 
@@ -5759,52 +5540,13 @@ ${panes}
       });
       const metadata = { ...(page.metadata as Record<string, unknown>) };
       metadata.editor = permContext.userContext?.username || 'unknown';
+      // #1462: the door brings the shared indexes in step.
       await pageManager.savePageWithContext(wikiContext, metadata);
-
-      await this.syncAfterProgrammaticSave(pageName, newContent, metadata, req.userContext);
       return undefined;
     } catch (err) {
       logger.error(`Error attaching upload to page "${pageName}":`, err);
       return 'attach-to-page failed — attachment stored but not linked';
     }
-  }
-
-  /**
-   * Post-save sync for programmatic page saves outside the unified /save
-   * handler — same block it runs (#405/#438/#245): attachment mentions,
-   * pageAssets, render cache, link graph, search index, rendered-page cache.
-   */
-  private async syncAfterProgrammaticSave(
-    pageName: string,
-    content: string,
-    metadata: Record<string, unknown>,
-    ctx: ActorContext
-  ): Promise<void> {
-    const pageManager = this.engine.getManager('PageManager');
-    const cacheManager = this.engine.getManager('CacheManager');
-    const clearRendered = async (): Promise<void> => {
-      if (cacheManager?.isInitialized?.()) {
-        const uuid = pageManager?.getPageUUID?.(pageName, ctx) ?? pageName;
-        await cacheManager.clear(undefined, `rendered-pages:${uuid}:*`);
-      }
-    };
-    // #1456: a private page is in no shared index — mentions, assets, the link
-    // graph and search hold public pages only.
-    if (parsePrivatePageName(pageName)) return clearRendered();
-    const attachmentManager = this.engine.getManager('AttachmentManager');
-    if (attachmentManager?.syncPageMentions) attachmentManager.syncPageMentions(pageName, content).catch(() => {});
-    const assetManager = this.engine.getManager('AssetManager');
-    if (assetManager?.syncPageAssets) assetManager.syncPageAssets(pageName, content).catch(() => {});
-    const renderingManager = this.engine.getManager('RenderingManager');
-    const searchManager = this.engine.getManager('SearchManager');
-    renderingManager.addPageToCache(pageName);
-    renderingManager.updatePageInLinkGraph(pageName, content);
-    await searchManager.updatePageInIndex(pageName, {
-      name: pageName,
-      content,
-      metadata
-    });
-    await clearRendered();
   }
 
   // ---------------------------------------------------------------------
@@ -5980,14 +5722,14 @@ ${panes}
         content: newContent,
         response: res
       });
-      await pageManager.savePageWithContext(wikiContext, metadata);
-      await this.syncAfterProgrammaticSave(targetName, newContent, metadata, req.userContext);
+      // #1462: the door brings the shared indexes in step.
+      const saved = await pageManager.savePageWithContext(wikiContext, metadata);
 
       return res.render('capture', {
         pageName, url, pageTitle: title, text: '',
         csrfToken: req.session?.csrfToken || '',
         success: true,
-        viewUrl: pageUrl(targetName),
+        viewUrl: pageUrl(saved.name),
         error: ''
       });
     } catch (err: unknown) {
@@ -9480,30 +9222,15 @@ ${panes}
         content: finalDoc.content,
         response: res
       });
+      // #1462: the door brings the shared indexes in step.
       await pageManager.savePageWithContext(wikiContext, finalDoc.data);
 
-      // Incremental, in-band index update (mirrors createPageFromTemplate).
+      // The page as saved, for the response.
       const saved = await pageManager.getPage(pageName, req.userContext);
       if (!saved) {
         logger.error(`Ingest: page "${pageName}" not retrievable immediately after save`);
         return res.status(500).json({ success: false, error: 'Page saved but could not be reloaded' });
       }
-      const renderingManager = this.engine.getManager('RenderingManager');
-      const searchManager = this.engine.getManager('SearchManager');
-      renderingManager.addPageToCache(pageName);
-      renderingManager.updatePageInLinkGraph(pageName, saved.content);
-      await searchManager.updatePageInIndex(pageName, {
-        name: pageName,
-        content: saved.content,
-        metadata: saved.metadata
-      });
-
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        const _uuid = pageManager?.getPageUUID?.(pageName, req.userContext) ?? pageName;
-        await cacheManager.clear(undefined, `rendered-pages:${_uuid}:*`);
-      }
-
       const savedMeta = saved.metadata as Record<string, unknown>;
       const baseUrl = this.engine.getManager('ConfigurationManager')
         ?.getProperty('ngdpbase.application.base-url', '') || '';

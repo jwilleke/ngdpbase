@@ -14,7 +14,7 @@ import {
   type PrivatePageName
 } from '../utils/privateStorePath.js';
 import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
-import type { StoreFileLocation, StorePageEntry } from '../types/Provider.js';
+import type { SavedPage, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
   storeFileIO,
@@ -683,7 +683,7 @@ class FileSystemProvider extends BasePageProvider {
     metadata: Partial<PageFrontmatter> = {},
     ctx: ActorContext,
     options?: PageSaveOptions
-  ): Promise<void> {
+  ): Promise<SavedPage> {
     // #1381: a caller may hand over metadata parsed with YAML's own types — a
     // boolean or Date title would reach toLowerCase() below and throw.
     metadata = namesAsText({ ...metadata });
@@ -842,7 +842,7 @@ class FileSystemProvider extends BasePageProvider {
       };
       await this.putStorePage(this.pagesDirectory, storeLocation, entry);
       logger.info(`[FileSystemProvider] Page '${finalTitle}' saved to ${storeLocation.owner}'s store '${storeLocation.store}'${sealed ? ' (sealed)' : ''}.`);
-      return;
+      return { name: formatPrivatePageName(storeLocation.owner, storeLocation.store, finalTitle), uuid };
     }
 
     // Handle title change: remove old cache entries
@@ -883,6 +883,7 @@ class FileSystemProvider extends BasePageProvider {
     }
 
     logger.info(`[FileSystemProvider] Page '${finalTitle}' saved successfully to ${path.basename(filePath)}.`);
+    return { name: finalTitle, uuid };
   }
 
   /**

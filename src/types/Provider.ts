@@ -140,6 +140,13 @@ export interface PagesScanOptions {
  * Fields beyond `title`/`uuid`/`lastModified` are best-effort: providers populate what
  * they have. Consumers should treat optional fields as advisory.
  */
+/** Where a save put a page (#1462). */
+export interface SavedPage {
+  /** The page's name now: its title, or `private/{owner}/{store}/{title}` (#1456). */
+  name: string;
+  uuid: string;
+}
+
 export interface RecentChangeEntry {
   title: string;
   uuid: string;
@@ -190,7 +197,8 @@ export interface PageProvider extends BaseProvider {
    * @param content - Markdown content
    * @param metadata - Frontmatter metadata
    * @param options - Save options
-   * @returns Promise that resolves when save is complete
+   * @returns Where the page landed (#1462): the provider decides placement,
+   *   so it is the one that can say — a private page's name is its path.
    */
   savePage(
     pageName: string,
@@ -198,7 +206,7 @@ export interface PageProvider extends BaseProvider {
     metadata: Partial<PageFrontmatter> | undefined,
     ctx: ActorContext,
     options?: PageSaveOptions
-  ): Promise<void>;
+  ): Promise<SavedPage>;
 
   /**
    * Delete a page

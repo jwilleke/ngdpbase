@@ -26,7 +26,7 @@ function makeManager(existing: StoredPage[] = []) {
   const provider = {
     getPage: vi.fn(async (title: string) => byTitle.get(title) ?? null),
     getPageMetadata: vi.fn(async (title: string) => byTitle.get(title)?.metadata ?? null),
-    savePage: vi.fn(async () => {})
+    savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' }))
   };
 
   const auditManager = {
@@ -170,7 +170,7 @@ describe('PageManager.savePageWithContext() audit emission (#1121)', () => {
     broken.provider = provider;
 
     await expect(broken.savePageWithContext(context('Still Saves'), { title: 'Still Saves' }))
-      .resolves.toEqual({ content: 'body' });
+      .resolves.toEqual({ content: 'body', name: 'Still Saves', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
     await settle();
     expect(provider.savePage).toHaveBeenCalled();
   });

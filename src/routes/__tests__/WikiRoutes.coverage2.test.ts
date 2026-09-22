@@ -17,6 +17,7 @@ import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { doorSaveResult } from './__fixtures__/pageDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -238,7 +239,7 @@ function resetMocks() {
   mockPageManager.getPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.getAllPageNames.mockResolvedValue(['Welcome', 'TestPage']);
   mockPageManager.savePage.mockResolvedValue(true);
-  mockPageManager.savePageWithContext.mockResolvedValue(true);
+  mockPageManager.savePageWithContext.mockImplementation(async (ctx: { content: string }, metadata?: Record<string, unknown>) => doorSaveResult(ctx, metadata));
   mockPageManager.deletePage.mockResolvedValue(true);
   mockPageManager.deletePageWithContext.mockResolvedValue(true);
   mockPageManager.pageExists.mockReturnValue(true);

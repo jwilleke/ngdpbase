@@ -1253,7 +1253,9 @@ describe('AddonsManager', () => {
       expect(warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('home.md'))).toBeUndefined();
     });
 
-    test('re-indexes already-existing pages via SearchManager on startup', async () => {
+    // #1462: an unchanged seeded page is not saved, so nothing is reindexed
+    // here — it is already in the index the startup build made.
+    test('does not reindex an already-existing, unchanged page itself', async () => {
       const uuid = '550e8400-e29b-41d4-a716-446655440042';
       await makeAddonWithSeedPages('reindex-addon', [
         { filename: 'page.md', uuid, slug: 'reindex-page', title: 'Test' }
@@ -1269,15 +1271,11 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).not.toHaveBeenCalled();
-      // #1406: indexed by title, as the editor's save indexes pages.
-      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('Test', {
-        name: 'Test',
-        content: existingPage.content,
-        metadata: existingPage.metadata
-      });
+      expect(searchManager.updatePageInIndex).not.toHaveBeenCalled();
     });
 
-    test('indexes new pages in SearchManager after seeding', async () => {
+    // #1462: the page door indexes a seeded page (PageManager.sharedIndexes.test.ts).
+    test('seeds new pages through the page door and leaves the index to it', async () => {
       const uuid = '550e8400-e29b-41d4-a716-446655440043';
       await makeAddonWithSeedPages('index-addon', [
         { filename: 'page.md', uuid, slug: 'index-page', title: 'Test' }
@@ -1290,9 +1288,9 @@ describe('AddonsManager', () => {
       await manager.initialize();
 
       expect(pageManager.savePage).toHaveBeenCalledTimes(1);
-      expect(searchManager.updatePageInIndex).toHaveBeenCalledWith('Test',
-        expect.objectContaining({ name: 'Test', metadata: expect.objectContaining({ 'system-category': 'addon' }) })
-      );
+      expect(pageManager.savePage).toHaveBeenCalledWith('Test', expect.any(String),
+        expect.objectContaining({ title: 'Test', 'system-category': 'addon' }), expect.anything(), expect.anything());
+      expect(searchManager.updatePageInIndex).not.toHaveBeenCalled();
     });
 
     test('skips search indexing gracefully when SearchManager is unavailable', async () => {

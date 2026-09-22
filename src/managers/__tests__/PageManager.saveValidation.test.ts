@@ -23,7 +23,7 @@ const ERROR = {
 };
 
 function makeManager(errors: unknown[] = []) {
-  const provider = { savePage: vi.fn().mockResolvedValue(undefined) };
+  const provider = { savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' })) };
   const validationManager = {
     collectContentErrors: vi.fn().mockResolvedValue(errors),
     checkConflicts: vi.fn().mockResolvedValue({ hasConflict: false })
@@ -122,7 +122,7 @@ describe('validation failures never become save failures (#1037)', () => {
   });
 
   test('no ValidationManager at all is not an error', async () => {
-    const provider = { savePage: vi.fn().mockResolvedValue(undefined) };
+    const provider = { savePage: vi.fn(async (name: string) => ({ name, uuid: 'uuid-1' })) };
     const manager = new PageManager({ getManager: () => null });
     (manager as unknown as { provider: unknown }).provider = provider;
 
