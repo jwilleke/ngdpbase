@@ -1,5 +1,5 @@
 import BaseAttachmentProvider, { FileInfo, User, AttachmentResult } from './BaseAttachmentProvider.js';
-import type { ProviderInfo } from '../types/Provider.js';
+import type { ProviderInfo, StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import { AttachmentMetadata } from '../types/index.js';
 import type { AssetProvider, AssetRecord, AssetQuery, AssetPage, AssetInput, AssetMetadata, AssetMetadataPatch } from '../types/Asset.js';
 import type { CreativeWork, DigitalDocument } from '../types/Schema.js';
@@ -17,6 +17,7 @@ import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
   privateStoreFilePath,
+  storeFileIndexPath,
   privateStoreAttachmentsDir,
   privateStoreLayoutFromConfig,
   type PrivateStoreLayout
@@ -884,6 +885,107 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       logger.error(`[BasicAttachmentProvider] Error during orphan fallback scan: ${attachmentId}`, error);
       return null;
     }
+  }
+
+  // ── Files in a private store (#1400) ──────────────────────────────────────
+  //
+  // The store's own index lives beside its `store.json`; the files in its
+  // `attachments/` folder, named `{uuid}.ext`. Both go through the location's
+  // I/O, so an encrypted store's index and bytes are sealed without this
+  // provider deciding it. Nothing here touches the global metadata map.
+
+  private storeIndexFile(location: StoreFileLocation): string {
+    return storeFileIndexPath(this.requirePagesDirectory(), location.owner, location.store, this.privateStoreLayout);
+  }
+
+  private storeFilePath(location: StoreFileLocation, fileName: string): string {
+    return privateStoreFilePath(this.requirePagesDirectory(), location.owner, fileName, location.store, this.privateStoreLayout);
+  }
+
+  private requirePagesDirectory(): string {
+    if (!this.pagesDirectory) throw new Error('[BasicAttachmentProvider] private stores need the pages directory');
+    return this.pagesDirectory;
+  }
+
+  private async readStoreIndex(location: StoreFileLocation): Promise<Record<string, StoreFileEntry>> {
+    const file = this.storeIndexFile(location);
+    if (!await fs.pathExists(file)) return {};
+    const parsed = JSON.parse(await location.io.readText(file)) as { version?: number; files?: Record<string, StoreFileEntry> };
+    return parsed && typeof parsed.files === 'object' && parsed.files ? parsed.files : {};
+  }
+
+  private async writeStoreIndex(location: StoreFileLocation, files: Record<string, StoreFileEntry>): Promise<void> {
+    const file = this.storeIndexFile(location);
+    await fs.ensureDir(path.dirname(file));
+    await location.io.writeText(file, JSON.stringify({ version: 1, files }));
+  }
+
+  async storeFileInStore(
+    location: StoreFileLocation,
+    bytes: Buffer,
+    file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+  ): Promise<StoreFileEntry> {
+    this.validateFile({ originalName: file.originalName, mimeType: file.mimeType, size: bytes.length });
+    const fingerprint = crypto.createHash('sha256').update(bytes).digest('hex');
+    const files = await this.readStoreIndex(location);
+    const now = new Date().toISOString();
+
+    // Duplicates are found in THIS store only (operator, 2026-09-22) — never
+    // the public pool or another store.
+    const existing = Object.values(files).find((f) => f.fingerprint === fingerprint);
+    if (existing) {
+      if (file.pageName && !existing.mentions.includes(file.pageName)) {
+        existing.mentions.push(file.pageName);
+        existing.dateModified = now;
+        await this.writeStoreIndex(location, files);
+      }
+      return existing;
+    }
+
+    const id = crypto.randomUUID();
+    const fileName = `${id}${path.extname(file.originalName).toLowerCase()}`;
+    const target = this.storeFilePath(location, fileName);
+    await fs.ensureDir(path.dirname(target));
+    await location.io.writeBytes(target, bytes);
+
+    const entry: StoreFileEntry = {
+      id,
+      fileName,
+      name: file.originalName,
+      encodingFormat: file.mimeType,
+      contentSize: bytes.length,
+      fingerprint,
+      description: file.description,
+      ...(file.author ? { author: file.author } : {}),
+      dateCreated: now,
+      dateModified: now,
+      mentions: file.pageName ? [file.pageName] : []
+    };
+    files[id] = entry;
+    await this.writeStoreIndex(location, files);
+    logger.info(`[BasicAttachmentProvider] Stored a file in ${location.owner}'s store '${location.store}' (${id})`);
+    return entry;
+  }
+
+  async getFileInStore(location: StoreFileLocation, id: string): Promise<{ entry: StoreFileEntry; bytes: Buffer } | null> {
+    const entry = (await this.readStoreIndex(location))[id];
+    if (!entry) return null;
+    return { entry, bytes: await location.io.readBytes(this.storeFilePath(location, entry.fileName)) };
+  }
+
+  async filesInStoreForPage(location: StoreFileLocation, pageName: string): Promise<StoreFileEntry[]> {
+    return Object.values(await this.readStoreIndex(location)).filter((f) => f.mentions.includes(pageName));
+  }
+
+  async deleteFileInStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null> {
+    const files = await this.readStoreIndex(location);
+    const entry = files[id];
+    if (!entry) return null;
+    delete files[id];
+    await this.writeStoreIndex(location, files);
+    await fs.remove(this.storeFilePath(location, entry.fileName));
+    logger.info(`[BasicAttachmentProvider] Deleted a file from ${location.owner}'s store '${location.store}' (${id})`);
+    return entry;
   }
 
   /**

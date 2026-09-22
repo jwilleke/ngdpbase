@@ -1,7 +1,7 @@
 ---
 name: AttachmentManager
 description: "File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication"
-dateModified: '2026-05-14'
+dateModified: '2026-09-22'
 category: managers
 code: src/managers/AttachmentManager.ts
 ---
@@ -65,7 +65,9 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | `refreshAttachmentList()` | `Promise<void>` | Rescan storage |
 | `getAttachmentUrl(id)` | `string` | Get attachment URL path |
 | `getAttachmentByFilename(filename)` | `Promise<Object\|null>` | Find attachment by filename |
-| `resolveAttachmentSrc(src, pageName)` | `Promise<{url, mimeType}\|null>` | Canonical src resolution used by Image/ATTACH plugins |
+| `resolveAttachmentSrc(src, pageName, ctx)` | `Promise<{url, mimeType}\|null>` | Canonical src resolution used by Image/ATTACH plugins; the viewer's context reaches their own sealed files |
+| `getSealedAttachment(id, ctx)` | `Promise<{buffer, metadata}\|null>` | A file from the requester's own unlocked encrypted stores, decrypted (#1400) |
+| `getSealedAttachmentsForPage(pageName, ctx)` | `Promise<Array>` | The requester's own sealed files uploaded onto a page (#1400) |
 
 ## Attachment Resolution Order
 
@@ -76,9 +78,19 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 | 0 | `src` starts with `media://` | Resolved via MediaManager by filename (see [MediaManager](MediaManager.md)) |
 | 1 | `src` starts with `http://` or `https://` | Returned as-is |
 | 2 | `src` starts with `/` | Returned as-is |
+| 2a | plain filename | The viewer's own sealed files on this page, by name — only their own unlocked encrypted stores (#1400) |
 | 3 | plain filename | Page-local attachment lookup (exact filename) |
 | 4 | plain filename | Global attachment search (lazily updates `mentions`) |
 | — | no match | Returns `null` |
+
+## Files in an encrypted store (#1400)
+
+A file uploaded into an __encrypted__ private store never enters the global `attachment-metadata.json`. The store is self-contained ([private-stores planning](../planning/private-stores.md), "Stores are self-contained"):
+
+- The provider keeps it in the store: bytes in `{store}/attachments/{uuid}.ext`, listed in the store's own index `{store}/files-index.json`. Both are written through the store's `StoreFileIO`, which seals them with the store DEK. The name on disk is a random UUID, so it cannot confirm a known file.
+- Duplicates are found in the same store only, by a SHA-256 fingerprint kept inside the sealed index.
+- This manager is the door. It gets the store's I/O from the context, asks the PIP (`canAccessPrivateContainer`) who may reach the file, calls the provider and writes the audit record. Only the requester's own stores whose DEK the session holds are looked in; a locked store, or another user's, contributes nothing.
+- Upload, serve (`/attachments/:id`, `Cache-Control: private, no-store`), the page's attached-files list, `[{ATTACH}]`/`[{Image}]` resolution and delete are covered. Unencrypted private files are still in the global index until [#1454](https://github.com/jwilleke/ngdpbase/issues/1454).
 
 ## UI Features
 

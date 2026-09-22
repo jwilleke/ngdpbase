@@ -26,13 +26,18 @@ export interface StoreFileIO {
   readonly sealed: boolean;
   readText(file: string, encoding?: BufferEncoding): Promise<string>;
   writeText(file: string, text: string, encoding?: BufferEncoding): Promise<void>;
+  /** A store file's bytes — attachments (#1400) are binary, pages are text. */
+  readBytes(file: string): Promise<Buffer>;
+  writeBytes(file: string, bytes: Buffer): Promise<void>;
 }
 
 /** Files outside any encrypted store: read and written as they are. */
 export const PLAIN_FILE_IO: StoreFileIO = {
   sealed: false,
   readText: (file, encoding = 'utf8') => fs.readFile(file, encoding),
-  writeText: (file, text, encoding = 'utf8') => writeFileAtomic(file, text, encoding)
+  writeText: (file, text, encoding = 'utf8') => writeFileAtomic(file, text, encoding),
+  readBytes: (file) => fs.readFile(file),
+  writeBytes: (file, bytes) => writeFileAtomic(file, bytes)
 };
 
 function sealedFileIO(dek: Buffer): StoreFileIO {
@@ -43,6 +48,12 @@ function sealedFileIO(dek: Buffer): StoreFileIO {
     },
     async writeText(file, text, encoding = 'utf8') {
       await writeFileAtomic(file, sealBytes(dek, Buffer.from(text, encoding)));
+    },
+    async readBytes(file) {
+      return openBytes(dek, await fs.readFile(file));
+    },
+    async writeBytes(file, bytes) {
+      await writeFileAtomic(file, sealBytes(dek, bytes));
     }
   };
 }

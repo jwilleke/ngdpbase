@@ -1,3 +1,4 @@
+import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 import type { ActorContext } from '../context/ActorContext.js';
 /**
  * Provider type definitions for ngdpbase
@@ -547,6 +548,43 @@ export interface AttachmentMetadata {
 
   /** Additional metadata */
   [key: string]: unknown;
+}
+
+/**
+ * A file in a private store (#1400, docs/planning/private-stores.md "Stores are
+ * self-contained"). Listed in the store's OWN index, beside `store.json` —
+ * never in the global `attachment-metadata.json` — and sealed with the store
+ * DEK when the store is encrypted.
+ */
+export interface StoreFileEntry {
+  /** Random UUID — the file's id, and the base of its name on disk. */
+  id: string;
+  /** Name on disk inside `{store}/attachments/`: `{id}{ext}`. Says nothing about the file. */
+  fileName: string;
+  /** The name it was uploaded with. Only inside the store's index. */
+  name: string;
+  encodingFormat: string;
+  contentSize: number;
+  /** SHA-256 of the plaintext: duplicate detection within this store only. */
+  fingerprint: string;
+  description: string;
+  author?: string;
+  dateCreated: string;
+  dateModified: string;
+  /** Pages the file was uploaded onto. */
+  mentions: string[];
+}
+
+/**
+ * A private store as the attachment provider is handed it: whose it is, which
+ * store, and the I/O the caller's key allows (plain, or sealed with the store
+ * DEK). The provider stores and reads; it never decides who may, and never
+ * chooses whether to encrypt — the I/O already carries that.
+ */
+export interface StoreFileLocation {
+  owner: string;
+  store: string;
+  io: StoreFileIO;
 }
 
 /**

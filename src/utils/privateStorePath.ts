@@ -18,6 +18,8 @@ export type PrivateStoreLayoutFiles = {
   userversions: string;
   usertrash: string;
   storemeta: string;
+  /** A store's own file index, beside `store.json` (#1400). */
+  storefiles: string;
 };
 
 export type PrivateStoreLayout = {
@@ -25,7 +27,7 @@ export type PrivateStoreLayout = {
   defaultStoreId: string;
   versionsDir: string;
   deletedDir: string;
-  /** Non-page files inside a store: `{store}/{attachmentsDir}/{sha256}.ext` */
+  /** Non-page files inside a store: `{store}/{attachmentsDir}/{uuid}.ext` (#1400) */
   attachmentsDir: string;
   files: PrivateStoreLayoutFiles;
 };
@@ -45,7 +47,8 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
     userindex: 'user-index.json',
     userversions: 'user-versions.json',
     usertrash: 'user-trash.json',
-    storemeta: 'store.json'
+    storemeta: 'store.json',
+    storefiles: 'files-index.json'
   }
 };
 
@@ -99,7 +102,8 @@ export function privateStoreLayoutFromConfig(
         d.files.userversions
       ),
       usertrash: str('ngdpbase.page.provider.filesystem.private.files.usertrash', d.files.usertrash),
-      storemeta: str('ngdpbase.page.provider.filesystem.private.files.storemeta', d.files.storemeta)
+      storemeta: str('ngdpbase.page.provider.filesystem.private.files.storemeta', d.files.storemeta),
+      storefiles: str('ngdpbase.page.provider.filesystem.private.files.storefiles', d.files.storefiles)
     }
   };
 }
@@ -280,6 +284,17 @@ export function storeMetaPath(
 ): string {
   const L = resolvePrivateStoreLayout(layout);
   return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storemeta);
+}
+
+/** A store's own file index: `{privateroot}/{user}/{store}/{storefiles}` (#1400). */
+export function storeFileIndexPath(
+  pagesDirectory: string,
+  creator: string,
+  store?: string,
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storefiles);
 }
 
 export function privateVersionDirectory(

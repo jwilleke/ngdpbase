@@ -12,6 +12,8 @@
 import AttachPluginModule from '../AttachPlugin' ;
 import type { SimplePlugin } from '../types';
 const AttachPlugin = AttachPluginModule as unknown as SimplePlugin;
+const VIEWER = { username: 'molly', roles: ['editor'], isAuthenticated: true };
+
 function makeContext(resolvedValue) {
   const mockAttachmentManager = {
     resolveAttachmentSrc: vi.fn().mockResolvedValue(resolvedValue)
@@ -19,6 +21,8 @@ function makeContext(resolvedValue) {
   return {
     pageName: 'TestPage',
     linkGraph: {},
+    // #1400: the viewer — the resolver needs it to reach their own sealed files.
+    userContext: VIEWER,
     engine: {
       getManager: vi.fn().mockImplementation((name) => {
         if (name === 'AttachmentManager') return mockAttachmentManager;
@@ -140,7 +144,8 @@ describe('AttachPlugin', () => {
       expect(result).toContain('<img');
       expect(context._attachmentManager.resolveAttachmentSrc).toHaveBeenCalledWith(
         'photo.jpg',
-        'TestPage'
+        'TestPage',
+        VIEWER
       );
     });
 
@@ -272,7 +277,8 @@ describe('AttachPlugin', () => {
 
       expect(context._attachmentManager.resolveAttachmentSrc).toHaveBeenCalledWith(
         'photo.jpg',
-        'TestPage'
+        'TestPage',
+        VIEWER
       );
     });
   });

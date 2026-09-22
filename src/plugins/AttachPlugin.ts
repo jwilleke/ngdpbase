@@ -41,12 +41,13 @@
  * Related issue: #274 [{ATTACH filename}] produces "Plugin 'ATTACH' not found"
  */
 
+import type { ActorContext } from '../context/ActorContext.js';
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { renderImageHtml } from './renderImage.js';
 import { escapeHtml } from '../utils/pluginFormatters.js';
 
 interface AttachmentManager {
-  resolveAttachmentSrc(src: string, pageName: string): Promise<{ url: string; mimeType: string } | null>;
+  resolveAttachmentSrc(src: string, pageName: string, ctx: ActorContext): Promise<{ url: string; mimeType: string } | null>;
 }
 
 interface AttachParams extends PluginParams {
@@ -124,7 +125,7 @@ const AttachPlugin: SimplePlugin = {
       // Resolve attachment via AttachmentManager (canonical resolution shared with ImagePlugin)
       const attachmentManager = context.engine?.getManager('AttachmentManager') as AttachmentManager | undefined;
       const resolved = attachmentManager
-        ? await attachmentManager.resolveAttachmentSrc(filename, context.pageName)
+        ? await attachmentManager.resolveAttachmentSrc(filename, context.pageName, context.userContext as ActorContext)
         : null;
 
       if (!resolved) {

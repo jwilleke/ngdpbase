@@ -3605,7 +3605,11 @@ ${panes}
       let pageAttachments: unknown[] = [];
       try {
         if (attachmentManager) {
-          pageAttachments = await attachmentManager.getAttachmentsForPage(pageName);
+          pageAttachments = [
+            ...await attachmentManager.getAttachmentsForPage(pageName),
+            // #1400: the editor's own sealed files on this page, from their stores.
+            ...await attachmentManager.getSealedAttachmentsForPage(pageName, req.userContext)
+          ];
         }
       } catch (err) {
         logger.warn('Could not load attachments for edit page:', err);
@@ -6018,6 +6022,20 @@ ${panes}
           message: 'You do not have permission to access attachments',
           currentUser: req.userContext
         });
+      }
+
+      // #1400: a file in one of the requester's own ENCRYPTED stores. Found only
+      // through the context that can open it; AttachmentManager asks the PIP.
+      // Anyone else, or a locked store, finds nothing here and gets the 404 a
+      // missing file gets.
+      const sealed = await attachmentManager.getSealedAttachment(attachmentId, wikiContext.userContext);
+      if (sealed) {
+        const sealedName = String(sealed.metadata.name ?? 'attachment');
+        res.setHeader('Content-Type', String(sealed.metadata.encodingFormat ?? 'application/octet-stream'));
+        res.setHeader('Content-Disposition', `inline; filename="${sealedName}"`);
+        res.setHeader('Content-Length', String(sealed.buffer.length));
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.send(sealed.buffer);
       }
 
       // 🔒 PRIVACY: a private file lives in its owner's private container

@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import { AttachmentMetadata, AttachmentProvider } from '../types/index.js';
+import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { ProviderInfo } from './BasePageProvider.js';
 import BaseProvider from './BaseProvider.js';
@@ -197,6 +198,36 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
    * @returns {Promise<AttachmentMetadata|null>} Matching attachment metadata or null
    */
   async getAttachmentByFilename(_filename: string): Promise<AttachmentMetadata | null> {
+    return null;
+  }
+
+  // ── Files in a private store (#1400) ──────────────────────────────────────
+  //
+  // A store is self-contained: its files are listed in the store's own index,
+  // never the global one. The caller hands a StoreFileLocation whose I/O
+  // already seals or not; a provider that cannot keep store files says so.
+
+  /** Store a file in a store. The same bytes already in THAT store return the existing entry. */
+  async storeFileInStore(
+    _location: StoreFileLocation,
+    _bytes: Buffer,
+    _file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+  ): Promise<StoreFileEntry> {
+    throw new Error(`${this.constructor.name} cannot keep files in a private store`);
+  }
+
+  /** One file of a store, with its bytes; null when the store does not list it. */
+  async getFileInStore(_location: StoreFileLocation, _id: string): Promise<{ entry: StoreFileEntry; bytes: Buffer } | null> {
+    return null;
+  }
+
+  /** A store's files that were uploaded onto `pageName`. */
+  async filesInStoreForPage(_location: StoreFileLocation, _pageName: string): Promise<StoreFileEntry[]> {
+    return [];
+  }
+
+  /** Delete a file from a store: its bytes and its index entry. Null when the store does not list it. */
+  async deleteFileInStore(_location: StoreFileLocation, _id: string): Promise<StoreFileEntry | null> {
     return null;
   }
 

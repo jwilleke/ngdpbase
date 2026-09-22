@@ -643,6 +643,8 @@ describe('Image (via PluginManager)', () => {
 
       const context = makeContextWithAttachmentManager(mockAttachmentManager);
       context.pageName = '1b951bb5-a0b8-4c01-8366-3774f9546718';
+      // #1400: the viewer reaches the resolver, for their own sealed files.
+      context.userContext = { username: 'molly', roles: ['editor'], isAuthenticated: true };
 
       const params = { src: 'arabian-peninsula.webp' };
       const result = await ImagePlugin.execute(context, params);
@@ -652,7 +654,8 @@ describe('Image (via PluginManager)', () => {
       );
       expect(mockAttachmentManager.resolveAttachmentSrc).toHaveBeenCalledWith(
         'arabian-peninsula.webp',
-        '1b951bb5-a0b8-4c01-8366-3774f9546718'
+        '1b951bb5-a0b8-4c01-8366-3774f9546718',
+        context.userContext
       );
     });
 

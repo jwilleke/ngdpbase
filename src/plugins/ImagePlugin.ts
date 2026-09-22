@@ -34,6 +34,7 @@
  *   [{Image src='https://external.url/img.jpg' caption='External image'}]
  */
 
+import type { ActorContext } from '../context/ActorContext.js';
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { renderImageHtml } from './renderImage.js';
 
@@ -42,7 +43,7 @@ interface ConfigManager {
 }
 
 interface AttachmentManager {
-  resolveAttachmentSrc(src: string, pageName: string): Promise<{ url: string; mimeType: string } | null>;
+  resolveAttachmentSrc(src: string, pageName: string, ctx: ActorContext): Promise<{ url: string; mimeType: string } | null>;
 }
 
 interface ImageParams extends PluginParams {
@@ -87,7 +88,7 @@ const ImagePlugin: SimplePlugin = {
       const rawSrc = String(opts.src);
       const attachmentManager = context.engine?.getManager('AttachmentManager') as AttachmentManager | undefined;
       const resolved = attachmentManager
-        ? await attachmentManager.resolveAttachmentSrc(rawSrc, context.pageName)
+        ? await attachmentManager.resolveAttachmentSrc(rawSrc, context.pageName, context.userContext as ActorContext)
         : null;
       const src = resolved?.url ?? rawSrc;
 

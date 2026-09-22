@@ -212,6 +212,18 @@ export function dekFor(ctx: ActorContext | undefined, owner: string, store: stri
   return getUnlockedDek(handle, store);
 }
 
+/**
+ * The ids of the requester's OWN stores whose DEK its session holds (#1400) —
+ * the encrypted stores it can open right now. Another user's, or a locked
+ * store, is never listed. Ids only: no key bytes leave the bag.
+ */
+export function unlockedStoreIdsFor(ctx: ActorContext): string[] {
+  const handle = handleOf(ctx);
+  const bag = handle ? bags.get(handle) : undefined;
+  if (!bag || bag.username !== ctx.username) return [];
+  return [...bag.deks.keys()];
+}
+
 /** The unlocked sealed-store page catalog this context's session holds, if any (#1385). */
 export function userIndexFor(ctx: ActorContext | undefined): UserCatalog | undefined {
   const handle = handleOf(ctx);

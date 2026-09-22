@@ -35,6 +35,8 @@ type StoredCall = unknown[];
 function makeManager(opts: {
   pagesDir: string;
   stored: StoredCall[];
+  /** #1400: uploads that went into an encrypted store's own index. */
+  sealedStored?: unknown[];
   getProperty?: (key: string, fallback: unknown) => unknown;
   allow?: boolean;
   noConfig?: boolean;
@@ -79,6 +81,14 @@ function makeManager(opts: {
     storeAttachment: (...args: unknown[]) => {
       opts.stored.push(args);
       return Promise.resolve({ identifier: 'att-priv-1', name: FILE.originalName });
+    },
+    // #1400: an encrypted store keeps its own files.
+    storeFileInStore: (...args: unknown[]) => {
+      (opts.sealedStored ?? []).push(args);
+      return Promise.resolve({
+        id: 'sealed-1', fileName: 'sealed-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
+        contentSize: 1, fingerprint: 'f', description: '', dateCreated: '', dateModified: '', mentions: []
+      });
     }
   };
   return m;
@@ -318,17 +328,23 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     setUnlockedDek('sid', storeId, unwrapDek(kek, record));
 
     const stored: StoredCall[] = [];
+    const sealedStored: unknown[] = [];
     const m = makeManager({
       pagesDir,
       stored,
+      sealedStored,
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
     });
     // The key is reached through the context's handle, not an ambient session (P1).
+    // #1400: the file goes into the store itself, sealed — not the global pool.
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
-    ).resolves.toMatchObject({ identifier: 'att-priv-1' });
-    expect(stored).toHaveLength(1);
+    ).resolves.toMatchObject({ identifier: 'sealed-1', isPrivate: true, creator: 'molly', store: storeId });
+    expect(stored).toHaveLength(0);
+    expect(sealedStored).toHaveLength(1);
+    expect((sealedStored[0] as [{ owner: string; store: string; io: { sealed: boolean } }])[0])
+      .toMatchObject({ owner: 'molly', store: storeId, io: { sealed: true } });
   });
 
   test('encrypt-on: a context without the session handle cannot unlock the store', async () => {

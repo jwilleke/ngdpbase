@@ -27,7 +27,9 @@ import type {
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { assertContextCanWriteStore, unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
+import { storeFileIO } from '../utils/privateStoreFiles.js';
+import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -57,6 +59,15 @@ interface BaseAttachmentProvider {
   restore(backupData: unknown): Promise<void>;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
+  // #1400: files in a private store, listed in the store's own index.
+  storeFileInStore(
+    location: StoreFileLocation,
+    bytes: Buffer,
+    file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
+  ): Promise<StoreFileEntry>;
+  getFileInStore(location: StoreFileLocation, id: string): Promise<{ entry: StoreFileEntry; bytes: Buffer } | null>;
+  filesInStoreForPage(location: StoreFileLocation, pageName: string): Promise<StoreFileEntry[]>;
+  deleteFileInStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null>;
 }
 
 /**
@@ -555,6 +566,31 @@ class AttachmentManager extends BaseManager implements CatalogSource {
           store: pageStore,
           layout
         });
+        // #1400: an ENCRYPTED store keeps its files itself — sealed bytes named
+        // {uuid}.ext, listed in the store's own sealed index, never in the
+        // global metadata. (Unencrypted private files move there in #1454.)
+        const io = await storeFileIO(ctx, { pagesDirectory, owner: pageCreator, store: pageStore, layout });
+        if (io.sealed) {
+          const entry = await this.attachmentProvider.storeFileInStore(
+            { owner: pageCreator, store: pageStore, io },
+            fileBuffer,
+            {
+              originalName: fileInfo.originalName,
+              mimeType: fileInfo.mimeType,
+              description: options.description || '',
+              author: user.name,
+              ...(pageName ? { pageName } : {})
+            }
+          );
+          logger.info(`📎 Uploaded a file into ${pageCreator}'s sealed store '${pageStore}' (${entry.id})`);
+          await this.recordAttachmentEvent('upload', ctx, {
+            attachmentId: entry.id,
+            filename: fileInfo.originalName,
+            pageName: pageName ?? null,
+            sizeBytes: fileInfo.size ?? null
+          }, options.wikiContext);
+          return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
+        }
       }
     }
 
@@ -667,6 +703,85 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return await this.attachmentProvider.getAttachment(attachmentId);
   }
 
+  // ── Files in an encrypted private store (#1400) ───────────────────────────
+  //
+  // A sealed file is reached only through the context that may open it: the
+  // requester's own stores whose DEK its session holds. The decision is the
+  // PIP's (canAccessPrivateContainer — owner or delegate, never a role), and a
+  // refusal is recorded there. A locked store contributes nothing.
+
+  /** The requester's own unlocked encrypted stores, as provider locations. */
+  private async ownSealedStores(ctx: ActorContext): Promise<StoreFileLocation[]> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory || !ctx.username) return [];
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const out: StoreFileLocation[] = [];
+    for (const store of unlockedStoreIdsFor(ctx)) {
+      const io = await storeFileIO(ctx, { pagesDirectory, owner: ctx.username, store, layout });
+      if (io.sealed) out.push({ owner: ctx.username, store, io });
+    }
+    return out;
+  }
+
+  private mayReach(ctx: ActorContext, owner: string, resource: string, action: string): boolean {
+    const pip = this.engine.getManager<{
+      canAccessPrivateContainer(subject: unknown, owner: string, resource: string, action: string): boolean;
+        }>('PolicyInformationPoint');
+    return Boolean(pip?.canAccessPrivateContainer(ctx, owner, resource, action));
+  }
+
+  /** How a store file is shown to callers that expect attachment metadata. */
+  private static storeFileMetadata(entry: StoreFileEntry, owner: string, store: string): AttachmentMetadata {
+    return {
+      identifier: entry.id,
+      name: entry.name,
+      url: `/attachments/${entry.id}`,
+      encodingFormat: entry.encodingFormat,
+      contentSize: entry.contentSize,
+      description: entry.description,
+      dateCreated: entry.dateCreated,
+      dateModified: entry.dateModified,
+      mentions: entry.mentions.map((name) => ({ '@type': 'WebPage', name, url: `/view/${encodeURIComponent(name)}` })),
+      isPrivate: true,
+      creator: owner,
+      store
+    };
+  }
+
+  /**
+   * A file from the requester's own encrypted stores, decrypted — or null when
+   * none of its unlocked stores lists it, or the PIP refuses.
+   */
+  async getSealedAttachment(
+    attachmentId: string,
+    ctx: ActorContext
+  ): Promise<{ buffer: Buffer; metadata: AttachmentMetadata } | null> {
+    if (!this.attachmentProvider) {
+      throw new Error('Attachment provider not initialized');
+    }
+    for (const location of await this.ownSealedStores(ctx)) {
+      const found = await this.attachmentProvider.getFileInStore(location, attachmentId);
+      if (!found) continue;
+      if (!this.mayReach(ctx, location.owner, `attachment:${attachmentId}`, 'view')) return null;
+      return { buffer: found.bytes, metadata: AttachmentManager.storeFileMetadata(found.entry, location.owner, location.store) };
+    }
+    return null;
+  }
+
+  /** The requester's own sealed files uploaded onto `pageName`. */
+  async getSealedAttachmentsForPage(pageName: string, ctx: ActorContext): Promise<AttachmentMetadata[]> {
+    if (!this.attachmentProvider) return [];
+    const out: AttachmentMetadata[] = [];
+    for (const location of await this.ownSealedStores(ctx)) {
+      if (!this.mayReach(ctx, location.owner, `page-files:${pageName}`, 'view')) continue;
+      for (const entry of await this.attachmentProvider.filesInStoreForPage(location, pageName)) {
+        out.push(AttachmentManager.storeFileMetadata(entry, location.owner, location.store));
+      }
+    }
+    return out;
+  }
+
   /**
    * Get attachment metadata only
    *
@@ -750,6 +865,35 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Permission denied: You do not have permission to delete attachments');
     }
 
+    // #1080: read the filename BEFORE the delete — afterwards it is gone, and
+    // a record naming only an opaque id does not answer "what was lost?".
+    // Best-effort: a metadata read failure must not block the delete, so the
+    // record degrades to the id alone.
+    let meta: Awaited<ReturnType<AttachmentManager['getAttachmentMetadata']>> = null;
+    try {
+      meta = await this.getAttachmentMetadata(attachmentId);
+    } catch {
+      // keep the id-only fallback
+    }
+
+    // #1400: a file in one of the requester's encrypted stores is not in the
+    // global metadata — it is deleted from its store, recorded first as below.
+    if (!meta) {
+      for (const location of await this.ownSealedStores(context)) {
+        const found = await this.attachmentProvider.getFileInStore(location, attachmentId);
+        if (!found) continue;
+        if (!this.mayReach(context, location.owner, `attachment:${attachmentId}`, 'delete')) {
+          throw new Error('Permission denied: you cannot delete this attachment');
+        }
+        await this.recordAttachmentEvent('delete', context, {
+          attachmentId,
+          filename: found.entry.name,
+          sizeBytes: found.entry.contentSize
+        }, wikiContext);
+        return (await this.attachmentProvider.deleteFileInStore(location, attachmentId)) !== null;
+      }
+    }
+
     // #1183 — recorded HERE, at the door, not at the caller.
     //
     // `asset-delete` is declared on-failure: refuse with description 'destruction'
@@ -761,19 +905,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     //
     // AWAITED and not caught: critical means the action must not complete when
     // the record cannot be written (#1158).
-    // #1080: read the filename BEFORE the delete — afterwards it is gone, and
-    // a record naming only an opaque id does not answer "what was lost?".
-    // Best-effort: a metadata read failure must not block the delete, so the
-    // record degrades to the id alone.
-    let filename = attachmentId;
-    let sizeBytes: number | null = null;
-    try {
-      const meta = await this.getAttachmentMetadata(attachmentId);
-      if (typeof meta?.filename === 'string') filename = meta.filename;
-      if (typeof meta?.size === 'number') sizeBytes = meta.size;
-    } catch {
-      // keep the id-only fallback
-    }
+    const filename = typeof meta?.filename === 'string' ? meta.filename : attachmentId;
+    const sizeBytes = typeof meta?.size === 'number' ? meta.size : null;
     await this.recordAttachmentEvent('delete', context, { attachmentId, filename, sizeBytes }, wikiContext);
 
     return await this.attachmentProvider.deleteAttachment(attachmentId);
@@ -995,7 +1128,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * @param {string} pageName - Page name for step 3 context
    * @returns {Promise<{ url: string; mimeType: string } | null>} Resolved result or null
    */
-  async resolveAttachmentSrc(src: string, pageName: string): Promise<{ url: string; mimeType: string } | null> {
+  async resolveAttachmentSrc(src: string, pageName: string, ctx: ActorContext): Promise<{ url: string; mimeType: string } | null> {
     if (!src) return null;
 
     // Step 0: media:// URI scheme — route to MediaManager without touching attachment store.
@@ -1020,6 +1153,16 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     if (!this.attachmentProvider) return null;
+
+    // #1400: a file the viewer uploaded onto this page in one of their own
+    // encrypted stores. Only their own, only unlocked — anyone else resolves
+    // nothing here and falls through to the public lookups below.
+    const sealed = await this.getSealedAttachmentsForPage(pageName, ctx);
+    const baseName = src.split('/').pop() ?? src;
+    const sealedHit = sealed.find((a) => a.name === src) ?? sealed.find((a) => a.name === baseName);
+    if (sealedHit) {
+      return { url: String(sealedHit.url), mimeType: String(sealedHit.encodingFormat ?? '') };
+    }
 
     // Steps 3 & 4: page-scoped, then global, by exact name.
     const exact = await this.lookupAttachmentByName(src, pageName);

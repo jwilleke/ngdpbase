@@ -8,6 +8,8 @@ const mockAttachmentManager = {
   uploadAttachment: vi.fn(),
   getAttachment: vi.fn(),
   getAttachmentMetadata: vi.fn().mockResolvedValue(null), // null = not private
+  // #1400: not one of the viewer's sealed files — the public path decides.
+  getSealedAttachment: vi.fn().mockResolvedValue(null),
   deleteAttachment: vi.fn(),
   getAttachmentPath: vi.fn()
 };

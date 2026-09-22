@@ -73,6 +73,8 @@ data/attachments/
   └── metadata.json    (Schema.org CreativeWork metadata)
 ```
 
+A file in an __encrypted__ private store (#1400) is not here. It lives in the store — `pages/private/{user}/{store}/attachments/{uuid}.ext`, listed in `{store}/files-index.json` — with bytes and index sealed through the store's `StoreFileIO`. See [AttachmentManager](../managers/AttachmentManager.md#files-in-an-encrypted-store-1400).
+
 ## Metadata Format
 
 ```json

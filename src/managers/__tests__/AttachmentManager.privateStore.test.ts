@@ -2,7 +2,8 @@
  * Encrypt-on attachment writes refuse a missing session DEK. #1394
  *
  * The manager door calls the shared helper; keys are not on PageManager.
- * Destination is the store (#1386); ciphertext of those bytes is later.
+ * Destination is the store (#1386). #1400: an encrypted store keeps the file
+ * itself, sealed, in its own index — the provider's storeFileInStore.
  */
 
 import fs from 'fs-extra';
@@ -51,6 +52,13 @@ function makeManager(pagesDir: string, stored: unknown[]) {
     storeAttachment: (...args: unknown[]) => {
       stored.push(args);
       return Promise.resolve({ identifier: 'att-1', name: FILE.originalName });
+    },
+    storeFileInStore: (...args: unknown[]) => {
+      stored.push(['sealed', ...args]);
+      return Promise.resolve({
+        id: 'sealed-1', fileName: 'sealed-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
+        contentSize: 1, fingerprint: 'f', description: '', dateCreated: '', dateModified: '', mentions: []
+      });
     }
   };
   return m;
@@ -111,7 +119,9 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const m = makeManager(pagesDir, stored);
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
-    ).resolves.toMatchObject({ identifier: 'att-1' });
+    ).resolves.toMatchObject({ identifier: 'sealed-1', isPrivate: true });
+    // #1400: into the store's own index, sealed — never the global pool.
     expect(stored).toHaveLength(1);
+    expect((stored[0] as unknown[])[0]).toBe('sealed');
   });
 });
