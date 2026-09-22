@@ -394,6 +394,11 @@ Filed under [epic #1382](https://github.com/jwilleke/ngdpbase/issues/1382). Each
 | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) | Explicit `private` / `store` on `uploadAttachment` | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
 | [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) | Upload dialog Private checkbox; new upload onto a private page is forced private | [#1396](https://github.com/jwilleke/ngdpbase/issues/1396) |
 | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) | Files in an __encrypted__ store: per-store file index, `{uuid}.ext`, sealed bytes, per-store duplicates; upload, serve, page attached files, delete | [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
-| [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) | Private stores leave the shared indexes: unencrypted private files, per-store page, version, trash index and search | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (index format) |
+| [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) | __Epic__: private stores leave the shared indexes — decisions recorded there | [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (index format) |
+| [#1456](https://github.com/jwilleke/ngdpbase/issues/1456) | Store page index; private URLs `/private/{owner}/{store}/{title}` | — |
+| [#1457](https://github.com/jwilleke/ngdpbase/issues/1457) | Links `[store/Title]`, typeahead, migration, owner redirects | [#1456](https://github.com/jwilleke/ngdpbase/issues/1456), [#1455](https://github.com/jwilleke/ngdpbase/issues/1455) |
+| [#1458](https://github.com/jwilleke/ngdpbase/issues/1458) | Per-store search | [#1456](https://github.com/jwilleke/ngdpbase/issues/1456) |
+| [#1459](https://github.com/jwilleke/ngdpbase/issues/1459) | Per-store versions and trash | [#1456](https://github.com/jwilleke/ngdpbase/issues/1456) |
+| [#1460](https://github.com/jwilleke/ngdpbase/issues/1460) | Unencrypted private files out of the global index | [#1456](https://github.com/jwilleke/ngdpbase/issues/1456) |
 
 Implement [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) first. [#1384](https://github.com/jwilleke/ngdpbase/issues/1384) is the key primitive; login, logout, password re-wrap, and refuse-write are separate children.
