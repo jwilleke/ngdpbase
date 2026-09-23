@@ -20,6 +20,8 @@ import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
 import { convertEmojiShortcodes } from './data/emoji-map.js';
 import type RegionCache from '../cache/RegionCache.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
 
 // ============================================================================
 // Type Definitions
@@ -197,6 +199,11 @@ interface RenderingManagerInterface {
   converter?: {
     makeHtml(content: string): string;
   };
+}
+
+/** The page door, as a render of a private page asks it about links (#1457). */
+interface PrivateTitleReader {
+  readablePrivateTitles?(owner: string, ctx: ActorContext): Promise<Map<string, Set<string>>>;
 }
 
 /** Notification manager interface for type safety */
@@ -1164,6 +1171,42 @@ class MarkupParser extends BaseManager {
     } catch {
       // A provider that cannot answer must not turn into a cache write.
       return false;
+    }
+  }
+
+  /**
+   * What a `[store/Title]` link on THIS page is resolved against (#1457):
+   * the private titles the reader can see in the page owner's stores.
+   *
+   * Only on a private page. Its HTML is never cached for sharing — the same
+   * `isSharedIndexable` question above is false for every private name — so
+   * its links may be answered for the reader in front of them, and the owner
+   * of a page that is not there gets a red link to its editor. A public page's
+   * render is shared by role and keeps one appearance for everyone (operator,
+   * 2026-09-23).
+   *
+   * One lookup per render, as the reader — the context as it arrived, never
+   * rebuilt and never defaulted. With no reader, no page manager, or a lookup
+   * that throws there is no answer, and every link stays neutral rather than
+   * claiming a page is missing.
+   */
+  private async resolvePrivateLinkTitles(
+    content: string,
+    context: ParseContext
+  ): Promise<Map<string, Set<string>> | null> {
+    const owner = parsePrivatePageName(context.wikiContext.pageName)?.owner;
+    if (!owner || !mayContainPrivateLink(content)) return null;
+
+    const reader = context.wikiContext.userContext;
+    const pageManager = this.engine?.getManager<PrivateTitleReader>('PageManager');
+    if (!reader || !pageManager?.readablePrivateTitles) return null;
+
+    try {
+      return await pageManager.readablePrivateTitles(owner, reader);
+    } catch (error) {
+      // #1461: the store is not named here, and neither is any title.
+      logger.warn('Could not resolve private link targets:', getErrorMessage(error));
+      return null;
     }
   }
 
@@ -2758,6 +2801,7 @@ class MarkupParser extends BaseManager {
 
     // Create ParseContext to properly extract nested userContext/requestInfo
     const parseContext = new ParseContext(content, context, this.engine);
+    parseContext.privateLinkTitles = await this.resolvePrivateLinkTitles(content, parseContext);
 
     // Phase 1: Extract JSPWiki syntax
     const { sanitized, jspwikiElements, uuid } = this.extractJSPWikiSyntax(content, parseContext as unknown as Record<string, unknown>);

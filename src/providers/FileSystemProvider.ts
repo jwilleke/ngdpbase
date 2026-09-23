@@ -985,11 +985,29 @@ class FileSystemProvider extends BasePageProvider {
     }
     const out: PrivateStorePageRef[] = [];
     for (const who of owners) {
-      for (const { store, pages } of this.readableStoresOf(who, ctx)) {
-        for (const page of Object.values(pages)) {
-          out.push({ owner: who, store, title: page.title, uuid: page.uuid });
-        }
-      }
+      for (const pages of (await this.readablePrivateStores(who, ctx)).values()) out.push(...pages);
+    }
+    return out;
+  }
+
+  /**
+   * One owner's stores as this context can read them, by store id (#1457).
+   *
+   * `readableStoresOf` already drops a store whose index it cannot open, and
+   * keeps a readable one that is empty — so a store missing here is one this
+   * reader cannot say anything about, and an empty one is a store with no
+   * page in it. {@link listPrivateStorePages} is this, flattened.
+   *
+   * @param owner - Whose container
+   * @param ctx - Whose reading this is (#1179)
+   */
+  async readablePrivateStores(owner: string, ctx: ActorContext): Promise<Map<string, PrivateStorePageRef[]>> {
+    const out = new Map<string, PrivateStorePageRef[]>();
+    if (!this.pagesDirectory) return out;
+    for (const { store, pages } of this.readableStoresOf(owner, ctx)) {
+      out.set(store, Object.values(pages).map((page) => ({
+        owner, store, title: page.title, uuid: page.uuid
+      })));
     }
     return out;
   }

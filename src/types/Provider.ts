@@ -249,6 +249,17 @@ export interface PageProvider extends BaseProvider {
   listPrivateStorePages?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRef[]>;
 
   /**
+   * One owner's private stores as `ctx` can read them (#1457), by store id.
+   *
+   * A store whose index this context cannot open — sealed, and no key — is
+   * ABSENT from the map. A store it can open but which holds no page is
+   * present and empty. That difference is the whole point of this shape:
+   * "cannot say" is not "not there", and a caller that renders an answer must
+   * not turn the first into the second.
+   */
+  readablePrivateStores?(owner: string, ctx: ActorContext): Promise<Map<string, PrivateStorePageRef[]>>;
+
+  /**
    * Read a page's file exactly as stored — frontmatter and body, unparsed and
    * unsanitised. Optional capability: only providers backed by a filesystem can
    * offer it, so callers must feature-detect rather than assume.

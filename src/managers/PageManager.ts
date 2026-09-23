@@ -2189,6 +2189,32 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The private titles `ctx` can see in `owner`'s stores, by store id (#1457).
+   *
+   * For the one question a `[store/Title]` link asks while a PRIVATE page is
+   * rendered: is that page there? A private page's HTML is never cached for
+   * sharing (`isSharedIndexable` is false for every private name), so its
+   * links may be answered for the reader in front of them.
+   *
+   * A store `ctx` cannot open is absent from the map, not empty: the caller
+   * must render "cannot say" as it renders for everyone, never as a missing
+   * page. Titles are folded to lower case, which is how a store index matches
+   * them, so a caller compares folded.
+   *
+   * @param owner - Whose stores
+   * @param ctx - Whose reading this is (#1179) — never rebuilt, never defaulted
+   */
+  async readablePrivateTitles(owner: string, ctx: ActorContext): Promise<Map<string, Set<string>>> {
+    if (!ctx) throw new Error('PageManager.readablePrivateTitles requires an ActorContext');
+    const titles = new Map<string, Set<string>>();
+    if (!owner || !this.provider?.readablePrivateStores) return titles;
+    for (const [store, pages] of await this.provider.readablePrivateStores(owner, ctx)) {
+      titles.set(store, new Set(pages.map((page) => page.title.toLowerCase())));
+    }
+    return titles;
+  }
+
+  /**
    * Whether a page uuid is in the trash (#1403).
    *
    * A seed of shipped pages must treat a trashed uuid as deliberately removed,

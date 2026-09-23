@@ -191,6 +191,21 @@ function readPageOwner(context: RenderContext): string | null {
 }
 
 /**
+ * The render's one answer about which private pages are there (#1457): the
+ * titles the reader can see in the page owner's stores, folded to lower case,
+ * by store id.
+ *
+ * `MarkupParser` resolves it once per parse and only while a private page is
+ * being rendered, so node creation stays a lookup in a map. Null — a public
+ * page, or a caller that did not resolve it — means the question was not
+ * asked, and every private link keeps its one appearance for everyone.
+ */
+function readPrivateLinkTitles(context: RenderContext): Map<string, Set<string>> | null {
+  const titles = (context as { privateLinkTitles?: unknown })?.privateLinkTitles;
+  return titles instanceof Map ? titles as Map<string, Set<string>> : null;
+}
+
+/**
  * DOMLinkHandler class
  */
 class DOMLinkHandler {
@@ -710,17 +725,33 @@ class DOMLinkHandler {
         : rawFragment;
 
       // A private page's link: `[store/Title]` in the store of the page the
-      // link is written in (#1457). It renders IDENTICALLY for every reader —
-      // no existence lookup, no redlink — because rendered HTML is cached and
-      // shared, so a per-reader appearance would say whether a private page
-      // exists. `/private/…` already answers 404 to anyone who may not open it.
+      // link is written in (#1457).
+      //
+      // On a PUBLIC page it renders identically for every reader — no
+      // existence lookup, no redlink — because that page's HTML is cached and
+      // shared by role, so a per-reader appearance would say whether a private
+      // page exists. `/private/…` already answers 404 to anyone else.
+      //
+      // On a PRIVATE page nothing is cached for anyone to read, and only the
+      // owner or a delegate is there at all, so the link says what it found
+      // (operator, 2026-09-23): a page that is not in the store renders red
+      // and points at its editor, which is how the owner creates it — the same
+      // affordance a public red link is. `privateLinkTitles` is the render's
+      // one answer to that question, resolved as the reader; a store missing
+      // from it is one this reader cannot open, and those links stay neutral.
       const owner = readPageOwner(context);
       const privateTarget = owner ? parsePrivateLinkTarget(pageName) : null;
       if (owner && privateTarget) {
-        const base = pageUrl(formatPrivatePageName(owner, privateTarget.store, privateTarget.title));
+        const name = formatPrivatePageName(owner, privateTarget.store, privateTarget.title);
+        const known = readPrivateLinkTitles(context)?.get(privateTarget.store);
+        const missing = known ? !known.has(privateTarget.title.toLowerCase()) : false;
+        const base = pageUrl(name, missing ? 'edit' : 'view');
         node.setAttribute('href', fragment ? `${base}#${fragment}` : base);
-        node.setAttribute('class', 'wiki-link private-link');
-        node.setAttribute('title', `Private page in ${privateTarget.store}`);
+        node.setAttribute('class', missing ? 'wiki-link private-link redlink' : 'wiki-link private-link');
+        if (missing) node.setAttribute('style', 'color: red;');
+        node.setAttribute('title', missing
+          ? `Create page: ${pageName}`
+          : `Private page in ${privateTarget.store}`);
         node.setAttribute('data-link-type', 'internal');
         node.setAttribute('data-target', pageName);
         break;

@@ -266,6 +266,21 @@ class ParseContext {
    */
   readonly requestInfo: RequestInfo | null;
 
+  /**
+   * The private titles this reader can see in the page owner's stores, by
+   * store id (#1457) — what a `[store/Title]` link on a PRIVATE page is
+   * resolved against, so the owner of a page that is not there gets a red
+   * link to its editor.
+   *
+   * `null` when the question does not arise: a public page, whose HTML is
+   * cached and shared by role and so has one appearance for everyone, or a
+   * page with no such link in it. A store that is ABSENT from the map is one
+   * this reader cannot open — not one without the page.
+   *
+   * Resolved once per parse by MarkupParser, never per link.
+   */
+  privateLinkTitles: Map<string, Set<string>> | null;
+
   // Mutable processing state
   protectedBlocks: unknown[];
   syntaxTokens: unknown[];
@@ -302,6 +317,7 @@ class ParseContext {
     }
 
     // Processing state
+    this.privateLinkTitles = null;
     this.protectedBlocks = [];
     this.syntaxTokens = [];
     this.variables = new Map();
@@ -460,6 +476,7 @@ class ParseContext {
       );
 
     // Copy current state
+    newContext.privateLinkTitles = this.privateLinkTitles;
     newContext.protectedBlocks = [...this.protectedBlocks];
     newContext.syntaxTokens = [...this.syntaxTokens];
     newContext.variables = new Map(this.variables);

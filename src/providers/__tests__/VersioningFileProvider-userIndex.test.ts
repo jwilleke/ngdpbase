@@ -255,6 +255,31 @@ describe('private pages out of the global index (#1385, #1456)', () => {
         { owner: 'molly', store: DEFAULT_PRIVATE_STORE, title: 'Sealed Diary', uuid: SEALED }
       ]);
     });
+
+    test('readablePrivateStores: a store that cannot be read is absent, an empty one is empty', async () => {
+      // #1457: a `[store/Title]` link renders red only where the reader can
+      // see the store's pages. "Cannot say" and "not there" are different
+      // answers, so they are different shapes here.
+      const { kek, dek } = await sealDefaultStore();
+      unlockPrivateStores('sid', 'molly', kek);
+      setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, dek);
+      const provider = await newProvider();
+      await provider.savePage(SEALED_NAME, 'secret', { uuid: SEALED }, MOLLY);
+      lockPrivateStores('sid');
+
+      // A store with an index and no page in it — everything in it deleted.
+      await fs.outputJson(storePageIndexPath(pagesDir, 'molly', 'vault'), { pages: {} });
+
+      const atBoot = await provider.readablePrivateStores('molly', SYSTEM);
+      expect(atBoot.has(DEFAULT_PRIVATE_STORE)).toBe(false);
+      expect(atBoot.get('vault')).toEqual([]);
+
+      await unlockPrivateStoresWithPassword({ handle: 'sid-3', username: 'molly', password: 'pw', pagesDirectory: pagesDir });
+      const unlocked = await provider.readablePrivateStores('molly', { ...MOLLY, privateStoreHandle: 'sid-3' });
+      expect(unlocked.get(DEFAULT_PRIVATE_STORE)).toEqual([
+        { owner: 'molly', store: DEFAULT_PRIVATE_STORE, title: 'Sealed Diary', uuid: SEALED }
+      ]);
+    });
   });
 
   describe('adoptUserPageCatalog: a pre-#1456 user-index.json moves in at unlock', () => {
