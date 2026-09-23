@@ -3,6 +3,8 @@ import type { ProviderInfo } from '../types/Provider.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type { StoreSearchMatch, StoreSearchQuery } from '../utils/storeSearchIndex.js';
 
 /**
  * Search result structure
@@ -85,6 +87,20 @@ interface WikiContext {
     [key: string]: unknown;
   };
   [key: string]: unknown;
+}
+
+/**
+ * The page door, as the merge below uses it (#1458).
+ *
+ * A private page is in no shared index (#1456); its store's own saved search
+ * index is read through the door with the requester's context. SearchManager
+ * never reads a store file itself, and never learns whose stores exist.
+ */
+interface PrivateSearchDoor {
+  searchOwnPrivatePages(
+    ctx: ActorContext,
+    ask: StoreSearchQuery
+  ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>>;
 }
 
 /**
@@ -374,12 +390,70 @@ class SearchManager extends BaseManager {
     try {
       // Pass wikiContext in options so the provider can filter private results
       const results = await this.provider.search(query, { ...options, wikiContext });
-      logger.info(`[SearchManager] Search completed query="${query}" user=${username} results=${results.length}`);
-      return results;
+      // #1458: the shared index holds public pages only. The requester's own
+      // private pages come from their own stores' saved search indexes.
+      const merged = await this.mergeOwnPrivateResults(results, wikiContext, {
+        query,
+        searchIn: options.searchIn,
+        snippetLength: options.snippetLength as number | undefined
+      }, options.maxResults);
+      logger.info(`[SearchManager] Search completed query="${query}" user=${username} results=${merged.length}`);
+      return merged;
     } catch (err) {
       logger.error(`[SearchManager] Search failed query="${query}" user=${username}:`, err);
       return [];
     }
+  }
+
+  /**
+   * Public results, plus the requester's own private pages (#1458).
+   *
+   * The private matches come from the page door, which reads each of the
+   * REQUESTER'S OWN readable stores with their context — never from a store
+   * file read here, and never for anyone else's container: another user's
+   * search, and an admin's, reach none of them. A locked encrypted store
+   * yields nothing rather than an error.
+   *
+   * A private row carries the page's private name, so `pageUrl` links to it.
+   */
+  private async mergeOwnPrivateResults(
+    results: SearchResult[],
+    wikiContext: WikiContext,
+    ask: StoreSearchQuery,
+    maxResults?: number
+  ): Promise<SearchResult[]> {
+    const door = this.engine.getManager<PrivateSearchDoor>('PageManager');
+    // The forwarded request subject. A search with no subject is anonymous,
+    // and anonymous owns no private store.
+    const ctx = wikiContext.userContext as unknown as ActorContext | undefined;
+    if (!door?.searchOwnPrivatePages || !ctx) return results;
+
+    let matches: Awaited<ReturnType<PrivateSearchDoor['searchOwnPrivatePages']>>;
+    try {
+      matches = await door.searchOwnPrivatePages(ctx, ask);
+    } catch (err) {
+      // #1461: the failure is named, the pages are not.
+      logger.warn(`[SearchManager] Private-store search did not run: ${err instanceof Error ? err.message : String(err)}`);
+      return results;
+    }
+    if (matches.length === 0) return results;
+
+    const rows: SearchResult[] = matches.map((match) => ({
+      name: match.name,
+      title: match.document.title,
+      score: match.score,
+      snippet: match.snippet,
+      isPrivate: true,
+      metadata: {
+        lastModified: match.document.lastModified,
+        systemCategory: match.document.category,
+        userKeywords: match.document.tags.join(','),
+        tags: match.document.tags.join(' ')
+      }
+    }));
+
+    const merged = [...results, ...rows].sort((a, b) => b.score - a.score);
+    return typeof maxResults === 'number' && maxResults > 0 ? merged.slice(0, maxResults) : merged;
   }
 
   /**
@@ -427,8 +501,16 @@ class SearchManager extends BaseManager {
       // searchWithContext above; without it those page searches return
       // private pages the caller cannot access.
       const results = await this.provider.advancedSearch({ ...options, wikiContext });
-      logger.info(`[SearchManager] Advanced search completed user=${username} results=${results.length}`);
-      return results;
+      // #1458: the same merge as the text path — the requester's own private
+      // pages are in no shared index and come from their own stores.
+      const merged = await this.mergeOwnPrivateResults(results, wikiContext, {
+        query: options.query,
+        categories: options.categories,
+        userKeywords: options.userKeywords,
+        searchIn: options.searchIn
+      }, options.maxResults);
+      logger.info(`[SearchManager] Advanced search completed user=${username} results=${merged.length}`);
+      return merged;
     } catch (err) {
       logger.error(`[SearchManager] Advanced search failed user=${username}:`, err);
       return [];

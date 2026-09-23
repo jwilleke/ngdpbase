@@ -10,8 +10,14 @@ import {
   assertStoreId,
   privateStoreLayoutFromConfig,
   storePageIndexPath,
+  storeSearchIndexPath,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
+import {
+  STORE_SEARCH_INDEX_VERSION,
+  type StoreSearchDocument,
+  type StoreSearchIndexFile
+} from '../utils/storeSearchIndex.js';
 import { readStoreTextSync } from '../utils/privateStoreFiles.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -223,6 +229,69 @@ abstract class BasePageProvider extends BaseProvider {
     key: string
   ): Promise<StorePageEntry | null> {
     return BasePageProvider.findInStorePages(await this.readStorePages(pagesDirectory, location), key);
+  }
+
+  // ── A store's own saved search index (#1458) ──────────────────────────────
+  //
+  // Beside the page index, written through the same location I/O, for the same
+  // reason: the provider owns the store's bytes and decides nothing about them
+  // (Manager-SOT). It is saved rather than built at search time so a search
+  // reads one small file per store and never opens a page file.
+
+  /** Where the store's search index lives — for a caller that must look at the file itself. */
+  protected storeSearchFile(pagesDirectory: string, owner: string, store: string): string {
+    return storeSearchIndexPath(pagesDirectory, owner, store, this.privateStoreLayout);
+  }
+
+  /** True when this store has a saved search index; false means it must be built. */
+  protected async storeSearchIndexExists(pagesDirectory: string, owner: string, store: string): Promise<boolean> {
+    return fs.pathExists(this.storeSearchFile(pagesDirectory, owner, store));
+  }
+
+  /** A store's search documents, keyed by page uuid. A store with no index yet has none. */
+  protected async readStoreSearch(
+    pagesDirectory: string,
+    location: StoreFileLocation
+  ): Promise<Record<string, StoreSearchDocument>> {
+    const file = this.storeSearchFile(pagesDirectory, location.owner, location.store);
+    if (!await fs.pathExists(file)) return {};
+    const parsed = JSON.parse(await location.io.readText(file)) as Partial<StoreSearchIndexFile>;
+    return parsed && typeof parsed.documents === 'object' && parsed.documents ? parsed.documents : {};
+  }
+
+  protected async writeStoreSearch(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    documents: Record<string, StoreSearchDocument>
+  ): Promise<void> {
+    const file = this.storeSearchFile(pagesDirectory, location.owner, location.store);
+    await fs.ensureDir(path.dirname(file));
+    const contents: StoreSearchIndexFile = { version: STORE_SEARCH_INDEX_VERSION, documents };
+    await location.io.writeText(file, JSON.stringify(contents));
+  }
+
+  /** Add or replace one page's document in its store's search index. */
+  protected async putStoreSearchDocument(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    document: StoreSearchDocument
+  ): Promise<void> {
+    const documents = await this.readStoreSearch(pagesDirectory, location);
+    documents[document.uuid] = document;
+    await this.writeStoreSearch(pagesDirectory, location, documents);
+  }
+
+  /** Remove one page's document; false when it was not there. */
+  protected async dropStoreSearchDocument(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    uuid: string
+  ): Promise<boolean> {
+    const documents = await this.readStoreSearch(pagesDirectory, location);
+    if (!(uuid in documents)) return false;
+    delete documents[uuid];
+    await this.writeStoreSearch(pagesDirectory, location, documents);
+    return true;
   }
 
   /**

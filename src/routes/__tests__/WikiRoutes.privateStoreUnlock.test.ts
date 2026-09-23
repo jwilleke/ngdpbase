@@ -39,6 +39,7 @@ describe('private store unlock door (#1448)', () => {
   let throttle: { check: ReturnType<typeof vi.fn>; recordFailure: ReturnType<typeof vi.fn> } | null;
   let adoptUserPageCatalog: ReturnType<typeof vi.fn>;
   let migratePrivateLinks: ReturnType<typeof vi.fn>;
+  let buildMissingStoreSearchIndexes: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -72,6 +73,7 @@ describe('private store unlock door (#1448)', () => {
     authenticate = vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' }));
     adoptUserPageCatalog = vi.fn(async () => 0);
     migratePrivateLinks = vi.fn(async () => 0);
+    buildMissingStoreSearchIndexes = vi.fn(async () => 0);
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -84,7 +86,7 @@ describe('private store unlock door (#1448)', () => {
       PolicyInformationPoint: {
         subjectFor: vi.fn(async (username: string) => ({ username, roles: ['Authenticated'], isAuthenticated: true }))
       },
-      PageManager: { adoptUserPageCatalog, migratePrivateLinks }
+      PageManager: { adoptUserPageCatalog, migratePrivateLinks, buildMissingStoreSearchIndexes }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);
@@ -121,6 +123,12 @@ describe('private store unlock door (#1448)', () => {
     // #1457: and their links are migrated here, for the same reason — an
     // encrypted store cannot be read by the boot pass, only by its owner.
     expect(migratePrivateLinks).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }),
+      'molly'
+    );
+    // #1458: and a sealed store with no saved search index yet gets one, for
+    // the same reason — only the owner's session holds the key to build it.
+    expect(buildMissingStoreSearchIndexes).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }),
       'molly'
     );

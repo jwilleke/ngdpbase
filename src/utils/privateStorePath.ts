@@ -22,6 +22,8 @@ export type PrivateStoreLayoutFiles = {
   storefiles: string;
   /** A store's own page index, beside `store.json` (#1456). */
   storepages: string;
+  /** A store's own saved search index, beside its page index (#1458). */
+  storesearch: string;
   /** Which one-time migrations this store has had, beside its indexes (#1457). */
   storemigrations: string;
 };
@@ -54,6 +56,7 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
     storemeta: 'store.json',
     storefiles: 'files-index.json',
     storepages: 'pages-index.json',
+    storesearch: 'search-index.json',
     storemigrations: 'migrations.json'
   }
 };
@@ -111,6 +114,7 @@ export function privateStoreLayoutFromConfig(
       storemeta: str('ngdpbase.page.provider.filesystem.private.files.storemeta', d.files.storemeta),
       storefiles: str('ngdpbase.page.provider.filesystem.private.files.storefiles', d.files.storefiles),
       storepages: str('ngdpbase.page.provider.filesystem.private.files.storepages', d.files.storepages),
+      storesearch: str('ngdpbase.page.provider.filesystem.private.files.storesearch', d.files.storesearch),
       storemigrations: str(
         'ngdpbase.page.provider.filesystem.private.files.storemigrations',
         d.files.storemigrations
@@ -376,6 +380,17 @@ export function storePageIndexPath(
 ): string {
   const L = resolvePrivateStoreLayout(layout);
   return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storepages);
+}
+
+/** A store's own saved search index: `{privateroot}/{user}/{store}/{storesearch}` (#1458). */
+export function storeSearchIndexPath(
+  pagesDirectory: string,
+  creator: string,
+  store?: string,
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storesearch);
 }
 
 /** A store's record of the one-time migrations it has had (#1457). */

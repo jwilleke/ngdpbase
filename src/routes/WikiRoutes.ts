@@ -382,6 +382,8 @@ interface IPageManager {
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
   /** At unlock (#1457): `[Title]` becomes `[store/Title]` in this owner's stores. */
   migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
+  /** At unlock (#1458): a sealed store with no saved search index gets one. */
+  buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string, ctx: ActorContext): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
@@ -8134,6 +8136,9 @@ ${panes}
    *   boot pass cannot read a sealed store, so this is where it happens for
    *   one; each store records that it is done, so this runs once, not at
    *   every unlock.
+   * - #1458: a sealed store with no saved search index yet gets one, built
+   *   from its pages and sealed with its own key. A store that has one is
+   *   skipped, so this costs nothing at every later unlock.
    */
   private async adoptSealedPages(username: string, handle: string): Promise<void> {
     const pip = this.engine.getManager('PolicyInformationPoint');
@@ -8143,6 +8148,7 @@ ${panes}
     const ctx = { ...subject, privateStoreHandle: handle };
     await pageManager.adoptUserPageCatalog(ctx);
     await pageManager.migratePrivateLinks(ctx, username);
+    await pageManager.buildMissingStoreSearchIndexes(ctx, username);
   }
 
   /**
@@ -12399,7 +12405,8 @@ ${panes}
    * Project a page name / SearchResult into the AssetRecord-ish shape the
    * asset-picker consumes. Pure (no `this`); shared by the `types=page`
    * branch and the `#742` all-sources branch so both stay in lockstep.
-   * Canonical `/view/` URL per the no-wiki convention.
+   * Canonical `/view/` URL per the no-wiki convention, or the page's own
+   * private path when it is private (#1458 — `pageUrl` decides).
    */
   private readonly pageToAssetRecord = (pageName: string, title?: string, excerpt?: string, kw?: string[], lastModified?: string, systemCategory?: string) => ({
     id: pageName,
@@ -12409,13 +12416,21 @@ ${panes}
     description: excerpt || title || pageName,
     keywords: kw ?? [],
     encodingFormat: 'text/wiki',
-    url: '/view/' + encodeURIComponent(pageName),
+    // #1458: a private page's row carries its private name
+    // (`private/{owner}/{store}/{title}`), and `pageUrl` is the one place that
+    // turns a name into a link — `/view/` serves public pages only (#1456).
+    url: pageUrl(pageName),
     mentions: [],
     metadata: {
       ...(lastModified ? { lastModified } : {}),
       ...(systemCategory ? { systemCategory } : {})
     },
-    insertSnippet: '[' + pageName + ']'
+    // #1458/#1457: a private page is linked as `[store/Title]` — its path is
+    // not link syntax, and the owner writes the link inside their own page.
+    insertSnippet: ((name) => {
+      const privateName = parsePrivatePageName(name);
+      return privateName ? `[${privateName.store}/${privateName.title}]` : `[${name}]`;
+    })(pageName)
   });
 
   /**

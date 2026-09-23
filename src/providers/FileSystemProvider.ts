@@ -21,6 +21,7 @@ import {
   storeFileIOForPath,
   type StoreFileIO
 } from '../utils/privateStoreFiles.js';
+import type { StoreSearchDocument } from '../utils/storeSearchIndex.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
 import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import fs from 'fs-extra';
@@ -1155,6 +1156,78 @@ class FileSystemProvider extends BasePageProvider {
     }
     if (moved) logger.info(`[FileSystemProvider] Moved ${moved} sealed page(s) into their stores' own indexes (#1456)`);
     return moved;
+  }
+
+  // ── A store's own saved search index (#1458) ──────────────────────────────
+  //
+  // The page door calls these after a save, a delete and a rebuild; the store's
+  // bytes are the provider's, so the sealing is decided here by the location's
+  // I/O and nowhere else. Every one of them takes the caller's context: a
+  // sealed store is reached only through the key that context holds, and a
+  // locked one simply refuses.
+
+  /**
+   * Where the private stores live, once the provider has been initialised.
+   * Before that there is no store to read, and a caller asking is a bug.
+   */
+  private privateRootOrThrow(): string {
+    if (!this.pagesDirectory) throw new Error('FileSystemProvider: no pages directory — initialize() has not run');
+    return this.pagesDirectory;
+  }
+
+  /** The I/O for `owner`'s `store` as this context may use it (#1415). */
+  private async storeLocation(ctx: ActorContext, owner: string, store: string): Promise<StoreFileLocation> {
+    const io = await storeFileIO(ctx, {
+      pagesDirectory: this.privateRootOrThrow(),
+      owner,
+      store,
+      layout: this.privateStoreLayout
+    });
+    return { owner, store, io };
+  }
+
+  /** Add or replace one page's document in its store's search index. */
+  async updateStoreSearchDocument(
+    ctx: ActorContext,
+    owner: string,
+    store: string,
+    document: StoreSearchDocument
+  ): Promise<void> {
+    await this.putStoreSearchDocument(this.privateRootOrThrow(), await this.storeLocation(ctx, owner, store), document);
+  }
+
+  /** Remove one page's document from its store's search index. */
+  async removeStoreSearchDocument(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean> {
+    return this.dropStoreSearchDocument(this.privateRootOrThrow(), await this.storeLocation(ctx, owner, store), uuid);
+  }
+
+  /**
+   * One store's search documents, as this context may read them.
+   *
+   * A locked encrypted store throws on the way to its I/O; the caller turns
+   * that into "nothing", never into a plaintext read (#1415).
+   */
+  async readStoreSearchDocuments(
+    ctx: ActorContext,
+    owner: string,
+    store: string
+  ): Promise<Record<string, StoreSearchDocument>> {
+    return this.readStoreSearch(this.privateRootOrThrow(), await this.storeLocation(ctx, owner, store));
+  }
+
+  /** Replace a store's whole search index — what a rebuild writes. */
+  async writeStoreSearchDocuments(
+    ctx: ActorContext,
+    owner: string,
+    store: string,
+    documents: Record<string, StoreSearchDocument>
+  ): Promise<void> {
+    await this.writeStoreSearch(this.privateRootOrThrow(), await this.storeLocation(ctx, owner, store), documents);
+  }
+
+  /** True when this store already has a saved search index (#1458). */
+  async hasStoreSearchIndex(owner: string, store: string): Promise<boolean> {
+    return this.storeSearchIndexExists(this.privateRootOrThrow(), owner, store);
   }
 
   /**

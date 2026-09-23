@@ -28,6 +28,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/guardedElasticsearch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { validateUrl } from '../http/ssrf.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
 
 // Type aliases for commonly used ES types (estypes namespace is the stable export path)
 type AggregationsStringTermsBucket = estypes.AggregationsStringTermsBucket;
@@ -200,6 +201,12 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
       logger.warn('[ElasticsearchSearchProvider] PageManager not available for indexing');
       return;
     }
+
+    // #1458: an index built before private pages left the shared indexes
+    // (#1456) may still hold their text. `getAllPages` no longer returns one,
+    // so nothing here would ever replace or remove those documents — they are
+    // purged, once per build, before the public pages are written.
+    await this._purgePrivateDocuments();
 
     const pageNames = await pageManager.getAllPages();
     logger.info(`[ElasticsearchSearchProvider] Building index for ${pageNames.length} pages`);
@@ -375,6 +382,14 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
     const metadata = (pageData.metadata as Record<string, unknown>) ?? {};
     const content = typeof pageData.content === 'string' ? pageData.content : '';
     const doc = this._pageToDoc(pageName, content, metadata);
+    // #1458: the shared index takes public pages only. A private page's text
+    // lives in its own store's search index, sealed when the store is. The
+    // page door already keeps one out (#1462); this refuses one that reaches
+    // here by any other road, rather than shipping its text to the cluster.
+    if (doc.isPrivate || parsePrivatePageName(pageName) !== null) {
+      logger.debug('[ElasticsearchSearchProvider] A private page is not put in the shared index (#1458)');
+      return;
+    }
     const esId = doc.uuid || pageName;
 
     await this.client.index({
@@ -640,6 +655,32 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Delete every private page's document from the shared index (#1458).
+   *
+   * Private text may sit here from before #1456, when a private page was
+   * indexed like any other. Nothing else would remove it: the page door no
+   * longer names a private page to this provider, so it is neither replaced
+   * nor deleted by ordinary work. Best-effort — a cluster that refuses the
+   * delete must not stop the index being built.
+   */
+  private async _purgePrivateDocuments(): Promise<void> {
+    if (!this.client) return;
+    try {
+      const result = await this.client.deleteByQuery({
+        index: this.indexName,
+        query: { term: { isPrivate: true } },
+        conflicts: 'proceed'
+      });
+      const deleted = typeof result.deleted === 'number' ? result.deleted : 0;
+      if (deleted > 0) {
+        logger.info(`[ElasticsearchSearchProvider] Purged ${deleted} private page document(s) from the shared index (#1458)`);
+      }
+    } catch (err) {
+      logger.warn(`[ElasticsearchSearchProvider] Could not purge private documents: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   /** Convert page content + metadata to an ES document */
   private _pageToDoc(

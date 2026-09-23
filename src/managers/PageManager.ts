@@ -34,6 +34,13 @@ import {
   privateStoreLayoutFromConfig,
   PRIVATE_PAGE_NAME_PREFIX
 } from '../utils/privateStorePath.js';
+import {
+  matchStoreSearch,
+  storeSearchDocument,
+  type StoreSearchDocument,
+  type StoreSearchMatch,
+  type StoreSearchQuery
+} from '../utils/storeSearchIndex.js';
 import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
@@ -2122,6 +2129,11 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     };
 
+    // #1458: a private page is in no shared index, and its own store's search
+    // index is kept in step here — the one place a page write reconciles its
+    // indexes, so a new save path cannot forget one and not the other.
+    await step('store search', () => this.reconcileStoreSearch(change));
+
     const referrers = new Set<string>();
     const previousReferrers = isPublic(previousName) ? (rendering?.getReferringPages(previousName) ?? []) : [];
     previousReferrers.forEach((r) => referrers.add(r));
@@ -2151,6 +2163,202 @@ class PageManager extends BaseManager implements CatalogSource {
       for (const uuid of uuids) await step('rendered cache', () => cache.clear(undefined, `rendered-pages:${uuid}:*`));
     }
     return previousReferrers;
+  }
+
+  // ── A private store's own saved search index (#1458) ──────────────────────
+  //
+  // A private page is in no shared index (#1456), so without this its owner
+  // could not search their own pages at all. Each store keeps a saved search
+  // index in its own folder, sealed when the store is (operator, 2026-09-22).
+  // The door updates it after every private save and delete, the owner's
+  // search reads it, and a store that has none gets one built from its pages.
+  //
+  // Everything below takes the caller's context and passes it to the provider,
+  // which owns the store's bytes (Manager-SOT): a sealed store is reached only
+  // through the key that context holds, and a locked one yields nothing.
+
+  /** A private page's store's search index, after the page changed (#1458). */
+  private async reconcileStoreSearch(change: {
+    ctx: ActorContext;
+    name: string | null;
+    uuid?: string;
+    previousName: string | null;
+    content?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const provider = this.provider;
+    if (!provider) return;
+    const was = parsePrivatePageName(change.previousName);
+    const now = parsePrivatePageName(change.name);
+
+    // Out of the store it was in: deleted, renamed, or moved to the public
+    // space. A rename within one store replaces the document below, keyed by
+    // uuid, so only a real move needs taking out.
+    const movedStore = was && (!now || was.owner !== now.owner || was.store !== now.store);
+    if (movedStore && change.uuid && provider.removeStoreSearchDocument) {
+      await provider.removeStoreSearchDocument(change.ctx, was.owner, was.store, change.uuid);
+    }
+
+    if (!now || change.content === undefined || !provider.updateStoreSearchDocument) return;
+    const metadata = change.metadata ?? {};
+    const uuid = change.uuid ?? (typeof metadata.uuid === 'string' ? metadata.uuid : '');
+    if (!uuid) return;
+    await provider.updateStoreSearchDocument(change.ctx, now.owner, now.store, storeSearchDocument({
+      uuid,
+      title: typeof metadata.title === 'string' && metadata.title ? metadata.title : now.title,
+      content: change.content,
+      metadata
+    }));
+  }
+
+  /**
+   * The requester's own private pages that match, from their stores' own
+   * search indexes (#1458).
+   *
+   * Only the requester's own container is read: `mayActInPrivateContainer` is
+   * the same rule the page gate applies, so no role reaches in and an admin
+   * searching finds nothing of anyone else's. A store whose key this context
+   * does not hold contributes nothing — a locked store simply yields no
+   * matches, never a plaintext read.
+   *
+   * Each match carries the page's private NAME (`private/{owner}/{store}/{title}`),
+   * so `pageUrl` builds a link that works.
+   *
+   * @param ctx - Who is searching (#1179) — never rebuilt, never defaulted
+   * @param ask - The query, as {@link matchStoreSearch} reads it
+   */
+  async searchOwnPrivatePages(
+    ctx: ActorContext,
+    ask: StoreSearchQuery = {}
+  ): Promise<Array<StoreSearchMatch & { name: string; owner: string; store: string }>> {
+    if (!ctx) throw new Error('PageManager.searchOwnPrivatePages requires an ActorContext');
+    const owner = ctx.username;
+    const provider = this.provider;
+    if (!owner || !provider?.readStoreSearchDocuments || !provider.readablePrivateStores) return [];
+    // A search is a read of the searcher's OWN container and nobody else's.
+    if (!mayActInPrivateContainer(ctx, owner)) return [];
+
+    const out: Array<StoreSearchMatch & { name: string; owner: string; store: string }> = [];
+    for (const store of (await provider.readablePrivateStores(owner, ctx)).keys()) {
+      try {
+        const documents = await provider.readStoreSearchDocuments(ctx, owner, store);
+        for (const match of matchStoreSearch(documents, ask)) {
+          out.push({
+            ...match,
+            name: formatPrivatePageName(owner, store, match.document.title),
+            owner,
+            store
+          });
+        }
+      } catch (err) {
+        // A locked store, or an index that will not read: no matches from it.
+        // #1461: the store is named, its pages are not.
+        logger.debug(`[PageManager] No search index read for a store of ${owner}: ${String(err)}`);
+      }
+    }
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  /**
+   * Build a store's search index from its pages, replacing whatever is there.
+   *
+   * The repair for a lost or stale index, and what a store with none gets at
+   * its first boot or unlock. The pages are read through this door with `ctx`,
+   * so a sealed store is read with the owner's key and nothing reads a store
+   * file from outside the provider.
+   *
+   * @param ctx - Whose reading and writing this is (#1179)
+   * @param owner - Whose store
+   * @param store - Which store
+   * @returns How many documents the index now holds
+   */
+  async rebuildStoreSearchIndex(ctx: ActorContext, owner: string, store: string): Promise<number> {
+    if (!ctx) throw new Error('PageManager.rebuildStoreSearchIndex requires an ActorContext');
+    const provider = this.provider;
+    if (!provider?.writeStoreSearchDocuments || !provider.readablePrivateStores) return 0;
+    const pages = (await provider.readablePrivateStores(owner, ctx)).get(store);
+    // Absent means "cannot say" (#1457), not "empty": nothing is written for a
+    // store this context cannot open.
+    if (!pages) return 0;
+
+    const documents: Record<string, StoreSearchDocument> = {};
+    for (const ref of pages) {
+      const pageName = formatPrivatePageName(owner, store, ref.title);
+      const page = await this.getPage(pageName, ctx);
+      if (!page) continue;
+      documents[ref.uuid] = storeSearchDocument({
+        uuid: ref.uuid,
+        title: ref.title,
+        content: page.content ?? '',
+        metadata: page.metadata ?? {}
+      });
+    }
+    await provider.writeStoreSearchDocuments(ctx, owner, store, documents);
+    return Object.keys(documents).length;
+  }
+
+  /**
+   * Give every readable store that has no search index one, built from its
+   * pages (#1458).
+   *
+   * A store with an index is left alone, so this is cheap at every boot and
+   * every unlock; a store whose index was lost gets it back. That the file is
+   * missing IS the marker — unlike the link migration (#1457), which had to
+   * record that it ran because its result is indistinguishable from never
+   * having run, an absent index says plainly that one is needed.
+   *
+   * Only the stores `ctx` can open are visited: the system principal reaches
+   * the unencrypted ones at boot, the owner's own session reaches their sealed
+   * ones at unlock. One store's failure never stops the others.
+   *
+   * @param ctx - Whose reading and writing this is (#1179)
+   * @param owner - One user's stores, or every readable store when omitted
+   * @returns How many stores were given an index
+   */
+  async buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number> {
+    if (!ctx) throw new Error('PageManager.buildMissingStoreSearchIndexes requires an ActorContext');
+    const provider = this.provider;
+    if (!provider?.hasStoreSearchIndex || !provider.listPrivateStorePages) return 0;
+
+    // The stores this context can open, by owner — an empty store counts, so
+    // the walk is over the stores, not over the pages in them.
+    const stores = new Map<string, { owner: string; store: string }>();
+    for (const page of await provider.listPrivateStorePages(ctx, owner)) {
+      stores.set(`${page.owner}/${page.store}`, { owner: page.owner, store: page.store });
+    }
+
+    let built = 0;
+    for (const { owner: storeOwner, store } of stores.values()) {
+      try {
+        if (await provider.hasStoreSearchIndex(storeOwner, store)) continue;
+        const documents = await this.rebuildStoreSearchIndex(ctx, storeOwner, store);
+        built++;
+        // #1461: the store is named, the pages in it are only counted.
+        logger.info(`[PageManager] Built a search index of ${documents} page(s) for a private store of ${storeOwner} (#1458)`);
+      } catch (err) {
+        logger.warn(`[PageManager] Could not build a search index for a private store of ${storeOwner}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return built;
+  }
+
+  /**
+   * Build the missing search indexes of the unencrypted stores, at boot.
+   *
+   * Best-effort: a failure is logged and never blocks start-up. An encrypted
+   * store is not readable here — it gets its index at its owner's unlock, the
+   * same split the link migration uses (#1457).
+   */
+  async buildStoreSearchIndexesAtBoot(): Promise<void> {
+    const ctx = systemContext(
+      this.engine,
+      'per-store search index at boot (#1458) — build the missing search index of each unencrypted private store'
+    );
+    try {
+      await this.buildMissingStoreSearchIndexes(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Private-store search indexes were not built at boot: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**

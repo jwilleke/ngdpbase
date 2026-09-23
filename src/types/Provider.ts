@@ -1,5 +1,6 @@
 import type { StoreFileIO } from '../utils/privateStoreFiles.js';
 import type { UserCatalogPage } from '../utils/privateStoreCatalogs.js';
+import type { StoreSearchDocument } from '../utils/storeSearchIndex.js';
 import type { ActorContext } from '../context/ActorContext.js';
 /**
  * Provider type definitions for ngdpbase
@@ -258,6 +259,21 @@ export interface PageProvider extends BaseProvider {
    * not turn the first into the second.
    */
   readablePrivateStores?(owner: string, ctx: ActorContext): Promise<Map<string, PrivateStorePageRef[]>>;
+
+  /**
+   * A store's own saved search index (#1458). Optional capability, like the
+   * store page index above: only a provider that keeps private stores has one.
+   *
+   * The provider owns the store's bytes — it seals them when the store is
+   * sealed and refuses a locked one — and decides nothing about who may ask.
+   * The page door does that, with the requester's context, before calling.
+   */
+  updateStoreSearchDocument?(ctx: ActorContext, owner: string, store: string, document: StoreSearchDocument): Promise<void>;
+  removeStoreSearchDocument?(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean>;
+  readStoreSearchDocuments?(ctx: ActorContext, owner: string, store: string): Promise<Record<string, StoreSearchDocument>>;
+  writeStoreSearchDocuments?(ctx: ActorContext, owner: string, store: string, documents: Record<string, StoreSearchDocument>): Promise<void>;
+  /** False means the store has no search index yet and one must be built from its pages. */
+  hasStoreSearchIndex?(owner: string, store: string): Promise<boolean>;
 
   /**
    * Read a page's file exactly as stored — frontmatter and body, unparsed and

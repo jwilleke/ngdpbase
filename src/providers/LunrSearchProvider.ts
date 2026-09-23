@@ -24,6 +24,7 @@ import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { WikiPage } from '../types/index.js';
 import lunr from 'lunr';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 import fs from 'fs-extra';
@@ -305,6 +306,18 @@ class LunrSearchProvider extends BaseSearchProvider {
       const raw = await fs.readFile(this.documentsPath, 'utf8');
       const data = JSON.parse(raw) as { savedAt: string; documents: Record<string, LunrDocument> };
       this.documents = data.documents;
+      // #1458: a `documents.json` written before #1456 holds private page text
+      // in plaintext. It is dropped as it is read, so the rest of this process
+      // never sees it; the next persist rewrites the file without it.
+      const loaded = Object.keys(this.documents).length;
+      this.documents = this.sharedDocuments();
+      const dropped = loaded - Object.keys(this.documents).length;
+      if (dropped > 0) {
+        logger.info(`[LunrSearchProvider] Dropped ${dropped} private document(s) found in the persisted index (#1458)`);
+        // Written back at once: the point is that the plaintext leaves the
+        // disk, not merely that this process stops reading it.
+        await this.persistDocuments();
+      }
       logger.info(`[LunrSearchProvider] Loaded ${Object.keys(this.documents).length} documents from disk`);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -316,14 +329,45 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
-   * Persist documents to disk
+   * Is this document a private page's (#1458)? Either its name is a private
+   * path (#1456) or the document itself says so — a document written before
+   * private pages left the shared indexes has the flag and an ordinary title.
+   */
+  private static isPrivateDocument(name: string, doc: LunrDocument | undefined): boolean {
+    return parsePrivatePageName(name) !== null || doc?.isPrivate === true;
+  }
+
+  /**
+   * The documents that may be written to a shared place — `documents.json`
+   * and the backup that carries it off this host (#1458).
+   *
+   * Private page text sat in both in plaintext before #1456. This is the one
+   * rule that keeps it out, whatever put it in the map: a private page's text
+   * lives in its own store's search index and nowhere else.
+   */
+  private sharedDocuments(): Record<string, LunrDocument> {
+    const out: Record<string, LunrDocument> = {};
+    for (const [name, doc] of Object.entries(this.documents)) {
+      if (LunrSearchProvider.isPrivateDocument(name, doc)) continue;
+      out[name] = doc;
+    }
+    return out;
+  }
+
+  /**
+   * Persist documents to disk — the shared ones only (#1458).
    */
   private async persistDocuments(): Promise<void> {
-    if (!this.documentsPath || Object.keys(this.documents).length === 0) return;
+    if (!this.documentsPath) return;
+    const documents = this.sharedDocuments();
+    // Nothing in memory and no file on disk: there is nothing to say. When a
+    // file DOES exist it is rewritten even for an empty map, so a purge of
+    // private documents reaches the disk rather than leaving the old file.
+    if (Object.keys(documents).length === 0 && !(await fs.pathExists(this.documentsPath))) return;
     try {
-      const data = { savedAt: new Date().toISOString(), documents: this.documents };
+      const data = { savedAt: new Date().toISOString(), documents };
       await fs.writeFile(this.documentsPath, JSON.stringify(data, null, 2), 'utf8');
-      logger.debug(`[LunrSearchProvider] Persisted ${Object.keys(this.documents).length} documents to disk`);
+      logger.debug(`[LunrSearchProvider] Persisted ${Object.keys(documents).length} documents to disk`);
     } catch (err) {
       logger.error('[LunrSearchProvider] Failed to persist documents:', (err as Error).message);
     }
@@ -445,17 +489,24 @@ class LunrSearchProvider extends BaseSearchProvider {
       // index would otherwise be reloaded on every boot. Drop any entry that
       // is not shared-indexable now; the page list is in memory, no NAS read.
       const pageManager = this.engine.getManager<{ isSharedIndexable(id: string): boolean }>('PageManager');
-      if (pageManager) {
-        // #1456: a document written for a private page, before private pages
-        // left the shared indexes, goes too — even when a public page now has its title.
-        const sealed = Object.keys(this.documents).filter((name) =>
-          this.documents[name].isPrivate === true || !pageManager.isSharedIndexable(name));
-        for (const name of sealed) delete this.documents[name];
-        if (sealed.length > 0) {
-          logger.info(`[LunrSearchProvider] Dropped ${sealed.length} persisted document(s) that may not be in a shared index`);
-          await this.persistDocuments();
-        }
+      // #1456/#1458: a document written for a private page, before private
+      // pages left the shared indexes, goes too — even when a public page now
+      // has its title. The private half of this test needs no PageManager: a
+      // private document is one whatever else is or is not loaded.
+      const sealed = Object.keys(this.documents).filter((name) =>
+        LunrSearchProvider.isPrivateDocument(name, this.documents[name])
+        || (pageManager ? !pageManager.isSharedIndexable(name) : false));
+      for (const name of sealed) delete this.documents[name];
+      if (sealed.length > 0) {
+        logger.info(`[LunrSearchProvider] Dropped ${sealed.length} persisted document(s) that may not be in a shared index`);
+        await this.persistDocuments();
       }
+    }
+
+    // The purge above can empty the map — an instance whose persisted index
+    // held only private documents. There is then nothing warm to rebuild
+    // from, so the cold path below reads the public pages (#1458).
+    if (Object.keys(this.documents).length > 0) {
       this.rebuildLunrFromDocuments();
       this.engine.getManager<MetricsManager>('MetricsManager')
         ?.recordSearchRebuild?.(Date.now() - metricsStart);
@@ -484,10 +535,15 @@ class LunrSearchProvider extends BaseSearchProvider {
         if (!pageData) {
           continue; // Skip if page can't be loaded
         }
-        documents[pageName] = this.buildDocumentFromPageData(
+        const document = this.buildDocumentFromPageData(
           pageName,
           pageData as unknown as Record<string, unknown>
         );
+        // #1458: the cold path is a scan, and a scan must not put private text
+        // into a shared index either. A private page's text belongs to its own
+        // store's search index and nowhere else.
+        if (LunrSearchProvider.isPrivateDocument(pageName, document)) continue;
+        documents[pageName] = document;
       }
 
       this.documents = documents;
@@ -959,7 +1015,15 @@ class LunrSearchProvider extends BaseSearchProvider {
    * @returns {Promise<void>}
    */
   async updatePageInIndex(pageName: string, pageData: Record<string, unknown>): Promise<void> {
-    this.documents[pageName] = this.buildDocumentFromPageData(pageName, pageData);
+    const document = this.buildDocumentFromPageData(pageName, pageData);
+    // #1458: the shared index takes public pages only. The page door already
+    // keeps a private page out (#1462); this refuses one that reaches here by
+    // any other road, rather than writing its text to `documents.json`.
+    if (LunrSearchProvider.isPrivateDocument(pageName, document)) {
+      logger.debug('[LunrSearchProvider] A private page is not put in the shared index (#1458)');
+      return;
+    }
+    this.documents[pageName] = document;
     this.rebuildLunrFromDocuments();
     await this.persistDocuments();
     logger.debug(`[LunrSearchProvider] Incrementally updated index for page: ${pageName}`);
@@ -1214,11 +1278,15 @@ class LunrSearchProvider extends BaseSearchProvider {
    */
   async backup(): Promise<BackupData> {
     const baseBackup = await super.backup();
+    // #1458: a backup is an on-disk copy of the index that leaves this host.
+    // It carries the shared documents only — private page text is in its own
+    // store's search index, sealed when the store is, and never here.
+    const documents = this.sharedDocuments();
     return {
       ...baseBackup,
       config: { ...this.config },
-      documentCount: Object.keys(this.documents).length,
-      documents: { ...this.documents },
+      documentCount: Object.keys(documents).length,
+      documents,
       statistics: await this.getStatistics()
     };
   }
@@ -1230,8 +1298,12 @@ class LunrSearchProvider extends BaseSearchProvider {
    */
   async restore(backupData: BackupData): Promise<void> {
     if (backupData.documents) {
+      // #1458: a backup taken before private text left the shared index may
+      // carry it. Restoring one must not put it back.
       this.documents = backupData.documents as Record<string, LunrDocument>;
+      this.documents = this.sharedDocuments();
       await this.buildIndex();
+      await this.persistDocuments();
       logger.info(`[LunrSearchProvider] Restored ${Object.keys(this.documents).length} documents from backup`);
     }
   }

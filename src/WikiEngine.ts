@@ -379,6 +379,13 @@ class WikiEngine extends Engine {
     // key and migrates at their unlock.
     await pageManager.migratePrivateLinksAtBoot();
 
+    // #1458: a private page is in no shared index, so each store keeps its own
+    // saved search index. Build the missing ones here, after the link
+    // migration, so a store's index describes its pages as they now read.
+    // Only the unencrypted stores — an encrypted one is built at its owner's
+    // unlock, the same split the migration above uses.
+    await pageManager.buildStoreSearchIndexesAtBoot();
+
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
 
