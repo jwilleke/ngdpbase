@@ -28,7 +28,14 @@ import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/in
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { formatPrivatePageName, parsePrivatePageName, PRIVATE_PAGE_NAME_PREFIX } from '../utils/privateStorePath.js';
+import {
+  formatPrivatePageName,
+  parsePrivatePageName,
+  privateStoreLayoutFromConfig,
+  PRIVATE_PAGE_NAME_PREFIX
+} from '../utils/privateStorePath.js';
+import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
+import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
@@ -94,6 +101,23 @@ export interface PageSaveOptions {
    * Recent Changes.
    */
   preserveLastModified?: boolean;
+  /**
+   * Keep the page's stored `editor` — who is recorded as having written this
+   * version — instead of taking it from the acting context (#1354).
+   *
+   * For the one-time private-link migration (#1457), and said to be that:
+   * rewriting `[Title]` to `[store/Title]` changes the syntax of a link, not
+   * what anybody wrote, so the last person to edit the page is still the last
+   * person to edit it. Stamping the system principal (at boot) or the owner
+   * (at unlock) over their name would be a claim about authorship that the
+   * migration has no business making. The act itself is in the audit trail,
+   * as `link-rewrite`, where it belongs.
+   *
+   * NOT `rawFrontmatter` (#689): that is the admin raw editor's, it lifts
+   * every rule in `normalizeSaveMetadata` rather than this one, and its own
+   * doc says so.
+   */
+  preserveEditor?: boolean;
   /**
    * Request-level detail the manager cannot see, for the audit record (#1121).
    *
@@ -1430,6 +1454,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param existingPage - The page as stored, or null when this save creates it
    * @param actingUser - Who is writing this revision, from the context (#1164)
    * @param viaToken - The agent token this write came through (#946), if any
+   * @param keepEditor - Leave the stored `editor` alone (`preserveEditor`, #1457)
    * @returns The frontmatter to hand the provider
    */
   private async normalizeSaveMetadata(
@@ -1437,7 +1462,8 @@ class PageManager extends BaseManager implements CatalogSource {
     metadata: Partial<PageFrontmatter>,
     existingPage: WikiPage | null,
     actingUser: string,
-    viaToken: { name: string } | undefined
+    viaToken: { name: string } | undefined,
+    keepEditor = false
   ): Promise<Partial<PageFrontmatter>> {
     // author — immutable original creator, set on ALL pages, never changes.
     // Used for both attribution display and private-page ACL ownership (see PolicyInformationPoint).
@@ -1482,7 +1508,14 @@ class PageManager extends BaseManager implements CatalogSource {
     // (the save route's #803 step), and a stored `editor: system` from one
     // migration was stamped on every later human edit. A caller's own value is
     // used only when the context has no user (a system job).
-    rawMetadata.editor = actingUser || metadata.editor || rawMetadata.author;
+    //
+    // #1457: `preserveEditor` keeps the stored one. A link migration rewrites
+    // syntax, not a revision anybody wrote, so whoever ran it is not the
+    // page's editor; the act is recorded as `link-rewrite` in the audit trail.
+    const storedEditor = (existingPage?.metadata as Record<string, unknown> | undefined)?.editor;
+    rawMetadata.editor = keepEditor
+      ? (typeof storedEditor === 'string' && storedEditor ? storedEditor : metadata.editor) ?? actingUser
+      : actingUser || metadata.editor || rawMetadata.author;
 
     // Strip caller-supplied provenance before stamping our own.
     delete (rawMetadata as Record<string, unknown>)['via-token'];
@@ -1666,7 +1699,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * @param metadata - Frontmatter; server-owned fields in it are discarded, not merged
    * @param ctx - Who is acting (#1179)
    * @param options - Validation and conflict-check opt-outs, `rawFrontmatter` (#689),
-   *   `preserveLastModified`, audit enrichment
+   *   `preserveLastModified`, `preserveEditor` (#1457), audit enrichment
    * @returns Where the page landed, and what it was called before
    *
    * @example
@@ -1753,7 +1786,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // exactly as typed, with none of the stamping or normalisation below.
     const enrichedMetadata = options.rawFrontmatter
       ? metadata
-      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, actingUser, viaToken);
+      : await this.normalizeSaveMetadata(pageName, metadata, existingPage, actingUser, viaToken, options.preserveEditor);
 
     // Enforce uniqueness before delegating to provider — PageManager is the single
     // authority on uuid/title/slug uniqueness across the system (#510 architecture).
@@ -2436,6 +2469,134 @@ class PageManager extends BaseManager implements CatalogSource {
   async adoptUserPageCatalog(ctx: ActorContext): Promise<number> {
     if (!this.provider?.adoptUserPageCatalog) return 0;
     return this.provider.adoptUserPageCatalog(ctx);
+  }
+
+  // ── The private-link migration (#1457) ────────────────────────────────────
+  //
+  // A private page's links were written before `[store/Title]` existed, so a
+  // link to a sibling page reads as a public title, renders red and points at
+  // /edit. This rewrites them, once per store.
+  //
+  // Where it runs from is dictated by the keys: an unencrypted store can be
+  // read at boot, an encrypted one only when its owner unlocks it. Both come
+  // here with the context that may read the store — the system principal for
+  // the first, the owner themselves for the second — and each store records
+  // that it is done, so no later boot reads its pages again.
+
+  /**
+   * Run the private-link migration over the unencrypted stores, at boot.
+   *
+   * Best-effort: a failure is logged and never blocks start-up. An encrypted
+   * store is not readable here and is not touched — it migrates at its
+   * owner's unlock, through {@link migratePrivateLinks}.
+   */
+  async migratePrivateLinksAtBoot(): Promise<void> {
+    const ctx = systemContext(
+      this.engine,
+      'private-link migration at boot (#1457) — rewrite [Title] to [store/Title] in the unencrypted private stores'
+    );
+    try {
+      await this.migratePrivateLinks(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Private-link migration at boot did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Rewrite `[Title]` to `[store/Title]` in the private pages that mean it.
+   *
+   * Only a target naming a page in the SAME store is rewritten — never a
+   * public title, never another store — and a target that already parses as a
+   * private link is left alone, so a second run writes nothing
+   * ({@link rewriteToPrivateLinks}).
+   *
+   * Each page goes through {@link savePage}, so it is versioned, reindexed and
+   * audited as `link-rewrite`. It keeps its `lastModified` (operator,
+   * 2026-09-23: a syntax rewrite must not move a page to the top of Recent
+   * Changes) and its `editor`: nobody edited it.
+   *
+   * A store that has been migrated records it beside its own indexes and is
+   * skipped from then on. One store's failure never stops the others.
+   *
+   * @param ctx - Whose reading and writing this is (#1179). Only the stores
+   *   this context can open are visited: the system principal reaches the
+   *   unencrypted ones, an owner's own unlocked session reaches theirs.
+   * @param owner - One user's stores, or every readable store when omitted
+   * @returns How many pages were rewritten
+   */
+  async migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number> {
+    if (!ctx) throw new Error('PageManager.migratePrivateLinks requires an ActorContext');
+    if (!this.provider?.listPrivateStorePages) return 0;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.(
+      'ngdpbase.page.provider.filesystem.storagedir',
+      './data/pages'
+    );
+    if (!configManager || !pagesDirectory) return 0;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+
+    // Titles by store, so each page's links are matched against the pages of
+    // the store it is in and no other.
+    const byStore = new Map<string, { owner: string; store: string; titles: string[] }>();
+    for (const page of await this.provider.listPrivateStorePages(ctx, owner)) {
+      const key = `${page.owner}/${page.store}`;
+      const group = byStore.get(key) ?? { owner: page.owner, store: page.store, titles: [] };
+      group.titles.push(page.title);
+      byStore.set(key, group);
+    }
+
+    let rewritten = 0;
+    for (const { owner: storeOwner, store, titles } of byStore.values()) {
+      const where = { pagesDirectory, owner: storeOwner, store, layout };
+      try {
+        if (await storeMigrationDone(ctx, where, PRIVATE_LINK_MIGRATION)) continue;
+        const pages = await this.rewriteStoreLinks(ctx, storeOwner, store, titles);
+        await recordStoreMigration(ctx, where, PRIVATE_LINK_MIGRATION);
+        rewritten += pages;
+        // #1461: the store is named, the pages in it are only counted.
+        if (pages > 0) {
+          logger.info(`[PageManager] Private links: rewrote ${pages} of ${titles.length} page(s) in ${layout.privateRoot}/${storeOwner}/${store} (#1457)`);
+        }
+      } catch (err) {
+        logger.warn(`[PageManager] Private-link migration failed for ${layout.privateRoot}/${storeOwner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return rewritten;
+  }
+
+  /** One store's pages, rewritten through the door. Returns how many changed. */
+  private async rewriteStoreLinks(
+    ctx: ActorContext,
+    owner: string,
+    store: string,
+    titles: string[]
+  ): Promise<number> {
+    let rewritten = 0;
+    for (const title of titles) {
+      const pageName = formatPrivatePageName(owner, store, title);
+      try {
+        const page = await this.getPage(pageName, ctx);
+        if (!page) continue;
+        const result = rewriteToPrivateLinks(page.content ?? '', store, titles);
+        if (result.rewritten === 0) continue;
+        // #1121: `link-rewrite` is the one op the door cannot infer — from in
+        // here this looks exactly like an ordinary edit.
+        await this.savePage(pageName, result.content, { ...page.metadata }, ctx, {
+          preserveLastModified: true,
+          preserveEditor: true,
+          audit: { op: 'link-rewrite' }
+        });
+        rewritten++;
+      } catch (err) {
+        // One page must not stop the store; the others are still fixable, and
+        // the store is marked either way — a page that refuses its own content
+        // today refuses it at every boot.
+        // #1461: the page is not named — the store it is in is as far as a log goes.
+        logger.warn(`[PageManager] Private link rewrite failed for a page in ${owner}'s store '${store}': ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return rewritten;
   }
 
   /**

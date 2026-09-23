@@ -38,6 +38,7 @@ describe('private store unlock door (#1448)', () => {
   let auditAuthentication: ReturnType<typeof vi.fn>;
   let throttle: { check: ReturnType<typeof vi.fn>; recordFailure: ReturnType<typeof vi.fn> } | null;
   let adoptUserPageCatalog: ReturnType<typeof vi.fn>;
+  let migratePrivateLinks: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -70,6 +71,7 @@ describe('private store unlock door (#1448)', () => {
     clearUnlockedPrivateStores();
     authenticate = vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' }));
     adoptUserPageCatalog = vi.fn(async () => 0);
+    migratePrivateLinks = vi.fn(async () => 0);
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -82,7 +84,7 @@ describe('private store unlock door (#1448)', () => {
       PolicyInformationPoint: {
         subjectFor: vi.fn(async (username: string) => ({ username, roles: ['Authenticated'], isAuthenticated: true }))
       },
-      PageManager: { adoptUserPageCatalog }
+      PageManager: { adoptUserPageCatalog, migratePrivateLinks }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);
@@ -116,6 +118,12 @@ describe('private store unlock door (#1448)', () => {
     expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked');
     // The owner's sealed pages are adopted as the owner, through the unlocked session.
     expect(adoptUserPageCatalog).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
+    // #1457: and their links are migrated here, for the same reason — an
+    // encrypted store cannot be read by the boot pass, only by its owner.
+    expect(migratePrivateLinks).toHaveBeenCalledWith(
+      expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }),
+      'molly'
+    );
   });
 
   test('a wrong password leaves it locked and says so', async () => {

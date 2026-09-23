@@ -108,6 +108,78 @@ function splitFragment(target: string): { base: string; fragment: string } {
 }
 
 /**
+ * What a caller decides about one link target it was shown.
+ *
+ * @param base - The target as written, without any `#fragment`.
+ * @param targetIsDisplayText - True for `[Title]`, where the target IS the
+ *   text the reader sees, and false for the piped forms, where it is not.
+ *   The rewriting rule differs by form — see the module comment.
+ * @returns The target to write instead, or `null` to leave the link alone.
+ *   The fragment is re-attached by the caller; a resolver never sees one.
+ */
+export type LinkTargetResolver = (base: string, targetIsDisplayText: boolean) => string | null;
+
+/**
+ * Rewrite link targets by the caller's rule — the matcher, once.
+ *
+ * The rename rewrite below and the private-link migration (#1457) decide
+ * different things about a target and agree on everything else: which
+ * bracket forms are links at all, that a task-list checkbox is not one, that
+ * external, mail, anchor, absolute and InterWiki targets are left alone, and
+ * that a `#fragment` survives. A second pass with its own regex would be a
+ * second place for those to drift, so both come through here.
+ *
+ * @param content - The page's markdown.
+ * @param resolve - What to do with each internal target seen.
+ * @returns The rewritten content and a report.
+ */
+export function rewriteLinkTargetsBy(
+  content: string,
+  resolve: LinkTargetResolver
+): LinkRewriteResult {
+  if (typeof content !== 'string' || !content) {
+    return { content, rewritten: 0, unchangedTargets: [] };
+  }
+
+  let rewritten = 0;
+  const unchanged = new Set<string>();
+
+  const rewrittenContent = content.replace(
+    wikiLinkPattern(),
+    (whole: string, text: string, target?: string, attributes?: string) => {
+      // `[text]` carries its target in the text; the piped forms do not.
+      const targetIsDisplayText = target === undefined;
+      const rawTarget = targetIsDisplayText ? text : target;
+      const { base, fragment } = splitFragment(rawTarget);
+
+      // A task-list checkbox — `[ ]` or `[x]` — matches the link pattern.
+      // The blank case is not a link target and must not be reported as one.
+      if (!base.trim()) return whole;
+      if (!isInternalTarget(base)) return whole;
+
+      const to = resolve(base, targetIsDisplayText);
+      if (to === null) {
+        unchanged.add(base);
+        return whole;
+      }
+
+      rewritten++;
+      const newTarget = `${to}${fragment}`;
+
+      if (targetIsDisplayText) return `[${newTarget}]`;
+      if (attributes === undefined) return `[${text}|${newTarget}]`;
+      return `[${text}|${newTarget}|${attributes}]`;
+    }
+  );
+
+  return {
+    content: rewrittenContent,
+    rewritten,
+    unchangedTargets: Array.from(unchanged)
+  };
+}
+
+/**
  * Rewrite links pointing at `oldTitle` so they point at `newTitle`.
  *
  * @param content - The referring page's markdown.
@@ -130,45 +202,13 @@ export function rewriteLinkTargets(
   }
 
   const fromLower = from.toLowerCase();
-  let rewritten = 0;
-  const unchanged = new Set<string>();
 
-  const rewrittenContent = content.replace(
-    wikiLinkPattern(),
-    (whole: string, text: string, target?: string, attributes?: string) => {
-      // `[text]` carries its target in the text; the piped forms do not.
-      const targetIsDisplayText = target === undefined;
-      const rawTarget = targetIsDisplayText ? text : target;
-      const { base, fragment } = splitFragment(rawTarget);
-
-      // A task-list checkbox — `[ ]` or `[x]` — matches the link pattern.
-      // The blank case is not a link target and must not be reported as one.
-      if (!base.trim()) return whole;
-      if (!isInternalTarget(base)) return whole;
-
-      // Byte-exact for `[Title]`, case-insensitive for a piped target the
-      // reader never sees. See the module comment.
-      const matches = targetIsDisplayText
-        ? base === from
-        : base === from || base.toLowerCase() === fromLower;
-
-      if (!matches) {
-        unchanged.add(base);
-        return whole;
-      }
-
-      rewritten++;
-      const newTarget = `${to}${fragment}`;
-
-      if (targetIsDisplayText) return `[${newTarget}]`;
-      if (attributes === undefined) return `[${text}|${newTarget}]`;
-      return `[${text}|${newTarget}|${attributes}]`;
-    }
-  );
-
-  return {
-    content: rewrittenContent,
-    rewritten,
-    unchangedTargets: Array.from(unchanged)
-  };
+  // Byte-exact for `[Title]`, case-insensitive for a piped target the reader
+  // never sees. See the module comment.
+  return rewriteLinkTargetsBy(content, (base, targetIsDisplayText) => {
+    const matches = targetIsDisplayText
+      ? base === from
+      : base === from || base.toLowerCase() === fromLower;
+    return matches ? to : null;
+  });
 }

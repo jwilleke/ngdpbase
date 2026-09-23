@@ -372,6 +372,13 @@ class WikiEngine extends Engine {
     // PageManager.initialize() time neither exists yet.
     await pageManager.seedRequiredPages();
 
+    // #1457: rewrite `[Title]` to `[store/Title]` in the private pages that
+    // mean it, once per store. Here because it is a page write: it goes
+    // through the door, which needs the same managers a seed does. Only the
+    // unencrypted stores — an encrypted one is unreadable without its owner's
+    // key and migrates at their unlock.
+    await pageManager.migratePrivateLinksAtBoot();
+
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
 

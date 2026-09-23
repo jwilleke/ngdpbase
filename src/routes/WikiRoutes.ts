@@ -117,6 +117,7 @@ import {
   formatPrivatePageName,
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
+  type PrivatePageName,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
@@ -379,6 +380,8 @@ interface IPageManager {
   syncShippedPages(source: ShippedPageSource, uuids: string[], options: { force?: boolean }, ctx: ActorContext): Promise<ShippedPageSyncReport>;
   /** At unlock (#1456): sealed pages move into their stores' own indexes. */
   adoptUserPageCatalog(ctx: ActorContext): Promise<number>;
+  /** At unlock (#1457): `[Title]` becomes `[store/Title]` in this owner's stores. */
+  migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string, ctx: ActorContext): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
@@ -2730,6 +2733,23 @@ ${panes}
             301,
             `/view/${encodeURIComponent(renamedTo)}?from=${encodeURIComponent(pageName)}`
           );
+        }
+
+        // #1457: the requester's own private page of this title. `/view/` serves
+        // public pages only (#1456), so this runs last — a public page, live or
+        // under a former title, always wins. A reader with no such page gets
+        // exactly the 404 below that they get today, and the lookup is over
+        // their own stores through their own context, so nobody learns anything
+        // about anyone else's pages.
+        //
+        // 302, not the 301 above: the answer depends on who is asking, and a
+        // cached redirect would send the next reader to a page that is not
+        // theirs (they would get its 404, but the owner's own title would be in
+        // their browser's URL bar).
+        const ownPrivate = await this.ownPrivatePageNamed(pageName, req.userContext);
+        if (ownPrivate) {
+          logger.info(`[VIEW] '${pageName}' is a page in this requester's own store (302)`);
+          return res.redirect(302, pageUrl(ownPrivate));
         }
 
         return await this.renderError(
@@ -8104,16 +8124,25 @@ ${panes}
   }
 
   /**
-   * After an unlock (#1456): the owner's sealed pages move from their
-   * user-level catalog into each encrypted store's own page index, through
-   * the page door and as the owner — the only context that holds the keys.
+   * After an unlock: the work on an encrypted store that only its owner's
+   * context can do, through the page door and as the owner — the only context
+   * that holds the keys.
+   *
+   * - #1456: the owner's sealed pages move from their user-level catalog into
+   *   each encrypted store's own page index.
+   * - #1457: `[Title]` becomes `[store/Title]` in the pages that mean it. The
+   *   boot pass cannot read a sealed store, so this is where it happens for
+   *   one; each store records that it is done, so this runs once, not at
+   *   every unlock.
    */
   private async adoptSealedPages(username: string, handle: string): Promise<void> {
     const pip = this.engine.getManager('PolicyInformationPoint');
     const pageManager = this.engine.getManager('PageManager');
     const subject = await pip.subjectFor(username);
     if (!subject) throw new Error(`No active account '${username}' to unlock stores for`);
-    await pageManager.adoptUserPageCatalog({ ...subject, privateStoreHandle: handle });
+    const ctx = { ...subject, privateStoreHandle: handle };
+    await pageManager.adoptUserPageCatalog(ctx);
+    await pageManager.migratePrivateLinks(ctx, username);
   }
 
   /**
@@ -15546,21 +15575,17 @@ ${panes}
   }
 
   /**
-   * The caller's own private pages as autocomplete entries (#1457).
-   *
-   * `name` is the link syntax, `store/Title`, because that is what the editor
-   * wraps in brackets on select — the owner of the page being edited is the
-   * caller, so the link resolves in these very stores.
+   * The caller's OWN private pages, by their parts (#1457).
    *
    * Only the caller's: `getPagesByCreator` reads this user's stores, and each
    * entry's name is re-parsed and its owner checked, so no other user's
-   * private title can be returned even if a store index carried one.
+   * private title can be returned even if a store index carried one. Every
+   * caller below asks through this one lookup, so that check is in one place.
+   *
+   * Empty when there is no user, when the provider keeps no private stores,
+   * or when the lookup fails — never a partial answer with an excuse.
    */
-  private async getOwnPrivateSuggestions(
-    ctx: PermissionSubject | undefined,
-    queryLower: string,
-    limit: number
-  ): Promise<Array<{ name: string; slug: string; title: string; category: string; isPrivate: boolean }>> {
+  private async ownPrivatePages(ctx: PermissionSubject | undefined): Promise<PrivatePageName[]> {
     const username = ctx?.username;
     if (!username) return [];
 
@@ -15575,30 +15600,67 @@ ${panes}
 
     try {
       const entries = await pageManager.getPagesByCreator(username, ctx, { onlyPrivate: true });
-      const matches: string[] = [];
+      const own: PrivatePageName[] = [];
       for (const entry of entries) {
         const parsed = parsePrivatePageName(entry.name);
-        if (!parsed || parsed.owner !== username) continue;
-        const target = `${parsed.store}/${parsed.title}`;
-        if (!target.toLowerCase().includes(queryLower)) continue;
-        matches.push(target);
+        if (parsed && parsed.owner === username) own.push(parsed);
       }
-      return matches
-        .sort(suggestionOrder(queryLower))
-        .slice(0, limit)
-        .map((target) => ({
-          name: target,
-          slug: target,
-          // #1457: shown as it is inserted — two pages of the same title in
-          // different stores are different pages, and the store says which.
-          title: target,
-          category: `private store: ${target.slice(0, target.indexOf('/'))}`,
-          isPrivate: true
-        }));
+      return own;
     } catch (err) {
-      logger.warn('[WikiRoutes] private page suggestions failed:', getErrorMessage(err));
+      logger.warn('[WikiRoutes] private page lookup failed:', getErrorMessage(err));
       return [];
     }
+  }
+
+  /**
+   * The caller's own private page called `title`, as a page name, or null.
+   *
+   * For `/view/{title}` (#1457): the public ladder has missed, and this is the
+   * last question asked before the 404. A title is unique within a store but
+   * not across them, so the stores are consulted in name order and the first
+   * match wins — the same page every time, rather than whichever the index
+   * happened to list first.
+   *
+   * Byte-exact first, then case-insensitively: a typed URL is not prose, and
+   * the owner who types their own title in the wrong case still means it.
+   */
+  private async ownPrivatePageNamed(title: string, ctx: PermissionSubject | undefined): Promise<string | null> {
+    if (!title) return null;
+    const own = (await this.ownPrivatePages(ctx)).sort((a, b) => a.store.localeCompare(b.store));
+    const match = own.find((p) => p.title === title)
+      ?? own.find((p) => p.title.toLowerCase() === title.toLowerCase());
+    return match ? formatPrivatePageName(match.owner, match.store, match.title) : null;
+  }
+
+  /**
+   * The caller's own private pages as autocomplete entries (#1457).
+   *
+   * `name` is the link syntax, `store/Title`, because that is what the editor
+   * wraps in brackets on select — the owner of the page being edited is the
+   * caller, so the link resolves in these very stores.
+   */
+  private async getOwnPrivateSuggestions(
+    ctx: PermissionSubject | undefined,
+    queryLower: string,
+    limit: number
+  ): Promise<Array<{ name: string; slug: string; title: string; category: string; isPrivate: boolean }>> {
+    const matches: string[] = [];
+    for (const { store, title } of await this.ownPrivatePages(ctx)) {
+      const target = `${store}/${title}`;
+      if (target.toLowerCase().includes(queryLower)) matches.push(target);
+    }
+    return matches
+      .sort(suggestionOrder(queryLower))
+      .slice(0, limit)
+      .map((target) => ({
+        name: target,
+        slug: target,
+        // #1457: shown as it is inserted — two pages of the same title in
+        // different stores are different pages, and the store says which.
+        title: target,
+        category: `private store: ${target.slice(0, target.indexOf('/'))}`,
+        isPrivate: true
+      }));
   }
 
   /**

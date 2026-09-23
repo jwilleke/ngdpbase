@@ -14,7 +14,7 @@ import {
   type PrivatePageName
 } from '../utils/privateStorePath.js';
 import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
-import type { SavedPage, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
+import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
   storeFileIO,
@@ -960,6 +960,38 @@ class FileSystemProvider extends BasePageProvider {
       isPrivate: true,
       creator: owner
     })));
+  }
+
+  /**
+   * Every private page this context can read, for a migration that must visit
+   * them (#1457). The stores are the ones the context may already open, so a
+   * sealed store contributes nothing without its key and nothing here decides
+   * access.
+   *
+   * @param ctx - Whose reading this is (#1179)
+   * @param owner - One user's container, or every user's when omitted
+   */
+  async listPrivateStorePages(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRef[]> {
+    if (!this.pagesDirectory) return [];
+    let owners: string[];
+    if (owner) {
+      owners = [owner];
+    } else {
+      const root = path.join(this.pagesDirectory, this.privateStoreLayout.privateRoot);
+      if (!(await fs.pathExists(root))) return [];
+      owners = (await fs.readdir(root, { withFileTypes: true }))
+        .filter((d) => d.isDirectory() && isSafePathSegment(d.name))
+        .map((d) => d.name);
+    }
+    const out: PrivateStorePageRef[] = [];
+    for (const who of owners) {
+      for (const { store, pages } of this.readableStoresOf(who, ctx)) {
+        for (const page of Object.values(pages)) {
+          out.push({ owner: who, store, title: page.title, uuid: page.uuid });
+        }
+      }
+    }
+    return out;
   }
 
   /** Which of the owner's readable stores lists the page `uuid`, if any. */

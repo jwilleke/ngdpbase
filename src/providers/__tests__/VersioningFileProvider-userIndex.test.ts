@@ -225,6 +225,38 @@ describe('private pages out of the global index (#1385, #1456)', () => {
     expect((await readIndex()).pages[SEALED]).toBeUndefined();
   });
 
+  describe('listPrivateStorePages: a migration visits what its context can read (#1457)', () => {
+    // The boot pass acts as the system principal, which holds no store key.
+    const SYSTEM = actor('system');
+
+    test('an unencrypted store is visited at boot', async () => {
+      const provider = await newProvider();
+      await provider.savePage('Open Diary', 'plain', { uuid: OPEN, private: true, author: 'molly' }, MOLLY);
+
+      expect(await provider.listPrivateStorePages(SYSTEM)).toEqual([
+        { owner: 'molly', store: DEFAULT_PRIVATE_STORE, title: 'Open Diary', uuid: OPEN }
+      ]);
+    });
+
+    test('a sealed store is invisible at boot and visible at its owner\'s unlock', async () => {
+      const { kek, dek } = await sealDefaultStore();
+      unlockPrivateStores('sid', 'molly', kek);
+      setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, dek);
+      const provider = await newProvider();
+      await provider.savePage(SEALED_NAME, 'secret', { uuid: SEALED }, MOLLY);
+      lockPrivateStores('sid');
+
+      // Nothing to migrate at boot: the store cannot be read at all.
+      expect(await provider.listPrivateStorePages(SYSTEM)).toEqual([]);
+
+      await unlockPrivateStoresWithPassword({ handle: 'sid-2', username: 'molly', password: 'pw', pagesDirectory: pagesDir });
+      const ctx = { ...MOLLY, privateStoreHandle: 'sid-2' };
+      expect(await provider.listPrivateStorePages(ctx, 'molly')).toEqual([
+        { owner: 'molly', store: DEFAULT_PRIVATE_STORE, title: 'Sealed Diary', uuid: SEALED }
+      ]);
+    });
+  });
+
   describe('adoptUserPageCatalog: a pre-#1456 user-index.json moves in at unlock', () => {
     /**
      * The layout a pre-#1456 save left behind: the sealed page file in its

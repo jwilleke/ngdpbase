@@ -103,6 +103,17 @@ export interface RecentChangesOptions {
 }
 
 /**
+ * One page in a private store, as {@link PageProvider.listPrivateStorePages}
+ * reports it (#1457): where it is, and what it is called there.
+ */
+export interface PrivateStorePageRef {
+  owner: string;
+  store: string;
+  title: string;
+  uuid: string;
+}
+
+/**
  * Options for {@link PageProvider.getPagesByCreator} (#640).
  */
 export interface GetPagesByCreatorOptions {
@@ -224,6 +235,18 @@ export interface PageProvider extends BaseProvider {
    * only a provider that keeps private stores has one.
    */
   adoptUserPageCatalog?(ctx: ActorContext): Promise<number>;
+
+  /**
+   * Every private page in the stores `ctx` can read (#1457), for a migration
+   * that must visit them. `owner` narrows it to one user's stores; without it
+   * every user with a private container is walked.
+   *
+   * What comes back is what the context may already read: a sealed store
+   * whose key this context does not hold contributes nothing, so a system
+   * context sees the unencrypted stores and an owner's own context sees
+   * theirs. Optional capability, like the catalog adoption above.
+   */
+  listPrivateStorePages?(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRef[]>;
 
   /**
    * Read a page's file exactly as stored — frontmatter and body, unparsed and
