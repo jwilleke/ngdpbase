@@ -113,7 +113,8 @@ export function privateStoreLayoutFromConfig(
 }
 
 /** A store id is a plain slug — an addon slug or `default` — never a path (#1383). */
-const STORE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const STORE_ID_SOURCE = '[a-z0-9]+(?:-[a-z0-9]+)*';
+const STORE_ID_PATTERN = new RegExp(`^${STORE_ID_SOURCE}$`);
 
 export function isValidStoreId(store: string): boolean {
   return STORE_ID_PATTERN.test(store);
@@ -146,6 +147,35 @@ export function parsePrivatePageName(name: unknown): PrivatePageName | null {
   const [owner, store, title] = parts;
   if (!owner || !isSafePathSegment(owner) || !isValidStoreId(store) || !title.trim()) return null;
   return { owner, store, title };
+}
+
+/**
+ * A private page's LINK target, written inside brackets as `{store}/{Title}`
+ * (#1457). The store belongs to the owner of the page the link sits in, so the
+ * target names no user — {@link formatPrivatePageName} supplies the owner.
+ *
+ * `null` for anything else, including a target whose first segment is not a
+ * store id (`Docs/Setup`) and one with a second `/`: titles never contain one
+ * (#1455), so a deeper path is not a private page.
+ */
+export function parsePrivateLinkTarget(target: string): { store: string; title: string } | null {
+  const slash = target.indexOf('/');
+  if (slash <= 0) return null;
+  const store = target.slice(0, slash);
+  const title = target.slice(slash + 1);
+  if (!isValidStoreId(store) || !title.trim() || title.includes('/')) return null;
+  return { store, title };
+}
+
+/**
+ * Could this content hold a `[store/Title]` link? A cheap pre-test so only a
+ * page that may carry one pays for the owner lookup a render needs (#1457).
+ * Non-global, so it is stateless and safe to share.
+ */
+const PRIVATE_LINK_CANDIDATE = new RegExp(`\\[(?:[^|\\]\\n]*\\|)?${STORE_ID_SOURCE}/[^\\]\\n]+\\]`);
+
+export function mayContainPrivateLink(content: string): boolean {
+  return PRIVATE_LINK_CANDIDATE.test(content);
 }
 
 /** Refuse a store id that is not a plain slug. Every join below runs it. */

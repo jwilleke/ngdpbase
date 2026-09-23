@@ -108,8 +108,15 @@ class PageAutocomplete {
       // Highlight query in suggestion
       const titleHtml = this.highlightQuery(suggestion.title, this.currentQuery);
 
+      // #1457: a private page is offered as `store/Title`, the link syntax that
+      // reaches it. Saying which store it is in is the difference between two
+      // pages of the same title in different stores.
+      const privateNote = suggestion.isPrivate
+        ? '<span style="margin-left: 6px; font-size: 0.85em; color: #666;"><i class="fas fa-eye-slash" aria-hidden="true"></i> private</span>'
+        : '';
+
       item.innerHTML = `
-        <div style="font-weight: 500;">${titleHtml}</div>
+        <div style="font-weight: 500;">${titleHtml}${privateNote}</div>
         <div style="font-size: 0.85em; color: #666;">${suggestion.category}</div>
       `;
 

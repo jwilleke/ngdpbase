@@ -25,7 +25,7 @@ import matter from 'gray-matter';
 import { localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
-import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
+import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
@@ -210,6 +210,28 @@ const REWRITE_BUDGET_MS = 20_000;
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * Autocomplete order for a typed query: exact match, then prefix, then
+ * alphabetical. Declared once so the public titles and the caller's own
+ * `store/Title` entries (#1457) are ranked by the same rule.
+ */
+function suggestionOrder(queryLower: string): (a: string, b: string) => number {
+  return (a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+
+    if (aLower === queryLower) return -1;
+    if (bLower === queryLower) return 1;
+
+    const aPrefix = aLower.startsWith(queryLower);
+    const bPrefix = bLower.startsWith(queryLower);
+    if (aPrefix && !bPrefix) return -1;
+    if (!aPrefix && bPrefix) return 1;
+
+    return aLower.localeCompare(bLower);
+  };
 }
 
 interface WikiConfig {
@@ -15524,6 +15546,62 @@ ${panes}
   }
 
   /**
+   * The caller's own private pages as autocomplete entries (#1457).
+   *
+   * `name` is the link syntax, `store/Title`, because that is what the editor
+   * wraps in brackets on select — the owner of the page being edited is the
+   * caller, so the link resolves in these very stores.
+   *
+   * Only the caller's: `getPagesByCreator` reads this user's stores, and each
+   * entry's name is re-parsed and its owner checked, so no other user's
+   * private title can be returned even if a store index carried one.
+   */
+  private async getOwnPrivateSuggestions(
+    ctx: PermissionSubject | undefined,
+    queryLower: string,
+    limit: number
+  ): Promise<Array<{ name: string; slug: string; title: string; category: string; isPrivate: boolean }>> {
+    const username = ctx?.username;
+    if (!username) return [];
+
+    const pageManager = this.engine.getManager('PageManager') as unknown as {
+      getPagesByCreator?: (
+        u: string,
+        ctx: ActorContext,
+        o?: { onlyPrivate?: boolean }
+      ) => Promise<Array<{ name?: string; isPrivate?: boolean }>>;
+    };
+    if (!pageManager?.getPagesByCreator) return [];
+
+    try {
+      const entries = await pageManager.getPagesByCreator(username, ctx, { onlyPrivate: true });
+      const matches: string[] = [];
+      for (const entry of entries) {
+        const parsed = parsePrivatePageName(entry.name);
+        if (!parsed || parsed.owner !== username) continue;
+        const target = `${parsed.store}/${parsed.title}`;
+        if (!target.toLowerCase().includes(queryLower)) continue;
+        matches.push(target);
+      }
+      return matches
+        .sort(suggestionOrder(queryLower))
+        .slice(0, limit)
+        .map((target) => ({
+          name: target,
+          slug: target,
+          // #1457: shown as it is inserted — two pages of the same title in
+          // different stores are different pages, and the store says which.
+          title: target,
+          category: `private store: ${target.slice(0, target.indexOf('/'))}`,
+          isPrivate: true
+        }));
+    } catch (err) {
+      logger.warn('[WikiRoutes] private page suggestions failed:', getErrorMessage(err));
+      return [];
+    }
+  }
+
+  /**
    * API endpoint for page name autocomplete suggestions
    * GET /api/page-suggestions?q=partial
    *
@@ -15555,29 +15633,13 @@ ${panes}
 
       // Filter page names that match the query (case-insensitive)
       const queryLower = query.toLowerCase();
+      const byQuery = suggestionOrder(queryLower);
       const matchingNames = allPageNames
         .filter((pageName: string) => {
           if (!pageName || typeof pageName !== 'string') return false;
           return pageName.toLowerCase().includes(queryLower);
         })
-        // Sort: exact matches first, then prefix matches, then alphabetical
-        .sort((a: string, b: string) => {
-          const aLower = a.toLowerCase();
-          const bLower = b.toLowerCase();
-
-          // Exact match
-          if (aLower === queryLower) return -1;
-          if (bLower === queryLower) return 1;
-
-          // Prefix match
-          const aPrefix = aLower.startsWith(queryLower);
-          const bPrefix = bLower.startsWith(queryLower);
-          if (aPrefix && !bPrefix) return -1;
-          if (!aPrefix && bPrefix) return 1;
-
-          // Alphabetical
-          return aLower.localeCompare(bLower);
-        })
+        .sort(byQuery)
         .slice(0, limit);
 
       // Load metadata for matching pages (no content needed)
@@ -15589,7 +15651,8 @@ ${panes}
               name: pageName,
               slug: metadata?.slug || pageName,
               title: metadata?.title || pageName,
-              category: metadata?.['system-category'] || metadata?.category || 'general'
+              category: metadata?.['system-category'] || metadata?.category || 'general',
+              isPrivate: false
             };
           } catch {
             // If page load fails, return basic info
@@ -15597,16 +15660,27 @@ ${panes}
               name: pageName,
               slug: pageName,
               title: pageName,
-              category: 'general'
+              category: 'general',
+              isPrivate: false
             };
           }
         })
       );
 
+      // #1457: the requester's OWN private pages, offered as `store/Title` —
+      // the syntax a private link is written in, so what the editor inserts is
+      // a working link. They come from this caller's stores, never a shared
+      // index, so nobody else's private titles can reach this response.
+      const privatePages = await this.getOwnPrivateSuggestions(req.userContext, queryLower, limit);
+
+      const suggestions = [...matchingPages, ...privatePages]
+        .sort((a, b) => byQuery(a.name, b.name))
+        .slice(0, limit);
+
       return res.json({
         query,
-        suggestions: matchingPages,
-        count: matchingPages.length
+        suggestions,
+        count: suggestions.length
       });
     } catch (error: unknown) {
       logger.error('Error getting page suggestions:', error);

@@ -27,6 +27,8 @@ import { LinkParser, Link } from '../../LinkParser.js';
 import logger from '../../../utils/logger.js';
 import PageNameMatcher from '../../../utils/PageNameMatcher.js';
 import { headingSlug } from '../../../utils/SectionUtils.js';
+import { formatPrivatePageName, parsePrivateLinkTarget, parsePrivatePageName } from '../../../utils/privateStorePath.js';
+import { pageUrl } from '../../../utils/pageUrl.js';
 import type WikiDocument from '../WikiDocument.js';
 import type { LinkedomElement } from '../WikiDocument.js';
 
@@ -155,6 +157,37 @@ export interface LinkStatistics {
   linkTypes: LinkTypeStats;
   /** Number of red links (non-existent pages) */
   redLinks: number;
+}
+
+/**
+ * The owner of the page being rendered, as `RenderingManager` resolved it
+ * (#1457). It arrives flat from a direct caller or under `pageContext` from a
+ * `ParseContext` — the same two shapes `pageName` reaches a handler in.
+ */
+function readPageOwner(context: RenderContext): string | null {
+  const pageContext = (context?.pageContext ?? {}) as {
+    pageOwner?: unknown;
+    pageName?: unknown;
+    pageMetadata?: { author?: unknown } | null;
+  };
+  const text = (value: unknown): string | null =>
+    (typeof value === 'string' && value.length > 0 ? value : null);
+
+  // What the render was told, when a caller resolved it (RenderingManager).
+  const told = text(context?.pageOwner) ?? text(pageContext.pageOwner);
+  if (told) return told;
+
+  // Otherwise the page itself says: a private page's name carries its owner
+  // (#1456), and a public page's author owns the store a link means (#1457).
+  // Derived here so every render path has it — the page view renders through
+  // WikiContext.renderMarkdown, which calls the parser directly.
+  const pageName = text(context?.pageName) ?? text(pageContext.pageName);
+  const fromName = pageName ? parsePrivatePageName(pageName)?.owner : undefined;
+  if (fromName) return fromName;
+
+  const metadata = (context as { pageMetadata?: { author?: unknown } | null })?.pageMetadata
+    ?? pageContext.pageMetadata;
+  return text(metadata?.author);
 }
 
 /**
@@ -614,7 +647,7 @@ class DOMLinkHandler {
    * It creates a link node from a pre-extracted element instead of parsing tokens.
    *
    * @param {ExtractedLinkElement} element - Extracted element from extractJSPWikiSyntax()
-   * @param {RenderContext} _context - Rendering context (unused)
+   * @param {RenderContext} context - Rendering context; `pageOwner` selects the store a `[store/Title]` link resolves in (#1457)
    * @param {WikiDocument} wikiDocument - WikiDocument to create node in
    * @returns {Promise<Element>} DOM node for the link
    *
@@ -628,7 +661,7 @@ class DOMLinkHandler {
    * const node = await handler.createNodeFromExtract(element, context, wikiDoc);
    * // Returns: <a class="wiki-link wikipage" href="/view/PageName" data-jspwiki-id="1">Click Here</a>
    */
-  async createNodeFromExtract(element: ExtractedLinkElement, _context: RenderContext, wikiDocument: WikiDocument): Promise<LinkedomElement> {
+  async createNodeFromExtract(element: ExtractedLinkElement, context: RenderContext, wikiDocument: WikiDocument): Promise<LinkedomElement> {
     // Get LinkParser dynamically
     if (!this.linkParser) {
       this.linkParser = new LinkParser();
@@ -675,6 +708,24 @@ class DOMLinkHandler {
       const fragment = rawFragment.startsWith('section=')
         ? headingSlug(rawFragment.slice('section='.length))
         : rawFragment;
+
+      // A private page's link: `[store/Title]` in the store of the page the
+      // link is written in (#1457). It renders IDENTICALLY for every reader —
+      // no existence lookup, no redlink — because rendered HTML is cached and
+      // shared, so a per-reader appearance would say whether a private page
+      // exists. `/private/…` already answers 404 to anyone who may not open it.
+      const owner = readPageOwner(context);
+      const privateTarget = owner ? parsePrivateLinkTarget(pageName) : null;
+      if (owner && privateTarget) {
+        const base = pageUrl(formatPrivatePageName(owner, privateTarget.store, privateTarget.title));
+        node.setAttribute('href', fragment ? `${base}#${fragment}` : base);
+        node.setAttribute('class', 'wiki-link private-link');
+        node.setAttribute('title', `Private page in ${privateTarget.store}`);
+        node.setAttribute('data-link-type', 'internal');
+        node.setAttribute('data-target', pageName);
+        break;
+      }
+
       let matchedPage: string | null;
 
       if (this.pageNameMatcher && this.pageNames.size > 0) {

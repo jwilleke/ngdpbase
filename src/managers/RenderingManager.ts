@@ -21,6 +21,7 @@ import logger from '../utils/logger.js';
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import { LinkParser } from '../parsers/LinkParser.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
+import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import fs from 'fs';
 import path from 'path';
@@ -280,6 +281,34 @@ class RenderingManager extends BaseManager {
   }
 
   /**
+   * Whose stores a `[store/Title]` link on this page resolves in (#1457): the
+   * owner of the page the link is written in.
+   *
+   * A private page carries its owner in its name; a public page's owner is its
+   * author. Resolved once per render and never from the reader — rendered HTML
+   * is cached and shared, so anything reader-shaped here would leak.
+   *
+   * The metadata read happens only when the content actually holds a candidate
+   * link, so an ordinary page costs one regex. The read has no caller behind
+   * it, like the link graph's.
+   */
+  private async resolvePageOwner(content: string, pageName: string): Promise<string | undefined> {
+    const owner = parsePrivatePageName(pageName)?.owner;
+    if (owner) return owner;
+    if (!mayContainPrivateLink(content)) return undefined;
+
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    if (!pageManager) return undefined;
+    try {
+      const metadata = await pageManager.getPageMetadata(pageName, ANONYMOUS_SUBJECT);
+      return typeof metadata?.author === 'string' && metadata.author ? metadata.author : undefined;
+    } catch (error) {
+      logger.warn(`Could not resolve page owner for ${pageName}:`, getErrorMessage(error));
+      return undefined;
+    }
+  }
+
+  /**
    * Render content using the advanced MarkupParser system
    * @param {string} content - Content to render
    * @param {string} pageName - Page name
@@ -303,6 +332,7 @@ class RenderingManager extends BaseManager {
       // Create comprehensive context for MarkupParser
       const parseContext = {
         pageName: pageName,
+        pageOwner: await this.resolvePageOwner(content, pageName),
         userName: userContext?.username || userContext?.userName || 'anonymous',
         userContext: userContext,
         requestInfo: requestInfo,
@@ -983,6 +1013,15 @@ class RenderingManager extends BaseManager {
 
       // Process wiki links with extended pipe syntax [DisplayText|Target|Parameters] and simple links [PageName]
       // Use negative lookahead to avoid matching markdown links [text](url)
+      //
+      // No `/` in either character class, so a private page's `[store/Title]`
+      // link (#1457) is not matched here and stays literal. Deliberate: this
+      // path only runs when `ngdpbase.markup.use-advanced-parser` is false, or
+      // as the fallback when the advanced parser threw. It resolves links
+      // against `getAllPages()` alone and has no page context to say whose
+      // store a link means, so a second implementation of the syntax would be
+      // a second place for the rule to drift. Private links are an
+      // advanced-parser feature.
       return content.replace(/\[([a-zA-Z0-9_\- ]+)(?:\|([a-zA-Z0-9_\- .:?=&]+))?(?:\|([^|\]]+))?\](?!\()/g, (_match: string, displayText: string, target: string | undefined, params: string | undefined) => {
         // Parse parameters if provided
         let linkAttributes = '';

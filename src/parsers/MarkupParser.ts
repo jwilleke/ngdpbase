@@ -2153,7 +2153,10 @@ class MarkupParser extends BaseManager {
 
       const linkElement = { type: 'link' as const, syntax: match[0], target: inner.trim(), id: elemId, position: match.index };
       try {
-        return await this.domLinkHandler.createNodeFromExtract(linkElement, {}, wikiDocument);
+        // #1457: the link handler needs `pageOwner` to resolve `[store/Title]`,
+        // so this path hands it the same context the variable and plugin
+        // handlers above already get.
+        return await this.domLinkHandler.createNodeFromExtract(linkElement, handlerContext, wikiDocument);
       } catch { return text(match[0]); }
     }
 

@@ -14,6 +14,8 @@ import {
   isSafePathSegment,
   isUnderPrivateRoot,
   isValidStoreId,
+  mayContainPrivateLink,
+  parsePrivateLinkTarget,
   pathContainsPrivateRoot,
   privateStoreAttachmentsDir,
   privateStoreFilePath,
@@ -294,5 +296,29 @@ describe('pathContainsPrivateRoot is measured from the pages directory', () => {
     expect(pathContainsPrivateRoot(pages, path.join(pages, 'u.md'))).toBe(false);
     expect(pathContainsPrivateRoot(pages, path.join(pages, 'private', 'jim', 'default', 'u.md'))).toBe(true);
     expect(pathContainsPrivateRoot(pages, path.join(path.sep, 'elsewhere', 'private', 'x.md'))).toBe(false);
+  });
+});
+
+describe('the private link target `[store/Title]` (#1457)', () => {
+  test('a valid store id and a title', () => {
+    expect(parsePrivateLinkTarget('vault/Diary')).toEqual({ store: 'vault', title: 'Diary' });
+    expect(parsePrivateLinkTarget('default/Diary Notes')).toEqual({ store: 'default', title: 'Diary Notes' });
+    expect(parsePrivateLinkTarget('my-store/Diary')).toEqual({ store: 'my-store', title: 'Diary' });
+  });
+
+  test('anything that is not one keeps today\'s meaning', () => {
+    expect(parsePrivateLinkTarget('Diary')).toBeNull();
+    expect(parsePrivateLinkTarget('Docs/Setup')).toBeNull();
+    expect(parsePrivateLinkTarget('/Diary')).toBeNull();
+    expect(parsePrivateLinkTarget('vault/')).toBeNull();
+    // Titles never contain `/` (#1455), so a deeper path is not a page.
+    expect(parsePrivateLinkTarget('vault/sub/Diary')).toBeNull();
+  });
+
+  test('mayContainPrivateLink spends the owner lookup only on a candidate', () => {
+    expect(mayContainPrivateLink('See [vault/Diary].')).toBe(true);
+    expect(mayContainPrivateLink('See [My diary|vault/Diary].')).toBe(true);
+    expect(mayContainPrivateLink('See [Diary] and [Home].')).toBe(false);
+    expect(mayContainPrivateLink('See [Google|https://example.com/a].')).toBe(false);
   });
 });
