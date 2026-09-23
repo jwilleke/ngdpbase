@@ -8161,7 +8161,10 @@ ${panes}
     const pip = this.engine.getManager('PolicyInformationPoint');
     const subject = req.userContext ?? (await pip.currentSubject(req));
     if (!pip.canAccessPrivateContainer(subject, name.owner, `page:${pageName}`, action)) {
-      return this.renderError(req, res, 404, 'Not Found', `The page '${pageName}' does not exist.`);
+      // The same words as a private name that reads as nothing, and no echo of
+      // the path asked for: one answer for a page that is not there and for one
+      // this reader may not open (operator, 2026-09-23).
+      return this.renderError(req, res, 404, 'Not Found', 'The page does not exist.');
     }
     req.params.page = pageName;
     return handler();

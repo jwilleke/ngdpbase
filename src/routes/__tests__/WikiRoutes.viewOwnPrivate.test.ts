@@ -140,3 +140,47 @@ describe('viewPage — the requester\'s own private page (#1457)', () => {
     expect(getPagesByCreator).not.toHaveBeenCalled();
   });
 });
+
+// ───────────────────── the private gate's 404 (#1457) ────────────────────────
+//
+// A refusal and a missing page must be one answer. The message also names no
+// path: what it would echo is the private name the reader asked for, and the
+// page it belongs to may be somebody else's.
+
+describe('the 404 a private page answers with (#1457)', () => {
+  const gate = async (owner: string, reader: { username: string } | undefined) => {
+    const { routes, renderError } = makeRoutes({});
+    const managers = (routes as unknown as { engine: { getManager: (n: string) => unknown } }).engine;
+    const pip = managers.getManager('PolicyInformationPoint') as Record<string, unknown>;
+    pip.canAccessPrivateContainer = vi.fn(() => false);
+    pip.currentSubject = vi.fn(async () => ({ username: 'anonymous' }));
+
+    const req = {
+      params: { owner, store: 'vault', title: 'Diary' },
+      userContext: reader
+    } as unknown as Request;
+    await (routes as unknown as {
+      privatePageRoute: (r: Request, res: Response, a: string, h: () => Promise<unknown>) => Promise<unknown>
+    }).privatePageRoute(req, {} as Response, 'view', async () => 'handled');
+    return renderError.mock.calls[0] as unknown as [Request, Response, number, string, string];
+  };
+
+  test('a reader who may not open it is told only that the page does not exist', async () => {
+    const [, , status, heading, message] = await gate('molly', { username: 'bob' });
+    expect(status).toBe(404);
+    expect(heading).toBe('Not Found');
+    expect(message).toBe('The page does not exist.');
+  });
+
+  test('the answer names no owner, store or title', async () => {
+    const [, , , , message] = await gate('molly', { username: 'bob' });
+    expect(message).not.toMatch(/molly|vault|Diary|private\//);
+  });
+
+  test('an anonymous reader gets the same answer', async () => {
+    const [, , status, , message] = await gate('molly', undefined);
+    expect(status).toBe(404);
+    expect(message).toBe('The page does not exist.');
+  });
+});
+
