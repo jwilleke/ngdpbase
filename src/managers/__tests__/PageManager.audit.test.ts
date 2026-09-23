@@ -191,7 +191,7 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     broken.provider = provider;
 
     await expect(broken.savePage('Still Saves', 'body', { title: 'Still Saves' }, JIM))
-      .resolves.toEqual({ content: 'body', name: 'Still Saves', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
+      .resolves.toEqual({ content: 'body', name: 'Still Saves', uuid: 'uuid-1', previousName: null, previousReferrers: [], normalisedTitleFrom: null });
     await settle();
     expect(provider.savePage).toHaveBeenCalled();
   });

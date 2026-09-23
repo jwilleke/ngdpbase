@@ -53,14 +53,14 @@ describe('PageManager.savePage writes the text as typed (#1332)', () => {
     const md = '* Tests:\n** Skin\n\n{{{\ncode\n}}}\n\n* Other';
     const r = await pm.savePage('P', md, { title: 'P' }, jim);
     expect(provider.savePage).toHaveBeenCalledWith('P', md, expect.anything(), expect.anything());
-    expect(r).toEqual({ content: md, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
+    expect(r).toEqual({ content: md, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [], normalisedTitleFrom: null });
   });
 
   it('leaves a metadata-only save alone', async () => {
     const { pm, provider, jim } = makeSaver();
     const r = await pm.savePage('P', null, { title: 'P' }, jim);
     expect(provider.savePage).toHaveBeenCalledWith('P', null, expect.anything(), expect.anything());
-    expect(r).toEqual({ content: null, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [] });
+    expect(r).toEqual({ content: null, name: 'P', uuid: 'uuid-1', previousName: null, previousReferrers: [], normalisedTitleFrom: null });
   });
 });
 

@@ -359,3 +359,80 @@ describe('PageManager.restoreVersion() — a restore is a save (#1462 slice 3)',
     expect(onDisk.data.editor).toBeUndefined();
   });
 });
+
+// ───────────────────────── the title rule (#1455) ────────────────────────────
+//
+// The rule lived in three copies in WikiRoutes, so import, MCP and ingest —
+// which pass no route — could write a title the editor refuses. It is the
+// door's now: the editor is told, and a funnel normalises and reports.
+
+describe('the title rule at the door (#1455)', () => {
+  const rawDoor = () => makeRawDoor();
+
+  test('a title with a forbidden character is refused, and nothing is written', async () => {
+    const { pm, provider } = rawDoor();
+    await expect(pm.savePage('Docs/Setup', 'body', { title: 'Docs/Setup' }, JIM, { skipValidation: true, skipConflictCheck: true }))
+      .rejects.toThrow(/invalid characters/);
+    expect(provider.savePage).not.toHaveBeenCalled();
+  });
+
+  test('the rule reads a private page\'s title out of its path, not the path itself (#1456)', async () => {
+    const { pm, provider } = rawDoor();
+    await pm.savePage('private/jim/default/Diary', 'body', { title: 'Diary' }, JIM, { skipValidation: true, skipConflictCheck: true });
+    expect(provider.savePage).toHaveBeenCalled();
+  });
+
+  test('a funnel normalises the title, records what the source called it, and says so', async () => {
+    const { pm, provider } = rawDoor();
+    const saved = await pm.savePage('Docs/Setup', 'body', { title: 'Docs/Setup' }, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    });
+
+    expect(saved.normalisedTitleFrom).toBe('Docs/Setup');
+    const [name, , metadata] = provider.savePage.mock.calls[0];
+    expect(name).toBe('Docs-Setup');
+    expect(metadata.title).toBe('Docs-Setup');
+    expect(metadata.alternateName).toBe('Docs/Setup');
+  });
+
+  test('a funnel keeps a private page in its store when its title is normalised', async () => {
+    const { pm, provider } = rawDoor();
+    await pm.savePage('private/jim/default/Diary', 'body', { title: 'Diary?' }, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    });
+    expect((provider.savePage.mock.calls[0] as [string])[0]).toBe('private/jim/default/Diary');
+  });
+
+  test('a name under the private prefix that is not a private page name is refused, never written as a public page', async () => {
+    const { pm, provider } = rawDoor();
+    // Its title would have to contain a `/`, which no title may.
+    await expect(pm.savePage('private/jim/default/Docs/Setup', 'body', {}, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    })).rejects.toThrow(/is not a private page name/);
+    expect(provider.savePage).not.toHaveBeenCalled();
+  });
+
+  test('a funnel still refuses a title that normalises to nothing', async () => {
+    const { pm, provider } = rawDoor();
+    await expect(pm.savePage('///', 'body', { title: '///' }, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    })).rejects.toThrow(/invalid characters/);
+    expect(provider.savePage).not.toHaveBeenCalled();
+  });
+
+  test('a title the caller already aliased keeps the caller\'s alternateName', async () => {
+    const { pm, provider } = rawDoor();
+    await pm.savePage('Docs/Setup', 'body', { title: 'Docs/Setup', alternateName: 'From JSPWiki' }, JIM, {
+      normaliseTitle: true, skipValidation: true, skipConflictCheck: true
+    });
+    expect((provider.savePage.mock.calls[0])[2].alternateName).toBe('From JSPWiki');
+  });
+
+  test('an ordinary save is untouched and reports no normalisation', async () => {
+    const { pm } = rawDoor();
+    const saved = await pm.savePage('Docs Setup', 'body', { title: 'Docs Setup' }, JIM, { skipValidation: true, skipConflictCheck: true });
+    expect(saved.normalisedTitleFrom).toBeNull();
+    expect(saved.name).toBe('Docs Setup');
+  });
+});
+

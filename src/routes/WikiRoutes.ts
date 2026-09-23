@@ -120,6 +120,7 @@ import {
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
+import { titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
@@ -3221,12 +3222,9 @@ ${panes}
         return res.status(400).send('Page name and template are required');
       }
 
-      // Reject page names with characters that break URL routing or YAML parsing
-      const invalidChars = /[/\\#?%"<>|*]/;
-      if (invalidChars.test(pageName)) {
-        return res.status(400).send(
-          'Page name contains invalid characters. The following are not allowed: / \\ # ? % " < > | *'
-        );
+      // #1455: the title rule is the door's, declared once in pageTitleRule.
+      if (titleBreaksRule(pageName)) {
+        return res.status(400).send(TITLE_RULE_MESSAGE);
       }
 
       // Validate system-category against allowed list (case-insensitive)
@@ -3695,14 +3693,10 @@ ${panes}
       logger.debug(`💾 Request body keys: ${Object.keys(req.body).join(', ')}`);
       const { content: _rawContent, title, categories: _categories, userKeywords: _userKeywords } = req.body;
 
-      // Reject titles containing characters that break URL routing or YAML parsing
-      if (title && typeof title === 'string') {
-        const invalidChars = /[/\\#?%"<>|*]/;
-        if (invalidChars.test(title)) {
-          return res.status(400).send(
-            'Page title contains invalid characters. The following are not allowed: / \\ # ? % " < > | *'
-          );
-        }
+      // #1455: the title rule is the door's. Checked here too so the editor
+      // answers 400 with the message rather than a failed save.
+      if (typeof title === 'string' && titleBreaksRule(title)) {
+        return res.status(400).send(TITLE_RULE_MESSAGE);
       }
 
       // Section editing: if a section index was submitted, splice edited section
@@ -4126,6 +4120,11 @@ ${panes}
       // Return 409 for duplicate title/UUID conflicts
       if (errorMessage.includes('is already in use') || errorMessage.includes('is already assigned')) {
         return await fail(409, 'Page Conflict', errorMessage);
+      }
+
+      // #1455: a title the rule refuses is the caller's mistake, not ours.
+      if (errorMessage === TITLE_RULE_MESSAGE) {
+        return await fail(400, 'Invalid Title', errorMessage);
       }
 
       return await fail(500, 'Error Saving Page', `Failed to save page: ${errorMessage}`);
@@ -9063,7 +9062,7 @@ ${panes}
       const body = req.body as {
         pageName?: unknown; markdown?: unknown; category?: unknown; keywords?: unknown;
       };
-      const pageName = typeof body.pageName === 'string' ? body.pageName.trim() : '';
+      let pageName = typeof body.pageName === 'string' ? body.pageName.trim() : '';
       const markdown = typeof body.markdown === 'string' ? body.markdown : '';
       if (!pageName) {
         return res.status(400).json({ success: false, error: 'pageName is required' });
@@ -9072,14 +9071,9 @@ ${panes}
         return res.status(400).json({ success: false, error: 'markdown is required' });
       }
 
-      // Same name validation as createPageFromTemplate — protect URL routing / YAML.
-      const invalidChars = /[/\\#?%"<>|*]/;
-      if (invalidChars.test(pageName)) {
-        return res.status(400).json({
-          success: false,
-          error: 'pageName contains invalid characters: / \\ # ? % " < > | *'
-        });
-      }
+      // #1455: ingest is an NCM funnel path — it converts what an agent or an
+      // import hands over, so a title that breaks the rule is normalised by the
+      // door and reported below, never refused.
 
       // Optional category — validate against the enabled system categories.
       let category: string | undefined;
@@ -9215,7 +9209,17 @@ ${panes}
       ncmWarnings.push(...fn.warnings);
 
       // #1462: the door brings the shared indexes in step.
-      await pageManager.savePage(pageName, finalDoc.content, finalDoc.data, currentUser);
+      // #1455: a title that breaks the rule is normalised here, not refused —
+      // ingest converts what an agent hands over. The door says what it
+      // rewrote, and the response below tells the caller.
+      const written = await pageManager.savePage(pageName, finalDoc.content, finalDoc.data, currentUser, {
+        normaliseTitle: true
+      });
+      if (written.normalisedTitleFrom) {
+        ncmWarnings.push(`Title "${written.normalisedTitleFrom}" contains characters a page title may not have; saved as "${written.name}".`);
+        logger.info(`Ingest: title normalised "${written.normalisedTitleFrom}" → "${written.name}"`);
+      }
+      pageName = written.name;
 
       // The page as saved, for the response.
       const saved = await pageManager.getPage(pageName, req.userContext);

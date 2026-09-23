@@ -28,7 +28,8 @@ import { normalizeExistingPageToNcm, type NcmResult } from '../converters/ncm/in
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
-import { formatPrivatePageName, parsePrivatePageName } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, parsePrivatePageName, PRIVATE_PAGE_NAME_PREFIX } from '../utils/privateStorePath.js';
+import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -74,6 +75,18 @@ export interface PageSaveOptions {
    * exists to repair.
    */
   rawFrontmatter?: boolean;
+  /**
+   * Rewrite a title that breaks the title rule (#1455) instead of refusing
+   * the page: the forbidden characters become `-`, the page records what its
+   * source called it in `alternateName`, and the result says so in
+   * `normalisedTitleFrom` for the caller's report.
+   *
+   * For the NCM funnel — import, MCP, paste, ingest — which converts data
+   * somebody else wrote, where refusing would drop a page from a bulk import
+   * over one character (operator, 2026-09-23). The editor never passes it: a
+   * person typing a title can simply be told.
+   */
+  normaliseTitle?: boolean;
   /**
    * Keep the page's `lastModified` from the metadata passed in. For a write
    * that changes no content a reader cares about — e.g. stamping a shipped
@@ -121,6 +134,13 @@ export interface PageSaveResult {
   previousName: string | null;
   /** Pages that linked to the old name, read before a rename took it out of the link graph (#1094). */
   previousReferrers: string[];
+  /**
+   * What the source called this page, when `normaliseTitle` rewrote a title
+   * that broke the rule (#1455). Null when nothing was rewritten. A funnel
+   * names it in its report — a page whose title changed under the reader's
+   * feet is a fact they are owed.
+   */
+  normalisedTitleFrom: string | null;
 }
 
 /** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
@@ -1690,6 +1710,39 @@ class PageManager extends BaseManager implements CatalogSource {
       );
     }
 
+    // #1455: the title rule, once, for every writer — the editor, the funnel,
+    // an addon, a script. A private page's name is a path (#1456), so the rule
+    // reads the title out of it rather than judging the whole name.
+    const privatePath = parsePrivatePageName(pageName);
+    // A name under the private prefix that does not read as
+    // `private/{owner}/{store}/{title}` says nothing we can act on — its title
+    // would have to contain a `/`, which no title may. Refused rather than
+    // read as a public title, which would write it to the public space.
+    if (!privatePath && pageName.startsWith(PRIVATE_PAGE_NAME_PREFIX)) {
+      throw new Error(`'${pageName}' is not a private page name: ${TITLE_RULE_MESSAGE}`);
+    }
+    const givenTitle = (metadata.title) ?? privatePath?.title ?? pageName;
+    let normalisedTitleFrom: string | null = null;
+    if (givenTitle && titleBreaksRule(givenTitle)) {
+      const normalised = options.normaliseTitle ? normaliseTitle(givenTitle) : '';
+      if (!normalised) throw new Error(TITLE_RULE_MESSAGE);
+      normalisedTitleFrom = givenTitle;
+      metadata = {
+        ...metadata,
+        title: normalised,
+        // schema.org's alias property: what the source called this page.
+        ...((metadata as Record<string, unknown>).alternateName ? {} : { alternateName: givenTitle })
+      };
+      // The name follows the title, unless the caller addressed the page some
+      // other way (a uuid or a slug), which stays the way in.
+      if (privatePath) {
+        pageName = formatPrivatePageName(privatePath.owner, privatePath.store, normalised);
+      } else if (pageName === givenTitle) {
+        pageName = normalised;
+      }
+      logger.info(`[PageManager] Title normalised for '${givenTitle}' → '${normalised}' (#1455)`);
+    }
+
     const existingPage = pageName ? await this.provider.getPage(pageName, ctx) : null;
 
     // #946: the agent this write came through, if any — stamped on the page by
@@ -1776,7 +1829,7 @@ class PageManager extends BaseManager implements CatalogSource {
       );
     }
 
-    return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers };
+    return { content, name: saved.name, uuid: saved.uuid, previousName, previousReferrers, normalisedTitleFrom };
   }
 
   /**

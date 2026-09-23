@@ -47,6 +47,7 @@ import MarkdownConverter from '../converters/MarkdownConverter.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type ValidationManager from './ValidationManager.js';
 import type PageManager from './PageManager.js';
+import type { PageSaveResult } from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
 import logger from '../utils/logger.js';
 
@@ -709,7 +710,7 @@ class ImportManager extends BaseManager {
     // Check for duplicate page by title (metadata only - no content needed).
     // conflictPolicy 'overwrite' (#874) falls through instead of returning:
     // the existing page is updated in place at the write step below.
-    const pageTitle = conversionResult.metadata['title'] as string;
+    let pageTitle = conversionResult.metadata['title'] as string;
     let overwriteExistingUuid: string | undefined;
     try {
       const pageManager = this.engine.getManager<PageManager>('PageManager');
@@ -824,9 +825,11 @@ class ImportManager extends BaseManager {
     const written = !options.dryRun;
     if (written) {
       if (overwriteExistingUuid !== undefined) {
-        await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
+        const saved = await this.overwriteExistingPage(pageTitle, conversionResult.content, conversionResult.metadata, options);
+        pageTitle = this.reportNormalisedTitle(saved, conversionResult, pageTitle);
       } else if (isLivePagesTarget || options.private === true) {
-        await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
+        const saved = await this.createPageThroughPipeline(pageTitle, conversionResult, pageUuid, options);
+        pageTitle = this.reportNormalisedTitle(saved, conversionResult, pageTitle);
       } else {
         await fs.ensureDir(path.dirname(targetPath));
         await fs.writeFile(targetPath, finalContent, 'utf-8');
@@ -872,7 +875,7 @@ class ImportManager extends BaseManager {
     content: string,
     importMetadata: Record<string, unknown>,
     options: ImportOptions
-  ): Promise<void> {
+  ): Promise<PageSaveResult> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot overwrite existing page');
@@ -906,7 +909,28 @@ class ImportManager extends BaseManager {
       if (options.store) merged.store = options.store;
     }
     // #1462: the door indexes the page.
-    await pageManager.savePage(pageTitle, content, merged, options.actorContext);
+    // #1455: an import converts what somebody else wrote, so a title the rule
+    // refuses is normalised and reported, never dropped.
+    return pageManager.savePage(pageTitle, content, merged, options.actorContext, { normaliseTitle: true });
+  }
+
+  /**
+   * A title the save door had to rewrite (#1455) is named in this file's
+   * warnings, so the import report says what the source called the page and
+   * what it is called here. Returns the title the page actually has.
+   */
+  private reportNormalisedTitle(
+    saved: PageSaveResult,
+    conversionResult: ConversionResult,
+    pageTitle: string
+  ): string {
+    if (!saved.normalisedTitleFrom) return pageTitle;
+    conversionResult.warnings.push({
+      kind: 'title-normalised',
+      detail: `"${saved.normalisedTitleFrom}" contains characters a page title may not have; imported as "${saved.name}"`
+    });
+    logger.info(`[ImportManager] Title normalised "${saved.normalisedTitleFrom}" → "${saved.name}"`);
+    return saved.name;
   }
 
   /**
@@ -922,7 +946,7 @@ class ImportManager extends BaseManager {
     conversionResult: ConversionResult,
     pageUuid: string | undefined,
     options: Pick<ImportOptions, 'actorContext' | 'private' | 'store'>
-  ): Promise<void> {
+  ): Promise<PageSaveResult> {
     const pageManager = this.engine.getManager<PageManager>('PageManager');
     if (!pageManager) {
       throw new Error('PageManager unavailable — cannot import page');
@@ -939,8 +963,9 @@ class ImportManager extends BaseManager {
     for (const key of Object.keys(metadata)) {
       if (metadata[key] === undefined) delete metadata[key];
     }
-    // #1462: the door indexes the page.
-    await pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext);
+    // #1462: the door indexes the page. #1455: a title the rule refuses is
+    // normalised and reported (see overwriteExistingPage).
+    return pageManager.savePage(pageTitle, conversionResult.content, metadata, actorContext, { normaliseTitle: true });
   }
 
   /**

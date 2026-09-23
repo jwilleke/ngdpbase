@@ -139,12 +139,30 @@ describe('WikiRoutes.ingestPageMarkdown() — POST /api/page/ingest (#819)', () 
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  test('400 when pageName has invalid characters', async () => {
-    const routes = new WikiRoutes(makeEngine({ getPage: vi.fn() }));
-    installContextSpy(routes);
+  test('a pageName the title rule refuses is normalised and reported, not rejected (#1455)', async () => {
+    // Ingest is an NCM funnel path: it converts what an agent hands over, so a
+    // title with a forbidden character is rewritten and the caller is told —
+    // dropping the page over one character is the worse answer (operator, 2026-09-23).
+    const saved = makeSavedPage({ metadata: { ...makeSavedPage().metadata, title: 'bad-name' } });
+    const pm = {
+      getPage: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(saved),
+      savePage: vi.fn(async (name: string, content: string, metadata?: Record<string, unknown>) =>
+        ({ ...doorSaveResult(name, content, metadata), name: 'bad-name', normalisedTitleFrom: 'bad/name' })),
+      getPageUUID: vi.fn().mockReturnValue('uuid-doc-1')
+    };
+    const routes = new WikiRoutes(makeEngine(pm));
+    installContextSpy(routes, true);
     const res = createRes();
-    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'bad/name', markdown: 'body' }), res);
-    expect(res.status).toHaveBeenCalledWith(400);
+
+    await routes.ingestPageMarkdown(createReq(AUTHED, { pageName: 'bad/name', markdown: '# Body' }), res);
+
+    expect(pm.savePage).toHaveBeenCalledWith(
+      'bad/name', expect.any(String), expect.any(Object), expect.anything(),
+      expect.objectContaining({ normaliseTitle: true })
+    );
+    const body = (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as { success: boolean; ncmWarnings: string[] };
+    expect(body.success).toBe(true);
+    expect(body.ncmWarnings.join(' ')).toContain('saved as "bad-name"');
   });
 
   test('403 when caller lacks permission', async () => {

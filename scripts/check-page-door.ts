@@ -27,6 +27,10 @@
  * 3. __No page file written by a route__ — a route that writes a page's bytes
  *    with `fs`/`fs-extra` is a save with no validation, no audit and no index
  *    work, however small the edit.
+ * 4. __No second copy of a save condition__ — the title character rule is
+ *    declared in `utils/pageTitleRule.ts` and applied at the door (#1455). It
+ *    was written out three times in `WikiRoutes`, which is how the paths that
+ *    pass no route could write a title the editor refuses.
  *
  * A site that is genuinely none of these says so at the line, or in the few
  * lines just above it, with `page-door-ignore: <why>` — the
@@ -54,7 +58,10 @@ const INDEX_WRITE = /\.(addPageToCache|updatePageInLinkGraph|removePageFromLinkG
 /** A route writing page bytes itself — a save with none of the door's work. */
 const FILE_WRITE = /\bfse?\s*\.\s*(writeFile|writeJson|outputFile|move|remove|copy)\s*\(/;
 
-/** The marker that says a line is deliberately none of the three (#1462). */
+/** The title rule, spelled out somewhere other than where it is declared. */
+const TITLE_RULE_COPY = /\[\/\\\\#\?%"<>\|\*\]/;
+
+/** The marker that says a line is deliberately none of these (#1462). */
 const IGNORE = /page-door-ignore/;
 
 /** `file` → why it may write a shared index: it owns that index. */
@@ -66,7 +73,7 @@ const INDEX_ALLOWED: Record<string, string> = {
 interface Violation {
   file: string;
   line: number;
-  rule: 'page-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'stale-allowlist';
+  rule: 'page-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'title-rule-copy' | 'stale-allowlist';
   detail: string;
 }
 
@@ -152,6 +159,12 @@ export function scan(): Violation[] {
             });
           }
         }
+        if (rel !== 'src/utils/pageTitleRule.ts' && TITLE_RULE_COPY.test(line) && !excused(at)) {
+          violations.push({
+            file: rel, line: at, rule: 'title-rule-copy',
+            detail: `a second copy of the title rule (${line.trim()}) — import it from utils/pageTitleRule`
+          });
+        }
         if (rel.startsWith('src/routes/') && FILE_WRITE.test(line) && !excused(at)) {
           violations.push({
             file: rel, line: at, rule: 'page-file-written-by-route',
@@ -179,7 +192,7 @@ function run(): void {
   console.log('=================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('Every page write goes through PageManager, and the shared indexes are written by their owners.');
+    console.log('Every page write goes through PageManager, the shared indexes are written by their owners, and the save conditions are declared once.');
     return;
   }
   for (const v of violations) {

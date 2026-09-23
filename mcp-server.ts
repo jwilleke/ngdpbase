@@ -270,7 +270,7 @@ interface PageManagerType {
   getPageMetadata(identifier: string, ctx: unknown): Promise<PageMetadata>;
   getAllPages(): Promise<string[]>;
   /** #1462: the page door answers where the page landed; this server ignores it. */
-  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown): Promise<unknown>;
+  savePage(pageName: string, content: string, metadata: Record<string, unknown>, ctx: unknown, options?: { normaliseTitle?: boolean }): Promise<{ name: string; normalisedTitleFrom: string | null }>;
   deletePage(identifier: string, ctx: unknown): Promise<boolean>;
   /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
   convertPageToNcm(raw: string): NcmResult;
@@ -1267,10 +1267,10 @@ class NgdpbaseMCPServer {
    * Tool Implementation: Create Page
    */
   private async createPage(args: CreatePageArgs) {
-    const { title, content, category, keywords } = args;
+    const { content, category, keywords } = args;
+    let title = args.title;
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
     const validationManager = this.wikiEngine!.getManager('ValidationManager') as ValidationManagerType;
-    const searchManager = this.wikiEngine!.getManager('SearchManager') as SearchManagerType;
 
     if (pageManager.pageExists(title, this.mcpContext('read page'))) {
       throw new Error(`Page already exists: ${title}`);
@@ -1293,18 +1293,19 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
-    await pageManager.savePage(title, ncmDoc.content, ncmDoc.data, this.mcpContext('create page'));
+    // #1455: MCP is an NCM funnel path — a title the rule refuses is
+    // normalised by the door and reported here, never dropped.
+    // #1462: the door indexes the page; this server does not.
+    const written = await pageManager.savePage(title, ncmDoc.content, ncmDoc.data, this.mcpContext('create page'), {
+      normaliseTitle: true
+    });
+    if (written.normalisedTitleFrom) {
+      ncmWarnings.push(`Title "${written.normalisedTitleFrom}" contains characters a page title may not have; saved as "${written.name}".`);
+    }
+    title = written.name;
     notifyNcmConversion(this.wikiEngine!, 'MCP create_page', title, ncmWarnings);
 
     const savedPage = await pageManager.getPage(title, this.mcpContext('read page'));
-    await searchManager.updatePageInIndex(title, {
-      name: title,
-      title: savedPage.metadata.title,
-      content: savedPage.content,
-      metadata: savedPage.metadata,
-      category: savedPage.metadata['system-category'],
-      userKeywords: savedPage.metadata['user-keywords'] || []
-    });
 
     return {
       content: [
@@ -1332,7 +1333,6 @@ class NgdpbaseMCPServer {
   private async updatePage(args: UpdatePageArgs) {
     const { identifier, content, category, keywords, baseLastModified } = args;
     const pageManager = this.wikiEngine!.getPageManager() as PageManagerType;
-    const searchManager = this.wikiEngine!.getManager('SearchManager') as SearchManagerType;
 
     if (!pageManager.pageExists(identifier, this.mcpContext('read page'))) {
       throw new Error(`Page not found: ${identifier}`);
@@ -1382,18 +1382,11 @@ class NgdpbaseMCPServer {
     const ncmDoc = matter(ncm.content);
     const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
 
+    // #1462: the door indexes the page; this server does not.
     await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data, this.mcpContext('update page'));
     notifyNcmConversion(this.wikiEngine!, 'MCP update_page', pageName, ncmWarnings);
 
     const savedPage = await pageManager.getPage(pageName, this.mcpContext('read page'));
-    await searchManager.updatePageInIndex(pageName, {
-      name: pageName,
-      title: savedPage.metadata.title,
-      content: savedPage.content,
-      metadata: savedPage.metadata,
-      category: savedPage.metadata['system-category'],
-      userKeywords: savedPage.metadata['user-keywords'] || []
-    });
 
     return {
       content: [

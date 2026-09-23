@@ -63,7 +63,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     const d = makeDoor({}, { 'New Page': ['Alpha'] });
     const saved = await d.pm.savePage('New Page', 'see [Beta]', { title: 'New Page', uuid: 'uuid-new' }, d.jim);
 
-    expect(saved).toEqual({ content: 'see [Beta]', name: 'New Page', uuid: 'uuid-new', previousName: null, previousReferrers: [] });
+    expect(saved).toEqual({ content: 'see [Beta]', name: 'New Page', uuid: 'uuid-new', previousName: null, previousReferrers: [], normalisedTitleFrom: null });
     expect(d.rendering.addPageToCache).toHaveBeenCalledWith('New Page');
     expect(d.rendering.updatePageInLinkGraph).toHaveBeenCalledWith('New Page', 'see [Beta]');
     expect(d.search.updatePageInIndex).toHaveBeenCalledWith('New Page', expect.objectContaining({ name: 'New Page', content: 'see [Beta]' }));

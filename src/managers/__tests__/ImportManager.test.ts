@@ -796,7 +796,11 @@ See [OtherPage] for more.`;
     }
 
     beforeEach(() => {
-      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockSavePage = vi.fn(async (name: string) => ({
+        // #1462/#1455: the door says where the page landed, and what it had to
+        // rewrite to get it there.
+        name, uuid: 'uuid-import', previousName: null, previousReferrers: [], normalisedTitleFrom: null
+      }));
       mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
       mockUpdatePageInLinkGraph = vi.fn();
       conflictEngine = {
@@ -989,7 +993,11 @@ See [OtherPage] for more.`;
 
     beforeEach(() => {
       scratchPagesDir = path.join(testDir, 'live-pages');
-      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockSavePage = vi.fn(async (name: string) => ({
+        // #1462/#1455: the door says where the page landed, and what it had to
+        // rewrite to get it there.
+        name, uuid: 'uuid-import', previousName: null, previousReferrers: [], normalisedTitleFrom: null
+      }));
       mockUpdatePageInIndex = vi.fn().mockResolvedValue(undefined);
       mockUpdatePageInLinkGraph = vi.fn();
       pipelineEngine = {
@@ -1134,7 +1142,11 @@ See [OtherPage] for more.`;
     let storeEngine: { getManager: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
-      mockSavePage = vi.fn().mockResolvedValue(undefined);
+      mockSavePage = vi.fn(async (name: string) => ({
+        // #1462/#1455: the door says where the page landed, and what it had to
+        // rewrite to get it there.
+        name, uuid: 'uuid-import', previousName: null, previousReferrers: [], normalisedTitleFrom: null
+      }));
       mockUploadAttachment.mockClear();
       mockUploadAttachment.mockResolvedValue({ identifier: 'store-file-1', url: '/attachments/store-file-1' });
       storeEngine = {
@@ -1188,7 +1200,10 @@ See [OtherPage] for more.`;
         expect.any(String),
         expect.any(String),
         expect.objectContaining({ private: true }),
-        IMPORTER
+        IMPORTER,
+        // #1455: an import converts someone else's data, so a title the rule
+        // refuses is normalised and reported rather than dropping the page.
+        expect.objectContaining({ normaliseTitle: true })
       );
       expect(mockUploadAttachment).not.toHaveBeenCalled();
     });
