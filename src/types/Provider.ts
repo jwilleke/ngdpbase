@@ -276,6 +276,25 @@ export interface PageProvider extends BaseProvider {
   hasStoreSearchIndex?(owner: string, store: string): Promise<boolean>;
 
   /**
+   * A store's own trash (#1459). Optional capability, like the store page and
+   * search indexes above, and reached the same way: the provider owns the
+   * store's bytes and refuses a sealed store it has no key for; the page door
+   * decides who may ask, with the requester's context, before calling.
+   */
+  listStoreDeletedPages?(ctx: ActorContext, owner: string): Promise<StoreDeletedEntry[]>;
+  restoreStorePage?(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<StoreRestoreResult>;
+  purgeStorePage?(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean>;
+  /**
+   * Expire the tombstones past the retention window in every store `ctx` can
+   * open. A background job holds no key, so it reaches the unencrypted stores
+   * only; a sealed store's trash expires in its owner's own session (#1459).
+   *
+   * Returns WHAT it purged, not how many: the provider owns the bytes and the
+   * caller owns the audit record, so the caller needs the entries.
+   */
+  purgeExpiredStoreTrash?(ctx: ActorContext, owner?: string): Promise<StoreDeletedEntry[]>;
+
+  /**
    * Read a page's file exactly as stored — frontmatter and body, unparsed and
    * unsanitised. Optional capability: only providers backed by a filesystem can
    * offer it, so callers must feature-detect rather than assume.
@@ -645,6 +664,36 @@ export interface StoreFileEntry {
  * the user-level sealed catalogue used (#1385), which the store index replaces.
  */
 export type StorePageEntry = UserCatalogPage;
+
+/**
+ * A deleted page in a private store (#1459): its entry in the store's OWN
+ * trash record, `{store}/deleted-index.json`, beside the page index and
+ * written through the same store I/O — so it is sealed exactly when the store
+ * is, and a deleted private page is recorded nowhere else. Never in the global
+ * `page-index.json` and never in `pages/deleted/`.
+ *
+ * It is the live index entry it was, plus who removed it and when: restore
+ * puts that entry straight back, so nothing about the page has to be guessed
+ * or re-derived from the file.
+ */
+export interface StoreDeletedEntry extends StorePageEntry {
+  /** When the page was deleted (ISO 8601) */
+  deletedAt: string;
+  /** Username that deleted it */
+  deletedBy: string;
+}
+
+// Which container and store a tombstone belongs to is `creator` and `store`,
+// the fields the entry already carries — a listing that spans stores fills
+// them from the folder it read the entry out of, rather than adding a second
+// pair of names that could disagree with the first.
+
+/** Why a restore from a store's trash was refused (#1459). */
+export type StoreRestoreFailure = 'not-found' | 'title-conflict' | 'file-missing' | 'error';
+
+export type StoreRestoreResult =
+  | { ok: true; title: string; name: string }
+  | { ok: false; reason: StoreRestoreFailure; detail?: string };
 
 /**
  * A private store as the attachment provider is handed it: whose it is, which

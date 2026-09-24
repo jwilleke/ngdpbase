@@ -14,6 +14,23 @@
           </a>
         </div>
         <div class="card-body">
+          <% if (typeof notice !== 'undefined' && notice) { %>
+            <%# #1459: a restore refused because the title is taken says so, and
+                says which — renaming the page silently would be worse. %>
+            <div class="alert <%= notice === 'restored' || notice === 'purged' ? 'alert-success' : 'alert-warning' %>">
+              <% if (notice === 'restored') { %>
+                The page is back in its store, with its history.
+              <% } else if (notice === 'purged') { %>
+                The page, its history and its trash record are gone for good.
+              <% } else if (notice.indexOf('title-conflict:') === 0) { %>
+                That page cannot come back: the title <strong><%= notice.slice('title-conflict:'.length) %></strong> is in use in that store. Rename the page using it, then restore again.
+              <% } else if (notice === 'file-missing') { %>
+                The deleted page's file is no longer there, so it cannot be restored.
+              <% } else { %>
+                Nothing was changed.
+              <% } %>
+            </div>
+          <% } %>
           <% if (!items || items.length === 0) { %>
             <p class="text-muted"><%= emptyMessage %></p>
           <% } else if (listKind === 'links') { %>
@@ -27,6 +44,60 @@
                 </li>
               <% }); %>
             </ul>
+          <% } else if (listKind === 'trash') { %>
+            <%# #1459: the owner's own deleted private pages. Restore and
+                permanent delete post back as ordinary forms with the session
+                CSRF token — no fetch, so the page works without JS. %>
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th style="width: 15%;">Store</th>
+                    <th style="width: 20%;">Deleted</th>
+                    <th style="width: 12%;">Removed in</th>
+                    <th style="width: 20%;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% items.forEach(function(item) { %>
+                    <tr>
+                      <td><%= item.title %></td>
+                      <td><small class="text-muted"><%= item.store %></small></td>
+                      <td><small class="text-muted"><%= new Date(item.deletedAt).toLocaleString() %></small></td>
+                      <td>
+                        <% if (item.daysLeft === null) { %>
+                          <small class="text-muted">kept</small>
+                        <% } else if (item.daysLeft <= 0) { %>
+                          <span class="badge bg-danger">due</span>
+                        <% } else { %>
+                          <small><%= item.daysLeft %> day<%= item.daysLeft === 1 ? '' : 's' %></small>
+                        <% } %>
+                      </td>
+                      <td>
+                        <form method="post" action="/my/trash/restore" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <input type="hidden" name="store" value="<%= item.store %>">
+                          <input type="hidden" name="uuid" value="<%= item.uuid %>">
+                          <button type="submit" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-undo"></i> Restore
+                          </button>
+                        </form>
+                        <form method="post" action="/my/trash/purge" class="d-inline"
+                              onsubmit="return confirm('Delete this page for good? Its content and history cannot be brought back.');">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                          <input type="hidden" name="store" value="<%= item.store %>">
+                          <input type="hidden" name="uuid" value="<%= item.uuid %>">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-trash"></i> Delete for good
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
           <% } else if (listKind === 'journal') { %>
             <ul class="list-group">
               <% items.forEach(function(item) { %>

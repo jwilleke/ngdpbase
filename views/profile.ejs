@@ -89,6 +89,16 @@
                                                 <%= typeof contributions !== 'undefined' && contributions && contributions['private'] !== undefined ? contributions['private'] : '–' %>
                                             </span>
                                         </li>
+                                        <%# #1459: the owner's own private trash, beside their private pages.
+                                            Never another user's, and an admin sees nothing extra here. %>
+                                        <li class="list-group-item d-flex align-items-center justify-content-between">
+                                            <a href="/my/trash" class="text-decoration-none">
+                                                <i class="fas fa-trash"></i> My Trash
+                                            </a>
+                                            <span class="badge bg-secondary">
+                                                <%= typeof contributions !== 'undefined' && contributions && contributions.trash !== undefined ? contributions.trash : '–' %>
+                                            </span>
+                                        </li>
                                         <li class="list-group-item d-flex align-items-center justify-content-between">
                                             <a href="/my/pages" class="text-decoration-none">
                                                 <i class="fas fa-file-alt"></i> Pages I've Authored

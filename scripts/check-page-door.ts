@@ -16,9 +16,11 @@
  * two shapes it takes:
  *
  * 1. __No page write outside the door__ — `provider.savePage`,
- *    `provider.deletePage` and `provider.restoreDeletedPage` are PageManager's
- *    to call. A caller that reaches past it gets no validation, no audit and
- *    no index work.
+ *    `provider.deletePage`, `provider.restoreDeletedPage` and the private
+ *    store's trash writes (`restoreStorePage`, `purgeStorePage`,
+ *    `purgeExpiredStoreTrash`, #1459) are PageManager's to call. A caller that
+ *    reaches past it gets no validation, no audit and no index work — a
+ *    restore that skips the door leaves the store's search index behind.
  * 2. __No shared-index write outside its owner__ — the link graph, the search
  *    index, attachment mentions and page assets are updated by the manager
  *    that owns them and by the page door, never by a route or another manager
@@ -50,7 +52,7 @@ const DOOR = 'src/managers/PageManager.ts';
 const PROVIDERS = /^src\/providers\//;
 
 /** A write that belongs to the page door. */
-const PROVIDER_WRITE = /\b(?:provider|this\.provider|pageProvider)\s*(?:\??\.)\s*(savePage|deletePage|restoreDeletedPage)\s*\(/;
+const PROVIDER_WRITE = /\b(?:provider|this\.provider|pageProvider)\s*(?:\??\.)\s*(savePage|deletePage|restoreDeletedPage|restoreStorePage|purgeStorePage|purgeExpiredStoreTrash)\s*\(/;
 
 /** A shared index the door keeps in step after a page changes. */
 const INDEX_WRITE = /\.(addPageToCache|updatePageInLinkGraph|removePageFromLinkGraph|updatePageInIndex|removePageFromIndex|syncPageMentions|syncPageAssets)\s*\(/;

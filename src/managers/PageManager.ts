@@ -8,7 +8,7 @@ import { SeededShippedPages, type DeclinedShippedPage } from '../utils/seededShi
 import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
-import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions } from '../types/Provider.js';
+import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions, StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter } from '../types/Page.js';
 import type { PermissionSubject } from './UserManager.js';
 import type {
@@ -30,6 +30,7 @@ import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
   formatPrivatePageName,
+  isValidStoreId,
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
   PRIVATE_PAGE_NAME_PREFIX
@@ -1985,6 +1986,118 @@ class PageManager extends BaseManager implements CatalogSource {
       metadata: restored?.metadata
     });
     return result;
+  }
+
+  // ── The owner's private trash (#1459) ─────────────────────────────────────
+  //
+  // A private page is deleted, restored and purged in its own store, and
+  // these are the doors onto that: the route asks PageManager, never the
+  // provider, so a restore also puts the page back into the store's search
+  // index the way every other page write keeps its indexes in step (#1462).
+  //
+  // The container rule is the page gate's: `mayActInPrivateContainer`. No role
+  // reaches in — an admin looking at their own trash sees their own items and
+  // nobody else's, and `/admin/deleted-pages` never sees any of this, because
+  // a private tombstone is in its store and not in the global index at all.
+
+  /**
+   * The requester's own deleted private pages, newest first (#1459).
+   *
+   * Only their own container, and only the stores this context can open: a
+   * sealed store that is still locked contributes nothing.
+   *
+   * @param ctx - Who is asking (#1179) — never rebuilt, never defaulted
+   */
+  async listOwnDeletedPrivatePages(ctx: ActorContext): Promise<StoreDeletedEntry[]> {
+    if (!ctx) throw new Error('PageManager.listOwnDeletedPrivatePages requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !this.provider?.listStoreDeletedPages) return [];
+    if (!mayActInPrivateContainer(ctx, owner)) return [];
+    return this.provider.listStoreDeletedPages(ctx, owner);
+  }
+
+  /**
+   * Bring one of the requester's private pages back from its store's trash
+   * (#1459).
+   *
+   * The provider moves the file back and restores the store's page-index
+   * entry; the store's search index is rebuilt for that page here, through the
+   * same reconciliation every save and restore runs, so no index is left
+   * behind. The page's version history never moved, so it is simply there again.
+   *
+   * @param ctx - Who is restoring (#1179)
+   * @param store - Which of the requester's stores
+   * @param uuid - The trashed page's uuid
+   */
+  async restoreOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<StoreRestoreResult> {
+    if (!ctx) throw new Error('PageManager.restoreOwnPrivatePage requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !this.provider?.restoreStorePage) return { ok: false, reason: 'not-found' };
+    if (!mayActInPrivateContainer(ctx, owner) || !isValidStoreId(store)) return { ok: false, reason: 'not-found' };
+
+    const result = await this.provider.restoreStorePage(ctx, owner, store, uuid);
+    if (!result.ok) return result;
+
+    const restored = await this.provider.getPage(result.name, ctx).catch(() => null);
+    await this.reconcileSharedIndexes({
+      ctx,
+      name: result.name,
+      uuid,
+      // It is back where it was, under the name it had: nothing to take out.
+      previousName: null,
+      content: restored?.content,
+      metadata: restored?.metadata
+    });
+    return result;
+  }
+
+  /**
+   * Destroy one of the requester's trashed private pages for good (#1459):
+   * the file, its version history in the store, and the tombstone.
+   *
+   * @param ctx - Who is purging (#1179)
+   * @param store - Which of the requester's stores
+   * @param uuid - The trashed page's uuid
+   */
+  async purgeOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<boolean> {
+    if (!ctx) throw new Error('PageManager.purgeOwnPrivatePage requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !this.provider?.purgeStorePage) return false;
+    if (!mayActInPrivateContainer(ctx, owner) || !isValidStoreId(store)) return false;
+    return this.provider.purgeStorePage(ctx, owner, store, uuid);
+  }
+
+  /**
+   * Expire the requester's own private tombstones past the retention window
+   * (#1459), in their session.
+   *
+   * THE SPLIT, stated where it happens: the boot and hourly retention passes
+   * run under a job context, which holds no store key, so they reach the
+   * unencrypted stores only. A SEALED store can be opened by nobody but its
+   * owner, so its trash is expired here, right after an unlock — the same
+   * division as #1457's link migration and #1458's search-index build, and for
+   * the same reason.
+   *
+   * Best-effort: a failure is logged and never blocks the unlock.
+   *
+   * @param ctx - The owner's context, holding the unlocked store keys
+   */
+  async purgeExpiredOwnPrivateTrash(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.purgeExpiredOwnPrivateTrash requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !this.provider?.purgeExpiredStoreTrash) return 0;
+    if (!mayActInPrivateContainer(ctx, owner)) return 0;
+    try {
+      const purged = await this.provider.purgeExpiredStoreTrash(ctx, owner);
+      // #1461: the pages are counted, never named.
+      if (purged.length > 0) {
+        logger.info(`[PageManager] Expired ${purged.length} private tombstone(s) of ${owner} at unlock (#1459)`);
+      }
+      return purged.length;
+    } catch (err) {
+      logger.warn(`[PageManager] Private trash retention did not run for ${owner}: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    }
   }
 
   /**

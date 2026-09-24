@@ -9,7 +9,7 @@ import {
   parsePrivatePageName,
   parsePrivatePageRel,
   privatePageFilePath,
-  privateUserCatalogPath,
+  privateUserIndexPath,
   privateUserDir,
   type PrivatePageName
 } from '../utils/privateStorePath.js';
@@ -974,21 +974,42 @@ class FileSystemProvider extends BasePageProvider {
    */
   async listPrivateStorePages(ctx: ActorContext, owner?: string): Promise<PrivateStorePageRef[]> {
     if (!this.pagesDirectory) return [];
-    let owners: string[];
-    if (owner) {
-      owners = [owner];
-    } else {
-      const root = path.join(this.pagesDirectory, this.privateStoreLayout.privateRoot);
-      if (!(await fs.pathExists(root))) return [];
-      owners = (await fs.readdir(root, { withFileTypes: true }))
-        .filter((d) => d.isDirectory() && isSafePathSegment(d.name))
-        .map((d) => d.name);
-    }
     const out: PrivateStorePageRef[] = [];
-    for (const who of owners) {
+    for (const who of owner ? [owner] : await this.privateOwners()) {
       for (const pages of (await this.readablePrivateStores(who, ctx)).values()) out.push(...pages);
     }
     return out;
+  }
+
+  /**
+   * Every user with a private container, by folder name — the walk a
+   * container-wide job starts from (#1457, #1459). Whether any of their stores
+   * can be OPENED is a separate question the caller's context answers.
+   */
+  protected async privateOwners(): Promise<string[]> {
+    if (!this.pagesDirectory) return [];
+    const root = path.join(this.pagesDirectory, this.privateStoreLayout.privateRoot);
+    if (!(await fs.pathExists(root))) return [];
+    return (await fs.readdir(root, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && isSafePathSegment(d.name))
+      .map((d) => d.name);
+  }
+
+  /**
+   * The store ids in one owner's container (#1459), readable or not.
+   *
+   * Unlike {@link readableStoresOf}, this does not open anything: a store with
+   * no page in its index still has a trash, and a store this caller holds no
+   * key for must still be VISITED so the caller can decide to skip it rather
+   * than never see it.
+   */
+  protected async storeIdsOf(owner: string): Promise<string[]> {
+    if (!this.pagesDirectory) return [];
+    const dir = privateUserDir(this.pagesDirectory, owner, this.privateStoreLayout);
+    if (!(await fs.pathExists(dir))) return [];
+    return (await fs.readdir(dir, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && isValidStoreId(d.name))
+      .map((d) => d.name);
   }
 
   /**
@@ -1152,7 +1173,7 @@ class FileSystemProvider extends BasePageProvider {
       moved++;
     }
     if (left === 0) {
-      await fs.remove(privateUserCatalogPath(this.pagesDirectory, owner, 'index', this.privateStoreLayout));
+      await fs.remove(privateUserIndexPath(this.pagesDirectory, owner, this.privateStoreLayout));
     }
     if (moved) logger.info(`[FileSystemProvider] Moved ${moved} sealed page(s) into their stores' own indexes (#1456)`);
     return moved;

@@ -23,17 +23,25 @@ Predecessor: [plan-private-folder.md](./plan-private-folder.md) (shipped the `pr
 pages/private/{user}/user-keys.json        # wrapped user KEK (password + recovery)
 pages/private/{user}/{store}/              # one store — fully self-contained
 pages/private/{user}/{store}/store.json    # kind, encrypt, created; wrapped DEK if encrypt on
-pages/private/{user}/{store}/…             # the store's own indexes: pages, files, versions, trash
-                                           #   (sealed with the store DEK when encrypt is on)
+pages/private/{user}/{store}/pages-index.json    # its pages (#1456)
+pages/private/{user}/{store}/files-index.json    # its files (#1400)
+pages/private/{user}/{store}/search-index.json   # its saved search index (#1458)
+pages/private/{user}/{store}/deleted-index.json  # its trash (#1459)
+pages/private/{user}/{store}/migrations.json     # the one-time migrations it has had (#1457)
+                                           #   every one of these sealed with the store DEK when encrypt is on
 pages/private/{user}/{store}/{uuid}.md     # live pages
 pages/private/{user}/{store}/versions/     # page version blobs
 pages/private/{user}/{store}/deleted/      # trash blobs
 pages/private/{user}/{store}/attachments/  # every non-page file: {uuid}.ext
 ```
 
-The user-level catalogs (`user-index.json`, `user-versions.json`, `user-trash.json`) that shipped with [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) are superseded by per-store indexes — see "Stores are self-contained" below. Index file names are settled in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (files) and [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) (pages, versions, trash, search).
+The user-level catalogs that shipped with [#1385](https://github.com/jwilleke/ngdpbase/issues/1385) are superseded by per-store indexes — see "Stores are self-contained" below. Index file names are settled in [#1400](https://github.com/jwilleke/ngdpbase/issues/1400) (files) and [#1454](https://github.com/jwilleke/ngdpbase/issues/1454) (pages, versions, trash, search). `user-versions.json` and `user-trash.json` were written and never read, and [#1459](https://github.com/jwilleke/ngdpbase/issues/1459) removed them with their config keys; `user-index.json` remains only as the migration source `adoptUserPageCatalog` empties at the owner's first unlock.
 
-This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). Folder names and catalog filenames are `ngdpbase.page.provider.filesystem.*` keys in [app-default-config.json](../../config/app-default-config.json). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
+A store's indexes are now `pages-index.json`, `files-index.json`, `search-index.json`, `deleted-index.json` and `migrations.json`, all read and written through the store's own I/O — so an encrypted store's trash record is ciphertext at rest exactly as its pages are.
+
+This tree sits under the existing pages `storagedir` (`${SLOW_STORAGE}/pages` in shipped config). There is no second `${SLOW_STORAGE}/private` root and private page blobs do not live on `FAST_STORAGE`.
+
+Every one of those file names is __defined in code__, in `DEFAULT_PRIVATE_STORE_LAYOUT` ([src/utils/privateStorePath.ts](../../src/utils/privateStorePath.ts)) — they are a disk convention this code owns, not a setting anyone tunes, so the newer ones are deliberately not repeated in [app-default-config.json](../../config/app-default-config.json). An instance that must override one may still set the matching `ngdpbase.page.provider.filesystem.private.files.*` key; the default it overrides lives in that one list. The folder names (`privateroot`, `versionsdir`, `deleteddir`, `attachmentsdir`) are config keys as before.
 
 - Today's private pages migrate to store id `default`.
 - Named stores use the __addon slug__ (`yourphr` → `private/{user}/yourphr/`). `default` is core, not an addon.

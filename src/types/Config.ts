@@ -217,12 +217,6 @@ export interface WikiConfig {
   /** Encrypted user page catalog filename */
   'ngdpbase.page.provider.filesystem.private.files.userindex': string;
 
-  /** Encrypted user version catalog filename */
-  'ngdpbase.page.provider.filesystem.private.files.userversions': string;
-
-  /** Encrypted user trash catalog filename */
-  'ngdpbase.page.provider.filesystem.private.files.usertrash': string;
-
   /** Per-store metadata filename (encrypt flag / wrapped DEK) */
   'ngdpbase.page.provider.filesystem.private.files.storemeta': string;
 

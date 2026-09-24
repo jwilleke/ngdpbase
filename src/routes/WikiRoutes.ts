@@ -52,6 +52,7 @@ import {
   parsePageParam
 } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
+import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
@@ -384,6 +385,12 @@ interface IPageManager {
   migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
   /** At unlock (#1458): a sealed store with no saved search index gets one. */
   buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
+  /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
+  listOwnDeletedPrivatePages(ctx: ActorContext): Promise<StoreDeletedEntry[]>;
+  restoreOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<StoreRestoreResult>;
+  purgeOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<boolean>;
+  /** At unlock (#1459): a sealed store's expired tombstones go, where the key is. */
+  purgeExpiredOwnPrivateTrash(ctx: ActorContext): Promise<number>;
   getCurrentPageProvider(): IVersioningProvider | null;
   getPageUUID?(identifier: string, ctx: ActorContext): string | null;
   /** Direct provider reference — prefer getCurrentPageProvider() for new code */
@@ -7761,6 +7768,7 @@ ${panes}
     edits: number | undefined;
     shared: number | undefined;
     captures: number | undefined;
+    trash: number | undefined;
   }> {
     const counts: {
       pages: number | undefined;
@@ -7770,7 +7778,8 @@ ${panes}
       edits: number | undefined;
       shared: number | undefined;
       captures: number | undefined;
-    } = { pages: undefined, private: undefined, journal: undefined, links: undefined, edits: undefined, shared: undefined, captures: undefined };
+      trash: number | undefined;
+    } = { pages: undefined, private: undefined, journal: undefined, links: undefined, edits: undefined, shared: undefined, captures: undefined, trash: undefined };
 
     try {
       const pageManager = this.engine.getManager('PageManager') as unknown as {
@@ -7802,6 +7811,14 @@ ${panes}
       }
     } catch (err) {
       logger.warn('[/profile] getMyContributionsCounts: pages count failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+
+    try {
+      // #1459: the requester's own deleted private pages. A store this session
+      // cannot open contributes nothing, so a locked store simply counts zero.
+      counts.trash = (await this.engine.getManager('PageManager').listOwnDeletedPrivatePages(ctx)).length;
+    } catch (err) {
+      logger.warn('[/profile] getMyContributionsCounts: trash count failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     try {
@@ -8139,6 +8156,9 @@ ${panes}
    * - #1458: a sealed store with no saved search index yet gets one, built
    *   from its pages and sealed with its own key. A store that has one is
    *   skipped, so this costs nothing at every later unlock.
+   * - #1459: the sealed stores' trash is expired here. The boot and hourly
+   *   retention passes hold no key and reach the unencrypted stores only, so
+   *   this is the one moment a sealed store's tombstones can be read at all.
    */
   private async adoptSealedPages(username: string, handle: string): Promise<void> {
     const pip = this.engine.getManager('PolicyInformationPoint');
@@ -8149,6 +8169,7 @@ ${panes}
     await pageManager.adoptUserPageCatalog(ctx);
     await pageManager.migratePrivateLinks(ctx, username);
     await pageManager.buildMissingStoreSearchIndexes(ctx, username);
+    await pageManager.purgeExpiredOwnPrivateTrash(ctx);
   }
 
   /**
@@ -8305,6 +8326,126 @@ ${panes}
     } catch (err) {
       logger.error('Error rendering My Contributions list:', err);
       res.status(500).send('Error loading list');
+    }
+  }
+
+  // ── The owner's private trash (#1459) ─────────────────────────────────────
+  //
+  // Its own surface beside /my/private and /my/edits (operator, 2026-09-23),
+  // NOT a second meaning for /admin/trash: the same screen showing different
+  // things depending on who opened it was rejected. /admin/deleted-pages stays
+  // public pages only, and it cannot show a private tombstone even by mistake
+  // — a private tombstone lives in its store's own `deleted-index.json` and
+  // never enters `page-index.json`, which is the only thing that page reads.
+  //
+  // A private page in the trash is still only its owner's, so there is nothing
+  // extra for an admin here: every one of these three asks PageManager for the
+  // REQUESTER's own container, and PageManager applies the page gate's own
+  // container rule. No username is ever taken from the request.
+
+  /**
+   * GET /my/trash — the requester's own deleted private pages, newest first.
+   *
+   * A sealed store that is still locked shows nothing: its trash cannot be
+   * opened without the key, and "nothing yet" is the honest answer to give
+   * before an unlock.
+   */
+  async myTrashPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through silently.
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const pageManager = this.engine.getManager('PageManager');
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const retentionDays = Number(configManager?.getProperty('ngdpbase.page.delete.retentiondays', 30) ?? 30);
+      const now = Date.now();
+
+      const items = (await pageManager.listOwnDeletedPrivatePages(currentUser)).map((entry) => {
+        // Retention 0 means keep forever: no purge date to show, and showing
+        // one would be a promise the site does not keep (same rule as /admin/trash).
+        const purgeAt = retentionDays > 0
+          ? new Date(new Date(entry.deletedAt).getTime() + retentionDays * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+        return {
+          title: entry.title,
+          uuid: entry.uuid,
+          store: entry.store,
+          deletedAt: entry.deletedAt,
+          deletedBy: entry.deletedBy,
+          purgeAt,
+          daysLeft: purgeAt ? Math.ceil((new Date(purgeAt).getTime() - now) / (24 * 60 * 60 * 1000)) : null
+        };
+      });
+
+      const commonData = await this.getCommonTemplateData(req);
+      const paged = this.pageOfList(items, req, 25, 'Trash pagination');
+      return res.render('my-list', {
+        ...commonData,
+        title: 'My Trash',
+        icon: 'fa-trash',
+        items: paged.items,
+        totalItems: paged.totalItems,
+        paginationHtml: paged.paginationHtml,
+        listKind: 'trash',
+        retentionDays,
+        notice: typeof req.query.notice === 'string' ? req.query.notice : '',
+        csrfToken: req.session?.csrfToken || '',
+        emptyMessage: 'Nothing of yours is in the trash.'
+      });
+    } catch (err) {
+      logger.error('Error rendering My Trash:', err);
+      return res.status(500).send('Error loading list');
+    }
+  }
+
+  /** POST /my/trash/restore — put one of the requester's own pages back (#1459). */
+  async myTrashRestore(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const store = typeof req.body?.store === 'string' ? req.body.store : '';
+      const uuid = typeof req.body?.uuid === 'string' ? req.body.uuid : '';
+      const result = await this.engine.getManager('PageManager').restoreOwnPrivatePage(currentUser, store, uuid);
+      if (result.ok) {
+        // #1461: the page is logged by uuid; its title is the owner's alone.
+        logger.info(`[WikiRoutes] ${currentUser.username} restored their private page ${uuid} (#1459)`);
+        return res.redirect('/my/trash?notice=restored');
+      }
+      // A title now taken is the owner's to resolve — say which, do not rename.
+      const notice = result.reason === 'title-conflict'
+        ? `title-conflict:${result.detail ?? ''}`
+        : result.reason;
+      return res.redirect(`/my/trash?notice=${encodeURIComponent(notice)}`);
+    } catch (err) {
+      logger.error('[my-trash] restore failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The page could not be restored. Nothing was changed.');
+    }
+  }
+
+  /** POST /my/trash/purge — destroy one of the requester's own trashed pages (#1459). */
+  async myTrashPurge(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const store = typeof req.body?.store === 'string' ? req.body.store : '';
+      const uuid = typeof req.body?.uuid === 'string' ? req.body.uuid : '';
+      const purged = await this.engine.getManager('PageManager').purgeOwnPrivatePage(currentUser, store, uuid);
+      if (purged) {
+        logger.warn(`[WikiRoutes] ${currentUser.username} PERMANENTLY purged their private page ${uuid} (#1459)`);
+      }
+      return res.redirect(`/my/trash?notice=${purged ? 'purged' : 'not-found'}`);
+    } catch (err) {
+      logger.error('[my-trash] purge failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'The page could not be deleted. Nothing was changed.');
     }
   }
 
@@ -14331,6 +14472,11 @@ ${panes}
     app.get('/my/captures', (req: Request, res: Response) => this.myCapturesPage(req, res));
     // #640 Phase 2
     app.get('/my/edits', (req: Request, res: Response) => this.myEditsPage(req, res));
+    // #1459 — the owner's own private trash. Never another user's, and an
+    // admin sees nothing extra; /admin/trash stays public pages only.
+    app.get('/my/trash', (req: Request, res: Response) => this.myTrashPage(req, res));
+    app.post('/my/trash/restore', (req: Request, res: Response) => this.myTrashRestore(req, res));
+    app.post('/my/trash/purge', (req: Request, res: Response) => this.myTrashPurge(req, res));
     app.get('/my/shared', (req: Request, res: Response) => this.mySharedPage(req, res));
     app.post('/preferences', (req: Request, res: Response) => this.updatePreferences(req, res));
     // #819 — agent/markdown → NCM page ingest (upsert). Auth via Authentik

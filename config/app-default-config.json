@@ -95,8 +95,6 @@
   "ngdpbase.page.provider.filesystem.attachmentsdir": "attachments",
   "ngdpbase.page.provider.filesystem.private.files.userkeys": "user-keys.json",
   "ngdpbase.page.provider.filesystem.private.files.userindex": "user-index.json",
-  "ngdpbase.page.provider.filesystem.private.files.userversions": "user-versions.json",
-  "ngdpbase.page.provider.filesystem.private.files.usertrash": "user-trash.json",
   "ngdpbase.page.provider.filesystem.private.files.storemeta": "store.json",
   "_comment_stores_default": "Private stores (#1414): the store KIND definitions. A kind is instance-wide; a user's directory under it is that user's security container. encrypt is the kind OWNER's call — admin for 'default', the addon for its own — and is never overruled per user or per instance. 'admin' is a reserved owner slug no addon may claim. Changing a kind governs stores created afterwards; converting existing ones is a whole-store migration, not a config edit. Addon kinds are written here at first load from the addon's package.json ngdpbase.stores.",
   "ngdpbase.stores.default.encrypt": false,

@@ -7,7 +7,37 @@
  * User catalogs (`user-index.json` and siblings) live in that same user dir.
  *
  * Helpers take an optional layout override so unit tests need no live engine.
- * Defaults match `config/app-default-config.json`.
+ *
+ * ## What a store holds, and where these names are set
+ *
+ * A store is self-contained: everything about its pages is inside it, so a
+ * takeout is "copy this directory" and nothing of it sits in a shared index.
+ *
+ * ```
+ * private/{user}/user-keys.json        the user's wrapped keys (#1414)
+ * private/{user}/user-index.json       legacy: read once at unlock, then removed (#1385, #1456)
+ * private/{user}/{store}/store.json    this store: its kind, encrypt, wrapped DEK (#1414)
+ * private/{user}/{store}/pages-index.json    its pages (#1456)
+ * private/{user}/{store}/files-index.json    its files (#1400)
+ * private/{user}/{store}/search-index.json   its saved search index (#1458)
+ * private/{user}/{store}/deleted-index.json  its trash (#1459)
+ * private/{user}/{store}/migrations.json     the one-time migrations it has had (#1457)
+ * private/{user}/{store}/{uuid}.md           a page
+ * private/{user}/{store}/versions/{uuid}/    that page's history
+ * private/{user}/{store}/deleted/{uuid}.md   a deleted page, until it is purged
+ * private/{user}/{store}/attachments/        its files (#1400)
+ * ```
+ *
+ * Every one of those names is DEFINED HERE, in
+ * {@link DEFAULT_PRIVATE_STORE_LAYOUT} — not in `config/app-default-config.json`.
+ * They are a disk convention this code owns, not a setting anyone tunes. An
+ * instance that must override one may still set the matching
+ * `ngdpbase.page.provider.filesystem.private.files.*` key (see
+ * {@link privateStoreLayoutFromConfig}); the default it overrides lives here.
+ *
+ * Every file but `store.json` is written through the store's `StoreFileIO`, so
+ * it is ciphertext at rest exactly when the store is encrypted. `store.json` is
+ * the one that cannot be: it holds the wrapped key needed to open the rest.
  */
 
 import path from 'path';
@@ -15,8 +45,6 @@ import path from 'path';
 export type PrivateStoreLayoutFiles = {
   userkeys: string;
   userindex: string;
-  userversions: string;
-  usertrash: string;
   storemeta: string;
   /** A store's own file index, beside `store.json` (#1400). */
   storefiles: string;
@@ -26,6 +54,8 @@ export type PrivateStoreLayoutFiles = {
   storesearch: string;
   /** Which one-time migrations this store has had, beside its indexes (#1457). */
   storemigrations: string;
+  /** A store's own trash record, beside its page index (#1459). */
+  storedeleted: string;
 };
 
 export type PrivateStoreLayout = {
@@ -51,13 +81,12 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
   files: {
     userkeys: 'user-keys.json',
     userindex: 'user-index.json',
-    userversions: 'user-versions.json',
-    usertrash: 'user-trash.json',
     storemeta: 'store.json',
     storefiles: 'files-index.json',
     storepages: 'pages-index.json',
     storesearch: 'search-index.json',
-    storemigrations: 'migrations.json'
+    storemigrations: 'migrations.json',
+    storedeleted: 'deleted-index.json'
   }
 };
 
@@ -81,10 +110,10 @@ export function resolvePrivateStoreLayout(
   };
 }
 
-/** The four user-level catalog filenames from layout (not a second hardcoded list). */
+/** The user-level catalog filenames from layout (not a second hardcoded list). */
 export function privateUserCatalogFiles(layout?: PrivateStoreLayoutOverrides): Set<string> {
   const files = resolvePrivateStoreLayout(layout).files;
-  return new Set([files.userkeys, files.userindex, files.userversions, files.usertrash]);
+  return new Set([files.userkeys, files.userindex]);
 }
 
 export const PRIVATE_USER_CATALOG_FILES = privateUserCatalogFiles();
@@ -106,11 +135,6 @@ export function privateStoreLayoutFromConfig(
     files: {
       userkeys: str('ngdpbase.page.provider.filesystem.private.files.userkeys', d.files.userkeys),
       userindex: str('ngdpbase.page.provider.filesystem.private.files.userindex', d.files.userindex),
-      userversions: str(
-        'ngdpbase.page.provider.filesystem.private.files.userversions',
-        d.files.userversions
-      ),
-      usertrash: str('ngdpbase.page.provider.filesystem.private.files.usertrash', d.files.usertrash),
       storemeta: str('ngdpbase.page.provider.filesystem.private.files.storemeta', d.files.storemeta),
       storefiles: str('ngdpbase.page.provider.filesystem.private.files.storefiles', d.files.storefiles),
       storepages: str('ngdpbase.page.provider.filesystem.private.files.storepages', d.files.storepages),
@@ -118,6 +142,10 @@ export function privateStoreLayoutFromConfig(
       storemigrations: str(
         'ngdpbase.page.provider.filesystem.private.files.storemigrations',
         d.files.storemigrations
+      ),
+      storedeleted: str(
+        'ngdpbase.page.provider.filesystem.private.files.storedeleted',
+        d.files.storedeleted
       )
     }
   };
@@ -268,37 +296,6 @@ export function privateUserIndexPath(
   return path.join(privateUserDir(pagesDirectory, username, L), L.files.userindex);
 }
 
-export function privateUserVersionsPath(
-  pagesDirectory: string,
-  username: string,
-  layout?: PrivateStoreLayoutOverrides
-): string {
-  const L = resolvePrivateStoreLayout(layout);
-  return path.join(privateUserDir(pagesDirectory, username, L), L.files.userversions);
-}
-
-export function privateUserTrashPath(
-  pagesDirectory: string,
-  username: string,
-  layout?: PrivateStoreLayoutOverrides
-): string {
-  const L = resolvePrivateStoreLayout(layout);
-  return path.join(privateUserDir(pagesDirectory, username, L), L.files.usertrash);
-}
-
-export type UserCatalogKind = 'index' | 'versions' | 'trash';
-
-export function privateUserCatalogPath(
-  pagesDirectory: string,
-  username: string,
-  kind: UserCatalogKind,
-  layout?: PrivateStoreLayoutOverrides
-): string {
-  if (kind === 'versions') return privateUserVersionsPath(pagesDirectory, username, layout);
-  if (kind === 'trash') return privateUserTrashPath(pagesDirectory, username, layout);
-  return privateUserIndexPath(pagesDirectory, username, layout);
-}
-
 export function privateStoreRoot(
   pagesDirectory: string,
   creator: string,
@@ -391,6 +388,23 @@ export function storeSearchIndexPath(
 ): string {
   const L = resolvePrivateStoreLayout(layout);
   return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storesearch);
+}
+
+/**
+ * A store's own trash record: `{privateroot}/{user}/{store}/{storedeleted}` (#1459).
+ *
+ * Beside the store's other indexes, so it is sealed exactly when the store is
+ * and travels with it — a deleted private page leaves no trace outside its own
+ * store, not in the global trash and not in `page-index.json`.
+ */
+export function storeDeletedIndexPath(
+  pagesDirectory: string,
+  creator: string,
+  store?: string,
+  layout?: PrivateStoreLayoutOverrides
+): string {
+  const L = resolvePrivateStoreLayout(layout);
+  return path.join(privateStoreRoot(pagesDirectory, creator, store, L), L.files.storedeleted);
 }
 
 /** A store's record of the one-time migrations it has had (#1457). */

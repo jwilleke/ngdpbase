@@ -40,6 +40,7 @@ describe('private store unlock door (#1448)', () => {
   let adoptUserPageCatalog: ReturnType<typeof vi.fn>;
   let migratePrivateLinks: ReturnType<typeof vi.fn>;
   let buildMissingStoreSearchIndexes: ReturnType<typeof vi.fn>;
+  let purgeExpiredOwnPrivateTrash: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -74,6 +75,7 @@ describe('private store unlock door (#1448)', () => {
     adoptUserPageCatalog = vi.fn(async () => 0);
     migratePrivateLinks = vi.fn(async () => 0);
     buildMissingStoreSearchIndexes = vi.fn(async () => 0);
+    purgeExpiredOwnPrivateTrash = vi.fn(async () => 0);
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -86,7 +88,12 @@ describe('private store unlock door (#1448)', () => {
       PolicyInformationPoint: {
         subjectFor: vi.fn(async (username: string) => ({ username, roles: ['Authenticated'], isAuthenticated: true }))
       },
-      PageManager: { adoptUserPageCatalog, migratePrivateLinks, buildMissingStoreSearchIndexes }
+      PageManager: {
+        adoptUserPageCatalog,
+        migratePrivateLinks,
+        buildMissingStoreSearchIndexes,
+        purgeExpiredOwnPrivateTrash
+      }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);

@@ -41,6 +41,7 @@ interface PageManagerLike {
   getPagesByCreator?: (u: string, ctx: unknown, o?: { onlyPrivate?: boolean; systemKeywords?: string[] }) => Promise<unknown[]>;
   getPagesByEditor?: (u: string, ctx: unknown) => Promise<unknown[]>;
   getPagesSharedWith?: (principals: string[]) => Promise<unknown[]>;
+  listOwnDeletedPrivatePages?: (ctx: unknown) => Promise<unknown[]>;
 }
 
 interface JournalManagerLike {
@@ -56,6 +57,8 @@ interface ContributionCounts {
   shared?: number;
   /** #1004 — set only on a self-view of an instance with capture enabled. */
   captures?: number;
+  /** #1459 — the viewer's own deleted private pages; self-view only. */
+  trash?: number;
 }
 
 const MyContributionsPlugin: SimplePlugin = {
@@ -150,6 +153,11 @@ async function getContributionCounts(
         const privateOnly = await pageManager.getPagesByCreator(target, requester, { onlyPrivate: true });
         counts.private = privateOnly.length;
 
+        // #1459: the viewer's own deleted private pages, from their own stores.
+        if (pageManager.listOwnDeletedPrivatePages) {
+          counts.trash = (await pageManager.listOwnDeletedPrivatePages(requester)).length;
+        }
+
         // #1004: captures are personal clippings, so the row is self-view only
         // — same reasoning as `private`. Left undefined when capture is off, so
         // renderCard drops the row entirely rather than showing a dead link.
@@ -205,6 +213,9 @@ function renderCard(target: string, counts: ContributionCounts, isSelfView: bool
   const rows: CountRow[] = isSelfView
     ? [
       { href: '/my/private', icon: 'fa-eye-slash', label: 'Private Pages',       value: counts.private },
+      // #1459: self-view only, like Private Pages — a private page in the trash
+      // is still its owner's alone, so nobody else ever sees this row.
+      { href: '/my/trash',   icon: 'fa-trash',     label: 'My Trash',            value: counts.trash   },
       { href: '/my/pages',   icon: 'fa-file-alt',  label: "Pages I've Authored", value: counts.pages   },
       // #1004 — dropped entirely when capture is disabled (count stays undefined),
       // rather than rendered as an em-dash row linking to a 404.

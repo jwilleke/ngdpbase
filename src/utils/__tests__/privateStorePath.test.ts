@@ -42,10 +42,10 @@ describe('private-store filesystem config keys', () => {
     expect(shipped['ngdpbase.page.provider.filesystem.attachmentsdir']).toBe('attachments');
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userkeys']).toBe('user-keys.json');
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userindex']).toBe('user-index.json');
-    expect(shipped['ngdpbase.page.provider.filesystem.private.files.userversions']).toBe(
-      'user-versions.json'
-    );
-    expect(shipped['ngdpbase.page.provider.filesystem.private.files.usertrash']).toBe('user-trash.json');
+    // #1459: `user-versions.json` and `user-trash.json` were written and never
+    // read. A store keeps its own versions and its own trash, in the store.
+    expect(shipped['ngdpbase.page.provider.filesystem.private.files.userversions']).toBeUndefined();
+    expect(shipped['ngdpbase.page.provider.filesystem.private.files.usertrash']).toBeUndefined();
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.storemeta']).toBe('store.json');
     // privateroot is a folder name under existing storagedir, not a second data root.
     expect(String(shipped['ngdpbase.page.provider.filesystem.privateroot'])).not.toMatch(
@@ -73,12 +73,6 @@ describe('private-store filesystem config keys', () => {
     );
     expect(DEFAULT_PRIVATE_STORE_LAYOUT.files.userindex).toBe(
       shipped['ngdpbase.page.provider.filesystem.private.files.userindex']
-    );
-    expect(DEFAULT_PRIVATE_STORE_LAYOUT.files.userversions).toBe(
-      shipped['ngdpbase.page.provider.filesystem.private.files.userversions']
-    );
-    expect(DEFAULT_PRIVATE_STORE_LAYOUT.files.usertrash).toBe(
-      shipped['ngdpbase.page.provider.filesystem.private.files.usertrash']
     );
     expect(DEFAULT_PRIVATE_STORE_LAYOUT.files.storemeta).toBe(
       shipped['ngdpbase.page.provider.filesystem.private.files.storemeta']
@@ -153,18 +147,16 @@ describe('privateStorePath (#1383)', () => {
     );
   });
 
-  test('PRIVATE_USER_CATALOG_FILES is the four private.files.* catalog names', () => {
+  test('PRIVATE_USER_CATALOG_FILES is the private.files.* catalog names', () => {
     expect([...PRIVATE_USER_CATALOG_FILES].sort()).toEqual(
       [
         DEFAULT_PRIVATE_STORE_LAYOUT.files.userindex,
-        DEFAULT_PRIVATE_STORE_LAYOUT.files.userkeys,
-        DEFAULT_PRIVATE_STORE_LAYOUT.files.usertrash,
-        DEFAULT_PRIVATE_STORE_LAYOUT.files.userversions
+        DEFAULT_PRIVATE_STORE_LAYOUT.files.userkeys
       ].sort()
     );
     expect(
       [...privateUserCatalogFiles({ files: { userkeys: 'keys.json' } })].sort()
-    ).toEqual(['keys.json', 'user-index.json', 'user-trash.json', 'user-versions.json'].sort());
+    ).toEqual(['keys.json', 'user-index.json'].sort());
   });
 
   test('helpers compose using injected layout segments', () => {

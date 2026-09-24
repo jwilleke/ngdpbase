@@ -1,23 +1,22 @@
 /**
- * Encrypted user-index / versions / trash catalogs — #1385 (epic #1382)
+ * The encrypted user page catalog — #1385 (epic #1382)
  *
  * Titles of a sealed store live in user-index.json (user KEK), never in
- * global page-index.json. Login merges in memory; logout drops the merge.
+ * global page-index.json. Login decrypts it into the session bag; logout
+ * drops it.
+ *
+ * #1459 removed its `user-versions.json` and `user-trash.json` siblings,
+ * which were written and never read: a store keeps its own versions and its
+ * own trash, in the store.
  */
 
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { TEST_PRIVATE_STORE_KDF, createUserKeys } from '../privateStoreCrypto';
-import {
-  privateUserIndexPath,
-  privateUserKeysPath,
-  privateUserTrashPath,
-  privateUserVersionsPath
-} from '../privateStorePath';
+import { privateUserIndexPath, privateUserKeysPath } from '../privateStorePath';
 import {
   emptyUserCatalog,
-  mergeIndexPages,
   readUserCatalog,
   upsertUserIndexPage,
   writeUserCatalog
@@ -67,26 +66,15 @@ describe('private store catalogs (#1385)', () => {
     expect(onDisk).not.toContain('Sealed Diary');
     expect(onDisk).not.toContain(UUID);
 
-    const catalog = await readUserCatalog(pagesDir, 'molly', kek, 'index');
+    const catalog = await readUserCatalog(pagesDir, 'molly', kek);
     expect(catalog.pages[UUID]).toMatchObject({ title: 'Sealed Diary', store: 'yourphr' });
-  });
-
-  test('merge overlay does not mutate the global pages map', () => {
-    const global = { 'public-1': { title: 'Public', uuid: 'public-1' } };
-    const overlay = {
-      [UUID]: { title: 'Sealed Diary', uuid: UUID, store: 'yourphr', location: 'private' as const }
-    };
-    const merged = mergeIndexPages(global, overlay);
-    expect(merged[UUID]?.title).toBe('Sealed Diary');
-    expect(merged['public-1']?.title).toBe('Public');
-    expect(global[UUID]).toBeUndefined();
   });
 
   test('login decrypts catalogs into the session bag; logout drops them', async () => {
     const created = createUserKeys('correct-horse', { kdf });
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
-    await writeUserCatalog(pagesDir, 'molly', created.kek, 'index', {
+    await writeUserCatalog(pagesDir, 'molly', created.kek, {
       ...emptyUserCatalog(),
       pages: {
         [UUID]: {
@@ -117,52 +105,4 @@ describe('private store catalogs (#1385)', () => {
     expect(getSessionUserIndex('sid-1')).toBeUndefined();
   });
 
-  test('versions and trash catalogs are the same wrap as user-index', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
-    await writeUserCatalog(pagesDir, 'molly', kek, 'versions', {
-      ...emptyUserCatalog(),
-      pages: {
-        [UUID]: {
-          uuid: UUID,
-          title: 'Sealed Diary',
-          store: 'yourphr',
-          creator: 'molly',
-          location: 'private',
-          currentVersion: 2,
-          lastModified: '2026-09-14T00:00:00.000Z',
-          editor: 'molly',
-          hasVersions: true,
-          isPrivate: true
-        }
-      }
-    });
-    await writeUserCatalog(pagesDir, 'molly', kek, 'trash', {
-      ...emptyUserCatalog(),
-      pages: {
-        [UUID]: {
-          uuid: UUID,
-          title: 'Sealed Diary',
-          store: 'yourphr',
-          creator: 'molly',
-          location: 'private',
-          currentVersion: 1,
-          lastModified: '2026-09-14T00:00:00.000Z',
-          editor: 'molly',
-          hasVersions: true,
-          isPrivate: true,
-          deletedAt: '2026-09-14T01:00:00.000Z',
-          deletedBy: 'molly',
-          deletedFrom: '/tmp/x.md'
-        }
-      }
-    });
-
-    expect(await fs.readFile(privateUserVersionsPath(pagesDir, 'molly'), 'utf8')).not.toContain('Sealed Diary');
-    expect(await fs.readFile(privateUserTrashPath(pagesDir, 'molly'), 'utf8')).not.toContain('Sealed Diary');
-    expect((await readUserCatalog(pagesDir, 'molly', kek, 'versions')).pages[UUID]?.currentVersion).toBe(2);
-    expect((await readUserCatalog(pagesDir, 'molly', kek, 'trash')).pages[UUID]).toMatchObject({
-      deletedBy: 'molly',
-      title: 'Sealed Diary'
-    });
-  });
 });

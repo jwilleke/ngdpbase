@@ -21,11 +21,20 @@ import {
 import { WikiEngine, ProviderInfo } from './BasePageProvider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
-import type { RecentChangesOptions, RecentChangeEntry, SavedPage, StorePageEntry } from '../types/Provider.js';
+import type {
+  RecentChangesOptions,
+  RecentChangeEntry,
+  SavedPage,
+  StoreDeletedEntry,
+  StoreFileLocation,
+  StorePageEntry,
+  StoreRestoreResult
+} from '../types/Provider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
+  formatPrivatePageName,
   parsePrivatePageName,
   privateDeletedDirectory,
   legacyPrivatePageFilePath,
@@ -38,6 +47,21 @@ import {
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { PLAIN_FILE_IO, storeFileIO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
+
+/**
+ * One entry of a record keyed by uuid, by a key that came from a REQUEST.
+ * `record[key]` alone answers `Object.prototype` for `__proto__` and a
+ * function for `constructor`, which is a truthy "found" for a page that is not
+ * there — and every path built from it afterwards is built from a lie (#1459).
+ */
+function ownEntry<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+}
+
+/** An error's message, for a log line or a `detail` a caller may show. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Page index entry structure
@@ -2198,21 +2222,46 @@ class VersioningFileProvider extends FileSystemProvider {
 
       // #1456: a private page's deleted file stays in its own store, and it
       // leaves the store's page index. Nothing about it enters the shared
-      // trash or page index; the store's own trash listing is #1459.
+      // trash or page index.
+      //
+      // #1459: the store also records the tombstone, in its own
+      // `deleted-index.json`, through the same I/O — so it is sealed exactly
+      // when the store is, and the owner's /my/trash has something to list and
+      // restore from. Before this there was no record at all: the file was in
+      // `{store}/deleted/` and nothing anywhere said it existed.
       if (info.fromStore && this.pagesDirectory) {
+        const location: StoreFileLocation = {
+          ...info.fromStore,
+          io: await storeFileIO(ctx, {
+            pagesDirectory: this.pagesDirectory,
+            owner: info.fromStore.owner,
+            store: info.fromStore.store,
+            layout: this.privateStoreLayout
+          })
+        };
+        // Read the entry BEFORE dropping it: the tombstone is that entry plus
+        // who removed it and when, so a restore puts back exactly what was there.
+        const entry = await this.findStorePage(this.pagesDirectory, location, uuid);
         const storeTrash = privateDeletedDirectory(
           this.pagesDirectory, info.fromStore.owner, info.fromStore.store, this.privateStoreLayout
         );
         await fs.ensureDir(storeTrash);
         await fs.move(info.filePath, path.join(storeTrash, `${uuid}.md`), { overwrite: true });
-        const io = await storeFileIO(ctx, {
-          pagesDirectory: this.pagesDirectory,
-          owner: info.fromStore.owner,
-          store: info.fromStore.store,
-          layout: this.privateStoreLayout
-        });
-        await this.dropStorePage(this.pagesDirectory, { ...info.fromStore, io }, uuid);
-        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deletedBy}; kept in its store's trash`);
+        await this.dropStorePage(this.pagesDirectory, location, uuid);
+        if (entry) {
+          await this.putStoreDeleted(this.pagesDirectory, location, {
+            ...entry,
+            deletedAt: new Date().toISOString(),
+            deletedBy
+          });
+        } else {
+          // The page resolved but its store index had no entry for it — the
+          // file is safe in the store's `deleted/`, but there is nothing to
+          // restore it FROM. Say so rather than report a clean delete.
+          logger.warn(`[VersioningFileProvider] Deleted private page ${uuid} had no store index entry; no tombstone was recorded (#1459)`);
+        }
+        // #1461: a private page is logged by uuid, never by title.
+        logger.info(`[VersioningFileProvider] Deleted private page ${uuid} by ${deletedBy}; kept in its store's own trash (#1459)`);
         return true;
       }
 
@@ -2268,8 +2317,43 @@ class VersioningFileProvider extends FileSystemProvider {
     try {
       await this.purgeExpiredDeletedPages(ctx);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Delete-retention purge failed (${ctx.origin}: ${ctx.reason ?? ''})`, { error: errorMessage });
+      logger.error(`[VersioningFileProvider] Delete-retention purge failed (${ctx.origin}: ${ctx.reason ?? ''})`, { error: messageOf(error) });
+    }
+    // #1459: the private stores expire on the same clock. Separately, because
+    // this pass can only reach what this context holds a key for — an
+    // unencrypted store here, a sealed store in its owner's session — and one
+    // failing must not take the other down with it.
+    try {
+      await this.recordPrivateRetentionPurge(ctx, await this.purgeExpiredStoreTrash(ctx));
+    } catch (error) {
+      logger.error(`[VersioningFileProvider] Private-store trash retention purge failed (${ctx.origin}: ${ctx.reason ?? ''})`, { error: messageOf(error) });
+    }
+  }
+
+  /**
+   * Audit a private retention purge (#1459). #1461: the page is named by uuid
+   * and the store by id — never by title, which is the owner's alone.
+   */
+  private async recordPrivateRetentionPurge(ctx: JobContext, purged: StoreDeletedEntry[]): Promise<void> {
+    for (const entry of purged) {
+      await recordSystemAction(this.engine, ctx, {
+        eventType: AUDIT_EVENT.PAGE_DELETE,
+        action: 'purge',
+        resource: entry.uuid,
+        resourceType: 'page',
+        result: 'success',
+        severity: 'medium',
+        metadata: {
+          uuid: entry.uuid,
+          owner: entry.creator,
+          store: entry.store,
+          deletedAt: entry.deletedAt,
+          retentionDays: this.deleteRetentionDays
+        }
+      });
+    }
+    if (purged.length > 0) {
+      logger.info(`[VersioningFileProvider] Purged ${purged.length} private tombstone(s) past the ${this.deleteRetentionDays}-day delete retention (#1459)`);
     }
   }
 
@@ -2514,6 +2598,184 @@ class VersioningFileProvider extends FileSystemProvider {
 
     if (purged > 0) {
       logger.info(`[VersioningFileProvider] Purged ${purged} page(s) past the ${this.deleteRetentionDays}-day delete retention`);
+    }
+    return purged;
+  }
+
+  // ── A store's own trash (#1459) ───────────────────────────────────────────
+  //
+  // A private page is deleted, restored and purged inside its own store. The
+  // tombstone is in `{store}/deleted-index.json` and the file in
+  // `{store}/deleted/`, both written through the store's I/O, so both are
+  // ciphertext at rest when the store is sealed. Its version history is not
+  // moved: it already lives in the store and stays where it is, which is why a
+  // restore brings the history back for free and only a purge destroys it.
+  //
+  // Every method here takes the caller's context and reaches the store's key
+  // through it (P1). Who MAY ask is not decided here — the page door does that
+  // before calling, as it does for the store search index (#1458).
+
+  /** The store's I/O for this caller: plain, sealed with its DEK, or a refusal. */
+  private async storeTrashLocation(ctx: ActorContext, owner: string, store: string): Promise<StoreFileLocation> {
+    if (!this.pagesDirectory) throw new Error('VersioningFileProvider: no pages directory');
+    return {
+      owner,
+      store,
+      io: await storeFileIO(ctx, {
+        pagesDirectory: this.pagesDirectory,
+        owner,
+        store,
+        layout: this.privateStoreLayout
+      })
+    };
+  }
+
+  /**
+   * One owner's deleted private pages, from the stores `ctx` can open (#1459).
+   *
+   * A store whose key this context does not hold contributes nothing — a
+   * locked store's trash reads as no entries, never in the clear. Newest
+   * deletion first, with a uuid tie-break so a listing does not reorder itself
+   * between two requests (the title is not used: #1461 keeps private titles
+   * out of ordering decisions that end up in logs).
+   */
+  async listStoreDeletedPages(ctx: ActorContext, owner: string): Promise<StoreDeletedEntry[]> {
+    if (!this.pagesDirectory) return [];
+    const out: StoreDeletedEntry[] = [];
+    for (const store of await this.storeIdsOf(owner)) {
+      let location: StoreFileLocation;
+      try {
+        location = await this.storeTrashLocation(ctx, owner, store);
+      } catch {
+        continue; // sealed, and this context holds no key for it
+      }
+      try {
+        for (const entry of Object.values(await this.readStoreDeleted(this.pagesDirectory, location))) {
+          // The FOLDER says whose store this is, not the stored fields: a
+          // listing spans stores, so where it was read from decides.
+          out.push({ ...entry, creator: owner, store });
+        }
+      } catch (error) {
+        logger.warn(`[VersioningFileProvider] Could not read the trash of a private store of ${owner}: ${messageOf(error)}`);
+      }
+    }
+    return out.sort((a, b) => {
+      const delta = new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime();
+      return delta !== 0 ? delta : a.uuid.localeCompare(b.uuid);
+    });
+  }
+
+  /**
+   * Bring one page back from its store's trash (#1459).
+   *
+   * Refused when the title (or slug) is taken by a live page in that store
+   * since the delete: two pages on one title would make the store's index
+   * ambiguous, and renaming silently is worse than saying so — the same rule
+   * the public trash applies, scoped to the store, because titles are unique
+   * per store and not across the site (operator, 2026-09-22).
+   *
+   * The file moves back and the store's page index regains its entry. The
+   * store's search index is put back by the page door, which is the one place
+   * a page change reconciles its indexes (#1462).
+   */
+  async restoreStorePage(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<StoreRestoreResult> {
+    if (!this.pagesDirectory) return { ok: false, reason: 'error', detail: 'not initialized' };
+    let location: StoreFileLocation;
+    try {
+      location = await this.storeTrashLocation(ctx, owner, store);
+    } catch (error) {
+      return { ok: false, reason: 'error', detail: messageOf(error) };
+    }
+
+    const entry = ownEntry(await this.readStoreDeleted(this.pagesDirectory, location), uuid);
+    if (!entry) return { ok: false, reason: 'not-found' };
+
+    if (await this.findStorePage(this.pagesDirectory, location, entry.title)) {
+      // #1461: the refusal names the page by uuid in the log; the title goes
+      // only to the owner, who may see it, as `detail`.
+      logger.warn(`[VersioningFileProvider] Cannot restore private page ${uuid}: its title is in use in that store`);
+      return { ok: false, reason: 'title-conflict', detail: entry.title };
+    }
+
+    const trashPath = path.join(
+      privateDeletedDirectory(this.pagesDirectory, owner, store, this.privateStoreLayout),
+      `${uuid}.md`
+    );
+    if (!(await fs.pathExists(trashPath))) {
+      logger.error(`[VersioningFileProvider] The tombstone for private page ${uuid} has no file`);
+      return { ok: false, reason: 'file-missing' };
+    }
+
+    try {
+      const back = privatePageFilePath(
+        this.pagesDirectory, owner, entry.filename ?? uuid, store, this.privateStoreLayout
+      );
+      await fs.ensureDir(path.dirname(back));
+      await fs.move(trashPath, back, { overwrite: false });
+
+      const { deletedAt: _deletedAt, deletedBy: _deletedBy, ...page } = entry;
+      await this.putStorePage(this.pagesDirectory, location, page);
+      await this.dropStoreDeleted(this.pagesDirectory, location, uuid);
+
+      logger.info(`[VersioningFileProvider] Restored private page ${uuid} into its store, with its history (#1459)`);
+      return { ok: true, title: entry.title, name: formatPrivatePageName(owner, store, entry.title) };
+    } catch (error) {
+      return { ok: false, reason: 'error', detail: messageOf(error) };
+    }
+  }
+
+  /**
+   * Destroy one page in a store's trash for good (#1459): the file, its
+   * version history in the store, and the tombstone. Nothing else in the store
+   * refers to it — it left the page index and the search index at delete.
+   */
+  async purgeStorePage(ctx: ActorContext, owner: string, store: string, uuid: string): Promise<boolean> {
+    if (!this.pagesDirectory) return false;
+    let location: StoreFileLocation;
+    try {
+      location = await this.storeTrashLocation(ctx, owner, store);
+    } catch {
+      return false;
+    }
+    if (!ownEntry(await this.readStoreDeleted(this.pagesDirectory, location), uuid)) return false;
+    try {
+      await fs.remove(path.join(
+        privateDeletedDirectory(this.pagesDirectory, owner, store, this.privateStoreLayout),
+        `${uuid}.md`
+      ));
+      await fs.remove(privateVersionDirectory(this.pagesDirectory, owner, uuid, store, this.privateStoreLayout));
+      await this.dropStoreDeleted(this.pagesDirectory, location, uuid);
+      logger.warn(`[VersioningFileProvider] Purged private page ${uuid}, its history and its tombstone (#1459)`);
+      return true;
+    } catch (error) {
+      logger.error(`[VersioningFileProvider] Failed to purge private page ${uuid}: ${messageOf(error)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Expire the private tombstones past the retention window (#1459).
+   *
+   * THE SPLIT (the same one #1457's link migration and #1458's index build
+   * make): a background job holds no key, so the boot and hourly runs reach
+   * the UNENCRYPTED stores only. A sealed store's trash expires in its owner's
+   * own session, where the key is — `WikiRoutes.adoptSealedPages`, after an
+   * unlock. A sealed store therefore keeps its tombstones until its owner next
+   * signs in, which is the only moment anything can open them at all.
+   *
+   * Returns what it purged so the caller can record it; the provider does not
+   * decide how a purge is audited.
+   */
+  async purgeExpiredStoreTrash(ctx: ActorContext, owner?: string): Promise<StoreDeletedEntry[]> {
+    if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) return [];
+    if (!this.pagesDirectory) return [];
+    const cutoff = Date.now() - this.deleteRetentionDays * 24 * 60 * 60 * 1000;
+    const purged: StoreDeletedEntry[] = [];
+    for (const who of owner ? [owner] : await this.privateOwners()) {
+      for (const entry of await this.listStoreDeletedPages(ctx, who)) {
+        if (new Date(entry.deletedAt).getTime() >= cutoff) continue;
+        if (await this.purgeStorePage(ctx, who, entry.store, entry.uuid)) purged.push(entry);
+      }
     }
     return purged;
   }

@@ -29,15 +29,9 @@ import {
   isValidStoreId,
   privateUserDir,
   privateUserKeysPath,
-  type PrivateStoreLayoutOverrides,
-  type UserCatalogKind
+  type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
-import {
-  emptyUserCatalog,
-  readUserCatalog,
-  type UserCatalog,
-  type UserCatalogPage
-} from './privateStoreCatalogs.js';
+import { emptyUserCatalog, readUserCatalog, type UserCatalog } from './privateStoreCatalogs.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { PermissionSubject } from '../managers/UserManager.js';
 
@@ -45,19 +39,14 @@ interface UnlockedBag {
   username: string;
   kek: Buffer;
   deks: Map<string, Buffer>;
-  catalogs: {
-    index: UserCatalog;
-    versions: UserCatalog;
-    trash: UserCatalog;
-  };
-}
-
-function emptySessionCatalogs(): UnlockedBag['catalogs'] {
-  return {
-    index: emptyUserCatalog(),
-    versions: emptyUserCatalog(),
-    trash: emptyUserCatalog()
-  };
+  /**
+   * The legacy sealed-page catalog (#1385), read once at unlock so
+   * `adoptUserPageCatalog` can move its entries into each store's own index
+   * (#1456) and delete the file. The `user-versions.json` and `user-trash.json`
+   * catalogs that used to sit beside it were never read and went with #1459:
+   * a store's versions and trash live in the store.
+   */
+  userIndex: UserCatalog;
 }
 
 const bags = new Map<string, UnlockedBag>();
@@ -66,22 +55,12 @@ export function unlockPrivateStores(sessionId: string, username: string, kek: Bu
     username,
     kek: Buffer.from(kek),
     deks: new Map(),
-    catalogs: emptySessionCatalogs()
+    userIndex: emptyUserCatalog()
   });
 }
 
 export function getSessionUserIndex(sessionId: string): UserCatalog | undefined {
-  return bags.get(sessionId)?.catalogs.index;
-}
-
-export function replaceSessionUserCatalog(
-  sessionId: string,
-  kind: UserCatalogKind,
-  catalog: UserCatalog
-): void {
-  const bag = bags.get(sessionId);
-  if (!bag) return;
-  bag.catalogs[kind] = catalog;
+  return bags.get(sessionId)?.userIndex;
 }
 
 export function lockPrivateStores(sessionId: string): void {
@@ -159,11 +138,9 @@ export async function unlockPrivateStoresWithPassword(args: {
   const bag = bags.get(args.handle);
   if (bag) {
     try {
-      bag.catalogs.index = await readUserCatalog(args.pagesDirectory, args.username, kek, 'index');
-      bag.catalogs.versions = await readUserCatalog(args.pagesDirectory, args.username, kek, 'versions');
-      bag.catalogs.trash = await readUserCatalog(args.pagesDirectory, args.username, kek, 'trash');
+      bag.userIndex = await readUserCatalog(args.pagesDirectory, args.username, kek);
     } catch {
-      logger.warn('[private-store] user catalogs stayed sealed after login');
+      logger.warn('[private-store] the user page catalog stayed sealed after login');
     }
   }
 }
@@ -265,20 +242,6 @@ export function hasUnlockedKey(ctx: ActorContext | undefined): boolean {
 export function kekFor(ctx: ActorContext | undefined): Buffer | undefined {
   const handle = handleOf(ctx);
   return handle ? getUnlockedKek(handle) : undefined;
-}
-
-/** Replace one user catalog in this context's session bag. */
-export function replaceUserCatalogFor(ctx: ActorContext | undefined, kind: UserCatalogKind, catalog: UserCatalog): void {
-  const handle = handleOf(ctx);
-  if (handle) replaceSessionUserCatalog(handle, kind, catalog);
-}
-
-/** Put one page into this context's session page catalog. */
-export function putUserIndexPageFor(ctx: ActorContext | undefined, page: UserCatalogPage): void {
-  const handle = handleOf(ctx);
-  if (!handle) return;
-  const bag = bags.get(handle);
-  if (bag) bag.catalogs.index.pages[page.uuid] = page;
 }
 
 /** Test teardown only. */

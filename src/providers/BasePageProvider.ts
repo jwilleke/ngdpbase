@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js';
-import type { ProviderInfo, SavedPage, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
+import type { ProviderInfo, SavedPage, StoreDeletedEntry, StoreFileLocation, StorePageEntry } from '../types/Provider.js';
 import fs from 'fs-extra';
 import path from 'path';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
@@ -9,6 +9,7 @@ import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
   assertStoreId,
   privateStoreLayoutFromConfig,
+  storeDeletedIndexPath,
   storePageIndexPath,
   storeSearchIndexPath,
   type PrivateStoreLayout
@@ -229,6 +230,60 @@ abstract class BasePageProvider extends BaseProvider {
     key: string
   ): Promise<StorePageEntry | null> {
     return BasePageProvider.findInStorePages(await this.readStorePages(pagesDirectory, location), key);
+  }
+
+  // ── A store's own trash (#1459) ───────────────────────────────────────────
+  //
+  // The same shape and the same I/O as the page index above, for the same
+  // reason: a deleted private page is recorded in its OWN store, sealed
+  // exactly when the store is. Nothing about it reaches `pages/deleted/`,
+  // `page-index.json` or the global tombstone map, so an admin's
+  // /admin/deleted-pages cannot show it and no background listing can.
+
+  /** A store's tombstones, keyed by page uuid. A store that has never had a delete has none. */
+  protected async readStoreDeleted(
+    pagesDirectory: string,
+    location: StoreFileLocation
+  ): Promise<Record<string, StoreDeletedEntry>> {
+    const file = storeDeletedIndexPath(pagesDirectory, location.owner, location.store, this.privateStoreLayout);
+    if (!await fs.pathExists(file)) return {};
+    const parsed = JSON.parse(await location.io.readText(file)) as { version?: number; deleted?: Record<string, StoreDeletedEntry> };
+    return parsed && typeof parsed.deleted === 'object' && parsed.deleted ? parsed.deleted : {};
+  }
+
+  protected async writeStoreDeleted(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    deleted: Record<string, StoreDeletedEntry>
+  ): Promise<void> {
+    const file = storeDeletedIndexPath(pagesDirectory, location.owner, location.store, this.privateStoreLayout);
+    await fs.ensureDir(path.dirname(file));
+    await location.io.writeText(file, JSON.stringify({ version: 1, deleted }));
+  }
+
+  /** Record one tombstone in its store's trash. */
+  protected async putStoreDeleted(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    entry: StoreDeletedEntry
+  ): Promise<void> {
+    const deleted = await this.readStoreDeleted(pagesDirectory, location);
+    deleted[entry.uuid] = entry;
+    await this.writeStoreDeleted(pagesDirectory, location, deleted);
+  }
+
+  /** Take one tombstone out; the entry it removed, or null when there was none. */
+  protected async dropStoreDeleted(
+    pagesDirectory: string,
+    location: StoreFileLocation,
+    uuid: string
+  ): Promise<StoreDeletedEntry | null> {
+    const deleted = await this.readStoreDeleted(pagesDirectory, location);
+    const entry = deleted[uuid];
+    if (!entry) return null;
+    delete deleted[uuid];
+    await this.writeStoreDeleted(pagesDirectory, location, deleted);
+    return entry;
   }
 
   // ── A store's own saved search index (#1458) ──────────────────────────────
