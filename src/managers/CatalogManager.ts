@@ -28,6 +28,7 @@ import type {
   SchemaType
 } from '../types/Schema.js';
 import logger from '../utils/logger.js';
+import { normalizeKeywordValue } from '../utils/keywordNormalizer.js';
 
 // ---------------------------------------------------------------------------
 // DefaultCatalogProvider — reads ngdpbase.system-keywords from config
@@ -417,6 +418,34 @@ class CatalogManager extends BaseManager {
       logger.warn(`[CatalogManager] getProviderTerms failed for provider '${schemeId}':`, err);
       return { displayName: provider.displayName, terms: [] };
     }
+  }
+
+  /**
+   * #1467: canonical keyword value → the vocabulary's display title, for a
+   * caller snapping a page's or an asset's keywords to the catalogued form.
+   *
+   * This map is the vocabulary's own derived view, so it is declared here and
+   * nowhere else. It used to be written out twice — once in `PageManager`
+   * (#915) and once in `WikiRoutes` (#918) — and the `PageManager` copy cast
+   * `getProviderTerms` to an array, which it has never returned. The cast is
+   * what let the mismatch compile; `for...of` then threw on every page save
+   * and the catch swallowed it, so keyword title-snapping never ran at all.
+   *
+   * Best-effort by contract: an empty map when the vocabulary is unreachable,
+   * so a caller's dedup still runs, just without title-snapping.
+   *
+   * Only ENABLED terms are in the map — a disabled term is not part of the
+   * vocabulary, so nothing should be snapped to it.
+   */
+  async getCanonicalKeywordMap(schemeId = 'user-keywords'): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const result = await this.getProviderTerms(schemeId);
+    for (const term of result?.terms ?? []) {
+      const title = term.label || term.term;
+      const value = normalizeKeywordValue(title);
+      if (value && !map.has(value)) map.set(value, title);
+    }
+    return map;
   }
 
   // ===========================================================================

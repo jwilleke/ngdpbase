@@ -114,6 +114,60 @@ describe('CatalogManager', () => {
   });
 
   // -------------------------------------------------------------------------
+  // #1467: the canonical keyword map.
+  //
+  // This map lived in two other files, and PageManager's copy cast
+  // getProviderTerms to an array it has never returned, so every page save
+  // threw into a swallowed catch and no keyword was ever snapped to its
+  // catalogued title. The tests below pin the shape AND the emptiness
+  // contract, so the next caller cannot quietly go back to guessing.
+  // -------------------------------------------------------------------------
+
+  describe('getCanonicalKeywordMap (#1467)', () => {
+    const USER_KEYWORDS = {
+      travel: { label: 'Travel', category: 'general', enabled: true },
+      'fine-dining': { label: 'Fine Dining', category: 'general', enabled: true },
+      hiddenkw: { label: 'Hidden Keyword', category: 'general', enabled: false },
+      unlabelled: { category: 'general', enabled: true }
+    };
+
+    beforeEach(async () => {
+      engine = makeMockEngine(DEFAULT_KEYWORDS, USER_KEYWORDS);
+      manager = new CatalogManager(engine);
+      await manager.initialize();
+    });
+
+    test('maps a keyword\'s normalized value to the vocabulary\'s display title', async () => {
+      const map = await manager.getCanonicalKeywordMap();
+      // The whole point of the feature: `fine dining` typed by an author
+      // resolves to the catalogued form `Fine Dining`.
+      expect(map.get('fine-dining')).toBe('Fine Dining');
+      expect(map.get('travel')).toBe('Travel');
+    });
+
+    test('returns a non-empty Map — the regression that made #1467 invisible', async () => {
+      const map = await manager.getCanonicalKeywordMap();
+      expect(map).toBeInstanceOf(Map);
+      expect(map.size).toBeGreaterThan(0);
+    });
+
+    test('a disabled term is not in the map — nothing snaps to what the vocabulary withdrew', async () => {
+      const map = await manager.getCanonicalKeywordMap();
+      expect([...map.values()]).not.toContain('Hidden Keyword');
+    });
+
+    test('a term with no label falls back to its key', async () => {
+      const map = await manager.getCanonicalKeywordMap();
+      expect(map.get('unlabelled')).toBe('unlabelled');
+    });
+
+    test('an unknown scheme gives an empty map, not a throw — callers still dedup', async () => {
+      const map = await manager.getCanonicalKeywordMap('no-such-vocabulary');
+      expect(map.size).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // #896 (Slice 4 of #869): seed + instance store
   // -------------------------------------------------------------------------
 

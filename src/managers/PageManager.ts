@@ -20,7 +20,7 @@ import type {
   SchemaType
 } from '../types/Schema.js';
 import { pageToArticle } from '../utils/pageToArticle.js';
-import { dedupeKeywords, normalizeKeywordValue } from '../utils/keywordNormalizer.js';
+import { dedupeKeywords } from '../utils/keywordNormalizer.js';
 import { computeFormerTitles, buildFormerTitleIndex, AMBIGUOUS } from '../utils/formerTitles.js';
 import { buildPageMutationAuditEvent, recordAuditEvent, type PageMutationOp } from '../utils/auditEvents.js';
 import { runFixes, type FixChange, type FixResult, type RunFixesOptions } from '../converters/ncm/fix/index.js';
@@ -1204,31 +1204,6 @@ class PageManager extends BaseManager implements CatalogSource {
    * console.log('Author:', meta.author);
    */
   /**
-   * #915: map of canonical keyword value → registry display title, from the
-   * user-keywords catalog. Used to snap page keywords to the vocabulary's
-   * display form on save. Best-effort — empty map when CatalogManager is
-   * unavailable, so dedup still runs (just without title-snapping).
-   */
-  private async getUserKeywordCanonicalMap(): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
-    try {
-      const cm = this.engine.getManager<CatalogManager>('CatalogManager') as {
-        getProviderTerms?: (domain: string) => Promise<Array<{ term: string; label?: string }>>;
-      } | undefined;
-      if (!cm?.getProviderTerms) return map;
-      const terms = await cm.getProviderTerms('user-keywords');
-      for (const t of terms) {
-        const title = t.label ?? t.term;
-        const value = normalizeKeywordValue(title);
-        if (value && !map.has(value)) map.set(value, title);
-      }
-    } catch (err) {
-      logger.warn('[PageManager] getUserKeywordCanonicalMap failed:', err);
-    }
-    return map;
-  }
-
-  /**
    * Resolve a former page title to the page that holds it now, or null (#1105).
    *
    * **Callers must have already failed live resolution.** This is a fallback, not
@@ -1643,8 +1618,14 @@ class PageManager extends BaseManager implements CatalogSource {
     // user-keyword to one entry, snapping to the registry's canonical title when
     // catalogued. Runs on every save so `Dining` and `dining` can never coexist
     // on a page, and pages converge on the catalog's display form over time.
+    // #1467: the map is CatalogManager's, which owns the vocabulary. A copy
+    // used to live here behind a cast that claimed `getProviderTerms` returns
+    // an array; it returns `{ displayName, terms } | null`, so every save threw
+    // into a swallowed catch and no keyword was ever snapped.
     const keywordsBeforeDedup = normalizedKeywords;
-    const canonicalByValue = await this.getUserKeywordCanonicalMap();
+    const catalogManager = this.engine.getManager<CatalogManager>('CatalogManager');
+    const canonicalByValue =
+      (await catalogManager?.getCanonicalKeywordMap()) ?? new Map<string, string>();
     normalizedKeywords = dedupeKeywords(normalizedKeywords, canonicalByValue);
     const keywordsDeduped =
       normalizedKeywords.length !== keywordsBeforeDedup.length ||
