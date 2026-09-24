@@ -163,7 +163,11 @@ class JournalDataManager extends BaseManager {
     let results = (await this.loadAllEntries(ctx)).filter(e => e.author === author);
 
     if (opts.tag) {
-      results = results.filter(e => e.tags.includes(opts.tag!));
+      // Bound to a const so both the root and the addon tsconfig narrow it:
+      // the root build now rejects `opts.tag!` as a redundant assertion, while
+      // the addon build still needs the narrowing spelled out.
+      const tag = opts.tag;
+      results = results.filter(e => e.tags.includes(tag));
     }
     if (opts.mood) {
       results = results.filter(e => e.mood === opts.mood);
