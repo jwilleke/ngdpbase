@@ -88,6 +88,30 @@ function pageFileName(title: string): string {
   return `${safe || 'Untitled'}.md`;
 }
 
+/**
+ * A safe leaf name for an ARCHIVE entry, from a name a person chose.
+ *
+ * An uploaded file is stored on disk as `{generated-id}{ext}`, so its original
+ * name never becomes a path on this server — `path.extname` takes the extension
+ * of the basename, and a `/` cannot survive into it. But the original name IS
+ * kept, and a takeout puts it in the archive, where it becomes a path on
+ * SOMEONE ELSE'S machine.
+ *
+ * That is where a name harmless here turns dangerous there. On Linux `\` is an
+ * ordinary character, so `x.\..\..\etc\passwd` is one strange filename; handed
+ * to an extractor on Windows, it is a path that climbs out of the folder. So
+ * both separators go, and so does any `..` segment — this is the one place the
+ * name crosses from being data to being a path.
+ */
+function archiveFileName(raw: string): string {
+  const leaf = raw
+    .split(/[/\\]/)                       // both separators, whatever the platform thinks
+    .filter(part => part && part !== '.' && part !== '..')
+    .pop() ?? '';
+  const safe = leaf.replace(/^[.\s]+/, '').trim();
+  return safe || 'file';
+}
+
 /** Make `name` unique within `taken`, appending ` (2)`, ` (3)` … before the extension. */
 function uniqueName(name: string, taken: Set<string>): string {
   if (!taken.has(name.toLowerCase())) {
@@ -200,7 +224,7 @@ export async function buildStoreTakeout(
       }
 
       // The name it was uploaded with, not the uuid it is stored under.
-      const wanted = path.basename(record.name || record.fileName);
+      const wanted = archiveFileName(record.name || record.fileName);
       files.push({
         path: `${store}/${L.attachmentsDir}/${uniqueName(wanted, attachmentNames)}`,
         bytes,

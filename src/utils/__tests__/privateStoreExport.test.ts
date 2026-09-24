@@ -278,6 +278,41 @@ describe('buildStoreTakeout — what it carries (#1387)', () => {
     }
   });
 
+  test('an uploaded name that is a path elsewhere is reduced to a leaf', async () => {
+    // Reachable: the uploaded name is stored as-is and a takeout puts it in the
+    // archive, where it becomes a path on the machine that extracts it. On
+    // Linux `\\` is an ordinary character, so this is one odd filename here and
+    // a climb out of the folder on Windows.
+    await plainStore();
+    await fs.writeJson(storeFileIndexPath(pagesDir, 'molly', STORE), {
+      version: 1,
+      files: {
+        a: {
+          id: 'a', fileName: 'abc-123.jpg', name: 'x.\\..\\..\\etc\\passwd',
+          encodingFormat: 'image/jpeg', contentSize: 4, fingerprint: 'f', description: '',
+          dateCreated: '2026-01-01T00:00:00.000Z', dateModified: '2026-01-01T00:00:00.000Z', mentions: []
+        },
+        b: {
+          id: 'b', fileName: 'abc-123.jpg', name: '../../etc/passwd',
+          encodingFormat: 'image/jpeg', contentSize: 4, fingerprint: 'g', description: '',
+          dateCreated: '2026-01-01T00:00:00.000Z', dateModified: '2026-01-01T00:00:00.000Z', mentions: []
+        }
+      }
+    });
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const attachments = takeout.files.filter(f => f.path.includes('/attachments/'));
+
+    expect(attachments).toHaveLength(2);
+    for (const f of attachments) {
+      expect(f.path.includes('\\')).toBe(false);
+      expect(f.path.split('/').includes('..')).toBe(false);
+      expect(f.path.startsWith(`${STORE}/attachments/`)).toBe(true);
+      // One leaf under attachments/ — never a nested path.
+      expect(f.path.split('/')).toHaveLength(3);
+    }
+  });
+
   test('a store with nothing in it is an empty takeout, not an error', async () => {
     await fs.ensureDir(privateStoreRoot(pagesDir, 'molly', 'empty'));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'empty'), { kind: 'default', encrypt: false });
