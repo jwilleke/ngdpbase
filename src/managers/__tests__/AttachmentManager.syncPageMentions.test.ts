@@ -13,6 +13,10 @@
  */
 import AttachmentManager from '../AttachmentManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import type { ActorContext } from '../../context/ActorContext';
+
+/** #1460: the saver. No ConfigurationManager here, so no store is merged. */
+const SAVER = { username: 'molly', isAuthenticated: true, roles: ['editor'] } as ActorContext;
 
 const mockEngine = {
   getManager: vi.fn(() => null)
@@ -51,7 +55,8 @@ describe('syncPageMentions — path-prefixed references (#1051)', () => {
 
     await manager.syncPageMentions(
       'MyPage',
-      "[{Image src='Some Page/photo.jpg'}]"
+      "[{Image src='Some Page/photo.jpg'}]",
+      SAVER
     );
 
     // The whole point: before #1051 this ref resolved to nothing, so the
@@ -64,9 +69,9 @@ describe('syncPageMentions — path-prefixed references (#1051)', () => {
       getAttachmentsForPage: vi.fn().mockResolvedValue([])
     });
 
-    await manager.syncPageMentions('NewPage', "[{Image src='Old Page/photo.jpg'}]");
+    await manager.syncPageMentions('NewPage', "[{Image src='Old Page/photo.jpg'}]", SAVER);
 
-    expect(attachToPage).toHaveBeenCalledWith('id-1', 'NewPage');
+    expect(attachToPage).toHaveBeenCalledWith('id-1', 'NewPage', SAVER);
   });
 
   test('still detaches when the page genuinely stops referencing the attachment', async () => {
@@ -75,9 +80,9 @@ describe('syncPageMentions — path-prefixed references (#1051)', () => {
     // mentions actually going away.
     const { manager, detachFromPage } = makeManager();
 
-    await manager.syncPageMentions('MyPage', 'No attachment references here.');
+    await manager.syncPageMentions('MyPage', 'No attachment references here.', SAVER);
 
-    expect(detachFromPage).toHaveBeenCalledWith('id-1', 'MyPage');
+    expect(detachFromPage).toHaveBeenCalledWith('id-1', 'MyPage', SAVER);
   });
 
   test('does not invent a mention when the basename matches nothing either', async () => {
@@ -85,7 +90,7 @@ describe('syncPageMentions — path-prefixed references (#1051)', () => {
       getAttachmentsForPage: vi.fn().mockResolvedValue([])
     });
 
-    await manager.syncPageMentions('MyPage', "[{Image src='Mongol Empire (1206-1368)/missing.jpg'}]");
+    await manager.syncPageMentions('MyPage', "[{Image src='Mongol Empire (1206-1368)/missing.jpg'}]", SAVER);
 
     expect(attachToPage).not.toHaveBeenCalled();
   });
@@ -101,8 +106,8 @@ describe('syncPageMentions — path-prefixed references (#1051)', () => {
       })
     });
 
-    await manager.syncPageMentions('MyPage', "[{Image src='Odd/photo.jpg'}]");
+    await manager.syncPageMentions('MyPage', "[{Image src='Odd/photo.jpg'}]", SAVER);
 
-    expect(attachToPage).toHaveBeenCalledWith('id-odd', 'MyPage');
+    expect(attachToPage).toHaveBeenCalledWith('id-odd', 'MyPage', SAVER);
   });
 });

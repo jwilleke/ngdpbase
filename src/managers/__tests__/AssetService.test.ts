@@ -19,6 +19,7 @@
  */
 
 import AssetService from '../AssetService';
+import type { ActorContext } from '../../context/ActorContext';
 import { type MockInstance } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,12 @@ function makeAssetRecord(overrides = {}) {
     ...overrides
   };
 }
+
+/**
+ * #1460: search() takes the requester, mandatory and positional, and forwards
+ * it to AssetManager as given — that is what the assertions below check.
+ */
+const SEARCHER = { username: 'alice', isAuthenticated: true, roles: ['editor'] } as ActorContext;
 
 function makeAssetPage(records = [makeAssetRecord()]) {
   return { results: records, total: records.length, hasMore: false };
@@ -78,7 +85,7 @@ describe('AssetService.search()', () => {
       const page = makeAssetPage([makeAssetRecord(), makeAssetRecord({ id: 'a2' })]);
       const { service } = makeService({ assetManagerSearch: vi.fn().mockResolvedValue(page) });
 
-      const result = await service.search();
+      const result = await service.search({}, SEARCHER);
 
       expect(result).toBe(page);
     });
@@ -86,7 +93,7 @@ describe('AssetService.search()', () => {
     it('returns empty AssetPage when AssetManager is not registered', async () => {
       const { service } = makeService({ noAssetManager: true });
 
-      const result = await service.search();
+      const result = await service.search({}, SEARCHER);
 
       expect(result).toEqual({ results: [], total: 0, hasMore: false });
     });
@@ -101,7 +108,7 @@ describe('AssetService.search()', () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search();
+      await service.search({}, SEARCHER);
 
       expect(assetManagerSearch).toHaveBeenCalledTimes(1);
     });
@@ -110,45 +117,45 @@ describe('AssetService.search()', () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ query: 'sunset' });
+      await service.search({ query: 'sunset' }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ query: 'sunset' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ query: 'sunset' }), SEARCHER);
     });
 
     it('passes year to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ year: 2023 });
+      await service.search({ year: 2023 }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ year: 2023 }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ year: 2023 }), SEARCHER);
     });
 
     it('passes mimeCategory to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ mimeCategory: 'image' });
+      await service.search({ mimeCategory: 'image' }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ mimeCategory: 'image' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ mimeCategory: 'image' }), SEARCHER);
     });
 
     it('passes pageSize and offset to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ pageSize: 10, offset: 20 });
+      await service.search({ pageSize: 10, offset: 20 }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 10, offset: 20 }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 10, offset: 20 }), SEARCHER);
     });
 
     it('passes sort and order to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ sort: 'caption', order: 'desc' });
+      await service.search({ sort: 'caption', order: 'desc' }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ sort: 'caption', order: 'desc' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ sort: 'caption', order: 'desc' }), SEARCHER);
     });
 
     it('passes wikiContext to AssetManager', async () => {
@@ -156,36 +163,36 @@ describe('AssetService.search()', () => {
       const { service } = makeService({ assetManagerSearch });
       const ctx = { user: 'alice' };
 
-      await service.search({ wikiContext: ctx });
+      await service.search({ wikiContext: ctx }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ wikiContext: ctx }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ wikiContext: ctx }), SEARCHER);
     });
 
     it('applies default query="" when not provided', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search();
+      await service.search({}, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ query: '' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ query: '' }), SEARCHER);
     });
 
     it('applies default pageSize=48 when not provided', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search();
+      await service.search({}, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 48 }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 48 }), SEARCHER);
     });
 
     it('applies default sort=date order=asc when not provided', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search();
+      await service.search({}, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ sort: 'date', order: 'asc' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ sort: 'date', order: 'asc' }), SEARCHER);
     });
   });
 
@@ -204,18 +211,18 @@ describe('AssetService.search()', () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['local'] });
+      await service.search({ types: ['local'] }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'local' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'local' }), SEARCHER);
     });
 
     it('types=["media-library"] passes providerId="media-library" to AssetManager', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['media-library'] });
+      await service.search({ types: ['media-library'] }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'media-library' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'media-library' }), SEARCHER);
     });
 
     it('an addon-registered provider id is passed through unchanged', async () => {
@@ -224,16 +231,16 @@ describe('AssetService.search()', () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['sist2'] });
+      await service.search({ types: ['sist2'] }, SEARCHER);
 
-      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'sist2' }));
+      expect(assetManagerSearch).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'sist2' }), SEARCHER);
     });
 
     it('two provider ids do not pass providerId (search all)', async () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({ types: ['local', 'media-library'] });
+      await service.search({ types: ['local', 'media-library'] }, SEARCHER);
 
       const callArg = assetManagerSearch.mock.calls[0][0];
       expect(callArg).not.toHaveProperty('providerId');
@@ -243,7 +250,7 @@ describe('AssetService.search()', () => {
       const assetManagerSearch = vi.fn().mockResolvedValue(makeAssetPage());
       const { service } = makeService({ assetManagerSearch });
 
-      await service.search({});
+      await service.search({}, SEARCHER);
 
       const callArg = assetManagerSearch.mock.calls[0][0];
       expect(callArg).not.toHaveProperty('providerId');

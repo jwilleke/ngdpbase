@@ -2,6 +2,7 @@ import BaseManager, { BackupData, type ManagerStats } from './BaseManager.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { actorOf, isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { systemContext } from '../context/bootActions.js';
 import { toPermissionSubject } from '../context/JobContext.js';
 import logger from '../utils/logger.js';
 
@@ -27,8 +28,11 @@ import type {
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
-import { assertContextCanWriteStore, unlockedStoreIdsFor } from '../utils/privateStoreUnlock.js';
-import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { privateStoreIdsOf, storeFileIO } from '../utils/privateStoreFiles.js';
+import { transformImage, parseSize } from '../utils/imageTransform.js';
+import type { AssetQuery, AssetRecord } from '../types/Asset.js';
 import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 
 /**
@@ -59,15 +63,22 @@ interface BaseAttachmentProvider {
   restore(backupData: unknown): Promise<void>;
   shutdown(): Promise<void>;
   getProviderInfo(): { features: string[] };
-  // #1400: files in a private store, listed in the store's own index.
+  // #1400 / #1460: files in a private store, listed in the store's own index —
+  // an encrypted store's and an unencrypted one's alike.
   storeFileInStore(
     location: StoreFileLocation,
     bytes: Buffer,
     file: { originalName: string; mimeType: string; description: string; author?: string; pageName?: string }
   ): Promise<StoreFileEntry>;
   getFileInStore(location: StoreFileLocation, id: string): Promise<{ entry: StoreFileEntry; bytes: Buffer } | null>;
+  listFilesInStore(location: StoreFileLocation): Promise<StoreFileEntry[]>;
   filesInStoreForPage(location: StoreFileLocation, pageName: string): Promise<StoreFileEntry[]>;
+  setFileMentionInStore(location: StoreFileLocation, id: string, pageName: string, mentioned: boolean): Promise<boolean>;
   deleteFileInStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null>;
+  searchFilesInStore(location: StoreFileLocation, query: AssetQuery): Promise<AssetRecord[]>;
+  // #1460: the start-up move out of the shared index.
+  privateRecordsInSharedIndex(): Array<{ id: string; owner: string | null; store: string | null; pages: string[] }>;
+  adoptRecordIntoStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null>;
 }
 
 /**
@@ -324,6 +335,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     // Pull all attachments via the existing flattened accessor (which now
     // includes the Slice-5 documentTitle / documentAuthor / etc. fields).
+    // #1460: the shared pool only. A CatalogQuery carries no requester, and a
+    // cross-source catalogue is a shared surface — a private store's files
+    // belong in the per-requester reads (`getAllAttachments`), not here.
     let all = await this.attachmentProvider.getAllAttachments();
 
     // Filter by free-text against name + description + doc fields.
@@ -566,31 +580,42 @@ class AttachmentManager extends BaseManager implements CatalogSource {
           store: pageStore,
           layout
         });
-        // #1400: an ENCRYPTED store keeps its files itself — sealed bytes named
-        // {uuid}.ext, listed in the store's own sealed index, never in the
-        // global metadata. (Unencrypted private files move there in #1454.)
+        // #1460: ANY private store keeps its files itself — bytes named
+        // {uuid}.ext in the store's `attachments/` folder, listed in the
+        // store's own index, never in the global metadata. The condition is
+        // "this page is in a private store", not "the store is sealed"
+        // (#1400's gate): encryption decides whether the bytes are ciphertext
+        // at rest, not whether the store owns its own catalogue.
+        //
+        // With a plain store there is no key, so nothing about reading it back
+        // can lean on one: ownership alone decides, through
+        // `mayActInPrivateContainer` / the PIP's container rule, exactly as
+        // the page door decides a private page ({@link ownPrivateStores}).
+        //
+        // Duplicate detection is per store, so a private upload whose bytes
+        // match a PUBLIC attachment lands here rather than returning the
+        // public record.
         const io = await storeFileIO(ctx, { pagesDirectory, owner: pageCreator, store: pageStore, layout });
-        if (io.sealed) {
-          const entry = await this.attachmentProvider.storeFileInStore(
-            { owner: pageCreator, store: pageStore, io },
-            fileBuffer,
-            {
-              originalName: fileInfo.originalName,
-              mimeType: fileInfo.mimeType,
-              description: options.description || '',
-              author: user.name,
-              ...(pageName ? { pageName } : {})
-            }
-          );
-          logger.info(`📎 Uploaded a file into ${pageCreator}'s sealed store '${pageStore}' (${entry.id})`);
-          await this.recordAttachmentEvent('upload', ctx, {
-            attachmentId: entry.id,
-            filename: fileInfo.originalName,
-            pageName: pageName ?? null,
-            sizeBytes: fileInfo.size ?? null
-          }, options.wikiContext);
-          return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
-        }
+        const entry = await this.attachmentProvider.storeFileInStore(
+          { owner: pageCreator, store: pageStore, io },
+          fileBuffer,
+          {
+            originalName: fileInfo.originalName,
+            mimeType: fileInfo.mimeType,
+            description: options.description || '',
+            author: user.name,
+            ...(pageName ? { pageName } : {})
+          }
+        );
+        // #1461: a private file is logged by id — never by its filename.
+        logger.info(`📎 Uploaded a file into ${pageCreator}'s private store '${pageStore}' (${entry.id})`);
+        await this.recordAttachmentEvent('upload', ctx, {
+          attachmentId: entry.id,
+          filename: fileInfo.originalName,
+          pageName: pageName ?? null,
+          sizeBytes: fileInfo.size ?? null
+        }, options.wikiContext);
+        return AttachmentManager.storeFileMetadata(entry, pageCreator, pageStore);
       }
     }
 
@@ -631,11 +656,20 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @param {string} attachmentId - Attachment identifier
    * @param {string} pageName - Page name to attach to
+   * @param ctx - Whose mention this is (#1179). Mandatory and positional.
    * @returns {Promise<boolean>} Success status
    */
-  async attachToPage(attachmentId: string, pageName: string): Promise<boolean> {
+  async attachToPage(attachmentId: string, pageName: string, ctx: ActorContext): Promise<boolean> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
+    }
+
+    // #1460: a file in one of the requester's own private stores is in no
+    // shared index — its mentions are its own store index's, changed through
+    // the context that owns the container.
+    const own = await this.findOwnStoreFile(ctx, attachmentId, 'edit');
+    if (own) {
+      return await this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, true);
     }
 
     const metadata = await this.attachmentProvider.getAttachmentMetadata(attachmentId);
@@ -669,11 +703,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *
    * @param {string} attachmentId - Attachment identifier
    * @param {string} pageName - Page name to detach from
+   * @param ctx - Whose mention this is (#1179). Mandatory and positional.
    * @returns {Promise<boolean>} Success status
    */
-  async detachFromPage(attachmentId: string, pageName: string): Promise<boolean> {
+  async detachFromPage(attachmentId: string, pageName: string, ctx: ActorContext): Promise<boolean> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
+    }
+
+    // #1460: as in attachToPage — a private store's file keeps its own mentions.
+    const own = await this.findOwnStoreFile(ctx, attachmentId, 'edit');
+    if (own) {
+      return await this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, false);
     }
 
     const metadata = await this.attachmentProvider.getAttachmentMetadata(attachmentId);
@@ -703,23 +744,47 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return await this.attachmentProvider.getAttachment(attachmentId);
   }
 
-  // ── Files in an encrypted private store (#1400) ───────────────────────────
+  // ── Files in a private store (#1400, every store since #1460) ─────────────
   //
-  // A sealed file is reached only through the context that may open it: the
-  // requester's own stores whose DEK its session holds. The decision is the
-  // PIP's (canAccessPrivateContainer — owner or delegate, never a role), and a
-  // refusal is recorded there. A locked store contributes nothing.
+  // A private file is reached only through the context whose container it is
+  // in: the requester's own stores. The decision is the PIP's
+  // (canAccessPrivateContainer — owner or delegate, never a role, admin
+  // included), and a refusal is recorded there.
+  //
+  // What encryption does, and what it does not: an encrypted store's bytes and
+  // index are ciphertext until its DEK is in the session, so a locked one
+  // contributes nothing here. An UNENCRYPTED store has no key at all — its
+  // bytes sit readable on disk — so nothing may serve them on the strength of
+  // "the file exists". Ownership is the whole of the decision, and it is
+  // applied below before a store is opened and again at the PIP before a byte
+  // is handed back.
 
-  /** The requester's own unlocked encrypted stores, as provider locations. */
-  private async ownSealedStores(ctx: ActorContext): Promise<StoreFileLocation[]> {
+  /**
+   * The requester's own private stores, as provider locations (#1460).
+   *
+   * The container rule first: a context that may not act in its own container
+   * — anonymous, or a share visitor, whose `viaShare` issuer is someone else
+   * — reaches no store at all. Then every store in that container, plain or
+   * sealed: `privateStoreIdsOf` answers from the folder, because which stores
+   * EXIST does not depend on keys. `storeFileIO` refuses an encrypted store
+   * this context holds no DEK for, and that store is skipped rather than read
+   * in the clear.
+   */
+  private async ownPrivateStores(ctx: ActorContext): Promise<StoreFileLocation[]> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    if (!configManager || !pagesDirectory || !ctx.username) return [];
+    if (!configManager || !pagesDirectory || !ctx?.username) return [];
+    if (!mayActInPrivateContainer(ctx, ctx.username)) return [];
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
     const out: StoreFileLocation[] = [];
-    for (const store of unlockedStoreIdsFor(ctx)) {
-      const io = await storeFileIO(ctx, { pagesDirectory, owner: ctx.username, store, layout });
-      if (io.sealed) out.push({ owner: ctx.username, store, io });
+    for (const store of await privateStoreIdsOf(pagesDirectory, ctx.username, layout)) {
+      try {
+        const io = await storeFileIO(ctx, { pagesDirectory, owner: ctx.username, store, layout });
+        out.push({ owner: ctx.username, store, io });
+      } catch {
+        // An encrypted store whose DEK this context does not hold: locked, so
+        // it lists nothing. Never a fall back to reading it in the clear.
+      }
     }
     return out;
   }
@@ -731,17 +796,30 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return Boolean(pip?.canAccessPrivateContainer(ctx, owner, resource, action));
   }
 
-  /** How a store file is shown to callers that expect attachment metadata. */
+  /**
+   * How a store file is shown to callers that expect attachment metadata.
+   * The legacy aliases (`id`, `filename`, `mimeType`, `size`, …) are here so a
+   * merged list renders through the same templates the shared pool does
+   * (#1460); `filePath` is not, because where a private file sits on disk is
+   * not something a listing carries.
+   */
   private static storeFileMetadata(entry: StoreFileEntry, owner: string, store: string): AttachmentMetadata {
     return {
       identifier: entry.id,
+      id: entry.id,
       name: entry.name,
+      filename: entry.name,
       url: `/attachments/${entry.id}`,
       encodingFormat: entry.encodingFormat,
+      mimeType: entry.encodingFormat,
       contentSize: entry.contentSize,
+      size: entry.contentSize,
       description: entry.description,
       dateCreated: entry.dateCreated,
       dateModified: entry.dateModified,
+      uploadedAt: entry.dateCreated,
+      uploadedBy: entry.author ?? 'Unknown',
+      pageUuid: entry.mentions[0] ?? '',
       mentions: entry.mentions.map((name) => ({ '@type': 'WebPage', name, url: `/view/${encodeURIComponent(name)}` })),
       isPrivate: true,
       creator: owner,
@@ -750,36 +828,196 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * A file from the requester's own encrypted stores, decrypted — or null when
-   * none of its unlocked stores lists it, or the PIP refuses.
+   * The requester's own store that lists `attachmentId`, with its entry — or
+   * null when none of them does, or the PIP refuses (#1460). Metadata only:
+   * the bytes are read by the caller that needs them, so a listing, a delete
+   * and a mention change do not decrypt a file to look at its name.
    */
-  async getSealedAttachment(
+  private async findOwnStoreFile(
+    ctx: ActorContext,
+    attachmentId: string,
+    action: string
+  ): Promise<{ location: StoreFileLocation; entry: StoreFileEntry } | null> {
+    if (!this.attachmentProvider) return null;
+    for (const location of await this.ownPrivateStores(ctx)) {
+      const entry = (await this.attachmentProvider.listFilesInStore(location)).find((f) => f.id === attachmentId);
+      if (!entry) continue;
+      if (!this.mayReach(ctx, location.owner, `attachment:${attachmentId}`, action)) return null;
+      return { location, entry };
+    }
+    return null;
+  }
+
+  /**
+   * A file from the requester's own private stores — or null when none of the
+   * stores it can open lists it, or the PIP refuses. An encrypted store's
+   * bytes come back decrypted; a plain store's come back as they are, and in
+   * both cases the caller got here only by owning the container.
+   */
+  async getPrivateStoreAttachment(
     attachmentId: string,
     ctx: ActorContext
   ): Promise<{ buffer: Buffer; metadata: AttachmentMetadata } | null> {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
-    for (const location of await this.ownSealedStores(ctx)) {
-      const found = await this.attachmentProvider.getFileInStore(location, attachmentId);
-      if (!found) continue;
-      if (!this.mayReach(ctx, location.owner, `attachment:${attachmentId}`, 'view')) return null;
-      return { buffer: found.bytes, metadata: AttachmentManager.storeFileMetadata(found.entry, location.owner, location.store) };
-    }
-    return null;
+    const found = await this.findOwnStoreFile(ctx, attachmentId, 'view');
+    if (!found) return null;
+    const bytes = await this.attachmentProvider.getFileInStore(found.location, attachmentId);
+    if (!bytes) return null;
+    return {
+      buffer: bytes.bytes,
+      metadata: AttachmentManager.storeFileMetadata(found.entry, found.location.owner, found.location.store)
+    };
   }
 
-  /** The requester's own sealed files uploaded onto `pageName`. */
-  async getSealedAttachmentsForPage(pageName: string, ctx: ActorContext): Promise<AttachmentMetadata[]> {
+  /**
+   * Is `attachmentId` a file in one of the requester's own private stores?
+   * An index read, no bytes — for a caller that has to treat a private file
+   * differently without reading it twice (#1460).
+   */
+  async isOwnPrivateStoreFile(attachmentId: string, ctx: ActorContext): Promise<boolean> {
+    return (await this.findOwnStoreFile(ctx, attachmentId, 'view')) !== null;
+  }
+
+  /** The requester's own private-store files uploaded onto `pageName`. */
+  async getPrivateStoreAttachmentsForPage(pageName: string, ctx: ActorContext): Promise<AttachmentMetadata[]> {
     if (!this.attachmentProvider) return [];
     const out: AttachmentMetadata[] = [];
-    for (const location of await this.ownSealedStores(ctx)) {
+    for (const location of await this.ownPrivateStores(ctx)) {
       if (!this.mayReach(ctx, location.owner, `page-files:${pageName}`, 'view')) continue;
       for (const entry of await this.attachmentProvider.filesInStoreForPage(location, pageName)) {
         out.push(AttachmentManager.storeFileMetadata(entry, location.owner, location.store));
       }
     }
     return out;
+  }
+
+  /**
+   * Everything the requester's own private stores hold (#1460) — the half of
+   * a browse or a list that is in no shared index. Another user's stores, and
+   * an admin's view of anyone's, are not here: this reads `ctx`'s container
+   * and no other.
+   */
+  async getPrivateStoreAttachments(ctx: ActorContext): Promise<AttachmentMetadata[]> {
+    if (!this.attachmentProvider) return [];
+    const out: AttachmentMetadata[] = [];
+    for (const location of await this.ownPrivateStores(ctx)) {
+      if (!this.mayReach(ctx, location.owner, `store-files:${location.store}`, 'view')) continue;
+      for (const entry of await this.attachmentProvider.listFilesInStore(location)) {
+        out.push(AttachmentManager.storeFileMetadata(entry, location.owner, location.store));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The requester's own private-store files as asset-search results (#1460).
+   *
+   * AssetManager fans a search out over the provider registry, and no provider
+   * can see a store it was given no context for — so the store half is merged
+   * by the one caller that holds the requester's context. The matching rules
+   * are the provider's own, applied to the store's entries, so a private file
+   * is findable exactly as a public one is.
+   */
+  async searchPrivateStoreAttachments(query: AssetQuery, ctx: ActorContext): Promise<AssetRecord[]> {
+    if (!this.attachmentProvider) return [];
+    const out: AssetRecord[] = [];
+    for (const location of await this.ownPrivateStores(ctx)) {
+      if (!this.mayReach(ctx, location.owner, `store-files:${location.store}`, 'view')) continue;
+      out.push(...await this.attachmentProvider.searchFilesInStore(location, query));
+    }
+    return out;
+  }
+
+  // ── The move out of the shared index (#1460) ──────────────────────────────
+
+  /**
+   * Move every unencrypted private file record out of the global
+   * `attachment-metadata.json` and into its store's own index, at start-up.
+   *
+   * Best-effort: a failure is logged and never blocks start-up, the shape
+   * `migratePrivateLinksAtBoot` uses.
+   */
+  async migratePrivateFilesAtBoot(): Promise<void> {
+    const ctx = systemContext(
+      this.engine,
+      'private-file migration at boot (#1460) — move unencrypted private files out of attachment-metadata.json into their store'
+    );
+    try {
+      await this.migratePrivateFilesIntoStores(ctx);
+    } catch (err) {
+      logger.warn(`📎 Private-file migration at boot did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Move the private file records still in the shared index into their stores.
+   *
+   * __Which files are private__ is decided from the record itself first — the
+   * `isPrivate` / `creator` / `store` fields #1398 writes — and, where that is
+   * not enough, from the page it is attached to: a mention naming
+   * `private/{owner}/{store}/{title}` says whose store the file belongs in,
+   * confirmed through `PageManager.getPrivatePageOwner`. A record that is
+   * neither is a public attachment and stays where it is.
+   *
+   * __What moves__: the bytes, into `{store}/attachments/`, KEEPING their
+   * existing file name — nothing on disk is renamed — and the record, into
+   * the store's own index under the id it already had, because that id is its
+   * `/attachments/{id}` URL on every page that references it.
+   *
+   * __No unlock split__, unlike #1457's link migration and #1458's search
+   * indexes. Those needed one because a page's TEXT is sealed; here an
+   * unencrypted store needs no key at all, so this boot job finishes the whole
+   * job for the stores it is about. A record pointing at an ENCRYPTED store is
+   * skipped, with a line saying so: #1400 already keeps those files in their
+   * store, and one predating it cannot be re-sealed without its owner's DEK.
+   *
+   * __Idempotent__: a second run finds nothing left in the shared index, and a
+   * record whose store already lists the id moves no bytes.
+   *
+   * @param ctx - Whose reading and writing this is (#1179). Mandatory and positional.
+   * @returns how many records moved
+   */
+  async migratePrivateFilesIntoStores(ctx: ActorContext): Promise<number> {
+    if (!this.attachmentProvider) return 0;
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return 0;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+
+    let moved = 0;
+    for (const record of this.attachmentProvider.privateRecordsInSharedIndex()) {
+      let owner = record.owner;
+      let store = record.store;
+
+      if (!owner) {
+        for (const page of record.pages) {
+          const where = await pageManager?.getPrivatePageOwner(page, ctx).catch(() => null);
+          if (where) { owner = where.creator; store = where.store; break; }
+        }
+      }
+      if (!owner) continue;
+      const storeId = store ?? layout.defaultStoreId;
+
+      try {
+        const io = await storeFileIO(ctx, { pagesDirectory, owner, store: storeId, layout });
+        if (io.sealed) {
+          // #1461: the store is named, the file only by id.
+          logger.info(`📎 Leaving a private file in place: ${owner}'s store '${storeId}' is encrypted and this job holds no key (${record.id})`);
+          continue;
+        }
+        if (await this.attachmentProvider.adoptRecordIntoStore({ owner, store: storeId, io }, record.id)) moved++;
+      } catch (err) {
+        logger.warn(`📎 Could not move a private file into ${owner}'s store '${storeId}' (${record.id}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (moved > 0) {
+      logger.info(`📎 Private files: moved ${moved} record(s) out of the shared attachment index into their own store (#1460)`);
+    }
+    return moved;
   }
 
   /**
@@ -797,50 +1035,97 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Get all attachments for a page
+   * Every file attached to a page that this requester may see: the shared
+   * pool's records, plus the requester's own private-store files that name
+   * the page (#1460). Another user's, and an admin's view of anyone's, are
+   * not merged — {@link ownPrivateStores} reads `ctx`'s container and no other.
    *
-   * @param {string} pageName - Page name
-   * @returns {Promise<AttachmentMetadata[]>}
+   * @param pageName - Page name
+   * @param ctx - Whose reading this is (#1179). Mandatory and positional.
    */
-  async getAttachmentsForPage(pageName: string): Promise<AttachmentMetadata[]> {
+  async getAttachmentsForPage(pageName: string, ctx: ActorContext): Promise<AttachmentMetadata[]> {
     if (!this.attachmentProvider) {
       return [];
     }
 
-    return await this.attachmentProvider.getAttachmentsForPage(pageName);
+    return [
+      ...await this.attachmentProvider.getAttachmentsForPage(pageName),
+      ...await this.getPrivateStoreAttachmentsForPage(pageName, ctx)
+    ];
   }
 
   /**
-   * Find an attachment by its original filename across all attachments
+   * Find an attachment by its original filename.
    *
-   * @param {string} filename - Original filename to search for
-   * @returns {Promise<AttachmentMetadata|null>}
+   * The shared pool first, then the requester's own stores (#1460): a public
+   * page's markup must resolve to the same file for everyone who can read it,
+   * so a private file of the reader's never shadows a public record of the
+   * same name. A private file uploaded ONTO a page is still found before
+   * either, by {@link resolveAttachmentSrc}, which asks the page's own files.
+   *
+   * @param filename - Original filename to search for
+   * @param ctx - Whose reading this is (#1179). Mandatory and positional.
    */
-  async getAttachmentByFilename(filename: string): Promise<AttachmentMetadata | null> {
+  async getAttachmentByFilename(filename: string, ctx: ActorContext): Promise<AttachmentMetadata | null> {
     if (!this.attachmentProvider) {
       return null;
     }
 
-    return await this.attachmentProvider.getAttachmentByFilename(filename);
+    const shared = await this.attachmentProvider.getAttachmentByFilename(filename);
+    if (shared) return shared;
+    return (await this.getPrivateStoreAttachments(ctx)).find((a) => a.name === filename) ?? null;
   }
 
-  /**
-   * Get all attachments
-   *
-   * @returns {Promise<AttachmentMetadata[]>}
-   */
   /** #1006: how many attachments this instance holds. Count only, never metadata. */
   async getManagerStats(): Promise<ManagerStats> {
-    const n = (await this.getAllAttachments()).length;
+    // #1460: the shared pool, deliberately. An instance-wide count has no
+    // requester, and a private store's contents are not an instance statistic.
+    const n = (await this.getSharedPoolAttachments()).length;
     return { ...(await super.getManagerStats()), count: n, summary: `${n} attachment(s)` };
   }
 
-  async getAllAttachments(): Promise<AttachmentMetadata[]> {
+  /**
+   * Every attachment this requester may see: the shared pool, plus their own
+   * private stores' files (#1460).
+   *
+   * @param ctx - Whose reading this is (#1179). Mandatory and positional.
+   */
+  async getAllAttachments(ctx: ActorContext): Promise<AttachmentMetadata[]> {
+    if (!this.attachmentProvider) {
+      return [];
+    }
+
+    return [
+      ...await this.attachmentProvider.getAllAttachments(),
+      ...await this.getPrivateStoreAttachments(ctx)
+    ];
+  }
+
+  /**
+   * The shared pool alone — what `attachment-metadata.json` holds (#1460).
+   *
+   * For the surfaces that have no requester to merge for: an instance count,
+   * and the CatalogSource fan-out, whose results are a shared catalogue. A
+   * surface that DOES have one asks {@link getAllAttachments} instead.
+   */
+  async getSharedPoolAttachments(): Promise<AttachmentMetadata[]> {
     if (!this.attachmentProvider) {
       return [];
     }
 
     return await this.attachmentProvider.getAllAttachments();
+  }
+
+  /**
+   * The shared pool's record with this filename, with nothing merged (#1460).
+   *
+   * For `AssetManager.syncPageAssets`, which keeps a SHARED index of what each
+   * public page references: nothing private may enter it, so it must not be
+   * given the per-requester merge {@link getAttachmentByFilename} does.
+   */
+  async getSharedPoolAttachmentByFilename(filename: string): Promise<AttachmentMetadata | null> {
+    if (!this.attachmentProvider) return null;
+    return await this.attachmentProvider.getAttachmentByFilename(filename);
   }
 
   /**
@@ -876,21 +1161,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // keep the id-only fallback
     }
 
-    // #1400: a file in one of the requester's encrypted stores is not in the
+    // #1460: a file in one of the requester's own private stores is not in the
     // global metadata — it is deleted from its store, recorded first as below.
+    // The container rule refuses anyone else, which is the whole of the
+    // decision for a plain store: there is no key to fail to hold.
     if (!meta) {
-      for (const location of await this.ownSealedStores(context)) {
-        const found = await this.attachmentProvider.getFileInStore(location, attachmentId);
-        if (!found) continue;
-        if (!this.mayReach(context, location.owner, `attachment:${attachmentId}`, 'delete')) {
-          throw new Error('Permission denied: you cannot delete this attachment');
-        }
+      const own = await this.findOwnStoreFile(context, attachmentId, 'delete');
+      if (own) {
         await this.recordAttachmentEvent('delete', context, {
           attachmentId,
-          filename: found.entry.name,
-          sizeBytes: found.entry.contentSize
+          filename: own.entry.name,
+          sizeBytes: own.entry.contentSize
         }, wikiContext);
-        return (await this.attachmentProvider.deleteFileInStore(location, attachmentId)) !== null;
+        return (await this.attachmentProvider.deleteFileInStore(own.location, attachmentId)) !== null;
       }
     }
 
@@ -1154,18 +1437,20 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     if (!this.attachmentProvider) return null;
 
-    // #1400: a file the viewer uploaded onto this page in one of their own
-    // encrypted stores. Only their own, only unlocked — anyone else resolves
-    // nothing here and falls through to the public lookups below.
-    const sealed = await this.getSealedAttachmentsForPage(pageName, ctx);
+    // #1460: a file the viewer uploaded onto this page in one of their OWN
+    // private stores, encrypted or not. Only their own — anyone else resolves
+    // nothing here and falls through to the public lookups below, so the same
+    // markup on the same page shows the owner their file and shows everyone
+    // else whatever is public, or a red link.
+    const own = await this.getPrivateStoreAttachmentsForPage(pageName, ctx);
     const baseName = src.split('/').pop() ?? src;
-    const sealedHit = sealed.find((a) => a.name === src) ?? sealed.find((a) => a.name === baseName);
-    if (sealedHit) {
-      return { url: String(sealedHit.url), mimeType: String(sealedHit.encodingFormat ?? '') };
+    const ownHit = own.find((a) => a.name === src) ?? own.find((a) => a.name === baseName);
+    if (ownHit) {
+      return { url: String(ownHit.url), mimeType: String(ownHit.encodingFormat ?? '') };
     }
 
     // Steps 3 & 4: page-scoped, then global, by exact name.
-    const exact = await this.lookupAttachmentByName(src, pageName);
+    const exact = await this.lookupAttachmentByName(src, pageName, ctx);
     if (exact) return exact;
 
     // Step 5 (#1051): retry with the basename when the src carries a path.
@@ -1183,7 +1468,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // tightly than the unstripped one would be the odd choice.
     const basename = AttachmentManager.basenameOf(src);
     if (basename && basename !== src) {
-      const byBasename = await this.lookupAttachmentByName(basename, pageName);
+      const byBasename = await this.lookupAttachmentByName(basename, pageName, ctx);
       if (byBasename) return byBasename;
     }
 
@@ -1198,12 +1483,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    */
   private async lookupAttachmentByName(
     name: string,
-    pageName: string
+    pageName: string,
+    ctx: ActorContext
   ): Promise<{ url: string; mimeType: string } | null> {
     if (!this.attachmentProvider) return null;
 
     try {
-      const pageAttachments = await this.attachmentProvider.getAttachmentsForPage(pageName);
+      const pageAttachments = await this.getAttachmentsForPage(pageName, ctx);
       const match = pageAttachments.find(a => a.name === name);
       if (match) {
         return {
@@ -1216,7 +1502,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     try {
-      const globalMatch = await this.attachmentProvider.getAttachmentByFilename(name);
+      const globalMatch = await this.getAttachmentByFilename(name, ctx);
       if (globalMatch) {
         return {
           url: globalMatch.url || `/attachments/${globalMatch.identifier}`,
@@ -1249,12 +1535,40 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * Returns null for non-image attachments or when the provider has no
    * thumbnail capability.
    *
+   * #1460: a file in one of the requester's own private stores has no record
+   * in the shared index and no bytes in the shared pool, so the provider's
+   * cache-on-disk path cannot make its thumbnail. It is rendered from the
+   * bytes in memory and deliberately NOT written to the shared `.thumbs`
+   * folder: a thumbnail of a private file is the private file, smaller, and
+   * putting one in a shared directory would undo the move this issue is.
+   *
    * @param {string} attachmentId - Attachment identifier
    * @param {string} size         - Size string e.g. "150x150"
+   * @param ctx - Whose reading this is (#1179). Mandatory and positional.
    * @returns {Promise<Buffer|null>}
    */
-  async getThumbnail(attachmentId: string, size: string): Promise<Buffer | null> {
-    if (!this.attachmentProvider?.getThumbnail) return null;
+  async getThumbnail(attachmentId: string, size: string, ctx: ActorContext): Promise<Buffer | null> {
+    if (!this.attachmentProvider) return null;
+
+    const own = await this.findOwnStoreFile(ctx, attachmentId, 'view');
+    if (own) {
+      if (!own.entry.encodingFormat.startsWith('image/')) return null;
+      const dims = parseSize(size);
+      if (!dims) return null;
+      const bytes = await this.attachmentProvider.getFileInStore(own.location, attachmentId);
+      if (!bytes) return null;
+      try {
+        return await transformImage(bytes.bytes, {
+          width: dims.width, height: dims.height, fit: 'inside', format: 'jpeg', quality: 85
+        });
+      } catch (err) {
+        // #1461: named by id, never by filename.
+        logger.warn(`📎 Thumbnail generation failed for a private file (${attachmentId}): ${String(err)}`);
+        return null;
+      }
+    }
+
+    if (!this.attachmentProvider.getThumbnail) return null;
     return this.attachmentProvider.getThumbnail(attachmentId, size);
   }
 
@@ -1308,7 +1622,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     return ids;
   }
 
-  async syncPageMentions(pageName: string, content: string): Promise<void> {
+  /**
+   * @param ctx - Whose save this is (#1179). Mandatory and positional: the
+   *   requester's own private-store files take part in this too (#1460) —
+   *   a file uploaded into their store from a public page's editor is
+   *   mentioned by that page, and its mentions live in its store's own index.
+   */
+  async syncPageMentions(pageName: string, content: string, ctx: ActorContext): Promise<void> {
     if (!this.attachmentProvider) return;
 
     const referencedFilenames = AttachmentManager.extractLocalAttachmentRefs(content);
@@ -1317,7 +1637,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const currentIds = new Set<string>();
     for (const filename of referencedFilenames) {
       try {
-        let attachment = await this.attachmentProvider.getAttachmentByFilename(filename);
+        let attachment = await this.getAttachmentByFilename(filename, ctx);
 
         // #1051: a ref carrying a path (`Some Page/photo.jpg`) matches no
         // record, since records are named by bare filename. Falling through to
@@ -1330,7 +1650,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         if (!attachment) {
           const basename = AttachmentManager.basenameOf(filename);
           if (basename && basename !== filename) {
-            attachment = await this.attachmentProvider.getAttachmentByFilename(basename);
+            attachment = await this.getAttachmentByFilename(basename, ctx);
           }
         }
 
@@ -1347,12 +1667,18 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       if (currentIds.has(id)) continue;
       try {
         const meta = await this.attachmentProvider.getAttachmentMetadata(id);
-        if (meta) currentIds.add(id);
+        if (meta) { currentIds.add(id); continue; }
+        // #1460: a record #1460's migration moved into a store keeps its id, so
+        // an existing `/attachments/<id>` reference still names it — it is just
+        // no longer in the shared index.
+        if (await this.findOwnStoreFile(ctx, id, 'view')) currentIds.add(id);
       } catch { /* unknown id — skip */ }
     }
 
-    // Get identifiers currently mentioning this page
-    const previousMentions = await this.attachmentProvider.getAttachmentsForPage(pageName);
+    // Get identifiers currently mentioning this page — the shared pool's, plus
+    // the saver's own store files that name it (#1460), so a private file of
+    // theirs is neither missed nor detached as if it had vanished.
+    const previousMentions = await this.getAttachmentsForPage(pageName, ctx);
     const previousIds = new Set<string>(
       previousMentions.map(a => a.identifier).filter(Boolean)
     );
@@ -1360,14 +1686,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // Add mentions for newly referenced attachments
     for (const id of currentIds) {
       if (!previousIds.has(id)) {
-        await this.attachToPage(id, pageName).catch(() => {});
+        await this.attachToPage(id, pageName, ctx).catch(() => {});
       }
     }
 
     // Remove mentions for attachments no longer referenced
     for (const id of previousIds) {
       if (!currentIds.has(id)) {
-        await this.detachFromPage(id, pageName).catch(() => {});
+        await this.detachFromPage(id, pageName, ctx).catch(() => {});
       }
     }
   }
@@ -1385,8 +1711,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    *  - brokenRefs:      page markup references naming no record (ref → pages)
    *  - looseTextRefs:   record filenames appearing in content OUTSIDE
    *                     canonical markup (never tracked as mentions)
+   *
+   * #1460: the requester's OWN private-store files are merged into the record
+   * set, so one of their files is not reported as a broken reference merely
+   * because it is in no shared index. `recordlessFiles` and `missingFiles`
+   * stay shared-pool questions — they compare the shared index against the
+   * shared storage folder, which a store's files are not in.
+   *
+   * @param ctx - Whose report this is (#1179). Mandatory and positional; an
+   *   admin sees their own stores merged, never anyone else's.
    */
-  async getHealthReport(): Promise<{
+  async getHealthReport(ctx: ActorContext): Promise<{
     totals: { records: number; diskFiles: number; pagesScanned: number };
     orphans: Array<{ identifier: string; name?: string; contentSize?: number; dateCreated?: string; author?: string }>;
     recordlessFiles: string[];
@@ -1394,7 +1729,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     brokenRefs: Array<{ ref: string; pages: string[] }>;
     looseTextRefs: string[];
   }> {
-    const records = this.attachmentProvider ? await this.attachmentProvider.getAllAttachments() : [];
+    const sharedRecords = this.attachmentProvider ? await this.attachmentProvider.getAllAttachments() : [];
+    // #1460: the requester's own store files answer "is this reference broken?"
+    // and "is this record an orphan?" for the files that are theirs.
+    const ownStoreRecords = await this.getPrivateStoreAttachments(ctx);
+    const records = [...sharedRecords, ...ownStoreRecords];
     const provider = this.attachmentProvider as unknown as { listStorageFiles?: () => Promise<string[]> } | null;
     const diskFiles = provider?.listStorageFiles ? await provider.listStorageFiles() : [];
 
@@ -1402,14 +1741,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     for (const r of records) if (r.name) byFilename.set(r.name, r);
 
     const storageBasenames = new Set(
-      records
+      sharedRecords
         .map(r => (r as { storageLocation?: string }).storageLocation)
         .filter((s): s is string => typeof s === 'string')
         .map(s => s.split('/').pop() as string)
     );
     const diskSet = new Set(diskFiles);
     const recordlessFiles = diskFiles.filter(f => !storageBasenames.has(f)).sort();
-    const missingFiles = records
+    const missingFiles = sharedRecords
       .filter(r => {
         const loc = (r as { storageLocation?: string }).storageLocation;
         return typeof loc === 'string' && !diskSet.has(loc.split('/').pop() as string);
@@ -1484,8 +1823,16 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * files into `<storage>/quarantine/`. Removed records are appended to a
    * per-run manifest in the quarantine dir so the operation is reversible.
    * `dryRun: true` returns exactly what WOULD move, touching nothing.
+   *
+   * #1460: only the SHARED POOL's orphans are selected. The quarantine folder
+   * is a shared directory, so moving a private-store file into it would carry
+   * it out of its store and put its name back in shared storage — the exact
+   * move this issue undoes. A store's own files are its owner's to delete,
+   * through `deleteAttachment`.
+   *
+   * @param ctx - Whose run this is (#1179). Mandatory and positional.
    */
-  async quarantineOrphans(options: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }): Promise<{
+  async quarantineOrphans(options: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }, ctx: ActorContext): Promise<{
     dryRun: boolean;
     orphansSelected: Array<{ identifier: string; name?: string; contentSize?: number }>;
     recordlessSelected: string[];
@@ -1493,10 +1840,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     skipped: number;
     manifestPath: string | null;
   }> {
-    const report = await this.getHealthReport();
-    const orphansSelected = options.includeOrphans ? report.orphans.map(o => ({
-      identifier: o.identifier, name: o.name, contentSize: o.contentSize
-    })) : [];
+    const report = await this.getHealthReport(ctx);
+    const inStore = new Set((await this.getPrivateStoreAttachments(ctx)).map(a => a.identifier));
+    const orphansSelected = options.includeOrphans ? report.orphans
+      .filter(o => !inStore.has(o.identifier))
+      .map(o => ({ identifier: o.identifier, name: o.name, contentSize: o.contentSize })) : [];
     const recordlessSelected = options.includeRecordless ? [...report.recordlessFiles] : [];
 
     const provider = this.attachmentProvider as unknown as {

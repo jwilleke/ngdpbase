@@ -2263,7 +2263,7 @@ class PageManager extends BaseManager implements CatalogSource {
       if (previousName !== name) await step('link graph add', () => rendering?.addPageToCache(name));
       await step('link graph', () => rendering?.updatePageInLinkGraph(name, content));
       await step('search', () => search?.updatePageInIndex(name, { name, content, metadata: change.metadata ?? {} }));
-      await step('mentions', () => attachments?.syncPageMentions(name, content));
+      await step('mentions', () => attachments?.syncPageMentions(name, content, change.ctx));
       await step('assets', () => assets?.syncPageAssets(name, content));
       (rendering?.getReferringPages(name) ?? []).forEach((r) => referrers.add(r));
     }

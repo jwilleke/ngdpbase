@@ -67,7 +67,9 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.rendering.addPageToCache).toHaveBeenCalledWith('New Page');
     expect(d.rendering.updatePageInLinkGraph).toHaveBeenCalledWith('New Page', 'see [Beta]');
     expect(d.search.updatePageInIndex).toHaveBeenCalledWith('New Page', expect.objectContaining({ name: 'New Page', content: 'see [Beta]' }));
-    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('New Page', 'see [Beta]');
+    // #1460: the saver's context rides along — a private-store file of theirs
+    // mentioned by this page is its own store index's to keep in step.
+    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('New Page', 'see [Beta]', d.jim);
     expect(d.assets.syncPageAssets).toHaveBeenCalledWith('New Page', 'see [Beta]');
     expect(d.rendering.removePageFromLinkGraph).not.toHaveBeenCalled();
     expect(d.search.removePageFromIndex).not.toHaveBeenCalled();
@@ -144,7 +146,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
 
     expect(d.rendering.addPageToCache).toHaveBeenCalledWith('Seeded');
     expect(d.search.updatePageInIndex).toHaveBeenCalledWith('Seeded', expect.objectContaining({ content: 'hello' }));
-    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('Seeded', 'hello');
+    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('Seeded', 'hello', { username: 'system' });
     expect(d.assets.syncPageAssets).toHaveBeenCalledWith('Seeded', 'hello');
   });
 

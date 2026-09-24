@@ -17,7 +17,7 @@
 import AttachmentsPlugin from '../AttachmentsPlugin';
 
 const makeAttachmentManager = (attachments: unknown[]) => ({
-  getAllAttachments: vi.fn().mockResolvedValue(attachments)
+  getSharedPoolAttachments: vi.fn().mockResolvedValue(attachments)
 });
 
 const makeEngine = (attachmentManager: unknown = null) => ({
@@ -46,14 +46,14 @@ describe('AttachmentsPlugin', () => {
       expect(result).toBe('0');
     });
 
-    test('returns "0" when getAllAttachments is missing', async () => {
+    test('returns "0" when getSharedPoolAttachments is missing', async () => {
       const context = { engine: makeEngine({}) };
       const result = await AttachmentsPlugin.execute(context, {});
       expect(result).toBe('0');
     });
 
-    test('returns "0" when getAllAttachments returns non-array', async () => {
-      const am = { getAllAttachments: vi.fn().mockResolvedValue(null) };
+    test('returns "0" when getSharedPoolAttachments returns non-array', async () => {
+      const am = { getSharedPoolAttachments: vi.fn().mockResolvedValue(null) };
       const context = { engine: makeEngine(am) };
       const result = await AttachmentsPlugin.execute(context, {});
       expect(result).toBe('0');
@@ -141,7 +141,7 @@ describe('AttachmentsPlugin', () => {
   describe('error handling', () => {
     test('returns "0" on unexpected exception', async () => {
       const am = {
-        getAllAttachments: vi.fn().mockRejectedValue(new Error('DB down'))
+        getSharedPoolAttachments: vi.fn().mockRejectedValue(new Error('DB down'))
       };
       const context = { engine: makeEngine(am) };
       const result = await AttachmentsPlugin.execute(context, {});

@@ -13,12 +13,11 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
-import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import {
   DEFAULT_PRIVATE_STORE_LAYOUT,
+  parsePrivatePageName,
   privateStoreFilePath,
   storeFileIndexPath,
-  privateStoreAttachmentsDir,
   privateStoreLayoutFromConfig,
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
@@ -87,7 +86,12 @@ interface SchemaCreativeWork {
 }
 
 /**
- * Options passed to storeAttachmentInternal for privacy-aware storage
+ * Options passed to storeAttachmentInternal for privacy-aware storage.
+ *
+ * #1460: a private destination is now REFUSED here rather than honoured — a
+ * private file belongs in its store's own index ({@link
+ * BasicAttachmentProvider.storeFileInStore}). These fields say which
+ * destination was asked for, so the refusal can be specific.
  */
 interface StoreAttachmentOptions {
   /** Whether the linked page is private */
@@ -575,16 +579,22 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       throw new Error('Storage directory not initialized');
     }
 
-    // Private files live in the store's attachments folder, not attachments/private (#1386).
-    const isPrivatePage = options.isPrivatePage ?? false;
-    const pageCreator = options.pageCreator;
-    const storeId = options.store ?? this.privateStoreLayout.defaultStoreId;
-    const targetDir =
-      isPrivatePage && pageCreator && this.pagesDirectory
-        ? privateStoreAttachmentsDir(this.pagesDirectory, pageCreator, storeId, this.privateStoreLayout)
-        : this.storageDirectory;
+    // #1460: this is the SHARED POOL, and nothing private goes in it. A
+    // private file belongs to its store — {@link storeFileInStore}, whose
+    // index is the store's own — so a private destination here is refused
+    // rather than written. It used to be honoured: the file went to the store
+    // folder but its ORIGINAL NAME went into `attachment-metadata.json`, which
+    // is the leak this issue closes. #1386 put the bytes in the right place
+    // and left the name behind; the store's own index now carries both.
+    if (options.isPrivatePage) {
+      throw new Error(
+        '[BasicAttachmentProvider] a private file belongs in its store, not the shared pool — use storeFileInStore (#1460)'
+      );
+    }
 
-    // Ensure target directory exists (store dir may not yet exist)
+    const targetDir = this.storageDirectory;
+
+    // Ensure target directory exists
     await fs.ensureDir(targetDir);
 
     // Determine file extension from original name
@@ -624,9 +634,9 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       'isFamilyFriendly': metadata.isFamilyFriendly !== undefined ? metadata.isFamilyFriendly : true,
       'isBasedOn': metadata.isBasedOn,
       'mentions': [], // Array of pages using this attachment
-      'isPrivate': isPrivatePage,
-      'creator': isPrivatePage && pageCreator ? pageCreator : undefined,
-      'store': isPrivatePage ? storeId : undefined,
+      // #1460: a shared-pool record is public by construction — the private
+      // branch above is refused, so these are no longer decided here.
+      'isPrivate': false,
       'assetMetadata': (metadata).assetMetadata,
       // Slice 5 of #755 (#759) — embedded document metadata, spread only when present.
       ...(docMetadata?.title ? { documentTitle: docMetadata.title } : {}),
@@ -638,24 +648,10 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       ...(docMetadata?.inLanguage ? { inLanguage: docMetadata.inLanguage } : {})
     };
 
-    const sealed = isPrivatePage && pageCreator && this.pagesDirectory
-      ? (await readStoreMeta(
-        this.pagesDirectory,
-        pageCreator,
-        storeId,
-        this.privateStoreLayout
-      )).encrypt === true
-      : false;
+    this.attachmentMetadata.set(attachmentId, attachmentMetadata);
+    await this.saveMetadata();
 
-    // Sealed-store original names must not appear in global attachment-metadata.json.
-    if (!sealed) {
-      this.attachmentMetadata.set(attachmentId, attachmentMetadata);
-      await this.saveMetadata();
-    } else if (this.metadataFile && !await fs.pathExists(this.metadataFile)) {
-      await this.saveMetadata();
-    }
-
-    logger.info(`[BasicAttachmentProvider] Stored attachment: ${fileInfo.originalName} (${attachmentId})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}]` : ''}`);
+    logger.info(`[BasicAttachmentProvider] Stored attachment: ${fileInfo.originalName} (${attachmentId})`);
     return attachmentMetadata;
   }
 
@@ -887,12 +883,19 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     }
   }
 
-  // ── Files in a private store (#1400) ──────────────────────────────────────
+  // ── Files in a private store (#1400, every store since #1460) ─────────────
   //
   // The store's own index lives beside its `store.json`; the files in its
   // `attachments/` folder, named `{uuid}.ext`. Both go through the location's
   // I/O, so an encrypted store's index and bytes are sealed without this
-  // provider deciding it. Nothing here touches the global metadata map.
+  // provider deciding it — and an unencrypted store's are written in the clear
+  // by the same code, because encryption is the I/O's business and not this
+  // file's. Nothing here touches the global metadata map.
+  //
+  // Encryption is also not what keeps an unencrypted store's files private:
+  // its bytes are readable to anything with the disk. Who may reach them is
+  // decided by the container rule at the manager door (#1460), exactly as the
+  // page door decides a private page.
 
   private storeIndexFile(location: StoreFileLocation): string {
     return storeFileIndexPath(this.requirePagesDirectory(), location.owner, location.store, this.privateStoreLayout);
@@ -973,8 +976,131 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     return { entry, bytes: await location.io.readBytes(this.storeFilePath(location, entry.fileName)) };
   }
 
+  /** Everything this store lists, newest first — the store's half of a merged list (#1460). */
+  async listFilesInStore(location: StoreFileLocation): Promise<StoreFileEntry[]> {
+    return Object.values(await this.readStoreIndex(location))
+      .sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
+  }
+
   async filesInStoreForPage(location: StoreFileLocation, pageName: string): Promise<StoreFileEntry[]> {
-    return Object.values(await this.readStoreIndex(location)).filter((f) => f.mentions.includes(pageName));
+    return (await this.listFilesInStore(location)).filter((f) => f.mentions.includes(pageName));
+  }
+
+  /**
+   * Add or remove `pageName` in one store file's mentions (#1460) — the store
+   * index's half of save-time mention sync. `false` when this store does not
+   * list `id`, so a caller can try the next of its own stores.
+   */
+  async setFileMentionInStore(
+    location: StoreFileLocation,
+    id: string,
+    pageName: string,
+    mentioned: boolean
+  ): Promise<boolean> {
+    const files = await this.readStoreIndex(location);
+    const entry = files[id];
+    if (!entry) return false;
+    const has = entry.mentions.includes(pageName);
+    if (has === mentioned) return true;
+    entry.mentions = mentioned
+      ? [...entry.mentions, pageName]
+      : entry.mentions.filter((m) => m !== pageName);
+    entry.dateModified = new Date().toISOString();
+    await this.writeStoreIndex(location, files);
+    return true;
+  }
+
+  /**
+   * Move one record out of the global `attachment-metadata.json` and into its
+   * store's own index (#1460), bytes and all.
+   *
+   * The file KEEPS the name it has: renaming it would break nothing that is
+   * written down, but it would rewrite a file for no reason, and a store is
+   * meant to be a directory an operator can read. The entry keeps the record's
+   * identifier too — that id is the `/attachments/{id}` URL on every page that
+   * references the file.
+   *
+   * Idempotent: a record already gone from the map, or a store that already
+   * lists the id, is a no-op that answers `null`. The move itself is skipped
+   * when the bytes are already in place.
+   *
+   * @returns the store entry it wrote, or null when there was nothing to move
+   */
+  async adoptRecordIntoStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null> {
+    const record = this.attachmentMetadata.get(id);
+    if (!record) return null;
+
+    const files = await this.readStoreIndex(location);
+    const fileName = path.basename(record.storageLocation);
+    const target = this.storeFilePath(location, fileName);
+
+    if (!files[id]) {
+      const source = await this.resolveAttachmentFilePath(record, fileName);
+      if (path.resolve(source) !== path.resolve(target)) {
+        if (!await fs.pathExists(source)) {
+          // #1461: the file is named by id, never by its filename.
+          logger.warn(`[BasicAttachmentProvider] Cannot move a private file into ${location.owner}'s store '${location.store}': its bytes are missing (${id})`);
+          return null;
+        }
+        await fs.ensureDir(path.dirname(target));
+        await fs.move(source, target, { overwrite: false });
+      }
+      files[id] = {
+        id,
+        fileName,
+        name: record.name,
+        encodingFormat: record.encodingFormat,
+        contentSize: record.contentSize,
+        // The bytes are the file's own; hashing them again would be the same
+        // answer the id already is, since a shared-pool id IS their SHA-256.
+        fingerprint: id,
+        description: record.description ?? '',
+        ...(record.author?.name ? { author: record.author.name } : {}),
+        dateCreated: record.dateCreated,
+        dateModified: record.dateModified,
+        mentions: (record.mentions ?? []).map((m) => m.name ?? '').filter(Boolean)
+      };
+      await this.writeStoreIndex(location, files);
+    }
+
+    this.attachmentMetadata.delete(id);
+    await this.saveMetadata();
+    return files[id];
+  }
+
+  /**
+   * The private records still sitting in the shared index (#1460) — what the
+   * start-up migration has to move. Identifier, owner and store only: enough
+   * to place the file, and nothing of its name leaves this method.
+   *
+   * Two ways a record says it is private, in order:
+   *
+   * - `isPrivate`, #1398's flag, written by `storeAttachmentInternal` together
+   *   with `creator` and `store`. That is the record deciding from itself.
+   * - failing that, a mention naming a private page — `private/{owner}/{store}/{title}`
+   *   since #1456. The record is then placed by the page it is attached to,
+   *   with `owner: null` so the caller confirms it through PageManager, which
+   *   is what actually knows whose store a page is in.
+   *
+   * A record that is neither is a public attachment and is not listed: the
+   * shared pool is exactly what stays behind.
+   */
+  privateRecordsInSharedIndex(): Array<{ id: string; owner: string | null; store: string | null; pages: string[] }> {
+    const out: Array<{ id: string; owner: string | null; store: string | null; pages: string[] }> = [];
+    for (const record of this.attachmentMetadata.values()) {
+      const pages = (record.mentions ?? []).map((m) => m.name ?? '').filter(Boolean);
+      if (record.isPrivate === true) {
+        out.push({
+          id: record.identifier,
+          owner: record.creator ?? null,
+          store: record.store ?? null,
+          pages
+        });
+      } else if (pages.some((p) => parsePrivatePageName(p) !== null)) {
+        out.push({ id: record.identifier, owner: null, store: null, pages });
+      }
+    }
+    return out;
   }
 
   async deleteFileInStore(location: StoreFileLocation, id: string): Promise<StoreFileEntry | null> {
@@ -1722,12 +1848,68 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
 
   /**
    * AssetProvider.search() — searches by filename and description.
+   *
+   * The shared pool only. A private store's files are in no shared index, so
+   * they are searched through {@link searchFilesInStore}, by the one caller
+   * that has the requester's context to say which stores are theirs (#1460).
    */
   search(query: AssetQuery): Promise<AssetPage> {
-    const { query: q = '', pageSize = 48, offset = 0, mimeCategory } = query;
+    const { pageSize = 48, offset = 0 } = query;
+
+    // Sort by dateCreated desc by default
+    const items = this.matchSchemas(Array.from(this.attachmentMetadata.values()), query)
+      .sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
+
+    const total = items.length;
+    const page = items.slice(offset, offset + pageSize).map(s => this.schemaToAssetRecord(s));
+    return Promise.resolve({ results: page, total, hasMore: offset + page.length < total });
+  }
+
+  /**
+   * One private store's files as search results (#1460) — the store's half of
+   * an asset search, matched by the SAME rules the shared pool is, so a
+   * private file is findable the way a public one is and no filter exists in
+   * two places. Merging, sorting and paging are the caller's: it has the other
+   * halves.
+   */
+  async searchFilesInStore(location: StoreFileLocation, query: AssetQuery): Promise<AssetRecord[]> {
+    const schemas = (await this.listFilesInStore(location)).map((e) => this.storeEntryToSchema(e, location));
+    return this.matchSchemas(schemas, query).map((s) => this.schemaToAssetRecord(s));
+  }
+
+  /**
+   * A store file as the CreativeWork shape the rest of this provider speaks
+   * (#1460), so one converter, one filter and one record shape serve both
+   * halves of a merged list. `storageLocation` is deliberately absent: where a
+   * private file sits on disk is not something a search result carries.
+   */
+  private storeEntryToSchema(entry: StoreFileEntry, location: StoreFileLocation): SchemaCreativeWork {
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'CreativeWork',
+      identifier: entry.id,
+      name: entry.name,
+      description: entry.description,
+      ...(entry.author ? { author: { '@type': 'Person' as const, name: entry.author } } : {}),
+      dateCreated: entry.dateCreated,
+      dateModified: entry.dateModified,
+      encodingFormat: entry.encodingFormat,
+      contentSize: entry.contentSize,
+      url: `/attachments/${entry.id}`,
+      storageLocation: '',
+      mentions: entry.mentions.map((name) => ({ '@type': 'Thing' as const, name, url: `/view/${encodeURIComponent(name)}` })),
+      isPrivate: true,
+      creator: location.owner,
+      store: location.store
+    };
+  }
+
+  /** The free-text and MIME-category rules of an asset search, in one place (#1460). */
+  private matchSchemas(source: SchemaCreativeWork[], query: AssetQuery): SchemaCreativeWork[] {
+    const { query: q = '', mimeCategory } = query;
     const lower = q.toLowerCase();
 
-    let items = Array.from(this.attachmentMetadata.values());
+    let items = source;
 
     if (lower) {
       items = items.filter(s => {
@@ -1761,12 +1943,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
       });
     }
 
-    // Sort by dateCreated desc by default
-    items = items.sort((a, b) => new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime());
-
-    const total = items.length;
-    const page = items.slice(offset, offset + pageSize).map(s => this.schemaToAssetRecord(s));
-    return Promise.resolve({ results: page, total, hasMore: offset + page.length < total });
+    return items;
   }
 
   /**

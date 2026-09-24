@@ -634,15 +634,25 @@ export interface AttachmentMetadata {
 }
 
 /**
- * A file in a private store (#1400, docs/planning/private-stores.md "Stores are
- * self-contained"). Listed in the store's OWN index, beside `store.json` —
- * never in the global `attachment-metadata.json` — and sealed with the store
- * DEK when the store is encrypted.
+ * A file in a private store (#1400, #1460, docs/planning/private-stores.md
+ * "Stores are self-contained"). Listed in the store's OWN index, beside
+ * `store.json` — never in the global `attachment-metadata.json` — and sealed
+ * with the store DEK when the store is encrypted. #1460: every private store
+ * keeps its files this way, encrypted or not.
  */
 export interface StoreFileEntry {
-  /** Random UUID — the file's id, and the base of its name on disk. */
+  /**
+   * The file's id, and the base of its name on disk. A random UUID for a new
+   * upload; a record #1460's migration moved out of the shared index keeps the
+   * id it already had, because that id is its `/attachments/{id}` URL on every
+   * page that references it.
+   */
   id: string;
-  /** Name on disk inside `{store}/attachments/`: `{id}{ext}`. Says nothing about the file. */
+  /**
+   * Name on disk inside `{store}/attachments/`: `{id}{ext}` for a new upload,
+   * and for a migrated file the name it already had — #1460 moves bytes, it
+   * does not rename them. Says nothing about the file either way.
+   */
   fileName: string;
   /** The name it was uploaded with. Only inside the store's index. */
   name: string;

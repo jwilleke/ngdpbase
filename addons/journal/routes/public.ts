@@ -200,7 +200,9 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
 
         // Attachments
         const am = engine.getManager<AttachmentManager>('AttachmentManager');
-        const attachments = am ? await am.getAttachmentsForPage(entry.name) : [];
+        // #1460: the reader's own private-store files on this entry are merged
+        // by the manager, through their context — nobody else's.
+        const attachments = am ? await am.getAttachmentsForPage(entry.name, req.userContext) : [];
 
         const streakVisible = await getUserPref<boolean>(entry.author, 'journal.streakVisible', true);
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);

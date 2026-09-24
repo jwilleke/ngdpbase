@@ -3,7 +3,9 @@
  *
  * The manager door calls the shared helper; keys are not on PageManager.
  * Destination is the store (#1386). #1400: an encrypted store keeps the file
- * itself, sealed, in its own index — the provider's storeFileInStore.
+ * itself, sealed, in its own index — the provider's storeFileInStore. #1460:
+ * so does an unencrypted one, so `storeAttachment` is no longer reached by a
+ * private upload at all.
  */
 
 import fs from 'fs-extra';
@@ -54,9 +56,9 @@ function makeManager(pagesDir: string, stored: unknown[]) {
       return Promise.resolve({ identifier: 'att-1', name: FILE.originalName });
     },
     storeFileInStore: (...args: unknown[]) => {
-      stored.push(['sealed', ...args]);
+      stored.push(['in-store', ...args]);
       return Promise.resolve({
-        id: 'sealed-1', fileName: 'sealed-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
+        id: 'in-store-1', fileName: 'in-store-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
         contentSize: 1, fingerprint: 'f', description: '', dateCreated: '', dateModified: '', mentions: []
       });
     }
@@ -80,16 +82,17 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     await fs.remove(tmp);
   });
 
-  test('encrypt-off (missing store.json) still uploads', async () => {
+  test('#1460 encrypt-off (missing store.json) uploads into the store, not the shared pool', async () => {
     const stored: unknown[] = [];
     const m = makeManager(pagesDir, stored);
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
-    ).resolves.toMatchObject({ identifier: 'att-1' });
+    ).resolves.toMatchObject({ identifier: 'in-store-1', isPrivate: true, creator: 'molly', store: DEFAULT_PRIVATE_STORE });
     expect(stored).toHaveLength(1);
-    const metadata = (stored[0] as unknown[])[2] as { store?: string; pageCreator?: string };
-    expect(metadata.store).toBe(DEFAULT_PRIVATE_STORE);
-    expect(metadata.pageCreator).toBe('molly');
+    expect((stored[0] as unknown[])[0]).toBe('in-store');
+    // A plain store: the I/O carries no key, and the destination is still its own.
+    const location = (stored[0] as [string, { owner: string; store: string; io: { sealed: boolean } }])[1];
+    expect(location).toMatchObject({ owner: 'molly', store: DEFAULT_PRIVATE_STORE, io: { sealed: false } });
   });
 
   test('encrypt-on upload refuses without a session DEK', async () => {
@@ -119,9 +122,10 @@ describe('AttachmentManager encrypt-on write (#1394)', () => {
     const m = makeManager(pagesDir, stored);
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
-    ).resolves.toMatchObject({ identifier: 'sealed-1', isPrivate: true });
+    ).resolves.toMatchObject({ identifier: 'in-store-1', isPrivate: true });
     // #1400: into the store's own index, sealed — never the global pool.
     expect(stored).toHaveLength(1);
-    expect((stored[0] as unknown[])[0]).toBe('sealed');
+    expect((stored[0] as unknown[])[0]).toBe('in-store');
+    expect((stored[0] as [string, { io: { sealed: boolean } }])[1].io.sealed).toBe(true);
   });
 });

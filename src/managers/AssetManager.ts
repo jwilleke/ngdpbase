@@ -19,6 +19,7 @@ import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AssetProvider, AssetRecord, AssetPage, AssetQuery, AssetAggregations, AssetFacet, ProviderHealthStatus, ProviderHealthReport } from '../types/Asset.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 
 class AssetManager extends BaseManager {
@@ -187,7 +188,9 @@ class AssetManager extends BaseManager {
     const composites = new Set<string>();
     let m: RegExpExecArray | null;
 
-    type AttachmentManagerLike = { getAttachmentByFilename(f: string): Promise<{ id?: string; identifier?: string } | null> };
+    // #1460: the shared pool's reader, deliberately. page-assets-index.json is
+    // a shared index, so nothing private may be resolved into it.
+    type AttachmentManagerLike = { getSharedPoolAttachmentByFilename(f: string): Promise<{ id?: string; identifier?: string } | null> };
     type MediaManagerLike = { findByFilename(f: string): Promise<{ id: string } | null> };
 
     const attachmentManager = this.engine.getManager<AttachmentManagerLike>('AttachmentManager');
@@ -213,7 +216,7 @@ class AssetManager extends BaseManager {
         tasks.push(
           (async () => {
             try {
-              const att = await attachmentManager?.getAttachmentByFilename(src);
+              const att = await attachmentManager?.getSharedPoolAttachmentByFilename(src);
               const id = att?.id ?? att?.identifier;
               if (id) composites.add(`local:${id}`);
             } catch { /* unresolvable — skip */ }
@@ -334,8 +337,15 @@ class AssetManager extends BaseManager {
   /**
    * Search across all registered providers (or a specific one when
    * query.providerId is set), merge results, sort, and paginate.
+   *
+   * @param query - what to look for; `wikiContext` rides along for the media
+   *   providers' own path ACL, as it always has
+   * @param ctx - who is searching (#1179, #1460). Mandatory and positional:
+   *   the private-store half of the results is the requester's own container,
+   *   and a door that took it out of the query bag would be reading an
+   *   identity someone could leave out (#1164).
    */
-  async search(query: AssetQuery & { providerId?: string; wikiContext?: unknown } = {}): Promise<AssetPage> {
+  async search(query: AssetQuery & { providerId?: string; wikiContext?: unknown }, ctx: ActorContext): Promise<AssetPage> {
     const { pageSize = 48, offset = 0, sort = 'date', order = 'asc', providerId, ...providerQuery } = query;
 
     const providers = providerId
@@ -356,6 +366,22 @@ class AssetManager extends BaseManager {
         if (page.aggregations) allAggs.push(page.aggregations);
       } catch (err) {
         logger.warn(`[AssetManager] Provider "${provider.id}" search failed:`, err);
+      }
+    }
+
+    // #1460: the requester's own private-store files are in no shared index,
+    // so no provider above can have seen them — a provider is handed a query,
+    // not a context. They are merged here, from the requester's own stores
+    // only, through the context this door was given. Another user's stores, and
+    // an admin's view of anyone's, are not reachable from here.
+    if (!providerId || providerId === 'local') {
+      const attachments = this.engine.getManager<{
+        searchPrivateStoreAttachments(q: AssetQuery, who: ActorContext): Promise<AssetRecord[]>;
+          }>('AttachmentManager');
+      try {
+        if (attachments) all.push(...await attachments.searchPrivateStoreAttachments(providerQuery, ctx));
+      } catch (err) {
+        logger.warn('[AssetManager] Private-store search failed:', err);
       }
     }
 

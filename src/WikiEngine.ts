@@ -386,6 +386,13 @@ class WikiEngine extends Engine {
     // unlock, the same split the migration above uses.
     await pageManager.buildStoreSearchIndexesAtBoot();
 
+    // #1460: an unencrypted private store keeps its own files too, so the
+    // private records still sitting in `attachment-metadata.json` move into
+    // their stores' own indexes. No unlock split here: a plain store needs no
+    // key, so this finishes the job for the stores it is about — an encrypted
+    // store's files were never in the shared index (#1400).
+    await attachmentManager.migratePrivateFilesAtBoot();
+
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
 

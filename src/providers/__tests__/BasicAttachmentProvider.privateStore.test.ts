@@ -1,8 +1,13 @@
 /**
- * Private-store files live in the store tree, not attachments/private (#1386).
+ * The shared pool takes no private file (#1460; destination was #1386).
  *
- * Ciphertext of those bytes is a later issue; this suite is destination +
- * sealed-name omission from global attachment-metadata.json.
+ * #1386 sent a private upload's BYTES to the store tree but left its original
+ * NAME in the global `attachment-metadata.json`, and #1400 removed the name
+ * only for an ENCRYPTED store. #1460 gives every private store its own file
+ * index, so `storeAttachment` — the shared pool's door — refuses a private
+ * destination outright rather than half-honouring it. `storeFileInStore` is
+ * where a private file goes; `AttachmentManager.plainStoreFiles` and
+ * `.sealedFiles` cover it end to end.
  */
 
 vi.unmock('../BasicAttachmentProvider');
@@ -49,7 +54,7 @@ function hashName(buf: Buffer, ext: string): string {
   return `${crypto.createHash('sha256').update(buf).digest('hex')}${ext}`;
 }
 
-describe('BasicAttachmentProvider private-store destination (#1386)', () => {
+describe('BasicAttachmentProvider — the shared pool takes no private file (#1460)', () => {
   let tmp: string;
   let storageDir: string;
   let pagesDir: string;
@@ -69,48 +74,45 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
     await fs.remove(tmp);
   });
 
-  test('encrypt-off private upload writes into the store, not attachments/private', async () => {
-    const buf = Buffer.from('lab-results');
-    const originalName = 'labs.pdf';
-    await provider.storeAttachment(
+  /** The shared index as text — '' when the refusal meant it was never written. */
+  const sharedIndex = async () => {
+    const file = path.join(storageDir, 'attachment-metadata.json');
+    return (await fs.pathExists(file)) ? await fs.readFile(file, 'utf8') : '';
+  };
+
+  const privateUpload = (buf: Buffer, originalName: string, store: string) =>
+    provider.storeAttachment(
       buf,
       { originalName, mimeType: 'application/pdf', size: buf.length },
-      { isPrivatePage: true, pageCreator: 'molly', store: DEFAULT_PRIVATE_STORE },
+      { isPrivatePage: true, pageCreator: 'molly', store },
       { username: 'molly' }
     );
 
-    const dest = path.join(
-      pagesDir,
-      'private',
-      'molly',
-      DEFAULT_PRIVATE_STORE,
-      'attachments',
-      hashName(buf, '.pdf')
-    );
-    expect(await fs.pathExists(dest)).toBe(true);
-    expect(await fs.readFile(dest)).toEqual(buf);
-    expect(await fs.pathExists(path.join(storageDir, 'private', 'molly'))).toBe(false);
+  test('an unencrypted private destination is refused — nothing is written anywhere', async () => {
+    const buf = Buffer.from('lab-results');
+    const originalName = 'labs.pdf';
+
+    await expect(privateUpload(buf, originalName, DEFAULT_PRIVATE_STORE))
+      .rejects.toThrow(/storeFileInStore/);
+
+    // Not in the shared pool's folder, not in the store's, not in the index.
     expect(await fs.pathExists(path.join(storageDir, hashName(buf, '.pdf')))).toBe(false);
-
-    const metaRaw = await fs.readFile(path.join(storageDir, 'attachment-metadata.json'), 'utf8');
-    expect(metaRaw).toContain(originalName);
-  });
-
-  test('named store uses that store segment', async () => {
-    const buf = Buffer.from('fhir');
-    await provider.storeAttachment(
-      buf,
-      { originalName: 'patient.json', mimeType: 'application/json', size: buf.length },
-      { isPrivatePage: true, pageCreator: 'molly', store: 'yourphr' },
-      { username: 'molly' }
-    );
-
     expect(await fs.pathExists(
-      path.join(pagesDir, 'private', 'molly', 'yourphr', 'attachments', hashName(buf, '.json'))
-    )).toBe(true);
+      path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, 'attachments', hashName(buf, '.pdf'))
+    )).toBe(false);
+    expect(await sharedIndex()).not.toContain(originalName);
+    expect(await provider.getAllAttachments()).toEqual([]);
   });
 
-  test('sealed-store original filename is omitted from global attachment-metadata.json', async () => {
+  test('a named store is refused the same way — the store id does not make it acceptable', async () => {
+    const buf = Buffer.from('fhir');
+    await expect(privateUpload(buf, 'patient.pdf', 'yourphr')).rejects.toThrow(/storeFileInStore/);
+    expect(await fs.pathExists(
+      path.join(pagesDir, 'private', 'molly', 'yourphr', 'attachments', hashName(buf, '.pdf'))
+    )).toBe(false);
+  });
+
+  test('an encrypted store is refused too — and its name never reaches the shared index', async () => {
     const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
@@ -118,26 +120,10 @@ describe('BasicAttachmentProvider private-store destination (#1386)', () => {
 
     const buf = Buffer.from('tax');
     const originalName = 'tax-return.pdf';
-    await provider.storeAttachment(
-      buf,
-      { originalName, mimeType: 'application/pdf', size: buf.length },
-      { isPrivatePage: true, pageCreator: 'molly', store: DEFAULT_PRIVATE_STORE },
-      { username: 'molly' }
-    );
+    await expect(privateUpload(buf, originalName, DEFAULT_PRIVATE_STORE)).rejects.toThrow(/storeFileInStore/);
 
-    const dest = path.join(
-      pagesDir,
-      'private',
-      'molly',
-      DEFAULT_PRIVATE_STORE,
-      'attachments',
-      hashName(buf, '.pdf')
-    );
-    expect(await fs.pathExists(dest)).toBe(true);
-
-    const metaRaw = await fs.readFile(path.join(storageDir, 'attachment-metadata.json'), 'utf8');
-    expect(metaRaw).not.toContain(originalName);
-    expect(JSON.parse(metaRaw).attachments).toEqual([]);
+    expect(await sharedIndex()).not.toContain(originalName);
+    expect(await provider.getAllAttachments()).toEqual([]);
   });
 
   test('public upload still writes the attachments directory', async () => {

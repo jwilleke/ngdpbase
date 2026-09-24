@@ -21,6 +21,14 @@ import { type MockInstance } from 'vitest';
  */
 
 import AssetManager from '../AssetManager';
+import type { ActorContext } from '../../context/ActorContext';
+
+/**
+ * #1460: search() takes the requester, mandatory and positional. A context
+ * with no private container of its own merges nothing, so the fan-out results
+ * below are the providers' alone.
+ */
+const SEARCHER = { username: 'tester', isAuthenticated: true, roles: ['editor'] } as ActorContext;
 
 // ---------------------------------------------------------------------------
 // Fixture provider factory
@@ -56,20 +64,20 @@ function makeEngine({
   attachmentProvider = undefined,
   mediaProvider = undefined,
   // pageAssets reverse index: filename-resolution mocks
-  getAttachmentByFilename = undefined,
+  getSharedPoolAttachmentByFilename = undefined,
   findByFilename = undefined
 }: {
   attachmentProvider?: ReturnType<typeof makeProvider>;
   mediaProvider?: ReturnType<typeof makeProvider>;
-  getAttachmentByFilename?: MockInstance;
+  getSharedPoolAttachmentByFilename?: MockInstance;
   findByFilename?: MockInstance;
 } = {}) {
   return {
     getManager: vi.fn((name) => {
       if (name === 'AttachmentManager') {
         const base = attachmentProvider ? { provider: attachmentProvider } : {};
-        return getAttachmentByFilename
-          ? { ...base, getAttachmentByFilename }
+        return getSharedPoolAttachmentByFilename
+          ? { ...base, getSharedPoolAttachmentByFilename }
           : (attachmentProvider ? base : undefined);
       }
       if (name === 'MediaManager') {
@@ -182,7 +190,7 @@ describe('AssetManager.search()', () => {
     const { manager } = makeManager();
     manager.registerProvider(makeProvider());
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(page).toHaveProperty('results');
     expect(page).toHaveProperty('total');
@@ -193,7 +201,7 @@ describe('AssetManager.search()', () => {
   it('returns empty page when no providers registered', async () => {
     const { manager } = makeManager();
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(page.results).toEqual([]);
     expect(page.total).toBe(0);
@@ -208,7 +216,7 @@ describe('AssetManager.search()', () => {
     manager.registerProvider(p1);
     manager.registerProvider(p2);
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(p1.search).toHaveBeenCalled();
     expect(p2.search).toHaveBeenCalled();
@@ -226,7 +234,7 @@ describe('AssetManager.search()', () => {
     manager.registerProvider(p1);
     manager.registerProvider(p2);
 
-    const page = await manager.search({ providerId: 'p2' });
+    const page = await manager.search({ providerId: 'p2' }, SEARCHER);
 
     expect(p1.search).not.toHaveBeenCalled();
     expect(p2.search).toHaveBeenCalled();
@@ -237,7 +245,7 @@ describe('AssetManager.search()', () => {
     const { manager } = makeManager();
     manager.registerProvider(makeProvider({ id: 'p1' }));
 
-    const page = await manager.search({ providerId: 'unknown' });
+    const page = await manager.search({ providerId: 'unknown' }, SEARCHER);
 
     expect(page.results).toEqual([]);
     expect(page.total).toBe(0);
@@ -251,7 +259,7 @@ describe('AssetManager.search()', () => {
     manager.registerProvider(failing);
     manager.registerProvider(healthy);
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(page.results).toHaveLength(1);
     expect(page.results[0].providerId).toBe('good');
@@ -265,7 +273,7 @@ describe('AssetManager.search()', () => {
     const provider = makeProvider({ search: vi.fn().mockResolvedValue({ results: records, total: 10, hasMore: false }) });
     manager.registerProvider(provider);
 
-    const page = await manager.search({ pageSize: 3 });
+    const page = await manager.search({ pageSize: 3 }, SEARCHER);
 
     expect(page.results).toHaveLength(3);
     expect(page.total).toBe(10);
@@ -277,7 +285,7 @@ describe('AssetManager.search()', () => {
     const provider = makeProvider({ search: vi.fn().mockResolvedValue({ results: [makeAssetRecord()], total: 1, hasMore: false }) });
     manager.registerProvider(provider);
 
-    const page = await manager.search({ pageSize: 10 });
+    const page = await manager.search({ pageSize: 10 }, SEARCHER);
 
     expect(page.hasMore).toBe(false);
   });
@@ -296,7 +304,7 @@ describe('AssetManager.search()', () => {
     });
     manager.registerProvider(pluginProvider);
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     const ids = page.results.map(r => r.id);
     expect(ids).toContain('att-1');
@@ -647,7 +655,7 @@ describe('degraded provider skipping', () => {
     manager.registerProvider(healthy);
     await manager.checkProviderHealth();
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(degraded.search).not.toHaveBeenCalled();
     expect(healthy.search).toHaveBeenCalled();
@@ -687,7 +695,7 @@ describe('degraded provider skipping', () => {
     });
     manager.registerProvider(provider);
 
-    const page = await manager.search();
+    const page = await manager.search({}, SEARCHER);
 
     expect(provider.search).toHaveBeenCalled();
     expect(page.total).toBe(1);
@@ -705,12 +713,12 @@ describe('degraded provider skipping', () => {
 
     // First check — degraded, search is skipped
     await manager.checkProviderHealth();
-    const page1 = await manager.search();
+    const page1 = await manager.search({}, SEARCHER);
     expect(page1.total).toBe(0);
 
     // Simulated recovery — re-check, search is included
     await manager.checkProviderHealth();
-    const page2 = await manager.search();
+    const page2 = await manager.search({}, SEARCHER);
     expect(page2.total).toBe(1);
   });
 });
@@ -722,7 +730,7 @@ describe('degraded provider skipping', () => {
 describe('AssetManager.syncPageAssets()', () => {
   it('stores local attachment composite key for [{Image src="filename"}] refs', async () => {
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1', identifier: 'uuid-1' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1', identifier: 'uuid-1' })
     });
     await manager.syncPageAssets('SomePage', "[{Image src='photo.jpg'}]");
     const assets = await manager.getAssetsForPage('SomePage');
@@ -739,7 +747,7 @@ describe('AssetManager.syncPageAssets()', () => {
       getById: vi.fn().mockResolvedValue(record)
     });
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' })
     });
     manager.registerProvider(localProvider);
 
@@ -755,7 +763,7 @@ describe('AssetManager.syncPageAssets()', () => {
     const record = makeAssetRecord({ id: 'uuid-1', providerId: 'local' });
     const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(record) });
     const { manager, engine } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'uuid-1' })
     });
     manager.registerProvider(localProvider);
     let sealed = false;
@@ -800,7 +808,7 @@ describe('AssetManager.syncPageAssets()', () => {
         .mockResolvedValueOnce(attRecord)
     });
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn()
+      getSharedPoolAttachmentByFilename: vi.fn()
         .mockResolvedValueOnce({ id: 'att-1' })
         .mockResolvedValueOnce({ id: 'att-1' })
     });
@@ -814,23 +822,23 @@ describe('AssetManager.syncPageAssets()', () => {
   });
 
   it('skips http:// and https:// external URLs', async () => {
-    const getAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'att-1' });
-    const { manager } = makeManager({ getAttachmentByFilename });
+    const getSharedPoolAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'att-1' });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename });
 
     await manager.syncPageAssets('SomePage', "[{Image src='https://example.com/img.jpg'}]");
 
-    expect(getAttachmentByFilename).not.toHaveBeenCalled();
+    expect(getSharedPoolAttachmentByFilename).not.toHaveBeenCalled();
     const assets = await manager.getAssetsForPage('SomePage');
     expect(assets).toHaveLength(0);
   });
 
   it('skips absolute /path/ URLs', async () => {
-    const getAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'att-1' });
-    const { manager } = makeManager({ getAttachmentByFilename });
+    const getSharedPoolAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'att-1' });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename });
 
     await manager.syncPageAssets('SomePage', "[{Image src='/static/logo.png'}]");
 
-    expect(getAttachmentByFilename).not.toHaveBeenCalled();
+    expect(getSharedPoolAttachmentByFilename).not.toHaveBeenCalled();
   });
 
   it('overwrites previous index entry on re-save', async () => {
@@ -839,10 +847,10 @@ describe('AssetManager.syncPageAssets()', () => {
       id: 'local',
       getById: vi.fn().mockResolvedValue(record)
     });
-    const getAttachmentByFilename = vi.fn()
+    const getSharedPoolAttachmentByFilename = vi.fn()
       .mockResolvedValueOnce({ id: 'att-old' })
       .mockResolvedValueOnce({ id: 'att-new' });
-    const { manager } = makeManager({ getAttachmentByFilename });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename });
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('SomePage', "[{Image src='old.jpg'}]");
@@ -856,7 +864,7 @@ describe('AssetManager.syncPageAssets()', () => {
 
   it('handles unresolvable filename gracefully — returns no composite key', async () => {
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue(null)
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue(null)
     });
 
     await expect(
@@ -869,7 +877,7 @@ describe('AssetManager.syncPageAssets()', () => {
 
   it('handles AttachmentManager lookup throwing — does not crash', async () => {
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockRejectedValue(new Error('disk error'))
+      getSharedPoolAttachmentByFilename: vi.fn().mockRejectedValue(new Error('disk error'))
     });
 
     await expect(
@@ -901,7 +909,7 @@ describe('AssetManager.getAssetsForPage()', () => {
       getById: vi.fn().mockResolvedValue(null) // asset deleted
     });
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'deleted-id' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'deleted-id' })
     });
     manager.registerProvider(localProvider);
 
@@ -915,7 +923,7 @@ describe('AssetManager.getAssetsForPage()', () => {
     // Sync with a provider registered
     const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(null) });
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'att-1' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'att-1' })
     });
     manager.registerProvider(localProvider);
     await manager.syncPageAssets('SomePage', "[{Image src='photo.jpg'}]");
@@ -937,10 +945,10 @@ describe('AssetManager.getAssetsForPage()', () => {
         .mockResolvedValueOnce(rec1)
         .mockResolvedValueOnce(rec2)
     });
-    const getAttachmentByFilename = vi.fn()
+    const getSharedPoolAttachmentByFilename = vi.fn()
       .mockResolvedValueOnce({ id: 'a1' })
       .mockResolvedValueOnce({ id: 'a2' });
-    const { manager } = makeManager({ getAttachmentByFilename });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename });
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('SomePage',
@@ -961,7 +969,7 @@ describe('AssetManager.removePageAssets()', () => {
     const record = makeAssetRecord({ id: 'a1', providerId: 'local' });
     const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(record) });
     const { manager } = makeManager({
-      getAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'a1' })
+      getSharedPoolAttachmentByFilename: vi.fn().mockResolvedValue({ id: 'a1' })
     });
     manager.registerProvider(localProvider);
 
@@ -980,8 +988,8 @@ describe('AssetManager.removePageAssets()', () => {
   it('does not affect other pages in the index', async () => {
     const rec = makeAssetRecord({ id: 'a1', providerId: 'local' });
     const localProvider = makeProvider({ id: 'local', getById: vi.fn().mockResolvedValue(rec) });
-    const getAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'a1' });
-    const { manager } = makeManager({ getAttachmentByFilename });
+    const getSharedPoolAttachmentByFilename = vi.fn().mockResolvedValue({ id: 'a1' });
+    const { manager } = makeManager({ getSharedPoolAttachmentByFilename });
     manager.registerProvider(localProvider);
 
     await manager.syncPageAssets('PageA', "[{Image src='photo.jpg'}]");

@@ -5,6 +5,11 @@
  * store — the author owns the page and every attachment uploaded onto it.
  * With no private page, options.private === true writes the uploader's store;
  * absent/false stays the public pool. Sealed writes need the owner's DEK (#1394).
+ *
+ * #1460: EVERY private store keeps its own files, so a private upload reaches
+ * `storeFileInStore` with the store's location — plain or sealed — and never
+ * `storeAttachment`. The destination decisions below are asserted on that
+ * location; the public pool is what `stored` still records.
  */
 
 import fs from 'fs-extra';
@@ -35,8 +40,8 @@ type StoredCall = unknown[];
 function makeManager(opts: {
   pagesDir: string;
   stored: StoredCall[];
-  /** #1400: uploads that went into an encrypted store's own index. */
-  sealedStored?: unknown[];
+  /** #1400/#1460: uploads that went into a private store's own index. */
+  storeStored?: unknown[];
   getProperty?: (key: string, fallback: unknown) => unknown;
   allow?: boolean;
   noConfig?: boolean;
@@ -82,11 +87,11 @@ function makeManager(opts: {
       opts.stored.push(args);
       return Promise.resolve({ identifier: 'att-priv-1', name: FILE.originalName });
     },
-    // #1400: an encrypted store keeps its own files.
+    // #1400/#1460: a private store keeps its own files, encrypted or not.
     storeFileInStore: (...args: unknown[]) => {
-      (opts.sealedStored ?? []).push(args);
+      (opts.storeStored ?? []).push(args);
       return Promise.resolve({
-        id: 'sealed-1', fileName: 'sealed-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
+        id: 'in-store-1', fileName: 'in-store-1.pdf', name: FILE.originalName, encodingFormat: FILE.mimeType,
         contentSize: 1, fingerprint: 'f', description: '', dateCreated: '', dateModified: '', mentions: []
       });
     }
@@ -100,6 +105,11 @@ function storedMeta(stored: StoredCall[]): {
   store?: string;
 } {
   return (stored[0])[2];
+}
+
+/** #1460: the private destination a `storeFileInStore` call was given. */
+function storeLocation(storeStored: unknown[], index = 0): { owner: string; store: string; io: { sealed: boolean } } {
+  return (storeStored[index] as [{ owner: string; store: string; io: { sealed: boolean } }])[0];
 }
 
 describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
@@ -120,62 +130,58 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
   test('private true without pageName: owner is ctx; store from config; does not read a page', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
       if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
       return fallback;
     });
     const pageOwner = vi.fn().mockResolvedValue(null);
-    const m = makeManager({ pagesDir, stored, getProperty, pageOwner });
+    const m = makeManager({ pagesDir, stored, storeStored, getProperty, pageOwner });
 
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
-    ).resolves.toMatchObject({ identifier: 'att-priv-1' });
+    ).resolves.toMatchObject({ identifier: 'in-store-1', isPrivate: true, creator: 'molly', store: 'vault' });
 
     expect(pageOwner).not.toHaveBeenCalled();
     expect(getProperty).toHaveBeenCalledWith(
       'ngdpbase.page.provider.filesystem.defaultstoreid',
       expect.any(String)
     );
-    expect(storedMeta(stored)).toEqual({
-      description: '',
-      isFamilyFriendly: true,
-      isPrivatePage: true,
-      pageCreator: 'molly',
-      store: 'vault'
-    });
+    // #1460: the store's own index, with a plain I/O — never the public pool.
+    expect(stored).toHaveLength(0);
+    expect(storeLocation(storeStored)).toMatchObject({ owner: 'molly', store: 'vault', io: { sealed: false } });
   });
 
   test('private true onto a public page: the uploader\'s store', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
       if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
       return fallback;
     });
     const pageOwner = vi.fn().mockResolvedValue(null);
-    const m = makeManager({ pagesDir, stored, getProperty, pageOwner });
+    const m = makeManager({ pagesDir, stored, storeStored, getProperty, pageOwner });
 
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true, pageName: 'Main' });
 
     expect(pageOwner).toHaveBeenCalledWith('Main', CTX);
-    expect(storedMeta(stored)).toEqual({
-      description: '',
-      isFamilyFriendly: true,
-      isPrivatePage: true,
-      pageCreator: 'molly',
-      store: 'vault'
-    });
+    expect(stored).toHaveLength(0);
+    expect(storeLocation(storeStored)).toMatchObject({ owner: 'molly', store: 'vault' });
+    // The public page it was uploaded onto is the file's mention.
+    expect((storeStored[0] as [unknown, unknown, { pageName?: string }])[2].pageName).toBe('Main');
   });
 
   test('options.store overrides the config default', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
       if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
       return fallback;
     });
-    const m = makeManager({ pagesDir, stored, getProperty });
+    const m = makeManager({ pagesDir, stored, storeStored, getProperty });
 
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true, store: 'yourphr' });
-    expect(storedMeta(stored).store).toBe('yourphr');
+    expect(storeLocation(storeStored).store).toBe('yourphr');
   });
 
   test('absent private onto a public page stays the public pool', async () => {
@@ -194,27 +200,26 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
   test('#1398: upload onto a private page is forced private, into the page author\'s store', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const pageOwner = vi.fn().mockResolvedValue({ creator: 'molly', store: 'yourphr' });
-    const m = makeManager({ pagesDir, stored, pageOwner });
+    const m = makeManager({ pagesDir, stored, storeStored, pageOwner });
 
     // Box unticked (absent) and explicitly false both still land private.
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' });
     await m.uploadAttachment(Buffer.from('y'), FILE, CTX, { pageName: 'Diary', private: false });
 
-    for (const call of stored) {
-      expect((call)[2]).toMatchObject({
-        isPrivatePage: true,
-        pageCreator: 'molly',
-        store: 'yourphr'
-      });
+    expect(storeStored).toHaveLength(2);
+    for (let i = 0; i < storeStored.length; i++) {
+      expect(storeLocation(storeStored, i)).toMatchObject({ owner: 'molly', store: 'yourphr' });
     }
-    expect(stored).toHaveLength(2);
+    expect(stored).toHaveLength(0);
   });
 
   test('#1398: the owner\'s own store id wins over options.store', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const pageOwner = vi.fn().mockResolvedValue({ creator: 'molly', store: 'default' });
-    const m = makeManager({ pagesDir, stored, pageOwner });
+    const m = makeManager({ pagesDir, stored, storeStored, pageOwner });
 
     await m.uploadAttachment(Buffer.from('x'), FILE, CTX, {
       pageName: 'Diary',
@@ -222,7 +227,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       store: 'elsewhere'
     });
 
-    expect(storedMeta(stored)).toMatchObject({ pageCreator: 'molly', store: 'default' });
+    expect(storeLocation(storeStored)).toMatchObject({ owner: 'molly', store: 'default' });
   });
 
   test('private container: nobody but the owner uploads onto a private page — admin included', async () => {
@@ -232,11 +237,13 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       { username: 'bob', isAuthenticated: true, roles: ['editor'] }
     ]) {
       const stored: StoredCall[] = [];
-      const m = makeManager({ pagesDir, stored, pageOwner });
+      const storeStored: unknown[] = [];
+      const m = makeManager({ pagesDir, stored, storeStored, pageOwner });
       await expect(
         m.uploadAttachment(Buffer.from('x'), FILE, who, { pageName: 'Diary' })
       ).rejects.toThrow(/permission denied/i);
       expect(stored).toHaveLength(0);
+      expect(storeStored).toHaveLength(0);
     }
   });
 
@@ -249,7 +256,8 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       viaShare: { id: 's1', issuer: 'alice', actions: ['asset-upload'], resources: [] }
     };
     const stored: StoredCall[] = [];
-    const m = makeManager({ pagesDir, stored, pageOwner });
+    const storeStored: unknown[] = [];
+    const m = makeManager({ pagesDir, stored, storeStored, pageOwner });
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, shareVisitor as never, { pageName: 'Diary' })
     ).rejects.toThrow(/permission denied/i);
@@ -257,17 +265,20 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       m.uploadAttachment(Buffer.from('x'), FILE, shareVisitor as never, { private: true })
     ).rejects.toThrow(/permission denied/i);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 
   test('#1398: a failed page lookup refuses the upload rather than falling back to the public pool', async () => {
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const pageOwner = vi.fn().mockRejectedValue(new Error('index unavailable'));
-    const m = makeManager({ pagesDir, stored, pageOwner });
+    const m = makeManager({ pagesDir, stored, storeStored, pageOwner });
 
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { pageName: 'Diary' })
     ).rejects.toThrow(/index unavailable/);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 
   test('private false stays the public pool', async () => {
@@ -281,20 +292,24 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
   test('permission denied refuses before store', async () => {
     const stored: StoredCall[] = [];
-    const m = makeManager({ pagesDir, stored, allow: false });
+    const storeStored: unknown[] = [];
+    const m = makeManager({ pagesDir, stored, storeStored, allow: false });
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/permission denied/i);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 
   test('private true requires ConfigurationManager from the engine', async () => {
     const stored: StoredCall[] = [];
-    const m = makeManager({ pagesDir, stored, noConfig: true });
+    const storeStored: unknown[] = [];
+    const m = makeManager({ pagesDir, stored, storeStored, noConfig: true });
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/ConfigurationManager/);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 
   test('encrypt-on refuses without a session DEK', async () => {
@@ -305,9 +320,11 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', storeId), record);
 
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const m = makeManager({
       pagesDir,
       stored,
+      storeStored,
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
     });
@@ -315,6 +332,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/locked|DEK/i);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 
   test('encrypt-on proceeds when the session bag has the DEK', async () => {
@@ -328,11 +346,11 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     setUnlockedDek('sid', storeId, unwrapDek(kek, record));
 
     const stored: StoredCall[] = [];
-    const sealedStored: unknown[] = [];
+    const storeStored: unknown[] = [];
     const m = makeManager({
       pagesDir,
       stored,
-      sealedStored,
+      storeStored,
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
     });
@@ -340,11 +358,10 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     // #1400: the file goes into the store itself, sealed — not the global pool.
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, { ...CTX, privateStoreHandle: 'sid' }, { private: true })
-    ).resolves.toMatchObject({ identifier: 'sealed-1', isPrivate: true, creator: 'molly', store: storeId });
+    ).resolves.toMatchObject({ identifier: 'in-store-1', isPrivate: true, creator: 'molly', store: storeId });
     expect(stored).toHaveLength(0);
-    expect(sealedStored).toHaveLength(1);
-    expect((sealedStored[0] as [{ owner: string; store: string; io: { sealed: boolean } }])[0])
-      .toMatchObject({ owner: 'molly', store: storeId, io: { sealed: true } });
+    expect(storeStored).toHaveLength(1);
+    expect(storeLocation(storeStored)).toMatchObject({ owner: 'molly', store: storeId, io: { sealed: true } });
   });
 
   test('encrypt-on: a context without the session handle cannot unlock the store', async () => {
@@ -356,9 +373,11 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     setUnlockedDek('sid', 'vault', unwrapDek(kek, record));
 
     const stored: StoredCall[] = [];
+    const storeStored: unknown[] = [];
     const m = makeManager({
       pagesDir,
       stored,
+      storeStored,
       getProperty: (key, fallback) =>
         key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? 'vault' : fallback
     });
@@ -368,5 +387,6 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
     ).rejects.toThrow(/locked|DEK/i);
     expect(stored).toHaveLength(0);
+    expect(storeStored).toHaveLength(0);
   });
 });

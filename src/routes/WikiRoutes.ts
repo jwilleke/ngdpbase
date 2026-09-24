@@ -3630,9 +3630,9 @@ ${panes}
       try {
         if (attachmentManager) {
           pageAttachments = [
-            ...await attachmentManager.getAttachmentsForPage(pageName),
-            // #1400: the editor's own sealed files on this page, from their stores.
-            ...await attachmentManager.getSealedAttachmentsForPage(pageName, req.userContext)
+            // #1460: the shared pool's records plus the editor's OWN
+            // private-store files on this page — the manager merges them.
+            ...await attachmentManager.getAttachmentsForPage(pageName, req.userContext)
           ];
         }
       } catch (err) {
@@ -5878,18 +5878,20 @@ ${panes}
         });
       }
 
-      // #1400: a file in one of the requester's own ENCRYPTED stores. Found only
-      // through the context that can open it; AttachmentManager asks the PIP.
-      // Anyone else, or a locked store, finds nothing here and gets the 404 a
-      // missing file gets.
-      const sealed = await attachmentManager.getSealedAttachment(attachmentId, wikiContext.userContext);
-      if (sealed) {
-        const sealedName = String(sealed.metadata.name ?? 'attachment');
-        res.setHeader('Content-Type', String(sealed.metadata.encodingFormat ?? 'application/octet-stream'));
-        res.setHeader('Content-Disposition', `inline; filename="${sealedName}"`);
-        res.setHeader('Content-Length', String(sealed.buffer.length));
+      // #1460: a file in one of the requester's own private stores, encrypted
+      // or not. Found only through the context whose container it is in;
+      // AttachmentManager asks the PIP. Anyone else — an admin included — and a
+      // locked store find nothing here and get the 404 a missing file gets.
+      // Nothing serves a plain store's readable bytes on the strength of the
+      // file existing: this is the only way in, and it is the container rule.
+      const own = await attachmentManager.getPrivateStoreAttachment(attachmentId, wikiContext.userContext);
+      if (own) {
+        const ownName = String(own.metadata.name ?? 'attachment');
+        res.setHeader('Content-Type', String(own.metadata.encodingFormat ?? 'application/octet-stream'));
+        res.setHeader('Content-Disposition', `inline; filename="${ownName}"`);
+        res.setHeader('Content-Length', String(own.buffer.length));
         res.setHeader('Cache-Control', 'private, no-store');
-        return res.send(sealed.buffer);
+        return res.send(own.buffer);
       }
 
       // 🔒 PRIVACY: a private file lives in its owner's private container
@@ -5983,12 +5985,16 @@ ${panes}
       if (!(await wikiContext.hasPermission('asset-read'))) {
         return res.status(403).send('Forbidden');
       }
-      const buffer = await attachmentManager.getThumbnail(attachmentId, size);
+      // #1460: the manager merges the requester's own private stores, and a
+      // private file's thumbnail is never cached in the shared .thumbs folder.
+      const buffer = await attachmentManager.getThumbnail(attachmentId, size, wikiContext.userContext);
       if (!buffer) {
         return res.status(404).send('Thumbnail not available');
       }
+      const isPrivateThumb = await attachmentManager.isOwnPrivateStoreFile(attachmentId, wikiContext.userContext);
       res.set('Content-Type', 'image/jpeg');
-      res.set('Cache-Control', 'public, max-age=86400');
+      // A private file's thumbnail must not be cached by a shared proxy.
+      res.set('Cache-Control', isPrivateThumb ? 'private, no-store' : 'public, max-age=86400');
       return res.send(buffer);
     } catch (err: unknown) {
       logger.error('[attachments] Error generating thumbnail:', err);
@@ -12411,7 +12417,9 @@ ${panes}
       }
 
       const attachmentManager = this.engine.getManager('AttachmentManager');
-      const attachments = await attachmentManager.getAllAttachments();
+      // #1460: the shared pool plus THIS admin's own private-store files —
+      // never another user's. An admin has no way in here.
+      const attachments = await attachmentManager.getAllAttachments(wikiContext.userContext);
       const commonData = await this.getCommonTemplateData(req);
 
       return res.render('admin-attachments', {
@@ -12442,12 +12450,12 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
       const attachmentManager = this.engine.getManager('AttachmentManager') as {
-        getHealthReport?: () => Promise<unknown>;
+        getHealthReport?: (ctx: ActorContext) => Promise<unknown>;
       } | undefined;
       if (!attachmentManager?.getHealthReport) {
         return res.status(503).json({ success: false, error: 'AttachmentManager unavailable' });
       }
-      const report = await attachmentManager.getHealthReport();
+      const report = await attachmentManager.getHealthReport(wikiContext.userContext);
       return res.json({ success: true, report });
     } catch (err: unknown) {
       logger.error('Error building attachment health report:', err);
@@ -12469,7 +12477,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Access denied' });
       }
       const attachmentManager = this.engine.getManager('AttachmentManager') as {
-        quarantineOrphans?: (o: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }) => Promise<unknown>;
+        quarantineOrphans?: (o: { dryRun: boolean; includeOrphans: boolean; includeRecordless: boolean }, ctx: ActorContext) => Promise<unknown>;
       } | undefined;
       if (!attachmentManager?.quarantineOrphans) {
         return res.status(503).json({ success: false, error: 'AttachmentManager unavailable' });
@@ -12479,7 +12487,7 @@ ${panes}
         dryRun: body.dryRun !== false, // default DRY RUN — real run requires explicit dryRun:false
         includeOrphans: body.includeOrphans !== false,
         includeRecordless: body.includeRecordless !== false
-      });
+      }, wikiContext.userContext);
       return res.json({ success: true, result });
     } catch (err: unknown) {
       logger.error('Error running attachment quarantine:', err);
@@ -12496,7 +12504,8 @@ ${panes}
       }
 
       const attachmentManager = this.engine.getManager('AttachmentManager');
-      const attachments = await attachmentManager.getAllAttachments();
+      // #1460: the shared pool plus the requester's OWN private-store files.
+      const attachments = await attachmentManager.getAllAttachments(wikiContext.userContext);
 
       return res.json({ success: true, attachments });
     } catch (err: unknown) {
@@ -12719,7 +12728,7 @@ ${panes}
             wikiContext,
             userRoles,
             username: acctName
-          });
+          }, wikiContext.userContext);
           const assetResults = assetPage?.results ?? [];
           if (assetResults.length >= fetchLimit) anyCapped = true;
           for (const r of assetResults) merged.push(r as unknown as Record<string, unknown>);
@@ -13067,7 +13076,7 @@ ${panes}
         sort: sort ?? 'date', order,
         mimeCategory, wikiContext, userRoles, username,
         dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension
-      });
+      }, wikiContext.userContext);
 
       return res.json({ success: true, ...page });
     } catch (err: unknown) {
@@ -13088,7 +13097,8 @@ ${panes}
       }
 
       const attachmentManager = this.engine.getManager('AttachmentManager');
-      const attachments = await attachmentManager.getAllAttachments();
+      // #1460: the shared pool plus the requester's OWN private-store files.
+      const attachments = await attachmentManager.getAllAttachments(wikiContext.userContext);
 
       return res.json({ success: true, attachments });
     } catch (err: unknown) {
@@ -17601,7 +17611,7 @@ ${description}
       const sort = typeof req.query.sort === 'string' && req.query.sort === 'caption' ? 'caption' : 'date';
       const order = typeof req.query.order === 'string' && req.query.order === 'desc' ? 'desc' : ('asc' as 'asc' | 'desc');
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
-      const page = await assetService.search({ query, types: ['media'], sort, order, pageSize: 9999, wikiContext });
+      const page = await assetService.search({ query, types: ['media'], sort, order, pageSize: 9999, wikiContext }, wikiContext.userContext);
       const commonData = await this.getCommonTemplateData(req);
       return res.render('media-search', {
         ...commonData,

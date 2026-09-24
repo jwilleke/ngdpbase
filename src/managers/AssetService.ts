@@ -13,6 +13,7 @@
 import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import WikiContext from '../context/WikiContext.js';
+import type { ActorContext } from '../context/ActorContext.js';
 import type { AssetPage } from '../types/Asset.js';
 import logger from '../utils/logger.js';
 
@@ -81,7 +82,7 @@ export type AssetSearchPage = AssetPage;
 
 // ---------------------------------------------------------------------------
 
-type AssetManagerLike = { search(q: object): Promise<AssetPage> };
+type AssetManagerLike = { search(q: object, ctx: ActorContext): Promise<AssetPage> };
 
 class AssetService extends BaseManager {
   constructor(engine: WikiEngine) {
@@ -103,8 +104,13 @@ class AssetService extends BaseManager {
    *
    * All sorting, pagination, fan-out, and health-check logic lives in
    * AssetManager.  AssetService is a pure translation layer.
+   *
+   * @param options - the search itself
+   * @param ctx - who is searching (#1179, #1460). Mandatory and positional,
+   *   and forwarded as given: AssetManager merges the requester's own
+   *   private-store files, which are in no shared index.
    */
-  async search(options: AssetSearchOptions = {}): Promise<AssetPage> {
+  async search(options: AssetSearchOptions = {}, ctx: ActorContext): Promise<AssetPage> {
     const { query = '', types, year, pageSize = 48, offset = 0, sort = 'date', order = 'asc', mimeCategory, wikiContext, userRoles, username,
       dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension } = options;
 
@@ -121,7 +127,7 @@ class AssetService extends BaseManager {
       dateFrom, dateTo, dateField, includeHidden, pathPrefix, mime, extension,
       ...(providerId ? { providerId } : {}),
       wikiContext
-    });
+    }, ctx);
   }
 }
 

@@ -70,7 +70,7 @@ function makePageManager(uuid = PAGE_UUID, location = 'private', creator = PAGE_
 function makeAttachmentManager({ isPrivate = false, pageName = PAGE_NAME } = {}) {
   return {
     // #1400: not one of the viewer's sealed files — the public path decides.
-    getSealedAttachment: vi.fn().mockResolvedValue(null),
+    getPrivateStoreAttachment: vi.fn().mockResolvedValue(null),
     getAttachmentMetadata: vi.fn().mockResolvedValue(
       isPrivate
         ? { isPrivate: true, creator: PAGE_CREATOR, mentions: [{ name: pageName }] }
@@ -288,7 +288,7 @@ describe('WikiRoutes — a file in the viewer\'s own encrypted store (#1400)', (
   test('is served from the store, uncached, without consulting the global metadata', async () => {
     const attachmentManager = makeAttachmentManager({ isPrivate: false });
     const bytes = Buffer.from('%PDF sealed contents');
-    attachmentManager.getSealedAttachment.mockResolvedValue({
+    attachmentManager.getPrivateStoreAttachment.mockResolvedValue({
       buffer: bytes,
       metadata: { identifier: 'u-1', name: 'labs.pdf', encodingFormat: 'application/pdf', isPrivate: true, creator: PAGE_CREATOR }
     });
@@ -298,7 +298,7 @@ describe('WikiRoutes — a file in the viewer\'s own encrypted store (#1400)', (
     const res = createRes();
     await wikiRoutes.serveAttachment(createReq(viewer, { attachmentId: 'u-1' }), res);
 
-    expect(attachmentManager.getSealedAttachment).toHaveBeenCalledWith('u-1', expect.objectContaining({ username: PAGE_CREATOR }));
+    expect(attachmentManager.getPrivateStoreAttachment).toHaveBeenCalledWith('u-1', expect.objectContaining({ username: PAGE_CREATOR }));
     expect(attachmentManager.getAttachmentMetadata).not.toHaveBeenCalled();
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(res.send).toHaveBeenCalledWith(bytes);

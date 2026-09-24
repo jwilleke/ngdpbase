@@ -129,7 +129,8 @@ async function testBulkImport() {
 
   // Verify by listing all attachments
   console.log('\n=== Verification ===');
-  const allAttachments = await attachmentManager.getAllAttachments();
+  // #1460: the shared pool — this script has no requester whose stores to merge.
+  const allAttachments = await attachmentManager.getSharedPoolAttachments();
   console.log(`Total attachments in system: ${allAttachments.length}`);
 
   // Show the ones we just uploaded

@@ -17,7 +17,13 @@ import path from 'path';
 import { writeFileAtomic } from './atomicWrite.js';
 import { assertEncryptedStoreWritable, openBytes, sealBytes } from './privateStoreCrypto.js';
 import { readStoreMeta } from './privateStoreMeta.js';
-import { parsePrivateStoreRel, storeMetaPath, type PrivateStoreLayoutOverrides } from './privateStorePath.js';
+import {
+  isValidStoreId,
+  parsePrivateStoreRel,
+  privateUserDir,
+  storeMetaPath,
+  type PrivateStoreLayoutOverrides
+} from './privateStorePath.js';
 import { dekFor } from './privateStoreUnlock.js';
 import type { ActorContext } from '../context/ActorContext.js';
 
@@ -103,6 +109,32 @@ export function readStoreTextSync(ctx: ActorContext | undefined, args: {
   const dek = dekFor(ctx, args.owner, args.store);
   if (!dek) return null;
   return openBytes(dek, fs.readFileSync(args.file)).toString('utf8');
+}
+
+/**
+ * Every store id in `owner`'s container, whether or not it can be opened (#1460).
+ *
+ * Which stores EXIST is a question about a folder, not about keys: an
+ * unencrypted store has no DEK for a session to hold, so
+ * `unlockedStoreIdsFor` — which answers from the session's key bag — can only
+ * ever name the encrypted ones. A caller that wants all of the owner's stores
+ * asks here and then opens each through {@link storeFileIO}, which refuses the
+ * encrypted ones it holds no key for.
+ *
+ * Empty for a user with no container. Nothing here decides access: the
+ * container rule (`mayActInPrivateContainer`) is the caller's to apply, as it
+ * is at the page door.
+ */
+export async function privateStoreIdsOf(
+  pagesDirectory: string,
+  owner: string,
+  layout?: PrivateStoreLayoutOverrides
+): Promise<string[]> {
+  const dir = privateUserDir(pagesDirectory, owner, layout);
+  if (!await fs.pathExists(dir)) return [];
+  return (await fs.readdir(dir, { withFileTypes: true }))
+    .filter((d) => d.isDirectory() && isValidStoreId(d.name))
+    .map((d) => d.name);
 }
 
 /** The I/O for whichever store holds `file`; plain for a file in no store. */

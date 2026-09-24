@@ -145,7 +145,7 @@ describe('PageManager.saveRawPageWithAdminOverride() — the raw editor goes thr
       'Broken',
       expect.objectContaining({ name: 'Broken', content: '\nrepaired body' })
     );
-    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('Broken', '\nrepaired body');
+    expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('Broken', '\nrepaired body', ADMIN);
     expect(d.assets.syncPageAssets).toHaveBeenCalledWith('Broken', '\nrepaired body');
     expect(d.cache.clear).toHaveBeenCalledWith(undefined, 'rendered-pages:uuid-broken:*');
   });

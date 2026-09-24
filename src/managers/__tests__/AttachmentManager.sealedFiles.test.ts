@@ -115,7 +115,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
 
   test('upload then read back in the same session — the bytes match', async () => {
     const stored = await upload();
-    const read = await manager.getSealedAttachment(stored.identifier, MOLLY);
+    const read = await manager.getPrivateStoreAttachment(stored.identifier, MOLLY);
     expect(read?.buffer.equals(PDF)).toBe(true);
     expect(read?.metadata).toMatchObject({ name: 'labs.pdf', encodingFormat: 'application/pdf', isPrivate: true, creator: 'molly' });
   });
@@ -145,13 +145,13 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
   test('after logout the same read finds nothing', async () => {
     const stored = await upload();
     lockPrivateStores('molly-sid');
-    expect(await manager.getSealedAttachment(stored.identifier, MOLLY)).toBeNull();
+    expect(await manager.getPrivateStoreAttachment(stored.identifier, MOLLY)).toBeNull();
   });
 
   test('another user finds nothing, even with their own unlocked store', async () => {
     const stored = await upload();
     await sealedStoreFor('bob', 'bob-sid');
-    expect(await manager.getSealedAttachment(stored.identifier, BOB)).toBeNull();
+    expect(await manager.getPrivateStoreAttachment(stored.identifier, BOB)).toBeNull();
   });
 
   test('the same bytes twice in one store: one file, one id', async () => {
@@ -165,17 +165,17 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     await manager.uploadAttachment(PDF, FILE, MOLLY, { description: 'public copy' });
     const sealed = await upload();
     expect((await fs.readdir(attachmentsDir())).map((f) => f.replace(/\.pdf$/, ''))).toEqual([sealed.identifier]);
-    expect((await manager.getSealedAttachment(sealed.identifier, MOLLY))?.buffer.equals(PDF)).toBe(true);
+    expect((await manager.getPrivateStoreAttachment(sealed.identifier, MOLLY))?.buffer.equals(PDF)).toBe(true);
   });
 
   test('uploaded onto a page: listed for that page, and ATTACH resolves its name — for the owner only', async () => {
     const stored = await upload(PDF, MOLLY, 'Diary');
-    expect((await manager.getSealedAttachmentsForPage('Diary', MOLLY)).map((a) => a.identifier)).toEqual([stored.identifier]);
+    expect((await manager.getPrivateStoreAttachmentsForPage('Diary', MOLLY)).map((a) => a.identifier)).toEqual([stored.identifier]);
     expect(await manager.resolveAttachmentSrc('labs.pdf', 'Diary', MOLLY)).toEqual({
       url: `/attachments/${stored.identifier}`,
       mimeType: 'application/pdf'
     });
-    expect(await manager.getSealedAttachmentsForPage('Diary', BOB)).toEqual([]);
+    expect(await manager.getPrivateStoreAttachmentsForPage('Diary', BOB)).toEqual([]);
   });
 
   test('delete removes the bytes and the index entry, recorded first', async () => {
@@ -183,7 +183,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     audit.mockClear();
     expect(await manager.deleteAttachment(stored.identifier, MOLLY)).toBe(true);
     expect(await fs.readdir(attachmentsDir())).toEqual([]);
-    expect(await manager.getSealedAttachment(stored.identifier, MOLLY)).toBeNull();
+    expect(await manager.getPrivateStoreAttachment(stored.identifier, MOLLY)).toBeNull();
     expect(audit).toHaveBeenCalled();
   });
 

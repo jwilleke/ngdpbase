@@ -18,7 +18,12 @@ interface AttachmentMetadata {
 }
 
 interface AttachmentManager {
-  getAllAttachments(): Promise<AttachmentMetadata[]>;
+  /**
+   * #1460: the shared pool. This plugin's output is rendered INTO a page and
+   * cached with it, so it is shared text — a private store's files belong to
+   * the per-requester reads, never here.
+   */
+  getSharedPoolAttachments(): Promise<AttachmentMetadata[]>;
 }
 
 const AttachmentsPlugin: SimplePlugin = {
@@ -33,9 +38,9 @@ const AttachmentsPlugin: SimplePlugin = {
 
     try {
       const attachmentManager = engine.getManager('AttachmentManager') as AttachmentManager | undefined;
-      if (!attachmentManager?.getAllAttachments) return '0';
+      if (!attachmentManager?.getSharedPoolAttachments) return '0';
 
-      const attachments = await attachmentManager.getAllAttachments();
+      const attachments = await attachmentManager.getSharedPoolAttachments();
       if (!Array.isArray(attachments)) return '0';
 
       const format = typeof params.format === 'string' ? params.format : 'count';
