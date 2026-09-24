@@ -1,6 +1,6 @@
 /**
  * Private container access — owner or the owner's delegate, no role (#1398).
- * docs/planning/private-stores.md, Access.
+ * docs/private-stores.md, Access.
  */
 import { mayActInPrivateContainer } from '../privateStoreAccess';
 

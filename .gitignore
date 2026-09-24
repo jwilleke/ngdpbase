@@ -277,3 +277,6 @@ private/
 # Agent tooling installs skills here; not repo content.
 .continue/
 .agents/
+
+# Vitest local cache
+.vitest/

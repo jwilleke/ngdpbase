@@ -2,21 +2,21 @@
 
 ## Status — decisions since this plan (2026-09-15)
 
-This plan shipped the first private-folder layout (#122). Epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382) has since decided the parts below differently. The decision record is [private-stores.md](./private-stores.md); where it and this plan disagree, [private-stores.md](./private-stores.md) wins. The text of this plan is kept as history, with a note under each superseded section.
+This plan shipped the first private-folder layout (#122). Epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382) has since decided the parts below differently. The decision record is [private-stores.md](../private-stores.md); where it and this plan disagree, [private-stores.md](../private-stores.md) wins. The text of this plan is kept as history, with a note under each superseded section.
 
 | This plan | Decided now | Where |
 |---|---|---|
-| Private pages at `pages/private/{creator}/{uuid}.md` (1.2) | A store segment: `pages/private/{user}/{store}/{uuid}.md`; today's pages migrate to store `default` | [private-stores.md](./private-stores.md) Layout; [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) |
-| Private versions at `versions/private/{uuid}/` (1.3) | Inside the store: `{store}/versions/{uuid}/`; trash in `{store}/deleted/` | [private-stores.md](./private-stores.md) Layout |
-| Admins read any private page (1.5, 1.6, 1.12, 3.8) | __No admin bypass.__ `pages/private/{user}/` and every store below it is a security container owned by that user; nobody else has access unless the user __delegates permissions__ (a subset of their own, via a share, only while they still hold them). Never by role | [private-stores.md](./private-stores.md) Access; [#1382](https://github.com/jwilleke/ngdpbase/issues/1382) |
-| Access checks with `roles.includes('admin')` / a helper per route (1.5, 2.3, 3.8) | Allow and deny through the one door: `canAccess` (ACLManager private-page check) with the capability from `hasPermission`; refusals recorded as `authorization-deny` ([security-posture.md](../security-posture.md) P2) | [private-stores.md](./private-stores.md) Access |
-| Private attachments at `attachments/private/{creator}/` (2.1) | Files live in the store: `pages/private/{user}/{store}/attachments/{sha256}.ext`; folder name is config key `ngdpbase.page.provider.filesystem.attachmentsdir` | [private-stores.md](./private-stores.md) Files in the store; [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
-| Attachment privacy inferred from the page (2.2) | A new upload onto a private page is always private and belongs to the page's author (the author owns the page and every attachment uploaded onto it); an existing public asset linked to a private page stays public; with no page or a public page, the upload dialog's Private checkbox decides. Only the owner (or a delegate) may upload onto a private page | [private-stores.md](./private-stores.md) When an attachment is private; [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) |
-| Private attachment served to whoever may view the linked page (2.3) | Served only under the container rule — the owner or a delegate, never by role | [private-stores.md](./private-stores.md) Access |
-| Per-user key derived from the login password, held in the session (Option B) | A user KEK (password wrap + 12-word recovery) wraps a per-store DEK; encryption is a per-store switch. Keys live in a process bag reached through an opaque session handle the request context carries — never `AsyncLocalStorage`, never key bytes in the context, never in an audit record; jobs cannot reach it | [private-stores.md](./private-stores.md) Keys; Context, not ambient session |
-| Encrypted backup zip with `key-params.json` (Option B) | Instance backups copy `private/` as it sits on disk (encrypted stays encrypted); a user may download their own store | [private-stores.md](./private-stores.md) Backups; [#1387](https://github.com/jwilleke/ngdpbase/issues/1387) |
-| Paths and privacy wired per provider (Critical Files) | Folder names come only from `ConfigurationManager`; path joining with store-id validation lives in `src/utils/privateStorePath.ts`; the store rule and encrypted-write check live on `BasePageProvider`; a save that names a different store for an existing page is refused | [private-stores.md](./private-stores.md) Store placement is on BasePageProvider |
-| Contexts optional or ambient | Every call that decides, records or acts on a private store takes the `ActorContext`, mandatory and positional ([security-posture.md](../security-posture.md) P1) | [private-stores.md](./private-stores.md) Context, not ambient session |
+| Private pages at `pages/private/{creator}/{uuid}.md` (1.2) | A store segment: `pages/private/{user}/{store}/{uuid}.md`; today's pages migrate to store `default` | [private-stores.md](../private-stores.md) Layout; [#1383](https://github.com/jwilleke/ngdpbase/issues/1383) |
+| Private versions at `versions/private/{uuid}/` (1.3) | Inside the store: `{store}/versions/{uuid}/`; trash in `{store}/deleted/` | [private-stores.md](../private-stores.md) Layout |
+| Admins read any private page (1.5, 1.6, 1.12, 3.8) | __No admin bypass.__ `pages/private/{user}/` and every store below it is a security container owned by that user; nobody else has access unless the user __delegates permissions__ (a subset of their own, via a share, only while they still hold them). Never by role | [private-stores.md](../private-stores.md) Access; [#1382](https://github.com/jwilleke/ngdpbase/issues/1382) |
+| Access checks with `roles.includes('admin')` / a helper per route (1.5, 2.3, 3.8) | Allow and deny through the one door: `canAccess` (ACLManager private-page check) with the capability from `hasPermission`; refusals recorded as `authorization-deny` ([security-posture.md](../security-posture.md) P2) | [private-stores.md](../private-stores.md) Access |
+| Private attachments at `attachments/private/{creator}/` (2.1) | Files live in the store: `pages/private/{user}/{store}/attachments/{sha256}.ext`; folder name is config key `ngdpbase.page.provider.filesystem.attachmentsdir` | [private-stores.md](../private-stores.md) Files in the store; [#1386](https://github.com/jwilleke/ngdpbase/issues/1386) |
+| Attachment privacy inferred from the page (2.2) | A new upload onto a private page is always private and belongs to the page's author (the author owns the page and every attachment uploaded onto it); an existing public asset linked to a private page stays public; with no page or a public page, the upload dialog's Private checkbox decides. Only the owner (or a delegate) may upload onto a private page | [private-stores.md](../private-stores.md) When an attachment is private; [#1398](https://github.com/jwilleke/ngdpbase/issues/1398) |
+| Private attachment served to whoever may view the linked page (2.3) | Served only under the container rule — the owner or a delegate, never by role | [private-stores.md](../private-stores.md) Access |
+| Per-user key derived from the login password, held in the session (Option B) | A user KEK (password wrap + 12-word recovery) wraps a per-store DEK; encryption is a per-store switch. Keys live in a process bag reached through an opaque session handle the request context carries — never `AsyncLocalStorage`, never key bytes in the context, never in an audit record; jobs cannot reach it | [private-stores.md](../private-stores.md) Keys; Context, not ambient session |
+| Encrypted backup zip with `key-params.json` (Option B) | Instance backups copy `private/` as it sits on disk (encrypted stays encrypted); a user may download their own store | [private-stores.md](../private-stores.md) Backups; [#1387](https://github.com/jwilleke/ngdpbase/issues/1387) |
+| Paths and privacy wired per provider (Critical Files) | Folder names come only from `ConfigurationManager`; path joining with store-id validation lives in `src/utils/privateStorePath.ts`; the store rule and encrypted-write check live on `BasePageProvider`; a save that names a different store for an existing page is refused | [private-stores.md](../private-stores.md) Store placement is on BasePageProvider |
+| Contexts optional or ambient | Every call that decides, records or acts on a private store takes the `ActorContext`, mandatory and positional ([security-posture.md](../security-posture.md) P1) | [private-stores.md](../private-stores.md) Context, not ambient session |
 
 ## Issues: #122, #232 (attachment privacy cross-ref), #273 (MediaManager)
 
@@ -96,7 +96,7 @@ private async migratePageIndexEntries(): Promise<void> {
 
 ### 1.2 — Extend path-building in `FileSystemProvider.ts`
 
-> __Superseded 2026-09-15:__ private pages now live at `pages/private/{user}/{store}/{uuid}.md`. See [private-stores.md](./private-stores.md) Layout.
+> __Superseded 2026-09-15:__ private pages now live at `pages/private/{user}/{store}/{uuid}.md`. See [private-stores.md](../private-stores.md) Layout.
 
 Add a helper `resolvePageFilePath(entry)` that constructs the path based on location:
 
@@ -115,7 +115,7 @@ Create private directory on first use via `fs.mkdir({ recursive: true })`.
 
 ### 1.3 — Extend version directory for private pages
 
-> __Superseded 2026-09-15:__ versions live inside the store at `{store}/versions/{uuid}/`. See [private-stores.md](./private-stores.md) Layout.
+> __Superseded 2026-09-15:__ versions live inside the store at `{store}/versions/{uuid}/`. See [private-stores.md](../private-stores.md) Layout.
 
 Private page versions stored at `versions/private/{uuid}/` (no username in version path since UUID is unique):
 
@@ -156,7 +156,7 @@ const enrichedMetadata = {
 
 ### 1.5 — Enforce access via `WikiContext` in `WikiRoutes.ts`
 
-> __Superseded 2026-09-15:__ no admin allow. Only the owner, or a delegate of the owner, has access; decided through `canAccess` at ACLManager's private-page check, not a route helper or a role check. See [private-stores.md](./private-stores.md) Access.
+> __Superseded 2026-09-15:__ no admin allow. Only the owner, or a delegate of the owner, has access; decided through `canAccess` at ACLManager's private-page check, not a route helper or a role check. See [private-stores.md](../private-stores.md) Access.
 
 All access checks use `WikiContext` — the single object that carries both page and user data, consistent with `ACLManager.checkPagePermissionWithContext()`. Build a `WikiContext` once per request and reuse it everywhere.
 
@@ -192,7 +192,7 @@ Return __403__ (not 404) so the user knows the page exists but is restricted.
 
 ### 1.6 — Exclude private pages from search
 
-> __Superseded 2026-09-15:__ search follows the container rule: another user's private pages are not returned to anyone, admin included, unless the owner delegated. See [private-stores.md](./private-stores.md) Access.
+> __Superseded 2026-09-15:__ search follows the container rule: another user's private pages are not returned to anyone, admin included, unless the owner delegated. See [private-stores.md](../private-stores.md) Access.
 
 In `SearchManager.updatePageInIndex()` / `LunrSearchProvider`: store `isPrivate: true` and `creator: username` in the index document.
 
@@ -276,7 +276,7 @@ No new factory method needed on WikiEngine.
 
 ### 1.12 — Admin visibility of private pages
 
-> __Superseded 2026-09-15:__ admins do not see other users' private pages. There is no admin listing of them. See [private-stores.md](./private-stores.md) Access.
+> __Superseded 2026-09-15:__ admins do not see other users' private pages. There is no admin listing of them. See [private-stores.md](../private-stores.md) Access.
 
 Admins can read any private page (enforced in 1.5). Add a `/admin/pages?filter=private` view listing all private pages across all creators — queries the page index filtered by `location === 'private'`. Deferred to a follow-up issue, but the `creator` field in `PageIndexEntry` is required from the start to support this query.
 
@@ -286,7 +286,7 @@ Admins can read any private page (enforced in 1.5). Add a `/admin/pages?filter=p
 
 ### 2.1 — Private attachment storage subdirectory
 
-> __Superseded 2026-09-15:__ private files live in the store at `pages/private/{user}/{store}/attachments/`. See [private-stores.md](./private-stores.md) Files in the store.
+> __Superseded 2026-09-15:__ private files live in the store at `pages/private/{user}/{store}/attachments/`. See [private-stores.md](../private-stores.md) Files in the store.
 
 Extend `BasicAttachmentProvider` (`src/providers/BasicAttachmentProvider.ts`):
 
@@ -311,7 +311,7 @@ Add `isPrivate: boolean` and `creator?: string` to `SchemaCreativeWork` metadata
 
 ### 2.2 — Propagate privacy to AttachmentManager via `WikiContext`
 
-> __Superseded 2026-09-15:__ an upload onto a private page is forced private into the page author's store; the upload dialog's checkbox decides otherwise. (The page-index lookup below read `metadata['index-entry']`, which nothing set, so it never took effect.) See [private-stores.md](./private-stores.md) When an attachment is private.
+> __Superseded 2026-09-15:__ an upload onto a private page is forced private into the page author's store; the upload dialog's checkbox decides otherwise. (The page-index lookup below read `metadata['index-entry']`, which nothing set, so it never took effect.) See [private-stores.md](../private-stores.md) When an attachment is private.
 
 Replace the separate `isPrivatePage`/`pageCreator` flags in `UploadOptions` with a `WikiContext`. The manager derives all page and user data from it — DRY, consistent with the rest of the engine.
 
@@ -334,7 +334,7 @@ const pageCreator = index?.creator;
 
 ### 2.3 — Guard attachment serving route via `WikiContext`
 
-> __Superseded 2026-09-15:__ a private file is served only to its owner or a delegate, under the container rule, not to whoever may view the linked page. See [private-stores.md](./private-stores.md) Access.
+> __Superseded 2026-09-15:__ a private file is served only to its owner or a delegate, under the container rule, not to whoever may view the linked page. See [private-stores.md](../private-stores.md) Access.
 
 In `WikiRoutes.serveAttachment()` (`GET /attachments/:attachmentId`), build a `WikiContext` for the attachment's linked page and run the same `checkPrivatePageAccess()` used by page routes:
 
@@ -460,7 +460,7 @@ User-defined named collections are out of scope for this iteration.
 
 ### 3.8 — Private awareness in MediaManager
 
-> __Superseded 2026-09-15:__ no admin allow; the same container rule applies to media linked to a private page. See [private-stores.md](./private-stores.md) Access.
+> __Superseded 2026-09-15:__ no admin allow; the same container rule applies to media linked to a private page. See [private-stores.md](../private-stores.md) Access.
 
 When a media item is linked to a wiki page (`mentions` field), `MediaManager.getItem()` uses `WikiContext` and the shared `checkPrivatePageAccess()` helper — same function used by page and attachment routes:
 
@@ -588,7 +588,7 @@ __Not appropriate without encryption:__
 
 ### Option B — Application-level encryption (future phase)
 
-> __Superseded 2026-09-15:__ encryption is a per-store switch: a user KEK (password wrap + 12-word recovery) wraps a store DEK, and keys are reached through the request context's session handle. See [private-stores.md](./private-stores.md) Keys and Context, not ambient session.
+> __Superseded 2026-09-15:__ encryption is a per-store switch: a user KEK (password wrap + 12-word recovery) wraps a store DEK, and keys are reached through the request context's session handle. See [private-stores.md](../private-stores.md) Keys and Context, not ambient session.
 
 Option A establishes the folder structure. Option B adds AES-256-GCM encryption on top of it — the same paths, the same provider, encrypt-on-write and decrypt-on-read added to `VersioningFileProvider`. No restructuring required.
 
@@ -643,7 +643,7 @@ pages/private/bob/    ← encrypted with same instance master key
 
 #### Encrypted backup / download
 
-> __Superseded 2026-09-15:__ instance backups copy `private/` as it sits on disk; a user may download their own store. See [private-stores.md](./private-stores.md) Backups.
+> __Superseded 2026-09-15:__ instance backups copy `private/` as it sits on disk; a user may download their own store. See [private-stores.md](../private-stores.md) Backups.
 
 Because the server holds ciphertext on disk, backup is straightforward and does not require server-side decryption. The user downloads the encrypted folder as a zip — the zip is unreadable to anyone without their password.
 
@@ -685,7 +685,7 @@ __Effort:__ ~2–3 days on top of the encryption implementation.
 
 ### Decision record
 
-> __Superseded 2026-09-15:__ the decisions for epic #1382 are in [private-stores.md](./private-stores.md). The access rule there removes the admin read this record assumes.
+> __Superseded 2026-09-15:__ the decisions for epic #1382 are in [private-stores.md](../private-stores.md). The access rule there removes the admin read this record assumes.
 
 __Phase 1 and Phase 2 implement Option A__ — filesystem isolation and route-level access control. Files remain plaintext. This is appropriate for the "keep other wiki users out" threat model.
 

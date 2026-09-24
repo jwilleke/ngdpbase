@@ -629,7 +629,7 @@ class LunrSearchProvider extends BaseSearchProvider {
    * Private-page visibility (#731/#716, #1382). Used by both the text path in
    * search() and the no-text advancedSearch branch. A private page lives in its
    * owner's private container: it is found only by its owner — no role, and no
-   * frontmatter audience, reaches in (docs/planning/private-stores.md, Access;
+   * frontmatter audience, reaches in (docs/private-stores.md, Access;
    * the same rule PolicyInformationPoint applies at Tier 0).
    */
   private isDocVisible(doc: LunrDocument, wikiContext?: SearchOptions['wikiContext']): boolean {

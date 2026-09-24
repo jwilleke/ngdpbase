@@ -85,7 +85,7 @@ await attachmentManager.deleteAttachment(attachment.identifier, wikiContext);
 
 ## Files in an encrypted store (#1400)
 
-A file uploaded into an __encrypted__ private store never enters the global `attachment-metadata.json`. The store is self-contained ([private-stores planning](../planning/private-stores.md), "Stores are self-contained"):
+A file uploaded into an __encrypted__ private store never enters the global `attachment-metadata.json`. The store is self-contained ([private stores](../private-stores.md), "Stores are self-contained"):
 
 - The provider keeps it in the store: bytes in `{store}/attachments/{uuid}.ext`, listed in the store's own index `{store}/files-index.json`. Both are written through the store's `StoreFileIO`, which seals them with the store DEK. The name on disk is a random UUID, so it cannot confirm a known file.
 - Duplicates are found in the same store only, by a SHA-256 fingerprint kept inside the sealed index.

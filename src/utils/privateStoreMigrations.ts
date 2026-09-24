@@ -2,7 +2,7 @@
  * What a private store has already been migrated for (#1457, epic #1382).
  *
  * A one-time migration over private pages cannot ask a global record whether
- * it has run: a store is self-contained (docs/planning/private-stores.md), an
+ * it has run: a store is self-contained (docs/private-stores.md), an
  * encrypted one is unreadable until its owner unlocks it, and each store
  * therefore reaches its migration at a different moment. So the record lives
  * in the store, beside its own indexes — `{store}/migrations.json`, the shape

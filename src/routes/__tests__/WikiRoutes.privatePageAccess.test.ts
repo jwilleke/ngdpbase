@@ -2,7 +2,7 @@
  * Unit tests for WikiRoutes — private attachment access control (#122)
  *
  * Tests that serveAttachment() serves a private file only under the private
- * container rule (#1382, docs/planning/private-stores.md, Access): the file's
+ * container rule (#1382, docs/private-stores.md, Access): the file's
  * owner (its `creator`), or a delegate of the owner — never by role, and not
  * to whoever may view a page that links it.
  *

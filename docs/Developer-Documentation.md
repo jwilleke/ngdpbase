@@ -232,6 +232,7 @@ System design and architectural patterns:
 | [WikiContext-Complete-Guide](WikiContext-Complete-Guide.md) | In-depth WikiContext documentation |
 | [WikiDocument-Complete-Guide](WikiDocument-Complete-Guide.md) | WikiDocument DOM documentation |
 | [rendering-pipeline](rendering-pipeline.md) | End-to-end rendering flow |
+| [private-stores](private-stores.md) | Private stores: layout, store kinds and the door, keys, access, pages, links, search, trash and files |
 
 ---
 

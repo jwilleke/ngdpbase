@@ -3,7 +3,7 @@
  *
  * A user's copy of a store kind is created when they first walk through its
  * door — never at login and never mid-save. Decisions in
- * docs/planning/private-stores.md: "Recovery words: at first deliberate entry
+ * docs/private-stores.md: "Recovery words: at first deliberate entry
  * into the store", "The words are confirmed before anything is committed",
  * "Core owns the door", "The door asks for the password when the user has no
  * key", "`store.json` shape".

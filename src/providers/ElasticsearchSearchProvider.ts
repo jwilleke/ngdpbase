@@ -759,7 +759,7 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
    * Build the private-page visibility predicate from the current WikiContext
    * (#1382). A private page is found only by its owner — no role and no
    * frontmatter audience reaches into a private container
-   * (docs/planning/private-stores.md, Access). `owner` is the caller's username
+   * (docs/private-stores.md, Access). `owner` is the caller's username
    * when there is one; a share visitor (anonymous) finds no private page.
    */
   private _buildPrivacyFilter(wikiContext?: SearchOptions['wikiContext']): {

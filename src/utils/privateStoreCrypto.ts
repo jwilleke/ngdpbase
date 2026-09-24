@@ -3,7 +3,7 @@
  *
  * Random user KEK, wrapped by the login password and by a BIP39 12-word
  * phrase. Each encrypted store has its own DEK wrapped by that KEK.
- * Not on PageManager — see docs/planning/private-stores.md.
+ * Not on PageManager — see docs/private-stores.md.
  */
 
 import {

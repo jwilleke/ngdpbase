@@ -2737,7 +2737,7 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * The private-container decision for a page (docs/planning/private-stores.md,
+   * The private-container decision for a page (docs/private-stores.md,
    * Access). PolicyInformationPoint's Tier 0 asks this, so every `canAccess` on a page —
    * view, edit, lists, the attachment door — reaches the same rule.
    *

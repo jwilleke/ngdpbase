@@ -57,7 +57,7 @@ export async function storeDirectoryIsEncrypted(
 }
 
 /**
- * `store.json` as the door writes it (#1414, docs/planning/private-stores.md,
+ * `store.json` as the door writes it (#1414, docs/private-stores.md,
  * "`store.json` shape"): the kind this copy was created under, whether this
  * copy is sealed, when the user walked through the door, and the wrapped DEK
  * when it is sealed. Per-user state and key material only — never policy.

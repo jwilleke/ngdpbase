@@ -476,42 +476,48 @@ Guard admin panel EJS sections:
 
 ---
 
-### Declare a Private Store (planned — [#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
+### Declare a Private Store ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
-__Not yet available.__ This section is the contract addon authors will be held to; nothing below works today. Design record: [`docs/planning/private-stores.md`](../planning/private-stores.md), epic [#1382](https://github.com/jwilleke/ngdpbase/issues/1382).
-
-An addon that holds a user's own data — health records, finances, anything sensitive or regulated — owns a __store kind__: one private container per user, `pages/private/{user}/{storeid}/`.
+An addon that holds a user's own data — health records, finances, anything sensitive or regulated — owns a __store kind__: one private container per user, at `pages/private/{user}/{storeid}/`. Reference: [`docs/private-stores.md`](../private-stores.md).
 
 __You declare the kind. You do not implement encryption, keys, or recovery words.__
 
-The kind is persisted configuration, outside the provider namespace:
+#### Declaring the kind
+
+A kind is two configuration keys. Today they are written by an operator, in `app-custom-config.json`:
 
 ```json
 "ngdpbase.stores.yourphr.encrypt": true,
 "ngdpbase.stores.yourphr.owner": "yourphr"
 ```
 
-- `owner` is your addon's __slug__ — the canonical addon identity from `package.json` ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), the same id as `ngdpbase.addons.<slug>.enabled`. `admin` is a __reserved slug__: an addon claiming it is refused at load.
-- `encrypt` is __your call as the kind's owner__, not the end user's. Sensitive or regulated data MUST be `true`, and nobody — user or admin — can turn it off for that store.
-- A kind's definition cannot be removed while any user has data in it. Flipping `encrypt` on an existing kind is a whole-store migration, not a config edit, and is not offered.
+- `owner` is your addon's __slug__ — the canonical addon identity from `package.json` ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), the same id as `ngdpbase.addons.<slug>.enabled`.
+- `encrypt` is __your call as the kind's owner__, not the end user's. Sensitive or regulated data should be `true`. It is read when a user creates their copy of the store, and a copy keeps what it was created with.
+
+`storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` is the only reader of these keys. An addon cannot yet declare a kind from its own `package.json`: there is no manifest field for it and nothing persists one at load. Until that exists, shipping a kind means telling the operator which two keys to set.
+
+Two rules are stated in the design and are __not enforced by code__, so do not rely on them: that `admin` is a reserved owner slug, and that a kind cannot be removed while a user still has data in it. Nothing refuses either today.
 
 #### Core owns the door
 
-Every store kind provides an entry step, and __core implements it__. Core's route derives the user's key material if they have none, generates the 12 recovery words, creates the user's copy of the store with its wrapped DEK, and shows the words __once__ with the warning. It runs at the user's first deliberate entry into the store — never at login, never mid-save.
+Core implements the entry step, at `/stores/{kind}`. It derives the user's key material if they have none, generates the 12 recovery words, creates the user's copy of the store with its wrapped DEK, and shows the words __once__, with a confirmation step that discards everything if the words are not typed back. It runs at the user's deliberate entry — never at login, never mid-save.
 
 Your addon's part:
 
-- Link to the core door where your set-up step belongs ("set up your health records").
-- Supply a label and a short blurb that core renders on that screen, so it reads as your addon's step.
+- Link to `/stores/{your-kind-id}` where your set-up step belongs ("set up your health records").
 - Assume the key exists once the door returns. By the time your addon writes anything, it does.
+
+The door renders core's own wording. There is no addon-supplied label or blurb on that screen, and the door does not consult whether your addon is enabled.
 
 Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask for, store, or log one. There is no API that hands you key material, and there will not be.
 
 #### What this buys you
 
-- Reads and writes through the normal manager APIs; core seals the bytes and the per-user catalogues.
+- Reads and writes through the normal manager APIs; core seals the bytes and the store's own indexes.
 - A user who never enters your store is never asked to keep recovery words.
-- Takeout, backup and erasure work on the store because the layout is user-first.
+- The store is self-contained on disk, so everything about it lives in one directory.
+
+Takeout, backup and per-store sharing are __not built__ ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387), [#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). A private store cannot yet be exported by its user or included in a site backup.
 
 ---
 
@@ -920,7 +926,7 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 | [`addons/forms/`](../../addons/forms/) | Schema-driven forms with submission storage — plain JS reference implementation |
 | [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview, use-case analysis, roadmap |
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
-| [`docs/planning/private-stores.md`](../planning/private-stores.md) | Private stores: store kinds, encryption, keys and recovery words (planned) |
+| [`docs/private-stores.md`](../private-stores.md) | Private stores: layout, store kinds and the door, keys and recovery words, access, pages, links, search, trash and files |
 | [AddonsManager source](../../src/managers/AddonsManager.ts) | Discovery, loading, lifecycle implementation |
 | [security-developer-guide.md](security-developer-guide.md) | Authorization and context — mandatory |
 | [audit-developer-guide.md](audit-developer-guide.md) | Audit events — mandatory |

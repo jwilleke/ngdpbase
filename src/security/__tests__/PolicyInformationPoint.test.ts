@@ -107,7 +107,7 @@ describe('PolicyInformationPoint', () => {
 
   describe('Tier 0 — top-level `private: true` (#639)', () => {
     // #1382: a private page lives in its owner's private container — no role,
-    // admin included, reaches in (docs/planning/private-stores.md, Access).
+    // admin included, reaches in (docs/private-stores.md, Access).
     test('private: true + admin role (not the owner) → deny', async () => {
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },

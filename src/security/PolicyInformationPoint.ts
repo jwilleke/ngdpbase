@@ -615,7 +615,7 @@ class PolicyInformationPoint extends BaseManager {
 
   /**
    * The private-container decision for something that is not a page — a file
-   * in a store (docs/planning/private-stores.md, Access). The same rule a
+   * in a store (docs/private-stores.md, Access). The same rule a
    * private page gets at Tier 0: the owner, or a delegate of the owner; never
    * a role. A refusal is recorded like any page refusal (`authorization-deny`).
    *

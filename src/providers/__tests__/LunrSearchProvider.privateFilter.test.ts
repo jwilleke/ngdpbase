@@ -182,7 +182,7 @@ describe('LunrSearchProvider.search — private filtering — non-creator user',
 
 describe('LunrSearchProvider.search — private filtering — admin user', () => {
   // #1382: a private page lives in its owner's private container. No role —
-  // admin included — reaches in (docs/planning/private-stores.md, Access).
+  // admin included — reaches in (docs/private-stores.md, Access).
   test('admin does not see other users\' private pages', async () => {
     const wikiContext = makeWikiContext('admin', ['admin']);
     const results = await provider.search('content', { wikiContext });

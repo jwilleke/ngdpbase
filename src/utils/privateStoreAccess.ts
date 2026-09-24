@@ -1,6 +1,6 @@
 /**
  * Who may act inside a user's private container — `pages/private/{user}/` and
- * every store below it (docs/planning/private-stores.md, Access).
+ * every store below it (docs/private-stores.md, Access).
  *
  * The owner, or a delegate of the owner. No role reaches in, admin included.
  *

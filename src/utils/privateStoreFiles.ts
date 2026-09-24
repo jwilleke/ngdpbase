@@ -2,7 +2,7 @@
  * Reading and writing the bytes of a private store (#1415, epic #1382).
  *
  * The store DEK "encrypts every byte in `private/{user}/{store}/`"
- * (docs/planning/private-stores.md, Keys). This is the one place that turns
+ * (docs/private-stores.md, Keys). This is the one place that turns
  * that rule into file I/O: a caller asks for the store's {@link StoreFileIO}
  * once, through its context, and every read and write it makes with it is
  * ciphertext at rest when the store is encrypted. Providers do not decide the

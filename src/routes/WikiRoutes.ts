@@ -5895,7 +5895,7 @@ ${panes}
       }
 
       // 🔒 PRIVACY: a private file lives in its owner's private container
-      // (docs/planning/private-stores.md, Access). It is served to the owner, or
+      // (docs/private-stores.md, Access). It is served to the owner, or
       // a delegate of the owner — never by role, and not to whoever may view a
       // page that links it. The decision and its record are PolicyInformationPoint's.
       const meta = await attachmentManager.getAttachmentMetadata(attachmentId);

@@ -104,7 +104,7 @@ abstract class BasePageProvider extends BaseProvider {
 
   /**
    * Which store a private page is saved into — one rule for every page
-   * provider (docs/planning/private-stores.md, Store placement): the store the
+   * provider (docs/private-stores.md, Store placement): the store the
    * save names, else the store the page is already in, else the configured
    * default. A store id is a plain slug.
    *
@@ -145,7 +145,7 @@ abstract class BasePageProvider extends BaseProvider {
 
   // ── A store's own page index (#1456) ──────────────────────────────────────
   //
-  // A store is self-contained (docs/planning/private-stores.md): its pages are
+  // A store is self-contained (docs/private-stores.md): its pages are
   // listed in `{store}/pages-index.json`, never in the global page index or a
   // process cache. It is read and written through the location's I/O, so an
   // encrypted store's index is sealed without this provider deciding it, and

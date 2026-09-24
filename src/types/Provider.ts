@@ -634,7 +634,7 @@ export interface AttachmentMetadata {
 }
 
 /**
- * A file in a private store (#1400, #1460, docs/planning/private-stores.md
+ * A file in a private store (#1400, #1460, docs/private-stores.md
  * "Stores are self-contained"). Listed in the store's OWN index, beside
  * `store.json` — never in the global `attachment-metadata.json` — and sealed
  * with the store DEK when the store is encrypted. #1460: every private store
