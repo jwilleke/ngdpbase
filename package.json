@@ -112,7 +112,7 @@
     "cookie-parser": "^1.4.7",
     "diff": "^9.0.0",
     "diff2html": "^3.4.56",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.0",
     "ejs": "^6.0.1",
     "exiftool-vendored": "^38.1.0",
     "express": "^5.2.1",
