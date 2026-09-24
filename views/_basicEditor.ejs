@@ -442,8 +442,13 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
         }
 
         const titleField = document.getElementById('title');
-        if (titleField && /[\/\\#?%"'<>|*]/.test(titleField.value)) {
-            showPageMessage('error', 'The page title contains characters that are not allowed: / \\ # ? % " \' < > | * — change the title and save again.');
+        // #1468: the apostrophe is NOT in this list, and must not be put back.
+        // It was refused here alone — the server (utils/pageTitleRule), /create
+        // and every view surface accept it — as a workaround for #1471, where
+        // the editor corrupted an apostrophe on its way into the preview pane.
+        // That is fixed, and `Molly's Cooking` is a page that exists and works.
+        if (titleField && /[\/\\#?%"<>|*]/.test(titleField.value)) {
+            showPageMessage('error', 'The page title contains characters that are not allowed: / \\ # ? % " < > | * — change the title and save again.');
             titleField.focus();
             return;
         }
