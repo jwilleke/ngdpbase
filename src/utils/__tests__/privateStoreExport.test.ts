@@ -17,6 +17,7 @@ import {
   createEncryptedStore,
   createUserKeys,
   isSealedBytes,
+  sealBytes,
   unwrapDek
 } from '../privateStoreCrypto';
 import { storeFileIndexPath, storeMetaPath, privateStoreRoot } from '../privateStorePath';
@@ -248,6 +249,31 @@ describe('buildStoreTakeout — what it carries (#1387)', () => {
     }
     // And the escaping title is still present as a readable, visible file.
     expect(takeout.files.some(f => f.path === `${STORE}/etc-passwd.md`)).toBe(true);
+  });
+
+  test('ciphertext reaching the archive is refused — the guarantee is enforced, not assumed', async () => {
+    // A takeout is NEVER encrypted. Everything reads through `storeFileIO`,
+    // which decrypts, so this cannot happen without a bug — and a bug here
+    // ships an archive that looks fine and is unreadable, discovered long
+    // after the store is gone. So the invariant is checked, and this test
+    // makes the I/O layer misbehave to prove the check is live.
+    await plainStore();
+    const files = await import('../privateStoreFiles');
+    const spy = vi.spyOn(files, 'storeFileIO').mockResolvedValue({
+      sealed: true,
+      readText: async () => '',
+      writeText: async () => undefined,
+      readBytes: async () => sealBytes(Buffer.alloc(32), Buffer.from('secret')),
+      writeBytes: async () => undefined
+    });
+
+    try {
+      await expect(
+        buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE })
+      ).rejects.toThrow(/never encrypted/i);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('a store with nothing in it is an empty takeout, not an error', async () => {

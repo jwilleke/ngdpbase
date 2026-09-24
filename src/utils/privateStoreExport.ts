@@ -38,6 +38,7 @@ import {
 import type { ActorContext } from '../context/ActorContext.js';
 import type { StoreFileEntry } from '../types/Provider.js';
 import { normaliseTitle } from './pageTitleRule.js';
+import { isSealedBytes } from './privateStoreCrypto.js';
 
 /** One file of the takeout, ready for a packer. */
 export type TakeoutFile = {
@@ -203,6 +204,17 @@ export async function buildStoreTakeout(
       });
       attachmentCount++;
     }
+  }
+
+  // A takeout is NEVER encrypted (operator, #1387). Everything above reads
+  // through `storeFileIO`, which decrypts a sealed store, so this should be
+  // impossible — which is exactly why it is checked. A takeout of ciphertext
+  // looks like a takeout, downloads like one, and is found to be unreadable
+  // long after the store it came from is gone, so the guarantee is enforced
+  // here rather than left to hold by construction.
+  const sealed = files.find(f => isSealedBytes(f.bytes));
+  if (sealed) {
+    throw new Error(`[privateStoreExport] "${sealed.path}" is still ciphertext — a takeout is never encrypted`);
   }
 
   return {
