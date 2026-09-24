@@ -234,15 +234,17 @@ describe('buildStoreTakeout — what it carries (#1387)', () => {
     expect(takeout.pageCount).toBe(3);
   });
 
-  test('a title holding a path separator cannot escape its folder', async () => {
+  test('an odd title still yields a sane, visible filename', async () => {
+    // Hygiene, not a defence: the save door refuses `/` and `\\` in a title, so
+    // this cannot arrive through it. A takeout is named from the frontmatter on
+    // disk, which a hand-edited file or an old import could disagree with.
     await plainStore();
     const root = privateStoreRoot(pagesDir, 'molly', STORE);
     await fs.writeFile(path.join(root, 'uuid-4.md'), page('uuid-4', '../../etc/passwd', 'nope'));
 
     const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
 
-    // Every entry stays one level under the store folder: exactly one `/` for a
-    // page, two for an attachment, and no `..` segment anywhere.
+    // Every entry stays under the store folder, with no `..` segment.
     for (const f of takeout.files) {
       expect(f.path.startsWith(`${STORE}/`)).toBe(true);
       expect(f.path.split('/').includes('..')).toBe(false);

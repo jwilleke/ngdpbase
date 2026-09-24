@@ -75,11 +75,15 @@ export type Takeout = {
  * is reused rather than restated here.
  */
 function pageFileName(title: string): string {
-  // `normaliseTitle` already removes every path separator, so a title cannot
-  // reach out of its folder. Leading dots go too: `../../etc/passwd` becomes
-  // `..-..-etc-passwd`, which is harmless but reads like an attempt, and a
-  // name beginning with `.` is hidden on Unix — a page absent from the
-  // extracted folder is a page the owner thinks they lost.
+  // Not a defence against anything: the save door already refuses a title
+  // holding `/` or `\\`, so no page saved through it can carry one. This is for
+  // a title that reached DISK another way — a hand-edited file, a restored
+  // backup, an import older than the rule — since a takeout is named from the
+  // frontmatter it reads, not from the validated page name.
+  //
+  // Leading dots and dashes go for a plainer reason: a name beginning with `.`
+  // is hidden on Unix, and a page missing from the extracted folder is a page
+  // its owner thinks they lost.
   const safe = normaliseTitle(title).trim().replace(/^[.\-\s]+/, '').trim();
   return `${safe || 'Untitled'}.md`;
 }
