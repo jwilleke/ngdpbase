@@ -1,3 +1,12 @@
+<%
+// #1471: a value crossing into JavaScript needs a JS string literal, not an
+// HTML-escaped one. An escaping output tag writes `Molly&#39;s Cooking` into
+// the literal, JavaScript does not decode entities, and the corrupted name is
+// what the preview request then carries — so `keyword='current'` matched
+// nothing and every album in the pane read "(0 items)". `<` is escaped too, so
+// a value can never close the surrounding script element.
+const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
+%>
 <%- include('header', { pageName: pageName }) %>
 
 <div class="container-fluid">
@@ -356,7 +365,7 @@
             },
             body: JSON.stringify({
                 content: text,
-                pageName: '<%= pageName %>'
+                pageName: <%- jsValue(pageName) %>
             })
         })
         .then(response => response.json())
@@ -471,7 +480,7 @@
             // next edit as though it were unsaved.
             if (window.__clearEditorDraft) window.__clearEditorDraft();
             setSaving(false);
-            window.location.href = json.redirect || '<%= pageUrl(pageName) %>';
+            window.location.href = json.redirect || <%- jsValue(pageUrl(pageName)) %>;
             return;
         }
 
