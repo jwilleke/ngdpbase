@@ -60,6 +60,12 @@ export const AUDIT_EVENT = {
   /** #1233: one name for the footnote sidecar; `action` says add / import / transfer / update / delete. */
   FOOTNOTE_EDIT: 'footnote-edit',
   PAGE_EXPORT: 'page-export',
+  /**
+   * #1387: someone downloaded a whole private store of their own, DECRYPTED.
+   * Not `page-export`: this is the most concentrated copy of a person's
+   * private data the system can produce, and it leaves in the clear.
+   */
+  STORE_TAKEOUT: 'store-takeout',
   ASSET_EDIT: 'asset-edit',
   CONFIG_RESET: 'config-reset',
   BACKUP_CREATE: 'backup-create',

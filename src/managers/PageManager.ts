@@ -45,6 +45,8 @@ import {
 import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
+import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
+import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
@@ -1989,6 +1991,66 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * @param ctx - Who is asking (#1179) — never rebuilt, never defaulted
    */
+  /**
+   * A takeout of one of the requester's OWN private stores (#1387).
+   *
+   * The door is here rather than in a route because a route should not be
+   * working out where a store lives on disk. What comes back is decrypted and
+   * in memory, ready to be packed and streamed; nothing is written anywhere.
+   *
+   * Only the requester's own store: `mayActInPrivateContainer` decides, as
+   * everywhere else, on ownership or delegation and never on a role. A store
+   * that is encrypted and locked in this session THROWS rather than returning
+   * an empty takeout — an archive that downloads cleanly and cannot be read is
+   * the worst outcome available, since it is discovered long afterwards.
+   */
+  async buildOwnStoreTakeout(
+    ctx: ActorContext,
+    options: { store: string; pagesOnly?: boolean }
+  ): Promise<Takeout> {
+    if (!ctx) throw new Error('PageManager.buildOwnStoreTakeout requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner) throw new Error('PageManager.buildOwnStoreTakeout requires a named requester');
+    if (!mayActInPrivateContainer(ctx, owner)) {
+      throw new Error('PageManager.buildOwnStoreTakeout: not the owner of that store');
+    }
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.(
+      'ngdpbase.page.provider.filesystem.storagedir',
+      './data/pages'
+    );
+    if (!configManager || !pagesDirectory) {
+      throw new Error('PageManager.buildOwnStoreTakeout: no pages directory');
+    }
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+
+    return buildStoreTakeout(ctx, {
+      pagesDirectory,
+      owner,
+      store: options.store,
+      pagesOnly: options.pagesOnly === true,
+      layout
+    });
+  }
+
+  /** The store ids the requester has of their own (#1387). */
+  async listOwnStoreIds(ctx: ActorContext): Promise<string[]> {
+    if (!ctx) throw new Error('PageManager.listOwnStoreIds requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !mayActInPrivateContainer(ctx, owner)) return [];
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.(
+      'ngdpbase.page.provider.filesystem.storagedir',
+      './data/pages'
+    );
+    if (!configManager || !pagesDirectory) return [];
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+
+    return listStoreIds(pagesDirectory, owner, layout);
+  }
+
   async listOwnDeletedPrivatePages(ctx: ActorContext): Promise<StoreDeletedEntry[]> {
     if (!ctx) throw new Error('PageManager.listOwnDeletedPrivatePages requires an ActorContext');
     const owner = ctx.username;

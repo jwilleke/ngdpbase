@@ -520,6 +520,10 @@
       "on-failure": "continue",
       "description": "Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists"
     },
+    "store-takeout": {
+      "on-failure": "continue",
+      "description": "A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left"
+    },
     "asset-edit": {
       "on-failure": "continue",
       "description": "Attachment metadata edited; EXIF/IPTC and catalog fields change provenance"

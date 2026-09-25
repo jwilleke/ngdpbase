@@ -44,6 +44,78 @@
                 </li>
               <% }); %>
             </ul>
+          <% } else if (listKind === 'takeout') { %>
+            <%# #1387: the owner's own stores, and a download of each. The
+                archive is DECRYPTED, so this says so once, plainly, and then
+                gets out of the way — the person has chosen to take their data
+                somewhere we cannot protect it, which is their right. %>
+            <div class="alert alert-warning">
+              <i class="fas fa-exclamation-triangle"></i>
+              <strong>The download is not encrypted.</strong>
+              It holds your pages and files as plain text, readable by anything on the
+              device you save it to. Keeping it safe is yours to do from that point on.
+            </div>
+            <p class="text-muted">
+              Each download holds your pages under their own titles, with their files.
+              Page history and the contents of your trash are not included.
+            </p>
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th style="width: 12%;">Pages</th>
+                    <th style="width: 12%;">Files</th>
+                    <th style="width: 14%;">Size</th>
+                    <th style="width: 32%;">Download</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% items.forEach(function(item) { %>
+                    <tr>
+                      <td><%= item.store %></td>
+                      <% if (item.locked) { %>
+                        <td colspan="3">
+                          <span class="badge bg-secondary"><i class="fas fa-lock"></i> locked</span>
+                          <small class="text-muted ms-2">Unlock this store to download it.</small>
+                        </td>
+                        <td></td>
+                      <% } else { %>
+                        <td><%= item.pageCount %></td>
+                        <td><%= item.attachmentCount %></td>
+                        <td>
+                          <small class="text-muted">
+                            <%= item.totalBytes < 1024 * 1024
+                                ? (item.totalBytes / 1024).toFixed(1) + ' KB'
+                                : (item.totalBytes / 1024 / 1024).toFixed(1) + ' MB' %>
+                          </small>
+                        </td>
+                        <td>
+                          <form method="POST" action="/my/takeout" class="d-inline">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="store" value="<%= item.store %>">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                              <i class="fas fa-download"></i> Everything
+                            </button>
+                          </form>
+                          <% if (item.attachmentCount > 0) { %>
+                            <form method="POST" action="/my/takeout" class="d-inline ms-1">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                              <input type="hidden" name="store" value="<%= item.store %>">
+                              <input type="hidden" name="pagesOnly" value="true">
+                              <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                      title="Your writing only, without the files">
+                                <i class="fas fa-file-alt"></i> Pages only
+                              </button>
+                            </form>
+                          <% } %>
+                        </td>
+                      <% } %>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+            </div>
           <% } else if (listKind === 'trash') { %>
             <%# #1459: the owner's own deleted private pages. Restore and
                 permanent delete post back as ordinary forms with the session

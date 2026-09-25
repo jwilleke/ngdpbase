@@ -529,6 +529,7 @@ audited.
 | `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
 | `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
 | `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | continue | yes |
+| `store-takeout` | A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left | continue | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | refuse | yes |
 | `backup-create` | A full backup written; where it went and who asked | continue | yes |

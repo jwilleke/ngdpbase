@@ -42,6 +42,7 @@ import {
 import logger from '../utils/logger.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { packZip } from '../utils/zipArchive.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
 import {
@@ -386,6 +387,17 @@ interface IPageManager {
   /** At unlock (#1458): a sealed store with no saved search index gets one. */
   buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
+  /** #1387: the requester's own store ids, and a decrypted takeout of one. */
+  listOwnStoreIds(ctx: ActorContext): Promise<string[]>;
+  buildOwnStoreTakeout(
+    ctx: ActorContext,
+    options: { store: string; pagesOnly?: boolean }
+  ): Promise<{
+    files: Array<{ path: string; bytes: Buffer; mtime: Date }>;
+    pageCount: number;
+    attachmentCount: number;
+    totalBytes: number;
+  }>;
   listOwnDeletedPrivatePages(ctx: ActorContext): Promise<StoreDeletedEntry[]>;
   restoreOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<StoreRestoreResult>;
   purgeOwnPrivatePage(ctx: ActorContext, store: string, uuid: string): Promise<boolean>;
@@ -8436,6 +8448,122 @@ ${panes}
   }
 
   /**
+   * GET /my/takeout — what the requester could download, and how big it is (#1387).
+   *
+   * A takeout is decrypted, so the size matters before it is built rather than
+   * after: someone on a phone should know what they are asking for. Each store
+   * is measured by building it, which is also what proves it can be built — a
+   * locked store is reported as locked here instead of failing at the download.
+   */
+  async myTakeoutPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const currentUser = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+      if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+      const pageManager = this.engine.getManager('PageManager');
+      const stores = await pageManager.listOwnStoreIds(currentUser);
+
+      const items = [];
+      for (const store of stores) {
+        try {
+          const takeout = await pageManager.buildOwnStoreTakeout(currentUser, { store });
+          items.push({
+            store,
+            pageCount: takeout.pageCount,
+            attachmentCount: takeout.attachmentCount,
+            totalBytes: takeout.totalBytes,
+            locked: false
+          });
+        } catch {
+          // An encrypted store this session has not unlocked. Say so; do not
+          // offer a download that would fail or, worse, arrive unreadable.
+          items.push({ store, pageCount: 0, attachmentCount: 0, totalBytes: 0, locked: true });
+        }
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('my-list', {
+        ...commonData,
+        title: 'Download My Private Data',
+        icon: 'fa-download',
+        items,
+        totalItems: items.length,
+        paginationHtml: '',
+        listKind: 'takeout',
+        csrfToken: req.session?.csrfToken || '',
+        emptyMessage: 'You have no private store to download.'
+      });
+    } catch (err) {
+      logger.error('[my-takeout] listing failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'Your stores could not be listed.');
+    }
+  }
+
+  /**
+   * POST /my/takeout — build one store's takeout and send it (#1387).
+   *
+   * Built in memory and streamed: nothing decrypted is written to this
+   * server's disk, which is the point of a machine whose job is keeping these
+   * files sealed.
+   */
+  async myTakeoutDownload(req: Request, res: Response) {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+
+    const store = typeof req.body?.store === 'string' ? req.body.store : '';
+    const pagesOnly = req.body?.pagesOnly === 'true' || req.body?.pagesOnly === 'on';
+    if (!store) return this.renderError(req, res, 400, 'Bad Request', 'No store was named.');
+
+    let takeout;
+    try {
+      takeout = await this.engine.getManager('PageManager').buildOwnStoreTakeout(currentUser, { store, pagesOnly });
+    } catch (err) {
+      logger.warn(`[my-takeout] ${currentUser.username} could not build "${store}": ${(err as Error).message}`);
+      return this.renderError(
+        req, res, 409, 'Locked',
+        'That store is encrypted and locked in this session. Unlock it, then download again.'
+      );
+    }
+
+    const archive = await packZip(takeout.files.map(f => ({ path: f.path, bytes: f.bytes, mtime: f.mtime })));
+
+    // #1387: its own event, not `page-export`. This is the most concentrated
+    // copy of a person's private data the system can make, and it leaves in
+    // the clear — so the record says who, which store and how much.
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.STORE_TAKEOUT,
+      user: currentUser.username,
+      ipAddress: req.ip,
+      action: 'store-takeout',
+      result: 'success',
+      severity: 'high',
+      resource: `private/${currentUser.username}/${store}`,
+      resourceType: 'private-store',
+      metadata: {
+        store,
+        pages: takeout.pageCount,
+        attachments: takeout.attachmentCount,
+        bytes: archive.length,
+        pagesOnly
+      }
+    }, (err) => logger.warn('[my-takeout] audit record failed:', err));
+
+    // The store id is the owner's own word, so it is not echoed into the
+    // header unquoted; a filename is a header value, not free text.
+    const stamp = new Date().toISOString().slice(0, 10);
+    const safeStore = store.replace(/[^A-Za-z0-9._-]/g, '-');
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="takeout-${safeStore}-${stamp}.zip"`);
+    res.setHeader('Content-Length', String(archive.length));
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(archive);
+  }
+
+  /**
    * GET /my/edits — pages most recently edited by the current user (#640 Phase 2).
    */
   async myEditsPage(req: Request, res: Response) {
@@ -14464,6 +14592,8 @@ ${panes}
     app.get('/my/edits', (req: Request, res: Response) => this.myEditsPage(req, res));
     // #1459 — the owner's own private trash. Never another user's, and an
     // admin sees nothing extra; /admin/trash stays public pages only.
+    app.get('/my/takeout', (req: Request, res: Response) => this.myTakeoutPage(req, res));
+    app.post('/my/takeout', (req: Request, res: Response) => void this.myTakeoutDownload(req, res));
     app.get('/my/trash', (req: Request, res: Response) => this.myTrashPage(req, res));
     app.post('/my/trash/restore', (req: Request, res: Response) => this.myTrashRestore(req, res));
     app.post('/my/trash/purge', (req: Request, res: Response) => this.myTrashPurge(req, res));
