@@ -27,7 +27,7 @@ import {
   unlockPrivateStores
 } from '../privateStoreUnlock';
 import { storeFileIO } from '../privateStoreFiles';
-import { buildStoreTakeout } from '../privateStoreExport';
+import { buildStoreTakeout, TAKEOUT_FILE_INDEX } from '../privateStoreExport';
 import type { ActorContext } from '../../context/ActorContext';
 
 const STORE = 'vault';
@@ -151,6 +151,15 @@ describe('buildStoreTakeout — an encrypted store (#1387)', () => {
     await expect(
       buildStoreTakeout(MOLLY_LOCKED, { pagesDirectory: pagesDir, owner: 'molly', store: STORE })
     ).rejects.toThrow();
+  });
+
+  test('the file index comes out decrypted, so the ids survive a sealed store', async () => {
+    await sealedStore();
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const index = JSON.parse(text(takeout, `${STORE}/${TAKEOUT_FILE_INDEX}`));
+
+    expect(index.files['abc-123'].name).toBe('labs.pdf');
   });
 });
 
@@ -321,5 +330,53 @@ describe('buildStoreTakeout — what it carries (#1387)', () => {
 
     expect(takeout.files).toEqual([]);
     expect(takeout.totalBytes).toBe(0);
+  });
+});
+
+describe('buildStoreTakeout — the file index (operator, 2026-09-25)', () => {
+  test('it is carried, keeping each file id, pointing at the file in the archive', async () => {
+    await plainStore();
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const index = JSON.parse(text(takeout, `${STORE}/${TAKEOUT_FILE_INDEX}`));
+    const record = index.files['abc-123'];
+
+    // The id is what `/attachments/{id}` on a page names; without it the link dies.
+    expect(record.id).toBe('abc-123');
+    expect(record.name).toBe('kitchen photo.jpg');
+    expect(record.fileName).toBe('attachments/kitchen photo.jpg');
+    expect(takeout.files.some(f => f.path === `${STORE}/${record.fileName}`)).toBe(true);
+  });
+
+  test('a file missing from disk is left out of the index as well as the archive', async () => {
+    await plainStore();
+    const indexFile = storeFileIndexPath(pagesDir, 'molly', STORE);
+    const onDisk = await fs.readJson(indexFile);
+    onDisk.files.gone = { ...onDisk.files['abc-123'], id: 'gone', fileName: 'gone.jpg', name: 'gone.jpg' };
+    await fs.writeJson(indexFile, onDisk);
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const index = JSON.parse(text(takeout, `${STORE}/${TAKEOUT_FILE_INDEX}`));
+
+    expect(Object.keys(index.files)).toEqual(['abc-123']);
+  });
+
+  test('pagesOnly carries no file index — it would name files that are not there', async () => {
+    await plainStore();
+
+    const takeout = await buildStoreTakeout(MOLLY, {
+      pagesDirectory: pagesDir, owner: 'molly', store: STORE, pagesOnly: true
+    });
+
+    expect(takeout.files.some(f => f.path.endsWith(TAKEOUT_FILE_INDEX))).toBe(false);
+  });
+
+  test('the other indexes stay out', async () => {
+    await plainStore();
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const json = takeout.files.map(f => f.path).filter(p => p.endsWith('.json'));
+
+    expect(json).toEqual([`${STORE}/${TAKEOUT_FILE_INDEX}`]);
   });
 });

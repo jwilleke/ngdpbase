@@ -15,6 +15,12 @@
  *   - **Full frontmatter is kept.** Title, uuid, author, timestamps, keywords.
  *     It stays perfectly readable, and the uuid is what lets a later import
  *     (#1472) recognise a page as the same page rather than duplicating it.
+ *   - **The store's `files-index.json` is kept** (operator, 2026-09-25,
+ *     revising the list above). It is the one "index" that is content: pages
+ *     reference files as `/attachments/{id}`, and nothing else maps an id to
+ *     its file or holds its description, author and dates. Each record's
+ *     `fileName` is rewritten to the file's path in the archive, so an import
+ *     (#1472) can find every entry and keep every link.
  *   - **Nothing decrypted is written to the server's disk.** Everything here
  *     returns bytes in memory for the caller to stream.
  *
@@ -56,6 +62,14 @@ export type TakeoutOptions = {
   pagesOnly?: boolean;
   layout?: PrivateStoreLayoutOverrides;
 };
+
+/**
+ * Name of the file index inside a takeout, beside the pages.
+ *
+ * Fixed rather than read from the store layout: a takeout is carried to other
+ * instances, whose layout may name the on-disk index differently.
+ */
+export const TAKEOUT_FILE_INDEX = 'files-index.json';
 
 export type Takeout = {
   owner: string;
@@ -211,6 +225,7 @@ export async function buildStoreTakeout(
   if (!options.pagesOnly) {
     const index = await readFileIndex(io, storeFileIndexPath(pagesDirectory, owner, store, layout));
     const attachmentNames = new Set<string>();
+    const exported: Record<string, StoreFileEntry> = {};
 
     for (const record of index) {
       const abs = path.join(root, L.attachmentsDir, record.fileName);
@@ -224,13 +239,20 @@ export async function buildStoreTakeout(
       }
 
       // The name it was uploaded with, not the uuid it is stored under.
-      const wanted = archiveFileName(record.name || record.fileName);
-      files.push({
-        path: `${store}/${L.attachmentsDir}/${uniqueName(wanted, attachmentNames)}`,
-        bytes,
-        mtime
-      });
+      const inStore = `${L.attachmentsDir}/${uniqueName(archiveFileName(record.name || record.fileName), attachmentNames)}`;
+      files.push({ path: `${store}/${inStore}`, bytes, mtime });
+      exported[record.id] = { ...record, fileName: inStore };
       attachmentCount++;
+    }
+
+    // Only the files that made it into the archive: an entry naming a file
+    // that is not there would be a link an import cannot keep.
+    if (attachmentCount > 0) {
+      files.push({
+        path: `${store}/${TAKEOUT_FILE_INDEX}`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: exported }, null, 2), 'utf8'),
+        mtime: new Date()
+      });
     }
   }
 

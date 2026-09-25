@@ -347,11 +347,28 @@ Reading back, `AttachmentManager.ownPrivateStores()` applies the container rule 
 
 ---
 
+## Takeout and backup
+
+Two ways out, which differ in kind ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)):
+
+- __Instance backup__ (admin, a job). Private files ride in the backup document as base64, bytes as on disk: ciphertext stays ciphertext, `user-keys.json` travels, and no administrator becomes a keyholder. Restore writes them back as bytes.
+- __Takeout__ (the owner, `GET`/`POST /my/takeout`). `PageManager.buildOwnStoreTakeout` → `buildStoreTakeout` in `src/utils/privateStoreExport.ts`, packed by `src/utils/zipArchive.ts`. Decrypted, built in memory, never staged on disk; a locked store is refused, never exported empty.
+
+A takeout holds, under one `{store}/` folder:
+
+- each page as `{title}.md` with its full frontmatter, uuid included
+- each file under `attachments/` by the name it was uploaded with
+- `files-index.json` — the store's file index, decrypted, holding only the files in the archive, each record's `fileName` rewritten to its path in the archive. It is kept because it is the only record of a file's id, which is what `/attachments/{id}` on a page names; without it a takeout's links point at nothing (operator, 2026-09-25)
+
+It carries no `versions/`, `deleted/`, `pages-index.json`, `search-index.json`, `deleted-index.json`, `migrations.json`, `store.json` or `user-keys.json`. A takeout is a copy you can read, not a restore.
+
+---
+
 ## Not built
 
 Two things in this area do not exist. Nothing in the code implements either, and neither should be described to users as available.
 
-- __Taking your own data out, and backing private data up__ ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)). There is no user download of a store and no takeout bundle. There is also no admin backup of private data: `FileSystemProvider.walkDir()` skips the private root entirely, so the provider's page backup contains no private page, and `VersioningFileProvider.backup()` explicitly does not include the version histories under `private/{user}/{store}/versions/`. Copying a private store off an instance today is a filesystem operation outside the application.
+- __Importing a takeout back into a store__ ([#1472](https://github.com/jwilleke/ngdpbase/issues/1472)). A takeout gets data out; nothing takes one in. The admin import reads a server-side directory and is gated on `admin-system`.
 - __Sharing a store through a token__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). There is no per-store Share switch. `mayActInPrivateContainer` has the branch a share would use — it requires `opts.storeShared === true` and a share issued by the owner — and no caller passes it, so every store is closed to delegates and only the owner acts in one. A delegate would also need a wrapped store DEK, and nothing wraps one for a share.
 
 ---
