@@ -11,8 +11,10 @@ import {
   privatePageFilePath,
   privateUserIndexPath,
   privateUserDir,
+  resolvePrivateStoreLayout,
   type PrivatePageName
 } from '../utils/privateStorePath.js';
+import { collectUser, listPrivateOwners } from '../utils/privateStoreTakeout.js';
 import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef } from '../types/Provider.js';
 import {
@@ -69,6 +71,37 @@ export interface BackupData {
     content: string;
     size: number;
   }>;
+  /**
+   * Private stores, as bytes (#1387).
+   *
+   * A private store is NEVER walked with the pages above: its files are
+   * ciphertext when the store is sealed, and `pages` holds decoded text, which
+   * would replace every byte that is not valid UTF-8 with U+FFFD and leave a
+   * file that still looks like a file and never decrypts again. These are
+   * base64 so they survive the JSON document exactly as they sit on disk —
+   * ciphertext stays ciphertext, and restoring needs no key, so a backup runs
+   * as a job and an administrator never becomes a keyholder.
+   *
+   * `relativePath` is relative to the pages directory and therefore begins
+   * with the private root, e.g. `private/molly/vault/uuid-1.md`.
+   */
+  privateFiles?: Array<{
+    relativePath: string;
+    /** The file's bytes, base64. */
+    base64: string;
+    size: number;
+    mtime: string;
+  }>;
+  /**
+   * Set when the private tree was too large to carry and was left out. A
+   * backup that silently omitted it is the failure this whole field exists to
+   * end, so its absence is always stated rather than implied.
+   */
+  privateOmitted?: {
+    reason: string;
+    bytes: number;
+    files: number;
+  };
   statistics: {
     totalPages: number;
     totalSize: number;
@@ -1809,6 +1842,11 @@ class FileSystemProvider extends BasePageProvider {
         }
       }
 
+      // #1387: the private tree, as bytes. `walkDir` skips it (#1456), so until
+      // now an instance backup held no private store at all — a disk failure
+      // lost every sealed one, and nobody found out until a restore.
+      await this.backupPrivateStores(backupData);
+
       logger.info(`[FileSystemProvider] Backup complete: ${backupData.statistics.totalPages} pages, ${(backupData.statistics.totalSize / 1024).toFixed(2)} KB`);
 
       return backupData;
@@ -1816,6 +1854,84 @@ class FileSystemProvider extends BasePageProvider {
       logger.error('[FileSystemProvider] Backup failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Collect every private store into `backupData`, as bytes (#1387).
+   *
+   * ## Memory
+   *
+   * A backup is assembled whole in memory: every manager's data becomes one
+   * JavaScript object, `JSON.stringify` makes one string of it, and gzip makes
+   * one Buffer. Private files add to that, and base64 costs a further third on
+   * top of the bytes themselves. So the private tree is measured BEFORE it is
+   * read, and the limits below are about what the process can hold, not about
+   * what is worth keeping:
+   *
+   *   - under the warn limit: carried silently, as it should be;
+   *   - over it: carried, with a warning naming the size, so the growth is
+   *     visible before it becomes a problem;
+   *   - over the hard limit: NOT carried, and `privateOmitted` records why.
+   *     Refusing the whole backup would throw away the public pages too, and
+   *     omitting without a trace is the exact failure this field exists to end.
+   *
+   * On jimstest today the tree is 2.7 MB against a 15 MB backup, so neither
+   * limit is close. They exist so that the day it changes, someone is told.
+   */
+  private async backupPrivateStores(backupData: BackupData): Promise<void> {
+    if (!this.pagesDirectory) return;
+
+    const WARN_BYTES = 64 * 1024 * 1024;
+    const HARD_BYTES = 256 * 1024 * 1024;
+
+    const owners = await listPrivateOwners(this.pagesDirectory, this.privateStoreLayout);
+    if (owners.length === 0) return;
+
+    const files: NonNullable<BackupData['privateFiles']> = [];
+    let bytes = 0;
+
+    const root = resolvePrivateStoreLayout(this.privateStoreLayout).privateRoot;
+    for (const owner of owners) {
+      const taken = await collectUser(this.pagesDirectory, owner, this.privateStoreLayout);
+
+      const add = (relative: string, file: { bytes: Buffer; mtime: Date }): void => {
+        bytes += file.bytes.length;
+        files.push({
+          relativePath: relative,
+          base64: file.bytes.toString('base64'),
+          size: file.bytes.length,
+          mtime: file.mtime.toISOString()
+        });
+      };
+
+      for (const file of taken.userFiles) add(`${root}/${owner}/${file.path}`, file);
+      for (const store of taken.stores) {
+        for (const file of store.files) add(`${root}/${owner}/${store.store}/${file.path}`, file);
+      }
+    }
+
+    if (bytes > HARD_BYTES) {
+      backupData.privateOmitted = {
+        reason: `the private tree is ${(bytes / 1024 / 1024).toFixed(1)} MB, over the ${HARD_BYTES / 1024 / 1024} MB a single in-memory backup can carry`,
+        bytes,
+        files: files.length
+      };
+      logger.error(
+        `[FileSystemProvider] Private stores NOT backed up: ${backupData.privateOmitted.reason}. ` +
+        'Back the private tree up at the filesystem level until this is streamed (#1387).'
+      );
+      return;
+    }
+
+    if (bytes > WARN_BYTES) {
+      logger.warn(
+        `[FileSystemProvider] Private stores are ${(bytes / 1024 / 1024).toFixed(1)} MB — ` +
+        'carried, but a backup is built whole in memory and base64 adds a third again (#1387).'
+      );
+    }
+
+    backupData.privateFiles = files;
+    logger.info(`[FileSystemProvider] Backed up ${files.length} private file(s), ${(bytes / 1024).toFixed(2)} KB, as stored`);
   }
 
   /**
@@ -1883,10 +1999,42 @@ class FileSystemProvider extends BasePageProvider {
         }
       }
 
+      // #1387: private stores, written back as BYTES. Never through the text
+      // path above: a sealed page is ciphertext, and an encoding round-trip
+      // would leave a file that still looks like a file and never decrypts.
+      let privateCount = 0;
+      if (Array.isArray(backupData.privateFiles)) {
+        for (const file of backupData.privateFiles) {
+          try {
+            // A backup is an operator's own file, but a relative path from one
+            // is still data: join it and check it stayed inside the tree.
+            const targetPath = path.resolve(this.pagesDirectory, file.relativePath);
+            if (!targetPath.startsWith(path.resolve(this.pagesDirectory) + path.sep)) {
+              logger.error(`[FileSystemProvider] Refusing private file outside the pages directory: ${file.relativePath}`);
+              continue;
+            }
+            await fs.ensureDir(path.dirname(targetPath));
+            await writeFileAtomic(targetPath, Buffer.from(file.base64, 'base64'));
+            privateCount++;
+          } catch (error) {
+            logger.error(`[FileSystemProvider] Failed to restore private file: ${file.relativePath}`, error);
+          }
+        }
+      } else if (backupData.privateOmitted) {
+        // Say it plainly: this backup cannot put the private stores back.
+        logger.warn(
+          `[FileSystemProvider] This backup carries NO private stores — ${backupData.privateOmitted.reason} ` +
+          `(${backupData.privateOmitted.files} file(s), ${(backupData.privateOmitted.bytes / 1024 / 1024).toFixed(1)} MB).`
+        );
+      }
+
       // Refresh page cache after restore
       await this.refreshPageList();
 
-      logger.info(`[FileSystemProvider] Restore complete: ${restoredCount} pages restored, ${this.pageCache.size} pages in cache`);
+      logger.info(
+        `[FileSystemProvider] Restore complete: ${restoredCount} pages restored, ` +
+        `${privateCount} private file(s) restored, ${this.pageCache.size} pages in cache`
+      );
     } catch (error) {
       logger.error('[FileSystemProvider] Restore failed:', error);
       throw error;
