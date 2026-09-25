@@ -101,6 +101,8 @@
   "ngdpbase.stores.default.owner": "admin",
   "_comment_stores_recovery": "Private stores (#1414): how many EXTRA attempts a user gets to confirm their 12 recovery words before the door gives up and they start over. Each attempt shows a NEW set of words — a failed confirmation never re-shows the set that was just missed. 1 = two attempts in all; 0 = one attempt. Nothing is written until an attempt succeeds.",
   "ngdpbase.stores.recovery.confirmretries": 1,
+  "_comment_stores_import": "Private stores (#1472): the largest takeout a person may upload to import into their own store, in bytes, and the most it may unpack to. The whole archive and everything in it are held in memory for the import (nothing decrypted is staged on disk), so this is also the most memory one import can use. 256 MB matches the line the instance backup draws for private data.",
+  "ngdpbase.stores.import.maxsize": 268435456,
   "_comment_page_index": "Page index file - used by VersioningFileProvider for fast lookups (high I/O, consider fast storage)",
   "ngdpbase.page.provider.versioning.indexfile": "${FAST_STORAGE}/page-index.json",
   "ngdpbase.page.provider.filesystem.encoding": "utf-8",
@@ -523,6 +525,10 @@
     "store-takeout": {
       "on-failure": "continue",
       "description": "A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left"
+    },
+    "store-import": {
+      "on-failure": "continue",
+      "description": "A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped"
     },
     "asset-edit": {
       "on-failure": "continue",

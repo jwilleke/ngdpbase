@@ -66,6 +66,11 @@ export const AUDIT_EVENT = {
    * private data the system can produce, and it leaves in the clear.
    */
   STORE_TAKEOUT: 'store-takeout',
+  /**
+   * #1472: a takeout imported back into its owner's store. Its own event for
+   * the mirror-image reason: a bulk write into private data, in one request.
+   */
+  STORE_IMPORT: 'store-import',
   ASSET_EDIT: 'asset-edit',
   CONFIG_RESET: 'config-reset',
   BACKUP_CREATE: 'backup-create',

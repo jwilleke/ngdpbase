@@ -212,6 +212,98 @@
               </table>
             </div>
           <% } %>
+          <% if (listKind === 'takeout' && typeof importStores !== 'undefined') { %>
+            <%# #1472: a takeout handed back. Outside the list above, so someone
+                arriving at a new site with no store yet can still bring one in.
+                Posted with csrfFetch: the CSRF check runs before a multipart
+                body is parsed, so a form field could not carry the token. %>
+            <hr class="my-4">
+            <h5><i class="fas fa-upload"></i> Import a download</h5>
+            <p class="text-muted">
+              Bring a download from this page — from this site or another — back into one of your stores.
+              Pages already in the store are left as they are, so importing the same download twice changes nothing.
+              History and trash are not in a download, so they do not come back.
+            </p>
+            <% if (importStores.length === 0) { %>
+              <p class="text-muted">Unlock a store to import into it.</p>
+            <% } else { %>
+              <form id="takeoutImportForm" class="row g-2 align-items-end">
+                <div class="col-sm-3">
+                  <label for="takeoutImportStore" class="form-label">Into store</label>
+                  <select id="takeoutImportStore" name="store" class="form-select form-select-sm">
+                    <% importStores.forEach(function(s) { %>
+                      <option value="<%= s %>"><%= s %></option>
+                    <% }); %>
+                  </select>
+                </div>
+                <div class="col-sm-6">
+                  <label for="takeoutImportFile" class="form-label">Download (.zip)</label>
+                  <input id="takeoutImportFile" name="archive" type="file" accept=".zip,application/zip" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-sm-3">
+                  <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-upload"></i> Import</button>
+                </div>
+              </form>
+              <div id="takeoutImportResult" class="mt-3" aria-live="polite"></div>
+              <script>
+                (function () {
+                  var form = document.getElementById('takeoutImportForm');
+                  var out = document.getElementById('takeoutImportResult');
+                  var LABELS = {
+                    'imported': 'Imported',
+                    'unchanged': 'Already here, unchanged',
+                    'changed-since-takeout': 'Changed since this download — your current page was kept',
+                    'uuid-elsewhere': 'Already on this site elsewhere — not imported',
+                    'failed': 'Could not be imported'
+                  };
+                  function line(text, cls) {
+                    var p = document.createElement('div');
+                    if (cls) p.className = cls;
+                    p.textContent = text;
+                    return p;
+                  }
+                  form.addEventListener('submit', async function (e) {
+                    e.preventDefault();
+                    var button = form.querySelector('button');
+                    button.disabled = true;
+                    out.replaceChildren(line('Importing…', 'alert alert-info'));
+                    try {
+                      var res = await (window.csrfFetch || fetch)('/my/takeout/import', { method: 'POST', body: new FormData(form) });
+                      var data = await res.json();
+                      if (!data.success) {
+                        out.replaceChildren(line(data.error || 'The import failed.', 'alert alert-danger'));
+                        return;
+                      }
+                      var r = data.report;
+                      var imported = r.pages.filter(function (p) { return p.outcome === 'imported'; }).length;
+                      var summary = line(imported + ' page(s) imported, ' + r.files + ' file(s) stored, into ' + r.store + '.', 'alert alert-success');
+                      var list = document.createElement('ul');
+                      list.className = 'list-unstyled small';
+                      r.pages.forEach(function (p) {
+                        var li = document.createElement('li');
+                        var text = p.title + ' — ' + (LABELS[p.outcome] || p.outcome);
+                        if (p.outcome === 'imported' && p.importedAs && p.importedAs.split('/').pop() !== p.title) {
+                          text += ' as “' + p.importedAs.split('/').pop() + '”';
+                        }
+                        if (p.where) text += ' (' + p.where + ')';
+                        if (p.message) text += ': ' + p.message;
+                        li.textContent = text;
+                        list.appendChild(li);
+                      });
+                      r.fileErrors.forEach(function (f) {
+                        list.appendChild(line('File ' + f.name + ' — could not be stored: ' + f.message));
+                      });
+                      out.replaceChildren(summary, list);
+                    } catch (err) {
+                      out.replaceChildren(line('The import failed: ' + err.message, 'alert alert-danger'));
+                    } finally {
+                      button.disabled = false;
+                    }
+                  });
+                })();
+              </script>
+            <% } %>
+          <% } %>
           <%# #1302: all five of the "my" lists render through this view, so one
               control here covers pages, journal entries and links alike. %>
           <% if (typeof paginationHtml !== 'undefined' && paginationHtml) { %>

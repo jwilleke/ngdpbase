@@ -362,13 +362,24 @@ A takeout holds, under one `{store}/` folder:
 
 It carries no `versions/`, `deleted/`, `pages-index.json`, `search-index.json`, `deleted-index.json`, `migrations.json`, `store.json` or `user-keys.json`. A takeout is a copy you can read, not a restore.
 
+### Importing a takeout
+
+`POST /my/takeout/import` ([#1472](https://github.com/jwilleke/ngdpbase/issues/1472)) takes a takeout back into one of the requester's own stores, on this instance or another. The door is `ImportManager.importOwnStoreTakeout`; `src/utils/privateStoreImport.ts` reads the takeout and `readZip` in `src/utils/zipArchive.ts` unpacks it, both in memory. Not `importPages`: that reads a server-side directory and converts every page.
+
+- Refused before any write when the store is not the requester's, does not exist (the default store always does), or is encrypted and locked in this session.
+- Files first, through `AttachmentManager.uploadAttachment` into the store; `/attachments/{oldId}` links in the pages are pointed at the ids the store holds, using `files-index.json`.
+- Pages through `PageManager.savePage`, uuid kept, so a sealed store encrypts on write.
+- Idempotent: a uuid already in the store is skipped (`unchanged`, or `changed-since-takeout` when the body differs — the live page wins); a uuid used elsewhere on the site is skipped as `uuid-elsewhere`, naming the page only when the requester may view it; a title held by a different page lands beside it as `Title (imported)`.
+- Capped by `ngdpbase.stores.import.maxsize` (256 MB), which bounds both the upload and what it unpacks to. Audited as `store-import`, with counts only.
+
+It brings back pages and files, never history or trash.
+
 ---
 
 ## Not built
 
-Two things in this area do not exist. Nothing in the code implements either, and neither should be described to users as available.
+One thing in this area does not exist. Nothing in the code implements it, and it should not be described to users as available.
 
-- __Importing a takeout back into a store__ ([#1472](https://github.com/jwilleke/ngdpbase/issues/1472)). A takeout gets data out; nothing takes one in. The admin import reads a server-side directory and is gated on `admin-system`.
 - __Sharing a store through a token__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). There is no per-store Share switch. `mayActInPrivateContainer` has the branch a share would use — it requires `opts.storeShared === true` and a share issued by the owner — and no caller passes it, so every store is closed to delegates and only the owner acts in one. A delegate would also need a wrapped store DEK, and nothing wraps one for a share.
 
 ---
