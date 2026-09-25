@@ -296,7 +296,18 @@
                       r.fileErrors.forEach(function (f) {
                         list.appendChild(line('File ' + f.name + ' — could not be stored: ' + f.message));
                       });
-                      out.replaceChildren(summary, list);
+                      var parts = [summary];
+                      if (r.reportPage) {
+                        // A private page's URL is its name (#1456).
+                        var a = document.createElement('a');
+                        a.href = '/' + r.reportPage.split('/').map(encodeURIComponent).join('/');
+                        a.textContent = 'This report is saved as a page in ' + r.store + '.';
+                        var p = document.createElement('p');
+                        p.appendChild(a);
+                        parts.push(p);
+                      }
+                      parts.push(list);
+                      out.replaceChildren.apply(out, parts);
                     } catch (err) {
                       out.replaceChildren(line('The import failed: ' + err.message, 'alert alert-danger'));
                     } finally {

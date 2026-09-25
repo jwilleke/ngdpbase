@@ -319,6 +319,37 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
     expect(report.unlinkedFiles).toEqual(['scan.pdf']);
   });
 
+  test('each import saves its report as a page in the store, naming what a log may not', async () => {
+    await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
+    const archive = await takeoutOf(VAULT);
+    await emptyStore(VAULT);
+    await pages.savePage(name(VAULT, 'Medical notes'), 'A different page.', { uuid: UUID_B }, MOLLY);
+
+    const report = await importer.importOwnStoreTakeout(MOLLY, {
+      store: VAULT, archive, limits: LIMITS, sourceName: 'takeout-vault-2026-09-25.zip'
+    });
+
+    expect(report.reportPage).toMatch(/^private\/molly\/vault\/Import report \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const page = await pages.getPage(report.reportPage ?? '', MOLLY);
+    expect(page?.content).toContain('**takeout-vault-2026-09-25.zip**');
+    expect(page?.content).toContain('- Pages imported: 1');
+    expect(page?.content).toContain('[Medical notes (imported)|vault/Medical notes (imported)] — imported (its title "Medical notes" was taken)');
+    // In a sealed store the report is sealed too: its words are nowhere on disk.
+    expect(await filesContaining('takeout-vault-2026-09-25')).toEqual([]);
+  });
+
+  test('a second import adds its own report, and changes nothing else', async () => {
+    await pages.savePage(name(VAULT, 'Medical notes'), 'Cholesterol 180.', { uuid: UUID_A }, MOLLY);
+    const archive = await takeoutOf(VAULT);
+    await emptyStore(VAULT);
+
+    const first = await run(VAULT, archive);
+    const second = await run(VAULT, archive);
+
+    expect(second.reportPage).not.toBe(first.reportPage);
+    expect((await pages.getPage(second.reportPage ?? '', MOLLY))?.content).toContain('- Already here, unchanged: 1');
+  });
+
   test('a LOCKED store is refused before anything is written', async () => {
     const archive = await packZip([{ path: `${VAULT}/Page.md`, bytes: Buffer.from('---\ntitle: Page\n---\n\nx\n') }]);
 

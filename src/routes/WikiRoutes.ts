@@ -8608,7 +8608,8 @@ ${panes}
     }
 
     const store = typeof req.body?.store === 'string' ? req.body.store : '';
-    const archive = (req as Request & { file?: Express.Multer.File }).file?.buffer;
+    const uploaded = (req as Request & { file?: Express.Multer.File }).file;
+    const archive = uploaded?.buffer;
     if (!store) return res.status(400).json({ success: false, error: 'No store was named.' });
     if (!archive) return res.status(400).json({ success: false, error: 'No file was uploaded.' });
 
@@ -8620,7 +8621,8 @@ ${panes}
       report = await importManager.importOwnStoreTakeout(currentUser, {
         store,
         archive,
-        limits: { maxEntries: 0xffff, maxTotalBytes: maxBytes }
+        limits: { maxEntries: 0xffff, maxTotalBytes: maxBytes },
+        ...(uploaded?.originalname ? { sourceName: uploaded.originalname } : {})
       });
     } catch (err) {
       if (err instanceof TakeoutImportRefused) {

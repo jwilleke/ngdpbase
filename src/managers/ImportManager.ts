@@ -294,6 +294,11 @@ export type TakeoutImportReport = {
   unlinkedFiles: string[];
   /** Archive members that are neither a page nor a file. */
   ignored: string[];
+  /**
+   * The private page this import's report was saved as, in the target store
+   * (operator, 2026-09-25). Absent only when that save failed.
+   */
+  reportPage?: string;
 };
 
 /**
@@ -1652,7 +1657,13 @@ class ImportManager extends BaseManager {
    */
   async importOwnStoreTakeout(
     ctx: ActorContext,
-    options: { store: string; archive: Buffer; limits: ZipReadLimits }
+    options: {
+      store: string;
+      archive: Buffer;
+      limits: ZipReadLimits;
+      /** The uploaded file's name, for the report page. */
+      sourceName?: string;
+    }
   ): Promise<TakeoutImportReport> {
     if (!ctx) throw new Error('ImportManager.importOwnStoreTakeout requires an ActorContext');
     const owner = ctx.username;
@@ -1759,7 +1770,96 @@ class ImportManager extends BaseManager {
     logger.info(`[ImportManager] ${owner} imported a takeout into '${store}': `
       + `${report.pages.filter(p => p.outcome === 'imported').length} page(s), ${report.files} file(s)`
       + (report.unlinkedFiles.length ? `, ${report.unlinkedFiles.length} file(s) no page in the store links to` : ''));
+
+    // The report, kept (operator, 2026-09-25): a page in the store it is about,
+    // sealed exactly when the store is, so it can name what a log may not. A
+    // failure here costs the record, never the import.
+    try {
+      const when = new Date();
+      const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
+        + ` ${when.toTimeString().slice(0, 8)}`;
+      const title = await freeImportTitle(`Import report ${stamp}`, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
+      const saved = await pageManager.savePage(
+        nameIn(store, title),
+        this.takeoutReportMarkdown(report, { owner, when, sourceName: options.sourceName }),
+        { title, private: true, store },
+        ctx
+      );
+      report.reportPage = saved.name;
+    } catch (err) {
+      logger.warn(`[ImportManager] the import report for ${owner}'s store '${store}' could not be saved: ${(err as Error).message}`);
+    }
     return report;
+  }
+
+  /** The import report page's markdown. Private links are `[Title|store/Title]` (#1457). */
+  private takeoutReportMarkdown(
+    report: TakeoutImportReport,
+    about: { owner: string; when: Date; sourceName?: string }
+  ): string {
+    // Link text cannot carry the characters that end or split a link.
+    const text = (t: string): string => t.replace(/[|[\]]/g, ' ').trim();
+    const inStore = (name: string): string => {
+      const title = name.split('/').pop() ?? name;
+      return `[${text(title)}|${report.store}/${title}]`;
+    };
+    const where = (w: string): string => {
+      const parts = w.split('/');
+      // `private/{owner}/{store}/{title}`, or a public title.
+      return parts.length === 4 && parts[0] === 'private'
+        ? `[${text(parts[3])}|${parts[2]}/${parts[3]}]`
+        : `[${text(w)}]`;
+    };
+    const count = (o: TakeoutPageOutcome['outcome']): number => report.pages.filter(p => p.outcome === o).length;
+
+    const lines: string[] = [
+      `Import of ${about.sourceName ? `**${text(about.sourceName)}**` : 'a download'} into store **${report.store}**,`
+        + ` ${about.when.toLocaleString()}, by ${about.owner}.`,
+      '',
+      `- Pages imported: ${count('imported')}`,
+      `- Already here, unchanged: ${count('unchanged')}`,
+      `- Changed since the download — the page here was kept: ${count('changed-since-takeout')}`,
+      `- Already on this site elsewhere — not imported: ${count('uuid-elsewhere')}`,
+      `- Could not be imported: ${count('failed')}`,
+      `- Files stored: ${report.files}${report.unlinkedFiles.length ? ` (${report.unlinkedFiles.length} not linked from any page)` : ''}`,
+      '',
+      'A download holds no history and no trash, so neither came back.',
+      ''
+    ];
+
+    if (report.pages.length > 0) {
+      lines.push('## Pages', '');
+      for (const p of report.pages) {
+        switch (p.outcome) {
+        case 'imported': {
+          const as = p.importedAs.split('/').pop() ?? p.importedAs;
+          lines.push(`- ${inStore(p.importedAs)} — imported${as !== p.title ? ` (its title "${text(p.title)}" was taken)` : ''}`);
+          break;
+        }
+        case 'unchanged': lines.push(`- ${text(p.title)} — already here, unchanged`); break;
+        case 'changed-since-takeout': lines.push(`- ${text(p.title)} — changed since the download; the page here was kept`); break;
+        case 'uuid-elsewhere': lines.push(`- ${text(p.title)} — already on this site${p.where ? ` as ${where(p.where)}` : ' elsewhere'}; not imported`); break;
+        case 'failed': lines.push(`- ${text(p.title)} — could not be imported: ${text(p.message)}`); break;
+        }
+      }
+      lines.push('');
+    }
+    if (report.unlinkedFiles.length > 0) {
+      lines.push('## Files no page links to', '', 'Stored in this store, but no page here links to them.', '');
+      for (const f of report.unlinkedFiles) lines.push(`- ${text(f)}`);
+      lines.push('');
+    }
+    if (report.fileErrors.length > 0) {
+      lines.push('## Files that could not be stored', '');
+      for (const f of report.fileErrors) lines.push(`- ${text(f.name)}: ${text(f.message)}`);
+      lines.push('');
+    }
+    if (report.ignored.length > 0) {
+      lines.push('## Left out of the import', '', 'In the download, but neither a page nor a file.', '');
+      for (const i of report.ignored) lines.push(`- \`${i.replace(/`/g, '')}\``);
+      lines.push('');
+    }
+    return lines.join('\n');
   }
 
   /**

@@ -274,7 +274,7 @@ describe('POST /my/takeout/import (#1472)', () => {
     // Requester positional, no owner named: the door decides whose store it is.
     expect(importOwnStoreTakeout).toHaveBeenCalledWith(
       expect.objectContaining({ username: 'molly' }),
-      expect.objectContaining({ store: 'vault', archive: ZIP })
+      expect.objectContaining({ store: 'vault', archive: ZIP, sourceName: 'takeout-vault.zip' })
     );
   });
 
