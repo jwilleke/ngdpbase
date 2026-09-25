@@ -50,6 +50,12 @@ import type PageManager from './PageManager.js';
 import type { PageSaveResult } from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
 import logger from '../utils/logger.js';
+import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
+import { freeImportTitle, readTakeout, rewriteAttachmentLinks } from '../utils/privateStoreImport.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
+import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { toPermissionSubject } from '../context/JobContext.js';
 
 /**
  * Options for import operations
@@ -249,6 +255,40 @@ export interface ImportResult {
   /** Import duration in milliseconds */
   durationMs: number;
 }
+
+/**
+ * Why a takeout import was refused before anything was written (#1472).
+ * A refusal is never a partial import.
+ */
+export class TakeoutImportRefused extends Error {
+  constructor(
+    readonly reason: 'not-owner' | 'no-such-store' | 'locked' | 'unreadable',
+    message: string
+  ) {
+    super(message);
+    this.name = 'TakeoutImportRefused';
+  }
+}
+
+/** One page's outcome in a takeout import (#1472). */
+export type TakeoutPageOutcome =
+  | { title: string; outcome: 'imported'; importedAs: string }
+  | { title: string; outcome: 'unchanged' }
+  | { title: string; outcome: 'changed-since-takeout' }
+  /** `where` is named only when the requester may view that page. */
+  | { title: string; outcome: 'uuid-elsewhere'; where?: string }
+  | { title: string; outcome: 'failed'; message: string };
+
+export type TakeoutImportReport = {
+  store: string;
+  pages: TakeoutPageOutcome[];
+  /** Files stored, or matched to one the store already held. */
+  files: number;
+  /** Files that could not be stored, by name. */
+  fileErrors: Array<{ name: string; message: string }>;
+  /** Archive members that are neither a page nor a file. */
+  ignored: string[];
+};
 
 /**
  * Import Manager class
@@ -1571,6 +1611,164 @@ class ImportManager extends BaseManager {
     }
 
     return addedCount;
+  }
+
+  /**
+   * Import a takeout into one of the requester's OWN private stores (#1472).
+   *
+   * The mirror of `PageManager.buildOwnStoreTakeout`, and not `importPages`:
+   * that reads a directory on the server, so a decrypted takeout would have to
+   * be staged on disk, and it converts every page, which would rewrite bodies
+   * that are already this system's own markdown. Here the archive is read in
+   * memory and each page and file goes through the same doors an edit and an
+   * upload use, so a sealed store encrypts on write with no new crypto.
+   *
+   * Refused before anything is written — never a partial import — when the
+   * requester is not the owner, the store is not theirs, or it is encrypted
+   * and locked in this session.
+   *
+   * Idempotent (operator, 2026-09-25): importing the same takeout twice leaves
+   * the store as the first import did.
+   *
+   *   - Files first, so page links can be pointed at them. The store's upload
+   *     finds a file whose bytes it already holds and returns that one, so a
+   *     second import stores nothing new.
+   *   - A page whose uuid the target store already holds is skipped:
+   *     `unchanged` when its body matches, `changed-since-takeout` when not —
+   *     the live page wins.
+   *   - A page whose uuid is used elsewhere on the site is skipped as
+   *     `uuid-elsewhere`, naming the page only when the requester may view it.
+   *   - A title held by a DIFFERENT page lands beside it as `Title (imported)`.
+   *
+   * This is not a restore: a takeout carries no history and no trash.
+   *
+   * @param ctx - Who is importing; only into their own container
+   */
+  async importOwnStoreTakeout(
+    ctx: ActorContext,
+    options: { store: string; archive: Buffer; limits: ZipReadLimits }
+  ): Promise<TakeoutImportReport> {
+    if (!ctx) throw new Error('ImportManager.importOwnStoreTakeout requires an ActorContext');
+    const owner = ctx.username;
+    if (!owner || !mayActInPrivateContainer(ctx, owner)) {
+      throw new TakeoutImportRefused('not-owner', 'Only the owner can import into their store.');
+    }
+
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!pageManager || !attachmentManager || !configManager || !pagesDirectory) {
+      throw new Error('ImportManager.importOwnStoreTakeout: page, attachment or configuration manager unavailable');
+    }
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+
+    // Only a store that exists, or the default one every person has. Making a
+    // store is its own door (#1414): an encrypted one needs keys made for it.
+    const { store } = options;
+    const ownStores = await pageManager.listOwnStoreIds(ctx);
+    if (!isValidStoreId(store) || !(ownStores.includes(store) || store === layout.defaultStoreId)) {
+      throw new TakeoutImportRefused('no-such-store', 'You have no store of that name.');
+    }
+    try {
+      await assertContextCanWriteStore(ctx, { pagesDirectory, owner, store, layout });
+    } catch {
+      throw new TakeoutImportRefused('locked', 'That store is encrypted and locked in this session. Unlock it, then import again.');
+    }
+
+    let takeout;
+    try {
+      takeout = readTakeout(readZip(options.archive, options.limits));
+    } catch (err) {
+      throw new TakeoutImportRefused('unreadable', `That file could not be read as a takeout: ${(err as Error).message}`);
+    }
+
+    const report: TakeoutImportReport = { store, pages: [], files: 0, fileErrors: [], ignored: takeout.ignored };
+
+    // ── Files ──────────────────────────────────────────────────────────────
+    const newIds = new Map<string, string>();
+    for (const file of takeout.files) {
+      try {
+        const stored = await attachmentManager.uploadAttachment(
+          file.bytes,
+          { originalName: file.name, mimeType: file.encodingFormat || this.getMimeType(file.name), size: file.bytes.length },
+          ctx,
+          { private: true, store, description: file.description ?? '' }
+        );
+        if (file.oldId && stored.identifier) newIds.set(file.oldId, stored.identifier);
+        report.files++;
+      } catch (err) {
+        report.fileErrors.push({ name: file.name, message: (err as Error).message });
+      }
+    }
+
+    // ── Pages ──────────────────────────────────────────────────────────────
+    const nameIn = (s: string, key: string): string => formatPrivatePageName(owner, s, key);
+    for (const page of takeout.pages) {
+      try {
+        const body = rewriteAttachmentLinks(page.body, newIds);
+
+        if (page.uuid) {
+          const here = await pageManager.getPage(nameIn(store, page.uuid), ctx);
+          if (here) {
+            report.pages.push({
+              title: page.title,
+              outcome: (here.content ?? '').trim() === body.trim() ? 'unchanged' : 'changed-since-takeout'
+            });
+            continue;
+          }
+          const elsewhere = await this.whereUuidLives(pageManager, ctx, page.uuid, ownStores.filter(s => s !== store), nameIn);
+          if (elsewhere) {
+            report.pages.push({ title: page.title, outcome: 'uuid-elsewhere', ...(elsewhere.where ? { where: elsewhere.where } : {}) });
+            continue;
+          }
+        }
+
+        const title = await freeImportTitle(page.title, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
+        const metadata: Record<string, unknown> = { ...page.metadata, title, private: true, store };
+        for (const key of Object.keys(metadata)) {
+          if (metadata[key] === undefined) delete metadata[key];
+        }
+        const saved = await pageManager.savePage(nameIn(store, title), body, metadata, ctx, { normaliseTitle: true });
+        report.pages.push({ title: page.title, outcome: 'imported', importedAs: saved.name });
+      } catch (err) {
+        report.pages.push({ title: page.title, outcome: 'failed', message: (err as Error).message });
+      }
+    }
+
+    // #1461: a private store is logged by owner and store, never by page.
+    logger.info(`[ImportManager] ${owner} imported a takeout into '${store}': `
+      + `${report.pages.filter(p => p.outcome === 'imported').length} page(s), ${report.files} file(s)`);
+    return report;
+  }
+
+  /**
+   * Where a uuid is already in use outside the target store, or null.
+   *
+   * The owner's other stores this session can read, then the public pages.
+   * `where` is set only for a page the requester may view: a uuid held by a
+   * page they cannot see is reported without naming it, so an import cannot
+   * be used to probe for pages.
+   */
+  private async whereUuidLives(
+    pageManager: PageManager,
+    ctx: ActorContext,
+    uuid: string,
+    otherStores: string[],
+    nameIn: (store: string, key: string) => string
+  ): Promise<{ where?: string } | null> {
+    for (const other of otherStores) {
+      const found = await pageManager.getPage(nameIn(other, uuid), ctx);
+      if (found) return { where: nameIn(other, found.title) };
+    }
+    const shared = await pageManager.getPage(uuid, ctx);
+    if (!shared) return null;
+    const pip = this.engine.getManager<{
+      canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean>;
+        }>('PolicyInformationPoint');
+    const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+    const visible = !!pip && await pip.canUserAccessPage(subject, shared.title, 'view');
+    return visible ? { where: shared.title } : {};
   }
 
   /**
