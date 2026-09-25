@@ -4,17 +4,19 @@
  * A takeout lands on the owner's laptop or phone, and that decides the format:
  * iOS, iPadOS, Android, Windows and macOS all open a `.zip` by tapping it,
  * while `.tar.gz` needs a third-party app on exactly the devices people carry.
- * The instance backup keeps tar (`tarArchive`) — it is a server-side artifact
- * an administrator handles on a server, where tar is the native idiom.
  *
- * Bytes in, one Buffer out, for the same reason as the tar writer: a takeout is
- * decrypted, and nothing decrypted may be staged on the server's disk.
+ * This is the only archive the system writes. The instance backup does not use
+ * one: it carries private files as base64 inside the backup document (#1387),
+ * so there is nothing to unpack on restore.
+ *
+ * Bytes in, one Buffer out: a takeout is decrypted, and nothing decrypted may
+ * be staged on the server's disk, so there is no file for a packer to read.
  *
  * Written here rather than taken from a library because the zip container is
- * small and completely specified, and every candidate library wants to read
- * from or write to the filesystem. The tests extract each archive with the
- * system `unzip` and compare the bytes, so this is checked against a real
- * implementation rather than against its own assumptions.
+ * small and completely specified, while every candidate library wants to read
+ * from or write to the filesystem. The tests extract each archive with an
+ * independent implementation and compare the bytes, so this is checked against
+ * a real reader rather than against its own assumptions.
  *
  * Deliberately NOT implemented: zip64. An archive over 4 GiB, a member over
  * 4 GiB, or more than 65,535 members is refused with a clear error rather than
