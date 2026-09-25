@@ -5,7 +5,8 @@
  * iOS, iPadOS, Android, Windows and macOS all open a `.zip` by tapping it,
  * while `.tar.gz` needs a third-party app on exactly the devices people carry.
  *
- * This is the only archive the system writes. The instance backup does not use
+ * This is the only archive the system writes, and `readZip` below is the only
+ * one it reads: a takeout handed back for import (#1472). The instance backup does not use
  * one: it carries private files as base64 inside the backup document (#1387),
  * so there is nothing to unpack on restore.
  *
@@ -24,7 +25,7 @@
  * streaming and zip64 together, which is its own piece of work.
  */
 
-import { deflateRaw as deflateRawCb } from 'zlib';
+import { deflateRaw as deflateRawCb, inflateRawSync } from 'zlib';
 import { promisify } from 'util';
 
 const deflateRaw = promisify(deflateRawCb);
@@ -182,4 +183,165 @@ export async function packZip(entries: readonly ZipEntry[]): Promise<Buffer> {
   end.writeUInt16LE(0, 20);                  // no archive comment
 
   return Buffer.concat([...localChunks, ...centralChunks, end]);
+}
+
+/** Limits on what `readZip` will unpack, so an upload cannot exhaust memory. */
+export type ZipReadLimits = {
+  /** Most members accepted. */
+  maxEntries: number;
+  /** Most bytes accepted once everything is inflated. */
+  maxTotalBytes: number;
+};
+
+/**
+ * The files in a zip archive, as bytes in memory (#1472).
+ *
+ * Read from the central directory, which is the archive's own table of
+ * contents, so a member written with a data descriptor — what a streaming
+ * writer, or an OS re-zipping a folder, produces — is read the same as any
+ * other. Directory entries are dropped, and so is what macOS adds when it
+ * zips a folder (`__MACOSX/`, `.DS_Store`): they are not anyone's data.
+ *
+ * Refused, with an error naming why, rather than read as something else:
+ *
+ *   - a path that would climb out of wherever it is extracted — absolute, or
+ *     holding a `..` segment, with `\` read as the separator it is on Windows;
+ *   - encryption, zip64, split archives, and any method but stored and deflate;
+ *   - a member whose inflated bytes do not match the size or CRC the archive
+ *     declares for it;
+ *   - more members, or more inflated bytes, than `limits` allow. Inflating is
+ *     capped per member at what is left of the budget, so a small archive
+ *     that expands enormously stops at the budget, not at the machine's memory.
+ */
+export function readZip(archive: Buffer, limits: ZipReadLimits): ZipEntry[] {
+  const eocd = findEndOfCentralDirectory(archive);
+  if (eocd < 0) throw new Error('zipArchive: not a zip archive');
+
+  if (archive.readUInt16LE(eocd + 4) !== 0 || archive.readUInt16LE(eocd + 6) !== 0) {
+    throw new Error('zipArchive: split archives are not supported');
+  }
+  const count = archive.readUInt16LE(eocd + 10);
+  const centralSize = archive.readUInt32LE(eocd + 12);
+  const centralOffset = archive.readUInt32LE(eocd + 16);
+  if (count === MAX_ENTRIES || centralSize === MAX_UINT32 || centralOffset === MAX_UINT32) {
+    throw new Error('zipArchive: zip64 archives are not supported');
+  }
+  if (count > limits.maxEntries) {
+    throw new Error(`zipArchive: ${count} members exceeds the ${limits.maxEntries} allowed`);
+  }
+  if (centralOffset + centralSize > eocd) throw new Error('zipArchive: the central directory is truncated');
+
+  const entries: ZipEntry[] = [];
+  let budget = limits.maxTotalBytes;
+  let at = centralOffset;
+
+  for (let i = 0; i < count; i++) {
+    if (at + 46 > eocd || archive.readUInt32LE(at) !== 0x02014b50) {
+      throw new Error('zipArchive: the central directory is corrupt');
+    }
+    const flags = archive.readUInt16LE(at + 8);
+    const method = archive.readUInt16LE(at + 10);
+    const date = archive.readUInt16LE(at + 14);
+    const time = archive.readUInt16LE(at + 12);
+    const crc = archive.readUInt32LE(at + 16);
+    const storedSize = archive.readUInt32LE(at + 20);
+    const size = archive.readUInt32LE(at + 24);
+    const nameLength = archive.readUInt16LE(at + 28);
+    const extraLength = archive.readUInt16LE(at + 30);
+    const commentLength = archive.readUInt16LE(at + 32);
+    const localOffset = archive.readUInt32LE(at + 42);
+    const rawName = archive.subarray(at + 46, at + 46 + nameLength);
+    at += 46 + nameLength + extraLength + commentLength;
+
+    // Bit 11 says UTF-8. Without it the name is CP437 by the spec, which
+    // agrees with UTF-8 for ASCII — and a name outside ASCII from a writer
+    // that old is rare enough to read as UTF-8 rather than carry a code page.
+    const name = rawName.toString('utf8');
+
+    if (flags & 0x0001) throw new Error(`zipArchive: "${name}" is encrypted`);
+    if (storedSize === MAX_UINT32 || size === MAX_UINT32 || localOffset === MAX_UINT32) {
+      throw new Error('zipArchive: zip64 archives are not supported');
+    }
+
+    const clean = safeMemberPath(name);
+    if (clean === null) continue;       // a directory, or macOS's folder litter
+
+    if (method !== 0 && method !== 8) {
+      throw new Error(`zipArchive: "${clean}" uses compression method ${method}; only stored and deflate are supported`);
+    }
+    if (size > budget) {
+      throw new Error(`zipArchive: the archive unpacks to more than the ${limits.maxTotalBytes} bytes allowed`);
+    }
+
+    // The local header repeats the name and may carry a different extra
+    // field, so the data starts where IT says, not where the central record
+    // would suggest.
+    if (localOffset + 30 > archive.length || archive.readUInt32LE(localOffset) !== 0x04034b50) {
+      throw new Error(`zipArchive: "${clean}" has no local header`);
+    }
+    const dataStart = localOffset + 30 + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28);
+    if (dataStart + storedSize > archive.length) throw new Error(`zipArchive: "${clean}" is truncated`);
+    const stored = archive.subarray(dataStart, dataStart + storedSize);
+
+    let bytes: Buffer;
+    if (method === 0) {
+      bytes = Buffer.from(stored);
+    } else {
+      try {
+        // One byte over the declared size, so an entry that lies about its
+        // size is caught as a mismatch rather than silently truncated.
+        bytes = inflateRawSync(stored, { maxOutputLength: Math.min(budget, size) + 1 });
+      } catch {
+        throw new Error(`zipArchive: "${clean}" could not be inflated, or unpacks to more than it declares`);
+      }
+    }
+    if (bytes.length !== size) throw new Error(`zipArchive: "${clean}" does not match its declared size`);
+    if (crc32(bytes) !== crc) throw new Error(`zipArchive: "${clean}" fails its CRC check`);
+
+    budget -= bytes.length;
+    entries.push({ path: clean, bytes, mtime: fromDosDateTime(date, time) });
+  }
+
+  return entries;
+}
+
+/** Where the end-of-central-directory record starts, or -1. */
+function findEndOfCentralDirectory(archive: Buffer): number {
+  // 22 bytes of record, preceded by nothing; followed by a comment of at most
+  // 65,535 bytes. Scanned from the end, since the comment could itself hold
+  // the signature.
+  const floor = Math.max(0, archive.length - 22 - 0xffff);
+  for (let i = archive.length - 22; i >= floor; i--) {
+    if (archive.readUInt32LE(i) === 0x06054b50) return i;
+  }
+  return -1;
+}
+
+/**
+ * A member's name as a safe relative path, `null` for one to skip, or a throw
+ * for one that would escape.
+ */
+function safeMemberPath(name: string): string | null {
+  const unified = name.replace(/\\/g, '/');
+  if (unified.endsWith('/')) return null;
+  if (unified.startsWith('/') || /^[A-Za-z]:/.test(unified)) {
+    throw new Error(`zipArchive: "${name}" is an absolute path`);
+  }
+  const parts = unified.split('/').filter(part => part && part !== '.');
+  if (parts.includes('..')) throw new Error(`zipArchive: "${name}" climbs out of the archive`);
+  if (parts.length === 0) return null;
+  if (parts[0] === '__MACOSX' || parts[parts.length - 1] === '.DS_Store') return null;
+  return parts.join('/');
+}
+
+/** The inverse of `dosDateTime`, in local time as the format stores it. */
+function fromDosDateTime(date: number, time: number): Date {
+  return new Date(
+    ((date >> 9) & 0x7f) + 1980,
+    ((date >> 5) & 0x0f) - 1,
+    date & 0x1f,
+    (time >> 11) & 0x1f,
+    (time >> 5) & 0x3f,
+    (time & 0x1f) * 2
+  );
 }
