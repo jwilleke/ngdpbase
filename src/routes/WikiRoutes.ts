@@ -8653,7 +8653,8 @@ ${panes}
         pagesElsewhere: count('uuid-elsewhere'),
         pagesFailed: count('failed'),
         files: report.files,
-        fileErrors: report.fileErrors.length
+        fileErrors: report.fileErrors.length,
+        filesUnlinked: report.unlinkedFiles.length
       }
     }, (err) => logger.warn('[my-takeout] audit record failed:', err));
 

@@ -370,6 +370,7 @@ It carries no `versions/`, `deleted/`, `pages-index.json`, `search-index.json`, 
 - Files first, through `AttachmentManager.uploadAttachment` into the store; `/attachments/{oldId}` links in the pages are pointed at the ids the store holds, using `files-index.json`.
 - Pages through `PageManager.savePage`, uuid kept, so a sealed store encrypts on write.
 - Idempotent: a uuid already in the store is skipped (`unchanged`, or `changed-since-takeout` when the body differs — the live page wins); a uuid used elsewhere on the site is skipped as `uuid-elsewhere`, naming the page only when the requester may view it; a title held by a different page lands beside it as `Title (imported)`.
+- Every file comes in, even one whose pages were skipped; files no page now in the store links to are named in the importer's report and counted (never named) in the log and audit record (operator, 2026-09-25).
 - Capped by `ngdpbase.stores.import.maxsize` (256 MB), which bounds both the upload and what it unpacks to. Audited as `store-import`, with counts only.
 
 It brings back pages and files, never history or trash.

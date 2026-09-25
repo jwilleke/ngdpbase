@@ -290,6 +290,9 @@
                         li.textContent = text;
                         list.appendChild(li);
                       });
+                      r.unlinkedFiles.forEach(function (f) {
+                        list.appendChild(line('File ' + f + ' — stored, but no page in this store links to it'));
+                      });
                       r.fileErrors.forEach(function (f) {
                         list.appendChild(line('File ' + f.name + ' — could not be stored: ' + f.message));
                       });

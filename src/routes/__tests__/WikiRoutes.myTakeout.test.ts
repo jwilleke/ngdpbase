@@ -68,6 +68,7 @@ function makeRoutes(options: {
       pages: [{ title: 'Recipes', outcome: 'imported', importedAs: 'private/molly/vault/Recipes' }, { title: 'Soup', outcome: 'unchanged' }],
       files: 2,
       fileErrors: [],
+      unlinkedFiles: ['scan.pdf'],
       ignored: []
     };
   });
@@ -285,8 +286,10 @@ describe('POST /my/takeout/import (#1472)', () => {
     const event = logAuditEvent.mock.calls[0][0] as { eventType: string; resource: string; metadata: Record<string, unknown> };
     expect(event.eventType).toBe(AUDIT_EVENT.STORE_IMPORT);
     expect(event.resource).toBe('private/molly/vault');
-    expect(event.metadata).toMatchObject({ pagesImported: 1, pagesUnchanged: 1, files: 2 });
+    expect(event.metadata).toMatchObject({ pagesImported: 1, pagesUnchanged: 1, files: 2, filesUnlinked: 1 });
+    // Counts only: a private page or file is never named in a log (#1461).
     expect(JSON.stringify(event)).not.toContain('Recipes');
+    expect(JSON.stringify(event)).not.toContain('scan.pdf');
   });
 
   test('a locked store is a 409 with the reason, and nothing is audited', async () => {

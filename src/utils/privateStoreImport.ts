@@ -151,18 +151,27 @@ function readPage(entry: ZipEntry, fileName: string): TakeoutPage {
 }
 
 /**
- * `body` with every `/attachments/{old}` link pointed at its new id.
- *
- * Whole ids only: an id followed by more id characters is a different id.
+ * A link to the file `id`, as `/attachments/{id}` — whole ids only: an id
+ * followed by more id characters is a different id.
  */
+function attachmentLink(id: string, flags = ''): RegExp {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`/attachments/${escaped}(?![A-Za-z0-9_-])`, flags);
+}
+
+/** `body` with every `/attachments/{old}` link pointed at its new id. */
 export function rewriteAttachmentLinks(body: string, ids: ReadonlyMap<string, string>): string {
   let out = body;
   for (const [from, to] of ids) {
     if (from === to) continue;
-    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`/attachments/${escaped}(?![A-Za-z0-9_-])`, 'g'), `/attachments/${to}`);
+    out = out.replace(attachmentLink(from, 'g'), `/attachments/${to}`);
   }
   return out;
+}
+
+/** Whether `body` links to the file `id`. */
+export function linksToAttachment(body: string, id: string): boolean {
+  return attachmentLink(id).test(body);
 }
 
 /**

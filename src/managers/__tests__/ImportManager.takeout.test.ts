@@ -293,6 +293,32 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
     expect(body).toContain('/attachments/old-id-2 stays.');
   });
 
+  test('files no page in the store links to still come in, and are reported', async () => {
+    // Its page is already on the site in another store, so it is skipped;
+    // its file lands anyway (operator, 2026-09-25) and is named in the report.
+    await pages.savePage(name(VAULT, 'Labs'), 'Kept here.', { uuid: UUID_A }, MOLLY);
+    await seal(OTHER);
+    const archive = await packZip([
+      { path: `${VAULT}/Labs.md`, bytes: Buffer.from(`---\ntitle: Labs\nuuid: ${UUID_A}\n---\n\n![scan](/attachments/old-id)\n`) },
+      { path: `${VAULT}/Notes.md`, bytes: Buffer.from(`---\ntitle: Notes\nuuid: ${UUID_B}\n---\n\n![photo](/attachments/old-2)\n`) },
+      { path: `${VAULT}/attachments/scan.pdf`, bytes: Buffer.from('%PDF lab scan') },
+      { path: `${VAULT}/attachments/photo.jpg`, bytes: Buffer.from('jpeg bytes') },
+      {
+        path: `${VAULT}/files-index.json`,
+        bytes: Buffer.from(JSON.stringify({ version: 1, files: {
+          'old-id': { id: 'old-id', fileName: 'attachments/scan.pdf', name: 'scan.pdf' },
+          'old-2': { id: 'old-2', fileName: 'attachments/photo.jpg', name: 'photo.jpg' }
+        } }))
+      }
+    ]);
+
+    const report = await run(OTHER, archive);
+
+    expect(report.files).toBe(2);
+    expect(report.pages.map(p => p.outcome)).toEqual(['uuid-elsewhere', 'imported']);
+    expect(report.unlinkedFiles).toEqual(['scan.pdf']);
+  });
+
   test('a LOCKED store is refused before anything is written', async () => {
     const archive = await packZip([{ path: `${VAULT}/Page.md`, bytes: Buffer.from('---\ntitle: Page\n---\n\nx\n') }]);
 

@@ -51,7 +51,7 @@ import type { PageSaveResult } from './PageManager.js';
 import type AttachmentManager from './AttachmentManager.js';
 import logger from '../utils/logger.js';
 import { readZip, type ZipReadLimits } from '../utils/zipArchive.js';
-import { freeImportTitle, readTakeout, rewriteAttachmentLinks } from '../utils/privateStoreImport.js';
+import { freeImportTitle, linksToAttachment, readTakeout, rewriteAttachmentLinks } from '../utils/privateStoreImport.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { formatPrivatePageName, isValidStoreId, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
@@ -286,6 +286,12 @@ export type TakeoutImportReport = {
   files: number;
   /** Files that could not be stored, by name. */
   fileErrors: Array<{ name: string; message: string }>;
+  /**
+   * Files stored that no page now in the store links to — typically because
+   * the pages that used them were skipped (operator, 2026-09-25: they come
+   * in, and are reported). Named here, for the owner; counted in the logs.
+   */
+  unlinkedFiles: string[];
   /** Archive members that are neither a page nor a file. */
   ignored: string[];
 };
@@ -1683,10 +1689,13 @@ class ImportManager extends BaseManager {
       throw new TakeoutImportRefused('unreadable', `That file could not be read as a takeout: ${(err as Error).message}`);
     }
 
-    const report: TakeoutImportReport = { store, pages: [], files: 0, fileErrors: [], ignored: takeout.ignored };
+    const report: TakeoutImportReport = {
+      store, pages: [], files: 0, fileErrors: [], unlinkedFiles: [], ignored: takeout.ignored
+    };
 
     // ── Files ──────────────────────────────────────────────────────────────
     const newIds = new Map<string, string>();
+    const storedFiles: Array<{ name: string; id: string }> = [];
     for (const file of takeout.files) {
       try {
         const stored = await attachmentManager.uploadAttachment(
@@ -1696,6 +1705,7 @@ class ImportManager extends BaseManager {
           { private: true, store, description: file.description ?? '' }
         );
         if (file.oldId && stored.identifier) newIds.set(file.oldId, stored.identifier);
+        if (stored.identifier) storedFiles.push({ name: file.name, id: stored.identifier });
         report.files++;
       } catch (err) {
         report.fileErrors.push({ name: file.name, message: (err as Error).message });
@@ -1704,6 +1714,9 @@ class ImportManager extends BaseManager {
 
     // ── Pages ──────────────────────────────────────────────────────────────
     const nameIn = (s: string, key: string): string => formatPrivatePageName(owner, s, key);
+    // The bodies of this takeout's pages as they now stand in the store —
+    // what decides whether a file is linked from anything.
+    const bodiesInStore: string[] = [];
     for (const page of takeout.pages) {
       try {
         const body = rewriteAttachmentLinks(page.body, newIds);
@@ -1711,6 +1724,7 @@ class ImportManager extends BaseManager {
         if (page.uuid) {
           const here = await pageManager.getPage(nameIn(store, page.uuid), ctx);
           if (here) {
+            bodiesInStore.push(here.content ?? '');
             report.pages.push({
               title: page.title,
               outcome: (here.content ?? '').trim() === body.trim() ? 'unchanged' : 'changed-since-takeout'
@@ -1730,15 +1744,21 @@ class ImportManager extends BaseManager {
           if (metadata[key] === undefined) delete metadata[key];
         }
         const saved = await pageManager.savePage(nameIn(store, title), body, metadata, ctx, { normaliseTitle: true });
+        bodiesInStore.push(body);
         report.pages.push({ title: page.title, outcome: 'imported', importedAs: saved.name });
       } catch (err) {
         report.pages.push({ title: page.title, outcome: 'failed', message: (err as Error).message });
       }
     }
 
-    // #1461: a private store is logged by owner and store, never by page.
+    report.unlinkedFiles = storedFiles
+      .filter(f => !bodiesInStore.some(b => linksToAttachment(b, f.id)))
+      .map(f => f.name);
+
+    // #1461: a private store is logged by owner and store, never by page or file.
     logger.info(`[ImportManager] ${owner} imported a takeout into '${store}': `
-      + `${report.pages.filter(p => p.outcome === 'imported').length} page(s), ${report.files} file(s)`);
+      + `${report.pages.filter(p => p.outcome === 'imported').length} page(s), ${report.files} file(s)`
+      + (report.unlinkedFiles.length ? `, ${report.unlinkedFiles.length} file(s) no page in the store links to` : ''));
     return report;
   }
 
