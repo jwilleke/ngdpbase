@@ -22,14 +22,66 @@ test.describe('Saved keywords snap to the catalogued form (#1467)', () => {
   test.setTimeout(60000);
 
   const pageName = `${TEST_PAGE_PREFIX}-KeywordCanonical-${Date.now()}`;
-  const typedKeywords = 'Artificial Intelligence, artificial-intelligence, Backgammon';
+
+  // The vocabulary term this spec snaps to is CREATED by the spec. The first
+  // version used `artificial intelligence`, which exists on the author's
+  // instance and on no fresh one — so it passed locally and failed in CI,
+  // testing the instance's data rather than the behaviour. The term is unique
+  // per run, and its display form is deliberately mixed case so that snapping
+  // to it is visible.
+  const stamp = Date.now();
+  const catalogued = `Ngdpbase Test Kw ${stamp}`;
+  const typedKeywords = `${catalogued.toLowerCase()}, ${catalogued.toLowerCase().replace(/ /g, '-')}, Backgammon`;
+  let keywordId = '';
+  let csrfToken = '';
+
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(120000);
+    const context = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
+    const p = await context.newPage();
+    await p.goto('/user-keywords/create');
+    csrfToken = await p.locator('input[name="_csrf"]').first().inputValue();
+    const res = await p.request.post('/user-keywords/create', {
+      form: { _csrf: csrfToken, label: catalogued, description: 'Created by an e2e test' }
+    });
+    expect(res.status(), 'the test vocabulary term must be created').toBeLessThan(400);
+    // Its id is the normalised form of the label, which is what the map keys on.
+    keywordId = catalogued.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    await context.close();
+  });
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(120000);
     const context = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
-    const p = await context.newPage();
-    await deletePage(p, pageName);
-    await context.close();
+    try {
+      const p = await context.newPage();
+      await deletePage(p, pageName);
+      if (keywordId) {
+        // Leave no term behind: this one exists only for the run that made it.
+        // The delete is CSRF-gated like every other state change, and a token
+        // has to be fetched from a rendered page — the first version of this
+        // omitted it, swallowed the rejection, and left five test terms in a
+        // real instance's vocabulary.
+        // The token was taken in beforeAll, from a page that certainly has a
+        // form. Hunting for one here hung the hook: /admin/keywords has no
+        // `_csrf` input, so the locator waited out the timeout.
+        const res = await p.request.delete(`/admin/keywords/${encodeURIComponent(keywordId)}`, {
+          headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+          // An empty object, not nothing: the handler destructures `req.body`
+          // unguarded and 500s on a bodyless DELETE (#1473).
+          data: {}
+        });
+        if (!res.ok()) {
+          // Say so rather than hiding it: a silent failure here is how the
+          // leftovers happened.
+          console.warn(`[keyword-canonical] could not remove test term ${keywordId}: HTTP ${res.status()}`);
+        }
+      }
+    } catch {
+      // Cleanup is not the assertion.
+    } finally {
+      await context.close().catch(() => undefined);
+    }
   });
 
   test('a catalogued keyword is stored in its display form, an uncatalogued one as typed', async ({ page }) => {
@@ -105,12 +157,12 @@ test.describe('Saved keywords snap to the catalogued form (#1467)', () => {
 
     // Snapped to the vocabulary's display form — this is what never happened
     // before #1467, because the map was empty on every save.
-    expect(stored).toContain('artificial intelligence');
+    expect(stored).toContain(catalogued);
 
     // The two variants collapsed to one entry.
-    expect(stored.filter(k => k.toLowerCase().replace(/[^a-z]/g, '') === 'artificialintelligence')).toHaveLength(1);
-    expect(stored).not.toContain('Artificial Intelligence');
-    expect(stored).not.toContain('artificial-intelligence');
+    const flat = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    expect(stored.filter(k => flat(k) === flat(catalogued))).toHaveLength(1);
+    expect(stored).not.toContain(catalogued.toLowerCase());
 
     // A keyword the vocabulary does not know is left exactly as the author typed it.
     expect(stored).toContain('Backgammon');
