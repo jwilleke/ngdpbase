@@ -17304,7 +17304,7 @@ ${description}
       }
 
       const keywordId = req.params.id;
-      const { reassignTo, removeFromPages } = req.body;
+      const { reassignTo, removeFromPages } = req.body ?? {};
 
       const pageManager = this.engine.getManager('PageManager');
       // #896: catalog through the vocabulary provider (seed + instance store)

@@ -532,6 +532,16 @@ describe('WikiRoutes — coverage batch 13', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
+
+    // #1473: a DELETE need not carry a body; Express 5 leaves req.body undefined.
+    test('returns 200 when the request carries no body', async () => {
+      setUserKeywords({ 'tech': { label: 'Technology', enabled: true } });
+      const res = await request(app)
+        .delete('/admin/keywords/tech')
+        .set('x-csrf-token', 'test-csrf-token');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
   });
 
   // ── Exports ──────────────────────────────────────────────────────────────────
