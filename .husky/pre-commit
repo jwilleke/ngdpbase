@@ -59,3 +59,15 @@ npm run lint:page-door --silent
 # config. This fails when the two have drifted, i.e. someone added a permission
 # and did not run `npm run generate:permissions`. Cheap.
 npm run lint:permissions --silent
+
+# Addon/host boundary (#1192) — an addon may import host TYPES, never host
+# source as a value: bundled addons compile in place, so a value import emits
+# host .js beside them and loads on a developer machine, then dies in the
+# image, which ships dist/ and addons/ but not src/. v4.13.0 shipped two dead
+# addons that way. Cheap.
+npm run lint:addons --silent
+
+# Audit coverage (#1184) — every audit event the code emits is one the
+# configuration requires, with an on-failure rule. Fifteen event types were
+# emitted and documented without being required before this existed. Cheap.
+npm run lint:audit --silent
