@@ -13,6 +13,8 @@ import { IContentConverter, ConversionResult } from './IContentConverter.js';
 import { classifyWarnings } from './conversionWarning.js';
 import { jspwikiHeadings } from './ncm/fix/jspwikiHeadings.js';
 import { jspwikiItalic } from './ncm/fix/jspwikiItalic.js';
+import { codeSpan } from './ncm/fix/jspwikiCodeMarkers.js';
+import { buildBlockMap, joinLines } from './ncm/fix/blocks.js';
 
 /**
  * JSPWiki syntax to Markdown converter
@@ -224,13 +226,65 @@ class JSPWikiConverter implements IContentConverter {
   }
 
   /**
-   * Convert JSPWiki monospace to Markdown inline code
-   * {{text}} -> `text`
+   * JSPWiki monospace `{{text}}` → an inline code span (#1342).
+   *
+   * Here only, never in the NCM funnel: in Markdown from anywhere else
+   * `{{name}}` is template syntax, and converting it would strip the braces
+   * (operator decision, 2026-09-26). The match is balanced, so braces inside
+   * (`{{.mark {background:yellow;}}}`) stay in the span; inside it the
+   * JSPWiki escapes `[[`, `&#91;` and `&#124;` read as the reader saw them.
+   * In a table row a span that would hold a `|` is left as written, since
+   * the bar would split the cell. Code, and `{{{ }}}` blocks, are left alone.
    */
   private convertMonospace(content: string): string {
-    // Inline monospace: {{text}} -> `text`
-    // Don't match {{{ which is code block
-    return content.replace(/\{\{([^{}\n]+)\}\}/g, '`$1`');
+    const map = buildBlockMap(content);
+    const out = map.lines.map((line, i) => (map.code[i] || map.html[i] ? line : this.monospaceLine(line)));
+    return joinLines(out, map.eols);
+  }
+
+  private monospaceLine(line: string): string {
+    if (!line.includes('{{')) return line;
+    const tableRow = line.trimStart().startsWith('|');
+    let out = '';
+    let pos = 0;
+    while (pos < line.length) {
+      const ticks = /^`+/.exec(line.slice(pos));
+      if (ticks) {
+        const close = line.indexOf(ticks[0], pos + ticks[0].length);
+        const end = close === -1 ? pos + ticks[0].length : close + ticks[0].length;
+        out += line.slice(pos, end);
+        pos = end;
+        continue;
+      }
+      if (line.startsWith('{{', pos) && line[pos - 1] !== '{' && line[pos + 2] !== '{') {
+        const end = this.monospaceEnd(line, pos + 2);
+        if (end !== -1) {
+          const text = line.slice(pos + 2, end)
+            .replace(/\[\[/g, '[').replace(/&#91;/g, '[').replace(/&#124;/g, '|').trim();
+          if (text && !(tableRow && text.includes('|'))) {
+            out += codeSpan(text);
+            pos = end + 2;
+            continue;
+          }
+        }
+      }
+      out += line[pos];
+      pos++;
+    }
+    return out;
+  }
+
+  /** Where the `}}` closing a monospace run starts, counting nested braces; -1 if none. */
+  private monospaceEnd(line: string, from: number): number {
+    let depth = 0;
+    for (let i = from; i < line.length; i++) {
+      if (line[i] === '{') depth++;
+      else if (line[i] === '}') {
+        if (depth === 0 && line[i + 1] === '}') return i;
+        if (depth > 0) depth--;
+      }
+    }
+    return -1;
   }
 
   /**

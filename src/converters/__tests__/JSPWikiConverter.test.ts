@@ -116,6 +116,21 @@ describe('JSPWikiConverter', () => {
       const result = converter.convert('Use {{code}} here');
       expect(result.content).toBe('Use `code` here');
     });
+
+    // #1342 decision 2026-09-26: balanced braces, JSPWiki escapes read as shown.
+    it('keeps braces inside the span, and a backtick inside gets a longer fence', () => {
+      expect(converter.convert('A {{.mark {background:yellow;}}} B').content).toBe('A `.mark {background:yellow;}` B');
+      expect(converter.convert('One of {{ a`b }}').content).toBe('One of ``a`b``');
+    });
+
+    it('reads the [[ and entity escapes inside as the reader saw them', () => {
+      expect(converter.convert('{{ [[\\p{Lower}] }}').content).toBe('`[\\p{Lower}]`');
+      expect(converter.convert('x {{a&#91;b&#124;c}}').content).toBe('x `a[b|c`');
+    });
+
+    it('leaves a span that would hold a bar in a table row as written', () => {
+      expect(converter.convert('| {{a&#124;b}} | x').content).toContain('{{a&#124;b}}');
+    });
   });
 
   describe('code blocks conversion', () => {

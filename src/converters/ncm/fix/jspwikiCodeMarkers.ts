@@ -49,7 +49,7 @@ function fenceCloser(indent: string, run: string): RegExp {
 }
 
 /** An inline code span holding `code`, with a backtick run longer than any inside it. */
-function codeSpan(code: string): string {
+export function codeSpan(code: string): string {
   const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map((r) => r.length));
   const ticks = '`'.repeat(longest + 1);
   const pad = code.startsWith('`') || code.endsWith('`') ? ' ' : '';
