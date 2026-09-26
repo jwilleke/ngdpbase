@@ -8,6 +8,7 @@ import { styleClosers } from '../styleClosers.js';
 import { jspwikiHeadings } from '../jspwikiHeadings.js';
 import { jspwikiItalic } from '../jspwikiItalic.js';
 import { jspwikiInsert } from '../jspwikiInsert.js';
+import { jspwikiIndent } from '../jspwikiIndent.js';
 import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
@@ -489,6 +490,32 @@ describe('jspwiki-insert (#1342)', () => {
 
   it('is idempotent', () => {
     const once = run('[{INSERT org.apache.wiki.plugin.X WHERE a=1}]').content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('jspwiki-indent (#1342)', () => {
+  const run = (body: string) => jspwikiIndent.apply(body);
+
+  it(';:text becomes its own paragraph; consecutive ones stay separate', () => {
+    const r = run('Intro\n;:**img** = the tag\n;:**caption** = the caption\nAfter');
+    expect(r.content).toBe('Intro\n\n**img** = the tag\n\n**caption** = the caption\n\nAfter');
+    expect(r.lines).toEqual([2, 3]);
+  });
+
+  it('keeps what follows the marker; an empty ;: is dropped', () => {
+    expect(run(';: *Comment here.*').content).toBe('*Comment here.*');
+    expect(run('a\n\n;:\n\nb').content).toBe('a\n\n\nb');
+  });
+
+  it('left alone: a term definition, code, text not at line start', () => {
+    expect(run(';term:definition').lines).toEqual([]);
+    expect(run('```\n;:x\n```').lines).toEqual([]);
+    expect(run('a ;:b').lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = run('x\n;:a\n;:b\ny').content;
     expect(run(once).lines).toEqual([]);
   });
 });
