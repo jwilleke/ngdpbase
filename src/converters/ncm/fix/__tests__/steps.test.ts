@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { jspwikiCodeMarkers } from '../jspwikiCodeMarkers.js';
 import { jspwikiBullets } from '../jspwikiBullets.js';
 import { styleClosers } from '../styleClosers.js';
+import { jspwikiHeadings } from '../jspwikiHeadings.js';
 import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
@@ -369,6 +370,30 @@ describe('more-information-footer (#1348)', () => {
 
   it('is idempotent', () => {
     const once = run(`# T\n\nBody.\n\n${std}`).content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('jspwiki-headings (#1342)', () => {
+  const run = (body: string) => jspwikiHeadings.apply(body);
+
+  it('more marks are a larger heading: !!! to #, !! to ##, ! to ###', () => {
+    const r = run('!!! Big\n!!Medium\n! Small\ntext');
+    expect(r.content).toBe('# Big\n## Medium\n### Small\ntext');
+    expect(r.lines).toEqual([1, 2, 3]);
+  });
+
+  it('a Markdown image is not a heading; a heading that starts with a link is', () => {
+    expect(run('![alt](pic.png)').lines).toEqual([]);
+    expect(run('![Main] page').content).toBe('### [Main] page');
+  });
+
+  it('only at the start of a line, with text after the marks, never in code', () => {
+    expect(run(' ! indented\nwow!\n!\n```\n!! code\n```').lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = run('!!! Big\n! Small').content;
     expect(run(once).lines).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@
 
 import { IContentConverter, ConversionResult } from './IContentConverter.js';
 import { classifyWarnings } from './conversionWarning.js';
+import { jspwikiHeadings } from './ncm/fix/jspwikiHeadings.js';
 
 /**
  * JSPWiki syntax to Markdown converter
@@ -201,19 +202,8 @@ class JSPWikiConverter implements IContentConverter {
    * !!! -> # (h1), !! -> ## (h2), ! -> ### (h3)
    */
   private convertHeadings(content: string): string {
-    // Process in order from most exclamation marks to least
-    // to avoid partial matches
-
-    // !!! heading -> # heading (h1 - large)
-    let result = content.replace(/^!!![ \t]*(.+)$/gm, '# $1');
-
-    // !! heading -> ## heading (h2 - medium)
-    result = result.replace(/^!![ \t]*(.+)$/gm, '## $1');
-
-    // ! heading -> ### heading (h3 - small)
-    result = result.replace(/^![ \t]*(.+)$/gm, '### $1');
-
-    return result;
+    // One mapping for import and the NCM funnel (#1342); it leaves code alone.
+    return jspwikiHeadings.apply(content).content;
   }
 
   /**

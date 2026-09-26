@@ -16,6 +16,7 @@
 
 import type { FixResult, FixStep } from './types.js';
 import { jspwikiCodeMarkers } from './jspwikiCodeMarkers.js';
+import { jspwikiHeadings } from './jspwikiHeadings.js';
 import { styleClosers } from './styleClosers.js';
 import { moreInformationFooter } from './moreInformationFooter.js';
 import { jspwikiBullets } from './jspwikiBullets.js';
@@ -29,11 +30,12 @@ export type { BlockMap, ListInfo, ListItem, ItemBlock } from './blocks.js';
 /**
  * Every step, in the order they run. Order matters: `{{{ }}}` blocks become
  * code first, so the steps after never edit the examples inside them (a
- * `%%` in an example stays as written); `**`
+ * `%%` in an example stays as written); `!` headings become `#` before the
+ * footer step looks for a "More Information" heading; `**`
  * bullets become list items before the marker and spacing steps look at the
  * lists.
  */
-export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, styleClosers, moreInformationFooter, jspwikiBullets, bulletMarkers, tightenLists];
+export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, jspwikiHeadings, styleClosers, moreInformationFooter, jspwikiBullets, bulletMarkers, tightenLists];
 
 export interface RunFixesOptions {
   /** Run exactly these step ids, in registry order. Default: every step. */
