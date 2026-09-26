@@ -44,6 +44,7 @@ import type { PageFrontmatter } from '../types/Page.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { DEFAULT_SHARE_ACTIONS, OWNER_ONLY_KEYWORD, resourcesForScope, type ShareGrant, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from './UserManager.js';
+import { keywordsCollide } from '../utils/keywordNormalizer.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 
 export { OWNER_ONLY_KEYWORD };
@@ -341,7 +342,8 @@ export default class ShareManager extends BaseManager {
         const keywords: string[] = Array.isArray(rawKeywords)
           ? rawKeywords.filter((k): k is string => typeof k === 'string')
           : typeof rawKeywords === 'string' ? [rawKeywords] : [];
-        if (keywords.includes(OWNER_ONLY_KEYWORD)) continue;
+        // #1469: `Owner-Only` and `owner only` exclude too — fail closed.
+        if (keywords.some(k => keywordsCollide(k, OWNER_ONLY_KEYWORD))) continue;
         if (item.isPrivate) continue;
         if (item.linkedPageName) {
           // Conservative-on-security (#714 convention): unresolvable
@@ -386,7 +388,7 @@ export default class ShareManager extends BaseManager {
    */
   private isPageExcluded(meta: PageFrontmatter): boolean {
     if (meta.private === true) return true;
-    if ((meta['user-keywords'] ?? []).includes(OWNER_ONLY_KEYWORD)) return true;
+    if ((meta['user-keywords'] ?? []).some(k => keywordsCollide(k, OWNER_ONLY_KEYWORD))) return true;
     if (Array.isArray(meta.audience) && meta.audience.length > 0) return true;
     if (meta.access && typeof meta.access === 'object' && Object.keys(meta.access).length > 0) return true;
     return false;

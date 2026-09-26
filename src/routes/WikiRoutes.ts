@@ -94,7 +94,7 @@ import {
   type RestrictableMetadata
 } from '../utils/buildSitemap.js';
 import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSuggestion } from '../utils/suggestedKeywords.js';
-import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, type KeywordFormStat } from '../utils/keywordNormalizer.js';
+import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, keywordsCollide, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
   kekFor,
   lockPrivateStores,
@@ -17488,7 +17488,9 @@ ${description}
       for (const pageName of allPages) {
         const metadata = await pageManager.getPageMetadata(pageName, req.userContext);
         const pageKeywords = (metadata?.['user-keywords'] as string[]) || [];
-        if (pageKeywords.includes(keywordId)) {
+        // #1469: a page may store the label (`Governance`) or the id
+        // (`governance`); both are this keyword. Normalised on both sides.
+        if (pageKeywords.some(k => keywordsCollide(k, keywordId))) {
           pagesUsingKeyword.push(pageName);
         }
       }
@@ -17603,20 +17605,20 @@ ${description}
         const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
-        if (pageKeywords.includes(keywordId)) {
+        // #1469: every stored form of this keyword, not only its exact id.
+        const isThisKeyword = (k: string): boolean => keywordsCollide(k, keywordId);
+        if (pageKeywords.some(isThisKeyword)) {
           let newKeywords: string[];
 
           if (removeFromPages) {
             // Remove the keyword from pages
-            newKeywords = pageKeywords.filter(k => k !== keywordId);
+            newKeywords = pageKeywords.filter(k => !isThisKeyword(k));
           } else if (reassignTo && userKeywordsConfig[reassignTo]) {
-            // Replace with reassign target (avoid duplicates)
-            newKeywords = pageKeywords
-              .map(k => (k === keywordId ? reassignTo : k))
-              .filter((k, i, arr) => arr.indexOf(k) === i);
+            // Replace with reassign target (avoid duplicates, in any form)
+            newKeywords = dedupeKeywords(pageKeywords.map(k => (isThisKeyword(k) ? reassignTo : k)));
           } else {
             // Default: remove from pages
-            newKeywords = pageKeywords.filter(k => k !== keywordId);
+            newKeywords = pageKeywords.filter(k => !isThisKeyword(k));
           }
 
           if (page) {
@@ -17704,11 +17706,12 @@ ${description}
         const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
-        if (pageKeywords.includes(sourceId)) {
-          // Replace source with target, avoiding duplicates
-          const newKeywords = pageKeywords
-            .map(k => (k === sourceId ? targetId : k))
-            .filter((k, i, arr) => arr.indexOf(k) === i);
+        // #1469: every stored form of the source keyword.
+        if (pageKeywords.some(k => keywordsCollide(k, sourceId))) {
+          // Replace source with target, avoiding duplicates in any form
+          const newKeywords = dedupeKeywords(
+            pageKeywords.map(k => (keywordsCollide(k, sourceId) ? targetId : k))
+          );
 
           if (page) {
             const saved = await this.resaveForKeywordChange(wikiContext, pageName, page, {

@@ -379,6 +379,16 @@ describe('ShareManager', () => {
       expect(r.media.map(m => m.id)).toEqual(['m2']);
     });
 
+    test('any written form of owner-only excludes — fail closed (#1469)', async () => {
+      mediaItems = [
+        { id: 'm1', filePath: '/x/a.jpg', metadata: { keywords: ['trip', 'Owner-Only'] } },
+        { id: 'm2', filePath: '/x/b.jpg', metadata: { keywords: ['trip', 'owner only'] } },
+        { id: 'm3', filePath: '/x/c.jpg', metadata: { keywords: ['trip'] } }
+      ];
+      const r = await sm.resolveScope(scope);
+      expect(r.media.map(m => m.id)).toEqual(['m3']);
+    });
+
     test('normalizes a scalar string keywords field', async () => {
       mediaItems = [{ id: 'm1', filePath: '/x/a.jpg', metadata: { keywords: OWNER_ONLY_KEYWORD } }];
       const r = await sm.resolveScope(scope);
@@ -414,12 +424,15 @@ describe('ShareManager', () => {
         { name: 'P-audience' },
         { name: 'P-access' },
         { name: 'P-owneronly' },
+        { name: 'P-ownerlabel' },
         { name: 'P-ok', title: 'OK' }
       ];
       pageMetas['P-private'] = { title: 'x', uuid: '1', private: true };
       pageMetas['P-audience'] = { title: 'x', uuid: '2', audience: ['family'] };
       pageMetas['P-access'] = { title: 'x', uuid: '3', access: { view: ['editors'] } };
       pageMetas['P-owneronly'] = { title: 'x', uuid: '4', 'user-keywords': [OWNER_ONLY_KEYWORD] };
+      // #1469: the label form excludes too.
+      pageMetas['P-ownerlabel'] = { title: 'x', uuid: '6', 'user-keywords': ['Owner-Only'] };
       pageMetas['P-ok'] = { title: 'OK', uuid: '5' };
 
       const r = await sm.resolveScope(scope);

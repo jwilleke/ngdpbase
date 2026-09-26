@@ -475,6 +475,20 @@ describe('WikiRoutes — coverage batch 13', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });
+
+    // #1469: a page may store the label or the id; both are the keyword.
+    test('counts every stored form of the keyword, not only its exact id', async () => {
+      mockPageManager.getAllPages.mockResolvedValue(['ById', 'ByLabel', 'Spaced', 'Other']);
+      const stored: Record<string, string[]> = {
+        ById: ['governance'], ByLabel: ['Governance'], Spaced: ['GOVERNANCE '], Other: ['tech']
+      };
+      mockPageManager.getPageMetadata.mockImplementation(async (name: string) => ({ 'user-keywords': stored[name] ?? [] }));
+
+      const res = await request(app).get('/api/admin/keywords/governance/usage');
+
+      expect(res.body.pages).toEqual(['ById', 'ByLabel', 'Spaced']);
+      expect(res.body.count).toBe(3);
+    });
   });
 
   describe('PUT /admin/keywords/:id (adminUpdateKeyword)', () => {
@@ -521,6 +535,21 @@ describe('WikiRoutes — coverage batch 13', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({});
       expect(res.status).toBe(404);
+    });
+
+    test('a deleted keyword is removed from pages in every stored form (#1469)', async () => {
+      setUserKeywords({ 'governance': { label: 'Governance', enabled: true } });
+      mockPageManager.getAllPages.mockResolvedValue(['ByLabel']);
+      mockPageManager.getPage.mockResolvedValue({ content: '# P', metadata: { title: 'ByLabel', 'user-keywords': ['Governance', 'tech'] } });
+
+      const res = await request(app)
+        .delete('/admin/keywords/governance')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ removeFromPages: true });
+
+      expect(res.body.pagesUpdated).toBe(1);
+      const savedMeta = mockPageManager.savePage.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+      expect(savedMeta['user-keywords']).toEqual(['tech']);
     });
 
     test('returns 200 when keyword deleted', async () => {
