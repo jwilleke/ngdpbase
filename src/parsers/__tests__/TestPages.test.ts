@@ -136,7 +136,6 @@ const EXPECTATIONS: Record<string, Expectation[]> = {
     },
     {
       name: 'rows without a trailing bar keep their last cell',
-      knownBug: 1338,
       check: (html) => {
         expect(html).toMatch(/<th>\s*Three\s*<\/th>/);
         expect(html).toMatch(/<td>\s*c\s*<\/td>/);

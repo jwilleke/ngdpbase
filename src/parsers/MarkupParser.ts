@@ -15,6 +15,7 @@ import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import { NOT_TASK_MARKER, UNESCAPED_BRACKET } from './LinkParser.js';
+import { parseJspwikiTableRow } from './jspwikiTableRow.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
 import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
@@ -2386,18 +2387,7 @@ class MarkupParser extends BaseManager {
     // Parse rows using bracket-aware splitting
     const rows: Array<{ isHeader: boolean; cells: string[] }> = [];
     for (const line of lines) {
-      const trimmed = line.trim();
-      const isHeader = trimmed.startsWith('||');
-
-      const delimiter = isHeader ? '||' : '|';
-      const parts = this.splitCellsBracketAware(trimmed, delimiter);
-
-      // Remove empty first/last elements (from leading/trailing delimiters)
-      const cells = parts
-        .slice(1, parts[parts.length - 1].trim() === '' ? -1 : undefined)
-        .map(c => c.trim());
-
-      rows.push({ isHeader, cells });
+      rows.push(parseJspwikiTableRow(line));
     }
 
     // Build CSS classes - always include 'table' base class
@@ -2489,45 +2479,6 @@ class MarkupParser extends BaseManager {
     }
 
     return table;
-  }
-
-  /**
-   * Split text by a delimiter while respecting [...] bracket groups.
-   * Pipes inside [wiki link|PageName] are not treated as cell delimiters.
-   */
-  private splitCellsBracketAware(text: string, delimiter: string): string[] {
-    const cells: string[] = [];
-    let current = '';
-    let bracketDepth = 0;
-    let i = 0;
-
-    while (i < text.length) {
-      if (text[i] === '[') {
-        bracketDepth++;
-        current += text[i];
-        i++;
-        continue;
-      }
-      if (text[i] === ']') {
-        bracketDepth = Math.max(0, bracketDepth - 1);
-        current += text[i];
-        i++;
-        continue;
-      }
-
-      if (bracketDepth === 0 && text.substring(i, i + delimiter.length) === delimiter) {
-        cells.push(current);
-        current = '';
-        i += delimiter.length;
-        continue;
-      }
-
-      current += text[i];
-      i++;
-    }
-    cells.push(current);
-
-    return cells;
   }
 
   /**

@@ -201,3 +201,34 @@ describe('JSPWikiPreprocessor', () => {
     });
   });
 });
+
+describe('a row without a trailing delimiter keeps its last cell (#1338)', () => {
+  const cellsOf = (html: string, tag: string) => [...html.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'g'))].map(m => m[1].trim());
+
+  test('no trailing || or | — every cell renders, as JSPWiki does', async () => {
+    const html = await run('|| H1 || H2\n| a | b');
+
+    expect(cellsOf(html, 'th')).toEqual(['H1', 'H2']);
+    expect(cellsOf(html, 'td')).toEqual(['a', 'b']);
+  });
+
+  test('with trailing delimiters nothing changes', async () => {
+    const html = await run('|| H1 || H2 ||\n| a | b |');
+
+    expect(cellsOf(html, 'th')).toEqual(['H1', 'H2']);
+    expect(cellsOf(html, 'td')).toEqual(['a', 'b']);
+  });
+
+  test('an empty first header cell stays (the Annelida shape)', async () => {
+    const html = await run('||  || Rank\n| x | y');
+
+    expect(cellsOf(html, 'th')).toEqual(['', 'Rank']);
+    expect(cellsOf(html, 'td')).toEqual(['x', 'y']);
+  });
+
+  test('a pipe inside a wiki link is not a delimiter', async () => {
+    const html = await run('|| Term || Link\n| a | [Text|Page]');
+
+    expect(cellsOf(html, 'td')).toHaveLength(2);
+  });
+});
