@@ -314,12 +314,14 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                                                 <td><small><%= att.encodingFormat %></small></td>
                                                 <td><small><%= Math.round((att.contentSize || 0) / 1024) %> KB</small></td>
                                                 <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary"
-                                                        onclick="insertAttachmentMarkup('<%= att.url %>', '<%= att.name %>', '<%= att.encodingFormat %>')">
+                                                    <%# #1471: values ride in data- attributes, which the escaping
+                                                        output tag gets right; never inside a quoted script string. %>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary js-insert-attachment"
+                                                        data-att-url="<%= att.url %>" data-att-name="<%= att.name %>" data-att-mime="<%= att.encodingFormat %>">
                                                         <i class="fas fa-code"></i> Insert
                                                     </button>
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                                        onclick="copyToClipboard('<%= att.url %>')">
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary js-copy-attachment-url"
+                                                        data-att-url="<%= att.url %>">
                                                         <i class="fas fa-copy"></i> URL
                                                     </button>
                                                 </td>
@@ -533,6 +535,18 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     // #897/#915: user-keywords typeahead is now shared — see
     // /js/keyword-typeahead.js (loaded next to the keyword field above).
 
+    // #1471: one listener for every Insert / URL button, server-rendered or
+    // added after an upload; the values come from the button's data- attributes.
+    document.addEventListener('click', function (e) {
+        const insert = e.target.closest && e.target.closest('.js-insert-attachment');
+        if (insert) {
+            insertAttachmentMarkup(insert.dataset.attUrl, insert.dataset.attName, insert.dataset.attMime);
+            return;
+        }
+        const copy = e.target.closest && e.target.closest('.js-copy-attachment-url');
+        if (copy) copyToClipboard(copy.dataset.attUrl);
+    });
+
     // Insert attachment markup at cursor position
     function insertAttachmentMarkup(url, name, mimeType) {
         const textarea = document.getElementById('content');
@@ -589,22 +603,35 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
             tbody = document.getElementById('attachmentTableBody');
         }
 
+        // #1471: built with DOM calls, never by pasting the file's name into
+        // HTML or into an onclick string — a name with ' < or " is just text.
         const row = document.createElement('tr');
         const sizeKB = Math.round((att.contentSize || 0) / 1024);
-        row.innerHTML = `
-            <td><code>${att.name}</code></td>
-            <td><small>${att.encodingFormat}</small></td>
-            <td><small>${sizeKB} KB</small></td>
-            <td>
-                <button type="button" class="btn btn-sm btn-outline-primary"
-                    onclick="insertAttachmentMarkup('${att.url}', '${att.name}', '${att.encodingFormat}')">
-                    <i class="fas fa-code"></i> Insert
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                    onclick="copyToClipboard('${att.url}')">
-                    <i class="fas fa-copy"></i> URL
-                </button>
-            </td>`;
+        const cell = (tag, text) => {
+            const td = document.createElement('td');
+            const inner = document.createElement(tag);
+            inner.textContent = text;
+            td.appendChild(inner);
+            return td;
+        };
+        row.appendChild(cell('code', att.name));
+        row.appendChild(cell('small', att.encodingFormat));
+        row.appendChild(cell('small', sizeKB + ' KB'));
+        const actions = document.createElement('td');
+        const insertBtn = document.createElement('button');
+        insertBtn.type = 'button';
+        insertBtn.className = 'btn btn-sm btn-outline-primary js-insert-attachment';
+        insertBtn.dataset.attUrl = att.url;
+        insertBtn.dataset.attName = att.name;
+        insertBtn.dataset.attMime = att.encodingFormat;
+        insertBtn.innerHTML = '<i class="fas fa-code"></i> Insert';
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn btn-sm btn-outline-secondary js-copy-attachment-url';
+        copyBtn.dataset.attUrl = att.url;
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i> URL';
+        actions.append(insertBtn, ' ', copyBtn);
+        row.appendChild(actions);
         tbody.appendChild(row);
 
         // Update badge count

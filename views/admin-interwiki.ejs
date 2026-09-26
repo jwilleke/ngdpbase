@@ -114,7 +114,8 @@
                                                     </button>
                                                     <form method="POST" action="/admin/interwiki/sites/<%= encodeURIComponent(name) %>/delete"
                                                         class="d-inline"
-                                                        onsubmit="return confirm('Delete site \'<%= name %>\'? This cannot be undone.');">
+                                                        data-confirm="Delete site '<%= name %>'? This cannot be undone."
+                                                        onsubmit="return confirm(this.dataset.confirm);">
                                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"<%- lockedUnless('admin-system') %>>
                                                             <i class="fas fa-trash"></i>
