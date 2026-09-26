@@ -18,7 +18,6 @@ const ROOT = path.resolve(__dirname, '../..');
 /** Scripts with type errors still to fix before they join the project. */
 const NOT_YET_IN_PROJECT = [
   'scripts/analyze-test-pages.ts',
-  'scripts/check-duplicate-pages.ts',
   'scripts/check-metadata-compliance.ts',
   'scripts/configurationmanage-get-config.ts',
   'scripts/dom-performance.ts',

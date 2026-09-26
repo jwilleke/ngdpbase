@@ -8,9 +8,9 @@
  * a duplicate. Only entries with the same value under a DIFFERENT UUID are flagged.
  *
  * Usage:
- *   node scripts/check-duplicate-pages.js
- *   node scripts/check-duplicate-pages.js --pages-dir /path/to/pages
- *   node scripts/check-duplicate-pages.js --required-only
+ *   npx tsx scripts/check-duplicate-pages.ts
+ *   npx tsx scripts/check-duplicate-pages.ts --pages-dir /path/to/pages
+ *   npx tsx scripts/check-duplicate-pages.ts --required-only
  *
  * Environment variables (from $FAST_STORAGE/.env, sourced by server.sh):
  *   SLOW_STORAGE  — path to bulk-content store; pages live at $SLOW_STORAGE/pages
@@ -22,14 +22,17 @@
  */
 
 
-const fs     = require('fs-extra');
-const path   = require('path');
 // Loads .env (root and <FAST_STORAGE>/.env) into process.env before anything
 // else evaluates. MUST stay the first import — see src/bootstrap-env.ts and
 // docs/bootstrap-methodology.md. Without it this script resolves instance
 // paths against an empty environment and silently operates on ./data.
 import '../src/bootstrap-env.js';
+import fs from 'fs-extra';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import matter from 'gray-matter';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Config
@@ -63,14 +66,16 @@ const REQUIRED_PAGES_DIR = path.join(__dirname, '../required-pages');
  * Read all .md files in a directory and parse their front-matter.
  * Returns an array of { file, title, slug, uuid } objects.
  */
-async function scanDir(dir, label) {
+interface ScannedPage { file: string; title: string | null; slug: string | null; uuid: string | null }
+
+async function scanDir(dir: string | undefined, label: string): Promise<ScannedPage[]> {
   if (!dir || !(await fs.pathExists(dir))) {
     if (dir) console.warn(`  ⚠️  Directory not found: ${dir}`);
     return [];
   }
 
-  const files   = (await fs.readdir(dir)).filter(f => f.endsWith('.md'));
-  const results = [];
+  const files   = (await fs.readdir(dir)).filter((f: string) => f.endsWith('.md'));
+  const results: ScannedPage[] = [];
 
   for (const file of files) {
     const filePath = path.join(dir, file);
@@ -84,7 +89,7 @@ async function scanDir(dir, label) {
         uuid:  typeof data.uuid  === 'string' ? data.uuid.trim()  : null
       });
     } catch (err) {
-      console.warn(`  ⚠️  Could not parse ${file}: ${err.message}`);
+      console.warn(`  ⚠️  Could not parse ${file}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -102,7 +107,7 @@ async function scanDir(dir, label) {
  *
  * Returns an array of { value, pages[] } for each real conflict.
  */
-function findDuplicates(pages, field) {
+function findDuplicates(pages: ScannedPage[], field: 'title' | 'slug' | 'uuid') {
   // key: normalised field value  →  Map<uuid, page[]>
   const index = new Map();
 
@@ -156,7 +161,7 @@ async function main() {
 
   let totalDupes = 0;
 
-  for (const field of ['title', 'slug', 'uuid']) {
+  for (const field of ['title', 'slug', 'uuid'] as const) {
     const dupes = findDuplicates(all, field);
     if (dupes.length === 0) {
       console.log(`  ✅  ${field.padEnd(6)} — no duplicates`);

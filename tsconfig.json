@@ -61,6 +61,7 @@
     "scripts/check-csrf-fetch.ts",
     "scripts/create-addon.ts",
     "scripts/fix-page-markdown.ts",
+    "scripts/check-duplicate-pages.ts",
     "scripts/audit-coverage.ts",
     "scripts/backfill-page-author.ts",
     "scripts/backfill-person-memberof.ts",
