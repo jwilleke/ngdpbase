@@ -102,6 +102,19 @@ const EXPECTATIONS: Record<string, Expectation[]> = {
       check: (html) => expect(html).toMatch(/<table class="table table-striped">.*<td>alpha<\/td><td>1<\/td>/s)
     },
     {
+      name: 'dotted classes on a block (#1345)',
+      check: (html) => expect(html).toContain('<div class="size-20 bg-silver">Two classes, written with a dot.</div>')
+    },
+    {
+      name: 'a bare %% closer is tolerated (#1346)',
+      check: (html) => expect(html).toContain('<div class="information">Closed the JSPWiki way.</div>')
+    },
+    {
+      // Inline CSS is off in this engine: a span with no style, never the markup as text (#1484).
+      name: 'inline CSS with no space after the parentheses',
+      check: (html) => expect(html).toMatch(/Some <span[^>]*>styled<\/span> text\./)
+    },
+    {
       name: 'no style markup left as text',
       check: (html) => expect(html.replace(/<code>[^<]*<\/code>/g, '')).not.toMatch(/%%|\/%/)
     },
