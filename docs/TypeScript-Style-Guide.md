@@ -275,7 +275,7 @@ When converting JavaScript to TypeScript:
 ## Commands
 
 ```bash
-npm run typecheck       # Type check without emitting
+npm run typecheck       # Type check without emitting: src/, the listed scripts, and every addon
 npm run build           # Build to dist/
 npm run build:watch     # Watch mode
 npm run lint:code       # Lint TypeScript/JavaScript
