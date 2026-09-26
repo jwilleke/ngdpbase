@@ -138,6 +138,20 @@ interface NotificationManager {
  * Related Issue: Phase 4 - Security Filter Suite (Content Validation)
  * Epic: #41 - Implement JSPWikiMarkupParser for Complete Enhancement Support
  */
+/**
+ * The destination of a markdown link or image, from what sits between its
+ * parentheses (#1476). CommonMark allows an optional title after it —
+ * `(https://example.com "Title")` — and a destination in angle brackets,
+ * `(<a url with spaces>)`. The title is not part of the URL; judging the
+ * whole string flagged every titled link as broken.
+ */
+export function markdownLinkDestination(inside: string): string {
+  const text = inside.trim();
+  const angled = /^<([^>]*)>/.exec(text);
+  if (angled) return angled[1];
+  return text.split(/\s+/)[0] ?? '';
+}
+
 class ValidationFilter extends BaseFilter {
   declare filterId: string;
   validationConfig: ValidationConfig | null;
@@ -463,7 +477,7 @@ class ValidationFilter extends BaseFilter {
     for (const link of markdownLinks) {
       const urlMatch = link.match(/\]\(([^)]+)\)/);
       if (urlMatch) {
-        const url = urlMatch[1];
+        const url = markdownLinkDestination(urlMatch[1]);
         if (!this.isValidURL(url)) {
           return false;
         }
@@ -498,7 +512,7 @@ class ValidationFilter extends BaseFilter {
     for (const image of markdownImages) {
       const urlMatch = image.match(/\]\(([^)]+)\)/);
       if (urlMatch) {
-        const url = urlMatch[1];
+        const url = markdownLinkDestination(urlMatch[1]);
         if (!this.isValidImageURL(url)) {
           return false;
         }

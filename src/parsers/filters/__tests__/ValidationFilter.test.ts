@@ -203,3 +203,23 @@ describe('ValidationFilter', () => {
     });
   });
 });
+
+describe('markdown link titles are not part of the URL (#1476)', () => {
+  const f = new ValidationFilter();
+
+  test('a titled link or image is valid', () => {
+    expect(f.validateLinks('[a](https://example.com "Title")')).toBe(true);
+    expect(f.validateLinks("[a](https://example.com 'Title')")).toBe(true);
+    expect(f.validateImages('![alt](/attachments/abc "Caption")')).toBe(true);
+  });
+
+  test('an angle-bracket destination is read inside its brackets', async () => {
+    const { markdownLinkDestination } = await import('../ValidationFilter');
+    expect(markdownLinkDestination('<https://example.com/a b> "T"')).toBe('https://example.com/a b');
+    expect(markdownLinkDestination('  https://example.com  ')).toBe('https://example.com');
+  });
+
+  test('a genuinely bad destination is still refused', () => {
+    expect(f.validateLinks('[a](javascript:alert(1) "Title")')).toBe(false);
+  });
+});
