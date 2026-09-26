@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { jspwikiCodeMarkers } from '../jspwikiCodeMarkers.js';
 import { jspwikiBullets } from '../jspwikiBullets.js';
+import { styleClosers } from '../styleClosers.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
 import { FIX_STEPS, runFixes, selectFixSteps } from '../index.js';
@@ -272,6 +273,54 @@ describe('tighten-lists', () => {
   });
 });
 
+describe('style-closers (#1346)', () => {
+  const run = (body: string) => styleClosers.apply(body);
+
+  it('a bare %% line that closes a block becomes /%', () => {
+    const r = run('%%information\ntext\n%%\nafter');
+    expect(r.content).toBe('%%information\ntext\n/%\nafter');
+    expect(r.lines).toEqual([3]);
+  });
+
+  it('the inline form closes with /% too', () => {
+    expect(run('a %%sub text%% b').content).toBe('a %%sub text/% b');
+  });
+
+  it('nested blocks: each bare closer closes the innermost', () => {
+    expect(run('%%tabs\n%%tab-one\nx\n%%\n%%\n').content).toBe('%%tabs\n%%tab-one\nx\n/%\n/%\n');
+  });
+
+  it('dotted and parenthesised openers count as open blocks', () => {
+    expect(run('%%size-20.bg-silver\nx\n%%').content).toBe('%%size-20.bg-silver\nx\n/%');
+    expect(run('%%(color:red)\nx\n%%').content).toBe('%%(color:red)\nx\n/%');
+  });
+
+  it('a %% with nothing open is left for review', () => {
+    const r = run('text\n%%\nmore');
+    expect(r.lines).toEqual([]);
+    expect(r.content).toBe('text\n%%\nmore');
+  });
+
+  it('an unclosed inline opener ends with its paragraph; a block opener does not', () => {
+    expect(run('a %%sub never closed\n\n%%').lines).toEqual([]);
+    expect(run('%%information\n\ntext\n\n%%').content).toBe('%%information\n\ntext\n\n/%');
+  });
+
+  it('/% closers are counted, so a later stray %% is not taken for one', () => {
+    expect(run('%%information\nx\n/%\n%%').lines).toEqual([]);
+  });
+
+  it('never inside code: fences or inline spans', () => {
+    expect(run('```\n%%information\n%%\n```').lines).toEqual([]);
+    expect(run('%%information\nuse `%%` to close\n%%').content).toBe('%%information\nuse `%%` to close\n/%');
+  });
+
+  it('is idempotent', () => {
+    const once = run('%%tabs\n%%tab-one\nx\n%%\n%%\na %%sub t%% b').content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
 describe('registry', () => {
   it('selects every step by default', () => {
     expect(selectFixSteps()).toEqual(FIX_STEPS);
@@ -290,7 +339,7 @@ describe('registry', () => {
   });
 
   it('every step is idempotent on a mixed page', () => {
-    const page = '# T\n\n* a\n** b\n\n+ c\n\n```\n** code\n```\n\n1. x\n\n2. y\n';
+    const page = '# T\n\n* a\n** b\n\n+ c\n\n```\n** code\n```\n\n%%information\nnote\n%%\n\n1. x\n\n2. y\n';
     const once = runFixes(page).content;
     for (const step of FIX_STEPS) expect(step.apply(once).lines).toEqual([]);
   });

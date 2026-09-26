@@ -16,6 +16,7 @@
 
 import type { FixResult, FixStep } from './types.js';
 import { jspwikiCodeMarkers } from './jspwikiCodeMarkers.js';
+import { styleClosers } from './styleClosers.js';
 import { jspwikiBullets } from './jspwikiBullets.js';
 import { bulletMarkers } from './bulletMarkers.js';
 import { tightenLists } from './tightenLists.js';
@@ -26,11 +27,12 @@ export type { BlockMap, ListInfo, ListItem, ItemBlock } from './blocks.js';
 
 /**
  * Every step, in the order they run. Order matters: `{{{ }}}` blocks become
- * code first, so the steps after never edit the examples inside them; `**`
+ * code first, so the steps after never edit the examples inside them (a
+ * `%%` in an example stays as written); `**`
  * bullets become list items before the marker and spacing steps look at the
  * lists.
  */
-export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, jspwikiBullets, bulletMarkers, tightenLists];
+export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, styleClosers, jspwikiBullets, bulletMarkers, tightenLists];
 
 export interface RunFixesOptions {
   /** Run exactly these step ids, in registry order. Default: every step. */
