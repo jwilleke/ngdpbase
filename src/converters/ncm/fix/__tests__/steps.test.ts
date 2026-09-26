@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { jspwikiCodeMarkers } from '../jspwikiCodeMarkers.js';
 import { jspwikiBullets } from '../jspwikiBullets.js';
 import { styleClosers } from '../styleClosers.js';
+import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
 import { FIX_STEPS, runFixes, selectFixSteps } from '../index.js';
@@ -317,6 +318,57 @@ describe('style-closers (#1346)', () => {
 
   it('is idempotent', () => {
     const once = run('%%tabs\n%%tab-one\nx\n%%\n%%\na %%sub t%% b').content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('more-information-footer (#1348)', () => {
+  const run = (body: string) => moreInformationFooter.apply(body);
+  const plugin = "[{ReferringPagesPlugin before='*' after='\\n' }]";
+  const std = `## More Information\nThere might be more information for this subject on one of the following:\n${plugin}\n`;
+
+  it('the standard footer at the end of a page goes, with the blank lines before it; the final newline stays', () => {
+    const r = run(`# T\n\nBody.\n\n${std}`);
+    expect(r.content).toBe('# T\n\nBody.\n');
+    expect(r.lines).toEqual([4, 5, 6, 7]);
+  });
+
+  it('the variants stored pages carry', () => {
+    for (const section of [
+      `## More Information\nThere might be more information for this subject on one  the following:\n${plugin}`,
+      `## More Information\nThere might be more information for this subject on one of the following:${plugin}`,
+      `## More Information\nThere might be more information for this subject on one o\n\n${plugin}`,
+      "## More Information\nThere might be more information for this subject on one of the following:\n[{ReferringPagesPlugin before='*' after='\\n' }",
+      `## More Information\n\nPages that reference this topic:\n${plugin}`,
+      '## More Information'
+    ]) {
+      expect(run(`Body.\n\n${section}`).content).toBe('Body.');
+    }
+  });
+
+  it('a section with anything else under the heading is left for review', () => {
+    const body = `Body.\n\n## More Information\n\nSee also: [Editing a Page]\n${plugin}\n`;
+    expect(run(body).lines).toEqual([]);
+  });
+
+  it('mid-page: only the section goes, up to the next heading of its level', () => {
+    expect(run(`# T\n\n${std}\n## Next\ntext`).content).toBe('# T\n\n## Next\ntext');
+  });
+
+  it('a deeper heading inside the section keeps it', () => {
+    expect(run(`${std}\n### Sub\ntext`).lines).toEqual([]);
+  });
+
+  it('the plugin without the heading is valid NCM and stays', () => {
+    expect(run(`Body.\n\n${plugin}\n`).lines).toEqual([]);
+  });
+
+  it('never inside code', () => {
+    expect(run(`\`\`\`\n${std}\`\`\`\n`).lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = run(`# T\n\nBody.\n\n${std}`).content;
     expect(run(once).lines).toEqual([]);
   });
 });

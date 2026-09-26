@@ -17,6 +17,7 @@
 import type { FixResult, FixStep } from './types.js';
 import { jspwikiCodeMarkers } from './jspwikiCodeMarkers.js';
 import { styleClosers } from './styleClosers.js';
+import { moreInformationFooter } from './moreInformationFooter.js';
 import { jspwikiBullets } from './jspwikiBullets.js';
 import { bulletMarkers } from './bulletMarkers.js';
 import { tightenLists } from './tightenLists.js';
@@ -32,7 +33,7 @@ export type { BlockMap, ListInfo, ListItem, ItemBlock } from './blocks.js';
  * bullets become list items before the marker and spacing steps look at the
  * lists.
  */
-export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, styleClosers, jspwikiBullets, bulletMarkers, tightenLists];
+export const FIX_STEPS: readonly FixStep[] = [jspwikiCodeMarkers, styleClosers, moreInformationFooter, jspwikiBullets, bulletMarkers, tightenLists];
 
 export interface RunFixesOptions {
   /** Run exactly these step ids, in registry order. Default: every step. */
