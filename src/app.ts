@@ -46,6 +46,7 @@ import { ThemeManager } from './managers/ThemeManager.js';
 import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
+import { jsonForScript } from './utils/jsonForScript.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -194,6 +195,9 @@ void (async (): Promise<void> => {
   // #1456: every view builds a page's links with the function the routes use —
   // a private page's actions live under /private/.
   app.locals.pageUrl = pageUrl;
+  // Data written into a <script> by a view goes through this, never a bare
+  // JSON.stringify: a string holding `</script>` would end the element.
+  app.locals.jsonForScript = jsonForScript;
   // #1468: the keyword normaliser the server runs, for the browser's keyword
   // field (public/js/keyword-typeahead.js imports it) — its compiled output,
   // not a retyped copy. No imports of its own, so it loads as it is.

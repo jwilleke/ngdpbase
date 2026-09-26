@@ -62,7 +62,7 @@
                                    placeholder="Type keywords, separated by commas…" value="">
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
-                        <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
+                        <script type="application/json" id="userKeywordsPool"><%- jsonForScript(_kwPool) %></script>
                         <script type="module" src="/js/keyword-typeahead.js"></script>
                         <%- include('_suggested-keywords', { targetInputId: 'userKeywordsInput', keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
@@ -135,7 +135,7 @@
 </div>
 
 <%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
-<script type="application/json" id="ngdpTitleRule"><%- JSON.stringify(typeof titleRule !== 'undefined' ? titleRule : null).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="ngdpTitleRule"><%- jsonForScript(typeof titleRule !== 'undefined' ? titleRule : null) %></script>
 <script>
     // Form submission validation for system-category and user-keywords.
     // By id: the header's /search forms come first in the page (#1369).

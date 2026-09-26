@@ -57,7 +57,7 @@
     }
 
     function _wire() {
-        var container = document.getElementById(<%- JSON.stringify(_containerId) %>);
+        var container = document.getElementById(<%- jsonForScript(_containerId) %>);
         if (!container) return;
 
         var triggers = Array.from(container.querySelectorAll('.media-lightbox-trigger'));

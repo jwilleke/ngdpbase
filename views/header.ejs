@@ -575,8 +575,8 @@
 <script>
     // #1456: the current page's name and its action URLs, from the server — a
     // private page lives under /private/, so neither can be read off /view/.
-    window.ngdpPageName = <%- JSON.stringify((typeof pageName !== 'undefined' && pageName) ? pageName : null).replace(/</g, '\\u003c') %>;
-    window.ngdpPageUrls = window.ngdpPageName ? <%- JSON.stringify((typeof pageName !== 'undefined' && pageName) ? { view: pageUrl(pageName), edit: pageUrl(pageName, 'edit'), history: pageUrl(pageName, 'history'), delete: pageUrl(pageName, 'delete') } : null) %> : null;
+    window.ngdpPageName = <%- jsonForScript((typeof pageName !== 'undefined' && pageName) ? pageName : null).replace(/</g, '\\u003c') %>;
+    window.ngdpPageUrls = window.ngdpPageName ? <%- jsonForScript((typeof pageName !== 'undefined' && pageName) ? { view: pageUrl(pageName), edit: pageUrl(pageName, 'edit'), history: pageUrl(pageName, 'history'), delete: pageUrl(pageName, 'delete') } : null) %> : null;
 
     /**
      * The current page's name, URL-encoded, when this document is that page's

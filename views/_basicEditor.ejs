@@ -191,7 +191,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                                    value="<%= _kwSelected.join(', ') %>">
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
-                        <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
+                        <script type="application/json" id="userKeywordsPool"><%- jsonForScript(_kwPool) %></script>
                         <script type="module" src="/js/keyword-typeahead.js"></script>
                         <%- include('_suggested-keywords', { targetInputId: 'userKeywordsInput', keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
@@ -352,7 +352,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
 </div>
 
 <%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
-<script type="application/json" id="ngdpTitleRule"><%- JSON.stringify(typeof titleRule !== 'undefined' ? titleRule : null).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="ngdpTitleRule"><%- jsonForScript(typeof titleRule !== 'undefined' ? titleRule : null) %></script>
 <script>
     // Update preview function
     function updatePreview() {
@@ -650,7 +650,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     // Initialize User Preferences for Smart Typing
     document.addEventListener('DOMContentLoaded', function() {
         <% if (typeof user !== 'undefined' && user && user.preferences) { %>
-            const userPrefs = new UserPreferences(<%- JSON.stringify(user.preferences) %>);
+            const userPrefs = new UserPreferences(<%- jsonForScript(user.preferences) %>);
             const contentTextarea = document.getElementById('content');
             if (contentTextarea) {
                 userPrefs.applyEditorPreferences(contentTextarea);
@@ -967,8 +967,8 @@ if (document.readyState === 'loading') {
     const currentBase = baseInput ? baseInput.value : null;
 
     const key = window.EditorDraft.draftKey(
-        <%- JSON.stringify(pageName) %>,
-        <%- JSON.stringify((typeof metadata !== 'undefined' && metadata && metadata.uuid) ? metadata.uuid : null) %>,
+        <%- jsonForScript(pageName) %>,
+        <%- jsonForScript((typeof metadata !== 'undefined' && metadata && metadata.uuid) ? metadata.uuid : null) %>,
         sectionInput ? sectionInput.value : null
     );
 

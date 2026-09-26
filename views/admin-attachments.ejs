@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const isAdmin = <%= JSON.stringify((typeof can === 'function' && can('admin-system'))) %>;   // #1198: policy, not a role name
 
     // Embed attachment data from server
-    const allAttachments = <%- JSON.stringify(attachments) %>;
+    const allAttachments = <%- jsonForScript(attachments) %>;
 
     const searchInput = document.getElementById('attachment-search');
     const mimeFilter = document.getElementById('mime-filter');

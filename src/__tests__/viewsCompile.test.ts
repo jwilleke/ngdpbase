@@ -40,4 +40,12 @@ describe('EJS templates', () => {
   test.each(templates)('%s compiles', (_name, file) => {
     expect(() => ejs.compile(fs.readFileSync(file, 'utf8'), { filename: file })).not.toThrow();
   });
+
+  // Data written into a <script> goes through jsonForScript, which escapes `<`
+  // so a value holding `</script>` cannot end the element. A bare
+  // JSON.stringify there is the bug this rules out.
+  test.each(templates)('%s embeds no raw JSON.stringify output', (_name, file) => {
+    expect(fs.readFileSync(file, 'utf8')).not.toMatch(/<%-\s*JSON\.stringify\(/);
+  });
 });
+

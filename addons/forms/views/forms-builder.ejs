@@ -143,7 +143,7 @@ const PREFILL_PATHS = [
 
 <script>
 var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section'];
-var fields = <%- JSON.stringify(form?.fields ?? []) %>.map(function(f) { return Object.assign({}, f); });
+var fields = <%- jsonForScript(form?.fields ?? []) %>.map(function(f) { return Object.assign({}, f); });
 
 function escAttr(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

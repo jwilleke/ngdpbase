@@ -270,7 +270,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
     var _apItems  = [];     // current page results (for index-based insert/copy)
     var _apTimer  = null;
     var _apInsert = <%- _apInsert ? 'true' : 'false' %>;
-    var _apPage_  = <%- JSON.stringify(_apPageName) %>;  // wiki page name for upload
+    var _apPage_  = <%- jsonForScript(_apPageName) %>;  // wiki page name for upload
 
     // DOM refs
     var qEl          = document.getElementById('ap-query');
@@ -850,28 +850,28 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 
     // Pre-populate from caller (e.g. /search passing its URL params as init state)
     <% if (_apInitQuery) { %>
-    qEl.value = <%- JSON.stringify(_apInitQuery) %>;
+    qEl.value = <%- jsonForScript(_apInitQuery) %>;
     <% } %>
     <% if (_apInitSource) { %>
-    srcEl.value = <%- JSON.stringify(_apInitSource) %>;
+    srcEl.value = <%- jsonForScript(_apInitSource) %>;
     _apUpdateControls();
     <% } %>
     <% if (_apInitMime) { %>
-    if (mimeEl) mimeEl.value = <%- JSON.stringify(_apInitMime) %>;
+    if (mimeEl) mimeEl.value = <%- jsonForScript(_apInitMime) %>;
     <% } %>
     <%# #745: reflect a bookmarked Pages date range into the inputs so the
         UI matches /search?types=page&since=&until=. %>
     <% if (_apInitSince) { %>
-    if (sinceEl) sinceEl.value = <%- JSON.stringify(_apInitSince) %>;
+    if (sinceEl) sinceEl.value = <%- jsonForScript(_apInitSince) %>;
     <% } %>
     <% if (_apInitUntil) { %>
-    if (untilEl) untilEl.value = <%- JSON.stringify(_apInitUntil) %>;
+    if (untilEl) untilEl.value = <%- jsonForScript(_apInitUntil) %>;
     <% } %>
     // #696: bookmarked page filters seeded from the URL. category /
     // keywords / systemKeywords now have UI (#691) and are moved to the
     // multi-selects below; only searchIn stays seed-forwarded (its UI is
     // the #739 Full-text toggle, reflected just below).
-    var _apHiddenFilters = <%- JSON.stringify(_apInitFilters) %>;
+    var _apHiddenFilters = <%- jsonForScript(_apInitFilters) %>;
 
     // #739: reflect a bookmarked full-text page search in the checkbox so the
     // UI matches the URL (e.g. /search?types=page&searchIn=content).

@@ -80,11 +80,11 @@
                                             <td>
                                                 <div class="btn-group btn-group-sm">
                                                     <button class="btn btn-sm btn-outline-primary" onclick="editOrganization('<%= org.name.toLowerCase() %>')" 
-                                                            data-org='<%- JSON.stringify(org) %>'>
+                                                            data-org="<%= JSON.stringify(org) %>">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
                                                     <button class="btn btn-sm btn-outline-info" onclick="viewOrganizationSchema('<%= org.name.toLowerCase() %>')"
-                                                            data-org='<%- JSON.stringify(org) %>'>
+                                                            data-org="<%= JSON.stringify(org) %>">
                                                         <i class="fas fa-code"></i>
                                                     </button>
                                                     <button class="btn btn-sm btn-outline-danger" onclick="deleteOrganization('<%= org.name.toLowerCase() %>', '<%= org.name %>')">
