@@ -554,6 +554,9 @@
                     <%- (typeof extraSidebarWidgets !== 'undefined' ? extraSidebarWidgets : '') %>
 
                 </div>
+                <%# #1334: drag to resize, double-click for the automatic width; arrow keys too. %>
+                <div class="left-menu-resizer" role="separator" aria-orientation="vertical"
+                     aria-label="Resize the left menu" title="Drag to resize — double-click for the automatic width" tabindex="0"></div>
             </nav>
 
             <main role="main" class="col-12 col-md-9 col-lg-10 px-md-4 px-2 jspwiki-content main-content">
@@ -1546,9 +1549,66 @@ function toggleLeftMenu() {
     }
 }
 
+// #1334: the left menu's width. Automatic (its longest line, within the CSS
+// bounds) until the reader drags the edge; a dragged width is remembered in
+// this browser, and a double-click on the edge goes back to automatic.
+var LEFT_MENU_WIDTH_KEY = 'leftMenuWidth';
+var LEFT_MENU_MIN = 160;
+var LEFT_MENU_MAX = 480;
+
+function setLeftMenuWidth(px) {
+    var sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    if (px === null) {
+        sidebar.style.removeProperty('--left-menu-width');
+        try { localStorage.removeItem(LEFT_MENU_WIDTH_KEY); } catch (e) { /* storage unavailable */ }
+        return;
+    }
+    var width = Math.round(Math.min(LEFT_MENU_MAX, Math.max(LEFT_MENU_MIN, px)));
+    sidebar.style.setProperty('--left-menu-width', width + 'px');
+    try { localStorage.setItem(LEFT_MENU_WIDTH_KEY, String(width)); } catch (e) { /* storage unavailable */ }
+}
+
+function initializeLeftMenuResizer() {
+    var sidebar = document.querySelector('.sidebar');
+    var handle = sidebar && sidebar.querySelector('.left-menu-resizer');
+    if (!handle) return;
+    var stored = null;
+    try { stored = Number(localStorage.getItem(LEFT_MENU_WIDTH_KEY)); } catch (e) { /* storage unavailable */ }
+    if (stored) sidebar.style.setProperty('--left-menu-width', Math.min(LEFT_MENU_MAX, Math.max(LEFT_MENU_MIN, stored)) + 'px');
+
+    handle.addEventListener('pointerdown', function (event) {
+        event.preventDefault();
+        var startX = event.clientX;
+        var startWidth = sidebar.getBoundingClientRect().width;
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add('left-menu-resizing');
+        function move(e) { setLeftMenuWidth(startWidth + e.clientX - startX); }
+        function up() {
+            handle.removeEventListener('pointermove', move);
+            handle.removeEventListener('pointerup', up);
+            handle.removeEventListener('pointercancel', up);
+            document.body.classList.remove('left-menu-resizing');
+        }
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', up);
+        handle.addEventListener('pointercancel', up);
+    });
+    handle.addEventListener('dblclick', function () { setLeftMenuWidth(null); });
+    handle.addEventListener('keydown', function (event) {
+        var step = event.shiftKey ? 64 : 16;
+        if (event.key === 'ArrowLeft') setLeftMenuWidth(sidebar.getBoundingClientRect().width - step);
+        else if (event.key === 'ArrowRight') setLeftMenuWidth(sidebar.getBoundingClientRect().width + step);
+        else if (event.key === 'Home' || event.key === 'Escape') setLeftMenuWidth(null);
+        else return;
+        event.preventDefault();
+    });
+}
+
 // Initialize left menu state from localStorage
 // Populate mobile offcanvas with sidebar content, then apply desktop preference
 function initializeLeftMenuState() {
+    initializeLeftMenuResizer();
     // Copy sidebar content into offcanvas for mobile use
     var sidebarBody = document.querySelector('.sidebar .sidebar-sticky');
     var offcanvasBody = document.getElementById('mobile-nav-body');

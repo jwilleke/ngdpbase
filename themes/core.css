@@ -343,6 +343,50 @@ main[role="main"] {
     }
 }
 
+/* #1334: at desktop widths the left menu is as wide as its longest line,
+   within bounds, unless the reader has dragged its edge (--left-menu-width,
+   set by header.ejs); the content column takes the rest. Mobile uses the
+   offcanvas copy and is unaffected. */
+@media (min-width: 768px) {
+    .row > .jspwiki-sidebar {
+        position: relative;
+        flex: 0 0 auto;
+        width: var(--left-menu-width, max-content);
+        min-width: 10rem;
+        max-width: var(--left-menu-width, 22rem);
+    }
+
+    .row > .jspwiki-sidebar + main.main-content {
+        flex: 1 1 0;
+        width: auto;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .left-menu-resizer {
+        position: absolute;
+        top: 0;
+        right: -3px;
+        width: 6px;
+        height: 100%;
+        cursor: col-resize;
+        z-index: 2;
+    }
+
+    .left-menu-resizer:hover,
+    .left-menu-resizer:focus-visible,
+    .left-menu-resizing .left-menu-resizer {
+        background-color: var(--link-color);
+        opacity: 0.5;
+        outline: none;
+    }
+
+    .left-menu-resizing {
+        cursor: col-resize;
+        user-select: none;
+    }
+}
+
 /* Page content styling */
 .markdown-body {
     line-height: 1.6;

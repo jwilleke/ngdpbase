@@ -247,6 +247,34 @@ test.describe('Desktop Navigation', () => {
     await expect(sidebar).toBeVisible();
   });
 
+  // #1334: the left menu sizes to its content, and its edge drags.
+  test('the left menu edge drags to a width that is remembered, and double-click resets it', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('domcontentloaded');
+    await page.evaluate(() => localStorage.removeItem('leftMenuWidth'));
+    await page.reload();
+
+    const sidebar = page.locator('.sidebar.jspwiki-sidebar');
+    const handle = page.locator('.left-menu-resizer');
+    const width = async (): Promise<number> => Math.round((await sidebar.boundingBox())?.width ?? 0);
+    const auto = await width();
+
+    const box = await handle.boundingBox();
+    if (!box) throw new Error('no resize handle');
+    await page.mouse.move(box.x + box.width / 2, box.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + 100, { steps: 5 });
+    await page.mouse.up();
+    expect(await width()).toBeGreaterThanOrEqual(auto + 90);
+
+    await page.reload();
+    expect(await width()).toBeGreaterThanOrEqual(auto + 90);
+
+    await handle.dblclick();
+    expect(await width()).toBe(auto);
+    expect(await page.evaluate(() => localStorage.getItem('leftMenuWidth'))).toBeNull();
+  });
+
   test('search bar is visible on desktop', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('domcontentloaded');
