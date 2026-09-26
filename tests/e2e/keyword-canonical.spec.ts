@@ -29,8 +29,13 @@ test.describe('Saved keywords snap to the catalogued form (#1467)', () => {
   // testing the instance's data rather than the behaviour. The term is unique
   // per run, and its display form is deliberately mixed case so that snapping
   // to it is visible.
+  //
+  // Creating a term also creates a PAGE titled with its label (#240), so the
+  // label carries TEST_PAGE_PREFIX: that page is then deleted below, and a
+  // crashed run's copy is swept at the next setup. Without the prefix every
+  // run left one live page behind that no sweep could find (#1474).
   const stamp = Date.now();
-  const catalogued = `Ngdpbase Test Kw ${stamp}`;
+  const catalogued = `${TEST_PAGE_PREFIX} Kw ${stamp}`;
   const typedKeywords = `${catalogued.toLowerCase()}, ${catalogued.toLowerCase().replace(/ /g, '-')}, Backgammon`;
   let keywordId = '';
   let csrfToken = '';
@@ -55,7 +60,12 @@ test.describe('Saved keywords snap to the catalogued form (#1467)', () => {
     const context = await browser.newContext({ storageState: './tests/e2e/.auth/user.json' });
     try {
       const p = await context.newPage();
-      await deletePage(p, pageName);
+      // Each step on its own: one failed delete must not skip the others, and
+      // each failure is said out loud (#1474).
+      for (const name of [pageName, catalogued]) {   // catalogued: the term's own page (#240)
+        await deletePage(p, name).catch((err: Error) =>
+          console.warn(`[keyword-canonical] could not delete test page ${name}: ${err.message}`));
+      }
       if (keywordId) {
         // Leave no term behind: this one exists only for the run that made it.
         // The delete is CSRF-gated like every other state change, and a token
