@@ -51,10 +51,98 @@ export interface StoreKind {
  * nothing else (a string "true" is not a switch).
  */
 export function storeKindFromConfig(getProperty: GetProperty, id: string): StoreKind | null {
-  if (!isValidStoreId(id)) return null;
+  if (!isValidStoreId(id) || RESERVED_STORE_IDS.includes(id)) return null;
   const owner = getProperty(`ngdpbase.stores.${id}.owner`, undefined);
   if (typeof owner !== 'string' || owner.length === 0) return null;
   return { id, owner, encrypt: getProperty(`ngdpbase.stores.${id}.encrypt`, false) === true };
+}
+
+/** The owner slug the site itself uses; no addon may claim it. */
+export const ADMIN_STORE_OWNER = 'admin';
+
+/**
+ * Ids under `ngdpbase.stores.*` that are instance settings, not kinds
+ * (`recovery.confirmretries`, `import.maxsize`). A kind by these names would
+ * share its keys with a setting, so none may be declared.
+ */
+export const RESERVED_STORE_IDS: readonly string[] = ['recovery', 'import'];
+
+/** One kind as an addon declares it in its `package.json` `ngdpbase.stores`. */
+export interface StoreDeclaration {
+  id: string;
+  encrypt: boolean;
+}
+
+/**
+ * The well-formed declarations in a manifest's `stores` value, and a reason
+ * for each one that is not. An `encrypt` that is not a boolean is refused
+ * rather than read as false: it is the one field that says whether a
+ * person's data is sealed.
+ */
+export function readStoreDeclarations(raw: unknown): { declarations: StoreDeclaration[]; problems: string[] } {
+  const declarations: StoreDeclaration[] = [];
+  const problems: string[] = [];
+  if (raw === undefined || raw === null) return { declarations, problems };
+  if (!Array.isArray(raw)) return { declarations, problems: ['`stores` must be an array'] };
+  for (const entry of raw as unknown[]) {
+    const e = entry as { id?: unknown; encrypt?: unknown } | null;
+    const id = typeof e?.id === 'string' ? e.id : '';
+    if (!id || !isValidStoreId(id)) { problems.push(`store id ${JSON.stringify(e?.id)} is not a valid store id`); continue; }
+    if (RESERVED_STORE_IDS.includes(id)) { problems.push(`store id "${id}" is reserved for an instance setting`); continue; }
+    if (typeof e?.encrypt !== 'boolean') { problems.push(`store "${id}": encrypt must be true or false`); continue; }
+    declarations.push({ id, encrypt: e.encrypt });
+  }
+  return { declarations, problems };
+}
+
+/**
+ * What loading an addon does with one of its declarations (#1414).
+ *
+ * - `persist` — no kind by this id yet: write it, owned by this addon.
+ * - `match` — already this addon's, and the manifest agrees.
+ * - `stale` — already this addon's, but the manifest now says otherwise.
+ *   Config wins; the declaration is ignored and reported, the addon loads.
+ * - `denied` — another owner holds this id. One addon reaching into another's
+ *   container: refused, and reported loudly.
+ */
+export type DeclarationPlan =
+  | { action: 'persist' }
+  | { action: 'match' }
+  | { action: 'stale'; configEncrypt: boolean }
+  | { action: 'denied'; owner: string };
+
+export function planStoreDeclaration(getProperty: GetProperty, slug: string, decl: StoreDeclaration): DeclarationPlan {
+  if (slug === ADMIN_STORE_OWNER) return { action: 'denied', owner: ADMIN_STORE_OWNER };
+  const existing = storeKindFromConfig(getProperty, decl.id);
+  if (!existing) return { action: 'persist' };
+  if (existing.owner !== slug) return { action: 'denied', owner: existing.owner };
+  if (existing.encrypt !== decl.encrypt) return { action: 'stale', configEncrypt: existing.encrypt };
+  return { action: 'match' };
+}
+
+/** Where the addon that owns a kind stands, as the door needs to know it. */
+export type StoreOwnerState = 'loaded' | 'failed' | 'disabled' | 'absent';
+
+/**
+ * Whether a kind's door is open (#1414). A kind the site owns is always open.
+ * An addon's kind is open only while that addon is loaded; otherwise the kind
+ * and every user's copy stay exactly as they are — nothing is removed — and
+ * the door says why it is shut.
+ */
+export type StoreDoorState =
+  | { open: true }
+  | { open: false; reason: 'unavailable' | 'disabled' | 'not-installed'; message: string };
+
+export function storeDoorState(kind: StoreKind, ownerState: StoreOwnerState | null): StoreDoorState {
+  if (kind.owner === ADMIN_STORE_OWNER || ownerState === 'loaded') return { open: true };
+  switch (ownerState) {
+  case 'failed':
+    return { open: false, reason: 'unavailable', message: 'This store is temporarily unavailable. Its data is untouched; try again later.' };
+  case 'disabled':
+    return { open: false, reason: 'disabled', message: 'The add-on that owns this store is turned off on this site. Its data is untouched.' };
+  default:
+    return { open: false, reason: 'not-installed', message: 'The add-on that owns this store is not installed on this site. Its data is untouched.' };
+  }
 }
 
 /** Attempts at confirming the words: one, plus `ngdpbase.stores.recovery.confirmretries`. */

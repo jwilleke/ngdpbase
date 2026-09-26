@@ -33,6 +33,11 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
 import logger from '../utils/logger.js';
 import type { User } from '../types/User.js';
+import {
+  planStoreDeclaration,
+  readStoreDeclarations,
+  type StoreOwnerState
+} from '../utils/privateStoreDoor.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -238,6 +243,13 @@ export interface AddonManifest {
   domainDefaults?: Record<string, unknown>;
   /** Capability flags this addon advertises */
   capabilities?: string[];
+  /**
+   * Private store kinds this addon owns (#1414): `[{ id, encrypt }]`. Saved to
+   * configuration at the addon's first load, owned by its slug; from then on
+   * configuration wins and this is never consulted again. See
+   * docs/guides/addons-developer-guide.md "Declare a Private Store".
+   */
+  stores?: unknown;
 }
 
 /**
@@ -272,6 +284,13 @@ interface AddonEntry {
 
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
+
+  /**
+   * What loading made of the addon's store declarations (#1414), for the
+   * admin add-ons screen: a stale manifest ignored, an id denied, a malformed
+   * entry. Empty when there is nothing to say.
+   */
+  storeNotices?: string[];
 }
 
 /**
@@ -309,6 +328,8 @@ export interface AddonStatus {
   hasTheme?: boolean;
   /** #443: themes/<name>/ already exists in the instance */
   themeDeployed?: boolean;
+  /** #1414: store declarations ignored, denied or malformed at load */
+  storeNotices?: string[];
 }
 
 /**
@@ -1309,6 +1330,11 @@ class AddonsManager extends BaseManager {
       // is already visible here — and to the managers that copied the
       // catalogs at boot, which the old runtime injection never reached.
 
+      // #1414: before register(), and before anything can fail: a kind the
+      // addon declares exists from its first load, so a later load failure
+      // leaves the door closed ("temporarily unavailable"), not missing.
+      await this.declareStoreKinds(addonName);
+
       // Inject domainDefaults before register() so the addon can read
       // any applied values from ConfigurationManager during startup
       this.applyDomainDefaults(addonName);
@@ -1340,6 +1366,66 @@ class AddonsManager extends BaseManager {
       logger.error(`Failed to load add-on ${addonName}: ${errorMessage}`);
       // Don't throw - allow other add-ons to load
     }
+  }
+
+  /**
+   * Save the addon's declared store kinds to configuration (#1414).
+   *
+   * Not `domainDefaults`: those are runtime-only and vanish on restart, so a
+   * disabled addon would leave encrypted data on disk with nothing saying it
+   * is encrypted or whose it is. A kind is written through
+   * `ConfigurationManager.setProperty` — `app-custom-config.json`, with its
+   * `config-change` audit record — owned by this addon's canonical slug,
+   * never by anything the manifest says.
+   *
+   * After the first write configuration wins: a manifest that later disagrees
+   * is ignored and reported, and the addon loads. The one refusal is an id
+   * another owner already holds.
+   */
+  private async declareStoreKinds(addonName: string): Promise<void> {
+    const addon = this.addons.get(addonName);
+    if (!addon) return;
+    const { declarations, problems } = readStoreDeclarations(addon.manifest?.stores);
+    const notices: string[] = problems.map(p => `Store declaration ignored: ${p}.`);
+    if (declarations.length === 0 && notices.length === 0) return;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) return;
+    const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
+
+    for (const decl of declarations) {
+      const plan = planStoreDeclaration(getProperty, addonName, decl);
+      if (plan.action === 'persist') {
+        const ctx = systemContext(this.engine, `addon ${addonName} declares private store kind ${decl.id} (#1414)`);
+        await configManager.setProperty(`ngdpbase.stores.${decl.id}.owner`, addonName, ctx);
+        await configManager.setProperty(`ngdpbase.stores.${decl.id}.encrypt`, decl.encrypt, ctx);
+        logger.info(`[AddonsManager] ${addonName}: private store kind '${decl.id}' saved (encrypt: ${decl.encrypt})`);
+      } else if (plan.action === 'stale') {
+        const msg = `Store "${decl.id}" is declared encrypt: ${decl.encrypt}, but this site holds it as encrypt: ${plan.configEncrypt}. `
+          + 'The declaration is ignored; every copy keeps being made the way existing ones were.';
+        notices.push(msg);
+        logger.warn(`[AddonsManager] ${addonName}: ${msg}`);
+      } else if (plan.action === 'denied') {
+        const msg = `Store "${decl.id}" belongs to ${plan.owner === 'admin' ? 'the site' : `add-on ${plan.owner}`}; `
+          + `${addonName} may not claim it. The declaration is refused.`;
+        notices.push(msg);
+        logger.error(`[AddonsManager] ${addonName}: ${msg}`);
+      }
+    }
+    for (const p of problems) logger.warn(`[AddonsManager] ${addonName}: store declaration ignored: ${p}`);
+    addon.storeNotices = notices;
+  }
+
+  /**
+   * Where the addon that owns a store kind stands, for the store door (#1414):
+   * loaded, enabled but failed to load, turned off, or not on this site.
+   */
+  storeOwnerState(addonName: string): StoreOwnerState {
+    const addon = this.addons.get(addonName);
+    if (!addon) return 'absent';
+    if (addon.loaded) return 'loaded';
+    if (!addon.enabled) return 'disabled';
+    return 'failed';
   }
 
   /**
@@ -1384,7 +1470,8 @@ class AddonsManager extends BaseManager {
         loaded: addon.loaded,
         dependencies: addon.module.dependencies || [],
         error: addon.error,
-        type: addon.manifest?.type
+        type: addon.manifest?.type,
+        ...(addon.storeNotices?.length ? { storeNotices: addon.storeNotices } : {})
       };
 
       // #443: surface theme-deploy state for the admin dashboard

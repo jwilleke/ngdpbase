@@ -21,7 +21,10 @@ import {
   hasPendingWords,
   holdWordsForConfirmation,
   storeCopyExists,
-  storeKindFromConfig
+  storeKindFromConfig,
+  planStoreDeclaration,
+  readStoreDeclarations,
+  storeDoorState
 } from '../privateStoreDoor';
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
 
@@ -166,5 +169,78 @@ describe('store door (#1414)', () => {
       await expect(commitStoreCopy({ pagesDirectory: pagesDir, username: 'molly', kind: sealed })).rejects.toThrow(/locked/);
       expect(await storeCopyExists({ pagesDirectory: pagesDir, username: 'molly', store: 'yourphr' })).toBe(false);
     });
+  });
+});
+
+describe('addon-declared store kinds (#1414 step 2)', () => {
+  const config = (entries: Record<string, unknown>) => (key: string, def: unknown): unknown =>
+    (key in entries ? entries[key] : def);
+
+  test('reads well-formed declarations and names what is wrong with the rest', () => {
+    const { declarations, problems } = readStoreDeclarations([
+      { id: 'yourphr', encrypt: true },
+      { id: 'notes', encrypt: false },
+      { id: 'Bad Id', encrypt: true },
+      { id: 'import', encrypt: true },
+      { id: 'health', encrypt: 'yes' }
+    ]);
+
+    expect(declarations).toEqual([{ id: 'yourphr', encrypt: true }, { id: 'notes', encrypt: false }]);
+    expect(problems).toHaveLength(3);
+    expect(problems.join(' ')).toMatch(/reserved/);
+    // encrypt says whether someone's data is sealed: a non-boolean is refused, never read as false.
+    expect(problems.join(' ')).toMatch(/health.*encrypt must be true or false/);
+  });
+
+  test('a manifest with no stores declares nothing, and a non-array is a problem', () => {
+    expect(readStoreDeclarations(undefined)).toEqual({ declarations: [], problems: [] });
+    expect(readStoreDeclarations({ id: 'x' }).problems).toEqual(['`stores` must be an array']);
+  });
+
+  test('a new id is persisted; the owner\'s own matching kind is left alone', () => {
+    expect(planStoreDeclaration(config({}), 'yourphr', { id: 'yourphr', encrypt: true })).toEqual({ action: 'persist' });
+    const owned = config({ 'ngdpbase.stores.yourphr.owner': 'yourphr', 'ngdpbase.stores.yourphr.encrypt': true });
+    expect(planStoreDeclaration(owned, 'yourphr', { id: 'yourphr', encrypt: true })).toEqual({ action: 'match' });
+  });
+
+  test('a manifest that later disagrees is stale: config wins', () => {
+    const owned = config({ 'ngdpbase.stores.yourphr.owner': 'yourphr', 'ngdpbase.stores.yourphr.encrypt': true });
+
+    expect(planStoreDeclaration(owned, 'yourphr', { id: 'yourphr', encrypt: false }))
+      .toEqual({ action: 'stale', configEncrypt: true });
+  });
+
+  test('an id another owner holds is denied — the site\'s default store included', () => {
+    const other = config({ 'ngdpbase.stores.yourphr.owner': 'otheraddon' });
+    expect(planStoreDeclaration(other, 'yourphr', { id: 'yourphr', encrypt: true }))
+      .toEqual({ action: 'denied', owner: 'otheraddon' });
+
+    const site = config({ 'ngdpbase.stores.default.owner': 'admin' });
+    expect(planStoreDeclaration(site, 'sneaky', { id: 'default', encrypt: false }))
+      .toEqual({ action: 'denied', owner: 'admin' });
+  });
+
+  test('an addon whose slug is the reserved "admin" owns nothing', () => {
+    expect(planStoreDeclaration(config({}), 'admin', { id: 'x', encrypt: true }))
+      .toEqual({ action: 'denied', owner: 'admin' });
+  });
+
+  test('a reserved id is never a kind, even when configuration names an owner', () => {
+    const cfg = config({ 'ngdpbase.stores.import.owner': 'someone' });
+
+    expect(storeKindFromConfig(cfg, 'import')).toBeNull();
+  });
+
+  test('the door: the site\'s kinds always open, an addon\'s only while it is loaded', () => {
+    const site = { id: 'default', owner: 'admin', encrypt: false };
+    const addon = { id: 'yourphr', owner: 'yourphr', encrypt: true };
+
+    expect(storeDoorState(site, null)).toEqual({ open: true });
+    expect(storeDoorState(addon, 'loaded')).toEqual({ open: true });
+    expect(storeDoorState(addon, 'failed')).toMatchObject({ open: false, reason: 'unavailable' });
+    expect(storeDoorState(addon, 'disabled')).toMatchObject({ open: false, reason: 'disabled' });
+    expect(storeDoorState(addon, 'absent')).toMatchObject({ open: false, reason: 'not-installed' });
+    // No AddonsManager answering is treated as not installed, never as open.
+    expect(storeDoorState(addon, null)).toMatchObject({ open: false, reason: 'not-installed' });
   });
 });

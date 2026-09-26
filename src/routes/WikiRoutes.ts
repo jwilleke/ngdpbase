@@ -112,6 +112,8 @@ import {
   holdWordsForConfirmation,
   storeCopyExists,
   storeKindFromConfig,
+  storeDoorState,
+  type StoreOwnerState,
   userKeysExist,
   type StoreKind
 } from '../utils/privateStoreDoor.js';
@@ -7890,6 +7892,15 @@ ${panes}
     const kind = storeKindFromConfig(getProperty, String(req.params.kind ?? ''));
     if (!kind) {
       await this.renderError(req, res, 404, 'Not Found', 'There is no such store on this site.');
+      return null;
+    }
+    // #1414: an addon's kind is served only while that addon is loaded. The
+    // kind and every copy stay as they are; the door says why it is shut.
+    const addonsManager = this.engine.getManager<{ storeOwnerState?: (slug: string) => StoreOwnerState }>('AddonsManager');
+    const door = storeDoorState(kind, addonsManager?.storeOwnerState?.(kind.owner) ?? null);
+    if (!door.open) {
+      res.status(503);
+      await this.renderStoreDoor(req, res, kind, { step: 'closed', closedReason: door.reason, closedMessage: door.message });
       return null;
     }
     const username = req.userContext.username;

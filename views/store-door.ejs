@@ -1,7 +1,7 @@
 <%- include('header', { pageName: '' }) %>
 <%
   // #1414 — the store door. One template, one step at a time:
-  // ready | intro-plain | intro-sealed | words | confirm | exhausted | done
+  // ready | intro-plain | intro-sealed | words | confirm | exhausted | done | closed
   const doorUrl = '/stores/' + encodeURIComponent(storeKind.id);
   const storeName = storeKind.id === 'default' ? 'your private pages' : 'the "' + storeKind.id + '" store';
 %>
@@ -23,7 +23,12 @@
             <div class="alert alert-warning" role="alert"><%= notice %></div>
           <% } %>
 
-          <% if (step === 'ready') { %>
+          <% if (step === 'closed') { %>
+            <%# #1414: the addon that owns this kind cannot serve it. Nothing is
+                removed; the message says which of the three reasons applies. %>
+            <div class="alert alert-secondary" role="status"><%= closedMessage %></div>
+
+          <% } else if (step === 'ready') { %>
             <p>You already have <%= storeName %>.</p>
             <a class="btn btn-primary" href="<%= landing %>">Open it</a>
 

@@ -37,8 +37,12 @@ describe('store door routes (#1414)', () => {
     'ngdpbase.stores.default.encrypt': false,
     'ngdpbase.stores.vault.owner': 'admin',
     'ngdpbase.stores.vault.encrypt': true,
+    'ngdpbase.stores.yourphr.owner': 'yourphr',
+    'ngdpbase.stores.yourphr.encrypt': false,
     'ngdpbase.stores.recovery.confirmretries': 1
   };
+  /** #1414 step 2: where the addon owning `yourphr` stands. */
+  let ownerState: string;
 
   const req = (kind: string, body: Record<string, unknown> = {}, userContext: Record<string, unknown> = subject) =>
     ({ params: { kind }, body: { _csrf: 't', ...body }, userContext, ip: '203.0.113.7', session: {} }) as never;
@@ -48,6 +52,7 @@ describe('store door routes (#1414)', () => {
 
   beforeEach(async () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'store-door-routes-'));
+    ownerState = 'loaded';
     pagesDir = path.join(testDir, 'pages');
     audit = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => {}) };
     const managers: Record<string, unknown> = {
@@ -56,6 +61,7 @@ describe('store door routes (#1414)', () => {
         getResolvedDataPath: () => pagesDir
       },
       AuditManager: audit,
+      AddonsManager: { storeOwnerState: () => ownerState },
       AuthManager: { authenticate: vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' })) }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
@@ -112,6 +118,31 @@ describe('store door routes (#1414)', () => {
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=%2Fstores%2Fdefault');
     expect(audit.logAuditEvent).not.toHaveBeenCalled();
     expect(await fs.pathExists(storeMetaPath(pagesDir, 'Anonymous', 'default'))).toBe(false);
+  });
+
+  test.each([
+    ['failed', 'unavailable'],
+    ['disabled', 'disabled'],
+    ['absent', 'not-installed']
+  ])('an addon\'s kind whose owner is %s: the door is shut (503, %s) and nothing is created', async (state, reason) => {
+    ownerState = state;
+    const shown = newRes();
+    const entered = newRes();
+    await routes.storeDoorPage(req('yourphr'), shown);
+    await routes.storeDoorEnter(req('yourphr'), entered);
+
+    for (const res of [shown, entered]) {
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.render.mock.calls.at(-1)?.[1]).toMatchObject({ step: 'closed', closedReason: reason });
+    }
+    expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'yourphr'))).toBe(false);
+    expect(audit.logAuditEvent).not.toHaveBeenCalled();
+  });
+  test('an addon\'s kind whose owner is loaded opens as any other', async () => {
+    const res = newRes();
+    await routes.storeDoorEnter(req('yourphr'), res);
+
+    expect(await fs.readJson(storeMetaPath(pagesDir, 'molly', 'yourphr'))).toMatchObject({ kind: 'yourphr', encrypt: false });
   });
 
   test('an unknown kind is a 404', async () => {

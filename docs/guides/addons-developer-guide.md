@@ -484,19 +484,46 @@ __You declare the kind. You do not implement encryption, keys, or recovery words
 
 #### Declaring the kind
 
-A kind is two configuration keys. Today they are written by an operator, in `app-custom-config.json`:
+Declare it in your `package.json`, beside the other manifest keys:
 
 ```json
-"ngdpbase.stores.yourphr.encrypt": true,
-"ngdpbase.stores.yourphr.owner": "yourphr"
+"ngdpbase": {
+  "stores": [{ "id": "yourphr", "encrypt": true }]
+}
 ```
 
-- `owner` is your addon's __slug__ — the canonical addon identity from `package.json` ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), the same id as `ngdpbase.addons.<slug>.enabled`.
-- `encrypt` is __your call as the kind's owner__, not the end user's. Sensitive or regulated data should be `true`. It is read when a user creates their copy of the store, and a copy keeps what it was created with.
+- `id` is the store kind's id: lowercase letters, digits and hyphens. `recovery` and `import` are reserved (they are instance settings under `ngdpbase.stores.*`).
+- `encrypt` is __your call as the kind's owner__, not the end user's, and must be `true` or `false`. Sensitive or regulated data should be `true`. A copy keeps what it was created with.
 
-`storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` is the only reader of these keys. An addon cannot yet declare a kind from its own `package.json`: there is no manifest field for it and nothing persists one at load. Until that exists, shipping a kind means telling the operator which two keys to set.
+At your addon's __first load__ core saves the kind to the site's configuration, owned by your addon's __slug__ (the canonical identity from `package.json`, [#927](https://github.com/jwilleke/ngdpbase/issues/927)):
 
-Two rules are stated in the design and are __not enforced by code__, so do not rely on them: that `admin` is a reserved owner slug, and that a kind cannot be removed while a user still has data in it. Nothing refuses either today.
+```json
+"ngdpbase.stores.yourphr.owner": "yourphr",
+"ngdpbase.stores.yourphr.encrypt": true
+```
+
+__From then on configuration wins.__ Your manifest is never consulted again for that kind:
+
+- __Changing `encrypt` in a later release changes nothing.__ The declaration is ignored, logged at warn and shown on the admin add-ons screen; your addon loads normally. Every user's copy keeps being made the way existing ones were, so a kind never ends up half sealed.
+- __Declaring an id that another owner holds is refused__ — including `default`, which belongs to the site. It is logged as an error and shown on the admin screen; the rest of your addon still runs.
+- An addon whose slug is `admin` owns nothing: `admin` is the site's own owner name.
+
+`storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` is the only reader of these keys.
+
+#### When your addon is not running
+
+Nothing is ever removed. The kind stays in configuration and every user's copy stays on disk, sealed if it was. The store's door is shut, and says why:
+
+| Your addon | The door |
+| --- | --- |
+| loaded | open |
+| enabled, failed to load | closed: temporarily unavailable |
+| turned off | closed: the add-on that owns this store is turned off |
+| not installed | closed: not installed on this site |
+
+Turning your addon back on reopens it, with every user's keys as they were.
+
+One rule is stated in the design and __not yet enforced by code__, so do not rely on it: that a kind's definition cannot be removed, nor its data purged, while any user still has data in it.
 
 #### Core owns the door
 
@@ -507,7 +534,7 @@ Your addon's part:
 - Link to `/stores/{your-kind-id}` where your set-up step belongs ("set up your health records").
 - Assume the key exists once the door returns. By the time your addon writes anything, it does.
 
-The door renders core's own wording. There is no addon-supplied label or blurb on that screen, and the door does not consult whether your addon is enabled.
+The door renders core's own wording. There is no addon-supplied label or blurb on that screen yet.
 
 Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask for, store, or log one. There is no API that hands you key material, and there will not be.
 
