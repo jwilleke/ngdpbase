@@ -23,6 +23,8 @@ export type CorePermission =
   | 'asset-upload'
   /** Add a comment, and delete your own; deleting anyone's is admin-system (#1198) */
   | 'comment-create'
+  /** Browse and view the media library (not delegated to anonymous visitors) */
+  | 'media-read'
   /** Create new pages */
   | 'page-create'
   /** Delete pages */
@@ -66,6 +68,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'asset-read',
   'asset-upload',
   'comment-create',
+  'media-read',
   'page-create',
   'page-delete',
   'page-edit',

@@ -1627,6 +1627,11 @@
       "icon": "paperclip",
       "color": "#6c757d"
     },
+    "media-read": {
+      "description": "Browse and view the media library (not delegated to anonymous visitors)",
+      "icon": "images",
+      "color": "#6c757d"
+    },
     "asset-upload": {
       "description": "Upload assets",
       "icon": "upload",
@@ -1802,6 +1807,7 @@
         "page-rename",
         "page-export",
         "asset-read",
+        "media-read",
         "asset-upload",
         "asset-delete",
         "share-manage",
@@ -1845,6 +1851,7 @@
         "page-create",
         "page-export",
         "asset-read",
+        "media-read",
         "asset-upload",
         "search-page",
         "admin-read",
@@ -1910,6 +1917,7 @@
         "page-rename",
         "page-export",
         "asset-read",
+        "media-read",
         "asset-upload",
         "asset-delete",
         "share-manage",
@@ -1945,6 +1953,7 @@
         "page-create",
         "page-export",
         "asset-read",
+        "media-read",
         "asset-upload",
         "search-page",
         "profile-manage",
@@ -1975,6 +1984,7 @@
         "page-read",
         "page-export",
         "asset-read",
+        "media-read",
         "search-page",
         "profile-manage",
         "comment-create",

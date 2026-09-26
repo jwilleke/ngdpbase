@@ -15223,7 +15223,10 @@ ${panes}
       this.adminGetOrganizationSchema(req, res)
     );
 
-    // Media routes (Phase 3 stub)
+    // Media routes. Every one is gated on media-read first (#1485): the
+    // library is personal, and the default policies do not delegate it to
+    // anonymous visitors. Share links serve media through /share/:token.
+    app.use('/media', (req: Request, res: Response, next: NextFunction) => void this.mediaGate(req, res, next));
     app.get('/media', (req: Request, res: Response) => void this.mediaHome(req, res));
     app.get('/media/year/:year', (req: Request, res: Response) => void this.mediaByYear(req, res));
     app.get('/media/keyword/:keyword', (req: Request, res: Response) => void this.mediaByKeyword(req, res));
@@ -17803,6 +17806,17 @@ ${description}
     });
 
     return { sort, order, items: sorted };
+  }
+
+  /**
+   * The media library's door (#1485): `media-read`, asked of policy, before
+   * any /media route runs. A JSON refusal for the API, a plain one for the
+   * file and thumbnail bytes, the refusal page for the rest.
+   */
+  private async mediaGate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
+    const mode = req.path.startsWith('/api/') ? 'json' : /^\/(file|thumb)\//.test(req.path) ? 'text' : 'page';
+    if (await this.permitted(wikiContext, 'media-read', req, res, mode)) next();
   }
 
   /**

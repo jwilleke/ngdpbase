@@ -102,7 +102,9 @@ No attachment upload is needed. The media library index is consulted only for `m
 
 ### Access Control
 
-- Media items carry no per-item privacy; a share visitor is held to the share's ceiling (#1427)
+- Every `/media/*` route requires the `media-read` permission (#1485). The default policies delegate it to reader and every role above, not to anonymous visitors, so a signed-out visitor is sent to sign in (pages) or refused (API, files, thumbnails). A `media://` image on a public page therefore does not show to a signed-out reader.
+- Share links serve media through `/share/:token/file|thumb`, outside that door, held to the share's own ceiling.
+- Items carry no per-item privacy (#1427).
 
 ## HTTP Routes
 

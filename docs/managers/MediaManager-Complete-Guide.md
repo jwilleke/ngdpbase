@@ -400,6 +400,8 @@ icon is shown in grids.
 
 ## Privacy and Access Control
 
+The library's door is the `media-read` permission (#1485), asked of policy by one gate in front of every `/media/*` route. The default policies delegate it to reader and above, never to anonymous visitors. Share links reach media through `/share/:token/...` instead.
+
 Media items carry no per-item privacy and no link to a page (#1427): every item is returned to any caller of MediaManager. A page's media are the items whose EXIF/XMP keywords name it.
 
 The one check is the share ceiling. `getItem(id, wikiContext)` asks `PolicyInformationPoint.canUserAccessMediaItem`, which for a subject that arrived through a share requires the share to delegate `asset-read`, be unexpired, and cover the item's keywords (not `owner-only`), with the issuer still holding `asset-read`. It returns `null` on refusal. An ordinary session is allowed.

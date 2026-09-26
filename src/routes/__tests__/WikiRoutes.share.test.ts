@@ -168,6 +168,8 @@ const mockPolicyDecisionPoint = {
     const roles = username === 'root' ? ['admin'] : username === 'ed' ? ['editor'] : username === 'reader' ? ['reader'] : [];
     if (action === 'admin-system') return roles.includes('admin');
     if (action === 'share-manage') return roles.includes('admin') || roles.includes('editor');
+    // #1485: the media door — reader and above, never anonymous.
+    if (action === 'media-read') return roles.length > 0;
     return false;
   }),
   getUserPermissions: vi.fn().mockReturnValue([])
@@ -745,6 +747,38 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
 
   // ── album entry point (#854) ───────────────────────────────────────────────
 
+  describe('#1485: the media library is refused to anonymous visitors', () => {
+    test.each(['/media', '/media/keyword/trip', '/media/api/year/2020', '/media/file/m1', '/media/thumb/m1'])(
+      '%s is refused anonymously and asks policy for media-read',
+      async (url) => {
+        mockUserContext = null;
+        shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+        const res = await request(app).get(url);
+        // A page sends the visitor to sign in; the API and the bytes refuse.
+        if (url === '/media' || url.startsWith('/media/keyword')) {
+          expect(res.status).toBe(302);
+          expect(res.headers.location).toMatch(/\/login/);
+        } else {
+          expect([401, 403]).toContain(res.status);
+        }
+        expect(mockMediaManager.getThumbnailBuffer).not.toHaveBeenCalled();
+      }
+    );
+
+    test('a reader passes the door', async () => {
+      mockUserContext = { ...readerUser };
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      expect((await request(app).get('/media/thumb/m1')).status).toBe(200);
+      expect(mockPolicyDecisionPoint.permits).toHaveBeenCalledWith('reader', 'media-read');
+    });
+
+    test('share links are not behind it', async () => {
+      mockUserContext = null;
+      shareState.media = [{ id: 'm1', filePath: mediaFilePath, mimeType: 'image/jpeg' }];
+      expect((await request(app).get(`/share/${VALID_TOKEN}/thumb/m1`)).status).toBe(200);
+    });
+  });
+
   describe('GET /media/keyword/:keyword canShare flag', () => {
     test('true for an editor when shares are enabled', async () => {
       mockUserContext = { ...editorUser };
@@ -753,11 +787,7 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
       expect(body.canShare).toBe(true);
     });
 
-    test('false for anonymous, false when shares disabled', async () => {
-      mockUserContext = null;
-      const anon = JSON.parse((await request(app).get('/media/keyword/trip')).text) as { canShare: boolean };
-      expect(anon.canShare).toBe(false);
-
+    test('false when shares are disabled', async () => {
       mockUserContext = { ...editorUser };
       shareState.enabled = false;
       const disabled = JSON.parse((await request(app).get('/media/keyword/trip')).text) as { canShare: boolean };

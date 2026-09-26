@@ -10,7 +10,7 @@ user-keywords:
   - Picture
 uuid: 6bdacfac-300d-4d89-ad4a-2acc98e12bc5
 slug: using-imageplugin
-lastModified: '2026-04-23T00:00:00.000Z'
+lastModified: '2026-09-26T20:00:00.000Z'
 author: system
 ---
 # Using ImagePlugin
@@ -152,6 +152,7 @@ If the [Media] feature is enabled, reference library photos without uploading th
 1. Check that the `src` path is correct and the file exists
 2. For attachment filenames, confirm the file has been uploaded
 3. For `media://` paths, confirm the filename matches exactly
+4. A `media://` image shows only to someone signed in: the media library is not open to anonymous visitors, so a signed-out reader sees no image there. Use an uploaded attachment for an image every visitor should see
 
 ### Text not wrapping around image
 
