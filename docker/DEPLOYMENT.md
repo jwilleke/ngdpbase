@@ -254,7 +254,7 @@ export REMOTE_HOST=<ec2-public-ip>
 ./deploy-remote.sh
 
 # 4. Configure security group
-# Allow inbound TCP port 3000
+# Allow inbound TCP port 3000 from your own address range only (e.g. <your-ip>/32), never 0.0.0.0/0
 ```
 
 ### Google Cloud Platform (GCE)
@@ -269,9 +269,15 @@ export REMOTE_USER=$(whoami)
 export REMOTE_HOST=$(gcloud compute instances describe instance-name --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
 ./deploy-remote.sh
 
-# 4. Configure firewall
-gcloud compute firewall-rules create ngdpbase --allow tcp:3000
+# 4. Configure firewall — only your own address range, only this instance
+gcloud compute firewall-rules create ngdpbase \
+  --allow tcp:3000 \
+  --source-ranges=<your-cidr> \
+  --target-tags=ngdpbase
+gcloud compute instances add-tags instance-name --tags=ngdpbase
 ```
+
+Without `--source-ranges` GCE opens the port to `0.0.0.0/0`, and without `--target-tags` the rule applies to every instance in the network. Port 3000 is plain HTTP: use the narrowest prefix you can (a single address is `/32`), and for anything reachable from the internet put the app behind the [reverse proxy](#reverse-proxy-setup-nginx-example) with TLS and open only 443 there, never 3000.
 
 ### DigitalOcean Droplet
 
