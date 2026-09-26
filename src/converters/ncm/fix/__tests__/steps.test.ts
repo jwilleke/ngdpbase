@@ -6,6 +6,7 @@ import { jspwikiCodeMarkers } from '../jspwikiCodeMarkers.js';
 import { jspwikiBullets } from '../jspwikiBullets.js';
 import { styleClosers } from '../styleClosers.js';
 import { jspwikiHeadings } from '../jspwikiHeadings.js';
+import { jspwikiItalic } from '../jspwikiItalic.js';
 import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
@@ -394,6 +395,70 @@ describe('jspwiki-headings (#1342)', () => {
 
   it('is idempotent', () => {
     const once = run('!!! Big\n! Small').content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('jspwiki-italic (#1342)', () => {
+  const run = (body: string) => jspwikiItalic.apply(body);
+
+  it("''text'' on one line becomes *text*", () => {
+    const r = run("a ''b'' c ''d''");
+    expect(r.content).toBe('a *b* c *d*');
+    expect(r.lines).toEqual([1]);
+  });
+
+  it('a run across lines of one paragraph keeps one pair', () => {
+    expect(run("''one\ntwo''").content).toBe('*one\ntwo*');
+  });
+
+  it('a run across paragraphs is closed and reopened in each, as Apache does', () => {
+    expect(run('"\'\'First.\n\nSecond.\n\nThird.\'\'"').content).toBe('"*First.*\n\n*Second.*\n\n*Third.*"');
+  });
+
+  it('a list inside the run: reopened after each marker', () => {
+    expect(run("''Intro\n- one\n- two''").content).toBe('*Intro*\n- *one*\n- *two*');
+  });
+
+  it("a '' alone on its line closes on the line before; the line goes", () => {
+    const r = run("''text\n''\nafter");
+    expect(r.content).toBe('*text*\nafter');
+  });
+
+  it('the * goes before a closing line break', () => {
+    expect(run("''a\\\\\n\nb''").content).toBe('*a*\\\\\n\n*b*');
+  });
+
+  it('a block that reopens only to close writes no empty emphasis', () => {
+    expect(run("''a\n\n''b").content).toBe('*a*\n\nb');
+  });
+
+  it('never in code spans, fences or plugin calls; an odd count is left for review', () => {
+    expect(run("use `''` here").lines).toEqual([]);
+    expect(run("```\n''x''\n```").lines).toEqual([]);
+    expect(run("[{Image src='a.png' caption=''}]").lines).toEqual([]);
+    expect(run("one '' stray").lines).toEqual([]);
+  });
+
+  it("'''' toggles twice and is nothing", () => {
+    expect(run("US '''' View Event").content).toBe('US  View Event');
+  });
+
+  it('spaces inside the marks move outside, so Markdown reads emphasis', () => {
+    expect(run("a '' b '' c").content).toBe('a  *b*  c');
+    expect(run("''quoted.\u00a0''").content).toBe('*quoted.*\u00a0');
+  });
+
+  it('a heading inside the run is closed on its own line', () => {
+    expect(run("''Intro\n## Head\ntext''").content).toBe('*Intro*\n## *Head*\n*text*');
+  });
+
+  it('an open at the end of a line opens the next line', () => {
+    expect(run("Quote: ''\nsaid this.''").content).toBe('Quote: \n*said this.*');
+  });
+
+  it('is idempotent', () => {
+    const once = run("''a\n\nb''").content;
     expect(run(once).lines).toEqual([]);
   });
 });

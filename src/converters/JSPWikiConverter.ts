@@ -12,6 +12,7 @@
 import { IContentConverter, ConversionResult } from './IContentConverter.js';
 import { classifyWarnings } from './conversionWarning.js';
 import { jspwikiHeadings } from './ncm/fix/jspwikiHeadings.js';
+import { jspwikiItalic } from './ncm/fix/jspwikiItalic.js';
 
 /**
  * JSPWiki syntax to Markdown converter
@@ -216,9 +217,8 @@ class JSPWikiConverter implements IContentConverter {
     // Use non-greedy match and avoid matching across lines
     let result = content.replace(/__([^_\n]+)__/g, '**$1**');
 
-    // Italic: ''text'' -> *text*
-    // Avoid matching empty or multi-line content
-    result = result.replace(/''([^'\n]+)''/g, '*$1*');
+    // Italic: ''text'' -> *text* — one reading for import and the NCM funnel (#1342)
+    result = jspwikiItalic.apply(result).content;
 
     return result;
   }
