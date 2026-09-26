@@ -20,6 +20,7 @@ import {
   assertEncryptedStoreWritable,
   rewrapPassword,
   unwrapDek,
+  unwrapKekWithMnemonic,
   unwrapKekWithPassword,
   type UserKeyEnvelope
 } from './privateStoreCrypto.js';
@@ -111,11 +112,52 @@ export async function unlockPrivateStoresWithPassword(args: {
   password: string;
   pagesDirectory: string;
 }): Promise<void> {
-  const keysPath = privateUserKeysPath(args.pagesDirectory, args.username);
-  if (!await fs.pathExists(keysPath)) return;
+  const envelope = await readUserKeyEnvelope(args.pagesDirectory, args.username);
+  if (!envelope) return;
+  await unlockWithKek(args, unwrapKekWithPassword(envelope, args.password));
+}
+
+/**
+ * Unlock with the 12 recovery words instead of the password (#1453).
+ *
+ * The words unwrap the SAME key the password does — the envelope holds it
+ * twice, once per wrap — so everything after the unwrap is the password
+ * path's, shared. Wrong words fail the authenticated unwrap and return
+ * `false`; nothing is unlocked and nothing is written. The words are never
+ * logged, stored or returned.
+ */
+export async function unlockPrivateStoresWithMnemonic(args: {
+  handle: string;
+  username: string;
+  words: string;
+  pagesDirectory: string;
+}): Promise<boolean> {
+  const envelope = await readUserKeyEnvelope(args.pagesDirectory, args.username);
+  if (!envelope) return false;
+  let kek: Buffer;
+  try {
+    kek = unwrapKekWithMnemonic(envelope, args.words);
+  } catch {
+    return false;
+  }
+  await unlockWithKek(args, kek);
+  return true;
+}
+
+/** The user's key envelope, or null when they have none (or it is not one). */
+async function readUserKeyEnvelope(pagesDirectory: string, username: string): Promise<UserKeyEnvelope | null> {
+  const keysPath = privateUserKeysPath(pagesDirectory, username);
+  if (!await fs.pathExists(keysPath)) return null;
   const raw = await fs.readJson(keysPath) as unknown;
-  if (!isUserKeyEnvelope(raw)) return;
-  const kek = unwrapKekWithPassword(raw, args.password);
+  return isUserKeyEnvelope(raw) ? raw : null;
+}
+
+/**
+ * Everything an unlock does once it holds the user's key: the key into the
+ * session's bag, each encrypted store's data key, and the user's catalogue.
+ * One implementation, whichever wrap the key came out of.
+ */
+async function unlockWithKek(args: { handle: string; username: string; pagesDirectory: string }, kek: Buffer): Promise<void> {
   unlockPrivateStores(args.handle, args.username, kek);
 
   const userDir = privateUserDir(args.pagesDirectory, args.username);

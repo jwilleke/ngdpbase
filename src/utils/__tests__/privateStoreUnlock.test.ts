@@ -25,6 +25,7 @@ import {
   lockPrivateStores,
   setUnlockedDek,
   unlockPrivateStores,
+  unlockPrivateStoresWithMnemonic,
   unlockPrivateStoresWithPassword
 } from '../privateStoreUnlock';
 
@@ -203,3 +204,63 @@ describe('keys through the context handle (#1382, security-posture P1)', () => {
     expect(userIndexFor(molly('h-other'))).toBeUndefined();
   });
 });
+
+describe('unlockPrivateStoresWithMnemonic (#1453)', () => {
+  let tmp: string;
+  let pagesDir: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'priv-unlock-words-'));
+    pagesDir = path.join(tmp, 'pages');
+    await fs.ensureDir(pagesDir);
+    clearUnlockedPrivateStores();
+  });
+
+  afterEach(async () => {
+    clearUnlockedPrivateStores();
+    await fs.remove(tmp);
+  });
+
+  async function mollyWithSealedStore() {
+    const created = createUserKeys('correct-horse', { kdf });
+    const store = createEncryptedStore(created.kek);
+    await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
+    await fs.outputJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), store);
+    return { created, store };
+  }
+
+  test('the words open the same key and the same store keys the password does', async () => {
+    const { created, store } = await mollyWithSealedStore();
+
+    const ok = await unlockPrivateStoresWithMnemonic({
+      handle: 'sid-w', username: 'molly', words: created.mnemonic, pagesDirectory: pagesDir
+    });
+
+    expect(ok).toBe(true);
+    expect(Buffer.compare(getUnlockedKek('sid-w'), created.kek)).toBe(0);
+    expect(Buffer.compare(getUnlockedDek('sid-w', 'yourphr'), unwrapDek(created.kek, store))).toBe(0);
+  });
+
+  test('the words as people type them — capitals, extra spaces, a line break — still work', async () => {
+    const { created } = await mollyWithSealedStore();
+    const typed = '  ' + created.mnemonic.toUpperCase().split(' ').join('   ').replace(/ ([A-Z]+) /, '\n$1\n') + '  ';
+
+    expect(await unlockPrivateStoresWithMnemonic({ handle: 'sid-t', username: 'molly', words: typed, pagesDirectory: pagesDir }))
+      .toBe(true);
+  });
+
+  test('wrong words unlock nothing and say so, without throwing', async () => {
+    const { created } = await mollyWithSealedStore();
+    const wrong = created.mnemonic.split(' ').reverse().join(' ');
+
+    expect(await unlockPrivateStoresWithMnemonic({ handle: 'sid-x', username: 'molly', words: wrong, pagesDirectory: pagesDir }))
+      .toBe(false);
+    expect(getUnlockedKek('sid-x')).toBeUndefined();
+  });
+
+  test('a user with no keys is not unlocked', async () => {
+    expect(await unlockPrivateStoresWithMnemonic({ handle: 'sid-n', username: 'nobody', words: 'a b c', pagesDirectory: pagesDir }))
+      .toBe(false);
+  });
+});
+

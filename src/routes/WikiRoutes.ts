@@ -101,6 +101,7 @@ import {
   newPrivateStoreHandle,
   setUnlockedDek,
   unlockPrivateStores,
+  unlockPrivateStoresWithMnemonic,
   unlockPrivateStoresWithPassword
 } from '../utils/privateStoreUnlock.js';
 import {
@@ -8044,18 +8045,33 @@ ${panes}
    */
   private async verifyDoorPassword(req: Request, username: string, password: string): Promise<boolean> {
     if (!password) return false;
-    const throttle = this.getLoginThrottle();
-    const keys = this.throttleKeys(req, username);
-    if (throttle && keys.map((k) => throttle.check(k)).some((state) => state.blocked)) return false;
+    if (this.secretCheckBlocked(req, username)) return false;
     const authManager = this.engine.getManager('AuthManager');
     const userManager = this.engine.getManager('UserManager');
     const result = authManager
       ? await authManager.authenticate('password', { username, password })
       : { success: await userManager.authenticateUser(username, password).then(Boolean) };
     if (result.success) return true;
-    if (throttle) for (const key of keys) throttle.recordFailure(key);
-    await this.auditAuthentication(req, username, 'failure', 'invalid password at a private store door');
+    await this.recordFailedSecret(req, username, 'invalid password at a private store door');
     return false;
+  }
+
+  /**
+   * Whether the sign-in throttle has this user or address blocked. Every check
+   * of a secret — the password, the recovery words (#1453) — asks the same
+   * throttle, so no door is an unthrottled way to guess.
+   */
+  private secretCheckBlocked(req: Request, username: string): boolean {
+    const throttle = this.getLoginThrottle();
+    if (!throttle) return false;
+    return this.throttleKeys(req, username).map((k) => throttle.check(k)).some((state) => state.blocked);
+  }
+
+  /** A failed secret: counted by the throttle and recorded, never with the secret itself. */
+  private async recordFailedSecret(req: Request, username: string, detail: string): Promise<void> {
+    const throttle = this.getLoginThrottle();
+    if (throttle) for (const key of this.throttleKeys(req, username)) throttle.recordFailure(key);
+    await this.auditAuthentication(req, username, 'failure', detail);
   }
 
   /**
@@ -8080,7 +8096,7 @@ ${panes}
     return { username, pagesDirectory, layout, locked };
   }
 
-  private async renderPrivateStoreUnlock(req: Request, res: Response, view: { next: string; error?: string }): Promise<void> {
+  private async renderPrivateStoreUnlock(req: Request, res: Response, view: { next: string; error?: string; mode?: 'password' | 'words' }): Promise<void> {
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.render('private-store-unlock', { ...commonData, title: 'Unlock your private store', ...view });
@@ -8134,16 +8150,33 @@ ${panes}
       const state = await this.privateStoreUnlockState(req);
       if (!state.locked) return res.redirect(next);
 
+      // The session's key-bag handle (the restart case), or a new one for a
+      // session signed in without a password — kept only once an unlock works.
+      const existingHandle = req.session.privateStoreHandle;
+      const hadHandle = typeof existingHandle === 'string' && existingHandle.length > 0;
+      const handle: string = hadHandle ? existingHandle : newPrivateStoreHandle();
+
+      // #1453: the 12 recovery words open the same key the password does.
+      const words = typeof req.body?.words === 'string' ? req.body.words.trim() : '';
+      if (words) {
+        const unlocked = !this.secretCheckBlocked(req, state.username)
+          && await unlockPrivateStoresWithMnemonic({ handle, username: state.username, words, pagesDirectory: state.pagesDirectory });
+        if (!unlocked) {
+          await this.recordFailedSecret(req, state.username, 'invalid recovery words at private store unlock');
+          return await this.renderPrivateStoreUnlock(req, res, { next, mode: 'words', error: 'Those recovery words did not unlock your store.' });
+        }
+        if (!hadHandle) req.session.privateStoreHandle = handle;
+        await this.adoptSealedPages(state.username, handle);
+        await this.auditAuthentication(req, state.username, 'success', 'private store unlocked with recovery words');
+        return res.redirect(next);
+      }
+
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
       if (!(await this.verifyDoorPassword(req, state.username, password))) {
         return await this.renderPrivateStoreUnlock(req, res, { next, error: 'That password is not correct.' });
       }
 
-      let handle = req.session.privateStoreHandle;
-      if (typeof handle !== 'string' || !handle) {
-        handle = newPrivateStoreHandle();
-        req.session.privateStoreHandle = handle;
-      }
+      if (!hadHandle) req.session.privateStoreHandle = handle;
       await unlockPrivateStoresWithPassword({
         handle,
         username: state.username,

@@ -223,4 +223,65 @@ describe('private store unlock door (#1448)', () => {
     expect(hasUnlockedKey({ privateStoreHandle: 'h2' })).toBe(false);
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
   });
+
+  describe('with the 12 recovery words (#1453)', () => {
+    /** Molly's keys, returning the words that also open them. */
+    async function giveMollyKeysWithWords(): Promise<string> {
+      const { envelope, mnemonic } = createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), envelope);
+      return mnemonic;
+    }
+
+    test('the right words unlock the store, run the unlock work and return to the page', async () => {
+      const words = await giveMollyKeysWithWords();
+      const res = newRes();
+
+      await routes.privateStoreUnlock(req({ body: { words, next: '/view/Journal' } }), res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/view/Journal');
+      expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
+      expect(adoptUserPageCatalog).toHaveBeenCalled();
+      // No password check ran: the words ARE the proof.
+      expect(authenticate).not.toHaveBeenCalled();
+      expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked with recovery words');
+    });
+
+    test('wrong words unlock nothing, are counted by the throttle, and never reach the record', async () => {
+      const words = await giveMollyKeysWithWords();
+      const wrong = words.split(' ').reverse().join(' ');
+      throttle = { check: vi.fn(() => ({ blocked: false })), recordFailure: vi.fn() };
+      const res = newRes();
+
+      await routes.privateStoreUnlock(req({ body: { words: wrong, next: '/' } }), res);
+
+      expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
+      expect(throttle.recordFailure).toHaveBeenCalled();
+      expect(res.render).toHaveBeenCalledWith('private-store-unlock', expect.objectContaining({ mode: 'words', error: expect.any(String) }));
+      // What reaches the record: everything after the request (auditAuthentication
+      // reads only the address and user agent from that).
+      const recorded = JSON.stringify(auditAuthentication.mock.calls.map(call => call.slice(1)));
+      for (const w of wrong.split(' ')) expect(recorded).not.toContain(w);
+    });
+
+    test('a throttled caller is refused even with the right words', async () => {
+      const words = await giveMollyKeysWithWords();
+      throttle = { check: vi.fn(() => ({ blocked: true })), recordFailure: vi.fn() };
+
+      await routes.privateStoreUnlock(req({ body: { words, next: '/' } }), newRes());
+
+      expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
+    });
+
+    test('a session with no key-bag handle keeps the new one only when the words work', async () => {
+      const words = await giveMollyKeysWithWords();
+      const failing = { } as Record<string, unknown>;
+      await routes.privateStoreUnlock(req({ body: { words: 'wrong words', next: '/' }, session: failing }), newRes());
+      expect(failing.privateStoreHandle).toBeUndefined();
+
+      const working = { } as Record<string, unknown>;
+      await routes.privateStoreUnlock(req({ body: { words, next: '/' }, session: working }), newRes());
+      expect(typeof working.privateStoreHandle).toBe('string');
+    });
+  });
 });
+
