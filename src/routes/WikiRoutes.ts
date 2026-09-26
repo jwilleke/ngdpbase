@@ -7921,12 +7921,17 @@ ${panes}
 
   private async renderStoreDoor(req: Request, res: Response, kind: StoreKind, view: Record<string, unknown>): Promise<void> {
     const commonData = await this.getCommonTemplateData(req);
+    // #1414: the owning addon's wording for its store, when it gives any.
+    const presentation = this.engine.getManager<{ storePresentation?: (k: StoreKind) => { label?: string; blurb?: string } }>('AddonsManager')
+      ?.storePresentation?.(kind) ?? {};
     // The words appear on one response only; nothing may keep a copy of it.
     res.set('Cache-Control', 'no-store');
     res.render('store-door', {
       ...commonData,
       title: 'Private store',
       storeKind: kind,
+      storeLabel: presentation.label ?? '',
+      storeBlurb: presentation.blurb ?? '',
       wordCount: mnemonicWordCount,
       landing: this.storeLanding(kind),
       ...view

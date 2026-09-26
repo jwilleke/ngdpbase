@@ -494,6 +494,7 @@ Declare it in your `package.json`, beside the other manifest keys:
 
 - `id` is the store kind's id: lowercase letters, digits and hyphens. `recovery` and `import` are reserved (they are instance settings under `ngdpbase.stores.*`).
 - `encrypt` is __your call as the kind's owner__, not the end user's, and must be `true` or `false`. Sensitive or regulated data should be `true`. A copy keeps what it was created with.
+- `label` and `blurb` (optional) are what the store's door calls it and one or two sentences under the name: `"label": "Health records", "blurb": "Your own medical notes, encrypted so only you can read them."` Plain text, at most 60 and 300 characters. They are wording, not policy: read from your manifest whenever the door renders, never saved to configuration, so you can change them in any release.
 
 At your addon's __first load__ core saves the kind to the site's configuration, owned by your addon's __slug__ (the canonical identity from `package.json`, [#927](https://github.com/jwilleke/ngdpbase/issues/927)):
 
@@ -534,7 +535,7 @@ Your addon's part:
 - Link to `/stores/{your-kind-id}` where your set-up step belongs ("set up your health records").
 - Assume the key exists once the door returns. By the time your addon writes anything, it does.
 
-The door renders core's own wording. There is no addon-supplied label or blurb on that screen yet.
+The door renders core's own wording around your `label` and `blurb`.
 
 Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask for, store, or log one. There is no API that hands you key material, and there will not be.
 

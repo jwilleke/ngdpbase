@@ -166,4 +166,18 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
 
     expect(await manager.storeDisableWarnings('yourphr')).toEqual([]);
   });
+
+  test('the door\'s wording comes from the owning addon, only while it is loaded', async () => {
+    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true, label: 'Health records', blurb: 'Your own medical notes.' }] });
+    config['ngdpbase.addons.yourphr.enabled'] = true;
+
+    const manager = await load();
+
+    expect(manager.storePresentation({ id: 'yourphr', owner: 'yourphr' }))
+      .toEqual({ label: 'Health records', blurb: 'Your own medical notes.' });
+    // Wording is never saved to configuration: only owner and encrypt are.
+    expect(written.map(w => w.key)).toEqual(['ngdpbase.stores.yourphr.owner', 'ngdpbase.stores.yourphr.encrypt']);
+    expect(manager.storePresentation({ id: 'yourphr', owner: 'someone-else' })).toEqual({});
+  });
 });
+

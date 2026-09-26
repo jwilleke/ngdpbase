@@ -3,7 +3,8 @@
   // #1414 — the store door. One template, one step at a time:
   // ready | intro-plain | intro-sealed | words | confirm | exhausted | done | closed
   const doorUrl = '/stores/' + encodeURIComponent(storeKind.id);
-  const storeName = storeKind.id === 'default' ? 'your private pages' : 'the "' + storeKind.id + '" store';
+  const _label = (typeof storeLabel !== 'undefined' && storeLabel) ? storeLabel : '';
+  const storeName = storeKind.id === 'default' ? 'your private pages' : (_label ? _label : 'the "' + storeKind.id + '" store');
 %>
 <div class="container">
   <div class="row justify-content-center">
@@ -12,10 +13,13 @@
         <div class="card-header">
           <h4 class="mb-0">
             <i class="fas <%= storeKind.encrypt ? 'fa-lock' : 'fa-eye-slash' %>"></i>
-            <%= storeKind.id === 'default' ? 'Private pages' : 'Private store: ' + storeKind.id %>
+            <%= storeKind.id === 'default' ? 'Private pages' : (_label || 'Private store: ' + storeKind.id) %>
           </h4>
         </div>
         <div class="card-body">
+          <% if (typeof storeBlurb !== 'undefined' && storeBlurb) { %>
+            <p class="text-muted"><%= storeBlurb %></p>
+          <% } %>
           <% if (typeof error !== 'undefined' && error) { %>
             <div class="alert alert-danger" role="alert"><%= error %></div>
           <% } %>

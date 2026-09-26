@@ -71,6 +71,24 @@ export const RESERVED_STORE_IDS: readonly string[] = ['recovery', 'import'];
 export interface StoreDeclaration {
   id: string;
   encrypt: boolean;
+  /**
+   * What the door calls the store ("Health records") and one or two sentences
+   * under it. Wording only: read from the loaded addon's manifest when the
+   * door renders, never saved to configuration — "config wins" is about
+   * policy, not words. Plain text; the door escapes it.
+   */
+  label?: string;
+  blurb?: string;
+}
+
+const MAX_STORE_LABEL = 60;
+const MAX_STORE_BLURB = 300;
+
+/** A trimmed display string, cut to `max`, or undefined when absent or empty. */
+function displayText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim().replace(/\s+/g, ' ');
+  return text ? text.slice(0, max) : undefined;
 }
 
 /**
@@ -85,12 +103,14 @@ export function readStoreDeclarations(raw: unknown): { declarations: StoreDeclar
   if (raw === undefined || raw === null) return { declarations, problems };
   if (!Array.isArray(raw)) return { declarations, problems: ['`stores` must be an array'] };
   for (const entry of raw as unknown[]) {
-    const e = entry as { id?: unknown; encrypt?: unknown } | null;
+    const e = entry as { id?: unknown; encrypt?: unknown; label?: unknown; blurb?: unknown } | null;
     const id = typeof e?.id === 'string' ? e.id : '';
     if (!id || !isValidStoreId(id)) { problems.push(`store id ${JSON.stringify(e?.id)} is not a valid store id`); continue; }
     if (RESERVED_STORE_IDS.includes(id)) { problems.push(`store id "${id}" is reserved for an instance setting`); continue; }
     if (typeof e?.encrypt !== 'boolean') { problems.push(`store "${id}": encrypt must be true or false`); continue; }
-    declarations.push({ id, encrypt: e.encrypt });
+    const label = displayText(e.label, MAX_STORE_LABEL);
+    const blurb = displayText(e.blurb, MAX_STORE_BLURB);
+    declarations.push({ id, encrypt: e.encrypt, ...(label ? { label } : {}), ...(blurb ? { blurb } : {}) });
   }
   return { declarations, problems };
 }

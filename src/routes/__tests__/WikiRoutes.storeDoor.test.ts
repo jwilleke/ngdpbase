@@ -61,7 +61,10 @@ describe('store door routes (#1414)', () => {
         getResolvedDataPath: () => pagesDir
       },
       AuditManager: audit,
-      AddonsManager: { storeOwnerState: () => ownerState },
+      AddonsManager: {
+        storeOwnerState: () => ownerState,
+        storePresentation: (k: { id: string }) => (k.id === 'yourphr' ? { label: 'Health records', blurb: 'Your own notes.' } : {})
+      },
       AuthManager: { authenticate: vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' })) }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
@@ -143,6 +146,13 @@ describe('store door routes (#1414)', () => {
     await routes.storeDoorEnter(req('yourphr'), res);
 
     expect(await fs.readJson(storeMetaPath(pagesDir, 'molly', 'yourphr'))).toMatchObject({ kind: 'yourphr', encrypt: false });
+  });
+
+  test('the door shows the owning addon\'s label and blurb', async () => {
+    const res = newRes();
+    await routes.storeDoorPage(req('yourphr'), res);
+
+    expect(res.render.mock.calls.at(-1)?.[1]).toMatchObject({ storeLabel: 'Health records', storeBlurb: 'Your own notes.' });
   });
 
   test('an unknown kind is a 404', async () => {

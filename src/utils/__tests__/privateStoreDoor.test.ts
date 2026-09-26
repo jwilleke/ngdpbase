@@ -243,4 +243,16 @@ describe('addon-declared store kinds (#1414 step 2)', () => {
     // No AddonsManager answering is treated as not installed, never as open.
     expect(storeDoorState(addon, null)).toMatchObject({ open: false, reason: 'not-installed' });
   });
+
+  test('a label and blurb are carried as plain, trimmed, capped text — and are optional', () => {
+    const { declarations } = readStoreDeclarations([
+      { id: 'yourphr', encrypt: true, label: '  Health   records ', blurb: 'x'.repeat(500) },
+      { id: 'notes', encrypt: false, label: 42 }
+    ]);
+
+    expect(declarations[0].label).toBe('Health records');
+    expect(declarations[0].blurb).toHaveLength(300);
+    expect(declarations[1]).toEqual({ id: 'notes', encrypt: false });
+  });
 });
+

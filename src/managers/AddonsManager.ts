@@ -1458,6 +1458,17 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * The label and blurb the owning addon gives a store kind, for its door
+   * (#1414) — only from an addon that is loaded and still owns the kind.
+   */
+  storePresentation(kind: { id: string; owner: string }): { label?: string; blurb?: string } {
+    const addon = this.addons.get(kind.owner);
+    if (!addon?.loaded) return {};
+    const decl = readStoreDeclarations(addon.manifest?.stores).declarations.find(d => d.id === kind.id);
+    return decl ? { ...(decl.label ? { label: decl.label } : {}), ...(decl.blurb ? { blurb: decl.blurb } : {}) } : {};
+  }
+
+  /**
    * Where the addon that owns a store kind stands, for the store door (#1414):
    * loaded, enabled but failed to load, turned off, or not on this site.
    */
