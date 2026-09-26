@@ -122,3 +122,37 @@ describe('the shared wiki link pattern honours the escape (#1480)', () => {
     expect(targets('Visit [Main] and [Help|Docs]')).toEqual(['Main', 'Help']);
   });
 });
+
+describe('task lists (#1476 — operator: supported)', () => {
+  test('[ ] and [x] after a list marker are checkboxes, not links — in the shared pattern', async () => {
+    const { wikiLinkPattern } = await import('../LinkParser');
+    const targets = (text: string) => [...text.matchAll(wikiLinkPattern())].map(m => m[1]);
+
+    expect(targets('- [ ] todo\n- [x] done\n* [X] also\n1. [ ] numbered')).toEqual([]);
+    // Not a task marker: a link to a page named "x" mid-line, or a bracket with no space after.
+    expect(targets('see [x] here')).toEqual(['x']);
+    expect(targets('- [Main] is a link in a bullet')).toEqual(['Main']);
+  });
+});
+
+describe('task lists render as checkboxes (#1476)', () => {
+  let parser;
+  beforeEach(async () => {
+    const engine = createMockEngine();
+    parser = new MarkupParser(engine);
+    parser.domVariableHandler = new DOMVariableHandler(engine);
+    await parser.domVariableHandler.initialize();
+    parser.domPluginHandler = new DOMPluginHandler(engine);
+    await parser.domPluginHandler.initialize();
+    parser.domLinkHandler = new DOMLinkHandler(engine);
+    await parser.domLinkHandler.initialize();
+  });
+
+  test('neither marker becomes a link or a placeholder', async () => {
+    const html = await parser.parseWithDOMExtraction('- [ ] todo\n- [x] done', { pageName: 'TestPage' });
+
+    expect(html).not.toContain('wiki-link');
+    expect(html).not.toContain('placeholder');
+    expect(html).not.toContain('/edit/');
+  });
+});

@@ -14,7 +14,7 @@ import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
-import { UNESCAPED_BRACKET } from './LinkParser.js';
+import { NOT_TASK_MARKER, UNESCAPED_BRACKET } from './LinkParser.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
 import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
@@ -1844,7 +1844,7 @@ class MarkupParser extends BaseManager {
     //   inner starts with ^  → footnote-ref     [^1]        → <a href="#footnote-1">
     //   inner is blank       → pass through     [ ]         → task-list checkbox
     //   otherwise            → wiki link        [PageName], [Display|Target]
-    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}\\[([^\\]]*)\\](?!\\()`, 'g'),
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^\\]]*)\\](?!\\()`, 'g'),
       (match: string, inner: string, offset: number) => {
         // Pass through blank brackets (task-list checkboxes [ ])
         if (inner.trim() === '') return match;

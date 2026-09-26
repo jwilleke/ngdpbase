@@ -52,6 +52,16 @@ import { headingSlug } from '../utils/SectionUtils.js';
 export const UNESCAPED_BRACKET = '(?<=(?:^|[^\\\\])(?:\\\\\\\\)*)';
 
 /**
+ * Not a task-list checkbox (#1476, operator: task lists are supported): a
+ * `[ ]`, `[x]` or `[X]` right after a list marker (`-`, `*`, `+`, `1.`,
+ * `1)`) at the start of a line, followed by a space. GitHub's task lists —
+ * markdown-it-task-lists renders them — and never a link to a page named
+ * "x". A lookahead, so it consumes nothing. Needs the `m` flag for `^`, so it
+ * spells the line start as `(?:^|\n)` instead.
+ */
+export const NOT_TASK_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+)\\[[ xX]\\][ \\t])';
+
+/**
  * The wiki link syntax, as a source string: `[text]`, `[text|target]` or
  * `[text|target|attributes]`. The trailing `(?!\()` skips `[text](url)` —
  * that is a markdown link, and its bracket text is not a wiki link target.
@@ -65,7 +75,7 @@ export const UNESCAPED_BRACKET = '(?<=(?:^|[^\\\\])(?:\\\\\\\\)*)';
  * a link *is*. A second copy of this pattern is a second answer waiting to
  * drift from this one.
  */
-export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
+export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
 
 /** A fresh global RegExp for the wiki link syntax. Never share one. */
 export function wikiLinkPattern(): RegExp {

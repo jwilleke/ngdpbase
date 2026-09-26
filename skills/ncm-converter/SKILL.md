@@ -54,6 +54,7 @@ Each item: what to write, then what not to write.
 - __Boxes:__ a `%%information` line, the text, then a `/%` line; also `%%warning` and `%%error`. Not HTML boxes.
 - __A few coloured words:__ `%%(color:red) these words/%`. Not `<span style>`.
 - __Emoji:__ `:smile:` shortcodes, or the character itself. Not images of emoji.
+- __Checklists:__ `- [ ] to do` and `- [x] done`, one space inside the empty box and a space after it. Not `☐` characters or images.
 
 Three details that catch people out:
 
@@ -78,7 +79,6 @@ They are allowed only inside code, where they are shown as text.
 
 ## Renders wrongly, so never write
 
-- Checkboxes, `- [ ]` and `- [x]`: the brackets are read as a page link. Write `- To do: …` and `- Done: …` instead.
 - GitHub pipe tables with a `|---|` row: use the `||` form above.
 - `==highlight==`, `{#id}` after a heading, definition lists: shown as literal text. Use `__bold__`, a plain heading, and a bullet list.
 - Old wiki markup at line start (`!!!`, `*`, `#` as bullets): convert it.
@@ -128,7 +128,7 @@ Use the same marker for anything else you had to leave out, with the kind of thi
 - Pipe tables become the `||` form, with the separator row removed.
 - `[text](https://…)` becomes `[text|https://…]`; relative links to other documents become `[Text|Page Name]` when that page exists or will exist, otherwise plain text.
 - `**bold**` becomes `__bold__`; `*`/`+` bullets become `-`; `1.` lists become `- 1` steps.
-- Task lists become plain bullets (see checkboxes above).
+- Task lists stay as they are: `- [ ]` and `- [x]` render as checkboxes.
 - Unwrap hard-wrapped paragraphs onto one line.
 - Front matter keeps only the fields listed above.
 
@@ -142,7 +142,7 @@ Use the same marker for anything else you had to leave out, with the kind of thi
 
 - Frontmatter has a `title` without forbidden characters, and nothing the site sets.
 - Exactly one `#` heading, at the top.
-- No GitHub pipe tables, no checkboxes, no `**`, no `*` or `+` bullets.
+- No GitHub pipe tables, no `**`, no `*` or `+` bullets.
 - No hard-wrapped paragraphs.
 - No refused HTML outside code.
 - No remote images; each lost item has an `NCM-DROPPED` marker.
