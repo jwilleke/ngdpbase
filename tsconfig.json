@@ -60,6 +60,7 @@
     "scripts/generate-docs-index.ts",
     "scripts/check-csrf-fetch.ts",
     "scripts/create-addon.ts",
+    "scripts/fix-page-markdown.ts",
     "mcp-server.ts"
   ],
   "exclude": [

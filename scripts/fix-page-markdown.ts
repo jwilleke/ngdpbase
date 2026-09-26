@@ -11,10 +11,14 @@
  * By default a DRY RUN: reads page files, never writes them, and produces a
  * report of every page that would change, with a few changed lines each.
  *
- * With `--apply` it writes the same changes through the page store, the only
- * way that keeps version history and the page index right: one new version per
- * page, editor `system`, and the page's own `lastModified` kept, so Recent
- * Changes is not flooded and date-sorted lists do not reshuffle. It refuses to
+ * With `--apply` it writes the same changes through PageManager, the door
+ * every page write takes (#1341): validated, versioned, audited, and the
+ * search index, link graph and rendered cache reconciled. One new version per
+ * page, written by the system principal, with the page's own `lastModified`
+ * kept, so Recent Changes is not flooded and date-sorted lists do not
+ * reshuffle. Private pages are reported and never written: a store page is
+ * written with its owner's keys under its store path, which a migration run
+ * does not have, and saving it by its bare title would publish it. It refuses to
  * run while the server is up — two processes writing one page store corrupts
  * the index — so stop it first (`./server.sh stop <env>`) and start it after.
  * Each page is re-read and re-converted at apply time; the dry-run report is
@@ -72,9 +76,8 @@ function serverRunning(): number | null {
   }
 }
 
-interface ProviderLike {
-  savePage(name: string, content: string, metadata: Record<string, unknown>, options: { preserveLastModified: boolean }): Promise<void>;
-}
+/** The one page write this script makes, through PageManager's door (#1341). */
+type SaveThroughDoor = (title: string, content: string, metadata: Record<string, unknown>) => Promise<void>;
 
 interface PageChange {
   title: string;
@@ -126,7 +129,7 @@ async function main(): Promise<void> {
   const reportPath = get('--report') ?? `private/fix-${apply ? 'applied' : 'dry-run'}.md`;
   const baseUrl = get('--base-url');
 
-  let provider: ProviderLike | null = null;
+  let save: SaveThroughDoor | null = null;
   if (apply) {
     const pid = serverRunning();
     if (pid) {
@@ -142,16 +145,24 @@ async function main(): Promise<void> {
     const { default: WikiEngine } = await import('../src/WikiEngine.js');
     const engine = new WikiEngine();
     await engine.initialize();
-    const pm = engine.getManager('PageManager') as { getCurrentPageProvider(): ProviderLike | null } | null;
-    provider = pm?.getCurrentPageProvider() ?? null;
-    if (!provider) {
-      console.error('✗ No page provider after engine start.');
+    const { systemContext } = await import('../src/context/bootActions.js');
+    const pm = engine.getManager<import('../src/managers/PageManager.js').default>('PageManager');
+    if (!pm) {
+      console.error('✗ No PageManager after engine start.');
       process.exit(1);
     }
+    // Through PageManager, so the write is validated, versioned, audited and
+    // reconciles the search index, link graph and rendered cache (#1341).
+    // Written by the system principal, keeping the page's lastModified.
+    const ctx = systemContext(engine, 'Markdown fix migration (scripts/fix-page-markdown.ts)');
+    save = async (title, content, metadata) => {
+      await pm.savePage(title, content, metadata, ctx, { preserveLastModified: true });
+    };
   }
 
   const files = (await walk(dataDir)).sort();
   const failed: Array<{ title: string; error: string }> = [];
+  const skippedPrivate: string[] = [];
   const changes: PageChange[] = [];
   const stepCounts = new Map<string, number>();
 
@@ -166,11 +177,18 @@ async function main(): Promise<void> {
     const result = runFixes(parsed.content, options);
     if (!result.changes.length) continue;
     const data = parsed.data as Record<string, unknown>;
-    if (provider) {
+    const isPrivate = data['private'] === true || path.relative(dataDir, file).split(path.sep).includes('private');
+    // A private page is written only with its owner's keys, under its store
+    // path — never by its bare title, which would publish it (#1341).
+    if (save && isPrivate) {
+      skippedPrivate.push(String(data['title'] ?? path.basename(file, '.md')));
+      continue;
+    }
+    if (save) {
       const title = String(data['title'] ?? '');
       try {
         if (!title) throw new Error('page has no title');
-        await provider.savePage(title, result.content, { ...data, editor: 'system' }, { preserveLastModified: true });
+        await save(title, result.content, data);
       } catch (err) {
         failed.push({ title: title || file, error: err instanceof Error ? err.message : String(err) });
         continue;
@@ -181,7 +199,7 @@ async function main(): Promise<void> {
       title: String(data['title'] ?? path.basename(file, '.md')),
       file: path.relative(dataDir, file),
       author: String(data['author'] ?? ''),
-      isPrivate: data['private'] === true || file.includes(`${path.sep}private${path.sep}`),
+      isPrivate,
       steps: result.changes.map((c) => c.step),
       samples: samples(parsed.content.replace(/\r/g, ''), result.content.replace(/\r/g, ''))
     });
@@ -189,19 +207,19 @@ async function main(): Promise<void> {
 
   const link = (title: string): string =>
     baseUrl ? `[${title.replace(/([[\]])/g, '\\$1')}](${baseUrl}${encodeURIComponent(title)})` : title;
-  const privateOthers = changes.filter((c) => c.isPrivate && c.author && c.author !== 'jim' && c.author !== 'system');
+  const privateCount = changes.filter((c) => c.isPrivate).length;
 
   const out: string[] = [
     `# Markdown fixes: ${apply ? 'applied' : 'dry run'}`,
     '',
-    `Corpus: \`${dataDir}\`. Generated ${new Date().toISOString()}. ${apply ? 'Pages were saved as one version each by system, keeping lastModified.' : 'Nothing was written.'}`,
+    `Corpus: \`${dataDir}\`. Generated ${new Date().toISOString()}. ${apply ? 'Public pages were saved through PageManager as one version each by the system principal, keeping lastModified. Private pages were not written.' : 'Nothing was written.'}`,
     '',
     `- Pages scanned: ${files.length}`,
     `- Steps: ${stepIds.join(', ')}`,
     `- Pages ${apply ? 'changed' : 'that would change'}: ${changes.length}`,
     ...stepIds.map((id) => `  - ${id}: ${stepCounts.get(id) ?? 0}`),
     ...(apply ? [`- Pages that failed: ${failed.length}`] : []),
-    `- Private pages of other users among them: ${privateOthers.length}`,
+    `- Private pages among them: ${privateCount}${apply ? ' (not written: a private page needs its owner\'s session)' : ' (--apply leaves them alone: a private page needs its owner\'s session)'}`,
     '',
     ...FIX_STEPS.filter((st) => stepIds.includes(st.id)).map((st) => `- ${st.id}: ${st.summary}.`),
     '',
@@ -214,6 +232,10 @@ async function main(): Promise<void> {
       out.push(`  - line ${s.line}: \`${s.before.replace(/`/g, "'")}\` → \`${s.after.replace(/`/g, "'")}\``);
     }
   }
+  if (skippedPrivate.length) {
+    out.push('', '## Private pages not written', '', 'Each needs its owner to convert it (Convert to NCM on the page).', '');
+    for (const t of skippedPrivate) out.push(`- ${t}`);
+  }
   if (failed.length) {
     out.push('', '## Failed', '');
     for (const f of failed) out.push(`- ${link(f.title)}: ${f.error}`);
@@ -223,7 +245,7 @@ async function main(): Promise<void> {
   await fs.ensureDir(path.dirname(reportPath));
   await fs.writeFile(reportPath, out.join('\n'), 'utf8');
 
-  console.log(`Scanned ${files.length} pages: ${changes.length} ${apply ? 'changed' : 'would change'} (${stepIds.map((id) => `${id} ${stepCounts.get(id) ?? 0}`).join(', ')}); ${privateOthers.length} private pages of other users.${apply ? ` Failed: ${failed.length}.` : ''}`);
+  console.log(`Scanned ${files.length} pages: ${changes.length} ${apply ? 'changed' : 'would change'} (${stepIds.map((id) => `${id} ${stepCounts.get(id) ?? 0}`).join(', ')}); ${privateCount} private.${apply ? ` Private skipped: ${skippedPrivate.length}. Failed: ${failed.length}.` : ''}`);
   console.log(`Report: ${reportPath}`);
   if (apply) process.exit(failed.length ? 1 : 0);
 }
