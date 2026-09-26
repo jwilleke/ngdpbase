@@ -63,7 +63,7 @@
                             <div class="dropdown-menu w-100" id="userKeywordsSuggest" style="max-height:12rem;overflow-y:auto;"></div>
                         </div>
                         <script type="application/json" id="userKeywordsPool"><%- JSON.stringify(_kwPool) %></script>
-                        <script src="/js/keyword-typeahead.js" defer></script>
+                        <script type="module" src="/js/keyword-typeahead.js"></script>
                         <%- include('_suggested-keywords', { targetInputId: 'userKeywordsInput', keywordSetSuggestions: (typeof keywordSetSuggestions !== 'undefined' ? keywordSetSuggestions : []) }) %>
                     </div>
                 </div>

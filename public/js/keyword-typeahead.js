@@ -16,8 +16,21 @@
  *   - Explicit-add affordance: when the current token isn't an exact vocabulary
  *     term, the dropdown offers "➕ Add new keyword: '<token>'", so new keywords
  *     are a deliberate choice, not a typo side effect.
- *   - Case-insensitive de-dup of the field on blur.
+ *   - De-dup of the field on blur, by the SERVER's rule (#1468): `Café` and
+ *     `Cafe`, `fine dining` and `fine-dining` are one keyword here exactly as
+ *     they are to the server, because this is the server's own function —
+ *     src/utils/keywordNormalizer.ts, compiled, served at
+ *     /js/shared/keyword-normalizer.js. It used to merge on toLowerCase() alone.
+ *
+ * Loaded as an ES module (type="module") for that import.
  */
+import { normalizeKeywordValue } from '/js/shared/keyword-normalizer.js';
+
+/** The one key two spellings of a keyword share; lowercase only if it normalises to nothing. */
+function keyOf(text) {
+  return normalizeKeywordValue(String(text)) || String(text).toLowerCase();
+}
+
 (function () {
   function bind(input) {
     if (input.dataset.kwBound) return;
@@ -28,8 +41,8 @@
 
     var pool = [];
     try { pool = JSON.parse(poolEl.textContent) || []; } catch (e) { pool = []; }
-    var byLower = {};
-    pool.forEach(function (label) { byLower[String(label).toLowerCase()] = label; });
+    var byKey = {};
+    pool.forEach(function (label) { byKey[keyOf(label)] = label; });
     var active = -1;
 
     function tokens() { return input.value.split(',').map(function (t) { return t.trim(); }); }
@@ -38,8 +51,8 @@
     function dedupeCanonical(parts) {
       var seen = {}, out = [];
       parts.filter(Boolean).forEach(function (t) {
-        var k = t.toLowerCase();
-        if (!seen[k]) { seen[k] = 1; out.push(byLower[k] || t); }
+        var k = keyOf(t);
+        if (!seen[k]) { seen[k] = 1; out.push(byKey[k] || t); }
       });
       return out;
     }
@@ -67,12 +80,12 @@
       var currentRaw = parts[parts.length - 1] || '';
       var current = currentRaw.toLowerCase();
       if (!current) { hide(); return; }
-      var chosen = parts.slice(0, -1).map(function (t) { return t.toLowerCase(); });
+      var chosen = parts.slice(0, -1).map(keyOf);
       var matches = pool.filter(function (label) {
         var l = String(label).toLowerCase();
-        return l.indexOf(current) !== -1 && chosen.indexOf(l) === -1;
+        return l.indexOf(current) !== -1 && chosen.indexOf(keyOf(label)) === -1;
       }).slice(0, 8);
-      var exact = Object.prototype.hasOwnProperty.call(byLower, current);
+      var exact = Object.prototype.hasOwnProperty.call(byKey, keyOf(currentRaw));
 
       menu.innerHTML = '';
       matches.forEach(function (label, i) { menu.appendChild(mkItem(label, label, i === active, false)); });

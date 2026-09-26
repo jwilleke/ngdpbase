@@ -194,6 +194,13 @@ void (async (): Promise<void> => {
   // #1456: every view builds a page's links with the function the routes use —
   // a private page's actions live under /private/.
   app.locals.pageUrl = pageUrl;
+  // #1468: the keyword normaliser the server runs, for the browser's keyword
+  // field (public/js/keyword-typeahead.js imports it) — its compiled output,
+  // not a retyped copy. No imports of its own, so it loads as it is.
+  app.get('/js/shared/keyword-normalizer.js', (_req: Request, res: Response) => {
+    res.type('application/javascript');
+    res.sendFile(path.join(projectRoot, 'dist', 'src', 'utils', 'keywordNormalizer.js'));
+  });
   app.use(express.static(path.join(projectRoot, 'public')));
   app.use('/themes', express.static(path.join(projectRoot, 'themes')));
   app.use('/addons', express.static(path.join(projectRoot, 'addons')));
