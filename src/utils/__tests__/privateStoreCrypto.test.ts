@@ -12,6 +12,7 @@ import {
   createUserKeys,
   mnemonicWordCount,
   rewrapPassword,
+  rewrapPasswordWithKek,
   unwrapDek,
   unwrapKekWithMnemonic,
   unwrapKekWithPassword
@@ -105,3 +106,20 @@ describe('private store keys (#1384)', () => {
       .not.toBe(createHash('sha256').update(JSON.stringify(b.envelope)).digest('hex'));
   });
 });
+
+describe('rewrapPasswordWithKek (#1452)', () => {
+  test('the new password opens the same key, the old one does not, the words still do, and stores still open', () => {
+    const created = createUserKeys('forgotten', { kdf: TEST_PRIVATE_STORE_KDF });
+    const store = createEncryptedStore(created.kek);
+    const kek = unwrapKekWithMnemonic(created.envelope, created.mnemonic);
+
+    const next = rewrapPasswordWithKek(created.envelope, kek, 'brand-new', { kdf: TEST_PRIVATE_STORE_KDF });
+
+    expect(Buffer.compare(unwrapKekWithPassword(next, 'brand-new'), created.kek)).toBe(0);
+    expect(() => unwrapKekWithPassword(next, 'forgotten')).toThrow();
+    expect(Buffer.compare(unwrapKekWithMnemonic(next, created.mnemonic), created.kek)).toBe(0);
+    expect(next.recoveryWrap).toEqual(created.envelope.recoveryWrap);
+    expect(Buffer.compare(unwrapDek(unwrapKekWithPassword(next, 'brand-new'), store), unwrapDek(created.kek, store))).toBe(0);
+  });
+});
+

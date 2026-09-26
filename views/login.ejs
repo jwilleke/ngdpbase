@@ -50,6 +50,10 @@
                         </div>
                         <button type="submit" class="btn btn-primary w-100">Login</button>
                     </form>
+                    <%# #1452: a forgotten password, reset with the recovery words. %>
+                    <p class="text-center small mt-2 mb-0">
+                        <a href="/recover-password">Forgot your password? Use your recovery words</a>
+                    </p>
                     <% if (magicLinkEnabled) { %>
                     <hr>
                     <p class="text-center text-muted small mb-2">Or sign in without a password</p>

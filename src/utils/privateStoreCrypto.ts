@@ -177,7 +177,21 @@ export function rewrapPassword(
   newPassword: string,
   opts: { kdf?: ScryptKdf } = {}
 ): UserKeyEnvelope {
-  const kek = unwrapKekWithPassword(envelope, oldPassword);
+  return rewrapPasswordWithKek(envelope, unwrapKekWithPassword(envelope, oldPassword), newPassword, opts);
+}
+
+/**
+ * Replace the password wrap, given the KEK itself (#1452): how the recovery
+ * words set a new password when the old one is forgotten. The KEK bytes and
+ * the recovery wrap are unchanged, so every store's wrapped DEK stays valid
+ * and the same words keep working.
+ */
+export function rewrapPasswordWithKek(
+  envelope: UserKeyEnvelope,
+  kek: Buffer,
+  newPassword: string,
+  opts: { kdf?: ScryptKdf } = {}
+): UserKeyEnvelope {
   const kdf = opts.kdf ?? { N: envelope.kdf.N, r: envelope.kdf.r, p: envelope.kdf.p };
   const passwordSalt = randomBytes(16);
   return {

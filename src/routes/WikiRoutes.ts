@@ -194,6 +194,9 @@ import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
  * This is the general form of the fix #1017 applied to `system-keywords` alone
  * after it silently destroyed capture marks on first edit (#1008).
  */
+/** The shortest password any form here accepts: sign-up, profile change, recovery (#1452). */
+const MIN_PASSWORD_LENGTH = 6;
+
 const DEFAULT_SEEDED_FIELDS = ['system-category', 'system-keywords', 'user-keywords', 'slug'] as const;
 
 const MAX_REWRITE_REFERRERS = 200;
@@ -286,6 +289,8 @@ interface IUserManager {
   updateUser(username: string, data: unknown, ctx: ActorContext): Promise<unknown>;
   deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
   authenticateUser(username: string, password: string): Promise<unknown>;
+  /** #1452: a forgotten password, reset with the recovery words. */
+  resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean>;
   getSession(req: Request): Promise<unknown>;
   searchUsers(query: string, options: { role?: string; limit?: number; activeOnly?: boolean }, ctx: ActorContext): Promise<{ username: string; displayName?: string; email?: string; roles?: string[]; [key: string]: unknown }[]>;
   getContactRecipient(recipientOverride: string): Promise<string | null>;
@@ -7617,9 +7622,9 @@ ${panes}
         return res.redirect('/register?error=Passwords do not match');
       }
 
-      if (password.length < 6) {
+      if (password.length < MIN_PASSWORD_LENGTH) {
         return res.redirect(
-          '/register?error=Password must be at least 6 characters'
+          `/register?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
         );
       }
 
@@ -8072,6 +8077,71 @@ ${panes}
     const throttle = this.getLoginThrottle();
     if (throttle) for (const key of this.throttleKeys(req, username)) throttle.recordFailure(key);
     await this.auditAuthentication(req, username, 'failure', detail);
+  }
+
+  /**
+   * GET /recover-password — set a new password with the 12 recovery words (#1452).
+   *
+   * For someone who has forgotten their password but kept the words written
+   * down when they created an encrypted store. Open to anyone, like the
+   * sign-in form: proving the words IS the authentication.
+   */
+  async recoverPasswordPage(req: Request, res: Response) {
+    return this.renderRecoverPassword(req, res, {});
+  }
+
+  private async renderRecoverPassword(req: Request, res: Response, view: { error?: string; username?: string }): Promise<void> {
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('recover-password', {
+      ...commonData,
+      title: 'Reset your password with your recovery words',
+      minPasswordLength: MIN_PASSWORD_LENGTH,
+      username: view.username ?? '',
+      error: view.error ?? ''
+    });
+  }
+
+  /**
+   * POST /recover-password (#1452).
+   *
+   * One answer for every failure — wrong words, no such account, no keys, an
+   * external account — so the form cannot be used to learn who exists or who
+   * has an encrypted store. Each failure counts against the sign-in throttle
+   * for that name and address, like a wrong password, and a throttled caller
+   * is refused even with the right words. The words are never logged or put
+   * in a record; the password change itself is recorded by `updateUser`.
+   */
+  async recoverPassword(req: Request, res: Response) {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const username = typeof body.username === 'string' ? body.username.trim() : '';
+    const words = typeof body.words === 'string' ? body.words.trim() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const confirmPassword = typeof body.confirmPassword === 'string' ? body.confirmPassword : '';
+    try {
+      if (!username || !words) {
+        return await this.renderRecoverPassword(req, res, { username, error: 'Enter your username and your 12 recovery words.' });
+      }
+      if (password !== confirmPassword) {
+        return await this.renderRecoverPassword(req, res, { username, error: 'The new passwords do not match.' });
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return await this.renderRecoverPassword(req, res, { username, error: `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+      }
+
+      const ctx = jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'password reset with recovery words (#1452)');
+      const reset = !this.secretCheckBlocked(req, username)
+        && await this.engine.getManager('UserManager').resetPasswordWithRecoveryWords(username, words, password, ctx);
+      if (!reset) {
+        await this.recordFailedSecret(req, username, 'invalid recovery words at password recovery');
+        return await this.renderRecoverPassword(req, res, { username, error: 'That username and those recovery words do not match.' });
+      }
+      await this.auditAuthentication(req, username, 'success', 'password reset with recovery words');
+      return res.redirect(`/login?success=${encodeURIComponent('Your password has been reset. Sign in with the new one.')}`);
+    } catch (err) {
+      logger.error('[recover-password] failed:', err);
+      return this.renderError(req, res, 500, 'Error', 'Your password could not be reset. Nothing was changed.');
+    }
   }
 
   /**
@@ -8964,9 +9034,9 @@ ${panes}
           return res.redirect('/profile?error=New passwords do not match');
         }
 
-        if (newPassword.length < 6) {
+        if (newPassword.length < MIN_PASSWORD_LENGTH) {
           return res.redirect(
-            '/profile?error=Password must be at least 6 characters'
+            `/profile?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
           );
         }
 
@@ -14777,6 +14847,8 @@ ${panes}
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no
     // store kind can ever shadow it.
+    app.get('/recover-password', (req: Request, res: Response) => void this.recoverPasswordPage(req, res));
+    app.post('/recover-password', (req: Request, res: Response) => void this.recoverPassword(req, res));
     app.get('/private-store/unlock', (req: Request, res: Response) => this.privateStoreUnlockPage(req, res));
     app.post('/private-store/unlock', (req: Request, res: Response) => this.privateStoreUnlock(req, res));
     app.get('/stores/:kind', (req: Request, res: Response) => this.storeDoorPage(req, res));

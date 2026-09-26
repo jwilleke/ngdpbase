@@ -25,6 +25,7 @@ import {
   lockPrivateStores,
   setUnlockedDek,
   unlockPrivateStores,
+  resetPasswordWrapWithMnemonic,
   unlockPrivateStoresWithMnemonic,
   unlockPrivateStoresWithPassword
 } from '../privateStoreUnlock';
@@ -261,6 +262,46 @@ describe('unlockPrivateStoresWithMnemonic (#1453)', () => {
   test('a user with no keys is not unlocked', async () => {
     expect(await unlockPrivateStoresWithMnemonic({ handle: 'sid-n', username: 'nobody', words: 'a b c', pagesDirectory: pagesDir }))
       .toBe(false);
+  });
+});
+
+describe('resetPasswordWrapWithMnemonic (#1452)', () => {
+  let tmp: string;
+  let pagesDir: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'priv-reset-words-'));
+    pagesDir = path.join(tmp, 'pages');
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmp);
+  });
+
+  test('the right words replace the password wrap on disk; nothing else about the key changes', async () => {
+    const created = createUserKeys('forgotten', { kdf });
+    await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
+
+    const ok = await resetPasswordWrapWithMnemonic({ pagesDirectory: pagesDir, username: 'molly', words: created.mnemonic, newPassword: 'brand-new' });
+
+    expect(ok).toBe(true);
+    const onDisk = await fs.readJson(privateUserKeysPath(pagesDir, 'molly'));
+    expect(onDisk.recoveryWrap).toEqual(created.envelope.recoveryWrap);
+    await unlockPrivateStoresWithPassword({ handle: 'sid-r', username: 'molly', password: 'brand-new', pagesDirectory: pagesDir });
+    expect(Buffer.compare(getUnlockedKek('sid-r'), created.kek)).toBe(0);
+  });
+
+  test('wrong words write nothing', async () => {
+    const created = createUserKeys('forgotten', { kdf });
+    await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
+    const wrong = created.mnemonic.split(' ').reverse().join(' ');
+
+    expect(await resetPasswordWrapWithMnemonic({ pagesDirectory: pagesDir, username: 'molly', words: wrong, newPassword: 'x-new-pw' })).toBe(false);
+    expect(await fs.readJson(privateUserKeysPath(pagesDir, 'molly'))).toEqual(created.envelope);
+  });
+
+  test('no keys, nothing to reset', async () => {
+    expect(await resetPasswordWrapWithMnemonic({ pagesDirectory: pagesDir, username: 'nobody', words: 'a b', newPassword: 'x-new-pw' })).toBe(false);
   });
 });
 

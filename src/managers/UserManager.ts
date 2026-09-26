@@ -24,7 +24,7 @@ import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.
 import { UserCreateError } from '../utils/userCreateError.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import { rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
+import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -945,6 +945,36 @@ class UserManager extends BaseManager {
   /**
    * Update user
    */
+  /**
+   * A forgotten password, reset with the 12 recovery words (#1452).
+   *
+   * The words are the account owner's own escrow: they unwrap the key the
+   * password used to, so proving them is proving you are the person the key
+   * was made for. The password wrap is replaced first — the recovery wrap and
+   * the key are unchanged, so every encrypted store still opens — and then the
+   * sign-in password is set, through `updateUser`, so the two stay one
+   * password and the change is recorded like any other.
+   *
+   * `false`, changing nothing, for any reason it cannot be done: no such
+   * account, an inactive or external one, no keys, or words that do not open
+   * them. The caller cannot tell which, so the door cannot be used to learn
+   * which accounts exist.
+   */
+  async resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean> {
+    if (!this.provider || !username || !words || !newPassword) return false;
+    const user = await this.provider.getUser(username);
+    if (!user || user.isExternal || user.isActive === false) return false;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!pagesDirectory) return false;
+    if (!(await resetPasswordWrapWithMnemonic({ pagesDirectory, username, words, newPassword }))) return false;
+
+    await this.updateUser(username, { password: newPassword }, ctx);
+    logger.info(`🔑 Password reset with recovery words for ${username}`);
+    return true;
+  }
+
   async updateUser(username: string, updates: UserUpdateInput, ctx: ActorContext): Promise<User> {
     if (!this.provider) {
       throw new Error('Provider not initialized');

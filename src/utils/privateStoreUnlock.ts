@@ -19,6 +19,7 @@ import logger from './logger.js';
 import {
   assertEncryptedStoreWritable,
   rewrapPassword,
+  rewrapPasswordWithKek,
   unwrapDek,
   unwrapKekWithMnemonic,
   unwrapKekWithPassword,
@@ -204,6 +205,36 @@ export async function rewrapUserKeysOnPasswordChange(args: {
   const next = rewrapPassword(raw, args.oldPassword, args.newPassword);
   await fs.ensureDir(privateUserDir(args.pagesDirectory, args.username));
   await fs.writeJson(keysPath, next);
+}
+
+/**
+ * A forgotten password, reset with the recovery words (#1452): the words
+ * unwrap the KEK, and the password wrap is replaced with one made from the
+ * new password. The recovery wrap and the KEK are untouched.
+ *
+ * Returns `false` — writing nothing — when the user has no keys or the words
+ * do not open them. The words are never logged or stored.
+ */
+export async function resetPasswordWrapWithMnemonic(args: {
+  pagesDirectory: string;
+  username: string;
+  words: string;
+  newPassword: string;
+}): Promise<boolean> {
+  const envelope = await readUserKeyEnvelope(args.pagesDirectory, args.username);
+  if (!envelope) return false;
+  let kek: Buffer;
+  try {
+    kek = unwrapKekWithMnemonic(envelope, args.words);
+  } catch {
+    return false;
+  }
+  try {
+    await fs.writeJson(privateUserKeysPath(args.pagesDirectory, args.username), rewrapPasswordWithKek(envelope, kek, args.newPassword));
+  } finally {
+    kek.fill(0);
+  }
+  return true;
 }
 
 /** A fresh handle for a session's key bag: random, never the session id. */
