@@ -76,7 +76,16 @@ Shipped defaults in `config/app-default-config.json`:
 "ngdpbase.stores.recovery.confirmretries": 1
 ```
 
-`owner` is `admin` for the core `default` kind, or an addon's canonical slug for a kind that addon owns. It is a label recording whose call `encrypt` was: nothing in the shipped code reads a `stores` block from an addon's `package.json` (`AddonManifest` in `src/managers/AddonsManager.ts` has no such field), so a kind is defined today by writing those two configuration keys. Whoever owns the kind decides `encrypt`; the end user is never asked, and the value is copied into that user's `store.json` when their copy is created, so changing the kind later does not reinterpret copies that already exist.
+`owner` is `admin` for the core `default` kind, or an addon's canonical slug for a kind that addon owns. Whoever owns the kind decides `encrypt`; the end user is never asked, and the value is copied into that user's `store.json` when their copy is created, so changing the kind later does not reinterpret copies that already exist.
+
+An addon declares its kinds in its `package.json`, `ngdpbase.stores: [{ id, encrypt, label?, blurb? }]` ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414)). `AddonsManager.declareStoreKinds` saves `owner` and `encrypt` to configuration at the addon's first load, before `register()`; after that configuration wins:
+
+- a manifest that later disagrees is ignored, logged at warn and shown on the admin add-ons screen (`storeNotices`);
+- an id another owner holds (the site's `default` included) is refused and logged as an error; an addon whose slug is `admin` owns nothing;
+- `recovery` and `import` are reserved ids: they are instance settings under `ngdpbase.stores.*`, and `storeKindFromConfig` ignores them;
+- `label` and `blurb` are wording for the door, read from the loaded addon's manifest (`AddonsManager.storePresentation`), never saved.
+
+The planning and decision rules are pure functions in `src/utils/privateStoreDoor.ts`: `readStoreDeclarations`, `planStoreDeclaration`, `storeDoorState`.
 
 ### The door
 
@@ -88,6 +97,8 @@ A user's copy of a kind is created when they walk through its door — never at 
 | `POST /stores/:kind` | Walk through. Creates at once, or shows the words screen |
 | `GET /stores/:kind/confirm` | Type the words back. Never shows them |
 | `POST /stores/:kind/confirm` | The last gate: a match commits, a miss shows a new set |
+
+An addon's kind is served only while that addon is loaded (`AddonsManager.storeOwnerState`, `storeDoorState`). Failed to load, turned off, or not installed, every door route answers `503` with `step: 'closed'` and the reason, and creates nothing. Nothing is removed in any state, and turning the addon back on reopens the store with every user's keys as they were. Turning it off is warned, never refused: `AddonsManager.storeDisableWarnings` counts the users holding a copy of each kind it owns, for the Disable confirmation and the success message.
 
 `storeDoorRequest()` gates all four on the `store-create` permission and on a password sign-in: the session must carry a `privateStoreHandle`, so a bearer-token or share request cannot reach the door. Views render from `views/store-door.ejs` with `Cache-Control: no-store`.
 
