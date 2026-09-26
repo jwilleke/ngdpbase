@@ -1545,8 +1545,12 @@ class MarkupParser extends BaseManager {
       // as A's closer and emits an empty `<span class="a">` followed by the
       // rest as stray text.
       const NOT_AN_OPENER = String.raw`(?!\(|sup|sub|strike|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)*[ \t])`;
+      // After a `(css)` head the text may follow with no space: the style
+      // ends at `)`, as in Apache (`%%(color:red)No%%`). It must then start on
+      // the same line, or a block-form `%%(css)` opener at the end of its line
+      // would be read as inline.
       const inlinePattern = new RegExp(
-        String.raw`%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)[ \t]+((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
+        String.raw`%%(\((?:[^()]|\([^()]*\))*\)|sup|sub|strike)(?:(?<=\))(?=[^\s])|[ \t]+)((?:(?!%%|\/%)[\s\S])*?)[ \t]*(?:\/%|%%${NOT_AN_OPENER})`
       );
       // #938: bare class-name runs — `%%feed-badge feed-badge--green GREEN/%`.
       // Inner content is `[^\n]` (SAME LINE ONLY), unlike the variants above.

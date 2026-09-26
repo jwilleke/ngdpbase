@@ -285,6 +285,25 @@ describe('MarkupParser', () => {
       expect(result).not.toContain('data-jspwiki-placeholder');
     });
 
+    // Apache: the style ends at `)`, so text may follow with no space
+    // (JSPWikiMarkupParserTest.testSpanStyle4, `%%(…)test/%`).
+    test('inline %%(css) with no space before the text renders, in a paragraph and a table cell', async () => {
+      cssOn();
+      const para = await markupParser.parse('This is %%(color:red)red text%% and normal.', { pageName: 'P' });
+      expect(para).toContain('<span style="color: red">red text</span>');
+      expect(para).not.toContain('%%');
+      const cell = await markupParser.parse('| a | b |\n|---|---|\n| %%(color:red)No/% | x |', { pageName: 'P' });
+      expect(cell).toContain('<span style="color: red">No</span>');
+      expect(cell).not.toContain('%%(');
+    });
+
+    test('a block-form %%(css) opener at the end of its line stays block-form', async () => {
+      cssOn();
+      const result = await markupParser.parse('%%(font-size:.9;)\nSmall block.\n/%', { pageName: 'P' });
+      expect(result).not.toContain('<span style="font-size');
+      expect(result).toContain('Small block.');
+    });
+
     test('#907: block-form %%(css) opener wraps following content', async () => {
       cssOn();
       const result = await markupParser.parse('%%(font-size:.9;)\nSmall block.\n/%', { pageName: 'P' });
