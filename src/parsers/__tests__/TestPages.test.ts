@@ -143,7 +143,6 @@ const EXPECTATIONS: Record<string, Expectation[]> = {
     },
     {
       name: 'a GFM table has a header and no separator row',
-      knownBug: 1352,
       check: (html) => {
         expect(html).toMatch(/<th>\s*Col A\s*<\/th>/);
         expect(html).not.toContain('-------');

@@ -1,5 +1,5 @@
 import BaseSyntaxHandler, { ParseContext, HandlerMetadata } from './BaseSyntaxHandler.js';
-import { parseJspwikiTableRow } from '../jspwikiTableRow.js';
+import { parseTableRows } from '../jspwikiTableRow.js';
 import { renderInlineMarkdown } from '../../rendering/markdownConverter.js';
 
 /**
@@ -278,7 +278,7 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
     }
 
     // Parse each row
-    const rows = lines.map(line => parseJspwikiTableRow(line));
+    const rows = parseTableRows(lines);
 
     // Separate header and body rows
     const headerRows = rows.filter(row => row.isHeader);

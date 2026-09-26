@@ -66,3 +66,32 @@ export function splitCellsBracketAware(text: string, delimiter: string): string[
   cells.push(current);
   return cells;
 }
+
+/**
+ * A GFM table's separator row: `|---|:---:|` (#1352). Cells of dashes, each
+ * optionally colon-edged for alignment; leading and trailing pipes optional.
+ */
+export function isGfmSeparatorRow(line: string): boolean {
+  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|');
+  return cells.length > 0 && cells.every(cell => /^\s*:?-{3,}:?\s*$/.test(cell));
+}
+
+/**
+ * The rows of a table block, with a GFM table read as one (#1352): the row
+ * above a separator row is the header, and the separator itself is not a
+ * row. Without this a pasted GFM table rendered its `|---|` line as a row of
+ * dashes and had no header. A JSPWiki table has no separator row and comes
+ * through unchanged.
+ */
+export function parseTableRows(lines: readonly string[]): JspwikiTableRow[] {
+  const rows: JspwikiTableRow[] = [];
+  for (const line of lines) {
+    if (isGfmSeparatorRow(line)) {
+      const header = rows[rows.length - 1];
+      if (header) header.isHeader = true;
+      continue;
+    }
+    rows.push(parseJspwikiTableRow(line));
+  }
+  return rows;
+}

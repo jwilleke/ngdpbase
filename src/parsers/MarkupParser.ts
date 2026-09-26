@@ -15,7 +15,7 @@ import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import { NOT_TASK_MARKER, UNESCAPED_BRACKET } from './LinkParser.js';
-import { parseJspwikiTableRow } from './jspwikiTableRow.js';
+import { parseTableRows } from './jspwikiTableRow.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
 import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
@@ -2413,10 +2413,7 @@ class MarkupParser extends BaseManager {
     const lines = content.split('\n').filter(line => /^\s*\|/.test(line));
 
     // Parse rows using bracket-aware splitting
-    const rows: Array<{ isHeader: boolean; cells: string[] }> = [];
-    for (const line of lines) {
-      rows.push(parseJspwikiTableRow(line));
-    }
+    const rows = parseTableRows(lines);
 
     // Build CSS classes - always include 'table' base class
     const classes = ['table'];

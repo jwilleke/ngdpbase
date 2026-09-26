@@ -42,7 +42,7 @@ Each item: what to write, then what not to write.
 - __Link to a page on the site:__ `[Page Name]`, or `[Text to show|Page Name]`. Not `[text](/view/Page)`.
 - __Link to a heading on a page:__ `[Text|Page Name#section=Heading Text]`. Not `[text](#anchor)`.
 - __Link to another site:__ `[Text|https://example.com]`. Not `[text](https://example.com)`, which works but loses the new-tab and `rel` handling.
-- __Table:__ a header row `|| Header || Header ||`, then one row per line `| cell | cell |`. Not GitHub pipe tables: their `|---|` row renders as a row of dashes.
+- __Table:__ a header row `|| Header || Header ||`, then one row per line `| cell | cell |`. A GitHub pipe table with a `|---|` row also renders, but write the `||` form: it is the house style, and it takes the table style wrappers below.
 - __Styled table:__ the table between a `%%table-striped` line and a `/%` line. Not an HTML `<table>`.
 - __Line break inside a paragraph:__ a new line. Not `<br>`, which is refused on save.
 - __Paragraphs:__ a blank line between them. Not hard-wrapped lines: every new line is a visible break.
@@ -79,7 +79,6 @@ They are allowed only inside code, where they are shown as text.
 
 ## Renders wrongly, so never write
 
-- GitHub pipe tables with a `|---|` row: use the `||` form above.
 - `==highlight==`, `{#id}` after a heading, definition lists: shown as literal text. Use `__bold__`, a plain heading, and a bullet list.
 - Old wiki markup at line start (`!!!`, `*`, `#` as bullets): convert it.
 
@@ -142,7 +141,7 @@ Use the same marker for anything else you had to leave out, with the kind of thi
 
 - Frontmatter has a `title` without forbidden characters, and nothing the site sets.
 - Exactly one `#` heading, at the top.
-- No GitHub pipe tables, no `**`, no `*` or `+` bullets.
+- Tables in the `||` form, no `**`, no `*` or `+` bullets.
 - No hard-wrapped paragraphs.
 - No refused HTML outside code.
 - No remote images; each lost item has an `NCM-DROPPED` marker.
