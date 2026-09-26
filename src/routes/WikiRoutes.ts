@@ -5654,11 +5654,16 @@ ${panes}
     return Array.isArray(configured) && configured.length > 0 ? configured : ['capture'];
   }
 
-  /** Resolve the capture target page name from config pattern ({date}/{username} tokens). */
+  /**
+   * Resolve the capture target page name from config pattern ({date}/{username}
+   * tokens). The default puts the date first, as the journal does:
+   * `2026-09-26-capture-jim` beside `2026-09-26-1-journal-jim`. No entry
+   * counter: all of a day's captures go to one page (#1466).
+   */
   private resolveCaptureDefaultPage(username: string): string {
     const configManager = this.engine.getManager('ConfigurationManager');
-    const pattern = (configManager?.getProperty('ngdpbase.capture.default-page', 'Captures — {username} — {date}'))
-      || 'Captures — {username} — {date}';
+    const pattern = (configManager?.getProperty('ngdpbase.capture.default-page', '{date}-capture-{username}'))
+      || '{date}-capture-{username}';
     const date = new Date().toISOString().slice(0, 10);
     return pattern.replace('{date}', date).replace('{username}', username);
   }

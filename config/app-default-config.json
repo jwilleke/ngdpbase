@@ -143,7 +143,7 @@
   "ngdpbase.attachment.metadatafile": "${SLOW_STORAGE}/attachments/attachment-metadata.json",
   "_comment_capture": "Bookmarklet capture (#881): optional feature, disabled by default — /capture routes 404 unless enabled per instance. default-page supports {date} and {username} tokens.",
   "ngdpbase.capture.enabled": false,
-  "ngdpbase.capture.default-page": "Captures — {username} — {date}",
+  "ngdpbase.capture.default-page": "{date}-capture-{username}",
   "ngdpbase.capture.keywords": [
     "capture"
   ],
