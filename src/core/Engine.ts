@@ -11,7 +11,6 @@ import type BaseManager from '../managers/BaseManager.js';
  * @abstract
  *
  * @property {Map<string, BaseManager>} managers - Map of registered manager instances keyed by name
- * @property {Map<string, unknown>} properties - Map of configuration properties
  * @property {boolean} initialized - Flag indicating if engine has been initialized
  * @property {WikiConfig} config - Configuration object passed during initialization
  */
@@ -19,8 +18,6 @@ class Engine {
   /** Map of registered manager instances */
   protected managers: Map<string, BaseManager>;
 
-  /** Map of configuration properties */
-  protected properties: Map<string, unknown>;
 
   /** Flag indicating if engine has been initialized */
   protected initialized: boolean;
@@ -42,7 +39,6 @@ class Engine {
    */
   constructor() {
     this.managers = new Map();
-    this.properties = new Map();
     this.initialized = false;
     this.capabilities = new Map();
   }
@@ -64,7 +60,6 @@ class Engine {
     if (!this.config) {
       this.config = config;
     }
-    this.properties = new Map(Object.entries(config));
 
     // Initialize managers in order
     await this.initializeManagers();
@@ -130,30 +125,6 @@ class Engine {
   }
 
   /**
-   * Get configuration property value
-   *
-   * @param {string} key - Configuration property key
-   * @param {T} [defaultValue=null] - Default value if property not found
-   * @returns {T} Property value or default value
-   *
-   * @example
-   * const appName = engine.getProperty('applicationName', 'MyWiki');
-   */
-  getProperty<T = unknown>(key: string, defaultValue: T | null = null): T | null {
-    const value = this.properties.get(key);
-    return (value !== undefined ? value : defaultValue) as T | null;
-  }
-
-  /**
-   * Get all configuration properties
-   *
-   * @returns {Map<string, unknown>} Map of all configuration properties
-   */
-  getProperties(): Map<string, unknown> {
-    return this.properties;
-  }
-
-  /**
    * Check if engine has been initialized
    *
    * @returns {boolean} True if engine is initialized and configured
@@ -163,21 +134,14 @@ class Engine {
   }
 
   /**
-   * Get application name from configuration
+   * The application's name. The base engine has no configuration of its own:
+   * WikiEngine overrides this to read `ngdpbase.application-name` from
+   * ConfigurationManager, the one configuration reader (#1191).
    *
-   * @returns {string} Application name (defaults to 'ngdpbase')
+   * @returns {string} 'ngdpbase'
    */
   getApplicationName(): string {
-    return this.getProperty<string>('applicationName', 'ngdpbase') || 'ngdpbase';
-  }
-
-  /**
-   * Get working directory path from configuration
-   *
-   * @returns {string} Working directory path (defaults to './')
-   */
-  getWorkDir(): string {
-    return this.getProperty<string>('workDir', './') || './';
+    return 'ngdpbase';
   }
 
   /**

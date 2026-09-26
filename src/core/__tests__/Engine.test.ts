@@ -6,9 +6,8 @@
  * - initialize(): first call succeeds, second throws
  * - getManager() / registerManager()
  * - getRegisteredManagers()
- * - getProperty() / getProperties()
  * - isConfigured()
- * - getApplicationName() / getWorkDir()
+ * - getApplicationName()
  * - getConfig()
  * - setCapability() / getCapabilities()
  * - shutdown(): calls shutdown on managers
@@ -57,9 +56,10 @@ describe('Engine', () => {
       await expect(engine.initialize({})).rejects.toThrow('already initialized');
     });
 
-    test('stores config properties', async () => {
+    test('keeps no second configuration reader (#1191)', async () => {
       await engine.initialize({ workDir: '/my/path' });
-      expect(engine.getProperty('workDir')).toBe('/my/path');
+      expect((engine as unknown as Record<string, unknown>).getProperty).toBeUndefined();
+      expect((engine as unknown as Record<string, unknown>).getProperties).toBeUndefined();
     });
   });
 
@@ -98,41 +98,6 @@ describe('Engine', () => {
     });
   });
 
-  describe('getProperty()', () => {
-    test('returns null for missing key', async () => {
-      await engine.initialize({});
-      expect(engine.getProperty('missing')).toBeNull();
-    });
-
-    test('returns default value for missing key', async () => {
-      await engine.initialize({});
-      expect(engine.getProperty('missing', 'default')).toBe('default');
-    });
-
-    test('returns stored config value', async () => {
-      await engine.initialize({ appName: 'MyApp' });
-      expect(engine.getProperty('appName')).toBe('MyApp');
-    });
-
-    test('returns null default before initialization (empty properties)', () => {
-      expect(engine.getProperty('anything')).toBeNull();
-    });
-  });
-
-  describe('getProperties()', () => {
-    test('returns empty map before initialization', () => {
-      expect(engine.getProperties()).toBeInstanceOf(Map);
-      expect(engine.getProperties().size).toBe(0);
-    });
-
-    test('returns map of all config properties', async () => {
-      await engine.initialize({ key1: 'val1', key2: 42 });
-      const props = engine.getProperties();
-      expect(props.get('key1')).toBe('val1');
-      expect(props.get('key2')).toBe(42);
-    });
-  });
-
   describe('isConfigured()', () => {
     test('returns false before initialization', () => {
       expect(engine.isConfigured()).toBe(false);
@@ -150,21 +115,9 @@ describe('Engine', () => {
       expect(engine.getApplicationName()).toBe('ngdpbase');
     });
 
-    test('returns configured application name', async () => {
+    test('ignores a name in the constructor config: ConfigurationManager owns it (#1191)', async () => {
       await engine.initialize({ applicationName: 'MyWiki' });
-      expect(engine.getApplicationName()).toBe('MyWiki');
-    });
-  });
-
-  describe('getWorkDir()', () => {
-    test('returns "./" by default', async () => {
-      await engine.initialize({});
-      expect(engine.getWorkDir()).toBe('./');
-    });
-
-    test('returns configured work dir', async () => {
-      await engine.initialize({ workDir: '/data/wiki' });
-      expect(engine.getWorkDir()).toBe('/data/wiki');
+      expect(engine.getApplicationName()).toBe('ngdpbase');
     });
   });
 
