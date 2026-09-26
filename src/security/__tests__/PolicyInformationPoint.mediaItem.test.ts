@@ -106,26 +106,8 @@ describe('canUserAccessMediaItem — a share subject (#1223)', () => {
     expect(await acl.canUserAccessMediaItem(viaShare(), item())).toBe(false);
   });
 
-  test('a private item is refused whatever the share says', async () => {
-    expect(await acl.canUserAccessMediaItem(viaShare(), item({ isPrivate: true }))).toBe(false);
-  });
-
   test('owner-only content is refused', async () => {
     expect(await acl.canUserAccessMediaItem(viaShare(), item({ metadata: { keywords: ['trip', 'owner-only'] } }))).toBe(false);
-  });
-
-  test('the linked page still has its say: a private linked page refuses', async () => {
-    expect(await acl.canUserAccessMediaItem(viaShare(), item({ linkedPageName: 'Secret' }))).toBe(false);
-  });
-
-  test('a linked page the share covers and the visitor may see is allowed', async () => {
-    // 'Public' carries audience All (tier 1) — but the share ceiling on the
-    // PAGE needs its keywords; the page here has none, so it is not covered.
-    expect(await acl.canUserAccessMediaItem(viaShare(), item({ linkedPageName: 'Public' }))).toBe(false);
-  });
-
-  test('a linked page that cannot be resolved refuses — conservative on security', async () => {
-    expect(await acl.canUserAccessMediaItem(viaShare(), item({ linkedPageName: 'Gone' }))).toBe(false);
   });
 
   test('a refusal is attributed to the share and its issuer', async () => {
@@ -144,20 +126,9 @@ describe('canUserAccessMediaItem — an ordinary subject is unchanged (#1223)', 
     await acl.initialize();
   });
 
-  test('no linked page: allowed, keywords irrelevant', async () => {
+  test('allowed whatever the keywords: media carries no per-item privacy (#1427)', async () => {
     expect(await acl.canUserAccessMediaItem(editor, item({ metadata: { keywords: ['whatever'] } }))).toBe(true);
     expect(await acl.canUserAccessMediaItem(anonymous, item())).toBe(true);
   });
 
-  test('a private linked page refuses a stranger and admits nobody else either', async () => {
-    expect(await acl.canUserAccessMediaItem(editor, item({ linkedPageName: 'Secret' }))).toBe(false);
-  });
-
-  test('a linked page the visitor may see is allowed', async () => {
-    expect(await acl.canUserAccessMediaItem(editor, item({ linkedPageName: 'Public' }))).toBe(true);
-  });
-
-  test('null user is the anonymous visitor', async () => {
-    expect(await acl.canUserAccessMediaItem(null, item({ linkedPageName: 'Secret' }))).toBe(false);
-  });
 });

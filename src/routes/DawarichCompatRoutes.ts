@@ -19,9 +19,8 @@
  * (including pre-#864 index entries lacking `captureDateField`) are excluded
  * from the feed and counted — never silently included with a guessed date.
  *
- * Privacy: `filterPrivateItems()` is intentionally bypassed (wikiContext
- * undefined) — wiki-page privacy governs visibility to other wiki users,
- * while this surface is a personal, network-restricted map feed.
+ * Media items carry no per-item privacy (#1427); this surface is a
+ * personal, network-restricted map feed.
  */
 
 import type { Application, Request, Response } from 'express';
@@ -39,7 +38,7 @@ interface ConfigLike {
 }
 
 interface MediaManagerLike {
-  listByDateRange(after?: string, before?: string, wikiContext?: undefined): Promise<MediaItem[]>;
+  listByDateRange(after?: string, before?: string): Promise<MediaItem[]>;
   getThumbnailBuffer(id: string, size: string): Promise<Buffer | null>;
 }
 
@@ -143,7 +142,7 @@ export function registerDawarichCompatRoutes(app: Application, engine: EngineLik
         const cacheKey = `${takenAfter ?? ''}|${takenBefore ?? ''}`;
         let entry = windowCache.get(cacheKey);
         if (!entry || Date.now() - entry.ts > WINDOW_CACHE_TTL_MS) {
-          const all = await mediaManager.listByDateRange(takenAfter, takenBefore, undefined);
+          const all = await mediaManager.listByDateRange(takenAfter, takenBefore);
           const { kept, dropped } = applyStrictDatePolicy(all);
           entry = { ts: Date.now(), items: kept, dropped };
           windowCache.set(cacheKey, entry);

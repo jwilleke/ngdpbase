@@ -811,16 +811,14 @@ class PolicyInformationPoint extends BaseManager {
    * May this user read this media item? (#1223, epic #1225)
    *
    * The media door's question, asked of the evaluator rather than answered
-   * in `MediaManager.getItem` and again in the share routes. Two parts:
+   * in `MediaManager.getItem` and again in the share routes.
    *
-   * 1. __The share ceiling__, for a subject carrying `viaShare` — the twin of
-   *    the page ceiling in `_runEvaluator`: `asset-read` must be delegated,
-   *    the share unexpired, the item's keywords covered by the share's media
-   *    resources (and not `owner-only`), the item not private, and the issuer
-   *    still holding `asset-read` live. An ordinary session skips this part.
-   * 2. __The linked page's own rules__, for everyone: an item linked to a page
-   *    is readable only by someone who may view that page (#714 Slice D),
-   *    which for a share subject runs the page ceiling too.
+   * __The share ceiling__, for a subject carrying `viaShare` — the twin of
+   * the page ceiling in `_runEvaluator`: `asset-read` must be delegated, the
+   * share unexpired, the item's keywords covered by the share's media
+   * resources (and not `owner-only`), and the issuer still holding
+   * `asset-read` live. An ordinary session is allowed: media items carry no
+   * per-item privacy and no page link (#1427).
    *
    * A refusal is audited as `authorization-deny` on the media resource, with
    * the share attribution when there is one.
@@ -831,7 +829,7 @@ class PolicyInformationPoint extends BaseManager {
   ): Promise<boolean> {
     // #1431: the share ceiling is the PDP's — this was the fourth copy of it,
     // after the page door, the list filter and UserManager. The media half it
-    // cannot know (does the share cover THIS item, and is the item private) is
+    // cannot know (does the share cover THIS item) is
     // supplied as coverage, which is PIP work.
     const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
     if (viaShare) {
@@ -844,7 +842,7 @@ class PolicyInformationPoint extends BaseManager {
           const keywords: string[] = Array.isArray(raw)
             ? raw.filter((k): k is string => typeof k === 'string')
             : typeof raw === 'string' ? [raw] : [];
-          return !item.isPrivate && shareCoversResource(shareResources, 'media', keywords);
+          return shareCoversResource(shareResources, 'media', keywords);
         }
       });
       if (ceiling && !ceiling.permit) {
@@ -852,9 +850,6 @@ class PolicyInformationPoint extends BaseManager {
         void this.auditDenial(userContext?.username || 'anonymous', item.id, 'asset-read', ceiling.reason, viaShare, 'media');
         return false;
       }
-    }
-    if (item.linkedPageName) {
-      return this.canUserAccessPage(userContext, item.linkedPageName, 'view');
     }
     return true;
   }

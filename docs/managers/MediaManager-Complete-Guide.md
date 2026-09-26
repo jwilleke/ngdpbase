@@ -39,7 +39,7 @@ MediaManager is the high-level coordinator for ngdpbase's media browsing feature
 - Reads config from `ConfigurationManager` (`ngdpbase.media.*` keys)
 - Creates and owns a `FileSystemMediaProvider` instance
 - Exposes query methods (`getItem`, `listByYear`, `listByKeyword`, `listByPage`, `search`, `getYears`, `getThumbnailBuffer`) to WikiRoutes and plugins
-- Applies private-page access control before returning items to callers
+- Holds a share visitor to the share's ceiling in `getItem`; items carry no other access control (#1427)
 - Manages a periodic background rescan timer
 
 The manager is __opt-in__: it is only instantiated by `WikiEngine` when
@@ -240,8 +240,6 @@ interface MediaItem {
   mimeType:        string;           // e.g. "image/jpeg"
   year?:           number;           // Four-digit year
   dirPath?:        string;           // Parent directory
-  linkedPageName?: string;           // Associated wiki page (optional)
-  isPrivate?:      boolean;          // Linked to a private page
   creator?:        string;           // Creator of linked page
   metadata?: {
     title:         unknown;
@@ -292,9 +290,7 @@ interface MediaItem {
 
 ## Querying
 
-All public query methods apply privacy filtering via `checkPrivatePageAccess()`
-before returning items to callers. Passing `undefined` as `wikiContext`
-bypasses filtering (for admin / internal use).
+Items carry no per-item privacy (see Privacy and Access Control). Only `getItem` takes a `wikiContext`, for the share ceiling.
 
 ### getYears
 
@@ -306,9 +302,7 @@ Returns all items where `item.year === year`, sorted by filename.
 
 ### listByPage
 
-Delegates to `provider.getItemsByPage(pageName)`. Matches items where
-`item.linkedPageName === pageName`. Useful for wiki pages that have media
-associated with them via the `linkedPageName` field rather than EXIF keywords.
+Delegates to `provider.getItemsByPage(pageName)`: the items whose EXIF/XMP keywords include the page name.
 
 ### getItem
 
@@ -324,33 +318,26 @@ in the combined haystack of: filename, year, title, description, and keywords.
 ### listByKeyword
 
 ```typescript
-async listByKeyword(keyword: string, wikiContext?: WikiContext): Promise<MediaItem[]>
+async listByKeyword(keyword: string): Promise<MediaItem[]>
 ```
 
 Delegates to `provider.getItemsByKeyword(keyword)`. The provider performs an
 __exact, case-sensitive match__ against each entry in `metadata.keywords`
 (which may be a string or a string array). Items with no keywords are excluded.
-The result is then passed through `filterPrivateItems()` before being returned.
-
-Passing `undefined` as `wikiContext` bypasses privacy filtering (admin/internal
-use only).
 
 ### getItemsByPage
 
 ```typescript
-async listByPage(pageName: string, wikiContext?: WikiContext): Promise<MediaItem[]>
+async listByPage(pageName: string): Promise<MediaItem[]>
 ```
 
-Delegates to `provider.getItemsByPage(pageName)`. Matches items whose
-`linkedPageName` field equals `pageName`. This is distinct from keyword
-browsing: `listByPage` uses the explicit page association set at index time,
-while `listByKeyword` uses EXIF/XMP metadata.
+Delegates to `provider.getItemsByPage(pageName)`: items whose EXIF/XMP keywords include the page name. It is `listByKeyword` with the page name as the keyword.
 
 ### /media/keyword/:keyword route
 
 ```
 GET /media/keyword/:keyword
-→ mediaManager.listByKeyword(keyword, wikiContext)
+→ mediaManager.listByKeyword(keyword)
 → renders media-keyword.ejs
    Variables: keyword (string), items (MediaItem[])
 ```
@@ -369,10 +356,10 @@ rather than the year's item list:
 // In mediaItemDetail route:
 const albumKeyword = typeof req.query.keyword === 'string' ? req.query.keyword : null;
 if (albumKeyword) {
-  const siblings = await mediaManager.listByKeyword(albumKeyword, wikiContext);
+  const siblings = await mediaManager.listByKeyword(albumKeyword);
   // find index of current item in siblings, set prevItem / nextItem
 } else if (item.year) {
-  const siblings = await mediaManager.listByYear(item.year, wikiContext);
+  const siblings = await mediaManager.listByYear(item.year);
   // ...
 }
 ```
@@ -413,24 +400,9 @@ icon is shown in grids.
 
 ## Privacy and Access Control
 
-MediaManager mirrors the private-page access logic from `WikiRoutes.checkPrivatePageAccess()`.
+Media items carry no per-item privacy and no link to a page (#1427): every item is returned to any caller of MediaManager. A page's media are the items whose EXIF/XMP keywords name it.
 
-```text
-item.linkedPageName present?
-  No  → allowed (public item)
-  Yes → look up page in PageManager index
-          entry.location !== 'private'?  → allowed
-          user is admin?                 → allowed
-          user is entry.creator?         → allowed
-          otherwise                      → denied (item hidden)
-```
-
-The check is applied in:
-
-- `getItem()` — returns `null` when denied
-- `filterPrivateItems()` — called by `listByYear()`, `listByKeyword()`, `listByPage()`, and `search()`
-
-Items with no `linkedPageName` are always visible to any user.
+The one check is the share ceiling. `getItem(id, wikiContext)` asks `PolicyInformationPoint.canUserAccessMediaItem`, which for a subject that arrived through a share requires the share to delegate `asset-read`, be unexpired, and cover the item's keywords (not `owner-only`), with the issuer still holding `asset-read`. It returns `null` on refusal. An ordinary session is allowed.
 
 ## MediaPlugin Integration
 
@@ -569,33 +541,29 @@ POST /admin/media/rescan   (admin:system permission required)
 
 Delegates to `provider.scan(force)`. Logs before and after. Returns the `ScanResult`.
 
-### `getYears(wikiContext?: WikiContext): Promise<number[]>`
+### `getYears(): Promise<number[]>`
 
-Delegates to `provider.getYears()`. The `wikiContext` parameter is reserved for
-future per-year ACL; currently all years are returned without filtering.
+Delegates to `provider.getYears()`.
 
-### `listByYear(year: number, wikiContext?: WikiContext): Promise<MediaItem[]>`
+### `listByYear(year: number): Promise<MediaItem[]>`
 
-Calls `provider.getItemsByYear(year)` then `filterPrivateItems(items, wikiContext)`.
+Delegates to `provider.getItemsByYear(year)`.
 
-### `listByKeyword(keyword: string, wikiContext?: WikiContext): Promise<MediaItem[]>`
+### `listByKeyword(keyword: string): Promise<MediaItem[]>`
 
-Calls `provider.getItemsByKeyword(keyword)` then `filterPrivateItems(items, wikiContext)`.
-The keyword match is exact and case-sensitive.
+Delegates to `provider.getItemsByKeyword(keyword)`. The keyword match is exact and case-sensitive.
 
-### `listByPage(pageName: string, wikiContext?: WikiContext): Promise<MediaItem[]>`
+### `listByPage(pageName: string): Promise<MediaItem[]>`
 
-Calls `provider.getItemsByPage(pageName)` then `filterPrivateItems(items, wikiContext)`.
-Matches items by their `linkedPageName` field.
+Delegates to `provider.getItemsByPage(pageName)`: items whose keywords include the page name.
 
 ### `getItem(id: string, wikiContext?: WikiContext): Promise<MediaItem | null>`
 
-Calls `provider.getItem(id)`. If `item.linkedPageName` is set and `wikiContext`
-is provided, runs `checkPrivatePageAccess()` and returns `null` on denial.
+Calls `provider.getItem(id)`. With a `wikiContext` whose subject arrived through a share, runs `PolicyInformationPoint.canUserAccessMediaItem` and returns `null` on refusal.
 
-### `search(query: string, wikiContext?: WikiContext): Promise<MediaItem[]>`
+### `search(query: string): Promise<MediaItem[]>`
 
-Calls `provider.search(query)` then `filterPrivateItems(items, wikiContext)`.
+Delegates to `provider.searchItems(query)`.
 
 ### `getThumbnailBuffer(id: string, size: string): Promise<Buffer | null>`
 
@@ -719,6 +687,5 @@ constructor inside `FileSystemMediaProvider`.
 |---------|-------|
 | Video thumbnails | Requires `fluent-ffmpeg` + FFmpeg binary |
 | Slideshow / lightbox UI | Client-side JS enhancement |
-| Link items to wiki pages | Associate `linkedPageName` at scan or edit time |
 | Bulk EXIF write-back | Out of scope — feature is read-only by design |
 | S3 / cloud provider | New `S3MediaProvider` implementing `BaseMediaProvider` |

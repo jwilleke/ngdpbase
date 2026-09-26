@@ -17817,7 +17817,7 @@ ${description}
     }
     try {
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
-      const years = (await mediaManager.getYears(wikiContext));
+      const years = (await mediaManager.getYears());
       const commonData = await this.getCommonTemplateData(req);
       return res.render('media-home', {
         ...commonData,
@@ -17847,7 +17847,7 @@ ${description}
         return res.status(400).send('Invalid year');
       }
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
-      const raw = await mediaManager.listByYear(year, wikiContext);
+      const raw = await mediaManager.listByYear(year);
       const { sort, order, items } = this.applyMediaSort(req, raw as unknown as Record<string, unknown>[]);
       const commonData = await this.getCommonTemplateData(req);
       return res.render('media-year', {
@@ -17877,7 +17877,7 @@ ${description}
     try {
       const keyword = decodeURIComponent(req.params.keyword);
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
-      const raw = await mediaManager.listByKeyword(keyword, wikiContext);
+      const raw = await mediaManager.listByKeyword(keyword);
       const { sort, order, items } = this.applyMediaSort(req, raw as unknown as Record<string, unknown>[]);
       const commonData = await this.getCommonTemplateData(req);
       // #854: Share entry point — visible only to users who may create shares.
@@ -17925,13 +17925,13 @@ ${description}
       let prevItem: { id: string; filename: string } | null = null;
       let nextItem: { id: string; filename: string } | null = null;
       if (albumKeyword) {
-        const raw = await mediaManager.listByKeyword(albumKeyword, wikiContext);
+        const raw = await mediaManager.listByKeyword(albumKeyword);
         const { items: siblings } = this.applyMediaSort(req, raw as unknown as Record<string, unknown>[]);
         const idx = siblings.findIndex((s: Record<string, unknown>) => s['id'] === item.id);
         if (idx > 0) prevItem = siblings[idx - 1] as { id: string; filename: string };
         if (idx >= 0 && idx < siblings.length - 1) nextItem = siblings[idx + 1] as { id: string; filename: string };
       } else if (item.year) {
-        const raw = await mediaManager.listByYear(item.year, wikiContext);
+        const raw = await mediaManager.listByYear(item.year);
         const { items: siblings } = this.applyMediaSort(req, raw as unknown as Record<string, unknown>[]);
         const idx = siblings.findIndex((s: Record<string, unknown>) => s['id'] === item.id);
         if (idx > 0) prevItem = siblings[idx - 1] as { id: string; filename: string };
@@ -18269,8 +18269,7 @@ ${description}
       if (isNaN(year)) {
         return res.status(400).json({ error: 'Invalid year' });
       }
-      const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
-      const items = await mediaManager.listByYear(year, wikiContext);
+      const items = await mediaManager.listByYear(year);
       return res.json({ year, items });
     } catch (err: unknown) {
       logger.error('[media] Error fetching media year API:', err);

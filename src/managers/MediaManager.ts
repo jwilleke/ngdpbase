@@ -4,7 +4,10 @@
  * Provides browsing, searching, and thumbnail access for pre-existing
  * media files stored on external drives. Unlike AttachmentManager, this
  * manager is read-only with respect to source files and is independent
- * of wiki pages (though items may be linked to pages via linkedPageName).
+ * of wiki pages. A page's media are the items whose EXIF/XMP keywords name
+ * it — there is no other link, and no per-item privacy: any subject that
+ * reaches this manager sees every item, except that a share visitor is held
+ * to the share's ceiling in {@link getItem} (#1427).
  *
  * STUB: Actual filesystem scanning is not yet wired up (Phase 4).
  * The manager compiles and registers cleanly; all index queries return
@@ -355,11 +358,11 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Retrieve a single media item, enforcing private-page access control.
+   * Retrieve a single media item, held to a share visitor's ceiling.
    *
-   * When the item is linked to a private wiki page and a WikiContext is
-   * provided, access is checked using the same rules as page and attachment
-   * routes. Returns null if access is denied (treated as not found).
+   * With a WikiContext whose subject arrived through a share, the item must
+   * be covered by that share (PolicyInformationPoint.canUserAccessMediaItem);
+   * a refusal returns null, treated as not found.
    *
    * @param id          - Item identifier.
    * @param wikiContext - Caller's WikiContext (pass undefined for admin/internal calls).
@@ -370,21 +373,9 @@ class MediaManager extends BaseManager implements CatalogSource {
     const item = await this.provider.getItem(id);
     if (!item) return null;
 
-    // #714 Slice D: was a private MediaManager.checkPrivatePageAccess
-    // helper that re-implemented the legacy private-page rule. Migrated
-    // to PolicyInformationPoint.canUserAccessPage (added in Slice B) — same evaluator
-    // every other surface uses, no duplicated logic.
-    //
-    // Behavior shift: the legacy helper returned `true` (allow) for the
-    // no-PageManager / no-metadata / catch-all cases (conservative-on-
-    // availability). `canUserAccessPage` returns false in those cases
-    // (conservative-on-security). Matches the documented Slice C/D
-    // shift in #714.
-    //
-    // #1223: the question is the evaluator's, in full. `canUserAccessMediaItem`
-    // runs the linked-page rule above and, for a subject carrying `viaShare`,
-    // the share ceiling on the item itself — so the share routes no longer
-    // need a decision of their own.
+    // #1223: the question is the evaluator's, in full. For a subject carrying
+    // `viaShare`, `canUserAccessMediaItem` applies the share ceiling to the
+    // item itself — so the share routes need no decision of their own.
     if (wikiContext) {
       const policyInformationPoint = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
       if (policyInformationPoint) {
@@ -459,63 +450,49 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * List all media items for a given year, filtering out private items
-   * that the current user cannot access.
+   * List all media items for a given year.
    *
-   * @param year        - Four-digit year.
-   * @param wikiContext - Caller's WikiContext (pass undefined for admin/internal calls).
-   * @returns Array of accessible MediaItem objects.
+   * @param year - Four-digit year.
+   * @returns Array of MediaItem objects.
    */
-  async listByYear(year: number, wikiContext?: WikiContext): Promise<MediaItem[]> {
+  async listByYear(year: number): Promise<MediaItem[]> {
     if (!this.provider) return [];
-    const items = await this.provider.getItemsByYear(year);
-    return this.filterPrivateItems(items, wikiContext);
+    return this.provider.getItemsByYear(year);
   }
 
   /**
    * List media items whose capture timestamp falls within [after, before],
    * ascending by capture date (#864 — Dawarich adapter). Items without a
-   * capture date are excluded by the provider. Privacy filtering applies
-   * only when a wikiContext is passed — the Dawarich compat layer calls
-   * with undefined (its map is a personal, network-restricted surface;
-   * wiki-privacy is a different axis, per the #864 decision).
+   * capture date are excluded by the provider.
    *
-   * @param after       - Inclusive lower bound (ISO-ish string), optional.
-   * @param before      - Inclusive upper bound (ISO-ish string), optional.
-   * @param wikiContext - Caller's WikiContext (undefined = no privacy filter).
+   * @param after  - Inclusive lower bound (ISO-ish string), optional.
+   * @param before - Inclusive upper bound (ISO-ish string), optional.
    */
-  async listByDateRange(after?: string, before?: string, wikiContext?: WikiContext): Promise<MediaItem[]> {
+  async listByDateRange(after?: string, before?: string): Promise<MediaItem[]> {
     if (!this.provider) return [];
-    const items = await this.provider.getItemsByDateRange(after, before);
-    return wikiContext ? this.filterPrivateItems(items, wikiContext) : items;
+    return this.provider.getItemsByDateRange(after, before);
   }
 
   /**
-   * List all media items linked to a specific wiki page, filtering out
-   * private items that the current user cannot access.
+   * List all media items whose EXIF/XMP keywords name a wiki page.
    *
-   * @param pageName    - Wiki page name to match against item.linkedPageName.
-   * @param wikiContext - Caller's WikiContext (pass undefined for admin/internal calls).
-   * @returns Array of accessible MediaItem objects.
+   * @param pageName - Wiki page name to match against each item's keywords.
+   * @returns Array of MediaItem objects.
    */
-  async listByPage(pageName: string, wikiContext?: WikiContext): Promise<MediaItem[]> {
+  async listByPage(pageName: string): Promise<MediaItem[]> {
     if (!this.provider) return [];
-    const items = await this.provider.getItemsByPage(pageName);
-    return this.filterPrivateItems(items, wikiContext);
+    return this.provider.getItemsByPage(pageName);
   }
 
   /**
-   * List all media items whose EXIF/XMP keywords contain the given keyword,
-   * filtering out private items the current user cannot access.
+   * List all media items whose EXIF/XMP keywords contain the given keyword.
    *
-   * @param keyword     - Exact keyword to match (e.g. "Molly's Cooking").
-   * @param wikiContext - Caller's WikiContext (pass undefined for admin/internal calls).
-   * @returns Array of accessible MediaItem objects.
+   * @param keyword - Exact keyword to match (e.g. "Molly's Cooking").
+   * @returns Array of MediaItem objects.
    */
-  async listByKeyword(keyword: string, wikiContext?: WikiContext): Promise<MediaItem[]> {
+  async listByKeyword(keyword: string): Promise<MediaItem[]> {
     if (!this.provider) return [];
-    const items = await this.provider.getItemsByKeyword(keyword);
-    return this.filterPrivateItems(items, wikiContext);
+    return this.provider.getItemsByKeyword(keyword);
   }
 
   /**
@@ -539,17 +516,14 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Search media items, filtering out private items that the current user
-   * cannot access.
+   * Search media items.
    *
-   * @param query       - Search query string.
-   * @param wikiContext - Caller's WikiContext.
-   * @returns Array of accessible MediaItem objects.
+   * @param query - Search query string.
+   * @returns Array of MediaItem objects.
    */
-  async search(query: string, wikiContext?: WikiContext): Promise<MediaItem[]> {
+  async search(query: string): Promise<MediaItem[]> {
     if (!this.provider) return [];
-    const items = await this.provider.searchItems(query);
-    return this.filterPrivateItems(items, wikiContext);
+    return this.provider.searchItems(query);
   }
 
   /**
@@ -611,14 +585,11 @@ class MediaManager extends BaseManager implements CatalogSource {
 
   /**
    * Return the list of years that have at least one media item, sorted
-   * descending (most recent first), filtered by the caller's access level.
+   * descending (most recent first).
    *
-   * Currently all years are public — private filtering is at the item level.
-   *
-   * @param _wikiContext - Caller's WikiContext (reserved for future per-year ACL).
    * @returns Sorted year list.
    */
-  async getYears(_wikiContext?: WikiContext): Promise<number[]> {
+  async getYears(): Promise<number[]> {
     if (!this.provider) return [];
     return this.provider.getYears();
   }
@@ -639,48 +610,6 @@ class MediaManager extends BaseManager implements CatalogSource {
     await super.shutdown();
     logger.info('[MediaManager] Shutdown complete');
   }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Filter a list of media items, removing those linked to private pages
-   * that the current user is not permitted to access.
-   */
-  private async filterPrivateItems(items: MediaItem[], wikiContext?: WikiContext): Promise<MediaItem[]> {
-    if (!wikiContext) return items; // No context — no filtering (admin/internal)
-    const results: MediaItem[] = [];
-    // #714 Slice D: same migration as findByFilename — was a private
-    // MediaManager.checkPrivatePageAccess helper; now delegates to
-    // PolicyInformationPoint.canUserAccessPage. Same conservative-on-security shift.
-    const policyInformationPoint = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
-    for (const item of items) {
-      if (item.linkedPageName) {
-        if (policyInformationPoint) {
-          const allowed = await policyInformationPoint.canUserAccessPage(
-            wikiContext.userContext ?? null,
-            item.linkedPageName,
-            'view'
-          );
-          if (allowed) results.push(item);
-        } else {
-          // No PolicyInformationPoint (test fixture without mock) — preserve the
-          // legacy "no manager → allow" fallback so unmocked tests
-          // don't all break.
-          results.push(item);
-        }
-      } else {
-        results.push(item);
-      }
-    }
-    return results;
-  }
-
-  // #714 Slice D: deleted the private `MediaManager.checkPrivatePageAccess`
-  // helper that previously sat here. Its 2 call sites (findByFilename and
-  // listByYear above) now use `PolicyInformationPoint.canUserAccessPage` directly —
-  // same evaluator every other surface uses, no duplicated logic.
 }
 
 export default MediaManager;

@@ -204,12 +204,6 @@
                                 <span class="location-plugin" itemprop="geo" itemscope itemtype="https://schema.org/GeoCoordinates"><meta itemprop="latitude" content="<%= lat %>"><meta itemprop="longitude" content="<%= lon %>"><a href="https://www.openstreetmap.org/?mlat=<%= lat %>&mlon=<%= lon %>#map=13/<%= lat %>/<%= lon %>" target="_blank" rel="noopener" class="location-link text-info" title="Open in OpenStreetMap"><i class="fas fa-map-marker-alt"></i> <%= lat.toFixed(4) %>, <%= lon.toFixed(4) %></a></span>
                             </li>
                             <% } %>
-                            <% if (item.linkedPageName) { %>
-                            <li class="list-group-item d-flex justify-content-between">
-                                <span class="text-muted">Page</span>
-                                <a href="/view/<%= item.linkedPageName %>" class="text-info"><%= item.linkedPageName %></a>
-                            </li>
-                            <% } %>
                         </ul>
                     </div>
 

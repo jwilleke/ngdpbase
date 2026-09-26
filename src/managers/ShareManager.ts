@@ -344,13 +344,6 @@ export default class ShareManager extends BaseManager {
           : typeof rawKeywords === 'string' ? [rawKeywords] : [];
         // #1469: `Owner-Only` and `owner only` exclude too — fail closed.
         if (keywords.some(k => keywordsCollide(k, OWNER_ONLY_KEYWORD))) continue;
-        if (item.isPrivate) continue;
-        if (item.linkedPageName) {
-          // Conservative-on-security (#714 convention): unresolvable
-          // linked-page metadata excludes the item rather than admitting it.
-          const linkedMeta = await getMeta(item.linkedPageName);
-          if (!linkedMeta || this.isPageExcluded(linkedMeta)) continue;
-        }
         media.push(item);
       }
     }

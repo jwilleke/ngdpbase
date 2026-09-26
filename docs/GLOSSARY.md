@@ -213,7 +213,7 @@ configured media folders outside the wiki). Located at
 Each `MediaItem` record includes: `id` (SHA-256 of file path), `filePath`,
 `filename`, `mimeType`, `year` (from EXIF or filename), `eventName` (parsed
 from catalog-export filenames in `YYYY-MM-DD-EventName` format),
-`linkedPageName`, `isPrivate`, `creator`.
+`creator`.
 
 ### Media Index Rebuild
 

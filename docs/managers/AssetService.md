@@ -71,8 +71,6 @@ Each item in the result array conforms to:
 | `url` | `string` | Browsable / embeddable URL |
 | `thumbUrl` | `string?` | Thumbnail URL — media items only (`/media/thumb/:id?size=150x150`) |
 | `year` | `number?` | Year — media items only |
-| `linkedPageName` | `string?` | Wiki page the item is associated with |
-| `isPrivate` | `boolean?` | `true` when gated by a private wiki page — media items only |
 | `insertSnippet` | `string` | Ready-to-paste wiki markup for the editor (see below) |
 
 ### `insertSnippet` values

@@ -465,14 +465,12 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
-   * Retrieve all items linked to a specific wiki page.
-   * Matches items where linkedPageName equals pageName OR where
-   * EXIF/XMP keywords include the page name (the primary association mechanism).
+   * Retrieve all items whose EXIF/XMP keywords include the page name — the
+   * only association between a media item and a page (#1427).
    */
   getItemsByPage(pageName: string): Promise<MediaItem[]> {
     const items = Object.values(this.index)
       .filter(item => {
-        if (item.linkedPageName === pageName) return true;
         const kw = item.metadata?.keywords;
         if (!kw) return false;
         return Array.isArray(kw)

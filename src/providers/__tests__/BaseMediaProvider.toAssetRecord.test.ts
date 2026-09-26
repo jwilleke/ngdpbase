@@ -118,8 +118,6 @@ describe('BaseMediaProvider.toAssetRecord() — Slice 3 of #755 (#758)', () => {
   it('does not regress existing fields when duration is present', () => {
     const item: MediaItem = {
       ...minimalVideo,
-      linkedPageName: 'Volcano Trip',
-      isPrivate: false,
       metadata: {
         duration: 'PT3M',
         bitrate: 3_500_000,
@@ -136,8 +134,8 @@ describe('BaseMediaProvider.toAssetRecord() — Slice 3 of #755 (#758)', () => {
     expect(rec.thumbnailUrl).toBe('/media/thumb/vid-1?size=150x150');
     expect(rec.dateCreated).toBe('2024-06-15 14:30:00');
     expect(rec.keywords).toEqual(['volcano', 'travel']);
-    expect(rec.mentions).toEqual(['Volcano Trip']);
-    expect(rec.isPrivate).toBe(false);
+    expect(rec.mentions).toEqual([]);
+    expect(rec.isPrivate).toBeUndefined();
     expect(rec.insertSnippet).toBe("[{ATTACH src='media://eruption.mp4'}]");
     expect(rec.duration).toBe('PT3M');
     expect(rec.bitrate).toBe(3_500_000);

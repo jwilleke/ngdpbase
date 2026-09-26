@@ -44,8 +44,6 @@ type MediaLike = {
   id: string;
   filePath: string;
   mimeType?: string;
-  isPrivate?: boolean;
-  linkedPageName?: string;
   metadata?: { keywords?: unknown };
 };
 
@@ -391,29 +389,6 @@ describe('ShareManager', () => {
 
     test('normalizes a scalar string keywords field', async () => {
       mediaItems = [{ id: 'm1', filePath: '/x/a.jpg', metadata: { keywords: OWNER_ONLY_KEYWORD } }];
-      const r = await sm.resolveScope(scope);
-      expect(r.media).toHaveLength(0);
-    });
-
-    test('excludes media flagged isPrivate', async () => {
-      mediaItems = [{ id: 'm1', filePath: '/x/a.jpg', isPrivate: true, metadata: { keywords: ['trip'] } }];
-      const r = await sm.resolveScope(scope);
-      expect(r.media).toHaveLength(0);
-    });
-
-    test('excludes media linked to a private page, keeps media linked to a public page', async () => {
-      mediaItems = [
-        { id: 'm1', filePath: '/x/a.jpg', linkedPageName: 'Secret', metadata: { keywords: ['trip'] } },
-        { id: 'm2', filePath: '/x/b.jpg', linkedPageName: 'Open', metadata: { keywords: ['trip'] } }
-      ];
-      pageMetas['Secret'] = { title: 'Secret', uuid: 's', private: true };
-      pageMetas['Open'] = { title: 'Open', uuid: 'o' };
-      const r = await sm.resolveScope(scope);
-      expect(r.media.map(m => m.id)).toEqual(['m2']);
-    });
-
-    test('excludes media whose linked-page metadata is unresolvable (conservative, #714)', async () => {
-      mediaItems = [{ id: 'm1', filePath: '/x/a.jpg', linkedPageName: 'Gone', metadata: { keywords: ['trip'] } }];
       const r = await sm.resolveScope(scope);
       expect(r.media).toHaveLength(0);
     });

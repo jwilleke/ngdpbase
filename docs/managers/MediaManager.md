@@ -30,7 +30,7 @@ Sharp thumbnails are maintained in the configured data directory.
 - __Year-based browse__ — items grouped by year (from EXIF or filename/path fallback)
 - __Keyword browsing__ — `listByKeyword()` returns items whose EXIF/XMP keywords contain a given value; powers `/media/keyword/:keyword` album pages
 - __Full-text search__ — multi-token AND search across all metadata fields
-- __Private-page awareness__ — items linked to private pages hidden from non-owners
+- __No per-item privacy__ — every item is returned to any caller; a share visitor is held to the share in `getItem` (#1427)
 - __MediaPlugin integration__ — `[{MediaPlugin}]` wiki plugin embeds counts, lists, and thumbnail albums in wiki pages
 - __Opt-in__ — disabled by default (`ngdpbase.media.enabled = false`)
 - __Background rescan__ — configurable periodic timer
@@ -48,11 +48,11 @@ const result = await mediaManager.scanFolders(true);
 const years = await mediaManager.getYears();
 // [2025, 2024, 2023, ...]
 
-// Items for a year (private-filtered)
-const items = await mediaManager.listByYear(2024, wikiContext);
+// Items for a year
+const items = await mediaManager.listByYear(2024);
 
-// Items for a keyword (private-filtered)
-const kwItems = await mediaManager.listByKeyword("Molly's Cooking", wikiContext);
+// Items for a keyword
+const kwItems = await mediaManager.listByKeyword("Molly's Cooking");
 
 // Single item
 const item = await mediaManager.getItem(id, wikiContext);
@@ -61,7 +61,7 @@ const item = await mediaManager.getItem(id, wikiContext);
 const buffer = await mediaManager.getThumbnailBuffer(id, '300x300');
 
 // Search
-const results = await mediaManager.search('birthday 2023', wikiContext);
+const results = await mediaManager.search('birthday 2023');
 ```
 
 ## Core Methods
@@ -69,13 +69,13 @@ const results = await mediaManager.search('birthday 2023', wikiContext);
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `scanFolders(force?)` | `Promise<ScanResult>` | Walk configured folders and update index |
-| `getYears(wikiContext?)` | `Promise<number[]>` | Sorted-descending list of years with items |
-| `listByYear(year, wikiContext?)` | `Promise<MediaItem[]>` | All items for a year, privacy-filtered |
-| `listByKeyword(keyword, wikiContext?)` | `Promise<MediaItem[]>` | Items whose EXIF/XMP keywords contain `keyword`, privacy-filtered |
-| `listByPage(pageName, wikiContext?)` | `Promise<MediaItem[]>` | Items linked to a wiki page by `linkedPageName`, privacy-filtered |
-| `getItem(id, wikiContext?)` | `Promise<MediaItem\|null>` | Single item by ID, privacy-filtered |
+| `getYears()` | `Promise<number[]>` | Sorted-descending list of years with items |
+| `listByYear(year)` | `Promise<MediaItem[]>` | All items for a year |
+| `listByKeyword(keyword)` | `Promise<MediaItem[]>` | Items whose EXIF/XMP keywords contain `keyword` |
+| `listByPage(pageName)` | `Promise<MediaItem[]>` | Items whose keywords include the page name |
+| `getItem(id, wikiContext?)` | `Promise<MediaItem\|null>` | Single item by ID; a share visitor is held to the share |
 | `findByFilename(filename)` | `Promise<MediaItem\|null>` | Find first item by basename — used by `media://` URI resolution |
-| `search(query, wikiContext?)` | `Promise<MediaItem[]>` | Keyword search, privacy-filtered |
+| `search(query)` | `Promise<MediaItem[]>` | Keyword search |
 | `getThumbnailBuffer(id, size)` | `Promise<Buffer\|null>` | JPEG thumbnail (cached) |
 | `shutdown()` | `Promise<void>` | Clear timer, release ExifTool worker |
 
@@ -102,8 +102,7 @@ No attachment upload is needed. The media library index is consulted only for `m
 
 ### Access Control
 
-- `/media/file/:id` enforces the same private-page access control as other media routes
-- Items linked to private pages are inaccessible to non-owners even when referenced by `media://` URI
+- Media items carry no per-item privacy; a share visitor is held to the share's ceiling (#1427)
 
 ## HTTP Routes
 

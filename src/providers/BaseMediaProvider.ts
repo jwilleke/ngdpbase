@@ -39,10 +39,6 @@ export interface MediaItem {
   year?: number;
   /** Source directory path (for display purposes) */
   dirPath?: string;
-  /** Wiki page name this item is linked to (when the item appears in a page context) */
-  linkedPageName?: string;
-  /** Whether this item is associated with a private wiki page */
-  isPrivate?: boolean;
   /** Username of the content creator */
   creator?: string;
   /** File modification time in epoch milliseconds — used as a sort fallback when EXIF DateTimeOriginal is absent (#606). */
@@ -177,9 +173,9 @@ abstract class BaseMediaProvider extends BaseProvider implements AssetProvider {
   abstract getThumbnailBuffer(id: string, size: string): Promise<Buffer | null>;
 
   /**
-   * Retrieve all media items linked to a specific wiki page.
+   * Retrieve all media items whose EXIF/XMP keywords name a wiki page.
    *
-   * @param pageName - The wiki page name to match against `linkedPageName`.
+   * @param pageName - The wiki page name to match against each item's keywords.
    * @returns Array of matching MediaItem objects (may be empty).
    */
   getItemsByPage(_pageName: string): Promise<MediaItem[]> {
@@ -521,8 +517,7 @@ abstract class BaseMediaProvider extends BaseProvider implements AssetProvider {
       dimensions,
       duration,
       bitrate,
-      mentions: item.linkedPageName ? [item.linkedPageName] : [],
-      isPrivate: item.isPrivate,
+      mentions: [],
       metadata: assetMetadata,
       insertSnippet: item.mimeType.startsWith('image/')
         ? `[{Image src='media://${item.filename}'}]`
