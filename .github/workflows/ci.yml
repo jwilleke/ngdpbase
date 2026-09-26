@@ -251,14 +251,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run markdown lint
-        run: |
-          echo "Checking markdown files..."
-          if [ -f ".markdownlint-cli2.jsonc" ]; then
-            npm run lint:md
-          else
-            echo "Skipping markdown lint (not configured)"
-          fi
+      # #1278: the whole lint chain, not markdown alone. The guards (page door,
+      # CSRF, permissions, context, audit docs, addon boundary, …) ran only in
+      # the pre-commit hook, which a Dependabot merge never passes through.
+      # Build first: it installs each addon's own dependencies, which eslint's
+      # type-aware rules on addons/ need, exactly as the test job does.
+      - name: Build (addon dependencies for type-aware lint)
+        run: npm run build
+
+      - name: Run the full lint chain
+        run: npm run lint:ci
 
       - name: Check for debugging code
         run: |
