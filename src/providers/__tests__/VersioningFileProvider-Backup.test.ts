@@ -115,3 +115,91 @@ describe('VersioningFileProvider - backup carries version history (#1380)', () =
     await expect(provider.restore(backup)).resolves.toBeUndefined();
   });
 });
+
+describe('VersioningFileProvider - backup carries the trash (#1409)', () => {
+  let testDir: string;
+  let provider: VersioningFileProvider;
+
+  beforeEach(async () => {
+    testDir = path.join(os.tmpdir(), `versioning-trash-backup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.ensureDir(testDir);
+    provider = makeProvider(testDir);
+    await provider.initialize();
+  });
+
+  afterEach(async () => {
+    // Only ever removes this test's own temp directory under os.tmpdir().
+    if (await fs.pathExists(testDir)) await fs.remove(testDir);
+  });
+
+  /** A page saved, then soft-deleted; returns its uuid. */
+  async function trashed(title: string): Promise<string> {
+    await provider.savePage(title, `${title} body`, { author: 'jim' });
+    const uuid = (await provider.getPage(title))!.metadata.uuid as string;
+    expect(await provider.deletePage(title, TEST_ACTOR)).toBe(true);
+    return uuid;
+  }
+
+  test('a backup holds each trashed page and its entry, with the path stored relative', async () => {
+    const uuid = await trashed('Old Notes');
+
+    const backup = await provider.backup();
+
+    const item = backup.trash!.find((t) => t.uuid === uuid)!;
+    expect(item.content).toContain('Old Notes body');
+    expect(item.entry.title).toBe('Old Notes');
+    expect(path.isAbsolute(item.entry.deletedFrom)).toBe(false);
+  });
+
+  test('restored onto a new instance, the trash is back and a page can be restored from it', async () => {
+    const uuid = await trashed('Old Notes');
+    const backup = JSON.parse(JSON.stringify(await provider.backup()));
+
+    // A different machine: a new folder, a fresh provider, nothing in the trash.
+    const otherDir = path.join(os.tmpdir(), `versioning-trash-target-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await fs.ensureDir(otherDir);
+    const other = makeProvider(otherDir);
+    await other.initialize();
+    try {
+      await other.restore(backup);
+
+      expect(other.isPageDeleted(uuid)).toBe(true);
+      expect(other.getDeletedPages().find((e) => e.uuid === uuid)!.deletedFrom.startsWith(path.join(otherDir, 'pages'))).toBe(true);
+      expect(await other.restoreDeletedPage(uuid)).toMatchObject({ ok: true, title: 'Old Notes' });
+      expect((await other.getPage('Old Notes'))!.content).toContain('Old Notes body');
+    } finally {
+      // Only this test's own temp directory.
+      await fs.remove(otherDir);
+    }
+  });
+
+  test('a uuid that is live again is not put back in the trash (#1403)', async () => {
+    const uuid = await trashed('Old Notes');
+    const backup = JSON.parse(JSON.stringify(await provider.backup()));
+    expect(await provider.restoreDeletedPage(uuid)).toMatchObject({ ok: true });
+
+    await provider.restore(backup);
+
+    expect(provider.isPageDeleted(uuid)).toBe(false);
+    expect(await provider.getPage('Old Notes')).not.toBeNull();
+  });
+
+  test('a trash path that leaves its folder is refused', async () => {
+    const uuid = await trashed('Old Notes');
+    const backup = JSON.parse(JSON.stringify(await provider.backup()));
+    await provider.purgeDeletedPage(uuid);
+    backup.trash[0].entry.deletedFrom = path.join('..', '..', 'escaped.md');
+
+    await provider.restore(backup);
+
+    expect(provider.isPageDeleted(uuid)).toBe(false);
+  });
+
+  test('a backup made before #1409 (no trash field) still restores', async () => {
+    await trashed('Old Notes');
+    const backup = JSON.parse(JSON.stringify(await provider.backup()));
+    delete backup.trash;
+
+    await expect(provider.restore(backup)).resolves.toBeUndefined();
+  });
+});

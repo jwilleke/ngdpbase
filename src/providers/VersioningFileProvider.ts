@@ -226,6 +226,19 @@ interface VersionBackupFile {
 interface VersioningBackupData extends BackupData {
   versions?: VersionBackupFile[];
   requiredPagesVersions?: VersionBackupFile[];
+  /** #1409: the public trash — each soft-deleted page's file and its entry. */
+  trash?: TrashBackupEntry[];
+}
+
+/**
+ * One soft-deleted page in a backup (#1409). `deletedFrom` is stored relative
+ * to its location's folder, not as the absolute path the live index keeps, so
+ * a backup restores onto a machine whose folders sit somewhere else.
+ */
+interface TrashBackupEntry {
+  uuid: string;
+  entry: Omit<DeletedPageEntry, 'deletedFrom'> & { deletedFrom: string };
+  content: string;
 }
 
 /**
@@ -3436,15 +3449,80 @@ class VersioningFileProvider extends FileSystemProvider {
    * Back up pages and their version histories (#1380).
    *
    * The parent walk skips every `versions/` directory, so each file under
-   * `pages/versions/` and `required-pages/versions/` is added here. Histories of
-   * private stores (`private/{user}/{store}/versions/`) are not included (#1387).
+   * `pages/versions/` and `required-pages/versions/` is added here, and the
+   * public trash (#1409). Private stores travel whole, trash and history
+   * included, through the parent's private-store backup (#1387).
    */
   async backup(): Promise<VersioningBackupData> {
     const backupData: VersioningBackupData = await super.backup();
     backupData.versions = await this.readVersionFiles(this.pagesVersionsDir);
     backupData.requiredPagesVersions = await this.readVersionFiles(this.requiredPagesVersionsDir);
-    logger.info(`[VersioningFileProvider] Backup includes ${backupData.versions.length + backupData.requiredPagesVersions.length} version files`);
+    backupData.trash = await this.readTrash();
+    logger.info(`[VersioningFileProvider] Backup includes ${backupData.versions.length + backupData.requiredPagesVersions.length} version files and ${backupData.trash.length} trashed page(s)`);
     return backupData;
+  }
+
+  /**
+   * The public trash, for a backup (#1409): each `deletedPages` entry with the
+   * page file it points at. A private page's trash is its store's own
+   * (#1459) and travels with the store (#1387); an old `private` entry here is
+   * left to that path. An entry whose file is gone is skipped — it cannot be
+   * restored from the trash anyway.
+   */
+  private async readTrash(): Promise<TrashBackupEntry[]> {
+    const out: TrashBackupEntry[] = [];
+    for (const [uuid, entry] of Object.entries(this.pageIndex?.deletedPages ?? {})) {
+      if (entry.location === 'private') continue;
+      const base = entry.location === 'required-pages' ? this.requiredPagesDirectory : this.pagesDirectory;
+      if (!base) continue;
+      const file = path.join(this.getDeletedDirectory(entry.location), `${uuid}.md`);
+      try {
+        if (!await fs.pathExists(file)) continue;
+        out.push({
+          uuid,
+          entry: { ...entry, deletedFrom: path.relative(base, entry.deletedFrom) },
+          content: await fs.readFile(file, 'utf8')
+        });
+      } catch (error) {
+        logger.error(`[VersioningFileProvider] Failed to back up trashed page ${uuid}`, error);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Put the trash back after a restore (#1409). A uuid that is live again is
+   * not trashed a second time (#1403). Every path is resolved and checked to
+   * stay inside its folder — a backup is the operator's file, but its paths
+   * are still data.
+   */
+  private async writeTrash(trash: TrashBackupEntry[] | undefined): Promise<number> {
+    if (!Array.isArray(trash) || !this.pageIndex) return 0;
+    let written = 0;
+    for (const item of trash) {
+      const { uuid, entry, content } = item;
+      if (!/^[A-Za-z0-9_-]+$/.test(uuid) || entry.location === 'private') continue;
+      if (this.pageIndex.pages[uuid]) continue;
+      const base = entry.location === 'required-pages' ? this.requiredPagesDirectory : this.pagesDirectory;
+      if (!base) continue;
+      const deletedFrom = path.resolve(base, entry.deletedFrom);
+      if (!deletedFrom.startsWith(path.resolve(base) + path.sep)) {
+        logger.warn(`[VersioningFileProvider] Skipping trashed page ${uuid}: its path leaves ${base}`);
+        continue;
+      }
+      try {
+        const trashDir = this.getDeletedDirectory(entry.location);
+        await fs.ensureDir(trashDir);
+        await writeFileAtomic(path.join(trashDir, `${uuid}.md`), content, 'utf8');
+        this.pageIndex.deletedPages ??= {};
+        this.pageIndex.deletedPages[uuid] = { ...entry, deletedFrom };
+        written++;
+      } catch (error) {
+        logger.error(`[VersioningFileProvider] Failed to restore trashed page ${uuid}`, error);
+      }
+    }
+    if (written > 0) await this.savePageIndex();
+    return written;
   }
 
   /**
@@ -3456,7 +3534,8 @@ class VersioningFileProvider extends FileSystemProvider {
     const written = await this.writeVersionFiles(this.pagesVersionsDir, backupData.versions)
       + await this.writeVersionFiles(this.requiredPagesVersionsDir, backupData.requiredPagesVersions);
     this.versionCache.clear();
-    logger.info(`[VersioningFileProvider] Restored ${written} version files`);
+    const trashed = await this.writeTrash(backupData.trash);
+    logger.info(`[VersioningFileProvider] Restored ${written} version files and ${trashed} trashed page(s)`);
   }
 
   private async readVersionFiles(dir: string | null): Promise<VersionBackupFile[]> {
