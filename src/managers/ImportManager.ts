@@ -1778,7 +1778,7 @@ class ImportManager extends BaseManager {
       const when = new Date();
       const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
         + ` ${when.toTimeString().slice(0, 8)}`;
-      const title = await freeImportTitle(`Import report ${stamp}`, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
+      const title = await freeImportTitle(`${stamp}-import-report`, async (t) => !!await pageManager.getPage(nameIn(store, t), ctx));
       const saved = await pageManager.savePage(
         nameIn(store, title),
         this.takeoutReportMarkdown(report, { owner, when, sourceName: options.sourceName }),

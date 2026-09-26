@@ -329,7 +329,7 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
       store: VAULT, archive, limits: LIMITS, sourceName: 'takeout-vault-2026-09-25.zip'
     });
 
-    expect(report.reportPage).toMatch(/^private\/molly\/vault\/Import report \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(report.reportPage).toMatch(/^private\/molly\/vault\/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}-import-report$/);
     const page = await pages.getPage(report.reportPage ?? '', MOLLY);
     expect(page?.content).toContain('**takeout-vault-2026-09-25.zip**');
     expect(page?.content).toContain('- Pages imported: 1');
