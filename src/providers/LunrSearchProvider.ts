@@ -1242,9 +1242,9 @@ class LunrSearchProvider extends BaseSearchProvider {
    */
   isHealthy(): Promise<boolean> {
     try {
-      // Check if index exists and has documents
-      const healthy = this.initialized && this.searchIndex !== null &&
-        Object.keys(this.documents).length > 0;
+      // Initialised with a built index (#1168). An empty index is healthy —
+      // a new site has no pages yet — so the document count is not asked.
+      const healthy = this.initialized && this.searchIndex !== null;
       return Promise.resolve(healthy);
     } catch (error) {
       logger.error('[LunrSearchProvider] Health check failed:', error);

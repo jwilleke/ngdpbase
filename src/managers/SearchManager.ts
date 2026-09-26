@@ -306,14 +306,10 @@ class SearchManager extends BaseManager {
         throw new Error('Failed to create search provider');
       }
       await this.provider.initialize();
-
-      // Test provider health
-      const isHealthy = await this.provider.isHealthy();
-      if (!isHealthy) {
-        logger.warn(`Search provider ${this.providerClass} health check failed after initialization`);
-        // Note: Unlike CacheManager, we don't fall back to NullSearchProvider
-        // We'll let the provider try to recover when buildIndex is called
-      }
+      // #1168: no health check here. A provider's index is built later, in
+      // buildSearchIndex(), so checking now measured an index that is not
+      // meant to exist yet and warned on every boot of a working provider.
+      // The check runs once the index is built.
     } catch (err) {
       logger.error(`Failed to load search provider ${this.providerClass}:`, err);
 
@@ -350,6 +346,11 @@ class SearchManager extends BaseManager {
       await this.provider.buildIndex();
       const docCount = await this.provider.getDocumentCount();
       logger.info(`🔍 Search index built with ${docCount} documents`);
+      // #1168: health is judged here, where the provider says it is ready —
+      // a warning now means search really is not working.
+      if (!(await this.provider.isHealthy())) {
+        logger.warn(`Search provider ${this.providerClass} health check failed after building its index`);
+      }
     } catch (err) {
       logger.error('[SearchManager] Failed to build search index:', err);
       throw err;

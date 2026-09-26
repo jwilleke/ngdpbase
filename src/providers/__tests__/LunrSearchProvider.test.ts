@@ -381,6 +381,22 @@ describe('LunrSearchProvider.rebuild — #724 ghost reconciliation', () => {
     // No pages on disk → index ends empty (ghost cannot survive a rebuild).
     expect(Object.keys(prov['documents'])).toHaveLength(0);
   });
+
+  test('#1168: not healthy before its index is built; healthy once built, even when empty', async () => {
+    const prov = new LunrSearchProvider(makeEngineWithPages([]));
+    prov['config'] = {
+      indexDir: '/tmp', stemming: false,
+      boost: { title: 1, systemCategory: 1, knowledgeRole: 1, userKeywords: 1, tags: 1, keywords: 1 },
+      maxResults: 100, snippetLength: 200
+    };
+    prov['initialized'] = true;
+    expect(await prov.isHealthy()).toBe(false);
+
+    await prov.rebuild();
+
+    // A new site has no pages; an empty, built index is working search.
+    expect(await prov.isHealthy()).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

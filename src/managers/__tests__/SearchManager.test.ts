@@ -670,4 +670,29 @@ describe('SearchManager', () => {
       expect(result.totalDocuments).toBe(0);
     });
   });
+
+  describe('#1168: health is judged once the index is built', () => {
+    test('an unhealthy provider is warned about after building its index', async () => {
+      const logger = (await import('../../utils/logger')).default;
+      const warn = vi.spyOn(logger, 'warn');
+      searchManager.provider = makeMockProvider({ isHealthy: vi.fn().mockResolvedValue(false) });
+
+      await searchManager.buildSearchIndex();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/health check failed after building its index/));
+      warn.mockRestore();
+    });
+
+    test('a healthy provider is not', async () => {
+      const logger = (await import('../../utils/logger')).default;
+      const warn = vi.spyOn(logger, 'warn');
+      searchManager.provider = makeMockProvider({ isHealthy: vi.fn().mockResolvedValue(true) });
+
+      await searchManager.buildSearchIndex();
+
+      expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/health check failed/));
+      warn.mockRestore();
+    });
+  });
 });
+
