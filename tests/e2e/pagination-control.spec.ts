@@ -31,7 +31,14 @@ test.describe('pagination control', () => {
     const secondPage = pager.locator('a.page-link', { hasText: '2' }).first();
     test.skip(await secondPage.count() === 0, 'only one page of results');
 
-    await secondPage.click();
-    await expect(page.locator('[data-pagination]').first()).toHaveAttribute('data-current-page', '2');
+    // #1437: wait for page 2's own search response, not a fixed 5 s. The
+    // pager is removed while results load, and a signed-in asset search took
+    // ~7 s a page (#1449) — the default expect timeout ran out mid-load and
+    // read the gap as "no pager", aborting the rest of the run.
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/assets/search'), { timeout: 60000 }),
+      secondPage.click()
+    ]);
+    await expect(page.locator('[data-pagination]').first()).toHaveAttribute('data-current-page', '2', { timeout: 15000 });
   });
 });
