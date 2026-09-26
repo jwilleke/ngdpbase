@@ -232,3 +232,23 @@ describe('a row without a trailing delimiter keeps its last cell (#1338)', () =>
     expect(cellsOf(html, 'td')).toHaveLength(2);
   });
 });
+
+describe('inline Markdown in a cell (#1351)', () => {
+  test('bold, italic, strike and code render; HTML stays escaped', async () => {
+    const html = await run('|| A || B ||\n| **bold** and *it* | ~~old~~ `x` <b>no</b> |');
+
+    expect(html).toContain('<strong>bold</strong>');
+    expect(html).toContain('<em>it</em>');
+    expect(html).toContain('<del>old</del>');
+    expect(html).toContain('<code>x</code>');
+    expect(html).toContain('&lt;b&gt;no&lt;/b&gt;');
+  });
+
+  test('a placeholder span in a cell survives untouched', async () => {
+    const ph = '<span data-jspwiki-placeholder="abc-1"></span>';
+    const html = await run(`|| A ||\n| **x** ${ph} |`);
+
+    expect(html).toContain(ph);
+    expect(html).toContain('<strong>x</strong>');
+  });
+});

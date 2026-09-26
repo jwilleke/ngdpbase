@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { createMarkdownConverter } from '../rendering/markdownConverter.js';
+import { createMarkdownConverter, renderInlineMarkdown } from '../rendering/markdownConverter.js';
 import BaseManager from '../managers/BaseManager.js';
 import { HandlerRegistry } from './handlers/HandlerRegistry.js';
 import BaseSyntaxHandler from './handlers/BaseSyntaxHandler.js';
@@ -2078,27 +2078,55 @@ class MarkupParser extends BaseManager {
    * @param wikiDocument - WikiDocument for node creation
    * @param idStart  - Starting ID for created elements (must not collide with outer IDs)
    */
+  /**
+   * Append `text` to `node` with the inline Markdown rules applied and its
+   * HTML escaped (#1351) — `renderInlineMarkdown`, parsed into nodes. Text
+   * with nothing to render goes in as a plain text node.
+   */
+  private appendInlineMarkdown(
+    node: ReturnType<typeof WikiDocument.prototype.createElement>,
+    text: string,
+    wikiDocument: WikiDocument
+  ): void {
+    if (!/[*_~^`[]/.test(text)) {
+      node.appendChild(wikiDocument.createTextNode(text));
+      return;
+    }
+    const holder = wikiDocument.createElement('span', {});
+    holder.innerHTML = renderInlineMarkdown(text);
+    while (holder.firstChild) node.appendChild(holder.firstChild);
+  }
+
   private async appendWikiNodes(
     content: string,
     node: ReturnType<typeof WikiDocument.prototype.createElement>,
     context: ParseContext | undefined,
     wikiDocument: WikiDocument,
     idStart: number,
-    lineBreaks = false
+    lineBreaks = false,
+    inlineMarkdown = false
   ): Promise<void> {
     // #1370: `lineBreaks` turns NCM's `\\` / `\\\` in the text into <br>. Inline
     // style runs are lifted out before the document-level rewrite (Step 0.6)
     // sees them, so they ask for it here. Off by default: raw code dumps come
     // through this method too, and a `\\` there is code.
+    //
+    // #1351: `inlineMarkdown` gives the plain text between wiki elements the
+    // inline Markdown rules (bold, italic, strike, sub/sup). Only table cells
+    // ask for it — a code dump's asterisks are code.
+    const plain = (text: string): void => {
+      if (inlineMarkdown) this.appendInlineMarkdown(node, this.decodeTextEntities(text), wikiDocument);
+      else node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(text)));
+    };
     const appendText = (raw: string): void => {
       if (!lineBreaks) {
-        node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(raw)));
+        plain(raw);
         return;
       }
       for (const part of raw.split(/(\\{2,3})/)) {
         if (part === '\\\\\\') node.appendChild(wikiDocument.createElement('br', { class: 'wiki-clearfix' }));
         else if (part === '\\\\') node.appendChild(wikiDocument.createElement('br', {}));
-        else if (part) node.appendChild(wikiDocument.createTextNode(this.decodeTextEntities(part)));
+        else if (part) plain(part);
       }
     };
     // Combined pattern — mirrors Steps 0–4 of extractJSPWikiSyntax:
@@ -2435,12 +2463,12 @@ class MarkupParser extends BaseManager {
 
         const hasWiki = /`[^`\n]+`|\[\[\{|\[\{\$|\[\{[A-Za-z]|\[|data-jspwiki-placeholder/.test(segment);
         if (!hasWiki) {
-          // Plain text: a text node escapes it, which is what a cell wants.
-          el.appendChild(wikiDocument.createTextNode(segment));
+          // Plain text: inline Markdown with its HTML escaped (#1351).
+          this.appendInlineMarkdown(el, segment, wikiDocument);
           continue;
         }
 
-        await this.appendWikiNodes(segment, el, context, wikiDocument, linkIdCounter);
+        await this.appendWikiNodes(segment, el, context, wikiDocument, linkIdCounter, false, true);
         linkIdCounter += 100; // advance past any IDs appendWikiNodes may have used
       }
     };

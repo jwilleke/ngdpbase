@@ -107,6 +107,23 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
 
 const converters = new Map<MarkdownProfile, MarkdownConverter>();
 
+let inlineCellMd: MarkdownIt | null = null;
+
+/**
+ * Inline Markdown for one line of text that is not a paragraph: a table cell
+ * (#1351). The page profile's inline rules — `**bold**`, `*italic*`,
+ * `~~strike~~`, `~sub~`, `^sup^`, `` `code` ``, `[text](url)` — with HTML
+ * escaped rather than passed through, which is what a cell has always done.
+ * No block rules and no paragraph: `renderInline`.
+ */
+export function renderInlineMarkdown(text: string): string {
+  if (!inlineCellMd) {
+    inlineCellMd = buildMarkdownIt('page');
+    inlineCellMd.set({ html: false, breaks: false });
+  }
+  return inlineCellMd.renderInline(text);
+}
+
 /** The converter for a profile. One per profile; markdown-it renders are independent. */
 export function createMarkdownConverter(profile: MarkdownProfile): MarkdownConverter {
   let converter = converters.get(profile);

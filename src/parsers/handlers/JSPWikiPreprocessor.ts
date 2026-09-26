@@ -1,5 +1,6 @@
 import BaseSyntaxHandler, { ParseContext, HandlerMetadata } from './BaseSyntaxHandler.js';
 import { parseJspwikiTableRow } from '../jspwikiTableRow.js';
+import { renderInlineMarkdown } from '../../rendering/markdownConverter.js';
 
 /**
  * Block extraction result
@@ -343,25 +344,22 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
    * The two implementations serve different contexts.
    */
   private escapeHtml(text: string): string {
-    // Protect placeholder spans before escaping
+    // Protect placeholder spans before escaping. Private-use characters, so
+    // no Markdown rule can read the sentinel as syntax.
     const placeholders: string[] = [];
-    const sentinel = '%%JSPWIKI_PH_';
     const protected_ = text.replace(
       /<span data-jspwiki-placeholder="[^"]+"><\/span>/g,
       (match) => {
         placeholders.push(match);
-        return `${sentinel}${placeholders.length - 1}%%`;
+        return `\uE000${placeholders.length - 1}\uE001`;
       }
     );
 
-    const map: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    const escaped = protected_.replace(/[&<>"']/g, m => map[m] ?? m);
+    // #1351: the cell gets inline Markdown — **bold**, *italic*, ~~strike~~,
+    // sub/sup, code, [text](url) — with its HTML still escaped, exactly as
+    // text outside a table would. It used to be escaped and nothing more, so
+    // emphasis in a cell showed as literal asterisks.
+    const escaped = renderInlineMarkdown(protected_);
 
     // Put line breaks back (#1038).
     //
@@ -384,7 +382,7 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
       .replace(/&lt;br class=&quot;wiki-clearfix&quot;&gt;/gi, '<br class="wiki-clearfix">');
 
     // Restore placeholder spans
-    return withBreaks.replace(/%%JSPWIKI_PH_(\d+)%%/g, (_match, idx: string) => placeholders[parseInt(idx, 10)]);
+    return withBreaks.replace(/\uE000(\d+)\uE001/g, (_match, idx: string) => placeholders[parseInt(idx, 10)]);
   }
 
   /**

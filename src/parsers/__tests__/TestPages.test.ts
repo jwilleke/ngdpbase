@@ -128,7 +128,6 @@ const EXPECTATIONS: Record<string, Expectation[]> = {
   'Test Page: Tables': [
     {
       name: 'bold and italic in cells',
-      knownBug: 1351,
       check: (html) => {
         expect(html).toContain('<td><strong>strong text</strong></td>');
         expect(html).toContain('<td><em>leaning text</em></td>');

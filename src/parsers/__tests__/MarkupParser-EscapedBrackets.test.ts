@@ -156,3 +156,27 @@ describe('task lists render as checkboxes (#1476)', () => {
     expect(html).not.toContain('/edit/');
   });
 });
+
+describe('inline Markdown in a %%-wrapped table cell (#1351)', () => {
+  let parser;
+  beforeEach(async () => {
+    const engine = createMockEngine();
+    parser = new MarkupParser(engine);
+    parser.domVariableHandler = new DOMVariableHandler(engine);
+    await parser.domVariableHandler.initialize();
+    parser.domPluginHandler = new DOMPluginHandler(engine);
+    await parser.domPluginHandler.initialize();
+    parser.domLinkHandler = new DOMLinkHandler(engine);
+    await parser.domLinkHandler.initialize();
+  });
+
+  test('plain and wiki-bearing cells both get emphasis; HTML stays text', async () => {
+    const html = await parser.parseWithDOMExtraction(
+      '%%table-striped\n|| A || B ||\n| **bold** <i>x</i> | *it* [HomePage] |\n/%', { pageName: 'TestPage' });
+
+    expect(html).toContain('<strong>bold</strong>');
+    expect(html).toContain('<em>it</em>');
+    expect(html).toContain('&lt;i&gt;x&lt;/i&gt;');
+    expect(html).toContain('wiki-link');
+  });
+});
