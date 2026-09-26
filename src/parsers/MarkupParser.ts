@@ -138,6 +138,14 @@ export interface ParseContextData {
 }
 
 /** Extracted JSPWiki element */
+/**
+ * A bracket that is not escaped: preceded by an even number of backslashes,
+ * none included (#1476). CommonMark's `\[` is a literal `[`; taking it as
+ * wiki syntax left the backslash before a placeholder, which markdown-it then
+ * printed as text. `\\[` — an escaped backslash — still opens a link.
+ */
+const UNESCAPED = '(?<=(?:^|[^\\\\])(?:\\\\\\\\)*)';
+
 export interface ExtractedElement {
   /** Element type */
   type: 'variable' | 'plugin' | 'link' | 'escaped' | 'style' | 'inline-style' | 'footnote-ref' | 'footnote-def' | 'code' | 'fenced-code';
@@ -1778,7 +1786,7 @@ class MarkupParser extends BaseManager {
     // Step 2: Extract variables [{$varname}]
     // Matches: [{$username}], [{$pagename}], etc.
     // Does NOT match: [{Plugin}], [[{$escaped}] (already extracted)
-    sanitized = sanitized.replace(/\[\{(\$\w+)\}\]/g, (match: string, varName: string, offset: number) => {
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED}\\[\\{(\\$\\w+)\\}\\]`, 'g'), (match: string, varName: string, offset: number) => {
       jspwikiElements.push({
         type: 'variable',
         syntax: match,
@@ -1793,7 +1801,7 @@ class MarkupParser extends BaseManager {
     // Matches: [{TableOfContents}], [{Search query='wiki'}]
     // Does NOT match: [{$variable}] (already extracted), [{] (malformed)
     // Requires: At least one word character after [{
-    sanitized = sanitized.replace(/\[\{([A-Za-z]\w*[^}]*)\}\]/g, (match: string, inner: string, offset: number) => {
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED}\\[\\{([A-Za-z]\\w*[^}]*)\\}\\]`, 'g'), (match: string, inner: string, offset: number) => {
       jspwikiElements.push({
         type: 'plugin',
         syntax: match,
@@ -1843,7 +1851,7 @@ class MarkupParser extends BaseManager {
     //   inner starts with ^  → footnote-ref     [^1]        → <a href="#footnote-1">
     //   inner is blank       → pass through     [ ]         → task-list checkbox
     //   otherwise            → wiki link        [PageName], [Display|Target]
-    sanitized = sanitized.replace(/\[([^\]]*)\](?!\()/g,
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED}\\[([^\\]]*)\\](?!\\()`, 'g'),
       (match: string, inner: string, offset: number) => {
         // Pass through blank brackets (task-list checkboxes [ ])
         if (inner.trim() === '') return match;
