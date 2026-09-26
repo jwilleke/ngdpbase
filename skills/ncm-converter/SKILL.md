@@ -27,7 +27,7 @@ Frontmatter you may write:
 
 - `title` (required): the page name. It may not contain any of `/ \ # ? % " < > | *`. Replace them, for example `Docs/Setup` becomes `Docs-Setup`.
 - `user-keywords`: up to 5 short keywords, as a YAML list. Leave the field out rather than inventing keywords.
-- `system-category`: only when the person names one. The usual ones are `general`, `documentation`, `developer` and `journal`; a site may have others, and an unknown one is refused.
+- `system-category`: only when the person names one. The usual ones are `general`, `documentation` and `journal`; a site may have others, and an unknown one is refused.
 
 Do not write `uuid`, `author`, `lastModified`, `slug`, `version`, `ncmVersion` or `system-keywords`. The site sets them. When updating a page that already has a `uuid`, keep it unchanged: it is how the site recognises the same page.
 

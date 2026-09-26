@@ -1062,7 +1062,7 @@
       "description": "Developer documentation and technical note Only in GitHub",
       "default": false,
       "storageLocation": "github",
-      "enabled": true
+      "enabled": false
     },
     "addon": {
       "label": "addon",
