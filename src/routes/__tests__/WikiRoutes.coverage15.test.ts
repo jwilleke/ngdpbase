@@ -641,6 +641,36 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(res.headers.location).not.toContain('fixed=');
     });
 
+    // #1353: only declared frontmatter is saved.
+    test('stray form fields are not saved as frontmatter; declared extension fields are', async () => {
+      mockPageManager.getPage.mockResolvedValue({
+        content: '# Old', metadata: {
+          title: 'TestPage', uuid: 'u-1', 'system-category': 'general', mood: 'calm',
+          baseLastModified: '2026-01-01T00:00:00.000Z', web_form_name: 'editForm', web_form_page: 'http://x/edit/TestPage'
+        }
+      });
+      mockPageManager.savePage.mockClear();
+
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({
+          content: '# Hello', title: 'TestPage', 'system-category': 'general',
+          baseLastModified: '2026-09-26T00:00:00.000Z', web_form_name: 'editForm',
+          anything_else: 'x', 'journal-date': '2026-09-26'
+        });
+
+      expect(res.status).toBe(302);
+      const saved = mockPageManager.savePage.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+      expect(saved).not.toHaveProperty('baseLastModified');
+      expect(saved).not.toHaveProperty('web_form_name');
+      expect(saved).not.toHaveProperty('web_form_page');
+      expect(saved).not.toHaveProperty('anything_else');
+      // A declared extension field is kept; an addon field already on disk is carried forward.
+      expect(saved['journal-date']).toBe('2026-09-26');
+      expect(saved.mood).toBe('calm');
+    });
+
     test('returns 403 when user lacks page-create permission for non-required page', async () => {
       mockPolicyDecisionPoint.permits.mockResolvedValue(false);
       const res = await request(app)
@@ -709,7 +739,10 @@ describe('WikiRoutes — coverage batch 15', () => {
 
     // ── #803 — Unified /save preserves unknown frontmatter fields ──────────
 
-    test('#803 — preserves unknown form fields (mood, journal-date) into metadata', async () => {
+    // #1353 replaced #803's "keep any posted field" with an allowlist: a posted
+    // field is saved only when an editor declares it (journal-date). `mood` is
+    // not posted by any editor, so a posted one is not frontmatter.
+    test('#803/#1353 — a declared extension field is saved; an undeclared posted field is not', async () => {
       mockPageManager.savePage.mockClear();
       const res = await request(app)
         .post('/save/TestPage')
@@ -724,7 +757,7 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(res.status).toBe(302);
       expect(mockPageManager.savePage).toHaveBeenCalled();
       const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
-      expect(metadata['mood']).toBe('curious');
+      expect(metadata['mood']).toBeUndefined();
       expect(metadata['journal-date']).toBe('2026-05-26');
     });
 
@@ -750,7 +783,7 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(metadata['mood']).toBe('tired');
     });
 
-    test('#803 — req.body unknown field overrides existing frontmatter', async () => {
+    test('#803/#1353 — an undeclared posted field does not override existing frontmatter', async () => {
       mockPageManager.savePage.mockClear();
       mockPageManager.getPage.mockImplementationOnce(() => Promise.resolve({
         content: '# Existing',
@@ -767,8 +800,8 @@ describe('WikiRoutes — coverage batch 15', () => {
         .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', mood: 'happy' });
       expect(res.status).toBe(302);
       const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
-      // Form-posted mood wins over existing
-      expect(metadata['mood']).toBe('happy');
+      // mood is not a declared editor field: the existing value is carried forward.
+      expect(metadata['mood']).toBe('tired');
     });
 
     test('#803 — form-internal markers do not leak into metadata', async () => {

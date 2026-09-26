@@ -1794,6 +1794,25 @@ class WikiRoutes {
    * @param metadata - The page's frontmatter (may be undefined-ish for new pages).
    * @returns Pre-rendered HTML string for the slot, or '' when no addon claims it.
    */
+  /**
+   * The frontmatter fields an editor's extension slot posts (#1353) — the
+   * inputs {@link buildEditorExtraFrontmatterFields} renders. A save keeps a
+   * posted field only when it is managed or listed here; anything else the
+   * browser sends (the editor's own `baseLastModified` token, a browser
+   * extension's `web_form_*`) is dropped instead of becoming frontmatter.
+   * Add a name here in the same change that renders its input.
+   */
+  static readonly EDITOR_EXTRA_FRONTMATTER_FIELDS: ReadonlySet<string> = new Set(['journal-date']);
+
+  /**
+   * A form field an earlier save wrongly stored as frontmatter (#1353): the
+   * editor's `baseLastModified` concurrency token, and the `web_form_*`
+   * fields a browser extension adds at submit (788 jimstest pages).
+   */
+  static isStrayFormField(key: string): boolean {
+    return key === 'baseLastModified' || key.startsWith('web_form_');
+  }
+
   static buildEditorExtraFrontmatterFields(metadata: Record<string, unknown> | undefined | null): string {
     const systemCategory = ((metadata?.['system-category'] as string | undefined) ?? '').toLowerCase();
     if (systemCategory !== 'journal') return '';
@@ -3958,28 +3977,25 @@ ${panes}
       // Step 1: carry forward existing on-disk frontmatter fields the form
       // didn't post (so editing a page through a generic editor that doesn't
       // know about an addon field — e.g. `mood` on a journal entry — doesn't
-      // drop the field). Step 2: layer non-managed, non-form-internal fields
-      // from the submit body on top so an addon editor's `extraFrontmatterFields`
-      // slot inputs (e.g. mood + journal-date in `_basicEditor.ejs`) actually
-      // persist. Empty-string values preserve existing (clear-via-blank is a
-      // known minor UX gap; a follow-up can add explicit deletion).
-      const _803_managedFields = new Set<string>([
-        'title', 'slug', 'uuid', 'lastModified', 'created',
-        'system-category', 'system-keywords', 'user-keywords',
-        'audience', 'author-lock', 'private', 'author', 'content', 'status',
-        // #1354: set from the signed-in user by PageManager, never by the form.
-        'editor'
-      ]);
-      const _803_formInternal = new Set<string>([
-        '_csrf', 'section', 'private-present', 'author-lock-present',
-        'categories', 'userKeywords', 'status-present'
-      ]);
+      // drop the field). Step 2 (below): layer the editor's declared extension
+      // fields from the submit body on top. Empty-string values preserve
+      // existing (clear-via-blank is a known minor UX gap).
+      //
+      // #1353: step 1 does NOT carry forward what earlier saves stored by
+      // mistake — the editor's own `baseLastModified` token and the
+      // `web_form_*` fields a browser extension injected — so each affected
+      // page sheds them on its next save.
       const _803_existingMeta = (existingPage?.metadata ?? {}) as Record<string, unknown>;
       for (const [k, v] of Object.entries(_803_existingMeta)) {
+        if (WikiRoutes.isStrayFormField(k)) continue;
         if (!(k in metadata)) (metadata)[k] = v;
       }
+      // #1353: an allowlist, not a denylist. Only the fields an editor's
+      // extension slot declares are layered on; the rest of the body — the
+      // stale-save token, or whatever a browser extension injects — is not
+      // frontmatter. (Managed fields were set above from their own inputs.)
       for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
-        if (_803_managedFields.has(k) || _803_formInternal.has(k)) continue;
+        if (!WikiRoutes.EDITOR_EXTRA_FRONTMATTER_FIELDS.has(k)) continue;
         if (typeof v === 'string' && v.trim() === '') continue;
         (metadata)[k] = v;
       }
