@@ -16,6 +16,7 @@ import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import { NOT_TASK_MARKER, UNESCAPED_BRACKET } from './LinkParser.js';
 import { parseTableRows } from './jspwikiTableRow.js';
+import { STYLE_BLOCK_OPENER, styleBlockClasses } from './styleBlockSyntax.js';
 import ParseContext from './context/ParseContext.js';
 import WikiDocument from './dom/WikiDocument.js';
 import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
@@ -1295,9 +1296,9 @@ class MarkupParser extends BaseManager {
       // Multiple space-separated classes are allowed (e.g. %%btn btn-sm) —
       // they all land on the one wrapper element, matching how CSS utility
       // frameworks compose.
-      const openMatch = line.match(/^\s*%%([a-zA-Z0-9_-]+(?:[ \t]+[a-zA-Z0-9_-]+)*)[ \t]*$/);
+      const openMatch = line.match(STYLE_BLOCK_OPENER);
       if (openMatch) {
-        const className = openMatch[1].replace(/[ \t]+/g, ' ');
+        const className = styleBlockClasses(openMatch[1]);
         // Calculate accumulated classes from parent blocks
         const parentClasses = stack.map(s => s.className).filter(Boolean);
         stack.push({

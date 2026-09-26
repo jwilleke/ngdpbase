@@ -1,5 +1,6 @@
 import BaseSyntaxHandler, { ParseContext, HandlerMetadata } from './BaseSyntaxHandler.js';
 import { parseTableRows } from '../jspwikiTableRow.js';
+import { STYLE_BLOCK_OPENER, styleBlockClasses } from '../styleBlockSyntax.js';
 import { renderInlineMarkdown } from '../../rendering/markdownConverter.js';
 
 /**
@@ -94,9 +95,9 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
       const line = lines[i];
 
       // Check if line starts a style block: %%class-name
-      if (/^\s*%%([a-zA-Z0-9_-]+)\s*$/.test(line)) {
-        const match = line.match(/^\s*%%([a-zA-Z0-9_-]+)\s*$/);
-        const className = match?.[1] ?? '';
+      const opener = line.match(STYLE_BLOCK_OPENER);
+      if (opener) {
+        const className = styleBlockClasses(opener[1]);
 
         // Find the matching /% and extract block content
         const blockResult = this.extractBlock(lines, i);
@@ -165,7 +166,7 @@ class JSPWikiPreprocessor extends BaseSyntaxHandler {
       const line = lines[i];
 
       // Check for nested %% opening
-      if (/^\s*%%([a-zA-Z0-9_-]+)\s*$/.test(line)) {
+      if (STYLE_BLOCK_OPENER.test(line)) {
         depth++;
         contentLines.push(line);
         continue;

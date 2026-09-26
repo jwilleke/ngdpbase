@@ -180,3 +180,29 @@ describe('inline Markdown in a %%-wrapped table cell (#1351)', () => {
     expect(html).toContain('wiki-link');
   });
 });
+
+describe('dotted classes in a block-form style block (#1345)', () => {
+  let parser;
+  beforeEach(async () => {
+    const engine = createMockEngine();
+    parser = new MarkupParser(engine);
+    parser.domVariableHandler = new DOMVariableHandler(engine);
+    await parser.domVariableHandler.initialize();
+    parser.domPluginHandler = new DOMPluginHandler(engine);
+    await parser.domPluginHandler.initialize();
+    parser.domLinkHandler = new DOMLinkHandler(engine);
+    await parser.domLinkHandler.initialize();
+  });
+
+  test('%%size-20.bg-silver opens a block with both classes', async () => {
+    const html = await parser.parseWithDOMExtraction('%%size-20.bg-silver\n20% wide\n/%', { pageName: 'TestPage' });
+
+    expect(html).toMatch(/class="size-20 bg-silver"/);
+    expect(html).not.toContain('%%size-20');
+  });
+
+  test('space-separated and single classes still work', async () => {
+    expect(await parser.parseWithDOMExtraction('%%btn btn-sm\nx\n/%', { pageName: 'T' })).toMatch(/class="btn btn-sm"/);
+    expect(await parser.parseWithDOMExtraction('%%information\nx\n/%', { pageName: 'T' })).toMatch(/information/);
+  });
+});
