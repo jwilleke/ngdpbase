@@ -33,6 +33,8 @@ declare module 'express-session' {
     roles?: string[];
     /** Opaque handle to this session's private-store key bag (#1382). Random, never the session id; never key bytes. */
     privateStoreHandle?: string;
+    /** The account's password-change generation when this session signed in (#1482). */
+    sessionGeneration?: number;
     [key: string]: unknown;
   }
 }

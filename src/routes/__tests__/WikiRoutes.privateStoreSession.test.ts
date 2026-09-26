@@ -92,7 +92,7 @@ function makeRoutes(opts: {
           )
         };
       }
-      if (name === 'UserManager') return { authenticateUser: vi.fn().mockResolvedValue(null) };
+      if (name === 'UserManager') return { authenticateUser: vi.fn().mockResolvedValue(null), getUser: vi.fn().mockResolvedValue(null) };
       if (name === 'MetricsManager') return { recordLoginAttempt: vi.fn() };
       if (name === 'AuditManager') {
         return {

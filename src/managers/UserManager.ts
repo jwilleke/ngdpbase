@@ -22,6 +22,7 @@ import type { Person, PersonUpdate } from '../types/Person.js';
 import type { ShareGrant } from '../types/Share.js';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
+import { bumpSessionGeneration } from '../utils/sessionGeneration.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
@@ -1021,6 +1022,9 @@ class UserManager extends BaseManager {
     const { roles: incomingRoles, ...userFieldUpdates } = updates;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
+    // #1482: a new password ends every other session of the account. The
+    // session that made the change is re-stamped by its route.
+    if (updates.password) bumpSessionGeneration(user);
     await this.provider.updateUser(username, user);
 
     await this.syncPersonOnUpdate(username, updates);

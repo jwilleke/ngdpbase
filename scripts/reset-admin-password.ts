@@ -28,6 +28,7 @@ import '../src/bootstrap-env.js';
 
 import path from 'path';
 import { hashPassword } from '../src/utils/passwordHash.js';
+import { bumpSessionGeneration } from '../src/utils/sessionGeneration.js';
 import { promises as fs } from 'fs';
 
 import ConfigurationManager from '../src/managers/ConfigurationManager.js';
@@ -37,6 +38,7 @@ interface StoredUser {
   password: string;
   email?: string;
   isSystem?: boolean;
+  sessionGeneration?: number;
   [key: string]: unknown;
 }
 
@@ -103,6 +105,9 @@ async function main(): Promise<void> {
   // written unverifiable hashes the moment the scheme changed, which is exactly
   // what #1042 did. One implementation, no drift.
   users[target].password = hashPassword(newPassword);
+  // #1482: the reset ends every session the account had — the reason to run
+  // this is often that someone else may be signed in as it.
+  bumpSessionGeneration(users[target]);
 
   // Write via a temp file so an interrupted run cannot leave users.json
   // truncated — losing every account is a far worse outcome than a failed

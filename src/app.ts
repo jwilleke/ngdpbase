@@ -47,6 +47,8 @@ import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
+import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
+import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
@@ -683,6 +685,9 @@ void (async (): Promise<void> => {
       const result = await authManager.authenticate('cloudflare-access', { token });
       if (result.success && result.username && req.session) {
         req.session.username = result.username;
+        // #1482: stamped at sign-in, like every other sign-in path.
+        const users = engine.getManager('UserManager') as { getUser(u: string): Promise<{ sessionGeneration?: number } | null> } | null;
+        req.session.sessionGeneration = sessionGenerationOf(await users?.getUser(result.username));
       }
     } catch (err) {
       logger.warn('[CloudflareAccess middleware] failed:', err);
@@ -695,7 +700,7 @@ void (async (): Promise<void> => {
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
 
   const userManager = engine.getManager('UserManager') as {
-    getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; [key: string]: unknown } | null>;
+    getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; sessionGeneration?: number; [key: string]: unknown } | null>;
     isAdminUsingDefaultPassword(): Promise<boolean>;
   };
   // #1431 step 13: the request's subject is built by the PIP — the account and
@@ -717,6 +722,22 @@ void (async (): Promise<void> => {
     }
 
     void (async (): Promise<void> => {
+      // #1482: a session signed in before the account's password last changed
+      // is over — every other session ends when the password does. Its
+      // private-store keys are dropped with it.
+      if (req.session?.username && req.session.isAuthenticated) {
+        const account = await userManager.getUser(req.session.username);
+        if (account && !sessionIsCurrent(req.session.sessionGeneration, account)) {
+          const handle = req.session.privateStoreHandle;
+          if (typeof handle === 'string' && handle) lockPrivateStores(handle);
+          logger.info(`[SESSION] Signed out ${req.session.username}: the password changed after this session signed in (#1482)`);
+          delete req.session.username;
+          delete req.session.privateStoreHandle;
+          delete req.session.sessionGeneration;
+          req.session.isAuthenticated = false;
+        }
+      }
+
       if (req.session?.username && req.session.isAuthenticated) {
         const sessionContext = await pip.subjectFor(req.session.username);
         if (sessionContext) {

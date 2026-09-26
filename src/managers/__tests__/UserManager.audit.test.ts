@@ -183,3 +183,19 @@ describe('#1204 search-user ships switched off', () => {
     expect(sink[0]).toMatchObject({ eventType: 'user-edit', metadata: { role: { assign: 'auditor' } } });
   });
 });
+
+describe('#1482 a password change ends the account\'s other sessions', () => {
+  test('a new password raises the session generation; any other edit leaves it', async () => {
+    const { um, users } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    expect(users.get('alice')?.sessionGeneration).toBeUndefined();
+
+    await um.updateUser('alice', { displayName: 'Alice B' }, ALICE);
+    expect(users.get('alice')?.sessionGeneration).toBeUndefined();
+
+    await um.updateUser('alice', { password: 'new-pw-7654321' }, ALICE);
+    expect(users.get('alice')?.sessionGeneration).toBe(1);
+    await um.updateUser('alice', { password: 'another-pw-1111' }, ADMIN);
+    expect(users.get('alice')?.sessionGeneration).toBe(2);
+  });
+});

@@ -37,6 +37,7 @@ import {
   REQUIRED_SOURCE_HASH_KEY,
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
+import { sessionGenerationOf } from '../utils/sessionGeneration.js';
 import logger from '../utils/logger.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -6584,6 +6585,18 @@ ${panes}
     });
   }
 
+  /**
+   * Stamp the session with the account's password-change generation (#1482):
+   * at every sign-in, and on the session that changed the password, so that
+   * one stays signed in while every other session of the account ends.
+   */
+  private async stampSessionGeneration(req: Request, username = req.session?.username): Promise<void> {
+    if (!req.session || !username) return;
+    const userManager = this.engine.getManager<IUserManager>('UserManager');
+    const account = (await userManager?.getUser(username)) as { sessionGeneration?: number } | null | undefined;
+    req.session.sessionGeneration = sessionGenerationOf(account);
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
       const { username, password } = req.body;
@@ -6676,6 +6689,7 @@ ${panes}
       // Store username in express-session
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
+      await this.stampSessionGeneration(req);
 
       // #1391: KEK/DEK live in the process bag, keyed by a random handle — never
       // the session id, never express-session JSON, never on PageManager. The
@@ -6920,6 +6934,7 @@ ${panes}
 
       req.session.username = result.username;
       req.session.isAuthenticated = true;
+      await this.stampSessionGeneration(req);
 
       logger.info(`👤 User logged in via magic link: ${result.username}`);
 
@@ -6999,6 +7014,7 @@ ${panes}
 
       req.session.username = result.username;
       req.session.isAuthenticated = true;
+      await this.stampSessionGeneration(req);
 
       logger.info(`👤 User logged in via Google: ${result.username}`);
 
@@ -9085,6 +9101,8 @@ ${panes}
       }
 
       await userManager.updateUser(currentUser.username, updates, currentUser);
+      // #1482: a new password ends the account's other sessions, not this one.
+      if (updates.password) await this.stampSessionGeneration(req, currentUser.username);
 
       // Rename profile page if requested
       const oldPageName = (originalProfilePage as string || '').trim();
@@ -10592,6 +10610,10 @@ ${panes}
       }
 
       const success = await userManager.updateUser(username, updates, currentUser);
+      // #1482: an administrator who sets their own password stays signed in here.
+      if (success && updates.password && username === currentUser.username) {
+        await this.stampSessionGeneration(req, username);
+      }
 
       if (success) {
         return res.json({ success: true, message: 'User updated successfully' });

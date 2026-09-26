@@ -69,7 +69,7 @@ function makeRoutes(authSucceeds = true) {
       if (name === 'ConfigurationManager') {
         return { getProperty: vi.fn((_k: string, d: unknown) => d) };
       }
-      if (name === 'UserManager') return { authenticateUser: vi.fn().mockResolvedValue(null) };
+      if (name === 'UserManager') return { authenticateUser: vi.fn().mockResolvedValue(null), getUser: vi.fn().mockResolvedValue(null) };
       if (name === 'MetricsManager') return { recordLoginAttempt: vi.fn() };
       return null;
     })

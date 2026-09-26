@@ -135,6 +135,12 @@ export interface User {
    */
   profileLocked?: boolean;
 
+  /**
+   * Raised on every password change (#1482). A session stamped with an older
+   * value is signed out on its next request. See `utils/sessionGeneration`.
+   */
+  sessionGeneration?: number;
+
   /** Account creation timestamp (ISO 8601) */
   createdAt: string;
 
