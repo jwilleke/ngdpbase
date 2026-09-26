@@ -5,7 +5,7 @@
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
-import { atOrAbove, findLockfiles, interpret, loadAllowlist, run, type AllowlistEntry, type AuditRunner } from '../../../scripts/check-lockfile-audit';
+import { atOrAbove, findLockfiles, interpret, loadAllowlist, run, staleAllowlist, type AllowlistEntry, type AuditRunner } from '../../../scripts/check-lockfile-audit';
 
 const counts = (o: Partial<Record<string, number>>) => JSON.stringify({ metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0, ...o } } });
 
@@ -109,3 +109,30 @@ describe('#1242 — the allowlist subtracts only what the operator decided, and 
   });
 });
 
+describe('#1350 — an allowlist entry that matches no finding is stale', () => {
+  const advisory = (id: string) => ({ source: 1, name: 'pkg', severity: 'moderate', url: `https://github.com/advisories/${id}` });
+  const report = (...ids: string[]) => JSON.stringify({
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: ids.length ? 1 : 0, high: 0, critical: 0, total: ids.length ? 1 : 0 } },
+    vulnerabilities: ids.length ? { pkg: { severity: 'moderate', via: ids.map(advisory) } } : {}
+  });
+  const entry = (id: string): AllowlistEntry => ({ advisory: id, issue: '#1', reason: 'decided', reviewBy: '2099-01-01' });
+  const allow = (...ids: string[]) => new Map(ids.map((id) => [id, entry(id)]));
+
+  test('the #1274 case: showdown gone from every lockfile, its entry left behind, is reported', () => {
+    const results = [interpret('a', { status: 0, stdout: report(), stderr: '' }), interpret('b', { status: 0, stdout: report(), stderr: '' })];
+    expect(staleAllowlist(results, allow('GHSA-rmmh-p597-ppvv')).map((e) => e.advisory)).toEqual(['GHSA-rmmh-p597-ppvv']);
+  });
+
+  test('an entry matched in any one lockfile is not stale', () => {
+    const list = allow('GHSA-aaaa-bbbb-cccc');
+    const results = [interpret('a', { status: 0, stdout: report(), stderr: '' }), interpret('b', { status: 1, stdout: report('GHSA-aaaa-bbbb-cccc'), stderr: '' }, list)];
+    expect(results[1].status).toBe('clean');
+    expect(staleAllowlist(results, list)).toEqual([]);
+  });
+
+  test('with a lockfile unaudited, absence proves nothing and nothing is called stale', () => {
+    const results = [interpret('a', { status: 0, stdout: report(), stderr: '' }), interpret('b', { status: null, stdout: '', stderr: 'getaddrinfo ENOTFOUND registry.npmjs.org' })];
+    expect(results[1].status).toBe('unreachable');
+    expect(staleAllowlist(results, allow('GHSA-rmmh-p597-ppvv'))).toEqual([]);
+  });
+});

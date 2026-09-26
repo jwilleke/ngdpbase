@@ -84,6 +84,8 @@ export interface LockfileResult {
   counts: AuditCounts | null;
   /** Findings subtracted because every advisory behind them is allowlisted and unexpired. */
   allowlisted?: string[];
+  /** Every advisory id npm reported for this lockfile, allowlisted or not. */
+  advisories?: string[];
   detail?: string;
 }
 
@@ -120,6 +122,14 @@ export function interpret(lockfile: string, run: ReturnType<AuditRunner>, allow:
     total: v.total ?? ((v.info ?? 0) + (v.low ?? 0) + (v.moderate ?? 0) + (v.high ?? 0) + (v.critical ?? 0))
   };
 
+  const advisories = new Set<string>();
+  for (const pkg of Object.values(parsed?.vulnerabilities ?? {})) {
+    for (const via of pkg.via) {
+      const id = typeof via === 'string' ? undefined : /GHSA-[\w-]+/.exec(via.url ?? '')?.[0];
+      if (id) advisories.add(id);
+    }
+  }
+
   // Subtract a package whose every advisory is allowlisted. A package reached
   // only THROUGH another vulnerable package (`via` is a bare name) inherits
   // that package's verdict, so it is subtracted when the package it names is.
@@ -149,7 +159,25 @@ export function interpret(lockfile: string, run: ReturnType<AuditRunner>, allow:
       }
     }
   }
-  return { lockfile, status: atOrAbove(counts, LEVEL) > 0 ? 'findings' : 'clean', counts, ...(allowlisted.length ? { allowlisted } : {}) };
+  return {
+    lockfile, status: atOrAbove(counts, LEVEL) > 0 ? 'findings' : 'clean', counts,
+    ...(allowlisted.length ? { allowlisted } : {}),
+    ...(advisories.size ? { advisories: [...advisories].sort() } : {})
+  };
+}
+
+/**
+ * Live allowlist entries whose advisory no lockfile reported (#1350).
+ *
+ * The package behind it was upgraded or removed, so the entry now tolerates
+ * nothing — and would silently tolerate the advisory again if it came back
+ * before the review date. Only said when every lockfile was audited: with one
+ * unreachable or failed, an absent advisory proves nothing.
+ */
+export function staleAllowlist(results: LockfileResult[], allow: Map<string, AllowlistEntry>): AllowlistEntry[] {
+  if (results.some((r) => r.status === 'unreachable' || r.status === 'error')) return [];
+  const seen = new Set(results.flatMap((r) => r.advisories ?? []));
+  return [...allow.values()].filter((e) => !seen.has(e.advisory));
 }
 
 /** How many findings sit at `level` or above. */
@@ -166,6 +194,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   console.log('Dependency audit — every lockfile (#1242)');
   console.log('========================================');
   const results = run();
+  const stale = staleAllowlist(results, loadAllowlist());
   let failing = 0;
   for (const r of results) {
     const c = r.counts;
@@ -178,10 +207,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     console.log('\nThe advisory registry was unreachable for every lockfile — the audit did NOT run. Not a pass.');
     process.exit(0);
   }
+  for (const e of stale) {
+    console.log(`  stale       ${ALLOWLIST_FILE}  ${e.advisory} (${e.issue}) matches no lockfile's findings — remove the entry`);
+  }
+  failing += stale.length;
   if (failing === 0) {
     console.log(`\n${results.length} lockfile(s) audited; nothing at ${LEVEL} or above.`);
     process.exit(0);
   }
-  console.error(`\n${failing} lockfile(s) with findings at ${LEVEL} or above, or an audit that failed. Run npm audit in that directory.`);
+  console.error(`\n${failing} problem(s): findings at ${LEVEL} or above, an audit that failed, or a stale allowlist entry. Run npm audit in that directory, or remove the stale entry.`);
   process.exit(1);
 }
