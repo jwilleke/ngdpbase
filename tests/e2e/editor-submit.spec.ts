@@ -77,8 +77,15 @@ test.describe('Editor and create forms keep the outcome in the page', () => {
     await expect(button).toHaveText('Saving…', inPage);
     await expect(page.locator(banner('info'))).toContainText('Saving changes', inPage);
 
+    // #1483: waitForURL also matches a /view that says "not found", so check
+    // the view itself answered — a flake then says whether the save landed.
+    const viewed = page.waitForResponse(
+      (r) => r.url().includes(`/view/${encodeURIComponent(savedPage)}`) && r.request().method() === 'GET',
+      { timeout: 30000 }
+    );
     release();
     await page.waitForURL(new RegExp(`/view/${encodeURIComponent(savedPage)}`), { timeout: 30000 });
+    expect((await viewed).status(), 'the page the save redirected to').toBe(200);
     await page.unroute('**/save/**');
     await markTestArtifact(page, savedPage);
 
