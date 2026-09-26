@@ -23,8 +23,10 @@ RUN apk add --no-cache python3 make g++
 # Copy package files first (for layer caching)
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies for TypeScript build)
-RUN npm ci
+# Install ALL dependencies (including devDependencies for TypeScript build).
+# Retried: a flap on GitHub's release CDN aborts ffmpeg-static's install (#1450).
+COPY scripts/npm-ci-retry.sh ./scripts/
+RUN sh scripts/npm-ci-retry.sh
 
 # Copy source files
 COPY . .

@@ -34,7 +34,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
         run: npm run build
@@ -249,7 +249,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       # #1278: the whole lint chain, not markdown alone. The guards (page door,
       # CSRF, permissions, context, audit docs, addon boundary, …) ran only in
@@ -298,7 +298,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
         run: npm run build
@@ -382,7 +382,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Check if build script exists
         id: check-build
@@ -417,7 +417,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
 
       - name: Build TypeScript
         run: npm run build
