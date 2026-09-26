@@ -32,6 +32,9 @@ import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { privateStoreIdsOf, storeFileIO } from '../utils/privateStoreFiles.js';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
+import { localizeNcmImages, type NcmImageDeps } from '../converters/ncm/index.js';
+import { guardedFetch } from '../http/guardedFetch.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { AssetQuery, AssetRecord } from '../types/Asset.js';
 import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 
@@ -495,6 +498,64 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       logger.warn(`📎 Permission denied: ${userContext.username} lacks ${permission}`);
     }
     return allowed;
+  }
+
+  /**
+   * Localize the remote images an NCM body embeds (#728 S5a-ii, #1486): each
+   * remote `<img>`/`![](url)` is fetched, checked (size, type, ad deny-list)
+   * and stored as an attachment of `pageName`, and the body is rewritten to
+   * point at it. With `dryRun` nothing is stored: the fetch and checks run,
+   * and the result reports what would be attached.
+   *
+   * Reached through PageManager.completeNcmConversion, the NCM door, never
+   * from a route.
+   *
+   * #1133: the URL comes from page content, so this fetch is a capability the
+   * editor does not otherwise have — making the server issue a request from
+   * inside the network. guardedFetch judges the address actually resolved, on
+   * every redirect hop.
+   */
+  async localizeRemoteImages(
+    content: string,
+    pageName: string,
+    ctx: ActorContext,
+    dryRun: boolean
+  ): Promise<{ content: string; warnings: string[] }> {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const maxBytes = (cm?.getProperty('ngdpbase.attachment.maxsize', 10485760) as number) || 10485760;
+    const adDenyList = (cm?.getProperty('ngdpbase.markdown.ncm.image.ad-deny-list', []) as string[]) || [];
+    const fetchTimeoutMs = (cm?.getProperty('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
+    const egress = resolveEgressPolicy((key, fallback) => cm?.getProperty(key, fallback));
+
+    const deps: NcmImageDeps = {
+      fetchBytes: async (url: string, timeoutMs: number): Promise<Buffer> => {
+        const r = await guardedFetch(url, {
+          policy: egress.policy,
+          headers: { 'User-Agent': 'ngdpbase/1.0 (NCM image)' },
+          timeoutMs,
+          maxBytes
+        });
+        if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+        return r.body;
+      },
+      storeAttachment: async ({ bytes, mime, sourceUrl }): Promise<string> => {
+        const ext = (mime.split('/')[1] || 'bin').toLowerCase();
+        const rawBase = (sourceUrl.split('/').pop() || 'image').split(/[?#]/)[0]
+          .replace(/[^A-Za-z0-9._-]/g, '_') || 'image';
+        const originalName = /\.[A-Za-z0-9]+$/.test(rawBase) ? rawBase : `${rawBase}.${ext}`;
+        if (dryRun) return `/attachments/${encodeURIComponent(originalName)}`;
+        const meta = await this.uploadAttachment(
+          bytes,
+          { originalName, mimeType: mime, size: bytes.length },
+          ctx,
+          { pageName, description: `NCM embedded image from ${sourceUrl}` }
+        );
+        return (meta.url as string) || `/attachments/${encodeURIComponent((meta.name as string) || originalName)}`;
+      }
+    };
+
+    const r = await localizeNcmImages(content, { maxBytes, adDenyList, fetchTimeoutMs }, deps);
+    return { content: r.content, warnings: r.warnings.map(w => `${w.kind}: ${w.detail}`) };
   }
 
   /**

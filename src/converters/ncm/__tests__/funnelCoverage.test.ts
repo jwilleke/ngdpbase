@@ -96,22 +96,39 @@ describe('#1126 the NCM funnel covers every ingestion path', () => {
   });
 });
 
-describe('#1126 the footnote transfer has one implementation and three adopters', () => {
+describe('#1486 one NCM door: every path takes the same writing half', () => {
   const wikiRoutes = read('src/routes/WikiRoutes.ts');
   const importManager = read('src/managers/ImportManager.ts');
+  const mcpServer = read('mcp-server.ts');
+  const pageManager = read('src/managers/PageManager.ts');
   const footnoteManager = read('src/managers/FootnoteManager.ts');
+  const attachmentManager = read('src/managers/AttachmentManager.ts');
 
-  test('FootnoteManager owns transferFromContent', () => {
+  test('FootnoteManager owns the footnote transfer, AttachmentManager the image localization', () => {
     expect(footnoteManager).toContain('async transferFromContent(');
+    expect(attachmentManager).toContain('async localizeRemoteImages(');
   });
 
-  test('convert, ingest, and import all delegate to it', () => {
-    // The route helper (used by convert preview/execute AND ingest):
-    expect(region(wikiRoutes, 'private async transferPageFootnotes(', '\n  private async convertEditContext'))
-      .toContain('transferFromContent');
-    const ingest = region(wikiRoutes, 'async ingestPageMarkdown(', '\n  async ');
-    expect(ingest).toContain('transferPageFootnotes(');
-    expect(importManager).toContain('transferFromContent(');
+  test('PageManager.completeNcmConversion reaches both', () => {
+    const door = region(pageManager, '  async completeNcmConversion(', '\n  }\n');
+    expect(door).toContain('.transferFromContent(');
+    expect(door).toContain('.localizeRemoteImages(');
+  });
+
+  test('convert preview and apply, ingest, both MCP writes and import all go through it', () => {
+    expect(region(wikiRoutes, 'async adminConvertPreview(', '\n  async ')).toContain('completeNcmConversion(');
+    expect(region(wikiRoutes, 'async adminConvertExecute(', '\n  async ')).toContain('completeNcmConversion(');
+    expect(region(wikiRoutes, 'async ingestPageMarkdown(', '\n  async ')).toContain('completeNcmConversion(');
+    expect(mcpServer.match(/pageManager\.completeNcmConversion\(/g)).toHaveLength(2);
+    expect(region(importManager, 'async importSinglePage(', '\n  async ')).toContain('completeNcmConversion(');
+  });
+
+  test('no path reaches around the door to a side effect', () => {
+    for (const source of [wikiRoutes, mcpServer, importManager]) {
+      expect(source).not.toContain('transferFromContent(');
+      expect(source).not.toContain('localizeNcmImages(');
+      expect(source).not.toContain('localizeRemoteImages(');
+    }
   });
 
   test('no second extraction loop grew outside the manager', () => {

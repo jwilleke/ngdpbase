@@ -22,14 +22,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import fse from 'fs-extra';
 import matter from 'gray-matter';
-import { localizeNcmImages } from '../converters/ncm/index.js';
 import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
-import type { NcmImageDeps } from '../converters/ncm/index.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
@@ -373,6 +371,8 @@ interface IPageManager {
   ): Promise<PageSaveResult>;
   /** #1332: NCM conversion with every fix step — Convert to NCM and ingest go through here. */
   convertPageToNcm(raw: string): PageConvertResult;
+  /** #1486: the NCM door's writing half — images, footnotes. */
+  completeNcmConversion(content: string, target: { pageName: string; uuid?: string }, ctx: ActorContext, options?: { dryRun?: boolean; localizeImages?: boolean }): Promise<{ content: string; warnings: string[] }>;
 
   /** #1105: former title -> current title, consulted only after live resolution fails. */
   resolveFormerTitle?(formerTitle: string): Promise<string | null>;
@@ -9762,11 +9762,10 @@ ${panes}
       // stale check (a refused save must not have written sidecar records),
       // before the write. Definitions land in the footnote list; the body
       // keeps its refs.
-      const fn = await this.transferPageFootnotes(
+      const fn = await pageManager.completeNcmConversion(
         ncm.content,
-        ncmDoc.data.uuid as string | undefined,
-        currentUser,
-        false
+        { pageName, uuid: ncmDoc.data.uuid as string | undefined },
+        currentUser
       );
       const finalDoc = fn.warnings.length > 0 ? matter(fn.content) : ncmDoc;
       ncmWarnings.push(...fn.warnings);
@@ -13816,65 +13815,6 @@ ${panes}
   }
 
   /**
-   * #728 S5a-ii: run the NCM image→attachment rule with real deps.
-   * `dryRun` (preview) validates fetch/sniff/size/deny-list but never
-   * persists — preview must be side-effect-free, like the import dry-run.
-   */
-  private async localizePageImages(
-    ncmContent: string,
-    pageName: string,
-    userContext: ActorContext,
-    dryRun: boolean
-  ): Promise<{ content: string; warnings: string[] }> {
-    const cm = this.engine.getManager('ConfigurationManager');
-    const maxBytes = (cm?.getProperty?.('ngdpbase.attachment.maxsize', 10485760) as number) || 10485760;
-    const adDenyList = (cm?.getProperty?.('ngdpbase.markdown.ncm.image.ad-deny-list', []) as string[]) || [];
-    const fetchTimeoutMs = (cm?.getProperty?.('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
-    const attachmentManager = this.engine.getManager('AttachmentManager');
-
-    // #1133: the URL comes from an <img src> in page content and the gate is
-    // the page's own edit ACL (#1127), so this fetch is a capability the editor
-    // does not otherwise have — the ability to make the server issue a request
-    // from inside the network. guardedFetch judges the address actually
-    // resolved, on every redirect hop; a bare fetch with redirect:'follow'
-    // could be sent to 169.254.169.254 by a two-line page edit.
-    const egress = resolveEgressPolicy((key, fallback) => cm?.getProperty?.(key, fallback));
-
-    const deps: NcmImageDeps = {
-      fetchBytes: async (url: string, timeoutMs: number): Promise<Buffer> => {
-        const r = await guardedFetch(url, {
-          policy: egress.policy,
-          headers: { 'User-Agent': 'ngdpbase/1.0 (NCM image)' },
-          timeoutMs,
-          maxBytes
-        });
-        if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-        return r.body;
-      },
-      storeAttachment: async ({ bytes, mime, sourceUrl }): Promise<string> => {
-        const ext = (mime.split('/')[1] || 'bin').toLowerCase();
-        const rawBase = (sourceUrl.split('/').pop() || 'image').split(/[?#]/)[0]
-          .replace(/[^A-Za-z0-9._-]/g, '_') || 'image';
-        const originalName = /\.[A-Za-z0-9]+$/.test(rawBase) ? rawBase : `${rawBase}.${ext}`;
-        if (dryRun) {
-          // Preview: do not persist. Report it would be attached.
-          return `/attachments/${encodeURIComponent(originalName)}`;
-        }
-        const meta = await attachmentManager.uploadAttachment(
-          bytes,
-          { originalName, mimeType: mime, size: bytes.length },
-          userContext,
-          { pageName, description: `NCM embedded image from ${sourceUrl}` }
-        );
-        return (meta.url as string) || `/attachments/${encodeURIComponent((meta.name as string) || originalName)}`;
-      }
-    };
-
-    const r = await localizeNcmImages(ncmContent, { maxBytes, adDenyList, fetchTimeoutMs }, deps);
-    return { content: r.content, warnings: r.warnings.map(w => `${w.kind}: ${w.detail}`) };
-  }
-
-  /**
    * GET /admin/convert — render the "Convert page to NCM" admin tool (#728 S5a)
    */
   async adminConvert(req: Request, res: Response) {
@@ -13926,12 +13866,13 @@ ${panes}
       if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
       const ncm = pageManager.convertPageToNcm(original);
-      // S5a-ii: dry-run image localization (preview must not persist).
-      const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, true);
-      // #1125: dry-run footnote transfer — the preview shows the body with
-      // definitions moved to the footnote list, but writes nothing.
-      const fn = await this.transferPageFootnotes(
-        img.content, page.metadata?.uuid, wikiContext.userContext, true
+      // #1486: the door's writing half, as a dry run — the preview shows
+      // images localized and footnotes moved, and stores nothing.
+      const fn = await pageManager.completeNcmConversion(
+        ncm.content,
+        { pageName, uuid: page.metadata?.uuid },
+        wikiContext.userContext,
+        { dryRun: true, localizeImages: true }
       );
       return res.json({
         success: true,
@@ -13940,7 +13881,7 @@ ${panes}
         ncmVersion: ncm.ncmVersion,
         original,
         proposed: fn.content,
-        warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings, ...fn.warnings]
+        warnings: [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...fn.warnings]
       });
     } catch (err: unknown) {
       logger.error('Error previewing page conversion:', err);
@@ -13975,13 +13916,15 @@ ${panes}
       if (!wikiContext.userContext) return this.refuse(wikiContext, req, res, 'json', 'asset-upload');
       const original = matter.stringify(page.content, page.metadata);
       const ncm = pageManager.convertPageToNcm(original);
-      // S5a-ii: real image localization (persists attachments via AttachmentManager).
-      const img = await this.localizePageImages(ncm.content, pageName, wikiContext.userContext, false);
-      // #1125: real footnote transfer — definitions land in the sidecar list.
-      const fn = await this.transferPageFootnotes(
-        img.content, page.metadata?.uuid, wikiContext.userContext, false
+      // #1486: the door's writing half — images become attachments of this
+      // page, footnote definitions move to its list.
+      const fn = await pageManager.completeNcmConversion(
+        ncm.content,
+        { pageName, uuid: page.metadata?.uuid },
+        wikiContext.userContext,
+        { localizeImages: true }
       );
-      const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...img.warnings, ...fn.warnings];
+      const warnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...fn.warnings];
       if (fn.content === original) {
         return res.json({ success: true, page: pageName, changed: false, warnings });
       }
@@ -14007,35 +13950,6 @@ ${panes}
       logger.error('Error executing page conversion:', err);
       return res.status(500).json({ success: false, error: getErrorMessage(err) || 'Error executing conversion' });
     }
-  }
-
-  /**
-   * #1125: transfer `[^id]: text` definitions from a page body into the
-   * FootnoteManager sidecar (the footnote list with the CRUD UI), leaving
-   * the `[^id]` refs in place and appending a [{FootnotesPlugin}] section
-   * when the page has none. The pure extraction lives in
-   * converters/ncm/footnotes.ts; this owns the side effect, mirroring the
-   * image-localization split. dryRun reports without writing.
-   *
-   * An id already present in the sidecar is NOT clobbered: the body
-   * definition stays where it is and a warning names the collision.
-   */
-  private async transferPageFootnotes(
-    content: string,
-    pageUuid: string | undefined,
-    ctx: ActorContext,
-    dryRun: boolean
-  ): Promise<{ content: string; warnings: string[] }> {
-    // #1126: FootnoteManager.transferFromContent is THE implementation —
-    // convert, ingest, and import all delegate there so the funnel cannot
-    // drift per-path. #1233: the caller's subject goes with it, never a name.
-    const footnoteManager = this.engine.getManager('FootnoteManager') as
-      | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: ActorContext, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
-      | null;
-    if (!pageUuid || !footnoteManager?.isEnabled?.() || !footnoteManager.transferFromContent) {
-      return { content, warnings: [] };
-    }
-    return footnoteManager.transferFromContent(pageUuid, content, ctx, dryRun);
   }
 
   /**

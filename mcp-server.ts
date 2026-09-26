@@ -274,6 +274,8 @@ interface PageManagerType {
   deletePage(identifier: string, ctx: unknown): Promise<boolean>;
   /** #1332: NCM conversion with every fix step — the same path as Convert to NCM and agent ingest. */
   convertPageToNcm(raw: string): NcmResult;
+  /** #1486: the NCM door's writing half — footnotes to the list (images stay links here). */
+  completeNcmConversion(content: string, target: { pageName: string; uuid?: string }, ctx: unknown, options?: { dryRun?: boolean; localizeImages?: boolean }): Promise<{ content: string; warnings: string[] }>;
 }
 
 /**
@@ -1284,14 +1286,19 @@ class NgdpbaseMCPServer {
     metadata.author = 'mcp-server';
     metadata.editor = 'mcp-server';
 
-    // #728 S5c: normalize MCP-supplied content to NCM (links + ncmVersion),
-    // with the #1332 fix steps, through PageManager like every convert path.
-    // Image localization is deferred (MCP is non-preview; like ImportManager).
+    // #728 S5c / #1486: through PageManager's NCM door like every convert
+    // path — the pure conversion, then its writing half, which moves footnote
+    // definitions to the page's list. Remote images stay links (non-preview).
     const ncm = pageManager.convertPageToNcm(
       matter.stringify(content, metadata)
     );
-    const ncmDoc = matter(ncm.content);
-    const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
+    const completed = await pageManager.completeNcmConversion(
+      ncm.content,
+      { pageName: title, uuid: metadata.uuid as string | undefined },
+      this.mcpContext('create page')
+    );
+    const ncmDoc = matter(completed.content);
+    const ncmWarnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...completed.warnings];
 
     // #1455: MCP is an NCM funnel path — a title the rule refuses is
     // normalised by the door and reported here, never dropped.
@@ -1374,13 +1381,18 @@ class NgdpbaseMCPServer {
 
     const updatedContent = content !== undefined ? content : existing.content;
 
-    // #728 S5c: normalize to NCM (links + ncmVersion, and the #1332 fix
-    // steps) through PageManager before save.
+    // #728 S5c / #1486: the NCM door — pure conversion, then its writing
+    // half (footnotes to the list) — before save.
     const ncm = pageManager.convertPageToNcm(
       matter.stringify(updatedContent, updatedMetadata)
     );
-    const ncmDoc = matter(ncm.content);
-    const ncmWarnings = ncm.warnings.map(w => `${w.kind}: ${w.detail}`);
+    const completed = await pageManager.completeNcmConversion(
+      ncm.content,
+      { pageName, uuid: updatedMetadata.uuid as string | undefined },
+      this.mcpContext('update page')
+    );
+    const ncmDoc = matter(completed.content);
+    const ncmWarnings = [...ncm.warnings.map(w => `${w.kind}: ${w.detail}`), ...completed.warnings];
 
     // #1462: the door indexes the page; this server does not.
     await pageManager.savePage(pageName, ncmDoc.content, ncmDoc.data, this.mcpContext('update page'));

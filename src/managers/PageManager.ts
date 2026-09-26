@@ -197,6 +197,7 @@ import type NotificationManager from './NotificationManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
 import type AttachmentManager from './AttachmentManager.js';
+import type FootnoteManager from './FootnoteManager.js';
 import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
 
@@ -2172,6 +2173,59 @@ class PageManager extends BaseManager implements CatalogSource {
       ],
       fixes: fixed.changes
     };
+  }
+
+  /**
+   * The NCM door's second half (#1486): the conversion steps that write.
+   *
+   * `convertPageToNcm` is pure — fix steps, links, tables, `ncmVersion` — so a
+   * caller can validate and check for a stale version before anything is
+   * written. This runs after those checks, and is the one place the funnel's
+   * side effects happen:
+   *
+   * - remote images become attachments of the page (AttachmentManager), when
+   *   `localizeImages` is set — interactive Convert to NCM only, today; the
+   *   agent and import paths leave remote images as links;
+   * - `[^id]: text` definitions move to the page's footnote list
+   *   (FootnoteManager), when the page has a uuid and footnotes are enabled.
+   *
+   * Import, ingest, MCP and Convert to NCM all come through here, so they
+   * cannot drift apart again. With `dryRun` nothing is stored: the preview
+   * shows what apply will do.
+   *
+   * @param content - The converted page text (with or without frontmatter)
+   * @param target - The page it belongs to: its name, and its uuid when known
+   * @param ctx - Who is acting; attachments and footnotes are theirs
+   * @param options - `dryRun`, `localizeImages`
+   * @returns The text to save, and a warning per thing done or refused
+   */
+  async completeNcmConversion(
+    content: string,
+    target: { pageName: string; uuid?: string },
+    ctx: ActorContext,
+    options: { dryRun?: boolean; localizeImages?: boolean } = {}
+  ): Promise<{ content: string; warnings: string[] }> {
+    const dryRun = options.dryRun === true;
+    const warnings: string[] = [];
+    let text = content;
+
+    if (options.localizeImages) {
+      const attachments = this.engine.getManager<AttachmentManager>('AttachmentManager');
+      if (attachments) {
+        const img = await attachments.localizeRemoteImages(text, target.pageName, ctx, dryRun);
+        text = img.content;
+        warnings.push(...img.warnings);
+      }
+    }
+
+    const footnotes = this.engine.getManager<FootnoteManager>('FootnoteManager');
+    if (target.uuid && footnotes?.isEnabled?.()) {
+      const fn = await footnotes.transferFromContent(target.uuid, text, ctx, dryRun);
+      text = fn.content;
+      warnings.push(...fn.warnings);
+    }
+
+    return { content: text, warnings };
   }
 
   /**

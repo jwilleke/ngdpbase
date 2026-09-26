@@ -833,26 +833,25 @@ class ImportManager extends BaseManager {
     }
     conversionResult.content = rewritten;
 
-    // #1126: the import path adopts the #1125 footnote transfer — body
-    // definitions become sidecar footnote-list records via the ONE
-    // implementation in FootnoteManager, the same one convert and ingest
-    // use. Dry runs report without writing; a page without a uuid (or a
-    // disabled FootnoteManager) is left untouched.
+    // #1126/#1486: the import path takes the NCM door's writing half — body
+    // footnote definitions move to the page's footnote list, through the
+    // same PageManager step convert, ingest and MCP use. Dry runs report
+    // without writing; a page without a uuid is left untouched. Remote
+    // images stay links on import.
     {
+      const pageManager = this.engine.getManager<PageManager>('PageManager');
       const targetUuid = overwriteExistingUuid ?? pageUuid;
-      const footnoteManager = this.engine.getManager('FootnoteManager') as
-        | { isEnabled?: () => boolean; transferFromContent?: (uuid: string, content: string, by: ActorContext, dryRun: boolean) => Promise<{ content: string; warnings: string[] }> }
-        | null;
-      if (targetUuid && footnoteManager?.isEnabled?.() && footnoteManager.transferFromContent) {
+      if (typeof pageManager?.completeNcmConversion === 'function' && targetUuid) {
         // #1233: the importer's own context, not a literal 'import'.
-        const fn = await footnoteManager.transferFromContent(
-          targetUuid, conversionResult.content, options.actorContext, options.dryRun === true
+        const fn = await pageManager.completeNcmConversion(
+          conversionResult.content,
+          { pageName: pageTitle, uuid: targetUuid },
+          options.actorContext,
+          { dryRun: options.dryRun === true }
         );
-        if (fn.warnings.length > 0) {
-          conversionResult.content = fn.content;
-          for (const w of fn.warnings) {
-            conversionResult.warnings.push({ kind: 'converter-note', detail: w });
-          }
+        conversionResult.content = fn.content;
+        for (const w of fn.warnings) {
+          conversionResult.warnings.push({ kind: 'converter-note', detail: w });
         }
       }
     }

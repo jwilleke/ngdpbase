@@ -42,7 +42,7 @@ function makeRoutes(canEdit: boolean) {
   };
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'PageManager') return withRealPageConvert(pageManager);
+      if (name === 'PageManager') return withRealPageConvert(pageManager, engine);
       if (name === 'PolicyInformationPoint') return policyInformationPoint;
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
@@ -51,8 +51,6 @@ function makeRoutes(canEdit: boolean) {
   const routes = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, r: unknown) => Promise<unknown>>;
   (routes as unknown as { createWikiContext: () => unknown }).createWikiContext =
     () => ({ userContext: editor, hasPermission: vi.fn().mockResolvedValue(false) });
-  (routes as unknown as { localizePageImages: (...a: unknown[]) => Promise<unknown> }).localizePageImages =
-    async (content: unknown) => ({ content, warnings: [] });
   return { routes, pageManager, policyInformationPoint, savePage };
 }
 
@@ -115,7 +113,7 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     };
     const engine = {
       getManager: vi.fn((name: string) => {
-        if (name === 'PageManager') return withRealPageConvert(pageManager);
+        if (name === 'PageManager') return withRealPageConvert(pageManager, engine);
         if (name === 'PolicyInformationPoint') return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(true) };
         if (name === 'FootnoteManager') {
           return {
