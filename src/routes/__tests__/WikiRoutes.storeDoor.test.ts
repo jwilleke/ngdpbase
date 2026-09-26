@@ -239,3 +239,45 @@ describe('store door routes (#1414)', () => {
     expect(audit.logAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+describe('GET /admin/stores (#1414)', () => {
+  test('lists each kind with its owner, encryption, door and how many users have a copy — counts only', async () => {
+    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'admin-stores-'));
+    const pagesDir = path.join(testDir, 'pages');
+    const cfg: Record<string, unknown> = {
+      'ngdpbase.stores.default.owner': 'admin',
+      'ngdpbase.stores.default.encrypt': false,
+      'ngdpbase.stores.yourphr.owner': 'yourphr',
+      'ngdpbase.stores.yourphr.encrypt': true,
+      'ngdpbase.stores.recovery.confirmretries': 1
+    };
+    await fs.outputJson(storeMetaPath(pagesDir, 'molly', 'default'), { kind: 'default' });
+    await fs.outputJson(storeMetaPath(pagesDir, 'jim', 'default'), { kind: 'default' });
+    await fs.outputJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), { kind: 'yourphr' });
+    const routes = new WikiRoutes({
+      getManager: (name: string) => ({
+        ConfigurationManager: {
+          getProperty: (k: string, d: unknown) => (k in cfg ? cfg[k] : d),
+          getAllProperties: () => cfg,
+          getResolvedDataPath: () => pagesDir
+        },
+        AddonsManager: { storeOwnerState: () => 'disabled' }
+      } as Record<string, unknown>)[name] ?? null
+    });
+    vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ userContext: { username: 'root' } }) as never);
+    vi.spyOn(routes as unknown as { hasAdminViewAccess: () => Promise<boolean> }, 'hasAdminViewAccess').mockResolvedValue(true);
+    vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({});
+    const res = newRes();
+
+    await routes.adminStores({ userContext: {} }, res);
+
+    const data = res.render.mock.calls[0][1] as { kinds: Array<Record<string, unknown>> };
+    expect(data.kinds).toEqual([
+      { id: 'default', owner: 'admin', encrypt: false, door: 'open', copies: 2 },
+      { id: 'yourphr', owner: 'yourphr', encrypt: true, door: 'disabled', copies: 1 }
+    ]);
+    // `recovery` is a setting, never a kind.
+    expect(data.kinds.some(k => k.id === 'recovery')).toBe(false);
+    await fs.remove(testDir);
+  });
+});

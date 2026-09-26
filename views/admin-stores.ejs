@@ -1,0 +1,61 @@
+<%- include('header', { pageName: 'Private Stores' }) %>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-database"></i> Private Stores</h1>
+        <a href="/admin" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <%# #1414: every store kind on this site. Read-only, and counts only —
+        never a user's name or anything inside a store. %>
+    <p class="text-muted">
+        A store kind is a private container each user can have one copy of. The site owns <code>default</code>;
+        an add-on owns the kinds it declares. Whether copies are encrypted is the owner's call, fixed when each
+        user creates their copy.
+    </p>
+
+    <% if (!kinds || kinds.length === 0) { %>
+        <div class="alert alert-info">No private store kinds are defined.</div>
+    <% } else { %>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Store</th>
+                        <th>Owner</th>
+                        <th>Encrypted</th>
+                        <th>Door</th>
+                        <th>Users with a copy</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% kinds.forEach(function(k) { %>
+                    <tr>
+                        <td><code><%= k.id %></code></td>
+                        <td><%= k.owner === 'admin' ? 'This site' : 'Add-on: ' + k.owner %></td>
+                        <td>
+                            <% if (k.encrypt) { %><span class="badge bg-success"><i class="fas fa-lock"></i> Yes</span>
+                            <% } else { %><span class="badge bg-secondary">No</span><% } %>
+                        </td>
+                        <td>
+                            <% if (k.door === 'open') { %><span class="badge bg-success">Open</span>
+                            <% } else if (k.door === 'disabled') { %><span class="badge bg-warning text-dark">Closed: add-on turned off</span>
+                            <% } else if (k.door === 'unavailable') { %><span class="badge bg-danger">Closed: add-on failed to load</span>
+                            <% } else { %><span class="badge bg-secondary">Closed: add-on not installed</span><% } %>
+                        </td>
+                        <td><%= k.copies %></td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted small">
+            A closed store keeps every user's data exactly as it was; it reopens when its add-on is running again.
+        </p>
+    <% } %>
+</div>
+
+<%- include('footer') %>

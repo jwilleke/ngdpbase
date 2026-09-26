@@ -33,6 +33,7 @@ import {
   type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
 import type { StoreFileRecord } from './privateStoreMeta.js';
+import { listPrivateOwners } from './privateStoreTakeout.js';
 
 type GetProperty = (key: string, defaultValue: unknown) => unknown;
 
@@ -163,6 +164,32 @@ export function storeDoorState(kind: StoreKind, ownerState: StoreOwnerState | nu
   default:
     return { open: false, reason: 'not-installed', message: 'The add-on that owns this store is not installed on this site. Its data is untouched.' };
   }
+}
+
+/** Every kind configuration defines, by id: each `ngdpbase.stores.{id}.owner` key. */
+export function storeKindIds(allProperties: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  for (const key of Object.keys(allProperties)) {
+    const m = /^ngdpbase\.stores\.([^.]+)\.owner$/.exec(key);
+    if (m && isValidStoreId(m[1]) && !RESERVED_STORE_IDS.includes(m[1])) ids.add(m[1]);
+  }
+  return [...ids].sort();
+}
+
+/**
+ * How many users hold a copy of a kind: whose `store.json` for it exists.
+ * The copy is what the door creates, so this is "who has walked through".
+ */
+export async function countStoreCopies(
+  pagesDirectory: string,
+  kindId: string,
+  layout?: PrivateStoreLayoutOverrides
+): Promise<number> {
+  let copies = 0;
+  for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+    if (await fs.pathExists(storeMetaPath(pagesDirectory, owner, kindId, layout))) copies++;
+  }
+  return copies;
 }
 
 /** Attempts at confirming the words: one, plus `ngdpbase.stores.recovery.confirmretries`. */

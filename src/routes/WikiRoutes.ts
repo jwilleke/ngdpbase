@@ -112,6 +112,8 @@ import {
   holdWordsForConfirmation,
   storeCopyExists,
   storeKindFromConfig,
+  storeKindIds,
+  countStoreCopies,
   storeDoorState,
   type StoreOwnerState,
   userKeysExist,
@@ -14054,6 +14056,45 @@ ${panes}
   }
 
   /**
+   * GET /admin/stores — every private store kind on this site (#1414).
+   *
+   * Read-only: which kinds exist, whose they are, whether copies are made
+   * encrypted, whether the door is open, and how many users have walked
+   * through it. Counts only — never a user's name or anything inside a store.
+   */
+  async adminStores(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view private store kinds');
+      }
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
+      const addonsManager = this.engine.getManager<{ storeOwnerState?: (slug: string) => StoreOwnerState }>('AddonsManager');
+      const pagesDirectory = configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+      const layout = privateStoreLayoutFromConfig(getProperty);
+
+      const kinds = [];
+      for (const id of storeKindIds(configManager.getAllProperties() as Record<string, unknown>)) {
+        const kind = storeKindFromConfig(getProperty, id);
+        if (!kind) continue;
+        const door = storeDoorState(kind, addonsManager?.storeOwnerState?.(kind.owner) ?? null);
+        kinds.push({
+          ...kind,
+          door: door.open ? 'open' : door.reason,
+          copies: await countStoreCopies(pagesDirectory, id, layout)
+        });
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-stores', { ...commonData, title: 'Private Stores', kinds });
+    } catch (err: unknown) {
+      logger.error('Error loading private store kinds:', err);
+      return this.renderError(req, res, 500, 'Error', 'The private store kinds could not be listed.');
+    }
+  }
+
+  /**
    * POST /admin/addons/:name/toggle — Enable or disable an add-on
    */
   async adminAddonToggle(req: Request, res: Response) {
@@ -14817,6 +14858,7 @@ ${panes}
     app.get('/admin/audit/export', (req: Request, res: Response) => void this.adminAuditExport(req, res));
     app.get('/admin/audit/details/:id', (req: Request, res: Response) => void this.adminAuditLogDetails(req, res));
     app.get('/admin/addons', (req: Request, res: Response) => void this.adminAddons(req, res));
+    app.get('/admin/stores', (req: Request, res: Response) => void this.adminStores(req, res));
     app.post('/admin/addons/:name/toggle', (req: Request, res: Response) => void this.adminAddonToggle(req, res));
     app.post('/admin/addons/:name/deploy-theme', (req: Request, res: Response) => void this.adminAddonDeployTheme(req, res));
     app.post('/admin/restart', (req: Request, res: Response) => this.adminRestart(req, res));

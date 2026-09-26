@@ -100,6 +100,8 @@ A user's copy of a kind is created when they walk through its door — never at 
 
 An addon's kind is served only while that addon is loaded (`AddonsManager.storeOwnerState`, `storeDoorState`). Failed to load, turned off, or not installed, every door route answers `503` with `step: 'closed'` and the reason, and creates nothing. Nothing is removed in any state, and turning the addon back on reopens the store with every user's keys as they were. Turning it off is warned, never refused: `AddonsManager.storeDisableWarnings` counts the users holding a copy of each kind it owns, for the Disable confirmation and the success message.
 
+`GET /admin/stores` (admin view access) lists every kind: owner, whether copies are encrypted, whether its door is open and, if not, why, and how many users hold a copy (`countStoreCopies`). Counts only, never a user's name or anything inside a store. Defining a kind from the admin interface is not built; a site-owned kind is still two configuration keys.
+
 `storeDoorRequest()` gates all four on the `store-create` permission and on a password sign-in: the session must carry a `privateStoreHandle`, so a bearer-token or share request cannot reach the door. Views render from `views/store-door.ejs` with `Cache-Control: no-store`.
 
 What happens on `POST /stores/:kind` depends on the kind and on whether the user already has a key:

@@ -34,12 +34,14 @@ import type PageManager from './PageManager.js';
 import logger from '../utils/logger.js';
 import type { User } from '../types/User.js';
 import {
+  countStoreCopies,
   planStoreDeclaration,
   readStoreDeclarations,
+  storeKindFromConfig,
+  storeKindIds,
   type StoreOwnerState
 } from '../utils/privateStoreDoor.js';
-import { privateStoreLayoutFromConfig, storeMetaPath } from '../utils/privateStorePath.js';
-import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
+import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -1431,24 +1433,18 @@ class AddonsManager extends BaseManager {
   async storeDisableWarnings(addonName: string): Promise<string[]> {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) return [];
-    const all = (configManager.getAllProperties?.() ?? {}) as Record<string, unknown>;
-    const kinds = Object.entries(all)
-      .map(([key, value]) => ({ m: /^ngdpbase\.stores\.([^.]+)\.owner$/.exec(key), value }))
-      .filter(({ m, value }) => m && value === addonName)
-      .map(({ m }) => (m as RegExpExecArray)[1]);
+    const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
+    const kinds = storeKindIds((configManager.getAllProperties?.() ?? {}) as Record<string, unknown>)
+      .filter(id => storeKindFromConfig(getProperty, id)?.owner === addonName);
     if (kinds.length === 0) return [];
 
     const pagesDirectory = configManager.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
     if (!pagesDirectory) return [];
-    const layout = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def));
-    const owners = await listPrivateOwners(pagesDirectory, layout);
+    const layout = privateStoreLayoutFromConfig(getProperty);
 
     const warnings: string[] = [];
-    for (const kind of kinds.sort()) {
-      let holders = 0;
-      for (const owner of owners) {
-        if (fs.existsSync(storeMetaPath(pagesDirectory, owner, kind, layout))) holders++;
-      }
+    for (const kind of kinds) {
+      const holders = await countStoreCopies(pagesDirectory, kind, layout);
       if (holders > 0) {
         warnings.push(`${holders} user${holders === 1 ? ' has' : 's have'} data in store "${kind}". `
           + 'Turning this add-on off shuts that store until it is turned back on; nothing is deleted.');
