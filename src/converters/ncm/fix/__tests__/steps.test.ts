@@ -7,6 +7,7 @@ import { jspwikiBullets } from '../jspwikiBullets.js';
 import { styleClosers } from '../styleClosers.js';
 import { jspwikiHeadings } from '../jspwikiHeadings.js';
 import { jspwikiItalic } from '../jspwikiItalic.js';
+import { jspwikiInsert } from '../jspwikiInsert.js';
 import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
@@ -459,6 +460,35 @@ describe('jspwiki-italic (#1342)', () => {
 
   it('is idempotent', () => {
     const once = run("''a\n\nb''").content;
+    expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('jspwiki-insert (#1342)', () => {
+  const run = (body: string) => jspwikiInsert.apply(body);
+
+  it('INSERT, WHERE and the default package go; the parameters stay', () => {
+    expect(run('[{INSERT CurrentTimePlugin WHERE format=zzzz}]').content).toBe('[{CurrentTimePlugin format=zzzz}]');
+    expect(run('[{INSERT SessionsPlugin property=users}]').content).toBe('[{SessionsPlugin property=users}]');
+    expect(run('[{INSERT org.apache.wiki.plugin.RecentChangesPlugin since=1}]').content).toBe('[{RecentChangesPlugin since=1}]');
+    expect(run('[{org.apache.wiki.plugin.UnusedPagesPlugin}]').content).toBe('[{UnusedPagesPlugin}]');
+  });
+
+  it('two calls on one line, quoted parameters untouched', () => {
+    expect(run("on [{INSERT CurrentTimePlugin format=zzzz}] at [{INSERT CurrentTimePlugin format='HH:mm'}].").content)
+      .toBe("on [{CurrentTimePlugin format=zzzz}] at [{CurrentTimePlugin format='HH:mm'}].");
+  });
+
+  it('left alone: the short form, an escaped example, another package, code', () => {
+    expect(run('[{CurrentTimePlugin}]').lines).toEqual([]);
+    expect(run('[[{INSERT <plugin class> WHERE param1=value}]').lines).toEqual([]);
+    expect(run('[{INSERT com.example.Plugin}]').lines).toEqual([]);
+    expect(run('use `[{INSERT X}]` here').lines).toEqual([]);
+    expect(run('```\n[{INSERT X}]\n```').lines).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = run('[{INSERT org.apache.wiki.plugin.X WHERE a=1}]').content;
     expect(run(once).lines).toEqual([]);
   });
 });
