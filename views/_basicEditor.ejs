@@ -351,6 +351,8 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     </div>
 </div>
 
+<%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
+<script type="application/json" id="ngdpTitleRule"><%- JSON.stringify(typeof titleRule !== 'undefined' ? titleRule : null).replace(/</g, '\\u003c') %></script>
 <script>
     // Update preview function
     function updatePreview() {
@@ -449,8 +451,12 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
         // and every view surface accept it — as a workaround for #1471, where
         // the editor corrupted an apostrophe on its way into the preview pane.
         // That is fixed, and `Molly's Cooking` is a page that exists and works.
-        if (titleField && /[\/\\#?%"<>|*]/.test(titleField.value)) {
-            showPageMessage('error', 'The page title contains characters that are not allowed: / \\ # ? % " < > | * — change the title and save again.');
+        const ngdpTitleRule = (function () {
+            try { return JSON.parse(document.getElementById('ngdpTitleRule').textContent); } catch (e) { return null; }
+        })();
+        const titleBreaksRule = (value) => !!ngdpTitleRule && new RegExp(ngdpTitleRule.source).test(value);
+        if (titleField && titleBreaksRule(titleField.value)) {
+            showPageMessage('error', ngdpTitleRule.message);
             titleField.focus();
             return;
         }

@@ -128,7 +128,7 @@ import {
   type PrivateStoreLayout
 } from '../utils/privateStorePath.js';
 import { pageUrl, type PageAction } from '../utils/pageUrl.js';
-import { titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
+import { FORBIDDEN_TITLE_CHARS, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { createUserKeys, mnemonicWordCount } from '../utils/privateStoreCrypto.js';
 import type { Article } from '../types/Schema.js';
 import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
@@ -1164,6 +1164,7 @@ class WikiRoutes {
       footer?: string;
       systemCategoryDefs?: Record<string, unknown>;
       knowledgeRoleDefs?: Record<string, unknown>;
+      titleRule?: { source: string; message: string };
       assetPickerSources?: Array<{ id: string; label: string }>;
     } = {
       // Supplied here rather than per-route so every surface embedding
@@ -1324,6 +1325,11 @@ class WikiRoutes {
     // (Concept) badges via the same page-badge mechanism as system-category.
     // Pages without `knowledge-role` set render no badge.
     templateData.knowledgeRoleDefs = (configManager?.getProperty('ngdpbase.knowledge-role', {}) as Record<string, unknown>) ?? {};
+
+    // #1468: the page-title rule, as data, for the forms that check a title
+    // before posting it. From its one declaration, so a change to
+    // FORBIDDEN_TITLE_CHARS reaches the browser with no second edit.
+    templateData.titleRule = { source: FORBIDDEN_TITLE_CHARS.source, message: TITLE_RULE_MESSAGE };
 
     return templateData;
   }

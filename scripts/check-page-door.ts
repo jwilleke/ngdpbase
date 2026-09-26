@@ -47,6 +47,15 @@ import { fileURLToPath } from 'url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCAN = ['src', 'addons'];
 
+/**
+ * Browser code (#1468): templates and client scripts. The title rule must reach
+ * the browser from its declaration (`titleRule` in the view), never retyped —
+ * the editor's retyped copy had drifted to refuse an apostrophe the server
+ * accepts. Only `title-rule-copy` applies here; the other rules are server
+ * writes.
+ */
+const BROWSER_SCAN = ['views', 'public/js'];
+
 /** The page door itself, and the providers that implement the writes. */
 const DOOR = 'src/managers/PageManager.ts';
 const PROVIDERS = /^src\/providers\//;
@@ -61,7 +70,7 @@ const INDEX_WRITE = /\.(addPageToCache|updatePageInLinkGraph|removePageFromLinkG
 const FILE_WRITE = /\bfse?\s*\.\s*(writeFile|writeJson|outputFile|move|remove|copy)\s*\(/;
 
 /** The title rule, spelled out somewhere other than where it is declared. */
-const TITLE_RULE_COPY = /\[\/\\\\#\?%"<>\|\*\]/;
+const TITLE_RULE_COPY = /\[\\?\/\\\\#\?%"<>\|\*\]/;
 
 /** The marker that says a line is deliberately none of these (#1462). */
 const IGNORE = /page-door-ignore/;
@@ -124,9 +133,44 @@ function tsFiles(dir: string): string[] {
   return found;
 }
 
+/** Templates and client scripts, minified vendor bundles excepted. */
+function browserFiles(dir: string): string[] {
+  const found: string[] = [];
+  const walk = (current: string): void => {
+    let entries: string[];
+    try { entries = readdirSync(current); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(current, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry === 'node_modules' || entry === 'vendor') continue;
+        walk(full);
+        continue;
+      }
+      if (entry.endsWith('.min.js')) continue;
+      if (entry.endsWith('.ejs') || entry.endsWith('.js')) found.push(full);
+    }
+  };
+  walk(dir);
+  return found;
+}
+
 export function scan(): Violation[] {
   const violations: Violation[] = [];
   const indexHit = new Set<string>();
+
+  for (const root of BROWSER_SCAN) {
+    for (const file of browserFiles(path.join(REPO, root))) {
+      const rel = path.relative(REPO, file);
+      readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+        if (TITLE_RULE_COPY.test(line)) {
+          violations.push({
+            file: rel, line: index + 1, rule: 'title-rule-copy',
+            detail: `a copy of the title rule in browser code (${line.trim()}) — read titleRule from the view, which comes from utils/pageTitleRule`
+          });
+        }
+      });
+    }
+  }
 
   for (const root of SCAN) {
     for (const file of tsFiles(path.join(REPO, root))) {

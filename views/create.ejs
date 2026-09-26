@@ -134,6 +134,8 @@
     </div>
 </div>
 
+<%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
+<script type="application/json" id="ngdpTitleRule"><%- JSON.stringify(typeof titleRule !== 'undefined' ? titleRule : null).replace(/</g, '\\u003c') %></script>
 <script>
     // Form submission validation for system-category and user-keywords.
     // By id: the header's /search forms come first in the page (#1369).
@@ -141,9 +143,13 @@
         // Same rule as the /create route; checked here so the message shows in
         // the page instead of the route's plain-text 400 page (#1327).
         const pageNameField = document.getElementById('pageName');
-        if (pageNameField && /[\/\\#?%"<>|*]/.test(pageNameField.value)) {
+        const ngdpTitleRule = (function () {
+            try { return JSON.parse(document.getElementById('ngdpTitleRule').textContent); } catch (e) { return null; }
+        })();
+        const titleBreaksRule = (value) => !!ngdpTitleRule && new RegExp(ngdpTitleRule.source).test(value);
+        if (pageNameField && titleBreaksRule(pageNameField.value)) {
             e.preventDefault();
-            showPageMessage('error', 'The page name contains characters that are not allowed: / \\ # ? % " < > | * — change the name and try again.');
+            showPageMessage('error', ngdpTitleRule.message);
             pageNameField.focus();
             return false;
         }
