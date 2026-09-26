@@ -521,7 +521,7 @@ Nothing is ever removed. The kind stays in configuration and every user's copy s
 | turned off | closed: the add-on that owns this store is turned off |
 | not installed | closed: not installed on this site |
 
-Turning your addon back on reopens it, with every user's keys as they were.
+Turning your addon back on reopens it, with every user's keys as they were. An administrator turning it off is warned how many users hold data in each of your stores, and is never refused.
 
 One rule is stated in the design and __not yet enforced by code__, so do not rely on it: that a kind's definition cannot be removed, nor its data purged, while any user still has data in it.
 

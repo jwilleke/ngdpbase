@@ -14077,10 +14077,19 @@ ${panes}
         }
       }
 
+      // #1414: turning off an addon that owns a store is warned, never refused.
+      const storeWarnings: string[] = willEnable
+        ? []
+        : (await this.engine.getManager('AddonsManager')?.storeDisableWarnings?.(addonName)) ?? [];
+
       const configManager = this.engine.getManager('ConfigurationManager');
       await configManager.setProperty(`ngdpbase.addons.${addonName}.enabled`, willEnable, currentUser);
       const state = willEnable ? 'enabled' : 'disabled';
-      return res.redirect(`/admin/addons?success=${encodeURIComponent(`Add-on "${addonName}" ${state}. Restart required for changes to take effect.`)}`);
+      if (storeWarnings.length) {
+        logger.warn(`[addons] ${currentUser.username} disabled ${addonName}, which owns private stores: ${storeWarnings.join(' ')}`);
+      }
+      const note = storeWarnings.length ? ` ${storeWarnings.join(' ')}` : '';
+      return res.redirect(`/admin/addons?success=${encodeURIComponent(`Add-on "${addonName}" ${state}. Restart required for changes to take effect.${note}`)}`);
     } catch (err: unknown) {
       logger.error('Error toggling add-on:', err);
       return res.redirect(`/admin/addons?error=${encodeURIComponent('Failed to update add-on configuration')}`);

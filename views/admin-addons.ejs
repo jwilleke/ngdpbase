@@ -93,7 +93,9 @@
                                     <% if (addon.enabled) { %>
                                         <input type="hidden" name="enabled" value="false">
                                         <button type="submit" class="btn btn-outline-warning btn-sm"<%- lockedUnless('admin-system') %>
-                                            onclick="return confirm('Disable add-on &quot;<%= addon.name %>&quot;? A restart is required for this to take effect.')">
+                                            <%# #1414: an addon that owns private stores is warned, never refused. %>
+                                            data-confirm="<%= 'Disable add-on "' + addon.name + '"? A restart is required for this to take effect.' + ((addon.disableWarnings && addon.disableWarnings.length) ? '\n\n' + addon.disableWarnings.join('\n') : '') %>"
+                                            onclick="return confirm(this.dataset.confirm)">
                                             <i class="fas fa-pause"></i> Disable
                                         </button>
                                     <% } else { %>

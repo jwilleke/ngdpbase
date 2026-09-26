@@ -38,6 +38,8 @@ import {
   readStoreDeclarations,
   type StoreOwnerState
 } from '../utils/privateStoreDoor.js';
+import { privateStoreLayoutFromConfig, storeMetaPath } from '../utils/privateStorePath.js';
+import { listPrivateOwners } from '../utils/privateStoreTakeout.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -330,6 +332,8 @@ export interface AddonStatus {
   themeDeployed?: boolean;
   /** #1414: store declarations ignored, denied or malformed at load */
   storeNotices?: string[];
+  /** #1414: what turning this addon off would shut — shown in the Disable confirmation */
+  disableWarnings?: string[];
 }
 
 /**
@@ -1417,6 +1421,43 @@ class AddonsManager extends BaseManager {
   }
 
   /**
+   * What turning this addon off would shut (#1414): one line per store kind it
+   * owns that users hold data in. Turning it off is warned, never refused —
+   * nothing is destroyed, the kind stays in configuration, every copy stays on
+   * disk (sealed ones keep their wrapped key), and turning it back on reopens
+   * them. Separate from `canDisable`, which stays synchronous: counting copies
+   * reads the disk.
+   */
+  async storeDisableWarnings(addonName: string): Promise<string[]> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager) return [];
+    const all = (configManager.getAllProperties?.() ?? {}) as Record<string, unknown>;
+    const kinds = Object.entries(all)
+      .map(([key, value]) => ({ m: /^ngdpbase\.stores\.([^.]+)\.owner$/.exec(key), value }))
+      .filter(({ m, value }) => m && value === addonName)
+      .map(({ m }) => (m as RegExpExecArray)[1]);
+    if (kinds.length === 0) return [];
+
+    const pagesDirectory = configManager.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!pagesDirectory) return [];
+    const layout = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def));
+    const owners = await listPrivateOwners(pagesDirectory, layout);
+
+    const warnings: string[] = [];
+    for (const kind of kinds.sort()) {
+      let holders = 0;
+      for (const owner of owners) {
+        if (fs.existsSync(storeMetaPath(pagesDirectory, owner, kind, layout))) holders++;
+      }
+      if (holders > 0) {
+        warnings.push(`${holders} user${holders === 1 ? ' has' : 's have'} data in store "${kind}". `
+          + 'Turning this add-on off shuts that store until it is turned back on; nothing is deleted.');
+      }
+    }
+    return warnings;
+  }
+
+  /**
    * Where the addon that owns a store kind stands, for the store door (#1414):
    * loaded, enabled but failed to load, turned off, or not on this site.
    */
@@ -1473,6 +1514,10 @@ class AddonsManager extends BaseManager {
         type: addon.manifest?.type,
         ...(addon.storeNotices?.length ? { storeNotices: addon.storeNotices } : {})
       };
+      if (addon.enabled) {
+        const disableWarnings = await this.storeDisableWarnings(name);
+        if (disableWarnings.length) info.disableWarnings = disableWarnings;
+      }
 
       // #443: surface theme-deploy state for the admin dashboard
       info.hasTheme = this.addonShipsTheme(addon.path);

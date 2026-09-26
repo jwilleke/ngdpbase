@@ -29,7 +29,8 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
       config[key] = value;
       written.push({ key, value, reason: ctx?.reason });
     }),
-    getAllProperties: vi.fn(() => ({})),
+    getAllProperties: vi.fn(() => ({ ...config })),
+    getResolvedDataPath: vi.fn(() => path.join(tmpDir, 'pages')),
     getCustomProperty: vi.fn(() => null),
     setRuntimeProperty: vi.fn()
   });
@@ -138,5 +139,31 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
     const manager = await load();
 
     expect(manager.storeOwnerState('yourphr')).toBe('loaded');
+  });
+
+  test('turning the owner off is warned with how many users hold data, never refused', async () => {
+    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+    config['ngdpbase.addons.yourphr.enabled'] = true;
+    // Two users walked through the door; a third has only the default store.
+    for (const [user, store] of [['molly', 'yourphr'], ['jim', 'yourphr'], ['ann', 'default']]) {
+      await fs.outputJson(path.join(tmpDir, 'pages', 'private', user, store, 'store.json'), { kind: store });
+    }
+
+    const manager = await load();
+
+    const warnings = await manager.storeDisableWarnings('yourphr');
+    expect(warnings).toEqual([expect.stringMatching(/^2 users have data in store "yourphr".*nothing is deleted/)]);
+    expect(manager.canDisable('yourphr')).toEqual({ ok: true });
+    const status = (await manager.getStatus()).find((s: { name: string }) => s.name === 'yourphr');
+    expect(status.disableWarnings).toEqual(warnings);
+  });
+
+  test('no warning when nobody has entered the store', async () => {
+    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+    config['ngdpbase.addons.yourphr.enabled'] = true;
+
+    const manager = await load();
+
+    expect(await manager.storeDisableWarnings('yourphr')).toEqual([]);
   });
 });
