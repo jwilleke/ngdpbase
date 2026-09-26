@@ -94,6 +94,13 @@ interface NpmVulnerability {
   via: Array<string | { url?: string; severity?: Severity }>;
 }
 
+/** The parts of `npm audit --json` output this check reads. */
+interface NpmAuditOutput {
+  metadata?: { vulnerabilities?: Partial<AuditCounts> };
+  vulnerabilities?: Record<string, NpmVulnerability>;
+  error?: { code?: string; summary?: string };
+}
+
 /** What one `npm audit --json` run returned: its exit code and stdout. Injectable for tests. */
 export type AuditRunner = (dir: string) => { status: number | null; stdout: string; stderr: string };
 
@@ -104,8 +111,8 @@ const npmAudit: AuditRunner = (dir) => {
 
 /** Interpret one run the way npm means it. */
 export function interpret(lockfile: string, run: ReturnType<AuditRunner>, allow: Map<string, AllowlistEntry> = new Map()): LockfileResult {
-  let parsed: { metadata?: { vulnerabilities?: Partial<AuditCounts> }; vulnerabilities?: Record<string, NpmVulnerability>; error?: { code?: string; summary?: string } } | null = null;
-  try { parsed = JSON.parse(run.stdout) as typeof parsed; } catch { parsed = null; }
+  let parsed: NpmAuditOutput | null;
+  try { parsed = JSON.parse(run.stdout) as NpmAuditOutput; } catch { parsed = null; }
 
   // npm reports a registry it could not reach as an error object with ENOTFOUND / EAI_AGAIN / ECONNREFUSED.
   const errCode = parsed?.error?.code ?? '';

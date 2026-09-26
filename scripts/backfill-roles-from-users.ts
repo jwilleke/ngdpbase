@@ -235,8 +235,12 @@ async function main(): Promise<void> {
     pairedUsers++;
     const roles = Array.isArray(user.roles) ? user.roles : [];
     for (const roleName of roles) {
-      if (!roleToMemberIds.has(roleName)) roleToMemberIds.set(roleName, new Set());
-      roleToMemberIds.get(roleName).add(personId);
+      let members = roleToMemberIds.get(roleName);
+      if (!members) {
+        members = new Set();
+        roleToMemberIds.set(roleName, members);
+      }
+      members.add(personId);
     }
   }
 

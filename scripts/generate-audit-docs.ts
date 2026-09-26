@@ -26,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { coverage } from './audit-coverage';
+import { coverage } from './audit-coverage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO = path.resolve(path.dirname(__filename), '..');
