@@ -109,3 +109,16 @@ describe('escaped brackets (#1476)', () => {
     expect(html).toContain('wiki-link');
   });
 });
+
+describe('the shared wiki link pattern honours the escape (#1480)', () => {
+  // The renderer's link pass (LinkParserHandler), the link graph and the
+  // rename rewriter all read links through this one pattern.
+  test('an escaped bracket is not a link; an escaped backslash before one is', async () => {
+    const { wikiLinkPattern } = await import('../LinkParser');
+    const targets = (text: string) => [...text.matchAll(wikiLinkPattern())].map(m => m[1]);
+
+    expect(targets('Say \\[not a link\\] here')).toEqual([]);
+    expect(targets('Path \\\\[Main] here')).toEqual(['Main']);
+    expect(targets('Visit [Main] and [Help|Docs]')).toEqual(['Main', 'Help']);
+  });
+});

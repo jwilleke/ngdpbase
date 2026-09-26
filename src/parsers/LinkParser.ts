@@ -43,6 +43,15 @@ import logger from '../utils/logger.js';
 import { headingSlug } from '../utils/SectionUtils.js';
 
 /**
+ * A bracket that is not escaped: preceded by an even number of backslashes,
+ * none included (#1480). CommonMark's `\[` is a literal `[`, so it is not
+ * a link, a variable or a plugin, for the renderer, the link graph or the
+ * rename rewriter alike. `\\[` — an escaped backslash — still opens one.
+ * A lookbehind, so it consumes nothing and match offsets are unchanged.
+ */
+export const UNESCAPED_BRACKET = '(?<=(?:^|[^\\\\])(?:\\\\\\\\)*)';
+
+/**
  * The wiki link syntax, as a source string: `[text]`, `[text|target]` or
  * `[text|target|attributes]`. The trailing `(?!\()` skips `[text](url)` —
  * that is a markdown link, and its bracket text is not a wiki link target.
@@ -56,7 +65,7 @@ import { headingSlug } from '../utils/SectionUtils.js';
  * a link *is*. A second copy of this pattern is a second answer waiting to
  * drift from this one.
  */
-export const WIKI_LINK_PATTERN_SOURCE = '\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()';
+export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
 
 /** A fresh global RegExp for the wiki link syntax. Never share one. */
 export function wikiLinkPattern(): RegExp {
