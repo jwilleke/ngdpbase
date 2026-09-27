@@ -114,10 +114,15 @@ The `journal` entry is not in core configuration. The journal add-on declares it
 - __`default: true`__: exactly one entry, `general`. The build warns at startup when more than one is marked.
 - `label`, `description`, `enabled` and `page-badge` keep their meaning (below).
 
+### Rules for owners
+
+- __An add-on's pages may be private.__ The add-on, as owner, declares for its category whether new pages start private (`defaultPrivate`) and whether they are encrypted (`encrypt`).
+- __`encrypt: true` means the pages are always private__: an encrypted page is never public in place. So `encrypt: true` forces `allowPublic: false`, and core refuses a declaration that says otherwise.
+- __`user-profile` has no vault: a profile page is public by definition.__ The editor warns the user, when they edit their profile page, that everyone who can see the site can read it.
+
 ### Still open
 
-- __`addon` pages can never be private__ (no `privatestore`): provisional, treating add-on-seeded pages like other shipped pages.
-- __`user-profile` pages have no vault__ (profiles always public): provisional.
+- __The catch-all `addon` entry__ (pages an add-on seeds, e.g. its help): does it get a vault, or does an add-on that wants private pages declare its own category (as the journal does)?
 - __The admin-only test pages__ ("Test Page: …"): stay `system`, or move to `documentation`.
 
 ## Where it is configured
