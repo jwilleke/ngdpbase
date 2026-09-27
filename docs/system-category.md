@@ -29,31 +29,54 @@ __Today__ (what ships and what the code reads now; `storageLocation` is still th
 }
 ```
 
-__Decided (#1477), not yet built.__ The switch moves to `source`. `storageLocation` becomes the place a new page of the category goes when nothing says otherwise. `vaultid` names the vault its private pages use (`pages/vaults/{user}/{vaultid}/`):
+__Decided (#1477), not yet built.__ The switch moves to `source`. `storageLocation` names the two places a page of the category can live, and the vault's settings sit beside it:
 
 ```json
 "general": {
   "label": "general",
   "default": true,
   "source": "site",
-  "storageLocation": "pages/",
-  "vaultid": "default"
+  "storageLocation": {
+    "defaultstore": "pages/",
+    "privatestore": "pages/vaults/{user}/default/"
+  },
+  "allowPublic": true,
+  "defaultPrivate": false,
+  "encrypt": false,
+  "owner": "admin"
 },
 "journal": {
   "label": "journal",
   "default": false,
   "source": "site",
-  "storageLocation": "pages/vaults/{user}/journal/",
-  "vaultid": "journal",
+  "storageLocation": {
+    "defaultstore": "pages/",
+    "privatestore": "pages/vaults/{user}/journal/"
+  },
+  "allowPublic": true,
+  "defaultPrivate": true,
+  "encrypt": false,
+  "owner": "journal",
   "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
 }
 ```
 
-- `general` pages go to `pages/` by default; one made private goes to `pages/vaults/{user}/default/`.
-- `journal` entries go to the journal vault by default; one made public goes to `pages/`.
-- `vaultid` is unique across all categories, core and add-on.
-- A category an add-on brings is added by the add-on, and its `vaultid` is the add-on's id: the `ngdpbase.slug` in its `package.json` (the canonical add-on identity, #927). The vault's `encrypt` and `owner` are decided by that owner.
+- __`storageLocation.defaultstore`__ is where public pages of the category live (`pages/`).
+- __`storageLocation.privatestore`__ is its vault, `pages/vaults/{user}/{vaultid}/`. The vault id is the path's last segment, so there's no separate `vaultid` field. No two categories may share a `privatestore`.
+- __`allowPublic`__ (the owner's choice) says whether a user may make an entry public. With `false`, every entry stays in the vault.
+- __`defaultPrivate`__ (the owner's choice) says where new entries start. With `allowPublic: true`, each person's preference overrides it, and the editor's Private box moves a single entry either way.
+- __`encrypt` and `owner`__ move here from `ngdpbase.stores.{kind}`. The owner is `admin` for core categories, or the add-on's `ngdpbase.slug` (#927) for an add-on's; for an add-on, the vault id is that slug.
 - Exactly one entry carries `default: true` (`general`).
+
+### Categories that add-ons bring
+
+An add-on __declares__ its category in its manifest, and core __persists__ it into the site's configuration at first load, the way store kinds are persisted today (#1414). After that, configuration wins. It isn't merged from the add-on's `config/default-config.json`, which only applies while the add-on is loaded. So turning an add-on off, or removing it, never loses anything:
+
+- the category stays valid, and is just not offered for new pages;
+- its public pages still display;
+- its vault shows a closed door ("turned off" or "not installed", "its data is untouched"), and sealed vaults keep their wrapped keys.
+
+Retiring an add-on for good (moving its pages to another category and vault, or exporting them, then removing the entry) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
 Shipped entries: `general` (the default), `system`, `documentation`, `developer` (disabled), `addon`, `user-profile`, `journal`.
 
@@ -110,14 +133,14 @@ A missing value reads as `regular` (`ValidationManager.ts:406`).
 
 - __Category__: an entry in `ngdpbase.system-category`; what kind of page.
 - __Vault__: a user's owner-only folder of private pages. Today `pages/private/{user}/{vaultid}/`; decided: `pages/vaults/{user}/{vaultid}/`.
-- __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (owner, encrypt). __`vaultid` is the kind's id__: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
+- __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (owner, encrypt). Its id, the __vaultid__, is the last segment of the category's `privatestore`: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
 - __Source__ (decided, name to be confirmed): the replacement for today's `storageLocation` switch, meaning where a page's master copy lives. Not to be confused with a vault kind.
 
 ## Decided target (#1477), not yet built
 
 - __The switch moves to its own field.__ Proposed as `source: site | shipped | repo`, replacing `regular | required | github` one for one. Every reader in the table above moves to it first, and a guard proves none still compares `storageLocation` to one of the old words.
-- __Then `storageLocation` becomes a path__: where a new page of the category goes by default (`pages/` for `general`, `pages/vaults/{user}/journal/` for `journal`), and `vaultid` names the vault its private pages use.
+- __Then `storageLocation` becomes the pair of places__ (`defaultstore`, `privatestore`), with `allowPublic` and `defaultPrivate` beside it.
 - __The vault settings move onto the category.__ `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides. An admin defines a new vault by adding or editing a category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Vaults move from `pages/private/` to `pages/vaults/`__, and page names and URLs follow (`/vaults/jim/default/Diary`). Old `/private/…` URLs redirect permanently, and stored links are rewritten once.
 - __Option 1 stays the rule__: a vault is owner-only. An encrypted page is never public in place; going public decrypts it and moves it to `pages/`.
-- __The journal is the first category with its own vault__ (`pages/vaults/{user}/journal/`, `vaultid: journal` = the add-on's slug), owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes: it only locates a retired sidecar.
+- __The journal is the first category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the category's `defaultPrivate`).
