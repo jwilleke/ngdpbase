@@ -116,6 +116,9 @@ The `journal` entry is not in core configuration. The journal add-on declares it
 
 ### Rules for owners
 
+- __Pages an add-on generates and owns go in its own category and vault__ (see below). Never in `general` or the user's `default` vault: there they could not be told apart, the add-on's rules (such as `encrypt`) could not apply, and turning the add-on off, retiring it (#1490) or a takeout could not find them.
+- __A `general` page an add-on helps a person create is that person's page__ (for example "new page from a template"): `general`, their `default` vault if they make it private, and no add-on rules afterwards. The add-on is a tool there, not the owner.
+- __Data an add-on keeps in its own files is the system's__, not a user's, and never goes in a vault. It is readable by admins, or handed to another add-on through that add-on's hook. Forms is the model: a submission is a file under the forms add-on's `dataPath`, recorded with who submitted it, read only with `admin-system`, or passed through `registerHandler` to another add-on (calendar turns `clubhouse-reservation` submissions into reservations, under its own permissions).
 - __Seeded `addon` pages are documentation about the add-on__: shipped with it, public, no vault. They are the only pages an add-on seeds.
 - __Content an add-on generates goes in the add-on's own category__, with its own vault (`pages/vaults/{user}/{slug}/`), declared by the add-on. A personal health record add-on, for example, would declare a category whose vault holds everything created through it, likely with `encrypt: true`. The journal is the first such add-on.
 - __The admin-only test pages__ ("Test Page: …", #1355) stay `system`: they must ship with every install, and their `test-page` system keyword is what marks them as tests.
