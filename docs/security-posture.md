@@ -331,6 +331,7 @@ What remains, grouped as the admin section would group them:
 | Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
 | Content sanitisation | `filters.security.enabled`, `.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.block-on-save`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
+| Browser security headers | `security.headers.csp-mode` — `report-only` (default), `enforce` or `off`. The policy (`object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'`, plus `nosniff` and `Referrer-Policy`) is fixed in `src/utils/securityHeaders.ts` and has no `script-src` yet ([#1488](https://github.com/jwilleke/ngdpbase/issues/1488); the nonce-based script policy is [#1489](https://github.com/jwilleke/ngdpbase/issues/1489)) |
 
 `server.trust-proxy` is in the session group deliberately: `resolveSessionSecurity()` reads the two together, and `app.ts:398` already warns when `session.secure` is on while `trust-proxy` is explicitly false. An ingredient list that showed one without the other would hide half of a known interaction. The full interaction — including why `trust-proxy` should be __unset__ on an instance that terminates its own TLS, and why the warning is suppressed there — is in [platform/ngdpbase-and-TLS.md](./platform/ngdpbase-and-TLS.md).
 

@@ -47,6 +47,7 @@ import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
+import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
@@ -189,6 +190,19 @@ void (async (): Promise<void> => {
   // #1153: collected before the engine exists, so it cannot go through
   // engine.blockConfiguration() at the point it is found.
   let tlsBlockedReasons: string[] = [];
+
+  // #1488: browser security headers on every response, static files and the
+  // maintenance page included, so this runs first. The mode is read from
+  // configuration once the engine is up; until then it is the shipped default.
+  app.disable('x-powered-by');
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    const configured = engineReady
+      ? engine.getManager<{ getProperty(key: string, fallback: unknown): unknown }>('ConfigurationManager')
+        ?.getProperty('ngdpbase.security.headers.csp-mode', 'report-only')
+      : 'report-only';
+    for (const [name, value] of Object.entries(securityHeaders(cspModeOf(configured)))) res.setHeader(name, value);
+    next();
+  });
 
   // 1. Setup View Engine and static files first so we can serve the maintenance page
   app.set('views', path.join(projectRoot, 'views'));
