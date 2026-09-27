@@ -64,7 +64,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-write'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const userManager = um();
         const freshUser = userManager ? await userManager.getUser(ctx.username!) : null;
@@ -98,7 +99,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-write'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const userManager = um();
         if (!userManager) { res.status(503).send('UserManager not available'); return; }
@@ -136,7 +138,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-write'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const username = ctx.username!;
         const date = typeof req.query['date'] === 'string'
@@ -163,7 +166,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-write'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const slug = sp(req.params['slug']);
         // #1456: found among the entries this requester may list, public or
@@ -188,7 +192,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-write'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const slug = sp(req.params['slug']);
         const p = pm();

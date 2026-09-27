@@ -5,7 +5,13 @@
 ## Standing rules
 
 - Addon code is subject to the same invariants as `src/`: context forwarded, allow/deny from `hasPermission` / `canAccess`, outbound HTTP through `src/http/`. Read [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md) before writing a route, manager method or job; they apply [security-posture.md](../security-posture.md) and [audit-posture.md](../audit-posture.md).
-- An addon never names a role. It declares its own permission and a policy granting it, and asks for the permission.
+- An addon never names a role in code. It declares its own permission, and a policy granting it, in its `config/default-config.json`, and its routes ask for the permission. A policy may name the roles it grants to on day one (an operator narrows them in `app-custom-config.json`).
+- There is no "signed in" gate. A route asks `requirePermission`; a feature that belongs to a person then asks `ctx.actingUsername()` for who it acts as ([#1430](https://github.com/jwilleke/ngdpbase/issues/1430)).
+- Where an addon's content goes ([system-category.md](../system-category.md)):
+  - __Pages it generates and owns__ go in its own category and vault, never `general` or the user's `default` vault.
+  - __A `general` page it helps a person create__ is that person's page, with no addon rules afterwards.
+  - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
+  - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value.
 - Seed pages get a real UUID v4. A placeholder UUID is skipped silently.
@@ -545,7 +551,17 @@ Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask fo
 - A user who never enters your store is never asked to keep recovery words.
 - The store is self-contained on disk, so everything about it lives in one directory.
 
-Takeout, backup and per-store sharing are __not built__ ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387), [#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). A private store cannot yet be exported by its user or included in a site backup.
+A user can take out their store and import it again ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387), [#1472](https://github.com/jwilleke/ngdpbase/issues/1472)), and a site backup copies it as it is on disk. Per-store sharing is __not built__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)).
+
+#### Where this is going ([#1477](https://github.com/jwilleke/ngdpbase/issues/1477), not built)
+
+The store kind is becoming part of the addon's __page category__. The addon will declare one category in its manifest, and it will carry everything above:
+
+- `storageLocation.privatestore` (its vault, `pages/vaults/{user}/{slug}/`);
+- `encrypt` and `owner`;
+- `allowPublic` and `defaultPrivate` (whether an entry may be made public, and where new entries start).
+
+Core will persist that category at first load, as it persists store kinds now. So turning the addon off still loses nothing: the category stays valid, its public pages still show, and the vault shows the closed door. `encrypt: true` will force `allowPublic: false`. Vaults move from `pages/private/` to `pages/vaults/`. The target is defined in [system-category.md](../system-category.md). Retiring an addon for good (moving its pages out, then removing its category) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
 ---
 
@@ -678,9 +694,11 @@ Do __not__ access `req.userContext`, `req.session`, or `req.session.isAuthentica
 in route handlers. `ApiContext` wraps these correctly and handles TypeScript typing.
 
 __`ApiContext.from()` always succeeds — it never throws for anonymous callers.__
-On an unauthenticated request it returns a context with `isAuthenticated: false`,
-`username: 'Anonymous'`, and `roles: ['Anonymous', 'All']`. The guard methods
-(`requireAuthenticated`, `requirePermission`) are opt-in — a public route simply does not call them:
+On an unauthenticated request it returns a context with `isAuthenticated: false`
+and the anonymous subject's username and roles. The guards (`requirePermission`,
+then `actingUsername` for a per-person feature) are opt-in — a public route simply does not call them.
+There is no "signed in" guard: whether an anonymous visitor may do something is a policy question,
+answered by `requirePermission` ([#1430](https://github.com/jwilleke/ngdpbase/issues/1430)):
 
 ```typescript
 // Fully public route — no guards, but ApiContext still used for consistency
@@ -721,11 +739,11 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   router.post('/items', async (req, res) => {
     try {
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();            // → 401 if not logged in
-      await ctx.requirePermission('my-addon-manage'); // → 403 unless a policy grants it
+      await ctx.requirePermission('my-addon-manage'); // → 401 anonymous, 403 signed in, unless a policy grants it
+      const username = ctx.actingUsername();          // only for a per-person feature: → 401 if nobody to act as
 
       const mgr = engine.getManager('MyDataManager');
-      const item = await mgr.create(req.body);
+      const item = await mgr.create(req.body, username);
       res.status(201).json(item);
     } catch (err) {
       if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
@@ -747,13 +765,16 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ctx.roles` | Caller's role array — always an array, never undefined. Never an allow or deny |
 | `ctx.email` | Caller's email, or `null` |
 | `await ctx.hasPermission(permission)` | `true` if policy grants the permission — deny policies and the token and share ceilings included |
-| `ctx.requireAuthenticated()` | Throws `ApiError(401)` if not authenticated |
-| `await ctx.requirePermission(permission)` | Throws `ApiError(403)` unless policy grants the permission |
+| `await ctx.requirePermission(permission)` | Throws unless policy grants the permission: `ApiError(401)` for an anonymous caller, `ApiError(403)` for a signed-in one |
+| `ctx.actingUsername()` | The signed-in username a per-person feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
 | `ctx.engine` | Reference to the engine |
 
 `ApiError` carries a `status` number — catch it and forward to `res.status(err.status)`.
 
-There is no `hasRole` / `requireRole`: a role name skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission the action is, grant it in a policy in the addon's `config/default-config.json`, and ask for it.
+There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission the action is, grant it in a policy in the addon's `config/default-config.json`, and ask for it. The journal and calendar addons are worked examples:
+
+- the journal declares `journal-read`, `journal-write` and `journal-export`, in one `journal-access` policy;
+- calendar declares `calendar-manage` (admin) and `calendar-reserve` (every role that can sign in).
 
 ---
 

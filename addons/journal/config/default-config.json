@@ -4,7 +4,14 @@
   "ngdpbase.addons.journal.defaultPrivate": true,
   "ngdpbase.addons.journal.defaultAuthorLock": true,
   "ngdpbase.addons.journal.defaultMoodOptions": [
-    "happy", "content", "neutral", "anxious", "sad", "grateful", "energized", "tired"
+    "happy",
+    "content",
+    "neutral",
+    "anxious",
+    "sad",
+    "grateful",
+    "energized",
+    "tired"
   ],
   "ngdpbase.addons.journal.streakEnabled": true,
   "ngdpbase.addons.journal.enableVoiceToText": true,
@@ -12,5 +19,69 @@
   "ngdpbase.addons.journal.dailyReminderTime": "20:00",
   "ngdpbase.addons.journal.dailyReminderUsers": [],
   "ngdpbase.addons.journal.exportEnabled": true,
-  "ngdpbase.addons.journal.showStreakLeaderboard": false
+  "ngdpbase.addons.journal.showStreakLeaderboard": false,
+  "_comment_journal_permissions": "#1430 — the journal declares the permissions its routes ask for: journal-read (list and view one's own entries), journal-write (create, edit, delete, settings) and journal-export (bulk JSON/Markdown export, separable like core's page-export). Delegated on day one to every role that can sign in, so nobody loses access; a deployment narrows it in app-custom-config.json by overriding journal-access or adding a deny policy.",
+  "ngdpbase.permissions.definitions": {
+    "journal-read": {
+      "description": "View your own journal: the entry list, entries, tags, moods, on-this-day and streak",
+      "icon": "book",
+      "color": "#0dcaf0"
+    },
+    "journal-write": {
+      "description": "Write, edit and delete your own journal entries and change your journal settings",
+      "icon": "pen",
+      "color": "#198754"
+    },
+    "journal-export": {
+      "description": "Export your whole journal as JSON or Markdown",
+      "icon": "file-export",
+      "color": "#6c757d"
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "journal-access",
+      "name": "Journal",
+      "description": "Keep and export one's own journal",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "reader"
+        },
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        },
+        {
+          "type": "role",
+          "value": "user-admin"
+        },
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "journal-read",
+        "journal-write",
+        "journal-export"
+      ]
+    }
+  ]
 }

@@ -13,8 +13,8 @@
  *   router.post('/reservations', async (req, res) => {
  *     try {
  *       const ctx = ApiContext.from(req, engine);
- *       ctx.requireAuthenticated();
  *       await ctx.requirePermission('page-edit');
+ *       const username = ctx.actingUsername();
  *       // ...
  *     } catch (err) {
  *       if (err instanceof ApiError) {
@@ -34,7 +34,7 @@ import type { ShareGrant } from '../types/Share.js';
 // ── ApiError ────────────────────────────────────────────────────────────────
 
 /**
- * Thrown by ApiContext guard methods (requireAuthenticated, requirePermission).
+ * Thrown by ApiContext guard methods (requirePermission, actingUsername).
  * Route handlers should catch this and forward `status` to `res.status()`.
  */
 export class ApiError extends Error {
@@ -171,15 +171,24 @@ export class ApiContext extends BaseContext {
   // ── Guards ────────────────────────────────────────────────────────────────
 
   /**
-   * Throws `ApiError(401)` if the caller is not authenticated.
+   * The username this request acts as, for a feature that belongs to a
+   * person (a journal, a reservation). Asked AFTER `requirePermission`: policy
+   * decides whether the caller may, this only says whether there is someone
+   * to act as (#1430). A permission delegated to anonymous visitors still
+   * finds nobody here, so the refusal is a 401, never a crash on a missing
+   * name.
    *
    * @example
-   * ctx.requireAuthenticated(); // → 401 if anonymous
+   * await ctx.requirePermission('page-edit');
+   * const username = ctx.actingUsername(); // → 401 if nobody is signed in
    */
-  requireAuthenticated(): void {
-    if (!this.isAuthenticated) {
+  actingUsername(): string {
+    // The anonymous subject carries a username ('anonymous'); it is not a
+    // person a journal or a reservation can belong to.
+    if (!this.isAuthenticated || !this.username) {
       throw new ApiError(401, 'Authentication required');
     }
+    return this.username;
   }
 
   // #1198: `hasRole` / `requireRole` are gone. A role name is not authority

@@ -52,7 +52,8 @@ export default function reservationRoutes(
       // 1. Authentication required
       const ctx = ApiContext.from(req, engine);
       const viewer = { username: ctx.username ?? undefined, isAuthenticated: ctx.isAuthenticated, canManage: await ctx.hasPermission('calendar-manage') };
-      ctx.requireAuthenticated();
+      await ctx.requirePermission('calendar-reserve'); // #1430: policy, not a signed-in check
+      ctx.actingUsername();
 
       // 2. Validate body
       const body = req.body as Record<string, unknown>;
@@ -148,7 +149,8 @@ export default function reservationRoutes(
       if (!m) { res.status(503).json({ error: 'CalendarDataManager not available' }); return; }
 
       const ctx = ApiContext.from(req, engine);
-      ctx.requireAuthenticated();
+      await ctx.requirePermission('calendar-reserve'); // #1430: policy, not a signed-in check
+      ctx.actingUsername();
 
       // #1198/#1220: the manager asks "may this viewer manage?" — answered by
       // policy here, never by a role name inside the manager.

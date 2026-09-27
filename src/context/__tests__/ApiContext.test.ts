@@ -112,28 +112,32 @@ describe('ApiContext.from()', () => {
 
 // #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).
 
-// ── requireAuthenticated() ────────────────────────────────────────────────────
+// ── actingUsername() ─────────────────────────────────────────────────────────
 
-describe('ApiContext#requireAuthenticated()', () => {
-  test('does not throw when authenticated', () => {
+// #1430: there is no "signed in" gate — policy decides. actingUsername only
+// says who a per-person feature acts as, after requirePermission.
+describe('ApiContext#actingUsername()', () => {
+  test('returns the signed-in username', () => {
     const ctx = ApiContext.from(
       makeReq({ userContext: { username: 'jane', isAuthenticated: true, roles: [] } }),
       mockEngine
     );
-    expect(() => ctx.requireAuthenticated()).not.toThrow();
+    expect(ctx.actingUsername()).toBe('jane');
   });
 
-  test('throws ApiError(401) when not authenticated', () => {
-    const ctx = ApiContext.from(
-      makeReq({ userContext: ANONYMOUS_SUBJECT }),
-      mockEngine
-    );
-    expect(() => ctx.requireAuthenticated()).toThrow(ApiError);
+  test('refuses with 401 when there is nobody to act as', () => {
+    const ctx = ApiContext.from(makeReq({ userContext: ANONYMOUS_SUBJECT }), mockEngine);
+    expect(() => ctx.actingUsername()).toThrow(ApiError);
     try {
-      ctx.requireAuthenticated();
+      ctx.actingUsername();
     } catch (err) {
-      expect(err.status).toBe(401);
+      expect((err as ApiError).status).toBe(401);
     }
+  });
+
+  test('requireAuthenticated is gone: a signed-in check is not a gate (#1430)', () => {
+    const ctx = ApiContext.from(makeReq({ userContext: ANONYMOUS_SUBJECT }), mockEngine);
+    expect((ctx as unknown as Record<string, unknown>).requireAuthenticated).toBeUndefined();
   });
 });
 

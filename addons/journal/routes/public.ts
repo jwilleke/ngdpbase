@@ -70,7 +70,8 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const m        = jdm();
         const username = ctx.username!;
@@ -108,7 +109,8 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const m        = jdm();
         const username = ctx.username!;
@@ -137,7 +139,8 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const m        = jdm();
         const username = ctx.username!;
@@ -166,7 +169,8 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const slug = sp(req.params['slug']);
         const m    = jdm();

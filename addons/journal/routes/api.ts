@@ -49,7 +49,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const username = ctx.username!;
         const date = qs(req.query['date']) ?? new Date().toISOString().slice(0, 10);
@@ -69,7 +70,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const limit  = parseInt(qs(req.query['limit'])  ?? '50', 10) || 50;
         const offset = parseInt(qs(req.query['offset']) ?? '0',  10) || 0;
@@ -90,7 +92,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const today   = new Date().toISOString().slice(0, 10);
         const m       = jdm();
@@ -108,7 +111,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         const m      = jdm();
         const streak = m ? await m.computeStreak(ctx.username!, req.userContext) : 0;
@@ -126,7 +130,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-export'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         if (config['exportEnabled'] === false) {
           res.status(403).json({ error: 'Export is disabled.' });
@@ -166,7 +171,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        ctx.requireAuthenticated();
+        await ctx.requirePermission('journal-export'); // #1430: policy, not a signed-in check
+        ctx.actingUsername();
 
         if (config['exportEnabled'] === false) {
           res.status(403).send('Export is disabled.');
