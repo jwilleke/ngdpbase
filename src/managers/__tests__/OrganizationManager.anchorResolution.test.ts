@@ -25,7 +25,8 @@ describe('getInstallOrg — anchor resolution tiers (#1027)', () => {
       key in overrides ? overrides[key] : defaultValue
     ),
     getResolvedDataPath: vi.fn(() => orgsDir),
-    getBaseURL: vi.fn(() => (overrides['ngdpbase.application.base-url'] as string) ?? '')
+    getBaseURL: vi.fn(() => (overrides['ngdpbase.application.base-url'] as string) ?? ''),
+    getInstanceDataFolder: vi.fn(() => tmpDir)
   });
 
   const makeEngine = (configManager: ReturnType<typeof makeConfigManager>) => ({

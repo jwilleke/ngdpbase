@@ -463,6 +463,7 @@ void (async (): Promise<void> => {
   // Install check middleware
   const installService = new InstallService(engine);
   const headlessInstall = process.env.HEADLESS_INSTALL === 'true';
+  await installService.markExistingSiteInstalled(); // #1410
 
   app.use((req: Request, res: Response, next: NextFunction): void => {
     if (req.path.startsWith('/install') ||

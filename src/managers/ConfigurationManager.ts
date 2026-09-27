@@ -11,7 +11,7 @@ import {
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
-import { configFilePaths, readConfigFilesSync } from '../utils/configFiles.js';
+import { configFilePaths, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
 import { mergeConfigWithAddons } from '../utils/addonConfigLayer.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -156,7 +156,7 @@ class ConfigurationManager extends BaseManager {
    * install flow will set the value before completing.
    */
   private async assertBaseUrlConfigured(): Promise<void> {
-    const installCompletePath = path.join(this.getInstanceDataFolder(), '.install-complete');
+    const installCompletePath = this.getInstallCompletePath();
     const installComplete = await fs.pathExists(installCompletePath);
     if (!installComplete) return;
 
@@ -1042,6 +1042,16 @@ class ConfigurationManager extends BaseManager {
    */
   getInstanceDataFolder(): string {
     return path.resolve(process.cwd(), this.instanceDataFolder);
+  }
+
+  /** This site's install marker (see {@link installCompletePath}). */
+  getInstallCompletePath(): string {
+    return installCompletePath(this.getInstanceDataFolder());
+  }
+
+  /** This site's custom config file: `<instance data folder>/config/<INSTANCE_CONFIG_FILE or app-custom-config.json>`. */
+  getCustomConfigPath(): string {
+    return path.resolve(process.cwd(), this.customConfigPath);
   }
 
   /**

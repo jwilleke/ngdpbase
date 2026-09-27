@@ -3,13 +3,11 @@ import { systemContext } from '../context/bootActions.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import path from 'path';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
 import { filenameFromOrg } from '../utils/orgFilename.js';
-import { SEEDED_SHIPPED_PAGES_FILE } from '../utils/seededShippedPages.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { SEEDED_SHIPPED_PAGES_FILE, SeededShippedPages } from '../utils/seededShippedPages.js';
+import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import type PageManager from '../managers/PageManager.js';
 
 /**
  * Wiki engine interface
@@ -18,15 +16,6 @@ interface WikiEngine {
   getManager(name: string): unknown;
 }
 
-/**
- * Configuration manager interface
- */
-interface ConfigManager {
-  getProperty<T>(key: string, defaultValue?: T): T;
-  getResolvedDataPath(key: string, defaultValue: string): string;
-  loadConfigurations(): Promise<void>;
-  reload(): Promise<void>;
-}
 
 /**
  * User manager interface
@@ -83,14 +72,15 @@ interface OrganizationManagerLike {
 }
 
 /**
- * Partial installation state
+ * Partial installation state: a custom config written without the marker, left
+ * by an earlier attempt or put there by the operator (#1410). The bootstrap
+ * admin and the placeholder anchor organization (#1027) are not steps: both
+ * exist from the first start.
  */
-interface PartialInstallationState {
+export interface PartialInstallationState {
   isPartial: boolean;
   steps: {
     configWritten?: boolean;
-    organizationCreated?: boolean;
-    adminCreated?: boolean;
   };
 }
 
@@ -146,7 +136,7 @@ interface HeadlessInstallResult {
  */
 class InstallService {
   private engine: WikiEngine;
-  private configManager: ConfigManager;
+  private configManager: ConfigurationManager;
 
   /**
    * Creates a new InstallService instance
@@ -156,22 +146,7 @@ class InstallService {
    */
   constructor(engine: WikiEngine) {
     this.engine = engine;
-    this.configManager = engine.getManager('ConfigurationManager') as ConfigManager;
-  }
-
-  /**
-   * Get the path to the .install-complete marker file
-   * This file indicates installation has been completed for this instance.
-   * Located in INSTANCE_DATA_FOLDER (not in config or code).
-   *
-   * @returns Path to .install-complete file
-   */
-  getInstallCompleteFilePath(): string {
-    const instanceDataFolder = process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
-    const resolvedPath = path.isAbsolute(instanceDataFolder)
-      ? instanceDataFolder
-      : path.join(process.cwd(), instanceDataFolder);
-    return path.join(resolvedPath, '.install-complete');
+    this.configManager = engine.getManager('ConfigurationManager') as ConfigurationManager;
   }
 
   /**
@@ -181,31 +156,58 @@ class InstallService {
    * @returns True if installation is complete
    */
   async isInstallComplete(): Promise<boolean> {
-    const installCompleteFile = this.getInstallCompleteFilePath();
+    const installCompleteFile = this.configManager.getInstallCompletePath();
     return fs.pathExists(installCompleteFile);
   }
 
   /**
-   * Check if installation is required
+   * Check if installation is required: the marker is missing (#1410).
+   *
+   * The bootstrap admin and the seeded shipped pages exist from the first
+   * start, so they say nothing about whether the operator ran setup. A site
+   * that predates the marker is given one at start-up by
+   * {@link markExistingSiteInstalled}.
    *
    * @returns True if install is needed
    */
   async isInstallRequired(): Promise<boolean> {
-    // Check for .install-complete file (instance-level state)
-    const completed = await this.isInstallComplete();
+    return !(await this.isInstallComplete());
+  }
 
-    if (completed) {
-      return false;
+  /**
+   * Write the marker for a site that was set up before the marker decided
+   * install state (#1410): no marker, the base URL is configured (the start-up
+   * check #642 needs it once the marker exists), and the site has its own
+   * custom config or a page it did not ship with. A fresh site has neither and
+   * gets the wizard. Runs once at start-up; logs what it inferred.
+   *
+   * @returns True if the marker was written
+   */
+  async markExistingSiteInstalled(): Promise<boolean> {
+    if (await this.isInstallComplete()) return false;
+    if (!this.configManager.isBaseUrlExplicit()) return false;
+    const customConfigPath = this.configManager.getCustomConfigPath();
+    const reason = await fs.pathExists(customConfigPath)
+      ? `custom config ${customConfigPath} exists`
+      : await this.#firstUnseededPage();
+    if (!reason) return false;
+    const marker = this.configManager.getInstallCompletePath();
+    await fs.writeJson(marker, { completedAt: new Date().toISOString(), version: '1.0.0', inferred: reason }, { spaces: 2 });
+    logger.warn(`[InstallService] ${marker} was missing on a site already set up (${reason}); wrote it so the setup wizard does not run (#1410)`);
+    return true;
+  }
+
+  /** A page this site did not seed from a shipped source, described for the log, or null. */
+  async #firstUnseededPage(): Promise<string | null> {
+    const pageManager = this.engine.getManager('PageManager') as PageManager | undefined;
+    if (!pageManager) return null;
+    const record = await SeededShippedPages.load(this.configManager.getInstanceDataFolder());
+    const ctx = systemContext(this.engine, 'install: is this an existing site (#1410)');
+    for (const title of await pageManager.getAllPages()) {
+      const uuid = (await pageManager.getPageMetadata(title, ctx))?.uuid;
+      if (typeof uuid === 'string' && !record.hasUuid(uuid)) return `page "${title}" was not seeded`;
     }
-
-    // Check if admin user exists
-    const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
-
-    // Check if pages directory is empty
-    const pagesDir = this.configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    const pagesExist = await this.#hasPagesInDirectory(pagesDir);
-
-    return !adminExists || !pagesExist;
+    return null;
   }
 
   /**
@@ -220,40 +222,8 @@ class InstallService {
       return { isPartial: false, steps: {} };
     }
 
-    const adminExists = await (this.engine.getManager('RoleManager') as RoleManager).hasRole('admin', 'admin');
-
-    const customConfigPath = path.join(__dirname, '../../config/app-custom-config.json');
-    const customConfigExists = await fs.pathExists(customConfigPath);
-
-    const usersDir = this.configManager.getResolvedDataPath('ngdpbase.user.provider.storagedir', './data/users');
-    const organizationsPath = path.join(usersDir, 'organizations.json');
-    const organizationsExist = await fs.pathExists(organizationsPath);
-
-    const steps = {
-      configWritten: customConfigExists,
-      organizationCreated: organizationsExist,
-      adminCreated: adminExists
-    };
-
-    const isPartial = Object.values(steps).some(v => v === true) && !completed;
-
-    return { isPartial, steps };
-  }
-
-  /**
-   * Check if pages exist in directory
-   *
-   * @private
-   * @param dir - Directory to check
-   * @returns True if pages exist
-   */
-  async #hasPagesInDirectory(dir: string): Promise<boolean> {
-    try {
-      const files = await fs.readdir(dir);
-      return files.some(f => f.endsWith('.md'));
-    } catch {
-      return false;
-    }
+    const configWritten = await fs.pathExists(this.configManager.getCustomConfigPath());
+    return { isPartial: configWritten, steps: { configWritten } };
   }
 
   /**
@@ -275,32 +245,22 @@ class InstallService {
       // Validate required fields
       this.#validateInstallData(installData);
 
-      // Check for partial installation - get the state but don't block
+      // Every step runs every time (#1410): the config write merges into an
+      // existing file and the organization seed is idempotent on filename, so
+      // a retry, or a config the operator put there first, still gets the
+      // answers from this form.
       const partialState = await this.detectPartialInstallation();
-
-      // Track which steps are already done
       if (partialState.steps.configWritten) {
         alreadyCompleted.push('configWritten');
       }
-      if (partialState.steps.organizationCreated) {
-        alreadyCompleted.push('organizationCreated');
-      }
-      if (partialState.steps.adminCreated) {
-        alreadyCompleted.push('adminCreated');
-      }
 
-      // 1. Write app-custom-config.json (skip if already done)
-      if (!partialState.steps.configWritten) {
-        installSteps.push('writeConfig');
-        await this.#writeCustomConfig(installData);
-      }
+      // 1. Write app-custom-config.json
+      installSteps.push('writeConfig');
+      await this.#writeCustomConfig(installData);
 
       // 2. Seed the install's anchor Organization via OrganizationManager (#617).
-      // Replaces the prior direct write to data/users/organizations.json.
-      if (!partialState.steps.organizationCreated) {
-        installSteps.push('writeOrganization');
-        await this.#seedOrganization(installData);
-      }
+      installSteps.push('writeOrganization');
+      await this.#seedOrganization(installData);
 
       // 3. Update admin password (always do this, user may want to change password)
       installSteps.push('updateAdminPassword');
@@ -362,7 +322,7 @@ class InstallService {
       const resetSteps: string[] = [];
 
       // 1. Remove app-custom-config.json
-      const customConfigPath = path.join(__dirname, '../../config/app-custom-config.json');
+      const customConfigPath = this.configManager.getCustomConfigPath();
       if (await fs.pathExists(customConfigPath)) {
         // Backup before deleting
         const backupPath = customConfigPath + '.backup-' + Date.now();
@@ -444,7 +404,7 @@ class InstallService {
       // #1406: the seeded-pages record says which shipped pages this site already
       // had. With the pages gone it would mark every one as removed on purpose,
       // and the next start-up would seed none of them.
-      const seededRecordPath = path.join(path.dirname(this.getInstallCompleteFilePath()), SEEDED_SHIPPED_PAGES_FILE);
+      const seededRecordPath = path.join(path.dirname(this.configManager.getInstallCompletePath()), SEEDED_SHIPPED_PAGES_FILE);
       if (await fs.pathExists(seededRecordPath)) {
         await fs.copy(seededRecordPath, seededRecordPath + '.backup-' + Date.now());
         await fs.remove(seededRecordPath);
@@ -564,7 +524,7 @@ class InstallService {
    * @async
    */
   async markHeadlessInstallationComplete(): Promise<void> {
-    const installCompleteFile = this.getInstallCompleteFilePath();
+    const installCompleteFile = this.configManager.getInstallCompletePath();
 
     // Ensure directory exists
     await fs.ensureDir(path.dirname(installCompleteFile));
@@ -630,30 +590,15 @@ class InstallService {
   }
 
   /**
-   * Get the instance config directory path
-   * Config files are stored in INSTANCE_DATA_FOLDER/config/
-   *
-   * @returns Path to instance config directory
-   */
-  getInstanceConfigDir(): string {
-    const instanceDataFolder = process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
-    const resolvedPath = path.isAbsolute(instanceDataFolder)
-      ? instanceDataFolder
-      : path.join(process.cwd(), instanceDataFolder);
-    return path.join(resolvedPath, 'config');
-  }
-
-  /**
    * Write custom configuration file
    *
    * @private
    * @param data - Installation data
    */
   async #writeCustomConfig(data: InstallData): Promise<void> {
-    const instanceConfigDir = this.getInstanceConfigDir();
-    const customConfigPath = path.join(instanceConfigDir, 'app-custom-config.json');
+    const customConfigPath = this.configManager.getCustomConfigPath();
 
-    await fs.ensureDir(instanceConfigDir);
+    await fs.ensureDir(path.dirname(customConfigPath));
 
     // Read existing custom config or start fresh
     let customConfig: Record<string, unknown> = {};
@@ -683,7 +628,7 @@ class InstallService {
     await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
 
     // Reload ConfigurationManager to pick up new values
-    await this.configManager.loadConfigurations();
+    await this.configManager.reload();
   }
 
   /**
@@ -745,7 +690,7 @@ class InstallService {
    * @private
    */
   async #markInstallationComplete(): Promise<void> {
-    const installCompleteFile = this.getInstallCompleteFilePath();
+    const installCompleteFile = this.configManager.getInstallCompletePath();
 
     // Ensure directory exists
     await fs.ensureDir(path.dirname(installCompleteFile));

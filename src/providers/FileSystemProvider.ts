@@ -37,6 +37,7 @@ import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import { installCompletePath } from '../utils/configFiles.js';
 
 /**
  * Page cache info (internal)
@@ -233,10 +234,7 @@ class FileSystemProvider extends BasePageProvider {
     logger.info(`[FileSystemProvider] Plural matching: ${matchEnglishPlurals ? 'enabled' : 'disabled'}, CamelCase matching: ${matchCamelCase ? 'enabled' : 'disabled'}`);
 
     // Check installation status via .install-complete file (not config)
-    const installCompleteFile = path.join(
-      configManager.getInstanceDataFolder(),
-      '.install-complete'
-    );
+    const installCompleteFile = installCompletePath(configManager.getInstanceDataFolder());
     this.installationComplete = await fs.pathExists(installCompleteFile);
     logger.info(`[FileSystemProvider] Installation complete: ${this.installationComplete}`);
 

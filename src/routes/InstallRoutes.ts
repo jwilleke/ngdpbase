@@ -1,6 +1,6 @@
 import express, { Router, Request, Response } from 'express';
 import logger from '../utils/logger.js';
-import InstallService from '../services/InstallService.js';
+import InstallService, { type PartialInstallationState } from '../services/InstallService.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 
@@ -39,18 +39,6 @@ interface InstallResult {
   success: boolean;
   error?: string;
   message?: string;
-}
-
-/**
- * Partial installation state
- */
-interface PartialInstallationState {
-  isPartial: boolean;
-  steps?: {
-    configWritten?: boolean;
-    organizationCreated?: boolean;
-    adminCreated?: boolean;
-  };
 }
 
 /**

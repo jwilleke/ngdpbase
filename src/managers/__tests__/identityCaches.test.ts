@@ -27,7 +27,8 @@ describe('Identity manager caches (#620 Option B)', () => {
     }),
     getResolvedDataPath: vi.fn((key: string, defaultValue: string) =>
       (overrides[key] as string) ?? defaultValue
-    )
+    ),
+    getInstanceDataFolder: vi.fn(() => tmpDir)
   });
 
   beforeEach(async () => {

@@ -19,7 +19,8 @@ describe('OrganizationManager (#617)', () => {
     // seedAnchorOrganization reads the base URL through getBaseURL(), NOT through
     // getProperty('ngdpbase.application.base-url'). A mock carrying only the
     // property made tier 3 look broken when it was the harness that was wrong.
-    getBaseURL: vi.fn(() => (overrides['ngdpbase.application.base-url'] as string) ?? '')
+    getBaseURL: vi.fn(() => (overrides['ngdpbase.application.base-url'] as string) ?? ''),
+    getInstanceDataFolder: vi.fn(() => tmpDir)
   });
 
   const makeEngine = (configManager: ReturnType<typeof makeConfigManager>) => ({

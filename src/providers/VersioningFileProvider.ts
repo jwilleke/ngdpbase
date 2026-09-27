@@ -47,6 +47,7 @@ import {
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { PLAIN_FILE_IO, storeFileIO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
+import { installCompletePath } from '../utils/configFiles.js';
 
 /**
  * One entry of a record keyed by uuid, by a key that came from a REQUEST.
@@ -531,10 +532,7 @@ class VersioningFileProvider extends FileSystemProvider {
     this.pageNameMatcher = new PageNameMatcher(matchEnglishPlurals);
 
     // Check installation status
-    const installCompleteFile = path.join(
-      configManager.getInstanceDataFolder(),
-      '.install-complete'
-    );
+    const installCompleteFile = installCompletePath(configManager.getInstanceDataFolder());
     this.installationComplete = await fs.pathExists(installCompleteFile);
 
     // Ensure directories exist

@@ -24,6 +24,14 @@ export const DEFAULT_CUSTOM_CONFIG_FILE = 'app-custom-config.json';
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * The marker the setup wizard (or a headless install) writes when a site is
+ * installed. Its presence alone says the site is installed (#1410).
+ */
+export function installCompletePath(dataFolder: string): string {
+  return path.join(dataFolder, '.install-complete');
+}
+
 /** Fast-storage data folder: FAST_STORAGE, then the legacy INSTANCE_DATA_FOLDER, then ./data. */
 export function instanceDataFolder(env: Env = process.env): string {
   return env.FAST_STORAGE || env.INSTANCE_DATA_FOLDER || './data';

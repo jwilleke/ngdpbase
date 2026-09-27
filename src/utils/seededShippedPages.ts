@@ -101,6 +101,12 @@ export class SeededShippedPages {
     return Boolean(this.data.sources[sourceId]?.seeded[uuid.toLowerCase()]);
   }
 
+  /** Whether the uuid was ever seeded from any source on this site. */
+  hasUuid(uuid: string): boolean {
+    const key = uuid.toLowerCase();
+    return Object.values(this.data.sources).some((source) => Boolean(source.seeded[key]));
+  }
+
   /** Record a uuid as seeded from the source. Returns true when it was not recorded before. */
   add(sourceId: string, uuid: string, at: string = new Date().toISOString()): boolean {
     const source = this.source(sourceId);

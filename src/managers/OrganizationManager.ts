@@ -7,6 +7,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { Organization, OrganizationUpdate, PostalAddress, ContactPoint } from '../types/Organization.js';
 import type { OrganizationProvider } from '../types/OrganizationProvider.js';
+import { installCompletePath } from '../utils/configFiles.js';
 
 interface OrganizationProviderConstructor {
   new (engine: WikiEngine): OrganizationProvider;
@@ -104,7 +105,7 @@ class OrganizationManager extends BaseManager {
 
     // Startup invariant: if install is complete and an anchor file is named,
     // the file MUST exist. Fail fast — operator deleted or never provisioned it.
-    const installComplete = await this.isInstallComplete(storageDir);
+    const installComplete = await fileExists(installCompletePath(configManager.getInstanceDataFolder()));
     const anchorFile = configManager.getProperty(
       'ngdpbase.application.organization.file',
       ''
@@ -389,18 +390,6 @@ class OrganizationManager extends BaseManager {
     };
 
     return provider.create(org, filename);
-  }
-
-  /**
-   * Probe for installation-complete state without depending on InstallService
-   * (which is constructed AFTER managers init). Mirrors InstallService.getInstallCompleteFilePath().
-   */
-  private async isInstallComplete(_storageDir: string): Promise<boolean> {
-    const instanceDataFolder = process.env.FAST_STORAGE || process.env.INSTANCE_DATA_FOLDER || './data';
-    const resolved = path.isAbsolute(instanceDataFolder)
-      ? instanceDataFolder
-      : path.join(process.cwd(), instanceDataFolder);
-    return fileExists(path.join(resolved, '.install-complete'));
   }
 
   private requireProvider(): OrganizationProvider {
