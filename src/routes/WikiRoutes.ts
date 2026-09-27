@@ -273,12 +273,6 @@ interface IComparisonResult {
   [key: string]: unknown;
 }
 
-interface IValidationReport {
-  fixedFiles: number;
-  invalidFiles: number;
-  [key: string]: unknown;
-}
-
 interface IUserManager {
   getUser(username: string): Promise<UserContext | null>;
   getUsers(): Promise<UserContext[]>;
@@ -427,7 +421,6 @@ interface IPageManager {
    * without going through savePage (#1040).
    */
   invalidatePageCache(identifier: string, ctx: ActorContext): void;
-  validateAndFixAllFiles(options?: unknown): Promise<IValidationReport>;
 }
 
 interface IPolicyInformationPoint {
@@ -14520,83 +14513,6 @@ ${panes}
     const target = decodeURIComponent(identifier).toLowerCase();
     const all = await organizationManager.list();
     return all.find((o) => typeof o.name === 'string' && o.name.toLowerCase() === target) ?? null;
-  }
-
-  /**
-   * Admin route to validate all files and check for naming convention compliance
-   */
-  async adminValidateFiles(req: Request, res: Response) {
-    try {
-      const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
-
-      if (
-        !userContext?.isAuthenticated ||
-        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
-      ) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'Admin access required'
-        );
-      }
-
-      const pageManager = this.engine.getManager('PageManager');
-      const dryRun = req.query.dryRun === 'true';
-
-      // Run validation
-      const report = await pageManager.validateAndFixAllFiles({ dryRun });
-
-      // Render validation report
-      const templateData = await this.getCommonTemplateData(req);
-      templateData.title = 'File Validation Report';
-      templateData.report = report;
-      templateData.dryRun = dryRun;
-
-      res.render('admin-validation-report', templateData);
-    } catch (err: unknown) {
-      logger.error('Error validating files:', err);
-      await this.renderError(req, res, 500, 'Validation Error', getErrorMessage(err));
-    }
-  }
-
-  /**
-   * Admin API route to fix all non-compliant files
-   */
-  async adminFixFiles(req: Request, res: Response) {
-    try {
-      const userContext = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
-
-      if (
-        !userContext?.isAuthenticated ||
-        !(await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
-      ) {
-        return res.status(403).json({
-          error: 'This account cannot make that change',
-          reason: "Read-only access — requires the 'admin-system' permission"
-        });
-      }
-
-      const pageManager = this.engine.getManager('PageManager');
-
-      // Run fixes (not dry run)
-      const report = await pageManager.validateAndFixAllFiles({
-        dryRun: false
-      });
-
-      return res.json({
-        success: true,
-        message: `Fixed ${report.fixedFiles} files out of ${report.invalidFiles} invalid files`,
-        report
-      });
-    } catch (err: unknown) {
-      logger.error('Error fixing files:', err);
-      return res.status(500).json({
-        success: false,
-        error: getErrorMessage(err)
-      });
-    }
   }
 
   /**
