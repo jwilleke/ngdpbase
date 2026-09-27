@@ -16,6 +16,8 @@ A category is not a subject. Subjects are `system-keywords` (the top-level taxon
 
 `ngdpbase.system-category` in `config/app-default-config.json`, overridable per instance in `app-custom-config.json`. It is a map. The map key names the entry in config, and each entry's `label` is what a page stores.
 
+__Today__ (what ships and what the code reads now; `storageLocation` is still the behaviour switch):
+
 ```json
 "journal": {
   "label": "journal",
@@ -26,6 +28,24 @@ A category is not a subject. Subjects are `system-keywords` (the top-level taxon
   "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
 }
 ```
+
+__Decided (#1477), not yet built__. The switch moves to `source`, `storageLocation` becomes the path of the vault its private pages use, and the vault settings sit beside it:
+
+```json
+"journal": {
+  "label": "journal",
+  "description": "Personal journal entries",
+  "default": false,
+  "enabled": true,
+  "source": "site",
+  "storageLocation": "pages/vaults/{user}/journal/",
+  "encrypt": false,
+  "owner": "journal",
+  "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
+}
+```
+
+A public page of any category lives in `pages/`, whatever `storageLocation` says; the path applies only to the category's private pages.
 
 Shipped entries: `general` (the default), `system`, `documentation`, `developer` (disabled), `addon`, `user-profile`, `journal`.
 
@@ -58,9 +78,9 @@ The category a new page gets when none is given: the first entry with `default: 
 
 `{ color, label, title }`: the badge shown beside the title on a page of this category (`views/header.ejs:207-212`, data from `WikiRoutes.ts:1323`). `color` is Bootstrap badge classes, `label` the badge text, `title` its tooltip. Without it, no badge (e.g. `general`).
 
-### `storageLocation` (`regular` | `required` | `github`)
+### `storageLocation` (today: `regular` | `required` | `github`)
 
-__Today this is a behaviour switch, not a place.__ The code branches on the exact word:
+__Today this is a behaviour switch, not a place. Decided: it becomes the path (see below); the switch moves to `source` first.__ The code branches on the exact word:
 
 | Value | Meaning | What the code does |
 |---|---|---|
