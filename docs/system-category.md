@@ -1,6 +1,8 @@
 # System categories
 
-What a `system-category` is, what each of its settings does today (read from the code, not from older docs), and what #1477 has decided it becomes. The decision record is [#1477](https://github.com/jwilleke/ngdpbase/issues/1477); where this page and the issue disagree, the issue's latest decision wins and this page is to be corrected.
+What a `system-category` is, what each of its settings does today (read from the code, not from older docs), and where we are taking it.
+
+__This page is the source of truth for the target.__ [#1477](https://github.com/jwilleke/ngdpbase/issues/1477) is the record of how each decision was reached; where the two disagree, this page wins, and a new decision is made on the issue and then written here. The target is not built yet: the code still does what "Settings, as the code reads them today" describes.
 
 ## The model
 
@@ -11,6 +13,112 @@ Every page carries exactly one `system-category` in its frontmatter. The #1477 m
 - __The folder is the safety line.__ `pages/` is shared; a vault folder is owner-only. Making a page public moves it to `pages/`; making it private moves it into its category's vault.
 
 A category is not a subject. Subjects are `system-keywords` (the top-level taxonomy) and `user-keywords` (sub-classification beneath it), per #1477.
+
+## Target configuration
+
+Decided, not yet built. It replaces `ngdpbase.system-category` and its comment in `config/app-default-config.json`:
+
+```json
+"_comment_system_category": "What kind of page this is, and where its pages live (#1477, docs/system-category.md). source: where the master copy lives: site (created here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: where its public pages live. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last segment is the vault id; no privatestore means its pages can never be private. allowPublic / defaultPrivate: the owner's choice whether an entry may be made public, and where new entries start; a person's preference overrides defaultPrivate only when allowPublic is true. encrypt, owner: the vault's settings, decided by the owner (admin, or the add-on's slug). Exactly one entry has default: true. Add-ons declare their own categories in their manifest; core persists them here at first load.",
+"ngdpbase.system-category": {
+  "general": {
+    "label": "general",
+    "description": "General User pages",
+    "default": true,
+    "enabled": true,
+    "source": "site",
+    "storageLocation": {
+      "defaultstore": "pages/",
+      "privatestore": "pages/vaults/{user}/default/"
+    },
+    "allowPublic": true,
+    "defaultPrivate": false,
+    "encrypt": false,
+    "owner": "admin"
+  },
+  "system": {
+    "label": "system",
+    "description": "Pages an instance must have to start up and run: its furniture and machinery",
+    "default": false,
+    "enabled": true,
+    "source": "shipped",
+    "storageLocation": { "defaultstore": "pages/" },
+    "page-badge": { "color": "bg-secondary", "label": "System", "title": "System page" }
+  },
+  "documentation": {
+    "label": "documentation",
+    "description": "End-User documentation",
+    "default": false,
+    "enabled": true,
+    "source": "shipped",
+    "storageLocation": { "defaultstore": "pages/" },
+    "page-badge": { "color": "bg-info text-dark", "label": "Documentation", "title": "Documentation page" }
+  },
+  "developer": {
+    "label": "developer",
+    "description": "Developer documentation and technical notes, only in GitHub",
+    "default": false,
+    "enabled": false,
+    "source": "repo"
+  },
+  "addon": {
+    "label": "addon",
+    "description": "Pages seeded by an installed add-on",
+    "default": false,
+    "enabled": true,
+    "source": "shipped",
+    "storageLocation": { "defaultstore": "pages/" },
+    "page-badge": { "color": "bg-primary", "label": "Addon", "title": "Add-on page" }
+  },
+  "user-profile": {
+    "label": "user-profile",
+    "description": "User profile pages",
+    "default": false,
+    "enabled": true,
+    "source": "site",
+    "storageLocation": { "defaultstore": "pages/" },
+    "page-badge": { "color": "bg-success", "label": "Profile", "title": "User profile page" }
+  }
+}
+```
+
+The `journal` entry is not in core configuration. The journal add-on declares it in its manifest, and core persists it into the site configuration at first load (see [Categories that add-ons bring](#categories-that-add-ons-bring)):
+
+```json
+"journal": {
+  "label": "journal",
+  "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
+  "default": false,
+  "enabled": true,
+  "source": "site",
+  "storageLocation": {
+    "defaultstore": "pages/",
+    "privatestore": "pages/vaults/{user}/journal/"
+  },
+  "allowPublic": true,
+  "defaultPrivate": true,
+  "encrypt": false,
+  "owner": "journal",
+  "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
+}
+```
+
+### The fields
+
+- __`source`__ replaces today's `storageLocation` words one for one: `regular` → `site`, `required` → `shipped`, `github` → `repo`. Every behaviour those words drive today moves to it first.
+- __`storageLocation.defaultstore`__: where public pages of the category live (`pages/`).
+- __`storageLocation.privatestore`__: its vault, `pages/vaults/{user}/{vaultid}/`. The vault id is the path's last segment; there is no separate `vaultid` field. No two categories may share a `privatestore`. __No `privatestore` means the category's pages can never be private__ (today's rule for shipped pages).
+- __`allowPublic`__ (the owner's choice): whether a user may make an entry public. With `false`, every entry stays in the vault.
+- __`defaultPrivate`__ (the owner's choice): where new entries start. With `allowPublic: true`, each person's preference overrides it, and the editor's Private box moves a single entry either way. Replaces `ngdpbase.addons.journal.defaultPrivate`.
+- __`encrypt` and `owner`__: the vault's settings, present only on entries that have a vault. They replace `ngdpbase.stores.{kind}.encrypt` / `.owner`; `general` carries what `ngdpbase.stores.default.*` holds today. `owner` is `admin` for core categories, or the add-on's `ngdpbase.slug` (#927).
+- __`default: true`__: exactly one entry, `general`. The build warns at startup when more than one is marked.
+- `label`, `description`, `enabled` and `page-badge` keep their meaning (below).
+
+### Still open
+
+- __`addon` pages can never be private__ (no `privatestore`): provisional, treating add-on-seeded pages like other shipped pages.
+- __`user-profile` pages have no vault__ (profiles always public): provisional.
+- __The admin-only test pages__ ("Test Page: …"): stay `system`, or move to `documentation`.
 
 ## Where it is configured
 
@@ -29,44 +137,7 @@ __Today__ (what ships and what the code reads now; `storageLocation` is still th
 }
 ```
 
-__Decided (#1477), not yet built.__ The switch moves to `source`. `storageLocation` names the two places a page of the category can live, and the vault's settings sit beside it:
-
-```json
-"general": {
-  "label": "general",
-  "default": true,
-  "source": "site",
-  "storageLocation": {
-    "defaultstore": "pages/",
-    "privatestore": "pages/vaults/{user}/default/"
-  },
-  "allowPublic": true,
-  "defaultPrivate": false,
-  "encrypt": false,
-  "owner": "admin"
-},
-"journal": {
-  "label": "journal",
-  "default": false,
-  "source": "site",
-  "storageLocation": {
-    "defaultstore": "pages/",
-    "privatestore": "pages/vaults/{user}/journal/"
-  },
-  "allowPublic": true,
-  "defaultPrivate": true,
-  "encrypt": false,
-  "owner": "journal",
-  "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
-}
-```
-
-- __`storageLocation.defaultstore`__ is where public pages of the category live (`pages/`).
-- __`storageLocation.privatestore`__ is its vault, `pages/vaults/{user}/{vaultid}/`. The vault id is the path's last segment, so there's no separate `vaultid` field. No two categories may share a `privatestore`.
-- __`allowPublic`__ (the owner's choice) says whether a user may make an entry public. With `false`, every entry stays in the vault.
-- __`defaultPrivate`__ (the owner's choice) says where new entries start. With `allowPublic: true`, each person's preference overrides it, and the editor's Private box moves a single entry either way.
-- __`encrypt` and `owner`__ move here from `ngdpbase.stores.{kind}`. The owner is `admin` for core categories, or the add-on's `ngdpbase.slug` (#927) for an add-on's; for an add-on, the vault id is that slug.
-- Exactly one entry carries `default: true` (`general`).
+The target shape is under [Target configuration](#target-configuration).
 
 ### Categories that add-ons bring
 
@@ -146,11 +217,11 @@ A missing value reads as `regular` (`ValidationManager.ts:406`).
 - __Category__: an entry in `ngdpbase.system-category`; what kind of page.
 - __Vault__: a user's owner-only folder of private pages. Today `pages/private/{user}/{vaultid}/`; decided: `pages/vaults/{user}/{vaultid}/`.
 - __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (owner, encrypt). Its id, the __vaultid__, is the last segment of the category's `privatestore`: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
-- __Source__ (decided, name to be confirmed): the replacement for today's `storageLocation` switch, meaning where a page's master copy lives. Not to be confused with a vault kind.
+- __Source__: the replacement for today's `storageLocation` switch, meaning where a page's master copy lives (`site`, `shipped`, `repo`). Not to be confused with a vault kind.
 
-## Decided target (#1477), not yet built
+## How we get there (#1477)
 
-- __The switch moves to its own field.__ Proposed as `source: site | shipped | repo`, replacing `regular | required | github` one for one. Every reader in the table above moves to it first, and a guard proves none still compares `storageLocation` to one of the old words.
+- __The switch moves to its own field__, `source: site | shipped | repo`, replacing `regular | required | github` one for one. Every reader in the table above moves to it first, and a guard proves none still compares `storageLocation` to one of the old words.
 - __Then `storageLocation` becomes the pair of places__ (`defaultstore`, `privatestore`), with `allowPublic` and `defaultPrivate` beside it.
 - __The vault settings move onto the category.__ `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides. An admin defines a new vault by adding or editing a category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Vaults move from `pages/private/` to `pages/vaults/`__, and page names and URLs follow (`/vaults/jim/default/Diary`). Old `/private/…` URLs redirect permanently, and stored links are rewritten once.
