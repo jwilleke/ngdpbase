@@ -63,7 +63,7 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
   },
   "addon": {
     "label": "addon",
-    "description": "Pages seeded by an installed add-on",
+    "description": "Documentation about an installed add-on, seeded by it",
     "default": false,
     "enabled": true,
     "source": "shipped",
@@ -116,15 +116,13 @@ The `journal` entry is not in core configuration. The journal add-on declares it
 
 ### Rules for owners
 
+- __Seeded `addon` pages are documentation about the add-on__: shipped with it, public, no vault. They are the only pages an add-on seeds.
+- __Content an add-on generates goes in the add-on's own category__, with its own vault (`pages/vaults/{user}/{slug}/`), declared by the add-on. A personal health record add-on, for example, would declare a category whose vault holds everything created through it, likely with `encrypt: true`. The journal is the first such add-on.
 - __The admin-only test pages__ ("Test Page: …", #1355) stay `system`: they must ship with every install, and their `test-page` system keyword is what marks them as tests.
 
 - __An add-on's pages may be private.__ The add-on, as owner, declares for its category whether new pages start private (`defaultPrivate`) and whether they are encrypted (`encrypt`).
 - __`encrypt: true` means the pages are always private__: an encrypted page is never public in place. So `encrypt: true` forces `allowPublic: false`, and core refuses a declaration that says otherwise.
 - __`user-profile` has no vault: a profile page is public by definition.__ The editor warns the user, when they edit their profile page, that everyone who can see the site can read it.
-
-### Still open
-
-- __The catch-all `addon` entry__ (pages an add-on seeds, e.g. its help): does it get a vault, or does an add-on that wants private pages declare its own category (as the journal does)?
 
 ## Where it is configured
 
