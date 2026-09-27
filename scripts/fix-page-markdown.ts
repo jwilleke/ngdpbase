@@ -40,6 +40,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import matter from 'gray-matter';
 import { structuredPatch } from 'diff';
+import { isPrivatePageFile, openSaveThroughDoor, pageFiles, type SaveThroughDoor } from './lib/pageMigration.js';
 import { FIX_STEPS, runFixes, selectFixSteps, type RunFixesOptions } from '../src/converters/ncm/fix/index.js';
 
 /** Up to `max` changed lines, as `before → after`, from a line diff. */
@@ -62,23 +63,6 @@ function samples(before: string, after: string, max = 3): Array<{ line: number; 
   return out;
 }
 
-/** The server's PID lock (src/app.ts). A live PID means the server is up. */
-function serverRunning(): number | null {
-  const pidFile = path.join(process.cwd(), '.ngdpbase.pid');
-  if (!fs.existsSync(pidFile)) return null;
-  const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
-  if (!pid) return null;
-  try {
-    process.kill(pid, 0);
-    return pid;
-  } catch {
-    return null;
-  }
-}
-
-/** The one page write this script makes, through PageManager's door (#1341). */
-type SaveThroughDoor = (title: string, content: string, metadata: Record<string, unknown>) => Promise<void>;
-
 interface PageChange {
   title: string;
   file: string;
@@ -86,19 +70,6 @@ interface PageChange {
   isPrivate: boolean;
   steps: string[];
   samples: Array<{ line: number; before: string; after: string }>;
-}
-
-async function walk(dir: string, out: string[] = []): Promise<string[]> {
-  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === 'versions' || entry.name === 'deleted') continue;
-      await walk(full, out);
-    } else if (entry.name.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
 }
 
 async function main(): Promise<void> {
@@ -129,38 +100,11 @@ async function main(): Promise<void> {
   const reportPath = get('--report') ?? `private/fix-${apply ? 'applied' : 'dry-run'}.md`;
   const baseUrl = get('--base-url');
 
-  let save: SaveThroughDoor | null = null;
-  if (apply) {
-    const pid = serverRunning();
-    if (pid) {
-      console.error(`✗ The server is running (PID ${pid}). Stop it first — ./server.sh stop <env> — then re-run.`);
-      process.exit(1);
-    }
-    await import('../src/bootstrap-env.js');
-    const expected = path.resolve(process.env.SLOW_STORAGE ?? '', 'pages');
-    if (path.resolve(dataDir) !== expected) {
-      console.error(`✗ --data ${dataDir} is not this instance's page store (${expected}). --apply writes through the engine, which uses .env.`);
-      process.exit(1);
-    }
-    const { default: WikiEngine } = await import('../src/WikiEngine.js');
-    const engine = new WikiEngine();
-    await engine.initialize();
-    const { systemContext } = await import('../src/context/bootActions.js');
-    const pm = engine.getManager<import('../src/managers/PageManager.js').default>('PageManager');
-    if (!pm) {
-      console.error('✗ No PageManager after engine start.');
-      process.exit(1);
-    }
-    // Through PageManager, so the write is validated, versioned, audited and
-    // reconciles the search index, link graph and rendered cache (#1341).
-    // Written by the system principal, keeping the page's lastModified.
-    const ctx = systemContext(engine, 'Markdown fix migration (scripts/fix-page-markdown.ts)');
-    save = async (title, content, metadata) => {
-      await pm.savePage(title, content, metadata, ctx, { preserveLastModified: true });
-    };
-  }
+  const save: SaveThroughDoor | null = apply
+    ? await openSaveThroughDoor(dataDir, 'Markdown fix migration (scripts/fix-page-markdown.ts)')
+    : null;
 
-  const files = (await walk(dataDir)).sort();
+  const files = (await pageFiles(dataDir)).sort();
   const failed: Array<{ title: string; error: string }> = [];
   const skippedPrivate: string[] = [];
   const changes: PageChange[] = [];
@@ -177,7 +121,7 @@ async function main(): Promise<void> {
     const result = runFixes(parsed.content, options);
     if (!result.changes.length) continue;
     const data = parsed.data as Record<string, unknown>;
-    const isPrivate = data['private'] === true || path.relative(dataDir, file).split(path.sep).includes('private');
+    const isPrivate = isPrivatePageFile(dataDir, file, data);
     // A private page is written only with its owner's keys, under its store
     // path — never by its bare title, which would publish it (#1341).
     if (save && isPrivate) {

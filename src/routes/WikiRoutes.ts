@@ -38,6 +38,7 @@ import {
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -1797,15 +1798,6 @@ class WikiRoutes {
    * Add a name here in the same change that renders its input.
    */
   static readonly EDITOR_EXTRA_FRONTMATTER_FIELDS: ReadonlySet<string> = new Set(['journal-date']);
-
-  /**
-   * A form field an earlier save wrongly stored as frontmatter (#1353): the
-   * editor's `baseLastModified` concurrency token, and the `web_form_*`
-   * fields a browser extension adds at submit (788 jimstest pages).
-   */
-  static isStrayFormField(key: string): boolean {
-    return key === 'baseLastModified' || key.startsWith('web_form_');
-  }
 
   static buildEditorExtraFrontmatterFields(metadata: Record<string, unknown> | undefined | null): string {
     const systemCategory = ((metadata?.['system-category'] as string | undefined) ?? '').toLowerCase();
@@ -3981,7 +3973,7 @@ ${panes}
       // page sheds them on its next save.
       const _803_existingMeta = (existingPage?.metadata ?? {}) as Record<string, unknown>;
       for (const [k, v] of Object.entries(_803_existingMeta)) {
-        if (WikiRoutes.isStrayFormField(k)) continue;
+        if (isStrayFormField(k)) continue;
         if (!(k in metadata)) (metadata)[k] = v;
       }
       // #1353: an allowlist, not a denylist. Only the fields an editor's
