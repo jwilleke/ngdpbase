@@ -80,6 +80,18 @@ Retiring an add-on for good (moving its pages to another category and vault, or 
 
 Shipped entries: `general` (the default), `system`, `documentation`, `developer` (disabled), `addon`, `user-profile`, `journal`.
 
+### What each shipped category is for
+
+- __`general`__: ordinary pages people write on the site. The default.
+- __`system`__: the pages an instance __must have to start up and run at its most basic__: its own furniture and machinery, which a fresh install could not work without. Examples: LeftMenu, Footer, Welcome, PageIndex, Recent Changes, SystemInfo, `Template:PageTabs`. Not help text: a page that explains something to a reader belongs in `documentation`, even if it ships.
+- __`documentation`__: help for the people using the site: how to write pages, use plugins and use features. Ships with the software.
+- __`developer`__: developer notes that live in the repository's `docs/`, never on the site. Disabled.
+- __`addon`__: pages an installed add-on seeds (its own help and screens).
+- __`user-profile`__: one page per user, their profile.
+- __`journal`__: journal entries. In core config today; decided to be declared by the journal add-on (#1477).
+
+`system` and `documentation` behave the same today (both ship and cannot be made private). They differ in purpose and badge, and are kept separate for that purpose (operator, 2026-09-27).
+
 ## Settings, as the code reads them today
 
 ### `label` (string, required)
