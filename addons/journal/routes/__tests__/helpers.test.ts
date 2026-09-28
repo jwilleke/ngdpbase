@@ -1,7 +1,7 @@
 /**
  * #1329 — journal entry naming, and finding an entry started under the old name.
  * #1456 — a private entry is named by its path in the user's default store,
- * `private/{user}/{store}/{title}`; a public one by its title.
+ * `vaults/{user}/{store}/{title}`; a public one by its title.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { journalPageName, legacyJournalSlug, findJournalEntryName, createJournalEntry } from '../helpers.js';
@@ -59,25 +59,25 @@ describe('findJournalEntryName', () => {
   it('returns the listed entry\'s name for that date', async () => {
     const { engine, getPage } = makeEngine({
       listed: [
-        { name: 'private/jim/default/2026-09-09-1-journal-jim', journalDate: '2026-09-09' },
-        { name: 'private/jim/default/2026-09-10-1-journal-jim', journalDate: '2026-09-10' }
+        { name: 'vaults/jim/default/2026-09-09-1-journal-jim', journalDate: '2026-09-09' },
+        { name: 'vaults/jim/default/2026-09-10-1-journal-jim', journalDate: '2026-09-10' }
       ]
     });
-    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
     expect(getPage).not.toHaveBeenCalled();
   });
 
   it('finds a private entry in the user\'s default store by direct probe', async () => {
-    const { engine } = makeEngine({ names: ['private/jim/default/2026-09-10-1-journal-jim'] });
-    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    const { engine } = makeEngine({ names: ['vaults/jim/default/2026-09-10-1-journal-jim'] });
+    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 
   it('probes the configured default store, not a hardcoded one', async () => {
     const { engine } = makeEngine({
-      names: ['private/jim/notes/2026-09-10-1-journal-jim'],
-      config: { 'ngdpbase.page.provider.filesystem.defaultstoreid': 'notes' }
+      names: ['vaults/jim/notes/2026-09-10-1-journal-jim'],
+      config: { 'ngdpbase.system-category': { general: { label: 'general', default: true, storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/notes/' } } } }
     });
-    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('private/jim/notes/2026-09-10-1-journal-jim');
+    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/notes/2026-09-10-1-journal-jim');
   });
 
   it('finds a public entry under the new name', async () => {
@@ -87,9 +87,9 @@ describe('findJournalEntryName', () => {
 
   it('prefers the private entry when both a private and a public one exist', async () => {
     const { engine } = makeEngine({
-      names: ['2026-09-10-1-journal-jim', 'private/jim/default/2026-09-10-1-journal-jim']
+      names: ['2026-09-10-1-journal-jim', 'vaults/jim/default/2026-09-10-1-journal-jim']
     });
-    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 
   it('finds an entry started under the old name, so it is reopened rather than duplicated', async () => {
@@ -102,8 +102,8 @@ describe('findJournalEntryName', () => {
 
   it('returns null when the user has no entry that day', async () => {
     const { engine } = makeEngine({
-      names: ['2026-09-10-1-journal-molly', 'private/molly/default/2026-09-10-1-journal-molly'],
-      listed: [{ name: 'private/jim/default/2026-09-09-1-journal-jim', journalDate: '2026-09-09' }]
+      names: ['2026-09-10-1-journal-molly', 'vaults/molly/default/2026-09-10-1-journal-molly'],
+      listed: [{ name: 'vaults/jim/default/2026-09-09-1-journal-jim', journalDate: '2026-09-09' }]
     });
     expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBeNull();
   });
@@ -113,11 +113,11 @@ describe('createJournalEntry', () => {
   it('saves a private entry under the user\'s default store and returns that name', async () => {
     const { engine, savePage } = makeEngine();
     const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
-    expect(name).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    expect(name).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
     expect(savePage).toHaveBeenCalledTimes(1);
     const [pageName, content, metadata, ctx] = savePage.mock.calls[0] as unknown as
       [string, string, Record<string, unknown>, unknown];
-    expect(pageName).toBe('private/jim/default/2026-09-10-1-journal-jim');
+    expect(pageName).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
     // #1328: empty, not ' '.
     expect(content).toBe('');
     // #1462 slice 2: the door is handed the entry's author, never a rebuilt actor.
@@ -149,7 +149,7 @@ describe('createJournalEntry', () => {
 
     const priv = makeEngine({ userPref: true });
     expect(await createJournalEntry(priv.engine, { defaultPrivate: false }, jim, '2026-09-10'))
-      .toBe('private/jim/default/2026-09-10-1-journal-jim');
+      .toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 
   it('leaves out the author lock when the deployment turns it off', async () => {

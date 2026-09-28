@@ -196,12 +196,6 @@ export interface WikiConfig {
   /** Required pages directory */
   'ngdpbase.page.provider.filesystem.requiredpagesdir': string;
 
-  /** Private-store folder name under the pages storagedir */
-  'ngdpbase.page.provider.filesystem.privateroot': string;
-
-  /** Default private store id */
-  'ngdpbase.page.provider.filesystem.defaultstoreid': string;
-
   /** Version snapshot folder name */
   'ngdpbase.page.provider.filesystem.versionsdir': string;
 

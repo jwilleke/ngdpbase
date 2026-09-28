@@ -8,6 +8,7 @@ import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { vaultCategories } from '../../test-support/vaults';
 
 const authedUser = { username: 'jim', isAuthenticated: true, roles: ['admin'] };
 
@@ -353,7 +354,7 @@ describe('WikiRoutes capture (#881)', () => {
     });
 
     test('the new page goes into the configured default store', async () => {
-      captureConfig['ngdpbase.page.provider.filesystem.defaultstoreid'] = 'clippings';
+      captureConfig['ngdpbase.system-category'] = vaultCategories('clippings');
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
       expect(mockSaveWithContext.mock.calls[0][0]).toBe(`vaults/jim/clippings/${body.pageName}`);
     });

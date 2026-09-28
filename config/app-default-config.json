@@ -87,9 +87,7 @@
   "ngdpbase.page.provider": "filesystemprovider",
   "ngdpbase.page.provider.filesystem.storagedir": "${SLOW_STORAGE}/pages",
   "ngdpbase.page.provider.filesystem.requiredpagesdir": "./required-pages",
-  "_comment_page_private_store": "Private-store path segments under the pages storagedir (ALL LOWERCASE). Join at runtime: resolved storagedir + privateroot + userid + storeid. Not a second ${SLOW_STORAGE} root; not FAST_STORAGE. User catalogs stay in that same user dir.",
-  "ngdpbase.page.provider.filesystem.privateroot": "vaults",
-  "ngdpbase.page.provider.filesystem.defaultstoreid": "default",
+  "_comment_page_private_store": "Private-store path segments inside each vault (ALL LOWERCASE). The vault folder itself comes from each system-category's storageLocation.privatestore (#1504); privateroot and defaultstoreid are no longer settings.",
   "ngdpbase.page.provider.filesystem.versionsdir": "versions",
   "ngdpbase.page.provider.filesystem.deleteddir": "deleted",
   "ngdpbase.page.provider.filesystem.attachmentsdir": "attachments",
@@ -1030,14 +1028,19 @@
   "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
-  "_comment_system_category": "System category definitions. source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here); see docs/system-category.md",
+  "_comment_system_category": "System category definitions (docs/system-category.md). source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last folder is the vault id; no privatestore means its pages can never be private. Every privatestore shares one parent folder, which is where all vaults live. defaultPrivate: how a new page's Private box starts: true, false, or choice (each person's preference, private until set). Exactly one entry has default: true; its vault is where a private page goes when nothing names another.",
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
       "description": "General User pages",
       "default": true,
       "source": "site",
-      "enabled": true
+      "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/default/"
+      },
+      "defaultPrivate": false
     },
     "system": {
       "label": "system",
@@ -1045,6 +1048,9 @@
       "default": false,
       "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-secondary",
         "label": "System",
@@ -1057,6 +1063,9 @@
       "default": false,
       "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-info text-dark",
         "label": "Documentation",
@@ -1076,6 +1085,9 @@
       "default": false,
       "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-primary",
         "label": "Addon",
@@ -1088,6 +1100,9 @@
       "default": false,
       "source": "site",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-success",
         "label": "Profile",
@@ -1100,11 +1115,28 @@
       "default": false,
       "source": "site",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/journal/"
+      },
+      "defaultPrivate": "choice",
       "page-badge": {
         "color": "bg-info",
         "label": "Journal",
         "title": "Journal entry"
       }
+    },
+    "capture": {
+      "label": "capture",
+      "description": "Pages made by the capture bookmarklet",
+      "default": false,
+      "source": "site",
+      "enabled": false,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/capture/"
+      },
+      "defaultPrivate": "choice"
     }
   },
   "_comment_knowledge_role": "#706 — knowledge-role: opt-in per-page position in the knowledge graph (source / citation / concept). Distinct from system-category (page-type). Absence is valid and means 'not in the graph' (the common case). Present with a value outside this catalog is HARD-REJECTED by ValidationManager. Each entry's page-badge block renders alongside the system-category badge via the v3.14.0 mechanism.",

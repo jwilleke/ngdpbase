@@ -25,6 +25,7 @@ import {
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
+import { vaultCategories } from '../../test-support/vaults';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 // The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
@@ -241,7 +242,7 @@ describe('private store default/ (#1383)', () => {
       getProperty: vi.fn((key: string, def: unknown) => {
         const cfg = {
           ...config(),
-          'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
+          'ngdpbase.system-category': vaultCategories('default', 'sealed')
         };
         return cfg[key] !== undefined ? cfg[key] : def;
       }),

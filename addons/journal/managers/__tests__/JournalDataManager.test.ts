@@ -393,8 +393,8 @@ describe('JournalDataManager', () => {
   // ── #1456: private entries come from the requester's own stores ──────────────
 
   describe('private entries (#1456)', () => {
-    const alicePrivateName = 'private/alice/default/2026-02-01-1-journal-alice';
-    const bobPrivateName   = 'private/bob/default/2026-02-01-1-journal-bob';
+    const alicePrivateName = 'vaults/alice/default/2026-02-01-1-journal-alice';
+    const bobPrivateName   = 'vaults/bob/default/2026-02-01-1-journal-bob';
 
     function privateFixture(): MockPrivatePage[] {
       return [
@@ -457,7 +457,7 @@ describe('JournalDataManager', () => {
     it('leaves out a private page that is not a journal entry', async () => {
       const notJournal = makeMockPage({ slug: 'notes', author: 'alice', journalDate: '2026-02-02', isPrivate: true });
       notJournal.metadata['system-category'] = 'general';
-      const { engine } = makeMockEngine([], [{ owner: 'alice', name: 'private/alice/default/notes', page: notJournal }]);
+      const { engine } = makeMockEngine([], [{ owner: 'alice', name: 'vaults/alice/default/notes', page: notJournal }]);
       const m = new JournalDataManager(engine, dir);
       expect(await m.listAll(alice)).toEqual([]);
     });
@@ -466,7 +466,7 @@ describe('JournalDataManager', () => {
       const today = new Date().toISOString().slice(0, 10);
       const { engine } = makeMockEngine([], [{
         owner: 'alice',
-        name: `private/alice/default/${today}-1-journal-alice`,
+        name: `vaults/alice/default/${today}-1-journal-alice`,
         page: makeMockPage({ slug: `${today}-1-journal-alice`, author: 'alice', journalDate: today, mood: 'calm', tags: ['walk'], isPrivate: true })
       }]);
       const m = new JournalDataManager(engine, dir);

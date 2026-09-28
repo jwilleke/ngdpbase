@@ -60,7 +60,8 @@ describe('shipped categories declare their source (#1503)', () => {
   test('every entry carries source, and none carries an old storageLocation word', () => {
     for (const [key, cfg] of Object.entries(categories)) {
       expect({ key, source: cfg.source }).toEqual({ key, source: expect.stringMatching(/^(site|shipped|repo)$/) as unknown });
-      expect({ key, storageLocation: cfg.storageLocation }).toEqual({ key, storageLocation: undefined });
+      // #1504: storageLocation is the entry's folders now, never a word.
+      expect({ key, isWord: typeof cfg.storageLocation === 'string' }).toEqual({ key, isWord: false });
     }
   });
 

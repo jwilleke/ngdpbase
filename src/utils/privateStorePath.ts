@@ -118,6 +118,34 @@ export function privateUserCatalogFiles(layout?: PrivateStoreLayoutOverrides): S
 
 export const PRIVATE_USER_CATALOG_FILES = privateUserCatalogFiles();
 
+/**
+ * A system-category's vault, read from its `storageLocation.privatestore`
+ * (#1504): `pages/vaults/{user}/journal/` → `{ root: 'vaults', vaultId: 'journal' }`.
+ * The shape is fixed — `pages/`, the vaults' parent folder, the `{user}`
+ * placeholder, the vault id — and `null` for anything else, so a malformed
+ * entry never names a folder.
+ */
+export function parsePrivatestore(value: unknown): { root: string; vaultId: string } | null {
+  if (typeof value !== 'string') return null;
+  const parts = value.replace(/\/$/, '').split('/');
+  if (parts.length !== 4 || parts[0] !== 'pages' || parts[2] !== '{user}') return null;
+  const [, root, , vaultId] = parts;
+  if (!isSafePathSegment(root) || !isValidStoreId(vaultId)) return null;
+  return { root, vaultId };
+}
+
+/** The entries of `ngdpbase.system-category` that declare a vault, in config order. */
+export function systemCategoryVaults(categories: unknown): Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> {
+  if (!categories || typeof categories !== 'object') return [];
+  const vaults: Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> = [];
+  for (const [key, entry] of Object.entries(categories as Record<string, unknown>)) {
+    const e = entry as { default?: unknown; storageLocation?: { privatestore?: unknown } } | null;
+    const parsed = parsePrivatestore(e?.storageLocation?.privatestore);
+    if (parsed) vaults.push({ key, ...parsed, isDefault: e?.default === true });
+  }
+  return vaults;
+}
+
 export function privateStoreLayoutFromConfig(
   getProperty: (key: string, defaultValue: string) => unknown
 ): PrivateStoreLayout {
@@ -126,9 +154,14 @@ export function privateStoreLayoutFromConfig(
     return typeof value === 'string' && value.length > 0 ? value : fallback;
   };
   const d = DEFAULT_PRIVATE_STORE_LAYOUT;
+  // #1504: where the vaults live, and which one is a person's ordinary vault,
+  // are said once — by the system-category entries' privatestore — not by
+  // settings of their own. Startup refuses entries that disagree on the parent
+  // (ValidationManager), so the first vault's parent is every vault's.
+  const vaults = systemCategoryVaults(getProperty('ngdpbase.system-category', ''));
   return {
-    privateRoot: str('ngdpbase.page.provider.filesystem.privateroot', d.privateRoot),
-    defaultStoreId: str('ngdpbase.page.provider.filesystem.defaultstoreid', d.defaultStoreId),
+    privateRoot: vaults[0]?.root ?? d.privateRoot,
+    defaultStoreId: vaults.find((v) => v.isDefault)?.vaultId ?? d.defaultStoreId,
     versionsDir: str('ngdpbase.page.provider.filesystem.versionsdir', d.versionsDir),
     deletedDir: str('ngdpbase.page.provider.filesystem.deleteddir', d.deletedDir),
     attachmentsDir: str('ngdpbase.page.provider.filesystem.attachmentsdir', d.attachmentsDir),

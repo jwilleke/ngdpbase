@@ -20,6 +20,7 @@ import {
   privateStoreAttachmentsDir,
   privateStoreFilePath,
   privateStoreLayoutFromConfig,
+  parsePrivatestore,
   privateStoreRoot,
   privateUserCatalogFiles,
   privateUserDir,
@@ -35,8 +36,9 @@ const shipped = JSON.parse(
 describe('private-store filesystem config keys', () => {
   test('app-default-config ships the approved keys with those defaults', () => {
     expect(shipped['_comment_page_private_store']).toEqual(expect.any(String));
-    expect(shipped['ngdpbase.page.provider.filesystem.privateroot']).toBe('vaults');
-    expect(shipped['ngdpbase.page.provider.filesystem.defaultstoreid']).toBe('default');
+    // #1504: the vault folder and the default vault come from the system-category entries.
+    expect(shipped['ngdpbase.page.provider.filesystem.privateroot']).toBeUndefined();
+    expect(shipped['ngdpbase.page.provider.filesystem.defaultstoreid']).toBeUndefined();
     expect(shipped['ngdpbase.page.provider.filesystem.versionsdir']).toBe('versions');
     expect(shipped['ngdpbase.page.provider.filesystem.deleteddir']).toBe('deleted');
     expect(shipped['ngdpbase.page.provider.filesystem.attachmentsdir']).toBe('attachments');
@@ -47,18 +49,13 @@ describe('private-store filesystem config keys', () => {
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.userversions']).toBeUndefined();
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.usertrash']).toBeUndefined();
     expect(shipped['ngdpbase.page.provider.filesystem.private.files.storemeta']).toBe('store.json');
-    // privateroot is a folder name under existing storagedir, not a second data root.
-    expect(String(shipped['ngdpbase.page.provider.filesystem.privateroot'])).not.toMatch(
-      /SLOW_STORAGE|FAST_STORAGE|[\\/]/
-    );
     expect(shipped['ngdpbase.page.provider.filesystem.storagedir']).toBe('${SLOW_STORAGE}/pages');
   });
 
   test('helper defaults match the shipped JSON so tests without config compose the same paths', () => {
-    expect(DEFAULT_PRIVATE_STORE_LAYOUT.privateRoot).toBe(
-      shipped['ngdpbase.page.provider.filesystem.privateroot']
-    );
-    expect(DEFAULT_PRIVATE_STORE).toBe(shipped['ngdpbase.page.provider.filesystem.defaultstoreid']);
+    const shippedLayout = privateStoreLayoutFromConfig((key, fallback) => (key in shipped ? shipped[key] : fallback));
+    expect(DEFAULT_PRIVATE_STORE_LAYOUT.privateRoot).toBe(shippedLayout.privateRoot);
+    expect(DEFAULT_PRIVATE_STORE).toBe(shippedLayout.defaultStoreId);
     expect(DEFAULT_PRIVATE_STORE_LAYOUT.versionsDir).toBe(
       shipped['ngdpbase.page.provider.filesystem.versionsdir']
     );
@@ -222,14 +219,15 @@ describe('privateStorePath (#1383)', () => {
     const seen: string[] = [];
     const layout = privateStoreLayoutFromConfig((key, fallback) => {
       seen.push(key);
-      if (key === 'ngdpbase.page.provider.filesystem.privateroot') return 'sealed';
+      if (key === 'ngdpbase.system-category') {
+        return { general: { label: 'general', default: true, storageLocation: { defaultstore: 'pages/', privatestore: 'pages/sealed/{user}/default/' } } };
+      }
       return fallback;
     });
     expect(layout.privateRoot).toBe('sealed');
     expect(layout.defaultStoreId).toBe('default');
     expect(layout.files.userkeys).toBe('user-keys.json');
-    expect(seen).toContain('ngdpbase.page.provider.filesystem.privateroot');
-    expect(seen).toContain('ngdpbase.page.provider.filesystem.defaultstoreid');
+    expect(seen).toContain('ngdpbase.system-category');
     expect(seen).toContain('ngdpbase.page.provider.filesystem.attachmentsdir');
     expect(layout.attachmentsDir).toBe('attachments');
     expect(seen).not.toContain('ngdpbase.page.provider.filesystem.storagedir');
@@ -312,5 +310,36 @@ describe('the private link target `[store/Title]` (#1457)', () => {
     expect(mayContainPrivateLink('See [My diary|vault/Diary].')).toBe(true);
     expect(mayContainPrivateLink('See [Diary] and [Home].')).toBe(false);
     expect(mayContainPrivateLink('See [Google|https://example.com/a].')).toBe(false);
+  });
+});
+
+describe('vault folders come from the system-category entries (#1504)', () => {
+  const entry = (privatestore: string, extra: Record<string, unknown> = {}) => ({
+    label: 'x', storageLocation: { defaultstore: 'pages/', privatestore }, ...extra
+  });
+
+  test('parsePrivatestore reads the parent folder and the vault id', () => {
+    expect(parsePrivatestore('pages/vaults/{user}/default/')).toEqual({ root: 'vaults', vaultId: 'default' });
+    expect(parsePrivatestore('pages/vaults/{user}/journal')).toEqual({ root: 'vaults', vaultId: 'journal' });
+  });
+
+  test('parsePrivatestore rejects anything not shaped pages/<parent>/{user}/<vault id>/', () => {
+    for (const bad of [undefined, '', 'pages/vaults/default/', 'vaults/{user}/default/', 'pages/vaults/{user}/', 'pages/vaults/{user}/Not A Store/', 'pages/../{user}/x/']) {
+      expect(parsePrivatestore(bad)).toBeNull();
+    }
+  });
+
+  test('the default vault is the one the default system-category declares', () => {
+    const layout = privateStoreLayoutFromConfig((key, fallback) => (key === 'ngdpbase.system-category'
+      ? { journal: entry('pages/vaults/{user}/journal/'), general: entry('pages/vaults/{user}/notes/', { default: true }) }
+      : fallback));
+    expect(layout.privateRoot).toBe('vaults');
+    expect(layout.defaultStoreId).toBe('notes');
+  });
+
+  test('with no system-category vaults the built-in layout applies', () => {
+    const layout = privateStoreLayoutFromConfig((_key, fallback) => fallback);
+    expect(layout.privateRoot).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.privateRoot);
+    expect(layout.defaultStoreId).toBe(DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId);
   });
 });

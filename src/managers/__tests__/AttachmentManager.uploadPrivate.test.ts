@@ -30,6 +30,7 @@ import {
   setUnlockedDek,
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
+import { vaultCategories } from '../../test-support/vaults';
 
 const CTX = { username: 'molly', isAuthenticated: true, roles: ['editor'] };
 const FILE = { originalName: 'labs.pdf', mimeType: 'application/pdf', size: 4 };
@@ -132,7 +133,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     const stored: StoredCall[] = [];
     const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
-      if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
+      if (key === 'ngdpbase.system-category') return vaultCategories('vault');
       return fallback;
     });
     const pageOwner = vi.fn().mockResolvedValue(null);
@@ -144,8 +145,8 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
 
     expect(pageOwner).not.toHaveBeenCalled();
     expect(getProperty).toHaveBeenCalledWith(
-      'ngdpbase.page.provider.filesystem.defaultstoreid',
-      expect.any(String)
+      'ngdpbase.system-category',
+      expect.anything()
     );
     // #1460: the store's own index, with a plain I/O — never the public pool.
     expect(stored).toHaveLength(0);
@@ -156,7 +157,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     const stored: StoredCall[] = [];
     const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
-      if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
+      if (key === 'ngdpbase.system-category') return vaultCategories('vault');
       return fallback;
     });
     const pageOwner = vi.fn().mockResolvedValue(null);
@@ -175,7 +176,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
     const stored: StoredCall[] = [];
     const storeStored: unknown[] = [];
     const getProperty = vi.fn((key: string, fallback: unknown) => {
-      if (key === 'ngdpbase.page.provider.filesystem.defaultstoreid') return 'vault';
+      if (key === 'ngdpbase.system-category') return vaultCategories('vault');
       return fallback;
     });
     const m = makeManager({ pagesDir, stored, storeStored, getProperty });
@@ -326,7 +327,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       stored,
       storeStored,
       getProperty: (key, fallback) =>
-        key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
+        key === 'ngdpbase.system-category' ? vaultCategories(storeId) : fallback
     });
     await expect(
       m.uploadAttachment(Buffer.from('x'), FILE, CTX, { private: true })
@@ -352,7 +353,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       stored,
       storeStored,
       getProperty: (key, fallback) =>
-        key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? storeId : fallback
+        key === 'ngdpbase.system-category' ? vaultCategories(storeId) : fallback
     });
     // The key is reached through the context's handle, not an ambient session (P1).
     // #1400: the file goes into the store itself, sealed — not the global pool.
@@ -379,7 +380,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
       stored,
       storeStored,
       getProperty: (key, fallback) =>
-        key === 'ngdpbase.page.provider.filesystem.defaultstoreid' ? 'vault' : fallback
+        key === 'ngdpbase.system-category' ? vaultCategories('vault') : fallback
     });
     // Molly's keys are unlocked in the process, but this context carries no
     // handle to them — and there is no ambient session to fall back on (P1).

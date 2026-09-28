@@ -131,7 +131,7 @@ export interface BackupData {
  * Configuration keys (all lowercase):
  * - ngdpbase.page.provider.filesystem.storagedir - Main pages directory (getResolvedDataPath)
  * - ngdpbase.page.provider.filesystem.requiredpagesdir - Required pages directory
- * - ngdpbase.page.provider.filesystem.privateroot - Private-store folder under storagedir
+ * - ngdpbase.system-category - each entry's storageLocation.privatestore names the vault folder (#1504)
  * - ngdpbase.page.provider.filesystem.encoding - File encoding (default: utf-8)
  * - ngdpbase.translator-reader.match-english-plurals - Enable plural matching
  *

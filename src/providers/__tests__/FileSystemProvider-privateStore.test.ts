@@ -14,6 +14,7 @@ import os from 'os';
 import { DEFAULT_PRIVATE_STORE, formatPrivatePageName, storeMetaPath, storePageIndexPath } from '../../utils/privateStorePath';
 import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys } from '../../utils/privateStoreCrypto';
 import { clearUnlockedPrivateStores } from '../../utils/privateStoreUnlock';
+import { vaultCategories } from '../../test-support/vaults';
 
 const UUID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 // The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
@@ -215,7 +216,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
 
   test('config privateroot sealed writes under sealed/, not private/', async () => {
     const provider = await newProvider({
-      'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
+      'ngdpbase.system-category': vaultCategories('default', 'sealed')
     });
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);

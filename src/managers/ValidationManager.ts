@@ -11,6 +11,7 @@ import BaseManager from './BaseManager.js';
 import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
+import { parsePrivatestore } from '../utils/privateStorePath.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -63,6 +64,49 @@ const CATEGORY_SOURCES: readonly string[] = ['site', 'shipped', 'repo'];
 export function categorySource(cfg: { source?: string } | null | undefined): CategorySource {
   const source = cfg?.source;
   return source !== undefined && CATEGORY_SOURCES.includes(source) ? source as CategorySource : 'site';
+}
+
+/**
+ * What is wrong with a `ngdpbase.system-category` map, one line per problem
+ * (#1504). Empty when it is sound. Startup refuses a map with problems
+ * (operator, 2026-09-28): each one could put a private page in the wrong
+ * place, so it must never run.
+ *
+ * - exactly one entry has `default: true`;
+ * - every `storageLocation.privatestore` is `pages/<parent>/{user}/<vault id>/`;
+ * - no two entries share a vault;
+ * - every vault has the same parent folder.
+ */
+export function systemCategoryConfigProblems(categories: unknown): string[] {
+  if (!categories || typeof categories !== 'object') return [];
+  const entries = Object.entries(categories as Record<string, { default?: unknown; storageLocation?: { privatestore?: unknown } } | null>);
+  const problems: string[] = [];
+
+  const defaults = entries.filter(([, e]) => e?.default === true).map(([key]) => key);
+  if (defaults.length !== 1) {
+    problems.push(`exactly one system-category must have default: true; found ${defaults.length ? defaults.join(', ') : 'none'}`);
+  }
+
+  const byVault = new Map<string, string[]>();
+  const roots = new Set<string>();
+  for (const [key, e] of entries) {
+    const declared = e?.storageLocation?.privatestore;
+    if (declared === undefined) continue;
+    const parsed = parsePrivatestore(declared);
+    if (!parsed) {
+      problems.push(`system-category '${key}': storageLocation.privatestore must be pages/<parent>/{user}/<vault id>/, got ${JSON.stringify(declared)}`);
+      continue;
+    }
+    roots.add(parsed.root);
+    byVault.set(parsed.vaultId, [...(byVault.get(parsed.vaultId) ?? []), key]);
+  }
+  for (const [vaultId, keys] of byVault) {
+    if (keys.length > 1) problems.push(`system-categories ${keys.join(', ')} share the vault '${vaultId}'; each needs its own`);
+  }
+  if (roots.size > 1) {
+    problems.push(`every vault must be under one parent folder; found ${[...roots].join(', ')}`);
+  }
+  return problems;
 }
 
 /**
@@ -199,6 +243,12 @@ class ValidationManager extends BaseManager {
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+
+    // #1504: a system-category map that could misplace private pages never runs.
+    const problems = systemCategoryConfigProblems(configManager?.getProperty('ngdpbase.system-category', null));
+    if (problems.length > 0) {
+      throw new Error(`ngdpbase.system-category is not valid (#1504):\n- ${problems.join('\n- ')}`);
+    }
 
     // Load system categories and keywords from configuration
     this.loadSystemCategories(configManager);
