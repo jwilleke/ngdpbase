@@ -267,11 +267,11 @@ vi.mock('../../WikiEngine', () => {
         'ngdpbase.application-name': 'ngdpbase',
         'ngdpbase.version': '1.0.0',
         'ngdpbase.system-category': {
-          general:       { label: 'general',       storageLocation: 'regular',  enabled: true },
-          system:        { label: 'system',        storageLocation: 'required', enabled: true },
-          documentation: { label: 'documentation', storageLocation: 'required', enabled: true },
-          developer:     { label: 'developer',     storageLocation: 'github',   enabled: true },
-          addon:         { label: 'addon',         storageLocation: 'regular',  enabled: true }
+          general:       { label: 'general',       source: 'site',  enabled: true },
+          system:        { label: 'system',        source: 'shipped', enabled: true },
+          documentation: { label: 'documentation', source: 'shipped', enabled: true },
+          developer:     { label: 'developer',     source: 'repo',   enabled: true },
+          addon:         { label: 'addon',         source: 'site',  enabled: true }
         }
       };
       return key in defaults ? defaults[key] : defaultValue;

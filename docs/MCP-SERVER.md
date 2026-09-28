@@ -278,13 +278,13 @@ __Returns:__
       "label": "general",
       "description": "General wiki pages",
       "default": true,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true
     },
     {
       "label": "documentation",
       "description": "Documentation",
-      "storageLocation": "required",
+      "source": "shipped",
       "enabled": true
     }
   ]

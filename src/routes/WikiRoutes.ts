@@ -165,6 +165,7 @@ import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
 import type TemplateManager from '../managers/TemplateManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
+import { categorySource } from '../managers/ValidationManager.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
@@ -1908,7 +1909,7 @@ class WikiRoutes {
   }
 
   /**
-   * Get category labels whose storageLocation is 'required' (i.e. tracked in required-pages/).
+   * Get category labels whose source is 'shipped' (i.e. tracked in required-pages/).
    * Used to determine whether to set the user-modified flag and whether a page is protected.
    */
   getRequiredPageCategories(): string[] {
@@ -1916,10 +1917,10 @@ class WikiRoutes {
       const configManager = this.engine.getManager('ConfigurationManager');
       if (!configManager) return [];
       const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { storageLocation?: string; label?: string; enabled?: boolean }>;
+        Record<string, { source?: string; label?: string; enabled?: boolean }>;
       const labels: string[] = [];
       for (const [key, cfg] of Object.entries(systemCategories)) {
-        if (cfg.enabled !== false && cfg.storageLocation === 'required') {
+        if (cfg.enabled !== false && categorySource(cfg) === 'shipped') {
           labels.push((cfg.label || key).toLowerCase());
         }
       }
@@ -1941,14 +1942,14 @@ class WikiRoutes {
 
       // Load system categories from configuration
       const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-        Record<string, { enabled?: boolean; label?: string; storageLocation?: string }>;
+        Record<string, { enabled?: boolean; label?: string; source?: string }>;
 
-      // Filter enabled categories — exclude 'github' storage locations since those
-      // pages live in the docs/ folder only and cannot be created via the wiki form.
+      // Filter enabled categories — exclude source 'repo', since those pages
+      // live in the repository's docs/ folder only and cannot be created here.
       const categories: string[] = [];
       for (const [key, config] of Object.entries(systemCategories)) {
         const cfg = config;
-        if (cfg.enabled !== false && cfg.storageLocation !== 'github') {
+        if (cfg.enabled !== false && categorySource(cfg) !== 'repo') {
           // Use label if available, otherwise use key (both lowercase)
           const label = (cfg.label || key).toLowerCase();
           categories.push(label);
@@ -3990,22 +3991,20 @@ ${panes}
       // from disk after the user set the page back to published.
       if (!statusValue) delete (metadata).status;
 
-      // Mark pages as user-modified based on their storageLocation in config
+      // Mark pages as user-modified when their category's master copy lives elsewhere (#1503)
       const _catConfigManager = this.engine.getManager('ConfigurationManager');
       const _allCategoryConfig = (_catConfigManager
         ? _catConfigManager.getProperty('ngdpbase.system-category', {})
-        : {}) as Record<string, { storageLocation?: string; label?: string }>;
+        : {}) as Record<string, { source?: string; label?: string }>;
       const _catKey = Object.keys(_allCategoryConfig).find(
         k => (_allCategoryConfig[k].label || k).toLowerCase() === matchedCategory.toLowerCase()
       );
-      const storageLocation = _catKey
-        ? (_allCategoryConfig[_catKey].storageLocation || 'regular')
-        : 'regular';
-      if (storageLocation === 'required' || storageLocation === 'github') {
+      const source = categorySource(_catKey ? _allCategoryConfig[_catKey] : undefined);
+      if (source === 'shipped' || source === 'repo') {
         metadata['user-modified'] = true;
       }
       // Warn when editing a page whose source lives in GitHub, not in required-pages/
-      const saveWarning = storageLocation === 'github'
+      const saveWarning = source === 'repo'
         ? 'This page is managed in GitHub — edits here will not be reflected in the source repository.'
         : undefined;
 
@@ -4121,7 +4120,7 @@ ${panes}
       content = saved.content ?? content;
 
       // Notify admins when a required page is edited in the wiki UI
-      if (storageLocation === 'required') {
+      if (source === 'shipped') {
         const pageTitle = (metadata.title as string) || pageName;
         const editor = currentUser?.username || 'unknown';
         try {
@@ -12050,7 +12049,7 @@ ${panes}
       }
 
       // #1377: live pages whose category says they belong in the required-pages
-      // set (`storageLocation: required` — system, documentation) but whose UUID
+      // set (source `shipped` — system, documentation) but whose UUID
       // is not in it yet. The comparison above is built from the source files,
       // so these were invisible. Addon pages belong to their addon's own set;
       // private pages are nobody's shipped content.
@@ -12108,7 +12107,7 @@ ${panes}
   }
 
   /**
-   * #1377: live pages in a `storageLocation: required` category (system,
+   * #1377: live pages in a category whose source is `shipped` (system,
    * documentation) whose UUID is in none of the source sets given — pages that
    * belong in the GitHub required-pages set but were never added to it. Addon
    * and private pages are left out. Sorted by title.
@@ -12118,10 +12117,10 @@ ${panes}
     sourceUuids: string[],
     reader: ActorContext
   ): Promise<Array<{ uuid: string; title: string; category: string; author: string; lastModified: string }>> {
-    const categories = (configManager.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; storageLocation?: string }>;
+    const categories = (configManager.getProperty('ngdpbase.system-category', {}) ?? {}) as Record<string, { label?: string; source?: string }>;
     const requiredCategories = new Set(
       Object.entries(categories)
-        .filter(([, c]) => c?.storageLocation === 'required')
+        .filter(([, c]) => categorySource(c) === 'shipped')
         .map(([key, c]) => (c.label || key).toLowerCase())
     );
     const inSource = new Set(sourceUuids.map((u) => u.toLowerCase()));

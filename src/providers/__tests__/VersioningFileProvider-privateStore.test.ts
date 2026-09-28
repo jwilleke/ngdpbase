@@ -49,7 +49,7 @@ describe('private store default/ (#1383)', () => {
     'ngdpbase.page.provider.versioning.deltastorage': true,
     'ngdpbase.page.provider.versioning.compression': 'none',
     'ngdpbase.system-category': {
-      general: { label: 'general', storageLocation: 'regular' }
+      general: { label: 'general', source: 'site' }
     }
   });
 

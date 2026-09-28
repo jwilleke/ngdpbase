@@ -44,8 +44,8 @@ function makeEngine(pageManager: Record<string, unknown>) {
     getProperty: vi.fn((key: string, def: unknown) => {
       if (key === 'ngdpbase.system-category') {
         return {
-          general:       { label: 'general',       storageLocation: 'regular', enabled: true },
-          documentation: { label: 'documentation', storageLocation: 'regular', enabled: true }
+          general:       { label: 'general',       source: 'site', enabled: true },
+          documentation: { label: 'documentation', source: 'site', enabled: true }
         };
       }
       if (key === 'ngdpbase.application.base-url') return 'https://jimstest.example';

@@ -8,10 +8,10 @@
 import WikiRoutes from '../WikiRoutes';
 
 const categories = {
-  general: { label: 'general', storageLocation: 'regular' },
-  system: { label: 'system', storageLocation: 'required' },
-  documentation: { label: 'documentation', storageLocation: 'required' },
-  addon: { label: 'addon', storageLocation: 'regular' }
+  general: { label: 'general', source: 'site' },
+  system: { label: 'system', source: 'shipped' },
+  documentation: { label: 'documentation', source: 'shipped' },
+  addon: { label: 'addon', source: 'site' }
 };
 
 function makeRoutes(pages: Record<string, Record<string, unknown>>) {

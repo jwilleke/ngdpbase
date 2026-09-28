@@ -63,7 +63,7 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
       'ngdpbase.page.provider.versioning.indexfile': path.join(testDir, 'data', 'page-index.json'),
       'ngdpbase.page.provider.versioning.deltastorage': true,
       'ngdpbase.page.provider.versioning.compression': 'none',
-      'ngdpbase.system-category': { general: { label: 'general', storageLocation: 'regular' } }
+      'ngdpbase.system-category': { general: { label: 'general', source: 'site' } }
     };
     const configManager = {
       getProperty: vi.fn((key: string, fallback: unknown) => (config[key] !== undefined ? config[key] : fallback)),

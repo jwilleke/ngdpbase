@@ -76,7 +76,7 @@ describe('sealed store bytes at rest (#1415)', () => {
     'ngdpbase.page.provider.versioning.deltastorage': true,
     'ngdpbase.page.provider.versioning.compression': 'none',
     'ngdpbase.system-category': {
-      general: { label: 'general', storageLocation: 'regular' }
+      general: { label: 'general', source: 'site' }
     }
   });
 

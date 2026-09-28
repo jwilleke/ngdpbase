@@ -47,13 +47,32 @@ export interface ContentValidationResult {
 }
 
 /**
+ * Where a category's pages come from (#1503): made on this site, shipped with
+ * the release in required-pages/, or kept in the repository's docs/ and never
+ * stored on the site. Replaces the old storageLocation words one for one
+ * (regular → site, required → shipped, github → repo).
+ */
+export type CategorySource = 'site' | 'shipped' | 'repo';
+
+const CATEGORY_SOURCES: readonly string[] = ['site', 'shipped', 'repo'];
+
+/**
+ * A category entry's source. An entry without a valid one is a site category.
+ * The one rule every reader of a category's source goes through.
+ */
+export function categorySource(cfg: { source?: string } | null | undefined): CategorySource {
+  const source = cfg?.source;
+  return source !== undefined && CATEGORY_SOURCES.includes(source) ? source as CategorySource : 'site';
+}
+
+/**
  * System category configuration
  */
 export interface CategoryConfig {
   label: string;
   description?: string;
   default?: boolean;
-  storageLocation?: string;
+  source?: CategorySource;
   enabled?: boolean;
   key?: string;
 }
@@ -212,7 +231,13 @@ class ValidationManager extends BaseManager {
 
         // Build valid categories list from enabled categories
         const categories: string[] = [];
-        for (const categoryConfig of Object.values(systemCategoriesConfig)) {
+        for (const [key, categoryConfig] of Object.entries(systemCategoriesConfig)) {
+          // #1503: a missing or unknown source reads as 'site'. Say so, because an
+          // entry written for the old storageLocation switch would silently lose
+          // its shipped/repo behaviour.
+          if (categorySource(categoryConfig) !== categoryConfig.source) {
+            logger.warn(`System category '${key}' has no valid source (site | shipped | repo); treating it as 'site'`);
+          }
           if (categoryConfig.enabled !== false) {
             // Use the label as the valid category value
             categories.push(categoryConfig.label);
@@ -397,13 +422,12 @@ class ValidationManager extends BaseManager {
   }
 
   /**
-   * Get storage location for a category
+   * Where a category's pages come from (#1503)
    * @param {string} category - Category label
-   * @returns {string} Storage location ('regular' or 'required')
+   * @returns {CategorySource} 'site', 'shipped' or 'repo'; an unknown category is 'site'
    */
-  getCategoryStorageLocation(category: string): string {
-    const config = this.getCategoryConfig(category);
-    return config?.storageLocation || 'regular';
+  getCategorySource(category: string): CategorySource {
+    return categorySource(this.getCategoryConfig(category));
   }
 
   /**
@@ -417,7 +441,7 @@ class ValidationManager extends BaseManager {
         label,
         description: '',
         default: label === 'general',
-        storageLocation: 'regular',
+        source: 'site' as const,
         enabled: true
       }));
     }

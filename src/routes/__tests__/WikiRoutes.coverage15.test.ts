@@ -159,7 +159,7 @@ const mockConfigManager = {
       'ngdpbase.page.nofooter': [],
       'ngdpbase.page.notabs': [],
       'ngdpbase.system-category': {
-        general: { label: 'general', storageLocation: 'regular', enabled: true }
+        general: { label: 'general', source: 'site', enabled: true }
       },
       'ngdpbase.roles.definitions': {},
       'ngdpbase.maximum.user-keywords': 5,
@@ -321,7 +321,7 @@ function resetMocks() {
       'ngdpbase.page.nofooter': [],
       'ngdpbase.page.notabs': [],
       'ngdpbase.system-category': {
-        general: { label: 'general', storageLocation: 'regular', enabled: true }
+        general: { label: 'general', source: 'site', enabled: true }
       },
       'ngdpbase.roles.definitions': {},
       'ngdpbase.maximum.user-keywords': 5,

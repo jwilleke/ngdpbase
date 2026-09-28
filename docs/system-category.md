@@ -131,14 +131,14 @@ The `journal` entry is not in core configuration. The journal add-on declares it
 
 `ngdpbase.system-category` in `config/app-default-config.json`, overridable per instance in `app-custom-config.json`. It is a map. The map key names the entry in config, and each entry's `label` is what a page stores.
 
-__Today__ (what ships and what the code reads now; `storageLocation` is still the behaviour switch):
+__Today__ (what ships and what the code reads now):
 
 ```json
 "journal": {
   "label": "journal",
   "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
   "default": false,
-  "storageLocation": "regular",
+  "source": "site",
   "enabled": true,
   "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
 }
@@ -201,17 +201,21 @@ The category a new page gets when none is given: the first entry with `default: 
 
 `{ color, label, title }`: the badge shown beside the title on a page of this category (`views/header.ejs:207-212`, data from `WikiRoutes.ts:1323`). `color` is Bootstrap badge classes, `label` the badge text, `title` its tooltip. Without it, no badge (e.g. `general`).
 
-### `storageLocation` (today: `regular` | `required` | `github`)
+### `source` (`site` | `shipped` | `repo`)
 
-__Today this is a behaviour switch, not a place. Decided: it becomes the path (see below); the switch moves to `source` first.__ The code branches on the exact word:
+__Built in #1503.__ Where a category's pages come from. It replaced the old `storageLocation` words one for one (`regular` → `site`, `required` → `shipped`, `github` → `repo`), and a guard test fails if any code still compares `storageLocation` to one of them. Every reader goes through `categorySource()` / `ValidationManager.getCategorySource()`:
 
 | Value | Meaning | What the code does |
 |---|---|---|
-| `regular` | An ordinary site page | Nothing special |
-| `required` | Shipped with the software, in `required-pages/` | Cannot be made private (`PageManager.ts:1558`). Editing marks the page user-modified (`WikiRoutes.ts:4019`, `:4139`). Listed as a shipped-page category (`WikiRoutes.ts:1937`). Checked for orphans (#1377, `WikiRoutes.ts:12139`). Badge "required-pages" in the categories table |
-| `github` | Lives in the repo's `docs/`, never in the site's pages | Saving is refused (`FileSystemProvider.ts:744`). Never seeded (`PageManager.ts:841`, `:1000`). Hidden from the editor's category list (`WikiRoutes.ts:1966`) |
+| `site` | An ordinary site page | Nothing special |
+| `shipped` | Shipped with the software, in `required-pages/` | Cannot be made private (`PageManager`). Editing marks the page user-modified and notifies admins (`WikiRoutes` save). Listed as a shipped-page category (`WikiRoutes.getRequiredPageCategories`). Checked for orphans (#1377). Badge "required-pages" in the categories table |
+| `repo` | Lives in the repo's `docs/`, never in the site's pages | Saving is refused (`FileSystemProvider`). Never seeded (`PageManager.requiredPagesSource`). Hidden from the editor's category list (`WikiRoutes.getSystemCategories`) |
 
-A missing value reads as `regular` (`ValidationManager.ts:406`).
+A missing or unknown value reads as `site`, and `ValidationManager` logs a warning at startup naming the entry.
+
+### `storageLocation`
+
+No longer read. The shipped entries no longer carry it; it becomes the pair of places (`defaultstore`, `privatestore`) in #1504.
 
 ## Related settings that are not per category
 
@@ -224,11 +228,11 @@ A missing value reads as `regular` (`ValidationManager.ts:406`).
 - __Category__: an entry in `ngdpbase.system-category`; what kind of page.
 - __Vault__: a user's owner-only folder of private pages. Today `pages/private/{user}/{vaultid}/`; decided: `pages/vaults/{user}/{vaultid}/`.
 - __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (owner, encrypt). Its id, the __vaultid__, is the last segment of the category's `privatestore`: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
-- __Source__: the replacement for today's `storageLocation` switch, meaning where a page's master copy lives (`site`, `shipped`, `repo`). Not to be confused with a vault kind.
+- __Source__: the replacement for the old `storageLocation` switch, meaning where a page's master copy lives (`site`, `shipped`, `repo`). Not to be confused with a vault kind.
 
 ## How we get there (#1477)
 
-- __The switch moves to its own field__, `source: site | shipped | repo`, replacing `regular | required | github` one for one. Every reader in the table above moves to it first, and a guard proves none still compares `storageLocation` to one of the old words.
+- __Done (#1503): the switch moved to its own field__, `source: site | shipped | repo`, replacing `regular | required | github` one for one. Every reader in the table above moves to it first, and a guard proves none still compares `storageLocation` to one of the old words.
 - __Then `storageLocation` becomes the pair of places__ (`defaultstore`, `privatestore`), with `allowPublic` and `defaultPrivate` beside it.
 - __The vault settings move onto the category.__ `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides. An admin defines a new vault by adding or editing a category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Vaults move from `pages/private/` to `pages/vaults/`__, and page names and URLs follow (`/vaults/jim/default/Diary`). Old `/private/…` URLs redirect permanently, and stored links are rewritten once.

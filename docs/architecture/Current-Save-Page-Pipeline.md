@@ -79,7 +79,7 @@ __Why__: `author` drives private-page ACL ownership in `PolicyInformationPoint`.
 
 If any `user-keyword` on the page maps to `storageLocation: "private"` in the keyword config (`ngdpbase.user-keywords`), `system-location: private` is added to the metadata. This causes `FileSystemProvider` to write the page under `data/pages/private/{author}/{uuid}.md` instead of `data/pages/{uuid}.md`.
 
-Required pages (system-category with `storageLocation: "required"`) are never marked private regardless of user-keywords.
+Required pages (system-category with `source: "shipped"`) are never marked private regardless of user-keywords.
 
 __Source__: `src/managers/PageManager.ts` ~lines 445–472
 

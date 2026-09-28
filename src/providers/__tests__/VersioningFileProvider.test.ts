@@ -766,7 +766,7 @@ describe('VersioningFileProvider', () => {
           return {
             Navigation: {
               label: 'Navigation',
-              storageLocation: 'required'
+              source: 'shipped'
             }
           };
         }

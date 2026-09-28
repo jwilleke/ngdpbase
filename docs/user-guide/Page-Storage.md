@@ -116,8 +116,8 @@ Storage location is __automatically determined__ by the `system-category` field 
         │                │
         ▼                ▼
 ┌──────────────┐  ┌──────────────┐
-│ storageLocation │  storageLocation │
-│ = "required"    │  = "regular"    │
+│ source          │  source          │
+│ = "shipped"     │  = "site"       │
 └───────┬────────┘  └───────┬────────┘
         │                   │
         ▼                   ▼
@@ -132,7 +132,7 @@ When you save a page, ngdpbase:
 
 1. __Reads__ the `system-category` from page frontmatter
 2. __Looks up__ the category in configuration
-3. __Checks__ the `storageLocation` property
+3. __Checks__ the category's `source`
 4. __Routes__ the page to the correct directory
 5. __Saves__ with UUID-based filename
 
@@ -145,7 +145,7 @@ system-category: documentation  # ← This determines storage
 ---
 ```
 
-The system sees `documentation` has `"storageLocation": "required"`, so the page goes to `required-pages/`.
+The system sees `documentation` has `"source": "shipped"`, so the page goes to `required-pages/`.
 
 ---
 
@@ -170,7 +170,7 @@ __Configuration Example:__
   "label": "documentation",
   "description": "User and technical documentation",
   "default": false,
-  "storageLocation": "required",  // ← Routes to required-pages/
+  "source": "shipped",  // ← Routes to required-pages/
   "enabled": true
 }
 ```
@@ -192,7 +192,7 @@ __Configuration Example:__
   "label": "general",
   "description": "General wiki pages",
   "default": true,              // ← Default category
-  "storageLocation": "regular", // ← Routes to pages/
+  "source": "site", // ← Routes to pages/
   "enabled": true
 }
 ```
@@ -709,7 +709,7 @@ __A:__ Yes! Add them to `data/config/app-custom-config.json`:
       "label": "my-custom-category",
       "description": "My custom content type",
       "default": false,
-      "storageLocation": "regular",  // or "required"
+      "source": "site",  // or "shipped"
       "enabled": true
     }
   }
@@ -842,11 +842,11 @@ __Solution:__
    grep -A5 '"documentation"' config/app-default-config.json
    ```
 
-2. __Verify `storageLocation` is correct:__
+2. __Verify `source` is correct:__
 
    ```json
    "documentation": {
-     "storageLocation": "required"  // Should be "required" not "regular"
+     "source": "shipped"  // Should be "shipped" not "site"
    }
    ```
 
@@ -927,21 +927,21 @@ Located in: `config/app-default-config.json`
       "label": "general",
       "description": "General wiki pages",
       "default": true,
-      "storageLocation": "regular",  // ← Routes to pages/
+      "source": "site",  // ← Routes to pages/
       "enabled": true
     },
     "system": {
       "label": "system",
       "description": "System configuration and infrastructure pages",
       "default": false,
-      "storageLocation": "required",  // ← Routes to required-pages/
+      "source": "shipped",  // ← Routes to required-pages/
       "enabled": true
     },
     "documentation": {
       "label": "documentation",
       "description": "User and technical documentation",
       "default": false,
-      "storageLocation": "required",  // ← Routes to required-pages/
+      "source": "shipped",  // ← Routes to required-pages/
       "enabled": true
     }
     // ... more categories

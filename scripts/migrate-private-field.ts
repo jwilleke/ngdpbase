@@ -154,9 +154,9 @@ export interface TransformOptions {
  * regardless of which directory they happen to be on disk right now.
  *
  * Source: `config/app-default-config.json` → `ngdpbase.system-category.*` —
- * any category whose `storageLocation` is `required`. Hardcoded here so the
+ * any category whose `source` is `shipped`. Hardcoded here so the
  * script stays standalone (no engine / no ConfigurationManager dependency).
- * If a future category is added to config with storageLocation:required,
+ * If a future category is added to config with source: shipped,
  * extend this set.
  */
 const REQUIRED_STORAGE_CATEGORIES = new Set(['documentation', 'system']);

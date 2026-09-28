@@ -37,6 +37,7 @@ import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { WikiPage, PageFrontmatter, PageInfo, PageSaveOptions, PageListOptions } from '../types/index.js';
 import type { RecentChangesOptions, RecentChangeEntry } from '../types/Provider.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import type ValidationManager from '../managers/ValidationManager.js';
 import { installCompletePath } from '../utils/configFiles.js';
 
 /**
@@ -730,17 +731,11 @@ class FileSystemProvider extends BasePageProvider {
       throw new Error('FileSystemProvider not initialized - directories not set');
     }
 
-    // Determine storage location to check for github-only pages
+    // A category whose source is the repository (docs/) is never stored on the site (#1503)
     const systemCategory = String(metadata['system-category'] ?? 'general');
-
-    // Get storage location from ValidationManager (if available)
-    interface ValidationManagerType { getCategoryStorageLocation(category: string): string }
-    const validationManager = this.engine.getManager<ValidationManagerType>('ValidationManager');
-    const storageLocation = validationManager?.getCategoryStorageLocation(systemCategory) ?? 'regular';
-
-    // Handle github storage location - these pages should not be saved to wiki
-    if (storageLocation === 'github') {
-      throw new Error(`Cannot save page with system-category '${systemCategory}' - pages with storageLocation 'github' are not stored in the wiki (docs/ folder only)`);
+    const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
+    if (validationManager?.getCategorySource(systemCategory) === 'repo') {
+      throw new Error(`Cannot save page with system-category '${systemCategory}' - its pages live in the repository's docs/ folder and are not stored on the site`);
     }
 
     // Resolve file path — private pages go under storagedir/{privateroot}/{creator}/{store}/{uuid}.md

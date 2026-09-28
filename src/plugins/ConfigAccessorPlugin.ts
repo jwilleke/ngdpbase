@@ -35,6 +35,7 @@
 import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
+import { categorySource } from '../managers/ValidationManager.js';
 import {
   escapeHtml,
   parsePageSizeParam,
@@ -96,7 +97,7 @@ interface SystemCategory {
   description?: string;
   enabled?: boolean;
   default?: boolean;
-  storageLocation?: string;
+  source?: string;
 }
 
 interface PermissionDefinition {
@@ -130,7 +131,7 @@ interface ConfigAccessorParams extends PluginParams {
   category?: string;
   restrictEditing?: string | boolean;
   default?: string | boolean;
-  storageLocation?: string;
+  source?: string;
   caption?: string;
   table?: string | boolean;
   noheader?: string | boolean;
@@ -935,7 +936,7 @@ function displaySystemCategories(
     }));
 
     // Apply filters based on opts
-    const filterKeys = ['label', 'enabled', 'default', 'storageLocation'] as const;
+    const filterKeys = ['label', 'enabled', 'default', 'source'] as const;
     for (const filterKey of filterKeys) {
       if (opts[filterKey] !== undefined) {
         const filterValue = opts[filterKey];
@@ -946,7 +947,7 @@ function displaySystemCategories(
             return cat[filterKey] === boolValue;
           }
           // Handle string values (case-insensitive comparison)
-          const catValue = cat[filterKey as keyof typeof cat];
+          const catValue = filterKey === 'source' ? categorySource(cat) : cat[filterKey as keyof typeof cat];
           return String(catValue).toLowerCase() === String(filterValue).toLowerCase();
         });
       }
@@ -1001,7 +1002,7 @@ function displaySystemCategories(
     html += '            <tr>\n';
     html += '              <th style="width: 15%;">Label</th>\n';
     html += '              <th style="width: 45%;">Description</th>\n';
-    html += '              <th style="width: 15%;">Storage Location</th>\n';
+    html += '              <th style="width: 15%;">Source</th>\n';
     html += '              <th style="width: 10%;">Enabled</th>\n';
     html += '              <th style="width: 15%;">Default</th>\n';
     html += '            </tr>\n';
@@ -1017,9 +1018,12 @@ function displaySystemCategories(
       const defaultBadge = cat.default ?
         '<span class="badge bg-primary">Yes</span>' :
         '<span class="badge bg-secondary">No</span>';
-      const storageBadge = cat.storageLocation === 'required' ?
-        '<span class="badge bg-warning">required-pages</span>' :
-        '<span class="badge bg-info">pages</span>';
+      const source = categorySource(cat);
+      const storageBadge = source === 'shipped'
+        ? '<span class="badge bg-warning">required-pages</span>'
+        : source === 'repo'
+          ? '<span class="badge bg-secondary">docs</span>'
+          : '<span class="badge bg-info">pages</span>';
 
       html += '            <tr>\n';
       html += `              <td><code>${escapeHtml(cat.label)}</code></td>\n`;
@@ -1038,14 +1042,14 @@ function displaySystemCategories(
     html += `      <small>Total Categories: ${categories.length}`;
 
     const storageBreakdown = categories.reduce<Record<string, number>>((acc, cat) => {
-      const loc = cat.storageLocation || 'regular';
+      const loc = categorySource(cat);
       acc[loc] = (acc[loc] || 0) + 1;
       return acc;
     }, {});
     const storageDesc = Object.entries(storageBreakdown)
       .map(([loc, count]) => `${loc}: ${count}`)
       .join(', ');
-    html += ` | By Storage: ${storageDesc}`;
+    html += ` | By Source: ${storageDesc}`;
 
     html += '</small>\n';
     html += '    </div>\n';

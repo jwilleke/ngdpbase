@@ -166,7 +166,7 @@ const mockConfigManager = {
       'ngdpbase.tab.pagetabs': false,
       'ngdpbase.logging.debug.login': false,
       'ngdpbase.system-category': {
-        general: { label: 'general', storageLocation: 'regular', enabled: true }
+        general: { label: 'general', source: 'site', enabled: true }
       }
     };
     return key in map ? map[key] : defaultValue;

@@ -82,8 +82,8 @@ function makeConfigManager() {
     getProperty: vi.fn((key, defaultValue) => {
       if (key === 'ngdpbase.system-category') {
         return {
-          general:    { label: 'general',    storageLocation: 'regular',  enabled: true },
-          'user pages': { label: 'user pages', storageLocation: 'regular',  enabled: true }
+          general:    { label: 'general',    source: 'site',  enabled: true },
+          'user pages': { label: 'user pages', source: 'site',  enabled: true }
         };
       }
       if (key === 'ngdpbase.theme.active') return 'default';

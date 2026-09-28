@@ -193,6 +193,7 @@ export class PageContentValidationError extends Error {
 }
 import type CatalogManager from './CatalogManager.js';
 import type ValidationManager from './ValidationManager.js';
+import { categorySource } from './ValidationManager.js';
 import type NotificationManager from './NotificationManager.js';
 import type RenderingManager from './RenderingManager.js';
 import type SearchManager from './SearchManager.js';
@@ -822,7 +823,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
   /**
    * The source for the required pages this release ships (#1405, #1406).
-   * Pages in a category whose `storageLocation` is `github` are excluded.
+   * Pages in a category whose source is `repo` are excluded.
    */
   requiredPagesSource(): ShippedPageSource {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -835,10 +836,10 @@ class PageManager extends BaseManager implements CatalogSource {
     ) as string;
     const dir = path.isAbsolute(requiredDirRaw) ? requiredDirRaw : path.join(process.cwd(), requiredDirRaw);
     const systemCategories = configManager.getProperty('ngdpbase.system-category', {}) as
-      Record<string, { storageLocation?: string }>;
-    const githubOnly = new Set(
+      Record<string, { source?: string }>;
+    const repoOnly = new Set(
       Object.entries(systemCategories)
-        .filter(([, cfg]) => cfg.storageLocation === 'github')
+        .filter(([, cfg]) => categorySource(cfg) === 'repo')
         .map(([key]) => key)
     );
     return {
@@ -848,8 +849,8 @@ class PageManager extends BaseManager implements CatalogSource {
       stampKey: REQUIRED_SOURCE_HASH_KEY,
       exclude: (data) => {
         const category = data['system-category'];
-        return typeof category === 'string' && githubOnly.has(category)
-          ? `github-only category '${category}'`
+        return typeof category === 'string' && repoOnly.has(category)
+          ? `repo-only category '${category}'`
           : undefined;
       },
       // #1411: administrator-edit only, the rule addon pages follow (#971). A
@@ -997,7 +998,7 @@ class PageManager extends BaseManager implements CatalogSource {
    *
    * A required page is seeded once per site: pages new in a release appear at
    * restart, and a page removed on the site stays removed (#954). Pages in a
-   * category whose `storageLocation` is `github` are never seeded.
+   * category whose source is `repo` are never seeded.
    *
    * Best-effort: a failure is logged and never blocks start-up.
    */
@@ -1546,16 +1547,16 @@ class PageManager extends BaseManager implements CatalogSource {
     }
 
     // Determine if this is a required page by checking the system-category config.
-    // Required pages (storageLocation === 'required') cannot be marked private.
+    // Shipped pages (a category whose source is 'shipped') cannot be marked private.
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const systemCategoriesConfig = (configManager
-      ? configManager.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; storageLocation?: string }>
-      : {}) as Record<string, { label?: string; storageLocation?: string }>;
+      ? configManager.getProperty('ngdpbase.system-category', {}) as Record<string, { label?: string; source?: string }>
+      : {}) as Record<string, { label?: string; source?: string }>;
     const pageSystemCategory = ((rawMetadata as Record<string, unknown>)['system-category'] as string | undefined)
       || ((existingPage?.metadata as Record<string, unknown> | undefined)?.['system-category'] as string | undefined)
       || '';
     const isRequiredPage = Object.values(systemCategoriesConfig).some(
-      (cfg) => ((cfg.label || '').toLowerCase() === pageSystemCategory.toLowerCase() && cfg.storageLocation === 'required')
+      (cfg) => ((cfg.label || '').toLowerCase() === pageSystemCategory.toLowerCase() && categorySource(cfg) === 'shipped')
     );
 
     // #639 Slice E: top-level `private: true` is the canonical privacy signal.

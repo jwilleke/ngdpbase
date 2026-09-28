@@ -1030,20 +1030,20 @@
   "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
-  "_comment_system_category": "System category definitions with storage location mapping",
+  "_comment_system_category": "System category definitions. source: where a category's pages come from: site (made here), shipped (required-pages/ in the release) or repo (the repository's docs/, never stored here); see docs/system-category.md",
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
       "description": "General User pages",
       "default": true,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true
     },
     "system": {
       "label": "system",
       "description": "System configuration and infrastructure pages",
       "default": false,
-      "storageLocation": "required",
+      "source": "shipped",
       "enabled": true,
       "page-badge": {
         "color": "bg-secondary",
@@ -1055,7 +1055,7 @@
       "label": "documentation",
       "description": "End-User documentation",
       "default": false,
-      "storageLocation": "required",
+      "source": "shipped",
       "enabled": true,
       "page-badge": {
         "color": "bg-info text-dark",
@@ -1067,14 +1067,14 @@
       "label": "developer",
       "description": "Developer documentation and technical note Only in GitHub",
       "default": false,
-      "storageLocation": "github",
+      "source": "repo",
       "enabled": false
     },
     "addon": {
       "label": "addon",
       "description": "Pages seeded by an installed add-on",
       "default": false,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true,
       "page-badge": {
         "color": "bg-primary",
@@ -1086,7 +1086,7 @@
       "label": "user-profile",
       "description": "User profile pages",
       "default": false,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true,
       "page-badge": {
         "color": "bg-success",
@@ -1098,7 +1098,7 @@
       "label": "journal",
       "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
       "default": false,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true,
       "page-badge": {
         "color": "bg-info",

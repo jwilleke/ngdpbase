@@ -81,7 +81,7 @@ describe('a private store\'s own trash (#1459)', () => {
       'ngdpbase.page.provider.versioning.deltastorage': true,
       'ngdpbase.page.provider.versioning.compression': 'none',
       'ngdpbase.page.delete.retentiondays': retentionDays,
-      'ngdpbase.system-category': { general: { label: 'general', storageLocation: 'regular' } }
+      'ngdpbase.system-category': { general: { label: 'general', source: 'site' } }
     });
     const configManager = {
       getProperty: vi.fn((key: string, fallback: unknown) => (config()[key] !== undefined ? config()[key] : fallback)),

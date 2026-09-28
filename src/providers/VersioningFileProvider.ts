@@ -2025,7 +2025,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     // Determine location — where the live file actually is (#1371). Every live
     // page, required pages included, is stored in the instance's pages directory
-    // (`private/<creator>/` for private pages); `storageLocation: required` on a
+    // (`private/<creator>/` for private pages); `source: shipped` on a
     // category says the page's SOURCE is the GitHub required-pages set, not that
     // the live copy, its history or its deleted record belong in that folder.
     // Deriving 'required-pages' from the category put history and deleted
