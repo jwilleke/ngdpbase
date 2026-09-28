@@ -1,7 +1,6 @@
 {
   "_comment": "Default configuration for the journal addon. Override any key in app-custom-config.json.",
   "ngdpbase.addons.journal.dataPath": "",
-  "ngdpbase.addons.journal.defaultPrivate": true,
   "ngdpbase.addons.journal.defaultAuthorLock": true,
   "ngdpbase.addons.journal.defaultMoodOptions": [
     "happy",

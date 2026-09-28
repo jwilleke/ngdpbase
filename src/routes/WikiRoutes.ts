@@ -3198,6 +3198,18 @@ ${panes}
       const validationManager = this.engine.getManager('ValidationManager');
       const defaultCategory = validationManager?.getDefaultSystemCategory?.() || 'general';
 
+      // #1504: per system-category, whether a page can be private (it has a
+      // vault) and how the Private box starts for this person. Without the
+      // answers (an older ValidationManager), today's form: allowed, unticked.
+      const creatorPrefs = (await this.engine.getManager('UserManager')?.getUser?.(String(req.userContext?.username ?? '')))?.preferences;
+      const privateStart = Object.fromEntries(systemCategories.map((category: string) => {
+        const can = typeof validationManager?.canBePrivate === 'function' ? validationManager.canBePrivate(category) : true;
+        const start = can && typeof validationManager?.getDefaultPrivate === 'function'
+          ? validationManager.getDefaultPrivate(category, creatorPrefs)
+          : false;
+        return [category, { can, start }];
+      }));
+
       // Build availableRoles for the audience picker (mirror edit handler at line 2316)
       const rolesConfig = configManager
         ? (configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string; displayname: string; issystem?: boolean }>)
@@ -3222,6 +3234,7 @@ ${panes}
           pageName
         ),
         defaultCategory: defaultCategory,
+        privateStart, // #1504
         statusOptions: this.getStatusOptions(),
         availableRoles: availableRoles,
         csrfToken: req.session.csrfToken
@@ -5623,6 +5636,17 @@ ${panes}
    * #881): routes 404 unless ngdpbase.capture.enabled is set true in the
    * instance config.
    */
+  /**
+   * How this person's new captures start (#1504), when they get to choose:
+   * capture is on and the capture system-category's defaultPrivate is
+   * `choice`. Otherwise null, and the preference is neither shown nor saved.
+   */
+  private captureDefaultPrivatePreference(preferences?: Record<string, unknown>): boolean | null {
+    const validationManager = this.engine.getManager('ValidationManager');
+    if (!this.isCaptureEnabled() || !validationManager?.offersDefaultPrivatePreference('capture')) return null;
+    return validationManager.getDefaultPrivate('capture', preferences);
+  }
+
   private isCaptureEnabled(): boolean {
     const configManager = this.engine.getManager('ConfigurationManager');
     return configManager?.getProperty('ngdpbase.capture.enabled', false) === true;
@@ -5740,11 +5764,16 @@ ${panes}
 
       const pageManager = this.engine.getManager('PageManager');
       const configManager = this.engine.getManager('ConfigurationManager');
-      const capturePrivate = configManager?.getProperty('ngdpbase.capture.private', true) !== false;
+      // #1504: how a new capture starts is the capture system-category's
+      // defaultPrivate — with `choice`, the capturer's capture.defaultPrivate
+      // preference, private until set. Without ValidationManager, private.
+      const validationManager = this.engine.getManager('ValidationManager');
+      const capturePrefs = (await this.engine.getManager('UserManager')?.getUser(String(currentUser.username)))?.preferences;
+      const capturePrivate = validationManager ? validationManager.getDefaultPrivate('capture', capturePrefs) : true;
       // #1456: a private page is named by its path. The day's page is the
       // capturer's own private page of that title when there is one, else a
       // public page of that title; a new one is private (in the capturer's
-      // default store) unless captures are configured public.
+      // default store) unless captures start public.
       const privateTarget = parsePrivatePageName(pageName)
         ? pageName
         : formatPrivatePageName(
@@ -7770,6 +7799,7 @@ ${panes}
         ...commonData,
         title: 'Profile',
         agentTokensEnabled, // #946
+        captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
         user: freshUser || currentUser, // Use fresh user data if available
         permissions: userPermissions,
         availableTimezones: availableTimezones,
@@ -8422,7 +8452,7 @@ ${panes}
    * dead end, not a discovery.
    *
    * NOT restricted to private pages even though captures default to private —
-   * `ngdpbase.capture.private` can be false, and a capture the user later made
+   * captures may start public (#1504), and a capture the user later made
    * public is still a capture.
    */
   async myCapturesPage(req: Request, res: Response) {
@@ -9268,6 +9298,11 @@ ${panes}
         'DEBUG: updatePreferences - preferences to save:',
         preferences
       );
+
+      // #1504: the capture preference is saved only where it is shown.
+      if (this.captureDefaultPrivatePreference(currentPreferences) !== null) {
+        preferences['capture.defaultPrivate'] = getBodyValue('capture.defaultPrivate') === 'on';
+      }
 
       // Update user with new preferences
       await userManager.updateUser(currentUser.username, { preferences }, currentUser);

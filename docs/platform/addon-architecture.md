@@ -119,7 +119,7 @@ Operators set addon config under `ngdpbase.addons.<addonName>.*` in `data/config
 | Config key in file | `config` key in register() |
 |--------------------|---------------------------|
 | `ngdpbase.addons.journal.enabled` | `enabled` |
-| `ngdpbase.addons.journal.defaultPrivate` | `defaultPrivate` |
+| `ngdpbase.addons.journal.defaultAuthorLock` | `defaultAuthorLock` |
 | `ngdpbase.addons.journal.dataPath` | `dataPath` |
 
 Multiple addon paths are supported:

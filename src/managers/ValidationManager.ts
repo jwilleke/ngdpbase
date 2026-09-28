@@ -109,6 +109,11 @@ export function systemCategoryConfigProblems(categories: unknown): string[] {
   return problems;
 }
 
+/** The preference that holds a person's choice for a `defaultPrivate: 'choice'` system-category (#1504). */
+export function defaultPrivatePreferenceKey(category: string): string {
+  return `${category}.defaultPrivate`;
+}
+
 /**
  * System category configuration
  */
@@ -478,6 +483,37 @@ class ValidationManager extends BaseManager {
    */
   getCategorySource(category: string): CategorySource {
     return categorySource(this.getCategoryConfig(category));
+  }
+
+  /**
+   * How a new page's Private box starts for this system-category and this
+   * person (#1504): the entry's `defaultPrivate` — `true`, `false`, or
+   * `choice`, where the person's `<system-category>.defaultPrivate`
+   * preference decides and someone who has not chosen starts private. No
+   * `defaultPrivate`, or an unknown system-category, starts public. It only
+   * sets the start: the box on the page always wins.
+   *
+   * @param category - the system-category's label
+   * @param preferences - the person's saved preferences
+   */
+  getDefaultPrivate(category: string, preferences?: Record<string, unknown>): boolean {
+    const declared = (this.getCategoryConfig(category) as { defaultPrivate?: unknown } | null)?.defaultPrivate;
+    if (declared === 'choice') {
+      const chosen = preferences?.[defaultPrivatePreferenceKey(category)];
+      return chosen === undefined ? true : chosen !== false;
+    }
+    return declared === true;
+  }
+
+  /** Whether pages of this system-category can be private: it declares a vault (`storageLocation.privatestore`, #1504). */
+  canBePrivate(category: string): boolean {
+    const entry = this.getCategoryConfig(category) as { storageLocation?: { privatestore?: unknown } } | null;
+    return parsePrivatestore(entry?.storageLocation?.privatestore) !== null;
+  }
+
+  /** Whether this system-category lets each person choose (`defaultPrivate: 'choice'`), so a preference is shown (#1504). */
+  offersDefaultPrivatePreference(category: string): boolean {
+    return (this.getCategoryConfig(category) as { defaultPrivate?: unknown } | null)?.defaultPrivate === 'choice';
   }
 
   /**

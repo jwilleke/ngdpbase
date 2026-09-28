@@ -79,7 +79,7 @@
                             </label>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-3" id="privateFlagColumn">
                         <label style="font-weight:bold;">Private: <%- include('_help-icon', { slug: 'page-private', label: 'Private Page' }) %></label>
                         <div class="form-check mt-2">
                             <input class="form-check-input" type="checkbox" name="private" id="privateFlag" value="true">
@@ -136,7 +136,26 @@
 
 <%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
 <script type="application/json" id="ngdpTitleRule"><%- jsonForScript(typeof titleRule !== 'undefined' ? titleRule : null) %></script>
+<script type="application/json" id="ngdpPrivateStart"><%- jsonForScript(typeof privateStart !== 'undefined' ? privateStart : null) %></script>
 <script>
+    // #1504: the Private box starts as the chosen system-category says, and is
+    // hidden for one with no vault. It only sets the start; the person can
+    // still change it before creating the page.
+    (function () {
+        const starts = JSON.parse(document.getElementById('ngdpPrivateStart').textContent || 'null');
+        const category = document.getElementById('systemCategory');
+        const box = document.getElementById('privateFlag');
+        const column = document.getElementById('privateFlagColumn');
+        if (!starts || !category || !box || !column) return;
+        function apply() {
+            const s = starts[category.value] || { can: true, start: false };
+            column.style.display = s.can ? '' : 'none';
+            box.checked = s.can && s.start;
+        }
+        apply();
+        category.addEventListener('change', apply);
+    })();
+
     // Form submission validation for system-category and user-keywords.
     // By id: the header's /search forms come first in the page (#1369).
     document.getElementById('createForm').addEventListener('submit', function(e) {

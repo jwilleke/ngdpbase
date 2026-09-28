@@ -38,13 +38,11 @@
         <div class="row">
           <div class="col-md-6">
             <div class="mb-3">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="defaultPrivate"
-                       name="defaultPrivate" <%= config.defaultPrivate ? 'checked' : '' %> disabled>
-                <label class="form-check-label" for="defaultPrivate">
-                  New entries private by default
-                </label>
+              <div class="form-label mb-1">New entries start</div>
+              <div id="defaultPrivate">
+                <%= config.defaultPrivate === 'choice' ? 'as each person chooses (private until they choose)' : (config.defaultPrivate ? 'private' : 'public') %>
               </div>
+              <div class="form-text">Set by the journal system-category's <code>defaultPrivate</code>.</div>
             </div>
 
             <div class="mb-3">

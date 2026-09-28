@@ -21,6 +21,7 @@
 </div>
 <% } %>
 
+<% if (offerDefaultPrivate) { %>
 <div class="form-check mb-2">
   <input class="form-check-input" type="checkbox" name="journal.defaultPrivate" id="journal_defaultPrivate"
          <%= prefs.defaultPrivate ? 'checked' : '' %>>
@@ -29,6 +30,7 @@
   </label>
   <div class="form-text">When checked (default), new entries are created with <code>private: true</code> — only you can read them. Uncheck to make new entries public by default. Existing entries unaffected; you can still toggle each entry individually in the editor.</div>
 </div>
+<% } %>
 
 <div class="form-check mb-2">
   <input class="form-check-input" type="checkbox" name="journal.streakVisible" id="journal_streakVisible"

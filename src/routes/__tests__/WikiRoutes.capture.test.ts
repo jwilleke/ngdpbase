@@ -48,6 +48,8 @@ describe('WikiRoutes capture (#881)', () => {
   let mockSyncPageAssets;
   let mockEngine;
   let captureConfig: Record<string, unknown>;
+  // #1504: how a new capture starts, as the capture system-category's defaultPrivate decides.
+  let captureStartsPrivate: boolean | undefined;
 
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
@@ -62,6 +64,7 @@ describe('WikiRoutes capture (#881)', () => {
     mockSyncPageMentions = vi.fn().mockResolvedValue(undefined);
     mockSyncPageAssets = vi.fn().mockResolvedValue(undefined);
     captureConfig = { 'ngdpbase.capture.enabled': true };
+    captureStartsPrivate = undefined;
 
     mockEngine = {
       getManager: vi.fn((name) => {
@@ -81,10 +84,12 @@ describe('WikiRoutes capture (#881)', () => {
         if (name === 'AssetManager') return { syncPageAssets: mockSyncPageAssets };
         if (name === 'ConfigurationManager') {
           // Feature is default-off; these tests run with it enabled. Every other
-          // key (private-store layout, capture.private) resolves to its default.
+          // key (private-store layout) resolves to its default.
           return { getProperty: vi.fn((key, def) => (key in captureConfig ? captureConfig[key] : def)) };
         }
-        if (name === 'ValidationManager') return null;
+        if (name === 'ValidationManager') {
+          return captureStartsPrivate === undefined ? null : { getDefaultPrivate: vi.fn(() => captureStartsPrivate) };
+        }
         return null;
       })
     };
@@ -407,8 +412,8 @@ describe('WikiRoutes capture (#881)', () => {
       }));
     });
 
-    test('a new page is public, under its plain name, when capture.private is false', async () => {
-      captureConfig['ngdpbase.capture.private'] = false;
+    test('a new page is public, under its plain name, when the capture system-category starts public', async () => {
+      captureStartsPrivate = false;
       const res = createMockRes();
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), res);
 
@@ -421,8 +426,8 @@ describe('WikiRoutes capture (#881)', () => {
       }));
     });
 
-    test('an existing private page is still used when capture.private is false', async () => {
-      captureConfig['ngdpbase.capture.private'] = false;
+    test('an existing private page is still used when captures start public', async () => {
+      captureStartsPrivate = false;
       pageAt(privateName, '# Mine\n', { private: true });
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
       expect(mockSaveWithContext.mock.calls[0][0]).toBe(privateName);
@@ -541,7 +546,7 @@ describe('WikiRoutes capture (#881)', () => {
       }));
     });
 
-    test('does NOT restrict to private pages — capture.private may be false', async () => {
+    test('does NOT restrict to private pages — captures may start public', async () => {
       const res = createMockRes();
       await capturesRoutes().myCapturesPage(myReq(), res);
       expect(mockGetPagesByCreator).toHaveBeenCalledWith('jim', callerCtx, expect.objectContaining({

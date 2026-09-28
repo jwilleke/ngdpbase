@@ -5,6 +5,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
+import type ValidationManager from '../../../dist/src/managers/ValidationManager.js';
 import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import { type UserContext } from '../../../dist/src/context/WikiContext.js';
 import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../dist/src/utils/privateStorePath.js';
@@ -67,10 +68,32 @@ export async function findJournalEntryName(
 }
 
 /**
+ * Where a new journal entry's privacy comes from (#1504): the journal
+ * system-category's `defaultPrivate`. `offer` says whether each person chooses
+ * (`choice`), so the preference is shown; `defaultPrivate` is how a new entry
+ * starts for this person; `setting` is what the site declares, for the admin
+ * view. Without ValidationManager, private and no preference: the safe side.
+ */
+export function journalPrivacy(
+  engine: WikiEngine,
+  preferences?: Record<string, unknown>
+): { offer: boolean; defaultPrivate: boolean; setting: boolean | 'choice' } {
+  const validation = engine.getManager<ValidationManager>('ValidationManager');
+  if (!validation) return { offer: false, defaultPrivate: true, setting: true };
+  const offer = validation.offersDefaultPrivatePreference('journal');
+  return {
+    offer,
+    defaultPrivate: validation.getDefaultPrivate('journal', preferences),
+    setting: offer ? 'choice' : validation.getDefaultPrivate('journal', {})
+  };
+}
+
+/**
  * Create the user's empty entry for a date and return its page name (#540).
  *
- * Visibility (#802): the user's `journal.defaultPrivate` preference if set,
- * else the deployment's `defaultPrivate`, else private. A private entry is
+ * Visibility (#1504): the journal system-category's `defaultPrivate` — with
+ * `choice`, the user's `journal.defaultPrivate` preference, private until set
+ * (ValidationManager.getDefaultPrivate). A private entry is
  * named by its path in the user's default store (#1456); a public one by its
  * title. Title and slug are the same per-user name (#1329, #789).
  */
@@ -86,9 +109,7 @@ export async function createJournalEntry(
   if (!username) throw new Error('A journal entry needs its author');
 
   const freshUser = await engine.getManager<UserManager>('UserManager')?.getUser(username);
-  const userPref = freshUser?.preferences?.['journal.defaultPrivate'];
-  const fleetDefaultPrivate = config['defaultPrivate'] !== false;
-  const isPrivate = userPref !== undefined ? userPref !== false : fleetDefaultPrivate;
+  const isPrivate = journalPrivacy(engine, freshUser?.preferences).defaultPrivate;
   const defaultAuthorLock = config['defaultAuthorLock'] !== false;
 
   const title = journalPageName(date, username);

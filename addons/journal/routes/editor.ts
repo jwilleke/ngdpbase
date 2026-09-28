@@ -26,7 +26,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
-import { getLeftMenu, findJournalEntryName, createJournalEntry } from './helpers.js';
+import { getLeftMenu, findJournalEntryName, createJournalEntry, journalPrivacy } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -71,6 +71,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const freshUser = userManager ? await userManager.getUser(ctx.username!) : null;
         const prefs = (freshUser?.preferences ?? {}) as Record<string, unknown>;
         const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
+        const privacy = journalPrivacy(engine, prefs);
 
         res.render('journal-settings', {
           currentUser:      req.userContext,
@@ -79,9 +80,10 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
             reminderEnabled:  Boolean(prefs['journal.reminderEnabled']),
             reminderTime:     (prefs['journal.reminderTime'] as string | undefined)     ?? '20:00',
             streakVisible:    prefs['journal.streakVisible']    !== false,
-            // #802 — Default Journal Visibility. Defaults to true (privacy-first).
-            defaultPrivate:   prefs['journal.defaultPrivate']   !== false
+            // #1504 — from the journal system-category; shown only for `choice`.
+            defaultPrivate:   privacy.defaultPrivate
           },
+          offerDefaultPrivate: privacy.offer,
           adminVoiceEnabled: enableVoiceToText(),
           csrfToken:         req.session?.csrfToken,
           successMessage:    req.query['success'] ?? null,
@@ -116,12 +118,13 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           'journal.reminderTime':   typeof body['reminderTime'] === 'string' && body['reminderTime'].trim()
             ? body['reminderTime'].trim()
             : '20:00',
-          'journal.streakVisible':  body['streakVisible']  === 'on',
-          // #802 — Default Journal Visibility. Absence on the submitted form
-          // means the user unchecked it (this surface always renders the field,
-          // unlike _profile-section.ejs which has admin-disabled gating).
-          'journal.defaultPrivate': body['defaultPrivate'] === 'on'
+          'journal.streakVisible':  body['streakVisible']  === 'on'
         };
+        // #1504: the preference is saved only where it is shown — a `choice`
+        // journal. Absence on the form then means the user unchecked it.
+        if (journalPrivacy(engine, existing).offer) {
+          updated['journal.defaultPrivate'] = body['defaultPrivate'] === 'on';
+        }
 
         await userManager.updateUser(ctx.username!, { preferences: updated }, jobContextFromRequest(ctx));
         res.redirect('/journal/settings?success=Settings+saved');

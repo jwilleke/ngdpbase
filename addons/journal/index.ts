@@ -7,7 +7,6 @@
  * Configuration keys (in app-custom-config.json):
  *   ngdpbase.addons.journal.enabled               — true/false
  *   ngdpbase.addons.journal.dataPath              — './data/journal'
- *   ngdpbase.addons.journal.defaultPrivate         — true
  *   ngdpbase.addons.journal.defaultAuthorLock      — true
  *   ngdpbase.addons.journal.defaultMoodOptions     — ["happy","content",...]
  *   ngdpbase.addons.journal.streakEnabled          — true
@@ -57,6 +56,7 @@ import editorRoutes from './routes/editor.js';
 import adminRoutes from './routes/admin.js';
 
 import { fileURLToPath } from 'url';
+import { journalPrivacy } from './routes/helpers.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -221,21 +221,22 @@ const journalAddon = {
     if (!engineRef) return null;
 
     const stored = (user.preferences ?? {}) as Record<string, unknown>;
+    const privacy = journalPrivacy(engineRef, stored);
 
     const prefs = {
       voiceToText:     stored['journal.voiceToText']     !== false,
       reminderEnabled: Boolean(stored['journal.reminderEnabled']),
       reminderTime:    (stored['journal.reminderTime'] as string | undefined) ?? '20:00',
       streakVisible:   stored['journal.streakVisible']   !== false,
-      // #802 — Default Journal Visibility. Default true (privacy-first); user
-      // can flip off per-account. Read by /api/journal/new and /journal/new
-      // when seeding the stub entry.
-      defaultPrivate:  stored['journal.defaultPrivate']  !== false
+      // #1504 — the journal system-category's defaultPrivate decides; the
+      // preference is shown only when it is `choice`.
+      defaultPrivate:  privacy.defaultPrivate
     };
 
     const partialPath = path.join(__dirname, 'views', '_profile-section.ejs');
     const html = await ejs.renderFile(partialPath, {
       prefs,
+      offerDefaultPrivate: privacy.offer,
       adminVoiceEnabled: voiceToTextEnabled
     });
 
@@ -280,7 +281,10 @@ const journalAddon = {
     // _rendered marker has guaranteed the partial was on the submitted form.
     updated['journal.streakVisible']   = body['journal.streakVisible']   === 'on';
     updated['journal.reminderEnabled'] = body['journal.reminderEnabled'] === 'on';
-    updated['journal.defaultPrivate']  = body['journal.defaultPrivate']  === 'on';
+    // #1504: only a `choice` journal shows (and so saves) the preference.
+    if (journalPrivacy(engineRef, existing).offer) {
+      updated['journal.defaultPrivate'] = body['journal.defaultPrivate'] === 'on';
+    }
     const rt = body['journal.reminderTime'];
     updated['journal.reminderTime']    = typeof rt === 'string' && rt.trim() ? rt.trim() : '20:00';
 

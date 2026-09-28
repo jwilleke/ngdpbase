@@ -19,6 +19,8 @@ interface EngineOpts {
   userPref?: boolean;
   /** Private-store config overrides. */
   config?: Record<string, unknown>;
+  /** The journal system-category's defaultPrivate (#1504); default 'choice'. */
+  journalDefaultPrivate?: boolean | 'choice';
 }
 
 function makeEngine(opts: EngineOpts = {}) {
@@ -33,12 +35,17 @@ function makeEngine(opts: EngineOpts = {}) {
     ? { preferences: {} }
     : { preferences: { 'journal.defaultPrivate': opts.userPref } }));
   const getProperty = vi.fn((key: string, def: unknown) => (opts.config && key in opts.config ? opts.config[key] : def));
+  // Stands in for ValidationManager.getDefaultPrivate (#1504), for the journal system-category only.
+  const declared = opts.journalDefaultPrivate ?? 'choice';
+  const getDefaultPrivate = vi.fn((_category: string, prefs?: Record<string, unknown>) =>
+    (declared === 'choice' ? prefs?.['journal.defaultPrivate'] !== false : declared));
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'PageManager') return { getPage, getPageBySlug, savePage };
       if (name === 'JournalDataManager') return { listByAuthor };
       if (name === 'UserManager') return { getUser };
       if (name === 'ConfigurationManager') return { getProperty };
+      if (name === 'ValidationManager') return { getDefaultPrivate, offersDefaultPrivatePreference: () => declared === 'choice' };
       return undefined;
     })
   } as never;
@@ -133,9 +140,9 @@ describe('createJournalEntry', () => {
     });
   });
 
-  it('saves a public entry under its plain title when the deployment defaults to public', async () => {
-    const { engine, savePage } = makeEngine();
-    const name = await createJournalEntry(engine, { defaultPrivate: false }, jim, '2026-09-10');
+  it('saves a public entry under its plain title when the journal system-category starts public', async () => {
+    const { engine, savePage } = makeEngine({ journalDefaultPrivate: false });
+    const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
     expect(name).toBe('2026-09-10-1-journal-jim');
     const [pageName, , metadata] = savePage.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
     expect(pageName).toBe('2026-09-10-1-journal-jim');
@@ -143,12 +150,18 @@ describe('createJournalEntry', () => {
     expect(metadata.title).toBe('2026-09-10-1-journal-jim');
   });
 
-  it('the user\'s preference overrides the deployment default', async () => {
+  it('under choice, the user\'s preference decides (#1504)', async () => {
     const pub = makeEngine({ userPref: false });
-    expect(await createJournalEntry(pub.engine, { defaultPrivate: true }, jim, '2026-09-10')).toBe('2026-09-10-1-journal-jim');
+    expect(await createJournalEntry(pub.engine, {}, jim, '2026-09-10')).toBe('2026-09-10-1-journal-jim');
 
     const priv = makeEngine({ userPref: true });
-    expect(await createJournalEntry(priv.engine, { defaultPrivate: false }, jim, '2026-09-10'))
+    expect(await createJournalEntry(priv.engine, {}, jim, '2026-09-10'))
+      .toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+  });
+
+  it('a fixed defaultPrivate ignores the preference (#1504)', async () => {
+    const fixed = makeEngine({ journalDefaultPrivate: true, userPref: false });
+    expect(await createJournalEntry(fixed.engine, {}, jim, '2026-09-10'))
       .toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 

@@ -12,6 +12,7 @@ import { Router, type Request, type Response } from 'express';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
+import { journalPrivacy } from './helpers.js';
 
 export default function adminRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -50,7 +51,8 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
         res.render('admin-journal', {
           currentUser:      req.userContext,
           config: {
-            defaultPrivate:    config['defaultPrivate']    !== false,
+            // #1504: the journal system-category's defaultPrivate — true, false or 'choice'.
+            defaultPrivate:    journalPrivacy(engine).setting,
             defaultAuthorLock: config['defaultAuthorLock'] !== false,
             defaultMoodOptions: Array.isArray(config['defaultMoodOptions'])
               ? config['defaultMoodOptions']

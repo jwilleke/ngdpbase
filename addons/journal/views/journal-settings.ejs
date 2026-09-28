@@ -35,7 +35,8 @@
       <% } %>
     </div>
 
-    <%# ── Visibility ────────────────────────────────────────────────────── %>
+    <%# ── Visibility (#1504: only when the journal system-category is 'choice') ── %>
+    <% if (offerDefaultPrivate) { %>
     <div class="mb-4">
       <label class="form-label fw-semibold">Visibility</label>
       <div class="form-check mb-2">
@@ -47,6 +48,7 @@
         <div class="form-text">When checked (default), new entries are created with <code>private: true</code> — only you can read them. Uncheck to make new entries public by default. Existing entries unaffected; you can still toggle each entry individually in the editor.</div>
       </div>
     </div>
+    <% } %>
 
     <%# ── Streak Widget ─────────────────────────────────────────────────── %>
     <div class="mb-4">
