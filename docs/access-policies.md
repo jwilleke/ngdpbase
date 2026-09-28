@@ -69,6 +69,7 @@ The three levels of checking built on this (the global `PolicyDecisionPoint.perm
 ## Decided, not yet built
 
 - __A `system-category` resource type__ (operator, 2026-09-28). `{ "type": "system-category", "pattern": "<system-category>" }` matches a page by its `system-category` frontmatter, the way `page` matches by name. One policy can then cover every page of a system-category, and the action list stays one vocabulary instead of growing a permission per system-category. It lets add-ons' own system-categories be governed the same way. See [system-category.md](system-category.md).
+- __Who may make a page public, and who may change a system-category's vault settings__ (`defaultPrivate`, `encrypt`), is policy on the `system-category` resource type (operator, 2026-09-28). These replace the `allowPublic` and `owner` fields once planned on the system-category entry. An add-on ships the policies for the system-categories it declares.
 - __First use: who may move a page into a system-category__ is decided by policy on the target system-category. By default only admins may move a page into `system` or `documentation` (today this is hard-wired in the save route). See [system-category.md](system-category.md#where-a-pages-master-copy-lives).
 
 ## Consolidation

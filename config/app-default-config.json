@@ -1030,7 +1030,7 @@
   "ngdpbase.default.system-category": "general",
   "ngdpbase.default.template.dateformat": "dd-MMM-yyyy HH:mm",
   "ngdpbase.default.timezone": "UTC",
-  "_comment_system_category": "System category definitions. source: where a category's pages come from: site (made here), shipped (required-pages/ in the release) or repo (the repository's docs/, never stored here); see docs/system-category.md",
+  "_comment_system_category": "System category definitions. source: where a category's pages come from: site (made here), shipped (required-pages/ in the release, or seeded by an add-on) or repo (the repository's docs/, never stored here); see docs/system-category.md",
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
@@ -1041,7 +1041,7 @@
     },
     "system": {
       "label": "system",
-      "description": "System configuration and infrastructure pages",
+      "description": "The minimal viable pages for a minimal site to start",
       "default": false,
       "source": "shipped",
       "enabled": true,
@@ -1065,16 +1065,16 @@
     },
     "developer": {
       "label": "developer",
-      "description": "Developer documentation and technical note Only in GitHub",
+      "description": "Developer documentation and technical notes, only in GitHub",
       "default": false,
       "source": "repo",
       "enabled": false
     },
     "addon": {
       "label": "addon",
-      "description": "Pages seeded by an installed add-on",
+      "description": "Documentation about an installed add-on, seeded by it",
       "default": false,
-      "source": "site",
+      "source": "shipped",
       "enabled": true,
       "page-badge": {
         "color": "bg-primary",

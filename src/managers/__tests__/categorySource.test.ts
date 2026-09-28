@@ -64,11 +64,11 @@ describe('shipped categories declare their source (#1503)', () => {
     }
   });
 
-  test('system and documentation are shipped, developer is repo, the rest are site', () => {
+  test('matches docs/system-category.md: system, documentation and addon are shipped, developer is repo, the rest are site', () => {
     const sources = Object.fromEntries(Object.entries(categories).map(([k, c]) => [k, c.source]));
     expect(sources).toMatchObject({
       general: 'site', system: 'shipped', documentation: 'shipped', developer: 'repo',
-      addon: 'site', 'user-profile': 'site', journal: 'site'
+      addon: 'shipped', 'user-profile': 'site', journal: 'site'
     });
   });
 });

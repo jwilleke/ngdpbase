@@ -19,7 +19,7 @@ A system-category is not a subject. Subjects are `system-keywords` (the top-leve
 Decided, not yet built. It replaces `ngdpbase.system-category` and its comment in `config/app-default-config.json`:
 
 ```json
-"_comment_system_category": "What kind of page this is, and where its pages live (#1477, docs/system-category.md). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last segment is the vault id; no privatestore means its pages can never be private. allowPublic / defaultPrivate: the owner's choice whether an entry may be made public, and where new entries start; a person's preference overrides defaultPrivate only when allowPublic is true. encrypt, owner: the vault's settings, decided by the owner (admin, or the add-on's slug). Exactly one entry has default: true. Add-ons declare their own system-categories in their manifest; core persists them here at first load.",
+"_comment_system_category": "What kind of page this is, and where its pages live (#1477, docs/system-category.md). storageLocation.defaultstore: the folder its public pages live in; no storageLocation means its pages are never stored on the site. storageLocation.privatestore: its vault, pages/vaults/{user}/{vaultid}/, whose last segment is the vault id; no privatestore means its pages can never be private. defaultPrivate: whether a new entry starts private; a person's preference overrides it only where policy lets them make pages of this system-category public. encrypt: whether the vault's pages are sealed; true means always private. Who may make an entry public, and who may change these settings, is policy (docs/access-policies.md), not a field here. Exactly one entry has default: true. Add-ons declare their own system-categories in their manifest; core persists them here at first load.",
 "ngdpbase.system-category": {
   "general": {
     "label": "general",
@@ -30,10 +30,8 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
       "defaultstore": "pages/",
       "privatestore": "pages/vaults/{user}/default/"
     },
-    "allowPublic": true,
     "defaultPrivate": false,
-    "encrypt": false,
-    "owner": "admin"
+    "encrypt": false
   },
   "system": {
     "label": "system",
@@ -88,10 +86,8 @@ The `journal` entry is not in core configuration. The journal add-on declares it
     "defaultstore": "pages/",
     "privatestore": "pages/vaults/{user}/journal/"
   },
-  "allowPublic": true,
   "defaultPrivate": true,
   "encrypt": false,
-  "owner": "journal",
   "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
 }
 ```
@@ -111,10 +107,8 @@ Each field of a system-category entry, what it represents, and what its absence 
 | `storageLocation` | Where this system-category's pages are stored on the site | Object with `defaultstore` and optionally `privatestore` | Pages are __never stored on the site__ (they live in the repository's `docs/`); saving one is refused and none is seeded | Core, or the add-on |
 | `storageLocation.defaultstore` | The folder public pages of this system-category live in | `pages/` | — (required when `storageLocation` is present) | Core |
 | `storageLocation.privatestore` | This system-category's vault: the owner-only folder its private pages live in, one per user | `pages/vaults/{user}/{vaultid}/`. The vault id is the last segment; there is no separate `vaultid` field. No two entries share one | Pages of this system-category __can never be private__ | Core, or the add-on |
-| `allowPublic` | Whether a user may make a page of this system-category public. Only meaningful with a `privatestore` | `true` / `false`. `encrypt: true` forces `false` | `true` | The owner |
-| `defaultPrivate` | Whether a new page of this system-category starts private. With `allowPublic: true`, each person's own preference overrides it, and the editor's Private box moves a single page either way. Replaces `ngdpbase.addons.journal.defaultPrivate` | `true` / `false` | `false` | The owner |
-| `encrypt` | Whether pages in this system-category's vault are sealed with the owner's key. Present only with a `privatestore`. Replaces `ngdpbase.stores.{kind}.encrypt` | `true` / `false`. `true` means always private | `false` | The owner |
-| `owner` | Who decides this system-category's vault settings (`allowPublic`, `defaultPrivate`, `encrypt`). Present only with a `privatestore`. Replaces `ngdpbase.stores.{kind}.owner` | `admin` for core entries, or the add-on's `ngdpbase.slug` (#927) | `admin` | Core, or the add-on |
+| `defaultPrivate` | Whether a new page of this system-category starts private. Where policy lets a person make pages of this system-category public, their own preference overrides it, and the editor's Private box moves a single page either way. Replaces `ngdpbase.addons.journal.defaultPrivate` | `true` / `false` | `false` | Core, or the add-on; changing it is policy |
+| `encrypt` | Whether pages in this system-category's vault are sealed with the page owner's key. Present only with a `privatestore`. Replaces `ngdpbase.stores.{kind}.encrypt` | `true` / `false`. `true` means always private | `false` | Core, or the add-on; changing it is policy |
 
 `general` carries what `ngdpbase.stores.default.*` holds today. The build warns at startup when more than one entry has `default: true`.
 
@@ -137,8 +131,9 @@ There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided
 - __Seeded `addon` pages are documentation about the add-on__: shipped with it, public, no vault. They are the only pages an add-on seeds.
 - __Content an add-on generates goes in the add-on's own system-category__, with its own vault (`pages/vaults/{user}/{slug}/`), declared by the add-on. A personal health record add-on, for example, would declare a system-category whose vault holds everything created through it, likely with `encrypt: true`. The journal is the first such add-on.
 - __The admin-only test pages__ ("Test Page: …", #1355) stay `system`: they must ship with every install, and their `test-page` system keyword is what marks them as tests.
-- __An add-on's pages may be private.__ The add-on, as owner, declares for its system-category whether new pages start private (`defaultPrivate`) and whether they are encrypted (`encrypt`).
-- __`encrypt: true` means the pages are always private__: an encrypted page is never public in place. So `encrypt: true` forces `allowPublic: false`, and core refuses a declaration that says otherwise.
+- __An add-on's pages may be private.__ The add-on declares for its system-category whether new pages start private (`defaultPrivate`) and whether they are encrypted (`encrypt`).
+- __Who may make a page public, and who may change a system-category's `defaultPrivate` and `encrypt`, is policy__ (operator, 2026-09-28), on the `system-category` resource type ([access-policies.md](access-policies.md#decided-not-yet-built)). This replaces the `allowPublic` and `owner` fields decided earlier. The add-on that declares a system-category ships the policies for it, in its own configuration.
+- __`encrypt: true` means the pages are always private__: an encrypted page is never public in place, whatever any policy allows.
 - __`user-profile` is set only through user preferences__ (operator, 2026-09-28), never chosen in the editor, so it is `enabled: false`. Naming a profile page in preferences redoes the frontmatter of both pages: the new page gets `system-category: user-profile`, and the old one becomes `general`, keeping its content.
 - __`user-profile` has no vault: a profile page is public by definition.__ The editor warns the user, when they edit their profile page, that everyone who can see the site can read it.
 
@@ -219,7 +214,7 @@ Not read today. The shipped entries no longer carry it. It becomes the pair of f
 
 ## Related settings that are not per system-category
 
-- `ngdpbase.stores.{kind}.owner` and `.encrypt`: the __vault__ settings (#1414). Only `default` exists today (`owner: admin`, `encrypt: false`). An add-on may declare its own kind in `package.json` `ngdpbase.stores`. Decided to move onto the system-category entry.
+- `ngdpbase.stores.{kind}.owner` and `.encrypt`: the __vault__ settings (#1414). Only `default` exists today (`owner: admin`, `encrypt: false`). An add-on may declare its own kind in `package.json` `ngdpbase.stores`. Decided: `encrypt` moves onto the system-category entry; `owner` becomes policy.
 - `ngdpbase.stores.recovery.confirmretries`: __per person__. A user has one key, and one set of 12 recovery words, for all their vaults.
 - `ngdpbase.stores.import.maxsize`: __per instance__. The largest takeout an import will hold in memory.
 
@@ -227,14 +222,14 @@ Not read today. The shipped entries no longer carry it. It becomes the pair of f
 
 - __system-category__: an entry in `ngdpbase.system-category`; what kind of page. A page carries exactly one.
 - __Vault__: a user's owner-only folder of private pages. Today `pages/private/{user}/{vaultid}/`; decided: `pages/vaults/{user}/{vaultid}/`.
-- __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (owner, encrypt). Its id, the __vaultid__, is the last segment of the system-category's `privatestore`: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
+- __Vault kind__ (called a "store kind" in #1414): the site-wide definition of a vault (`encrypt`). Its id, the __vaultid__, is the last segment of the system-category's `privatestore`: defining `journal` once gives every user `pages/vaults/{user}/journal/`. A user has at most one vault per kind.
 
 ## How we get there (#1477)
 
 - __Done (#1508):__ the unread `ngdpbase.storageLocation.*` block is gone from the default config.
 - __Built (#1503), now to be undone:__ `source: site | shipped | repo` replaced the old `storageLocation` words. It is removed again, each of its jobs moving to what [Where a page's master copy lives](#where-a-pages-master-copy-lives) names. __Order (operator, 2026-09-28): after `storageLocation` becomes the pair of folders (next bullet, #1504).__ Until every entry carries `storageLocation` and, where it has a vault, `privatestore`, reading their absence as "never stored" and "never private" would refuse every save and every private page.
-- __`storageLocation` becomes the pair of folders__ (`defaultstore`, `privatestore`), with `allowPublic` and `defaultPrivate` beside it.
-- __The vault settings move onto the system-category entry.__ `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides. An admin defines a new vault by adding or editing a system-category; there is no separate "create store kind" screen (#1414 closed on that basis).
+- __`storageLocation` becomes the pair of folders__ (`defaultstore`, `privatestore`), with `defaultPrivate` beside it.
+- __The vault settings move onto the system-category entry.__ `encrypt` sits beside `storageLocation`, so one entry says what kind of page it is, where its private pages go and whether they are sealed. Who may change them, and who may make a page public, is policy. An admin defines a new vault by adding or editing a system-category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Vaults move from `pages/private/` to `pages/vaults/`__, and page names and URLs follow (`/vaults/jim/default/Diary`). Old `/private/…` URLs redirect permanently, and stored links are rewritten once.
 - __Option 1 stays the rule__: a vault is owner-only. An encrypted page is never public in place; going public decrypts it and moves it to `pages/`.
 - __The journal is the first system-category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the entry's `defaultPrivate`).
