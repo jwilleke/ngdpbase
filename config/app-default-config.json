@@ -1404,17 +1404,6 @@
       "category": "South America"
     }
   ],
-  "_comment_storageLocation": "Storage location permissions",
-  "ngdpbase.storageLocation.enabled": true,
-  "ngdpbase.storageLocation.aclBasedStorage": true,
-  "ngdpbase.storageLocation.roleBasedStorage.admin": "required",
-  "ngdpbase.storageLocation.roleBasedStorage.editor": "regular",
-  "ngdpbase.storageLocation.roleBasedStorage.user": "regular",
-  "ngdpbase.storageLocation.categoryBasedStorage.System": "required",
-  "ngdpbase.storageLocation.categoryBasedStorage.Admin": "required",
-  "ngdpbase.storageLocation.categoryBasedStorage.Security": "required",
-  "ngdpbase.storageLocation.categoryBasedStorage.General": "regular",
-  "ngdpbase.storageLocation.categoryBasedStorage.Documentation": "regular",
   "_comment_holidays": "Holiday access restrictions and messages",
   "ngdpbase.holidays.enabled": false,
   "ngdpbase.holidays.dates": {

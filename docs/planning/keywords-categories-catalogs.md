@@ -27,7 +27,7 @@ Three config-defined controlled vocabularies plus one open (uncontrolled) vocabu
 Confusing overlaps baked into the defaults:
 
 - `user-keywords` and `system-keywords` __duplicate terms__: draft/review/published and the whole subject list (medicine, geology, …) exist in both. The `user-keywords` comment already marks these as "deprecated here — see system-keywords", but they still ship in both catalogs.
-- The word __"category" means three things__: (1) `system-category` (page's single storage/ACL category), (2) the `category` *facet field* inside each keyword definition (general/status/subject/workflow-status), (3) `ngdpbase.storageLocation.categoryBasedStorage` mapping (System/Admin/Security → required storage). Any future doc/UI work should disambiguate these.
+- The word __"category" means two things__: (1) `system-category` (page's single storage/ACL category), (2) the `category` *facet field* inside each keyword definition (general/status/subject/workflow-status). Any future doc/UI work should disambiguate these. (A third, the unread `ngdpbase.storageLocation.categoryBasedStorage` map, was removed in #1508.)
 
 ## 2. Where each vocabulary surfaces (UI + API)
 
