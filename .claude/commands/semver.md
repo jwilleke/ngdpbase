@@ -2,6 +2,8 @@
 
 Cut a new semver release: bump `package.json` (and `config/app-default-config.json` + `CHANGELOG.md`) via ngdpbase's `src/utils/version.ts`, create an annotated git tag, push it, and create a GitHub release with auto-generated notes.
 
+This is ngdpbase's own release command. The kit's generic version is installed beside it as `.claude/commands/semver-kit.md` (#1326), because this file existed first; `/semver` is the one to run, and the kit never overwrites this file.
+
 ## Relationship to /session-commit
 
 `/semver` is __release mechanics only__ (Steps 1–9: gate → container smoke test → bump → baseline → tag → push → GitHub release → watch the image build → jimstest-first re-validate → `/othersites`). It does __NOT__ update `docs/project_log.md`, comment on / close GitHub issues, or run `/check-todos` — that bookkeeping lives in `/session-commit` Steps 6–9.
@@ -58,34 +60,83 @@ If anything fails, __stop__. Fix the failures and start again from Step 1. The w
 
 `npm test` and E2E run against the dev server, so they say nothing about whether the __image__ works. Both v4.8.0 and v4.8.1 passed this gate and produced a broken image: a change to core startup behaviour made a fresh container refuse to boot, which only the container smoke test exercises. Because the image workflow triggers *on the tag*, the failure arrived after the release was already public — and because the plain tag is pushed before the smoke test while `-devtools` is built after it, the damage was invisible until a downstream repo needed `-devtools`, two releases later.
 
-This step reproduces CI's smoke test locally, __before__ anything is tagged, so that failure means no tag is ever created.
+This step reproduces CI's smoke test locally, __before__ anything is tagged, so that failure means no tag is ever created. It runs in two halves that mirror `.github/workflows/docker-build.yml`, so a local pass means the CI step will pass too.
+
+__An unconfigured container must refuse to start.__ [#1087](https://github.com/jwilleke/ngdpbase/issues/1087) made a headless install refuse to boot while the resolved admin password is still the well-known `admin123` shipped in this repository (it used to fail *open* onto a published credential). So half 1 checks the refusal, and half 2 boots a configured container. Skipping half 1, or reading its failure as a stale instruction, is how `v4.12.0` was half-published: `4.12.0` and `latest` were pushed, `4.12.0-devtools` never was (#1142).
 
 ```bash
-docker build -f docker/Dockerfile --target runtime --build-arg NODE_VERSION=24 -t ngdpbase-release-smoke:local .
+docker build -f docker/Dockerfile --target runtime --build-arg NODE_VERSION=24 \
+  -t ngdpbase-release-smoke:local .
 
+# Half 1 — an UNCONFIGURED headless install must REFUSE to boot (#1087).
+docker rm -f ngdpbase-smoke-refuse 2>/dev/null
+docker run -d --name ngdpbase-smoke-refuse \
+  -e HEADLESS_INSTALL=true -e NODE_ENV=production ngdpbase-release-smoke:local
+sleep 20
+docker inspect --format='{{.State.Running}}' ngdpbase-smoke-refuse   # must be false
+docker logs ngdpbase-smoke-refuse 2>&1 | grep "Refusing to create the bootstrap admin account"
+docker rm -f ngdpbase-smoke-refuse
+
+# Half 2 — a CONFIGURED headless install must become healthy.
+# The config file is required: the guard compares the RESOLVED password rather
+# than reading the variable, so the env var alone is still refused.
+SM=$(mktemp -d); mkdir -p "$SM/config"
+echo '{"ngdpbase.user.security.defaultpassword":"$NGDPBASE_ADMIN_PASSWORD"}' \
+  > "$SM/config/app-custom-config.json"
 docker rm -f ngdpbase-release-smoke 2>/dev/null
 docker run -d --name ngdpbase-release-smoke -p 3099:3000 \
   -e HEADLESS_INSTALL=true -e NODE_ENV=production \
-  ngdpbase-release-smoke:local
+  -e NGDPBASE_ADMIN_PASSWORD="smoke-$(openssl rand -hex 12)" \
+  -v "$SM:/app/data" ngdpbase-release-smoke:local
 
-# Poll for healthy, exactly as .github/workflows/docker-build.yml does
 for i in $(seq 1 18); do
   S=$(docker inspect --format='{{.State.Health.Status}}' ngdpbase-release-smoke 2>/dev/null || echo starting)
-  [ "$S" = "healthy" ] && break
+  echo "  $S"; [ "$S" = "healthy" ] && break
   [ "$S" = "unhealthy" ] && { docker logs ngdpbase-release-smoke; break; }
   sleep 5
 done
+
+# #1194 — no NGDPBASE_SESSION_SECRET was passed, so the instance must have
+# generated one into the mounted volume's .env. Must print a line; must not be
+# the shipped literal. Read it THROUGH the container, as CI does: the file is
+# root-owned 0600, and a host-side grep only works here because Docker Desktop
+# maps the bind mount's ownership to your user — on the CI runner it does not,
+# which is how v4.14.0's image build failed after a green local run.
+docker exec ngdpbase-release-smoke grep '^NGDPBASE_SESSION_SECRET=' /app/data/.env | sed 's/=.*/=<set>/'
+docker exec ngdpbase-release-smoke grep -q 'ngdpbase-session-secret-change-in-production' /app/data/.env && echo "FAILED: shipped literal"
+
+# #1192 — every bundled addon must have loaded IN THE IMAGE. AddonsManager
+# logs and continues on a dead addon, so the container is healthy either way.
+docker logs ngdpbase-release-smoke 2>&1 | grep "Failed to load add-on" && echo "FAILED: addon did not load"
+
+# v4.17.1 — the HTTP checks CI runs. Healthy is not ready: the HEALTHCHECK
+# probes /health/liveness, which answers 200 while the engine is still starting,
+# and a fresh container's first start seeds every required page (#1405). Wait
+# for readiness, then request / and /login exactly as docker-build.yml does.
+# Skipping this is how v4.17.0 passed locally and failed its image build.
+for i in $(seq 1 60); do
+  R=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3099/health/readiness)
+  ROOT=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3099/)
+  [ "$R" = "200" ] && [ "$ROOT" != "503" ] && [ "$ROOT" != "000" ] && { echo "  ready after ~$((i * 3))s"; break; }
+  sleep 3
+done
+for u in / /login; do
+  C=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3099$u")
+  echo "  $u → $C"
+  case "$C" in 200|301|302) ;; *) echo "FAILED: $u answered $C" ;; esac
+done
 ```
 
-Then always clean up, whatever the outcome:
+Then clean up whatever the outcome:
 
 ```bash
-docker rm -f ngdpbase-release-smoke; docker rmi -f ngdpbase-release-smoke:local
+docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse 2>/dev/null
+docker rmi -f ngdpbase-release-smoke:local 2>/dev/null
+rm -rf "$SM"
 ```
 
-- __Reaches `healthy`__ → continue to Step 5.
-- __Exits or goes `unhealthy`__ → __stop__. Read `docker logs` — a container that will not boot is a broken release, and nothing is tagged yet. This is the whole point of the step.
-- __Deliberately passes no `NGDPBASE_ADMIN_PASSWORD`.__ A fresh container with an empty volume must come up unattended on the shipped defaults; if it cannot, that is the regression this step exists to catch.
+- __Half 1 refuses and half 2 reaches ready, with every check passing__ → continue to Step 5.
+- __Either half fails, or an HTTP check fails__ → __stop__. Read `docker logs`. Nothing is tagged yet, which is the whole point of the step. A failing half is not a stale instruction to work around.
 
 __If Docker is not running__, do not block the release: say so plainly, note it in the Step 9 report, and rely on Step 7a. A skipped check that is announced is fine; a skipped check that is silent is how #1035 happened.
 
@@ -115,13 +166,7 @@ The script auto-detects the previous baseline. If this is the first-ever baselin
 
 ### Step 5b: Surface the perf diff to the user (and maybe stop)
 
-The script flags regression candidates with `⚠️` and __exits non-zero__ when any threshold trips. Default thresholds (override via env var if you have a reason):
-
-- `BASELINE_MEM_DELTA_PCT=25` — memory % regression
-- `BASELINE_RT_DELTA_PCT=50` — route % regression (must trip together with the ms threshold below)
-- `BASELINE_RT_DELTA_MS=50` — route absolute regression (avoids 1ms-on-already-fast-route false positives)
-
-__Default thresholds__ — override via env var if needed:
+The script flags regression candidates with `⚠️` and __exits non-zero__ when any threshold trips. __Default thresholds__ — override via env var if needed:
 
 - `BASELINE_MEM_DELTA_PCT=25` — memory % regression
 - `BASELINE_RT_DELTA_PCT=50` — route % regression (must trip together with the ms threshold below)
@@ -175,7 +220,11 @@ gh run list --workflow=docker-build.yml --limit 1 \
 gh run view <id> --json status,conclusion --jq '"\(.status)/\(.conclusion // "-")"'
 ```
 
-On __success__, verify the tags actually exist rather than trusting a green run — the plain image is pushed by an earlier step than `-devtools`, so a partial publish looks green in isolation:
+Since [#1228](https://github.com/jwilleke/ngdpbase/issues/1228) the workflow builds both images, runs every gate, and pushes only at the end: versioned tags first, `latest` + `latest-devtools` last. A red run means __nothing__ reached GHCR.
+
+To dry-run the workflow against master without publishing: `gh workflow run docker-build.yml --ref master -f push_to_registry=false` (the input is honoured).
+
+On __success__, verify the tags exist rather than trusting a green run; the check proves the publish step ran. `latest-devtools` is in the list because, before #1228, a failure between the two pushes left `latest` and `latest-devtools` on different releases, invisible from the workflow status (`v4.12.0`):
 
 ```bash
 for t in <version> <version>-devtools latest-devtools; do
@@ -188,8 +237,8 @@ On __failure__:
 
 1. __Stop before the satellites__ if they have not already been done. They pull from git rather than GHCR so they are not directly broken, but a release whose image fails is a release with something wrong in it, and propagating further is the wrong reflex.
 2. Get the failing step — `gh run view <id> --log-failed` — and report it.
-3. Say plainly in Step 9 that __the tag and GitHub release are already published__. This step is detection, not prevention; the tag cannot be unshipped. Prevention lives in Step 4a.
-4. Fix forward with a patch release. Re-running the old workflow re-runs the old code and will fail identically.
+3. Say plainly in Step 9 that __the git tag and GitHub release are already published__, though no image is (#1228). This step is detection, not prevention; the tag cannot be unshipped. Prevention lives in Step 4a.
+4. Fix forward with a patch release; its tags appear together. Re-running the old workflow re-runs the old code and will fail identically.
 
 ### Step 8: Update sister installs
 
