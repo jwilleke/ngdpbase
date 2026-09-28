@@ -1,0 +1,77 @@
+ "_comment_system_category": "System category definitions with storage location mapping",
+  "ngdpbase.system-category": {
+    "general": {
+      "label": "general",
+      "description": "General User pages",
+      "default": true,
+      "storageLocation": "regular",
+      "enabled": true
+    },
+    "system": {
+      "label": "system",
+      "description": "System configuration and infrastructure pages",
+      "default": false,
+      "storageLocation": "required",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-secondary",
+        "label": "System",
+        "title": "System page"
+      }
+    },
+    "documentation": {
+      "label": "documentation",
+      "description": "End-User documentation",
+      "default": false,
+      "storageLocation": "required",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-info text-dark",
+        "label": "Documentation",
+        "title": "Documentation page"
+      }
+    },
+    "developer": {
+      "label": "developer",
+      "description": "Developer documentation and technical note Only in GitHub",
+      "default": false,
+      "storageLocation": "github",
+      "enabled": false
+    },
+    "addon": {
+      "label": "addon",
+      "description": "Pages seeded by an installed add-on",
+      "default": false,
+      "storageLocation": "regular",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-primary",
+        "label": "Addon",
+        "title": "Add-on page"
+      }
+    },
+    "user-profile": {
+      "label": "user-profile",
+      "description": "User profile pages",
+      "default": false,
+      "storageLocation": "regular",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-success",
+        "label": "Profile",
+        "title": "User profile page"
+      }
+    },
+    "journal": {
+      "label": "journal",
+      "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
+      "default": false,
+      "storageLocation": "regular",
+      "enabled": true,
+      "page-badge": {
+        "color": "bg-info",
+        "label": "Journal",
+        "title": "Journal entry"
+      }
+    }
+  },
