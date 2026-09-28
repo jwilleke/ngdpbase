@@ -378,7 +378,7 @@ describe('the title rule at the door (#1455)', () => {
 
   test('the rule reads a private page\'s title out of its path, not the path itself (#1456)', async () => {
     const { pm, provider } = rawDoor();
-    await pm.savePage('private/jim/default/Diary', 'body', { title: 'Diary' }, JIM, { skipValidation: true, skipConflictCheck: true });
+    await pm.savePage('vaults/jim/default/Diary', 'body', { title: 'Diary' }, JIM, { skipValidation: true, skipConflictCheck: true });
     expect(provider.savePage).toHaveBeenCalled();
   });
 
@@ -397,16 +397,16 @@ describe('the title rule at the door (#1455)', () => {
 
   test('a funnel keeps a private page in its store when its title is normalised', async () => {
     const { pm, provider } = rawDoor();
-    await pm.savePage('private/jim/default/Diary', 'body', { title: 'Diary?' }, JIM, {
+    await pm.savePage('vaults/jim/default/Diary', 'body', { title: 'Diary?' }, JIM, {
       normaliseTitle: true, skipValidation: true, skipConflictCheck: true
     });
-    expect((provider.savePage.mock.calls[0] as [string])[0]).toBe('private/jim/default/Diary');
+    expect((provider.savePage.mock.calls[0] as [string])[0]).toBe('vaults/jim/default/Diary');
   });
 
   test('a name under the private prefix that is not a private page name is refused, never written as a public page', async () => {
     const { pm, provider } = rawDoor();
     // Its title would have to contain a `/`, which no title may.
-    await expect(pm.savePage('private/jim/default/Docs/Setup', 'body', {}, JIM, {
+    await expect(pm.savePage('vaults/jim/default/Docs/Setup', 'body', {}, JIM, {
       normaliseTitle: true, skipValidation: true, skipConflictCheck: true
     })).rejects.toThrow(/is not a private page name/);
     expect(provider.savePage).not.toHaveBeenCalled();

@@ -106,10 +106,10 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
 
   it('a private page is kept out of every shared index; only its own rendered page is cleared', async () => {
     const d = makeDoor();
-    d.provider.savePage.mockResolvedValueOnce({ name: 'private/jim/default/Diary', uuid: 'uuid-diary' });
-    const saved = await d.pm.savePage('private/jim/default/Diary', 'secret', { title: 'Diary', uuid: 'uuid-diary', private: true }, d.jim);
+    d.provider.savePage.mockResolvedValueOnce({ name: 'vaults/jim/default/Diary', uuid: 'uuid-diary' });
+    const saved = await d.pm.savePage('vaults/jim/default/Diary', 'secret', { title: 'Diary', uuid: 'uuid-diary', private: true }, d.jim);
 
-    expect(saved.name).toBe('private/jim/default/Diary');
+    expect(saved.name).toBe('vaults/jim/default/Diary');
     for (const fn of [d.rendering.addPageToCache, d.rendering.updatePageInLinkGraph, d.rendering.removePageFromLinkGraph,
       d.search.updatePageInIndex, d.search.removePageFromIndex, d.attachments.syncPageMentions, d.assets.syncPageAssets]) {
       expect(fn).not.toHaveBeenCalled();
@@ -119,7 +119,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
 
   it('a public page moved into a store leaves the shared indexes under its old name', async () => {
     const d = makeDoor({ Doc: { content: 'body', metadata: { title: 'Doc', uuid: 'uuid-doc' } } }, { Doc: ['Gamma'] });
-    d.provider.savePage.mockResolvedValueOnce({ name: 'private/jim/default/Doc', uuid: 'uuid-doc' });
+    d.provider.savePage.mockResolvedValueOnce({ name: 'vaults/jim/default/Doc', uuid: 'uuid-doc' });
     await d.pm.savePage('Doc', 'body', { title: 'Doc', uuid: 'uuid-doc', private: true }, d.jim);
 
     expect(d.rendering.removePageFromLinkGraph).toHaveBeenCalledWith('Doc');

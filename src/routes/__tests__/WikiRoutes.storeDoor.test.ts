@@ -170,7 +170,7 @@ describe('store door routes (#1414)', () => {
       user: 'molly',
       metadata: expect.objectContaining({ store: 'default', encrypt: false, keyCreated: false })
     }));
-    expect(res.redirect).toHaveBeenCalledWith('/my/private');
+    expect(res.redirect).toHaveBeenCalledWith('/my/vaults');
   });
 
   test('when the record cannot be written, nothing is created (refuse on failure)', async () => {

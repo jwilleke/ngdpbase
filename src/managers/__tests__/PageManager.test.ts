@@ -794,14 +794,14 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
   test('private page: owner and store come from the name, not frontmatter author (#1456)', async () => {
     const getPageMetadata = vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'renamed', store: 'other' });
     const pm = withProvider({ getPageMetadata });
-    await expect(pm.getPrivatePageOwner('private/alice/yourphr/Diary', OWNER_CTX))
+    await expect(pm.getPrivatePageOwner('vaults/alice/yourphr/Diary', OWNER_CTX))
       .resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-    expect(getPageMetadata).toHaveBeenCalledWith('private/alice/yourphr/Diary', OWNER_CTX);
+    expect(getPageMetadata).toHaveBeenCalledWith('vaults/alice/yourphr/Diary', OWNER_CTX);
   });
 
   test('a private name whose page does not exist: null', async () => {
     const pm = withProvider({ getPageMetadata: vi.fn().mockResolvedValue(null) });
-    await expect(pm.getPrivatePageOwner('private/alice/default/Nope', OWNER_CTX)).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('vaults/alice/default/Nope', OWNER_CTX)).resolves.toBeNull();
   });
 
   test('public or missing page: null', async () => {
@@ -828,9 +828,9 @@ describe('PageManager.getPrivatePageOwner (#1398)', () => {
         Promise.resolve(ctx.privateStoreHandle === 'sid-1' ? { uuid: 'u3' } : null))
     });
     await expect(
-      pm.getPrivatePageOwner('private/alice/yourphr/Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
+      pm.getPrivatePageOwner('vaults/alice/yourphr/Labs', { ...OWNER_CTX, privateStoreHandle: 'sid-1' })
     ).resolves.toEqual({ creator: 'alice', store: 'yourphr' });
-    await expect(pm.getPrivatePageOwner('private/alice/yourphr/Labs', OWNER_CTX)).resolves.toBeNull();
+    await expect(pm.getPrivatePageOwner('vaults/alice/yourphr/Labs', OWNER_CTX)).resolves.toBeNull();
   });
 });
 
@@ -840,7 +840,7 @@ describe('PageManager.checkPrivatePageAccess — the private container rule (#13
     (pm as unknown as { provider: unknown }).provider = provider;
     return pm;
   };
-  const DIARY = 'private/alice/default/Diary';
+  const DIARY = 'vaults/alice/default/Diary';
   const privatePage = () => withProvider({
     getPageMetadata: vi.fn().mockResolvedValue({ uuid: 'u1', private: true, author: 'alice' })
   });
@@ -885,10 +885,10 @@ describe('PageManager.checkPrivatePageAccess — the private container rule (#13
     for (const getPageMetadata of [vi.fn().mockResolvedValue(null), vi.fn().mockRejectedValue(new Error('disk'))]) {
       const pm = withProvider({ getPageMetadata });
       await expect(pm.checkPrivatePageAccess(
-        ctx({ username: 'bob', roles: [], isAuthenticated: true }), 'private/alice/default/Nope'
+        ctx({ username: 'bob', roles: [], isAuthenticated: true }), 'vaults/alice/default/Nope'
       )).resolves.toBe(false);
       await expect(pm.checkPrivatePageAccess(
-        ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'private/alice/default/Nope'
+        ctx({ username: 'alice', roles: [], isAuthenticated: true }), 'vaults/alice/default/Nope'
       )).resolves.toBe(true);
       expect(getPageMetadata).not.toHaveBeenCalled();
     }

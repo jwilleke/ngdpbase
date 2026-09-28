@@ -730,7 +730,7 @@ class DOMLinkHandler {
       // On a PUBLIC page it renders identically for every reader — no
       // existence lookup, no redlink — because that page's HTML is cached and
       // shared by role, so a per-reader appearance would say whether a private
-      // page exists. `/private/…` already answers 404 to anyone else.
+      // page exists. `/vaults/…` already answers 404 to anyone else.
       //
       // On a PRIVATE page nothing is cached for anyone to read, and only the
       // owner or a delegate is there at all, so the link says what it found

@@ -212,7 +212,7 @@ interface CountRow {
 function renderCard(target: string, counts: ContributionCounts, isSelfView: boolean): string {
   const rows: CountRow[] = isSelfView
     ? [
-      { href: '/my/private', icon: 'fa-eye-slash', label: 'Private Pages',       value: counts.private },
+      { href: '/my/vaults', icon: 'fa-eye-slash', label: 'Private Pages',       value: counts.private },
       // #1459: self-view only, like Private Pages — a private page in the trash
       // is still its owner's alone, so nobody else ever sees this row.
       { href: '/my/trash',   icon: 'fa-trash',     label: 'My Trash',            value: counts.trash   },

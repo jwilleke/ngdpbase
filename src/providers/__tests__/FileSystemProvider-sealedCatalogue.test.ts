@@ -94,7 +94,7 @@ describe('sealed store on FileSystemProvider (#1420)', () => {
   });
 
   const storePageFiles = async (): Promise<string[]> =>
-    (await fs.readdir(path.join(pagesDir, 'private', 'molly', STORE))).filter(f => f.endsWith('.md'));
+    (await fs.readdir(path.join(pagesDir, 'vaults', 'molly', STORE))).filter(f => f.endsWith('.md'));
 
   test('a sealed page is catalogued in its store and found again by its owner', async () => {
     const provider = await newProvider();

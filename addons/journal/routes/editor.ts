@@ -7,7 +7,7 @@
  *   GET  /journal/settings      — user preferences form
  *   POST /journal/settings      — save user preferences
  *   GET  /journal/new           — auto-creates today's stub entry, redirects to its editor
- *   GET  /journal/:slug/edit    — redirects to the entry's editor (/edit/… or /private/…/edit, #1456)
+ *   GET  /journal/:slug/edit    — redirects to the entry's editor (/edit/… or /vaults/…/edit, #1456)
  *   POST /journal/:slug/delete  — delete entry
  *
  * #799 / EPIC #790 retired the parallel POST /journal/new + POST /journal/:slug/edit

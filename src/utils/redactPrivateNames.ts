@@ -2,8 +2,8 @@
  * redactPrivateNames — keep private page titles out of logs and the audit
  * trail (#1461, epic #1454).
  *
- * A private page is named by its path, `private/{owner}/{store}/{title}`
- * (#1456). Its title belongs to its owner's store; nobody else — admin
+ * A private page is named by its path, `vaults/{owner}/{store}/{title}`
+ * (#1456; `private/…` before #1506, still matched). Its title belongs to its owner's store; nobody else — admin
  * included — may read it, and `/admin/logs` and the audit view are read by
  * admins. So wherever such a name reaches a log line or an audit event, the
  * title is struck and the owner and store are kept: the line stays
@@ -11,9 +11,9 @@
  *
  * Three shapes are recognised, because a name reaches a line in all three:
  *
- *   - as written:     `private/molly/default/Merger notes`
- *   - in a URL path:  `/private/molly/default/Merger%20notes/edit`
- *   - URL-encoded:    `private%2Fmolly%2Fdefault%2FMerger%20notes`
+ *   - as written:     `vaults/molly/default/Merger notes`
+ *   - in a URL path:  `/vaults/molly/default/Merger%20notes/edit`
+ *   - URL-encoded:    `vaults%2Fmolly%2Fdefault%2FMerger%20notes`
  *
  * A bare title — `Loaded MergerNotes from …` — cannot be told from any other
  * word, so the code that knows a page is private logs its uuid instead. This
@@ -23,6 +23,7 @@
  */
 import { format } from 'winston';
 import type { Logform } from 'winston';
+import { LEGACY_PRIVATE_ROOT, PRIVATE_URL_SEGMENT } from './privateStorePath.js';
 
 /** What a struck title is replaced with. */
 export const REDACTED_TITLE = '[redacted]';
@@ -32,15 +33,19 @@ const STORE_FILE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 const keep = (title: string): boolean => STORE_FILE.test(title);
 
-// URL-encoded: private%2F{owner}%2F{store}%2F{title}
-const ENCODED = /private%2F([^%\s/?#&"']+)%2F([^%\s/?#&"']+)%2F([^\s/?#&"']+)/gi;
-// A URL path: /private/{owner}/{store}/{title}, the title one path segment.
-const URL_PATH = /(\/private\/[^/\s?#'"]+\/[^/\s?#'"]+\/)([^/\s?#'"]+)/g;
+// The first segment of a private page's name: `vaults`, or `private` before #1506.
+const SEGMENT = `(?:${PRIVATE_URL_SEGMENT}|${LEGACY_PRIVATE_ROOT})`;
+// URL-encoded: vaults%2F{owner}%2F{store}%2F{title}
+const ENCODED = new RegExp(`(${PRIVATE_URL_SEGMENT}|${LEGACY_PRIVATE_ROOT})%2F([^%\\s/?#&"']+)%2F([^%\\s/?#&"']+)%2F([^\\s/?#&"']+)`, 'gi');
+// A URL path: /vaults/{owner}/{store}/{title}, the title one path segment.
+const URL_PATH = new RegExp(`(\\/${SEGMENT}\\/[^/\\s?#'"]+\\/[^/\\s?#'"]+\\/)([^/\\s?#'"]+)`, 'g');
+// Any private page name at all — the cheap test before the three rewrites.
+const ANY_NAME = new RegExp(`${SEGMENT}(?:\\/|%2F)`, 'i');
 // As written: the title runs to the end of the line, a quote, or where the
 // next `key=` field, `)` or `]` begins. A title containing one of those loses
 // only what follows it — over- rather than under-redaction is not possible
 // without knowing the title, so the boundary is kept deliberately wide.
-const PLAIN = /(^|[^/\w%])(private\/[^/\s'"]+\/[^/\s'"]+\/)(.+?)(?=$|\n|"|'(?=[\s,.;:)\]]|$)|\s[\w.-]+=|\)|\])/gm;
+const PLAIN = new RegExp(`(^|[^/\\w%])(${SEGMENT}\\/[^/\\s'"]+\\/[^/\\s'"]+\\/)(.+?)(?=$|\\n|"|'(?=[\\s,.;:)\\]]|$)|\\s[\\w.-]+=|\\)|\\])`, 'gm');
 
 /**
  * Strike the title from every private page name in `text`.
@@ -49,10 +54,10 @@ const PLAIN = /(^|[^/\w%])(private\/[^/\s'"]+\/[^/\s'"]+\/)(.+?)(?=$|\n|"|'(?=[\
  * @returns the text with each private title replaced by `[redacted]`
  */
 export function redactPrivateNames(text: string): string {
-  if (typeof text !== 'string' || !/private(?:\/|%2F)/i.test(text)) return text;
+  if (typeof text !== 'string' || !ANY_NAME.test(text)) return text;
   return text
-    .replace(ENCODED, (whole, owner: string, store: string, title: string) =>
-      (keep(title) ? whole : `private%2F${owner}%2F${store}%2F${REDACTED_TITLE}`))
+    .replace(ENCODED, (whole, segment: string, owner: string, store: string, title: string) =>
+      (keep(title) ? whole : `${segment}%2F${owner}%2F${store}%2F${REDACTED_TITLE}`))
     .replace(URL_PATH, (whole, prefix: string, title: string) =>
       (keep(title) || title === REDACTED_TITLE ? whole : `${prefix}${REDACTED_TITLE}`))
     .replace(PLAIN, (whole, lead: string, prefix: string, title: string) =>

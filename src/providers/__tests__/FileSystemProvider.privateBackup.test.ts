@@ -59,7 +59,7 @@ beforeEach(async () => {
   await fs.writeFile(path.join(pagesDir, 'public-1.md'), '---\ntitle: Public\n---\n\nHello\n');
 
   // A sealed store, its history, its trash, its indexes and the wrapped key.
-  const vault = path.join(pagesDir, 'private', 'molly', 'vault');
+  const vault = path.join(pagesDir, 'vaults', 'molly', 'vault');
   await fs.ensureDir(path.join(vault, 'versions', 'uuid-1'));
   await fs.ensureDir(path.join(vault, 'attachments'));
   await fs.writeFile(path.join(vault, 'uuid-1.md'), CIPHERTEXT);
@@ -67,7 +67,7 @@ beforeEach(async () => {
   await fs.writeFile(path.join(vault, 'attachments', 'abc-123.pdf'), CIPHERTEXT);
   await fs.writeFile(path.join(vault, 'pages-index.json'), CIPHERTEXT);
   await fs.writeJson(path.join(vault, 'store.json'), { kind: 'vault', encrypt: true });
-  await fs.writeJson(path.join(pagesDir, 'private', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
+  await fs.writeJson(path.join(pagesDir, 'vaults', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
 });
 
 afterEach(async () => {
@@ -78,7 +78,7 @@ describe('backup() carries the private tree (#1387)', () => {
   test('a sealed page is in the backup, as the bytes it is on disk', async () => {
     const backup = await makeProvider(pagesDir, requiredDir).backup();
 
-    const entry = backup.privateFiles?.find(f => f.relativePath === 'private/molly/vault/uuid-1.md');
+    const entry = backup.privateFiles?.find(f => f.relativePath === 'vaults/molly/vault/uuid-1.md');
     expect(entry).toBeDefined();
     expect(Buffer.compare(Buffer.from(entry!.base64, 'base64'), CIPHERTEXT)).toBe(0);
   });
@@ -88,12 +88,12 @@ describe('backup() carries the private tree (#1387)', () => {
     const paths = (backup.privateFiles ?? []).map(f => f.relativePath).sort();
 
     expect(paths).toEqual([
-      'private/molly/user-keys.json',
-      'private/molly/vault/attachments/abc-123.pdf',
-      'private/molly/vault/pages-index.json',
-      'private/molly/vault/store.json',
-      'private/molly/vault/uuid-1.md',
-      'private/molly/vault/versions/uuid-1/1.md'
+      'vaults/molly/user-keys.json',
+      'vaults/molly/vault/attachments/abc-123.pdf',
+      'vaults/molly/vault/pages-index.json',
+      'vaults/molly/vault/store.json',
+      'vaults/molly/vault/uuid-1.md',
+      'vaults/molly/vault/versions/uuid-1/1.md'
     ]);
   });
 
@@ -127,7 +127,7 @@ describe('restore() puts the private tree back (#1387)', () => {
       await fs.ensureDir(target);
       await makeProvider(target, requiredDir).restore(backup);
 
-      const restored = await fs.readFile(path.join(target, 'private', 'molly', 'vault', 'uuid-1.md'));
+      const restored = await fs.readFile(path.join(target, 'vaults', 'molly', 'vault', 'uuid-1.md'));
       expect(Buffer.compare(restored, CIPHERTEXT)).toBe(0);
     } finally {
       await fs.remove(fresh);
@@ -143,7 +143,7 @@ describe('restore() puts the private tree back (#1387)', () => {
       await fs.ensureDir(target);
       await makeProvider(target, requiredDir).restore(backup);
 
-      expect(await fs.readJson(path.join(target, 'private', 'molly', 'user-keys.json')))
+      expect(await fs.readJson(path.join(target, 'vaults', 'molly', 'user-keys.json')))
         .toEqual({ wrapped: 'xxx' });
     } finally {
       await fs.remove(fresh);
@@ -180,7 +180,7 @@ describe('restore() puts the private tree back (#1387)', () => {
       await fs.ensureDir(target);
       // The point is that it completes and warns rather than appearing to work.
       await expect(makeProvider(target, requiredDir).restore(backup)).resolves.toBeUndefined();
-      expect(await fs.pathExists(path.join(target, 'private'))).toBe(false);
+      expect(await fs.pathExists(path.join(target, 'vaults'))).toBe(false);
     } finally {
       await fs.remove(fresh);
     }

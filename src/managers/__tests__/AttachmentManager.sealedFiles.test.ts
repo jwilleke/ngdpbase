@@ -111,7 +111,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     await fs.remove(tmp);
   });
 
-  const attachmentsDir = (user = 'molly') => path.join(pagesDir, 'private', user, STORE, 'attachments');
+  const attachmentsDir = (user = 'molly') => path.join(pagesDir, 'vaults', user, STORE, 'attachments');
 
   test('upload then read back in the same session — the bytes match', async () => {
     const stored = await upload();

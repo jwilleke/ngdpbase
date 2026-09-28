@@ -123,6 +123,7 @@ import {
 import {
   formatPrivatePageName,
   parsePrivatePageName,
+  PRIVATE_URL_SEGMENT,
   privateStoreLayoutFromConfig,
   type PrivatePageName,
   type PrivateStoreLayout
@@ -7891,7 +7892,7 @@ ${panes}
   }
 
   /**
-   * GET /my/private — list of private pages owned by the current user (#640).
+   * GET /my/vaults — list of private pages owned by the current user (#640, #1506).
    */
   async myPrivatePagesPage(req: Request, res: Response) {
     return this.renderMyContributionsList(req, res, {
@@ -7951,7 +7952,7 @@ ${panes}
 
   /** Where a store's own pages take over once its door has been walked through. */
   private storeLanding(kind: StoreKind): string {
-    return kind.id === 'default' ? '/my/private' : '/';
+    return kind.id === 'default' ? '/my/vaults' : '/';
   }
 
   private async renderStoreDoor(req: Request, res: Response, kind: StoreKind, view: Record<string, unknown>): Promise<void> {
@@ -8478,7 +8479,7 @@ ${panes}
 
   // ── The owner's private trash (#1459) ─────────────────────────────────────
   //
-  // Its own surface beside /my/private and /my/edits (operator, 2026-09-23),
+  // Its own surface beside /my/vaults and /my/edits (operator, 2026-09-23),
   // NOT a second meaning for /admin/trash: the same screen showing different
   // things depending on who opened it was rejected. /admin/deleted-pages stays
   // public pages only, and it cannot show a private tombstone even by mistake
@@ -14659,7 +14660,7 @@ ${panes}
     app.get('/sitemap-:page.xml', (req: Request, res: Response) => this.sitemap(req, res));
     app.get('/', (req: Request, res: Response) => this.homePage(req, res));
     // #1456: a private page's name is its path; its canonical URL is under
-    // /private/. An old /view/private%2F… link is sent there.
+    // /vaults/ (#1506). An old /view/vaults%2F… link is sent there.
     app.get('/view/:page', (req: Request, res: Response) => {
       if (parsePrivatePageName(req.params.page)) {
         const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
@@ -14669,12 +14670,12 @@ ${panes}
     });
     // #1456: a private page's own URL space — every action on it lives here,
     // behind one gate that answers 404 to anyone who may not reach it.
-    app.get('/private/:owner/:store/:title', (req: Request, res: Response) => this.privatePageRoute(req, res, 'view', () => this.viewPage(req, res)));
-    app.get('/private/:owner/:store/:title/edit', (req: Request, res: Response) => this.privatePageRoute(req, res, 'edit', () => this.editPage(req, res)));
-    app.post('/private/:owner/:store/:title/save', (req: Request, res: Response) => this.privatePageRoute(req, res, 'save', () => this.savePage(req, res)));
-    app.post('/private/:owner/:store/:title/delete', (req: Request, res: Response) => this.privatePageRoute(req, res, 'delete', () => this.deletePage(req, res)));
-    app.get('/private/:owner/:store/:title/history', (req: Request, res: Response) => this.privatePageRoute(req, res, 'history', () => this.pageHistory(req, res)));
-    app.get('/private/:owner/:store/:title/diff', (req: Request, res: Response) => this.privatePageRoute(req, res, 'diff', () => this.pageDiff(req, res)));
+    app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'view', () => this.viewPage(req, res)));
+    app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/edit`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'edit', () => this.editPage(req, res)));
+    app.post(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/save`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'save', () => this.savePage(req, res)));
+    app.post(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/delete`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'delete', () => this.deletePage(req, res)));
+    app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/history`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'history', () => this.pageHistory(req, res)));
+    app.get(`/${PRIVATE_URL_SEGMENT}/:owner/:store/:title/diff`, (req: Request, res: Response) => this.privatePageRoute(req, res, 'diff', () => this.pageDiff(req, res)));
     // Backward-compatible redirect: /wiki/:page → /view/:page
     app.get('/wiki/:page', (req: Request, res: Response) => {
       const target = '/view/' + req.params.page + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
@@ -14713,7 +14714,7 @@ ${panes}
     app.post('/profile', (req: Request, res: Response) => this.updateProfile(req, res));
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
-    app.get('/my/private', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
+    app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no
     // store kind can ever shadow it.

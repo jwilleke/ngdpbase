@@ -102,8 +102,8 @@ describe('private store default/ (#1383)', () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
 
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', `${UUID}.md`))).toBe(false);
     expect((await readIndex()).pages[UUID]).toBeUndefined();
     expect((await readStoreIndex()).pages[UUID]).toMatchObject({
       title: 'Diary',
@@ -117,7 +117,7 @@ describe('private store default/ (#1383)', () => {
   });
 
   test('boot moves a legacy private/{user}/{uuid}.md into default/ and still loads the page', async () => {
-    const legacy = path.join(pagesDir, 'private', 'molly', `${UUID}.md`);
+    const legacy = path.join(pagesDir, 'vaults', 'molly', `${UUID}.md`);
     await fs.ensureDir(path.dirname(legacy));
     await fs.writeFile(
       legacy,
@@ -126,7 +126,7 @@ describe('private store default/ (#1383)', () => {
 
     const provider = await newProvider();
     expect(await fs.pathExists(legacy)).toBe(false);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', 'default', `${UUID}.md`))).toBe(true);
     expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
     expect((await readIndex()).pages[UUID]).toBeUndefined();
     expect((await readStoreIndex()).pages[UUID]).toMatchObject({
@@ -160,7 +160,7 @@ describe('private store default/ (#1383)', () => {
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await provider.deletePage(DIARY, MOLLY)).toBe(true);
 
-    const storeRoot = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    const storeRoot = path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE);
     expect(await fs.pathExists(path.join(storeRoot, `${UUID}.md`))).toBe(false);
     expect(await fs.pathExists(path.join(storeRoot, 'deleted', `${UUID}.md`))).toBe(true);
     expect((await readStoreIndex()).pages[UUID]).toBeUndefined();
@@ -170,25 +170,25 @@ describe('private store default/ (#1383)', () => {
     expect((await readIndex()).deletedPages?.[UUID]).toBeUndefined();
   });
 
-  test('version history lives under the store, not pages/versions/private/{uuid}', async () => {
+  test('version history lives under the store, not pages/versions/vaults/{uuid}', async () => {
     const provider = await newProvider();
     await provider.savePage('Diary', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
     await provider.savePage(DIARY, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
 
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'private', UUID))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'vaults', UUID))).toBe(false);
     expect(await provider.getVersionHistory(DIARY, TEST_ACTOR)).toHaveLength(2);
     expect((await readStoreIndex()).pages[UUID]).toMatchObject({ currentVersion: 2, hasVersions: true });
   });
 
-  test('boot moves pages/versions/private/{uuid} into the store', async () => {
-    const live = path.join(pagesDir, 'private', 'molly', 'default', `${UUID}.md`);
+  test('boot moves pages/versions/vaults/{uuid} into the store', async () => {
+    const live = path.join(pagesDir, 'vaults', 'molly', 'default', `${UUID}.md`);
     await fs.ensureDir(path.dirname(live));
     await fs.writeFile(
       live,
       `---\ntitle: 'Diary'\nuuid: ${UUID}\nprivate: true\nauthor: molly\n---\nv2\n`
     );
-    const legacyVer = path.join(pagesDir, 'versions', 'private', UUID);
+    const legacyVer = path.join(pagesDir, 'versions', 'vaults', UUID);
     await fs.ensureDir(legacyVer);
     await fs.writeJson(path.join(legacyVer, 'manifest.json'), {
       pageId: UUID,
@@ -199,7 +199,7 @@ describe('private store default/ (#1383)', () => {
 
     await newProvider();
     expect(await fs.pathExists(legacyVer)).toBe(false);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
   });
 
   test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {
@@ -212,7 +212,7 @@ describe('private store default/ (#1383)', () => {
     await expect(
       provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY)
     ).rejects.toThrow(/locked|DEK/i);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
 
   test('encrypt-on save proceeds when the session bag has the DEK (#1394)', async () => {
@@ -229,7 +229,7 @@ describe('private store default/ (#1383)', () => {
       provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY)
     );
 
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     // The store's index is sealed with its DEK (#1456) — never in the clear, never global.
     expect((await readIndex()).pages[UUID]).toBeUndefined();
     expect((await fs.readFile(storePageIndexPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE))).toString('utf8')).not.toContain('Diary');
@@ -259,14 +259,14 @@ describe('private store default/ (#1383)', () => {
     await provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
 
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
     expect(await fs.pathExists(path.join(pagesDir, 'versions', 'sealed'))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'private'))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'versions', 'vaults'))).toBe(false);
   });
 
   describe('one store per save (#1383, Store placement on BasePageProvider)', () => {
-    const storeFile = (store: string) => path.join(pagesDir, 'private', 'molly', store, `${UUID}.md`);
-    const storeHistory = (store: string) => path.join(pagesDir, 'private', 'molly', store, 'versions', UUID);
+    const storeFile = (store: string) => path.join(pagesDir, 'vaults', 'molly', store, `${UUID}.md`);
+    const storeHistory = (store: string) => path.join(pagesDir, 'vaults', 'molly', store, 'versions', UUID);
 
     // #1456: the private name names the store.
     const LABS = formatPrivatePageName('molly', 'yourphr', 'Labs');
@@ -278,7 +278,7 @@ describe('private store default/ (#1383)', () => {
 
       expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
       expect(await fs.pathExists(storeHistory('yourphr'))).toBe(true);
-      expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', 'default'))).toBe(false);
+      expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', 'default'))).toBe(false);
       expect((await readIndex()).pages[UUID]).toBeUndefined();
       expect((await readStoreIndex('yourphr')).pages[UUID].store).toBe('yourphr');
 
@@ -320,7 +320,7 @@ describe('private store default/ (#1383)', () => {
           provider.savePage('Labs', 'x', { uuid: UUID, private: true, author: 'molly', store: bad }, MOLLY)
         ).rejects.toThrow(/Invalid private store id/);
       }
-      expect(await fs.pathExists(path.join(pagesDir, 'private'))).toBe(false);
+      expect(await fs.pathExists(path.join(pagesDir, 'vaults'))).toBe(false);
       expect(await fs.pathExists(path.join(testDir, 'escape'))).toBe(false);
     });
 

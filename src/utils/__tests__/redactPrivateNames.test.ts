@@ -18,7 +18,14 @@ describe('redactPrivateNames (#1461)', () => {
     ['failed for "private/jim/default/Captures — jim — 2026-09-14"',
       'failed for "private/jim/default/[redacted]"'],
     ['ends the line private/jim/default/Refrigerator-kitchen',
-      'ends the line private/jim/default/[redacted]']
+      'ends the line private/jim/default/[redacted]'],
+    // #1506: the names and addresses since the move to vaults/
+    ['Saved page \'vaults/molly/default/Molly diary\' with versioning',
+      'Saved page \'vaults/molly/default/[redacted]\' with versioning'],
+    ['GET /vaults/molly/default/Merger%20notes/edit 200',
+      'GET /vaults/molly/default/[redacted]/edit 200'],
+    ['redirect to /view/vaults%2Fmolly%2Fdefault%2FMerger%20notes?x=1',
+      'redirect to /view/vaults%2Fmolly%2Fdefault%2F[redacted]?x=1']
   ])('strikes the title: %s', (line, expected) => {
     expect(redactPrivateNames(line)).toBe(expected);
   });

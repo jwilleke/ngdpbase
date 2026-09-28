@@ -53,8 +53,8 @@ describe('WikiRoutes.getPageSuggestions — private pages (#1457)', () => {
     const { routes } = makeRoutes({
       publicPages: ['Diary Rules'],
       creatorPages: [
-        { name: 'private/jim/vault/Diary', title: 'Diary', isPrivate: true },
-        { name: 'private/jim/default/Diary Notes', title: 'Diary Notes', isPrivate: true }
+        { name: 'vaults/jim/vault/Diary', title: 'Diary', isPrivate: true },
+        { name: 'vaults/jim/default/Diary Notes', title: 'Diary Notes', isPrivate: true }
       ]
     });
     const res = makeRes();
@@ -70,7 +70,7 @@ describe('WikiRoutes.getPageSuggestions — private pages (#1457)', () => {
   test('a private suggestion is marked private; a public one is not', async () => {
     const { routes } = makeRoutes({
       publicPages: ['Diary Rules'],
-      creatorPages: [{ name: 'private/jim/vault/Diary', title: 'Diary', isPrivate: true }]
+      creatorPages: [{ name: 'vaults/jim/vault/Diary', title: 'Diary', isPrivate: true }]
     });
     const res = makeRes();
 
@@ -87,8 +87,8 @@ describe('WikiRoutes.getPageSuggestions — private pages (#1457)', () => {
     const { routes, getPagesByCreator } = makeRoutes({
       publicPages: [],
       creatorPages: [
-        { name: 'private/jim/vault/Diary', title: 'Diary', isPrivate: true },
-        { name: 'private/alice/vault/Diary', title: 'Diary', isPrivate: true }
+        { name: 'vaults/jim/vault/Diary', title: 'Diary', isPrivate: true },
+        { name: 'vaults/alice/vault/Diary', title: 'Diary', isPrivate: true }
       ]
     });
     const res = makeRes();
@@ -108,7 +108,7 @@ describe('WikiRoutes.getPageSuggestions — private pages (#1457)', () => {
   test('an anonymous caller is offered no private page and no store read is made', async () => {
     const { routes, getPagesByCreator } = makeRoutes({
       publicPages: ['Diary Rules'],
-      creatorPages: [{ name: 'private/jim/vault/Diary', title: 'Diary', isPrivate: true }]
+      creatorPages: [{ name: 'vaults/jim/vault/Diary', title: 'Diary', isPrivate: true }]
     });
     const res = makeRes();
 

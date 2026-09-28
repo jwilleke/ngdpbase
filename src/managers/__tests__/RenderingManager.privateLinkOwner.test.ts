@@ -67,7 +67,7 @@ describe('RenderingManager — private link owner (#1457)', () => {
   test('a private page owns its links: the owner comes from the page name', async () => {
     const { context, getPageMetadata } = await capturedParseContext({
       content: 'See [vault/Diary].',
-      pageName: 'private/jim/default/Notes'
+      pageName: 'vaults/jim/default/Notes'
     });
 
     expect(context.pageOwner).toBe('jim');

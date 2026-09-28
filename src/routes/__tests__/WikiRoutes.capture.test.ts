@@ -133,7 +133,7 @@ describe('WikiRoutes capture (#881)', () => {
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
       // #1456: a new capture page is private by default, so it is saved under
       // its private name and kept out of the shared search index.
-      expect(savedName).toBe(`private/jim/default/${body.pageName}`);
+      expect(savedName).toBe(`vaults/jim/default/${body.pageName}`);
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({ success: true }));
     });
@@ -329,7 +329,7 @@ describe('WikiRoutes capture (#881)', () => {
       title: 'An Article',
       text: 'line one'
     };
-    const privateName = `private/jim/default/${body.pageName}`;
+    const privateName = `vaults/jim/default/${body.pageName}`;
     const pageAt = (name: string, content: string, metadata: Record<string, unknown> = {}) =>
       mockGetPage.mockImplementation(async (n: string) => (n === name
         ? { name, content, metadata: { title: body.pageName, uuid: 'uuid-1', author: 'jim', ...metadata } }
@@ -348,14 +348,14 @@ describe('WikiRoutes capture (#881)', () => {
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-create');
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
         success: true,
-        viewUrl: '/private/jim/default/' + encodeURIComponent(body.pageName)
+        viewUrl: '/vaults/jim/default/' + encodeURIComponent(body.pageName)
       }));
     });
 
     test('the new page goes into the configured default store', async () => {
       captureConfig['ngdpbase.page.provider.filesystem.defaultstoreid'] = 'clippings';
       await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
-      expect(mockSaveWithContext.mock.calls[0][0]).toBe(`private/jim/clippings/${body.pageName}`);
+      expect(mockSaveWithContext.mock.calls[0][0]).toBe(`vaults/jim/clippings/${body.pageName}`);
     });
 
     test('a private target touches no mentions, assets, link graph or search index', async () => {
@@ -383,7 +383,7 @@ describe('WikiRoutes capture (#881)', () => {
       expect(mockGetPage).not.toHaveBeenCalledWith(body.pageName, expect.anything());
       expect(mockUpdatePageInIndex).not.toHaveBeenCalled();
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
-        viewUrl: '/private/jim/default/' + encodeURIComponent(body.pageName)
+        viewUrl: '/vaults/jim/default/' + encodeURIComponent(body.pageName)
       }));
     });
 

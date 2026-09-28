@@ -44,6 +44,7 @@ import {
 } from '../utils/storeSearchIndex.js';
 import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
+import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -201,6 +202,8 @@ import type AttachmentManager from './AttachmentManager.js';
 import type FootnoteManager from './FootnoteManager.js';
 import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
+/** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
+const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -2839,7 +2842,7 @@ class PageManager extends BaseManager implements CatalogSource {
    * Access). PolicyInformationPoint's Tier 0 asks this, so every `canAccess` on a page —
    * view, edit, lists, the attachment door — reaches the same rule.
    *
-   * `pages/private/{user}/` and every store below it is owned by that user.
+   * `pages/vaults/{user}/` and every store below it is owned by that user.
    * Nobody else acts in it unless the owner delegated (a share the owner
    * issued, once the store's Share switch exists — #1388). No role reaches in,
    * admin included (security-posture P2: no `hasRole` as an allow).
@@ -2929,7 +2932,9 @@ class PageManager extends BaseManager implements CatalogSource {
   // that it is done, so no later boot reads its pages again.
 
   /**
-   * Run the private-link migration over the unencrypted stores, at boot.
+   * Run the link migrations at boot: over the unencrypted stores (#1457,
+   * #1506), then, once per site, `private/…` → `vaults/…` in the public pages
+   * (#1506).
    *
    * Best-effort: a failure is logged and never blocks start-up. An encrypted
    * store is not readable here and is not touched — it migrates at its
@@ -2938,13 +2943,63 @@ class PageManager extends BaseManager implements CatalogSource {
   async migratePrivateLinksAtBoot(): Promise<void> {
     const ctx = systemContext(
       this.engine,
-      'private-link migration at boot (#1457) — rewrite [Title] to [store/Title] in the unencrypted private stores'
+      'link migrations at boot (#1457, #1506) — [Title] to [store/Title], and private/… to vaults/…, in the unencrypted private stores and the public pages'
     );
     try {
       await this.migratePrivateLinks(ctx);
     } catch (err) {
       logger.warn(`[PageManager] Private-link migration at boot did not complete: ${err instanceof Error ? err.message : String(err)}`);
     }
+    try {
+      await this.migrateVaultUrlsInPublicPages(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Vault-URL migration of public pages did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * `private/…` → `vaults/…` in every public page, once per site (#1506). The
+   * site records it in `site-migrations.json` in the instance data folder,
+   * beside `seeded-shipped-pages.json`; a second run would write nothing
+   * anyway ({@link rewriteLegacyVaultUrls}).
+   *
+   * @returns How many pages were rewritten
+   */
+  async migrateVaultUrlsInPublicPages(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.migrateVaultUrlsInPublicPages requires an ActorContext');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!configManager || !this.provider) return 0;
+    const recordFile = path.join(configManager.getInstanceDataFolder(), SITE_MIGRATIONS_FILE);
+    const record = (await fse.pathExists(recordFile) ? await fse.readJson(recordFile) : {}) as { migrations?: Record<string, string> };
+    if (record.migrations?.[VAULT_URL_MIGRATION]) return 0;
+
+    const vaults = await this.listVaults();
+    let rewritten = 0;
+    for (const pageName of await this.getAllPages()) {
+      rewritten += await this.rewritePage(ctx, pageName, (content) => rewriteLegacyVaultUrls(content, vaults));
+    }
+    record.migrations = { ...record.migrations, [VAULT_URL_MIGRATION]: new Date().toISOString() };
+    await fse.writeJson(recordFile, record, { spaces: 2 });
+    logger.info(`[PageManager] Vault URLs: rewrote private/… to vaults/… in ${rewritten} public page(s) (#1506)`);
+    return rewritten;
+  }
+
+  /** Every vault on disk, as `owner/store` — encrypted ones included, since only their folder names are read. */
+  private async listVaults(): Promise<Set<string>> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    const vaults = new Set<string>();
+    if (!configManager || !pagesDirectory) return vaults;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const root = path.join(pagesDirectory, layout.privateRoot);
+    if (!await fse.pathExists(root)) return vaults;
+    for (const owner of await fse.readdir(root, { withFileTypes: true })) {
+      if (!owner.isDirectory()) continue;
+      for (const store of await fse.readdir(path.join(root, owner.name), { withFileTypes: true })) {
+        if (store.isDirectory()) vaults.add(`${owner.name}/${store.name}`);
+      }
+    }
+    return vaults;
   }
 
   /**
@@ -2991,57 +3046,67 @@ class PageManager extends BaseManager implements CatalogSource {
       byStore.set(key, group);
     }
 
+    // #1506: links naming `private/…` are rewritten only when they name a vault that exists.
+    const vaults = await this.listVaults();
+    const migrations: Array<{ id: string; issue: string; rewrite: (content: string, store: string, titles: string[]) => { content: string; rewritten: number } }> = [
+      { id: PRIVATE_LINK_MIGRATION, issue: '#1457', rewrite: (content, store, titles) => rewriteToPrivateLinks(content, store, titles) },
+      { id: VAULT_URL_MIGRATION, issue: '#1506', rewrite: (content) => rewriteLegacyVaultUrls(content, vaults) }
+    ];
+
     let rewritten = 0;
     for (const { owner: storeOwner, store, titles } of byStore.values()) {
       const where = { pagesDirectory, owner: storeOwner, store, layout };
-      try {
-        if (await storeMigrationDone(ctx, where, PRIVATE_LINK_MIGRATION)) continue;
-        const pages = await this.rewriteStoreLinks(ctx, storeOwner, store, titles);
-        await recordStoreMigration(ctx, where, PRIVATE_LINK_MIGRATION);
-        rewritten += pages;
-        // #1461: the store is named, the pages in it are only counted.
-        if (pages > 0) {
-          logger.info(`[PageManager] Private links: rewrote ${pages} of ${titles.length} page(s) in ${layout.privateRoot}/${storeOwner}/${store} (#1457)`);
+      for (const migration of migrations) {
+        try {
+          if (await storeMigrationDone(ctx, where, migration.id)) continue;
+          let pages = 0;
+          for (const title of titles) {
+            pages += await this.rewritePage(ctx, formatPrivatePageName(storeOwner, store, title), (content) => migration.rewrite(content, store, titles));
+          }
+          await recordStoreMigration(ctx, where, migration.id);
+          rewritten += pages;
+          // #1461: the store is named, the pages in it are only counted.
+          if (pages > 0) {
+            logger.info(`[PageManager] Links (${migration.id}): rewrote ${pages} of ${titles.length} page(s) in ${layout.privateRoot}/${storeOwner}/${store} (${migration.issue})`);
+          }
+        } catch (err) {
+          logger.warn(`[PageManager] Link migration ${migration.id} failed for ${layout.privateRoot}/${storeOwner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
         }
-      } catch (err) {
-        logger.warn(`[PageManager] Private-link migration failed for ${layout.privateRoot}/${storeOwner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     return rewritten;
   }
 
-  /** One store's pages, rewritten through the door. Returns how many changed. */
-  private async rewriteStoreLinks(
+  /**
+   * One page's body rewritten by `rewrite`, saved through the door. Returns 1
+   * when it changed, 0 when it did not or could not be read or saved.
+   */
+  private async rewritePage(
     ctx: ActorContext,
-    owner: string,
-    store: string,
-    titles: string[]
+    pageName: string,
+    rewrite: (content: string) => { content: string; rewritten: number }
   ): Promise<number> {
-    let rewritten = 0;
-    for (const title of titles) {
-      const pageName = formatPrivatePageName(owner, store, title);
-      try {
-        const page = await this.getPage(pageName, ctx);
-        if (!page) continue;
-        const result = rewriteToPrivateLinks(page.content ?? '', store, titles);
-        if (result.rewritten === 0) continue;
-        // #1121: `link-rewrite` is the one op the door cannot infer — from in
-        // here this looks exactly like an ordinary edit.
-        await this.savePage(pageName, result.content, { ...page.metadata }, ctx, {
-          preserveLastModified: true,
-          preserveEditor: true,
-          audit: { op: 'link-rewrite' }
-        });
-        rewritten++;
-      } catch (err) {
-        // One page must not stop the store; the others are still fixable, and
-        // the store is marked either way — a page that refuses its own content
-        // today refuses it at every boot.
-        // #1461: the page is not named — the store it is in is as far as a log goes.
-        logger.warn(`[PageManager] Private link rewrite failed for a page in ${owner}'s store '${store}': ${err instanceof Error ? err.message : String(err)}`);
-      }
+    try {
+      const page = await this.getPage(pageName, ctx);
+      if (!page) return 0;
+      const result = rewrite(page.content ?? '');
+      if (result.rewritten === 0) return 0;
+      // #1121: `link-rewrite` is the one op the door cannot infer — from in
+      // here this looks exactly like an ordinary edit.
+      await this.savePage(pageName, result.content, { ...page.metadata }, ctx, {
+        preserveLastModified: true,
+        preserveEditor: true,
+        audit: { op: 'link-rewrite' }
+      });
+      return 1;
+    } catch (err) {
+      // One page must not stop the rest; they are still fixable, and the
+      // migration is marked either way — a page that refuses its own content
+      // today refuses it at every boot.
+      // #1461: the page is not named here — a private title never reaches a log.
+      logger.warn(`[PageManager] Link rewrite failed for a page: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
     }
-    return rewritten;
   }
 
   /**

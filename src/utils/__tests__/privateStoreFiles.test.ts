@@ -57,12 +57,12 @@ describe('sealed store files (#1415)', () => {
 
   describe('parsePrivateStoreRel', () => {
     test('finds the store at any depth, and nothing beside the stores', () => {
-      expect(parsePrivateStoreRel(['private', 'molly', 'yourphr', 'a.md'])).toEqual({ creator: 'molly', store: 'yourphr' });
-      expect(parsePrivateStoreRel(['private', 'molly', 'yourphr', 'versions', 'u', 'v1', 'content.md']))
+      expect(parsePrivateStoreRel(['vaults', 'molly', 'yourphr', 'a.md'])).toEqual({ creator: 'molly', store: 'yourphr' });
+      expect(parsePrivateStoreRel(['vaults', 'molly', 'yourphr', 'versions', 'u', 'v1', 'content.md']))
         .toEqual({ creator: 'molly', store: 'yourphr' });
-      expect(parsePrivateStoreRel(['private', 'molly', 'user-index.json'])).toBeNull();
+      expect(parsePrivateStoreRel(['vaults', 'molly', 'user-index.json'])).toBeNull();
       expect(parsePrivateStoreRel(['a.md'])).toBeNull();
-      expect(parsePrivateStoreRel(['private', 'molly', '..', 'x.md'])).toBeNull();
+      expect(parsePrivateStoreRel(['vaults', 'molly', '..', 'x.md'])).toBeNull();
     });
   });
 
@@ -93,7 +93,7 @@ describe('sealed store files (#1415)', () => {
     });
 
     test('the owner writes ciphertext and reads back the text', async () => {
-      const file = path.join(pagesDir, 'private', 'molly', 'yourphr', 'versions', 'u', 'v1', 'content.md');
+      const file = path.join(pagesDir, 'vaults', 'molly', 'yourphr', 'versions', 'u', 'v1', 'content.md');
       await fs.ensureDir(path.dirname(file));
       const io = await storeFileIOForPath(MOLLY, { pagesDirectory: pagesDir, file });
       expect(io.sealed).toBe(true);

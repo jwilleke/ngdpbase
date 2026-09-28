@@ -45,7 +45,7 @@ describe('MarkupParser — private page links (#1457)', () => {
   test('[vault/Diary] renders as a link to the page owner\'s private URL', async () => {
     const html = await render('See [vault/Diary].', { pageName: 'HomePage', pageOwner: 'jim' });
 
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).toContain('class="wiki-link private-link"');
     expect(html).not.toContain('redlink');
   });
@@ -53,7 +53,7 @@ describe('MarkupParser — private page links (#1457)', () => {
   test('[Display|vault/Diary] keeps the display text', async () => {
     const html = await render('See [My diary|vault/Diary].', { pageName: 'HomePage', pageOwner: 'jim' });
 
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).toContain('>My diary</a>');
   });
 
@@ -73,22 +73,22 @@ describe('MarkupParser — private page links (#1457)', () => {
     const html = await render('See [Docs/Setup].', { pageName: 'HomePage', pageOwner: 'jim' });
 
     expect(html).toContain('redlink');
-    expect(html).not.toContain('/private/');
+    expect(html).not.toContain('/vaults/');
   });
 
   test('a plain title on a private page still means the public page', async () => {
     const html = await render('See [Diary].', {
-      pageName: 'private/jim/default/Notes', pageOwner: 'jim'
+      pageName: 'vaults/jim/default/Notes', pageOwner: 'jim'
     });
 
     expect(html).toContain('href="/view/Diary"');
-    expect(html).not.toContain('/private/');
+    expect(html).not.toContain('/vaults/');
   });
 });
 
 describe('MarkupParser — a private page resolves its own links (#1457)', () => {
   const onNotes = (extras: Record<string, unknown>) => ({
-    pageName: 'private/jim/default/Notes',
+    pageName: 'vaults/jim/default/Notes',
     userContext: JIM,
     ...extras
   });
@@ -99,7 +99,7 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     });
     const html = await render('See [vault/Diary].', onNotes({}), engine);
 
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).not.toContain('redlink');
   });
 
@@ -109,7 +109,7 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     });
     const html = await render('See [vault/Diary].', onNotes({}), engine);
 
-    expect(html).toContain('href="/private/jim/vault/Diary/edit"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary/edit"');
     expect(html).toContain('redlink');
   });
 
@@ -124,8 +124,8 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
 
     expect(readablePrivateTitles).toHaveBeenCalledTimes(1);
     expect(readablePrivateTitles).toHaveBeenCalledWith('jim', JIM);
-    expect(html).toContain('href="/private/jim/vault/Diary"');
-    expect(html).toContain('href="/private/jim/vault/Recipes/edit"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Recipes/edit"');
   });
 
   test('the same content on a public page is neutral, and asks nothing', async () => {
@@ -138,7 +138,7 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     );
 
     expect(readablePrivateTitles).not.toHaveBeenCalled();
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).not.toContain('redlink');
   });
 
@@ -148,7 +148,7 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     });
     const html = await render('See [vault/Diary].', onNotes({}), engine);
 
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).not.toContain('redlink');
   });
 
@@ -157,12 +157,12 @@ describe('MarkupParser — a private page resolves its own links (#1457)', () =>
     const engine = makeEngine({ readablePrivateTitles });
     const html = await render(
       'See [vault/Diary].',
-      { pageName: 'private/jim/default/Notes' },
+      { pageName: 'vaults/jim/default/Notes' },
       engine
     );
 
     expect(readablePrivateTitles).not.toHaveBeenCalled();
-    expect(html).toContain('href="/private/jim/vault/Diary"');
+    expect(html).toContain('href="/vaults/jim/vault/Diary"');
     expect(html).not.toContain('redlink');
   });
 

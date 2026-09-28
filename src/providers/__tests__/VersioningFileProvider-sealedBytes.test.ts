@@ -1,7 +1,7 @@
 /**
  * An encrypted private store is ciphertext at rest (#1415, epic #1382): the
  * live page, its version blobs and its manifest — every byte under
- * `private/{user}/{store}/` except `store.json`. Since #1456 that includes the
+ * `vaults/{user}/{store}/` except `store.json`. Since #1456 that includes the
  * store's own page index; a sealed page is named by its path and is in no
  * global index.
  */
@@ -155,12 +155,12 @@ describe('sealed store bytes at rest (#1415)', () => {
     const provider = await newProvider();
     await saveTwice(provider);
 
-    const storeRoot = path.join(pagesDir, 'private', 'molly', STORE);
-    const outside = (await filesUnder(path.join(pagesDir, 'private')))
+    const storeRoot = path.join(pagesDir, 'vaults', 'molly', STORE);
+    const outside = (await filesUnder(path.join(pagesDir, 'vaults')))
       .filter(f => !f.startsWith(storeRoot + path.sep))
       .map(f => path.relative(pagesDir, f))
       // The user-level key envelope is the only file beside the store.
-      .filter(rel => path.dirname(rel) !== path.join('private', 'molly'));
+      .filter(rel => path.dirname(rel) !== path.join('vaults', 'molly'));
     expect(outside).toEqual([]);
     expect(await fs.pathExists(path.join(storeRoot, 'versions', SEALED, 'manifest.json'))).toBe(true);
     // #1456: the page is listed in the store's own index; the superseded
@@ -173,7 +173,7 @@ describe('sealed store bytes at rest (#1415)', () => {
     const provider = await newProvider();
     await saveTwice(provider);
 
-    const storeRoot = path.join(pagesDir, 'private', 'molly', STORE);
+    const storeRoot = path.join(pagesDir, 'vaults', 'molly', STORE);
     const dek = unwrapDek(kek, await fs.readJson(storeMetaPath(pagesDir, 'molly', STORE)));
     const files = (await filesUnder(storeRoot)).filter(f => path.basename(f) !== 'store.json');
     expect(files.length).toBeGreaterThan(0);
@@ -191,7 +191,7 @@ describe('sealed store bytes at rest (#1415)', () => {
     await saveTwice(provider);
 
     const dek = unwrapDek(kek, await fs.readJson(storeMetaPath(pagesDir, 'molly', STORE)));
-    const versionsDir = path.join(pagesDir, 'private', 'molly', STORE, 'versions', SEALED);
+    const versionsDir = path.join(pagesDir, 'vaults', 'molly', STORE, 'versions', SEALED);
     const open = async (rel: string): Promise<string> =>
       openBytes(dek, await fs.readFile(path.join(versionsDir, rel))).toString('utf8');
 
@@ -212,7 +212,7 @@ describe('sealed store bytes at rest (#1415)', () => {
 
     await expect(provider.savePage(NAME, SECRET_V1, { uuid: SEALED }, MOLLY)).rejects.toThrow(/locked/);
 
-    const storeRoot = path.join(pagesDir, 'private', 'molly', STORE);
+    const storeRoot = path.join(pagesDir, 'vaults', 'molly', STORE);
     const written = (await filesUnder(storeRoot)).filter(f => path.basename(f) !== 'store.json');
     expect(written).toEqual([]);
   });

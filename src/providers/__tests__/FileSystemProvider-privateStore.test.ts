@@ -79,7 +79,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
   test('missing store.json (default encrypt off) still saves', async () => {
     const provider = await newProvider();
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     // Listed in the store's own index, never in the global one (#1456).
     expect((await storePages())[UUID]).toMatchObject({ title: 'Diary', slug: 'private--molly-default-diary' });
     expect(await provider.getAllPages()).not.toContain('Diary');
@@ -90,9 +90,9 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
   test('the owner comes from the name, never from frontmatter author (#1456)', async () => {
     const provider = await newProvider();
     await provider.savePage(DIARY, 'secret', { uuid: UUID, author: 'bob' }, MOLLY);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'bob'))).toBe(false);
-    const raw = await fs.readFile(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`), 'utf8');
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'bob'))).toBe(false);
+    const raw = await fs.readFile(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`), 'utf8');
     expect(raw).toMatch(/^author: molly$/m);
     expect(raw).toMatch(/^private: true$/m);
   });
@@ -102,7 +102,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     await provider.savePage('Notes', 'body', { uuid: UUID, private: false, author: 'molly' }, MOLLY);
     const raw = await fs.readFile(path.join(pagesDir, `${UUID}.md`), 'utf8');
     expect(raw).not.toMatch(/^private:/m);
-    expect(await fs.pathExists(path.join(pagesDir, 'private'))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults'))).toBe(false);
   });
 
   test('a page moved out of its store takes a public slug, and one moved in a private slug (#1456)', async () => {
@@ -134,11 +134,11 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     await expect(
       provider.savePage('Diary', 'secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY)
     ).rejects.toThrow(/locked|DEK/i);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
 
   test('a markdown file in {store}/attachments/ is an attachment, never scanned as a page (#1386)', async () => {
-    const storeDir = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    const storeDir = path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE);
     await fs.ensureDir(path.join(storeDir, 'attachments'));
     await fs.writeFile(
       path.join(storeDir, `${UUID}.md`),
@@ -150,7 +150,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
       '---\ntitle: Uploaded Notes\n---\nnot a page'
     );
     // A user literally named "attachments" still has its pages scanned.
-    const oddUserStore = path.join(pagesDir, 'private', 'attachments', DEFAULT_PRIVATE_STORE);
+    const oddUserStore = path.join(pagesDir, 'vaults', 'attachments', DEFAULT_PRIVATE_STORE);
     await fs.ensureDir(oddUserStore);
     await fs.writeFile(
       path.join(oddUserStore, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc.md'),
@@ -169,13 +169,13 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
   });
 
   test('a page file under private/ that is not at a store page path is skipped, never listed as a page', async () => {
-    const storeDir = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    const storeDir = path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE);
     await fs.ensureDir(path.join(storeDir, 'notes'));
     await fs.writeFile(
       path.join(storeDir, 'notes', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd.md'),
       '---\ntitle: Stray Note\nuuid: dddddddd-dddd-4ddd-8ddd-dddddddddddd\n---\nx'
     );
-    const badStore = path.join(pagesDir, 'private', 'molly', 'Bad Store');
+    const badStore = path.join(pagesDir, 'vaults', 'molly', 'Bad Store');
     await fs.ensureDir(badStore);
     await fs.writeFile(
       path.join(badStore, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.md'),
@@ -190,12 +190,35 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     expect(titles).not.toContain('Bad Store Page');
   });
 
+  test('start-up moves pages/private/ to pages/vaults/ with everything in it (#1506)', async () => {
+    const legacy = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    await fs.ensureDir(legacy);
+    await fs.writeFile(path.join(legacy, `${UUID}.md`), `---\ntitle: Diary\nuuid: ${UUID}\n---\nx`);
+
+    await newProvider();
+
+    expect(await fs.pathExists(path.join(pagesDir, 'private'))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
+  });
+
+  test('a private/ folder left beside vaults/ is never scanned as public pages (#1506)', async () => {
+    await fs.ensureDir(path.join(pagesDir, 'vaults', 'jim', DEFAULT_PRIVATE_STORE));
+    const leftover = path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE);
+    await fs.ensureDir(leftover);
+    await fs.writeFile(path.join(leftover, `${UUID}.md`), `---\ntitle: Left Behind\nuuid: ${UUID}\n---\nx`);
+
+    const provider = await newProvider();
+
+    expect(await fs.pathExists(path.join(leftover, `${UUID}.md`))).toBe(true);
+    expect(await provider.getAllPages()).not.toContain('Left Behind');
+  });
+
   test('config privateroot sealed writes under sealed/, not private/', async () => {
     const provider = await newProvider({
       'ngdpbase.page.provider.filesystem.privateroot': 'sealed'
     });
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(false);
   });
 });

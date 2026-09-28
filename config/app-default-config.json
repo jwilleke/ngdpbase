@@ -88,7 +88,7 @@
   "ngdpbase.page.provider.filesystem.storagedir": "${SLOW_STORAGE}/pages",
   "ngdpbase.page.provider.filesystem.requiredpagesdir": "./required-pages",
   "_comment_page_private_store": "Private-store path segments under the pages storagedir (ALL LOWERCASE). Join at runtime: resolved storagedir + privateroot + userid + storeid. Not a second ${SLOW_STORAGE} root; not FAST_STORAGE. User catalogs stay in that same user dir.",
-  "ngdpbase.page.provider.filesystem.privateroot": "private",
+  "ngdpbase.page.provider.filesystem.privateroot": "vaults",
   "ngdpbase.page.provider.filesystem.defaultstoreid": "default",
   "ngdpbase.page.provider.filesystem.versionsdir": "versions",
   "ngdpbase.page.provider.filesystem.deleteddir": "deleted",

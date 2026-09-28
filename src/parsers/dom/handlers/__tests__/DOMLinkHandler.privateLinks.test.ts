@@ -45,12 +45,12 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
 
   test('[vault/Diary] on a private page links to the owner\'s private URL', async () => {
     const node = await link('vault/Diary', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ vault: ['Diary'], default: ['Notes'] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
     expect(node.getAttribute('class')).toBe('wiki-link private-link');
     expect(node.getAttribute('title')).toBe('Private page in vault');
     expect(node.getAttribute('data-link-type')).toBe('internal');
@@ -60,12 +60,12 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
 
   test('on a private page a target that is not in the store renders red, at its editor', async () => {
     const node = await link('vault/Diary', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ vault: ['Recipes'], default: ['Notes'] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary/edit');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary/edit');
     expect(node.getAttribute('class')).toContain('redlink');
     expect(node.getAttribute('class')).toContain('private-link');
     expect(node.getAttribute('style')).toBe('color: red;');
@@ -75,23 +75,23 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
 
   test('a store with no page in it yet still renders its links red', async () => {
     const node = await link('vault/Diary', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ vault: [], default: ['Notes'] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary/edit');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary/edit');
     expect(node.getAttribute('class')).toContain('redlink');
   });
 
   test('the title matches as a store index matches it, case and all', async () => {
     const node = await link('vault/diary', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ vault: ['Diary'] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/diary');
     expect(node.getAttribute('class')).toBe('wiki-link private-link');
   });
 
@@ -99,12 +99,12 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
     // The map is the render's whole answer: `vault` is absent because its
     // index could not be read, which is not the same as having no such page.
     const node = await link('vault/Diary', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ default: ['Notes'] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
     expect(node.getAttribute('class')).toBe('wiki-link private-link');
     expect(node.getAttribute('style')).toBeFalsy();
   });
@@ -115,7 +115,7 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
     const missing = await link('vault/Diary', { pageName: 'HomePage', pageOwner: 'jim' });
     const existing = await link('vault/Recipes', { pageName: 'HomePage', pageOwner: 'jim' });
 
-    expect(missing.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(missing.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
     expect(missing.getAttribute('class')).toBe('wiki-link private-link');
     expect(existing.getAttribute('class')).toBe('wiki-link private-link');
     expect(missing.outerHTML).not.toContain('redlink');
@@ -123,18 +123,18 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
 
   test('a section fragment survives a red private link', async () => {
     const node = await link('vault/Diary#today', {
-      pageName: 'private/jim/default/Notes',
+      pageName: 'vaults/jim/default/Notes',
       pageOwner: 'jim',
       privateLinkTitles: titles({ vault: [] })
     });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary/edit#today');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary/edit#today');
   });
 
   test('[vault/Diary] on a public page links to its author\'s private URL', async () => {
     const node = await link('vault/Diary', { pageName: 'HomePage', pageOwner: 'jim' });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
     expect(node.getAttribute('class')).toBe('wiki-link private-link');
   });
 
@@ -142,7 +142,7 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
     const node = await link('My diary|vault/Diary', { pageName: 'HomePage', pageOwner: 'jim' });
 
     expect(node.textContent).toBe('My diary');
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
     expect(node.getAttribute('data-target')).toBe('vault/Diary');
   });
 
@@ -165,7 +165,7 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
   });
 
   test('a plain title is never a private link', async () => {
-    const node = await link('Diary', { pageName: 'private/jim/default/Notes', pageOwner: 'jim' });
+    const node = await link('Diary', { pageName: 'vaults/jim/default/Notes', pageOwner: 'jim' });
 
     expect(node.getAttribute('href')).toBe('/view/Diary');
     expect(node.getAttribute('class')).toBe('wiki-link wikipage');
@@ -183,12 +183,12 @@ describe('DOMLinkHandler — private page links (#1457)', () => {
     // same shape `pageName` arrives in.
     const node = await link('vault/Diary', { pageContext: { pageName: 'HomePage', pageOwner: 'jim' } });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary');
   });
 
   test('a section fragment still reaches the private URL', async () => {
     const node = await link('vault/Diary#today', { pageName: 'HomePage', pageOwner: 'jim' });
 
-    expect(node.getAttribute('href')).toBe('/private/jim/vault/Diary#today');
+    expect(node.getAttribute('href')).toBe('/vaults/jim/vault/Diary#today');
   });
 });

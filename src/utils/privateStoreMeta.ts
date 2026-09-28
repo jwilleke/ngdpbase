@@ -1,7 +1,7 @@
 /**
  * Per-store encrypt flag on disk (#1384).
  *
- * Lives on `pages/private/{user}/{store}/store.json`, not on PageManager.
+ * Lives on `pages/vaults/{user}/{store}/store.json`, not on PageManager.
  * Missing file = encrypt off (`default/` stays plaintext unless enabled).
  */
 

@@ -146,7 +146,7 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
     config['ngdpbase.addons.yourphr.enabled'] = true;
     // Two users walked through the door; a third has only the default store.
     for (const [user, store] of [['molly', 'yourphr'], ['jim', 'yourphr'], ['ann', 'default']]) {
-      await fs.outputJson(path.join(tmpDir, 'pages', 'private', user, store, 'store.json'), { kind: store });
+      await fs.outputJson(path.join(tmpDir, 'pages', 'vaults', user, store, 'store.json'), { kind: store });
     }
 
     const manager = await load();

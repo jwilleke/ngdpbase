@@ -2,7 +2,7 @@
  * GET /view/{title} — the requester's own private page (#1457, epic #1454).
  *
  * `/view/` serves public pages only (#1456): a private page lives at
- * `/private/{owner}/{store}/{title}`. But its owner types, bookmarks and
+ * `/vaults/{owner}/{store}/{title}`. But its owner types, bookmarks and
  * links its plain title, and got a 404 for a page they have. So when the
  * public ladder misses, the requester's OWN stores are asked, and only theirs.
  *
@@ -65,7 +65,7 @@ const req = (page: string, username: string | null) =>
     userContext: username ? { username, isAuthenticated: true, roles: ['reader'] } : undefined
   }) as unknown as Request;
 
-const JIMS_DIARY = { name: 'private/jim/vault/Diary', isPrivate: true };
+const JIMS_DIARY = { name: 'vaults/jim/vault/Diary', isPrivate: true };
 
 describe('viewPage — the requester\'s own private page (#1457)', () => {
   test('the owner is sent to their own page\'s URL', async () => {
@@ -75,7 +75,7 @@ describe('viewPage — the requester\'s own private page (#1457)', () => {
     await routes.viewPage(req('Diary', 'jim'), res);
 
     // 302, not 301: the answer depends on who is asking and must not be cached.
-    expect(res.redirect).toHaveBeenCalledWith(302, '/private/jim/vault/Diary');
+    expect(res.redirect).toHaveBeenCalledWith(302, '/vaults/jim/vault/Diary');
   });
 
   test('everybody else gets the 404 they get today, and no store is read for them', async () => {
@@ -104,7 +104,7 @@ describe('viewPage — the requester\'s own private page (#1457)', () => {
   test('another user\'s private page of that title is never the answer', async () => {
     // What a store index carried is re-checked against the requester.
     const { routes, renderError } = makeRoutes({
-      creatorPages: [{ name: 'private/alice/vault/Diary', isPrivate: true }]
+      creatorPages: [{ name: 'vaults/alice/vault/Diary', isPrivate: true }]
     });
     const res = newRes();
 

@@ -89,7 +89,7 @@ describe('AttachmentManager — files in an unencrypted private store (#1460)', 
       ...(pageName ? { pageName } : {})
     });
 
-  const attachmentsDir = (user = 'molly') => path.join(pagesDir, 'private', user, STORE, 'attachments');
+  const attachmentsDir = (user = 'molly') => path.join(pagesDir, 'vaults', user, STORE, 'attachments');
   const globalMetadata = async () => {
     const file = path.join(storageDir, 'attachment-metadata.json');
     return (await fs.pathExists(file)) ? await fs.readFile(file, 'utf8') : '';
@@ -302,7 +302,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
     const id = crypto.createHash('sha256').update(PDF).digest('hex');
     const fileName = `${id}.pdf`;
     const bytesAt = opts.flagged
-      ? path.join(pagesDir, 'private', 'molly', STORE, 'attachments', fileName)
+      ? path.join(pagesDir, 'vaults', 'molly', STORE, 'attachments', fileName)
       : path.join(storageDir, fileName);
     await fs.ensureDir(path.dirname(bytesAt));
     await fs.writeFile(bytesAt, PDF);
@@ -338,7 +338,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
     await fs.ensureDir(storageDir);
     await fs.ensureDir(pagesDir);
     clearUnlockedPrivateStores();
-    await fs.ensureDir(path.join(pagesDir, 'private', 'molly', STORE));
+    await fs.ensureDir(path.join(pagesDir, 'vaults', 'molly', STORE));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', STORE), { kind: STORE, encrypt: false, created: '2026-01-01T00:00:00.000Z' });
   });
 
@@ -373,7 +373,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
     });
 
     // The file on disk keeps the name it had — nothing was renamed.
-    expect(await fs.readdir(path.join(pagesDir, 'private', 'molly', STORE, 'attachments'))).toEqual([fileName]);
+    expect(await fs.readdir(path.join(pagesDir, 'vaults', 'molly', STORE, 'attachments'))).toEqual([fileName]);
 
     // And the owner reaches it by the same id its `/attachments/{id}` URL uses.
     expect((await manager.getPrivateStoreAttachment(id, MOLLY))?.buffer.equals(PDF)).toBe(true);
@@ -381,7 +381,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
 
     // Idempotent: a second run has nothing left to move and changes nothing.
     expect(await manager.migratePrivateFilesIntoStores(MOLLY)).toBe(0);
-    expect(await fs.readdir(path.join(pagesDir, 'private', 'molly', STORE, 'attachments'))).toEqual([fileName]);
+    expect(await fs.readdir(path.join(pagesDir, 'vaults', 'molly', STORE, 'attachments'))).toEqual([fileName]);
     const again = JSON.parse(await fs.readFile(storeFileIndexPath(pagesDir, 'molly', STORE), 'utf8')) as {
       files: Record<string, unknown>;
     };
@@ -403,7 +403,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
 
     // The bytes moved into the store under the name they already had, and the
     // shared storage folder no longer holds them.
-    expect(await fs.readdir(path.join(pagesDir, 'private', 'molly', STORE, 'attachments'))).toEqual([fileName]);
+    expect(await fs.readdir(path.join(pagesDir, 'vaults', 'molly', STORE, 'attachments'))).toEqual([fileName]);
     expect(await fs.readdir(storageDir)).not.toContain(fileName);
     expect((await manager.getPrivateStoreAttachment(id, MOLLY))?.buffer.equals(PDF)).toBe(true);
   });

@@ -209,7 +209,7 @@ void (async (): Promise<void> => {
   app.set('view engine', 'ejs');
   app.set('view cache', false);
   // #1456: every view builds a page's links with the function the routes use —
-  // a private page's actions live under /private/.
+  // a private page's actions live under /vaults/.
   app.locals.pageUrl = pageUrl;
   // Data written into a <script> by a view goes through this, never a bare
   // JSON.stringify: a string holding `</script>` would end the element.

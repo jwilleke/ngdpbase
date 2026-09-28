@@ -121,7 +121,7 @@ describe('BasicAttachmentProvider.migrateStaleStoragePaths()', () => {
 
     const entry = (provider as any).attachmentMetadata.get(id);
     expect(entry.storageLocation).toBe(
-      path.join(pagesDir, 'private', creator, 'default', 'attachments', `${id}.pdf`)
+      path.join(pagesDir, 'vaults', creator, 'default', 'attachments', `${id}.pdf`)
     );
     expect(saveMetadataSpy).toHaveBeenCalledTimes(1);
   });

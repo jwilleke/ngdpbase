@@ -62,7 +62,7 @@ describe('a store\'s own page index (#1456)', () => {
   test('an unencrypted store lists its pages in its own folder, as plain JSON', async () => {
     await provider.putStorePage(tmp, plain, entry('u-1', 'Diary', 'diary'));
     const file = storePageIndexPath(tmp, 'molly', 'default');
-    expect(file).toBe(path.join(tmp, 'private', 'molly', 'default', 'pages-index.json'));
+    expect(file).toBe(path.join(tmp, 'vaults', 'molly', 'default', 'pages-index.json'));
     expect(JSON.parse(await fs.readFile(file, 'utf8')).pages['u-1'].title).toBe('Diary');
   });
 

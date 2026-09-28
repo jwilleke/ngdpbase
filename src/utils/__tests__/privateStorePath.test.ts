@@ -35,7 +35,7 @@ const shipped = JSON.parse(
 describe('private-store filesystem config keys', () => {
   test('app-default-config ships the approved keys with those defaults', () => {
     expect(shipped['_comment_page_private_store']).toEqual(expect.any(String));
-    expect(shipped['ngdpbase.page.provider.filesystem.privateroot']).toBe('private');
+    expect(shipped['ngdpbase.page.provider.filesystem.privateroot']).toBe('vaults');
     expect(shipped['ngdpbase.page.provider.filesystem.defaultstoreid']).toBe('default');
     expect(shipped['ngdpbase.page.provider.filesystem.versionsdir']).toBe('versions');
     expect(shipped['ngdpbase.page.provider.filesystem.deleteddir']).toBe('deleted');
@@ -85,40 +85,40 @@ describe('privateStorePath (#1383)', () => {
 
   test('live file is private/{user}/{store}/{uuid}.md', () => {
     expect(privatePageFilePath(pages, 'jim', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(
-      path.join(pages, 'private', 'jim', 'default', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.md')
+      path.join(pages, 'vaults', 'jim', 'default', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.md')
     );
     expect(privatePageFilePath(pages, 'jim', 'x.md', 'yourphr')).toBe(
-      path.join(pages, 'private', 'jim', 'yourphr', 'x.md')
+      path.join(pages, 'vaults', 'jim', 'yourphr', 'x.md')
     );
   });
 
   test('parsePrivatePageRel reads store layout and treats legacy three-segment paths as default', () => {
-    expect(parsePrivatePageRel(['private', 'molly', 'default', 'u.md'])).toEqual({
+    expect(parsePrivatePageRel(['vaults', 'molly', 'default', 'u.md'])).toEqual({
       creator: 'molly',
       store: 'default'
     });
-    expect(parsePrivatePageRel(['private', 'molly', 'u.md'])).toEqual({
+    expect(parsePrivatePageRel(['vaults', 'molly', 'u.md'])).toEqual({
       creator: 'molly',
       store: DEFAULT_PRIVATE_STORE
     });
-    expect(parsePrivatePageRel(['private', 'molly', 'default'])).toBeNull();
+    expect(parsePrivatePageRel(['vaults', 'molly', 'default'])).toBeNull();
     expect(parsePrivatePageRel(['pages', 'u.md'])).toBeNull();
   });
 
   test('does not treat the store directory name as a page file', () => {
-    expect(parsePrivatePageRel(['private', 'molly', 'default'])).toBeNull();
-    expect(privateStoreRoot(pages, 'molly')).toBe(path.join(pages, 'private', 'molly', 'default'));
+    expect(parsePrivatePageRel(['vaults', 'molly', 'default'])).toBeNull();
+    expect(privateStoreRoot(pages, 'molly')).toBe(path.join(pages, 'vaults', 'molly', 'default'));
   });
 
   test('store files live in private/{user}/{store}/attachments/, not the store root (#1386)', () => {
     expect(privateStoreAttachmentsDir(pages, 'molly')).toBe(
-      path.join(pages, 'private', 'molly', 'default', 'attachments')
+      path.join(pages, 'vaults', 'molly', 'default', 'attachments')
     );
     expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf')).toBe(
-      path.join(pages, 'private', 'molly', 'default', 'attachments', 'aabb.pdf')
+      path.join(pages, 'vaults', 'molly', 'default', 'attachments', 'aabb.pdf')
     );
     expect(privateStoreFilePath(pages, 'molly', 'aabb.pdf', 'yourphr')).toBe(
-      path.join(pages, 'private', 'molly', 'yourphr', 'attachments', 'aabb.pdf')
+      path.join(pages, 'vaults', 'molly', 'yourphr', 'attachments', 'aabb.pdf')
     );
     // An uploaded markdown file in the store is an attachment, never a page path.
     const mdRel = path.relative(pages, privateStoreFilePath(pages, 'molly', 'aabb.md')).split(path.sep);
@@ -126,11 +126,11 @@ describe('privateStorePath (#1383)', () => {
   });
 
   test('isPrivateStoreAttachmentsRel matches only the store-level attachments folder', () => {
-    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'default', 'attachments'])).toBe(true);
-    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'yourphr', 'attachments'])).toBe(true);
+    expect(isPrivateStoreAttachmentsRel(['vaults', 'molly', 'default', 'attachments'])).toBe(true);
+    expect(isPrivateStoreAttachmentsRel(['vaults', 'molly', 'yourphr', 'attachments'])).toBe(true);
     // A user or store literally named "attachments" is not the files folder.
-    expect(isPrivateStoreAttachmentsRel(['private', 'attachments'])).toBe(false);
-    expect(isPrivateStoreAttachmentsRel(['private', 'molly', 'attachments'])).toBe(false);
+    expect(isPrivateStoreAttachmentsRel(['vaults', 'attachments'])).toBe(false);
+    expect(isPrivateStoreAttachmentsRel(['vaults', 'molly', 'attachments'])).toBe(false);
     expect(isPrivateStoreAttachmentsRel(['attachments'])).toBe(false);
     expect(isPrivateStoreAttachmentsRel(['vault', 'molly', 'home', 'files'], {
       privateRoot: 'vault',
@@ -140,10 +140,10 @@ describe('privateStorePath (#1383)', () => {
 
   test('version and deleted dirs sit inside the store (walkDir already skips those names)', () => {
     expect(privateVersionDirectory(pages, 'jim', 'uuid-1')).toBe(
-      path.join(pages, 'private', 'jim', 'default', 'versions', 'uuid-1')
+      path.join(pages, 'vaults', 'jim', 'default', 'versions', 'uuid-1')
     );
     expect(privateDeletedDirectory(pages, 'jim')).toBe(
-      path.join(pages, 'private', 'jim', 'default', 'deleted')
+      path.join(pages, 'vaults', 'jim', 'default', 'deleted')
     );
   });
 
@@ -198,7 +198,7 @@ describe('privateStorePath (#1383)', () => {
       creator: 'molly',
       store: 'home'
     });
-    expect(parsePrivatePageRel(['private', 'molly', 'default', 'u.md'], layout)).toBeNull();
+    expect(parsePrivatePageRel(['vaults', 'molly', 'default', 'u.md'], layout)).toBeNull();
   });
 
   test('a non-default privateroot (sealed) changes joined paths', () => {
@@ -274,10 +274,10 @@ describe('store ids and path segments are validated inside every join (#1383)', 
   });
 
   test('parsePrivatePageRel rejects a store folder that is not a store id; isUnderPrivateRoot still sees it', () => {
-    const rel = ['private', 'molly', 'Not A Store', 'u.md'];
+    const rel = ['vaults', 'molly', 'Not A Store', 'u.md'];
     expect(parsePrivatePageRel(rel)).toBeNull();
     expect(isUnderPrivateRoot(rel)).toBe(true);
-    expect(parsePrivatePageRel(['private', '..', 'default', 'u.md'])).toBeNull();
+    expect(parsePrivatePageRel(['vaults', '..', 'default', 'u.md'])).toBeNull();
     expect(isUnderPrivateRoot(['u.md'])).toBe(false);
   });
 });
@@ -286,8 +286,8 @@ describe('pathContainsPrivateRoot is measured from the pages directory', () => {
   test('a host path that itself contains /private/ does not make every page private (macOS /private/var)', () => {
     const pages = path.join(path.sep, 'private', 'var', 'data', 'pages');
     expect(pathContainsPrivateRoot(pages, path.join(pages, 'u.md'))).toBe(false);
-    expect(pathContainsPrivateRoot(pages, path.join(pages, 'private', 'jim', 'default', 'u.md'))).toBe(true);
-    expect(pathContainsPrivateRoot(pages, path.join(path.sep, 'elsewhere', 'private', 'x.md'))).toBe(false);
+    expect(pathContainsPrivateRoot(pages, path.join(pages, 'vaults', 'jim', 'default', 'u.md'))).toBe(true);
+    expect(pathContainsPrivateRoot(pages, path.join(path.sep, 'elsewhere', 'vaults', 'x.md'))).toBe(false);
   });
 });
 

@@ -27,7 +27,7 @@ const CIPHERTEXT = Buffer.from([0x00, 0xff, 0xfe, 0x80, 0x01, 0x92, 0xc3, 0x28])
 beforeEach(async () => {
   // mkdtemp, never the live data directory.
   pagesDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngdp-takeout-'));
-  const vault = path.join(pagesDir, 'private', 'molly', 'vault');
+  const vault = path.join(pagesDir, 'vaults', 'molly', 'vault');
   await fs.ensureDir(path.join(vault, 'versions', 'uuid-1'));
   await fs.ensureDir(path.join(vault, 'attachments'));
   await fs.ensureDir(path.join(vault, 'deleted'));
@@ -39,9 +39,9 @@ beforeEach(async () => {
   await fs.writeJson(path.join(vault, 'store.json'), { kind: 'vault', encrypt: true });
   await fs.writeFile(path.join(vault, 'pages-index.json'), CIPHERTEXT);
 
-  await fs.writeJson(path.join(pagesDir, 'private', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
-  await fs.ensureDir(path.join(pagesDir, 'private', 'molly', 'default'));
-  await fs.writeFile(path.join(pagesDir, 'private', 'molly', 'default', 'uuid-3.md'), '# plain\n');
+  await fs.writeJson(path.join(pagesDir, 'vaults', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
+  await fs.ensureDir(path.join(pagesDir, 'vaults', 'molly', 'default'));
+  await fs.writeFile(path.join(pagesDir, 'vaults', 'molly', 'default', 'uuid-3.md'), '# plain\n');
 });
 
 afterEach(async () => {

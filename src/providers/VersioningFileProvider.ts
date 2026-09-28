@@ -44,6 +44,7 @@ import {
   privatePageFilePath,
   privateVersionDirectory
 } from '../utils/privateStorePath.js';
+import { moveVaultRoot, relocateLegacyVaultPath } from '../utils/moveVaultRoot.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { PLAIN_FILE_IO, storeFileIO, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
@@ -369,6 +370,7 @@ class VersioningFileProvider extends FileSystemProvider {
 
     this.bindPageDirectories(configManager);
     if (this.pagesDirectory) {
+      await moveVaultRoot(this.pagesDirectory, this.privateStoreLayout);
       await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
     }
 
@@ -1460,7 +1462,7 @@ class VersioningFileProvider extends FileSystemProvider {
           metadata = parsed.data;
         } else {
           // {uuid}.md not found — the page may have a slug-based filename on disk,
-          // OR may live under pages/private/{author}/{uuid}.md.
+          // OR may live under pages/vaults/{author}/{uuid}.md.
           // pageCache.filePath holds the actual path discovered during directory scan.
           const actualFilePath = (pageData).filePath;
           if (actualFilePath && await fs.pathExists(actualFilePath)) {
@@ -1556,7 +1558,7 @@ class VersioningFileProvider extends FileSystemProvider {
    * needed). Called by `autoMigrateExistingPages` when scanning a pageCache
    * entry whose manifest already exists. Pulls currentVersion/lastModified/
    * editor from the manifest, slug/filename from frontmatter + disk, and
-   * detects location across `pages/`, `pages/private/{author}/`, and
+   * detects location across `pages/`, `pages/vaults/{author}/`, and
    * `required-pages/`.
    */
   private async indexExistingVersionedPage(
@@ -1645,7 +1647,7 @@ class VersioningFileProvider extends FileSystemProvider {
       try {
         // Determine location from disk:
         //   - required-pages/{uuid}.md          → 'required-pages'
-        //   - pages/private/{author}/{uuid}.md  → 'private'
+        //   - pages/vaults/{author}/{uuid}.md   → 'private'
         //   - pages/{uuid}.md                   → 'pages'
         // Prefer the cached filePath (set by FSP.refreshPageList during the
         // slow-path init walk). If it's not present, fall back to probing
@@ -2496,19 +2498,23 @@ class VersioningFileProvider extends FileSystemProvider {
       return { ok: false, reason: 'file-missing', detail: trashPath };
     }
 
+    // #1506: a page deleted while vaults lived in `pages/private/` goes back into `pages/vaults/`.
+    const restorePath = this.pagesDirectory
+      ? relocateLegacyVaultPath(this.pagesDirectory, entry.deletedFrom, this.privateStoreLayout)
+      : entry.deletedFrom;
     try {
-      await fs.ensureDir(path.dirname(entry.deletedFrom));
-      await fs.move(trashPath, entry.deletedFrom, { overwrite: false });
+      await fs.ensureDir(path.dirname(restorePath));
+      await fs.move(trashPath, restorePath, { overwrite: false });
 
       // Re-register in the live caches so the page resolves immediately,
       // without waiting for a provider reload.
-      const raw = await fs.readFile(entry.deletedFrom, this.encoding);
+      const raw = await fs.readFile(restorePath, this.encoding);
       const parsed = parsePageFrontmatter(raw);
       this.addToCaches(
         {
           title: entry.title,
           uuid,
-          filePath: entry.deletedFrom,
+          filePath: restorePath,
           metadata: parsed.data as PageFrontmatter
         },
         parsed.content

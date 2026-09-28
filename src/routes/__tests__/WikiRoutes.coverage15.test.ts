@@ -941,7 +941,7 @@ describe('WikiRoutes — coverage batch 15', () => {
     });
 
     test('a page the door put in a store redirects to where the door says it landed', async () => {
-      const landed = 'private/adminuser/notes/TestPage';
+      const landed = 'vaults/adminuser/notes/TestPage';
       mockPageManager.savePage.mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) =>
         ({ ...doorSaveResult(name, content, metadata, { name: 'TestPage' }), name: landed }));
       const res = await request(app)

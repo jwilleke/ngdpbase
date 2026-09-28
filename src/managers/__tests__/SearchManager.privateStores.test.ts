@@ -148,7 +148,7 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
     await pageManager.savePage(DIARY, 'The apricot harvest was thin.', { uuid: UUID }, MOLLY);
     const [hit] = (await searchManager.searchWithContext({ userContext: MOLLY }, 'apricot'))
       .filter((r) => r.name === DIARY);
-    expect(hit.name).toBe('private/molly/default/Diary');
+    expect(hit.name).toBe('vaults/molly/default/Diary');
     expect(hit.title).toBe('Diary');
     expect(hit.isPrivate).toBe(true);
   });

@@ -178,7 +178,7 @@ describe('private pages out of the global index (#1385, #1456)', () => {
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), record);
-    const sealedFile = path.join(pagesDir, 'private', 'molly', 'yourphr', `${SEALED}.md`);
+    const sealedFile = path.join(pagesDir, 'vaults', 'molly', 'yourphr', `${SEALED}.md`);
     await fs.writeFile(
       sealedFile,
       `---\ntitle: 'Sealed Diary'\nuuid: ${SEALED}\nprivate: true\nauthor: molly\n---\nsecret\n`
@@ -342,7 +342,7 @@ describe('private pages out of the global index (#1385, #1456)', () => {
 
     test('an entry whose page file is gone is dropped, not adopted', async () => {
       const { provider } = await legacyLayout();
-      await fs.remove(path.join(pagesDir, 'private', 'molly', DEFAULT_PRIVATE_STORE, `${SEALED}.md`));
+      await fs.remove(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${SEALED}.md`));
       const ctx = await unlock('sid-2');
 
       expect(await provider.adoptUserPageCatalog(ctx)).toBe(0);

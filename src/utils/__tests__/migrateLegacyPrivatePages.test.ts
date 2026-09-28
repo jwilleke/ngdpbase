@@ -18,26 +18,26 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
 
   test('moves private/{user}/{uuid}.md into default/ and leaves catalogs and store dirs', async () => {
     const uuid = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-    const legacy = path.join(pagesDir, 'private', 'jim', `${uuid}.md`);
+    const legacy = path.join(pagesDir, 'vaults', 'jim', `${uuid}.md`);
     await fs.ensureDir(path.dirname(legacy));
     await fs.writeFile(legacy, '---\ntitle: Secret\n---\nbody\n');
-    await fs.writeFile(path.join(pagesDir, 'private', 'jim', 'user-index.json'), '{}');
-    await fs.writeFile(path.join(pagesDir, 'private', 'jim', 'user-keys.json'), '{}');
-    await fs.ensureDir(path.join(pagesDir, 'private', 'jim', 'yourphr'));
+    await fs.writeFile(path.join(pagesDir, 'vaults', 'jim', 'user-index.json'), '{}');
+    await fs.writeFile(path.join(pagesDir, 'vaults', 'jim', 'user-keys.json'), '{}');
+    await fs.ensureDir(path.join(pagesDir, 'vaults', 'jim', 'yourphr'));
 
     const result = await migrateLegacyPrivatePages(pagesDir);
 
     expect(result.moved).toBe(1);
     expect(await fs.pathExists(legacy)).toBe(false);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', DEFAULT_PRIVATE_STORE, `${uuid}.md`))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'user-index.json'))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'user-keys.json'))).toBe(true);
-    expect(await fs.pathExists(path.join(pagesDir, 'private', 'jim', 'yourphr'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'jim', DEFAULT_PRIVATE_STORE, `${uuid}.md`))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'jim', 'user-index.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'jim', 'user-keys.json'))).toBe(true);
+    expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'jim', 'yourphr'))).toBe(true);
   });
 
   test('is a no-op when the file is already in default/', async () => {
     const uuid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-    const dest = path.join(pagesDir, 'private', 'jim', 'default', `${uuid}.md`);
+    const dest = path.join(pagesDir, 'vaults', 'jim', 'default', `${uuid}.md`);
     await fs.ensureDir(path.dirname(dest));
     await fs.writeFile(dest, 'x');
 
@@ -47,8 +47,8 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
 
   test('does not overwrite default/ if both layouts exist', async () => {
     const uuid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
-    const legacy = path.join(pagesDir, 'private', 'jim', `${uuid}.md`);
-    const dest = path.join(pagesDir, 'private', 'jim', 'default', `${uuid}.md`);
+    const legacy = path.join(pagesDir, 'vaults', 'jim', `${uuid}.md`);
+    const dest = path.join(pagesDir, 'vaults', 'jim', 'default', `${uuid}.md`);
     await fs.ensureDir(path.dirname(legacy));
     await fs.ensureDir(path.dirname(dest));
     await fs.writeFile(legacy, 'old');
@@ -65,14 +65,14 @@ describe('migrateLegacyPrivatePages (#1383)', () => {
     const legacy = path.join(pagesDir, 'sealed', 'jim', `${uuid}.md`);
     await fs.ensureDir(path.dirname(legacy));
     await fs.writeFile(legacy, '---\ntitle: Secret\n---\nbody\n');
-    await fs.ensureDir(path.join(pagesDir, 'private', 'jim'));
-    await fs.writeFile(path.join(pagesDir, 'private', 'jim', `${uuid}.md`), 'leave-me');
+    await fs.ensureDir(path.join(pagesDir, 'vaults', 'jim'));
+    await fs.writeFile(path.join(pagesDir, 'vaults', 'jim', `${uuid}.md`), 'leave-me');
 
     const result = await migrateLegacyPrivatePages(pagesDir, layout);
 
     expect(result.moved).toBe(1);
     expect(await fs.pathExists(path.join(pagesDir, 'sealed', 'jim', DEFAULT_PRIVATE_STORE, `${uuid}.md`))).toBe(true);
     expect(await fs.pathExists(legacy)).toBe(false);
-    expect(await fs.readFile(path.join(pagesDir, 'private', 'jim', `${uuid}.md`), 'utf8')).toBe('leave-me');
+    expect(await fs.readFile(path.join(pagesDir, 'vaults', 'jim', `${uuid}.md`), 'utf8')).toBe('leave-me');
   });
 });

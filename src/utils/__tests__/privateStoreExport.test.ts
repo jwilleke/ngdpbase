@@ -74,7 +74,7 @@ async function plainStore(): Promise<void> {
   await fs.writeJson(path.join(root, 'pages-index.json'), { version: 1, pages: {} });
   await fs.writeJson(path.join(root, 'search-index.json'), { version: 1 });
   await fs.writeJson(path.join(root, 'deleted-index.json'), { version: 1 });
-  await fs.writeJson(path.join(pagesDir, 'private', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
+  await fs.writeJson(path.join(pagesDir, 'vaults', 'molly', 'user-keys.json'), { wrapped: 'xxx' });
 
   // One attachment, stored under a uuid name, uploaded as something readable.
   await fs.writeFile(path.join(root, 'attachments', 'abc-123.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0x00]));

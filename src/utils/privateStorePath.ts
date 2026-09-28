@@ -73,7 +73,7 @@ export type PrivateStoreLayoutOverrides = Partial<Omit<PrivateStoreLayout, 'file
 };
 
 export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
-  privateRoot: 'private',
+  privateRoot: 'vaults',
   defaultStoreId: 'default',
   versionsDir: 'versions',
   deletedDir: 'deleted',
@@ -160,13 +160,24 @@ export function isValidStoreId(store: string): boolean {
 }
 
 /**
- * A private page's name (#1456, operator 2026-09-22): `private/{owner}/{store}/{title}` —
+ * A private page's name (#1456, operator 2026-09-22): `vaults/{owner}/{store}/{title}` —
  * the same string as its URL without the leading slash. Wherever the system
  * passes a page name, a private page is named this way; a plain title always
  * means a public page. Titles never contain `/` (#1455), so the parts are
- * unambiguous.
+ * unambiguous. Was `private/` until #1506.
  */
-export const PRIVATE_PAGE_NAME_PREFIX = 'private/';
+export const PRIVATE_PAGE_NAME_PREFIX = 'vaults/';
+
+/** The first path segment of a private page's URL: `/vaults/{owner}/{store}/{title}`. */
+export const PRIVATE_URL_SEGMENT = PRIVATE_PAGE_NAME_PREFIX.slice(0, -1);
+
+/**
+ * The vault parent folder, page-name prefix and URL segment before #1506
+ * (operator, 2026-09-28): `pages/private/`, `private/{owner}/{store}/{title}`,
+ * `/private/…`. Read only by the one-time move to `vaults` and by the things
+ * that must never mistake a leftover `private/` folder for public pages.
+ */
+export const LEGACY_PRIVATE_ROOT = 'private';
 
 export interface PrivatePageName {
   owner: string;

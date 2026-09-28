@@ -3,6 +3,7 @@ import type { ActorContext } from '../context/ActorContext.js';
 import {
   isPrivateStoreAttachmentsRel,
   isUnderPrivateRoot,
+  LEGACY_PRIVATE_ROOT,
   formatPrivatePageName,
   isSafePathSegment,
   isValidStoreId,
@@ -25,6 +26,7 @@ import {
 } from '../utils/privateStoreFiles.js';
 import type { StoreSearchDocument } from '../utils/storeSearchIndex.js';
 import { migrateLegacyPrivatePages } from '../utils/migrateLegacyPrivatePages.js';
+import { moveVaultRoot } from '../utils/moveVaultRoot.js';
 import { userIndexFor } from '../utils/privateStoreUnlock.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -243,6 +245,7 @@ class FileSystemProvider extends BasePageProvider {
     await fs.ensureDir(this.pagesDirectory);
     logger.info(`[FileSystemProvider] Page directory: ${this.pagesDirectory}`);
 
+    await moveVaultRoot(this.pagesDirectory, this.privateStoreLayout);
     await migrateLegacyPrivatePages(this.pagesDirectory, this.privateStoreLayout);
     await this.listPrivatePagesInStores();
 
@@ -407,6 +410,9 @@ class FileSystemProvider extends BasePageProvider {
           // each store's own index, never in the process caches or the global
           // index, so the private root is not walked at all.
           if (this.pagesDirectory && dir === this.pagesDirectory && entry.name === this.privateStoreLayout.privateRoot) continue;
+          // #1506: a `private/` folder left beside `vaults/` (the move refuses to
+          // merge the two) still holds private pages; it must never be walked as public.
+          if (this.pagesDirectory && dir === this.pagesDirectory && entry.name === LEGACY_PRIVATE_ROOT) continue;
           // #1386: a store's files are attachments, never pages — an uploaded
           // `{sha256}.md` there must not scan as a page.
           if (this.pagesDirectory && isPrivateStoreAttachmentsRel(

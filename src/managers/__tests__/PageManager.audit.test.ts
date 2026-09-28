@@ -75,7 +75,7 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
   });
 
   test('saving a private page under its own title is an edit, not a rename (#1456)', async () => {
-    const name = 'private/jim/default/Diary';
+    const name = 'vaults/jim/default/Diary';
     const { manager, events } = makeManager([
       { title: name, content: 'old', metadata: { title: 'Diary', author: 'jim', private: true } }
     ]);
@@ -86,7 +86,7 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
   });
 
   test('a renamed private page is named by its new path, not its bare title (#1456)', async () => {
-    const name = 'private/jim/default/Diary';
+    const name = 'vaults/jim/default/Diary';
     const { manager, events } = makeManager([
       { title: name, content: 'old', metadata: { title: 'Diary', author: 'jim', private: true } }
     ]);
@@ -98,8 +98,8 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     expect(events[0]).toMatchObject({
       eventType: 'page-rename',
       metadata: expect.objectContaining({
-        pageName: 'private/jim/default/Journal',
-        fromPageName: 'private/jim/default/Diary'
+        pageName: 'vaults/jim/default/Journal',
+        fromPageName: 'vaults/jim/default/Diary'
       })
     });
   });
