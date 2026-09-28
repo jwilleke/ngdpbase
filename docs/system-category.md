@@ -69,7 +69,7 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
     "label": "user-profile",
     "description": "User profile pages",
     "default": false,
-    "enabled": true,
+    "enabled": false,
     "storageLocation": { "defaultstore": "pages/" },
     "page-badge": { "color": "bg-success", "label": "Profile", "title": "User profile page" }
   }
@@ -105,7 +105,7 @@ Each field of a system-category entry, what it represents, and what its absence 
 | map key (e.g. `general`) | The entry's name in configuration | Lower-case word; the same as `label` | — (required) | Core, or the add-on that declares it |
 | `label` | The value a page stores as its `system-category`, and what pages are matched against | String; the same as the map key | — (required) | Core, or the add-on |
 | `description` | A human explanation of what kind of page this is. Shown to people only | String | No description shown | Core, or the add-on |
-| `enabled` | Whether the system-category is offered for new and saved pages | `true` / `false` | `true` | Admin |
+| `enabled` | Whether users can see and choose the system-category at all. `false` means users never see it: it is not offered when creating a page, nor when moving a page to another system-category or store. It is __only__ visibility: whether a page carrying it can be edited or saved is a policy decision (`hasPermission` / `canAccess`, the page's `access`), never this flag | `true` / `false` | `true` | Admin |
 | `default` | Whether this is the system-category a new page gets when none is given | `true` on exactly one entry, `general` | `false` | Core |
 | `page-badge` | The badge shown beside the title of a page in this system-category | `{ color, label, title }`: Bootstrap badge classes, badge text, tooltip | No badge | Core, or the add-on |
 | `storageLocation` | Where this system-category's pages are stored on the site | Object with `defaultstore` and optionally `privatestore` | Pages are __never stored on the site__ (they live in the repository's `docs/`); saving one is refused and none is seeded | Core, or the add-on |
@@ -125,6 +125,7 @@ There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided
 - __Never stored on the site__ (was `repo`): the entry has no `storageLocation`. That is `developer`.
 - __Can never be private__ (was part of `shipped`): the entry has no `privatestore`. That is `system`, `documentation`, `addon` and `user-profile`.
 - __Only admins may edit a shipped page__ (was part of `shipped`): the page's own `access`, which seeding sets on every page it copies from a shipped source (#1411).
+- __Who may move a page into a system-category__ (today: admin-only for the shipped ones): policy, per system-category, checked through `hasPermission` (operator, 2026-09-28), using the `system-category` resource type decided in [access-policies.md](access-policies.md#decided-not-yet-built). By default only admins may move a page into `system` or `documentation`.
 - __A page on the site is a copy of a shipped original__ (was part of `shipped`): its page ID is in a shipped source (`required-pages/` or an add-on's pages). That is decided per page, not per system-category, so a `system` page someone creates on the site is not mistaken for a shipped one. How shipped pages are seeded and tracked: [The seed pipeline](platform/addon-page-handling.md#the-seed-pipeline).
 - __Which system-categories ship from `required-pages/`__ (the #1377 check lists pages in one of them that are not in the release): read from the shipped files themselves. Each file in `required-pages/` carries `system-category:` in its frontmatter, and the values found there (today `system` and `documentation`) are the shipped ones. No setting names them (operator, 2026-09-28).
 
@@ -138,6 +139,7 @@ There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided
 - __The admin-only test pages__ ("Test Page: …", #1355) stay `system`: they must ship with every install, and their `test-page` system keyword is what marks them as tests.
 - __An add-on's pages may be private.__ The add-on, as owner, declares for its system-category whether new pages start private (`defaultPrivate`) and whether they are encrypted (`encrypt`).
 - __`encrypt: true` means the pages are always private__: an encrypted page is never public in place. So `encrypt: true` forces `allowPublic: false`, and core refuses a declaration that says otherwise.
+- __`user-profile` is set only through user preferences__ (operator, 2026-09-28), never chosen in the editor, so it is `enabled: false`. Naming a profile page in preferences redoes the frontmatter of both pages: the new page gets `system-category: user-profile`, and the old one becomes `general`, keeping its content.
 - __`user-profile` has no vault: a profile page is public by definition.__ The editor warns the user, when they edit their profile page, that everyone who can see the site can read it.
 
 ## Where it is configured
@@ -184,7 +186,7 @@ Shown to people only: in the table of `[{ConfigAccessor type='systemCategories'}
 
 - It leaves the list of valid system-categories (`ValidationManager`), so the editor, the create form and the ingest API no longer offer or accept it.
 - Pages that already carry it stay on disk and still display.
-- __Saving such a page is refused__: validation fails because the system-category is no longer valid. To edit it, change its system-category first. `developer` is shipped disabled; this is why a page carrying it cannot be saved.
+- __Saving such a page is refused__: validation fails because the system-category is no longer valid. To edit it, change its system-category first. `developer` is shipped disabled; this is why a page carrying it cannot be saved. __Decided to change__ (operator, 2026-09-28): `enabled` becomes visibility only, and edit/save becomes policy alone (security posture P2). `developer` stays unsaveable because it has no `storageLocation`, not because it is disabled.
 - A disabled entry is never chosen as the default.
 
 ### `default` (boolean)
@@ -230,7 +232,7 @@ Not read today. The shipped entries no longer carry it. It becomes the pair of f
 ## How we get there (#1477)
 
 - __Done (#1508):__ the unread `ngdpbase.storageLocation.*` block is gone from the default config.
-- __Built (#1503), now to be undone:__ `source: site | shipped | repo` replaced the old `storageLocation` words. It is removed again, each of its jobs moving to what [Where a page's master copy lives](#where-a-pages-master-copy-lives) names.
+- __Built (#1503), now to be undone:__ `source: site | shipped | repo` replaced the old `storageLocation` words. It is removed again, each of its jobs moving to what [Where a page's master copy lives](#where-a-pages-master-copy-lives) names. __Order (operator, 2026-09-28): after `storageLocation` becomes the pair of folders (next bullet, #1504).__ Until every entry carries `storageLocation` and, where it has a vault, `privatestore`, reading their absence as "never stored" and "never private" would refuse every save and every private page.
 - __`storageLocation` becomes the pair of folders__ (`defaultstore`, `privatestore`), with `allowPublic` and `defaultPrivate` beside it.
 - __The vault settings move onto the system-category entry.__ `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides. An admin defines a new vault by adding or editing a system-category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Vaults move from `pages/private/` to `pages/vaults/`__, and page names and URLs follow (`/vaults/jim/default/Diary`). Old `/private/…` URLs redirect permanently, and stored links are rewritten once.
