@@ -4,6 +4,7 @@ import Ajv, { ValidateFunction, ErrorObject } from 'ajv';
 import addFormats from 'ajv-formats';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { declaredResourceTypes } from './PolicyEvaluator.js';
 
 // CJS/ESM interop: Ajv lacks "exports" field; NodeNext treats default import as module namespace.
 // Cast to a constructable/callable type to work around NodeNext namespace typing restrictions.
@@ -23,9 +24,10 @@ const applyFormats = addFormats as unknown as (ajv: AjvLike) => void;
 type SubjectType = 'user' | 'role' | 'group' | 'attribute' | 'authenticated' | 'anonymous' | 'admin';
 
 /**
- * Resource type enumeration
+ * Resource type: one of the types declared in `ngdpbase.access.resource-types`
+ * (#1504), read from configuration, not listed here.
  */
-type ResourceType = 'page' | 'attachment' | 'category' | 'tag' | 'resource-type' | 'path';
+type ResourceType = string;
 
 /**
  * Action type enumeration
@@ -284,7 +286,8 @@ class PolicyValidator extends BaseManager {
               properties: {
                 type: {
                   type: 'string',
-                  enum: ['page', 'attachment', 'category', 'tag', 'resource-type', 'path']
+                  // #1504: the declared resource types, read through ConfigurationManager.
+                  enum: [...declaredResourceTypes((key, def) => this.configManager?.getProperty(key, def) ?? def)]
                 },
                 value: {
                   type: ['string', 'number']
@@ -805,19 +808,10 @@ class PolicyValidator extends BaseManager {
    */
   resourcesMatch(r1: PolicyResource, r2: PolicyResource): boolean {
     if (r1.type !== r2.type) return false;
-
-    switch (r1.type) {
-    case 'category':
-    case 'tag':
-    case 'resource-type':
-      return r1.value === r2.value;
-    case 'page':
-    case 'attachment':
-    case 'path':
-      return this.patternsOverlap((r1.pattern || r1.value) as string, (r2.pattern || r2.value) as string);
-    default:
-      return false;
-    }
+    // #1504: only a declared resource type matches anything; every declared
+    // type (page, system-category) matches by pattern.
+    if (!declaredResourceTypes((key, def) => this.configManager?.getProperty(key, def) ?? def).has(r1.type)) return false;
+    return this.patternsOverlap((r1.pattern || r1.value) as string, (r2.pattern || r2.value) as string);
   }
 
   /**

@@ -95,6 +95,12 @@ export interface DecisionRequest {
   action: string;
   resource?: DecisionResource;
   /**
+   * What the PIP knows about the resource beyond its reference, for the
+   * policy resource types that match on it (#1504): a page's
+   * `system-category`. The PDP passes it through; it never loads it.
+   */
+  attributes?: Record<string, unknown>;
+  /**
    * Whether a share's `resources` cover the thing being asked about.
    *
    * Supplied by the PEP because the answer depends on attributes the PDP does

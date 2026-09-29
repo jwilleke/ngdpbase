@@ -42,35 +42,19 @@ describe('PolicyValidator — resourcesMatch()', () => {
     )).toBe(false);
   });
 
-  test('matches category resources by value equality', async () => {
+  test('an undeclared resource type never matches (#1504)', async () => {
     const v = await makeValidator();
     expect(v.resourcesMatch(
       { type: 'category', value: 'General' },
       { type: 'category', value: 'General' }
-    )).toBe(true);
-  });
-
-  test('non-matching category resources return false', async () => {
-    const v = await makeValidator();
-    expect(v.resourcesMatch(
-      { type: 'category', value: 'General' },
-      { type: 'category', value: 'System' }
     )).toBe(false);
   });
 
-  test('matches tag resources by value', async () => {
+  test('matches system-category resources by pattern (#1504)', async () => {
     const v = await makeValidator();
     expect(v.resourcesMatch(
-      { type: 'tag', value: 'important' },
-      { type: 'tag', value: 'important' }
-    )).toBe(true);
-  });
-
-  test('matches resource-type resources by value', async () => {
-    const v = await makeValidator();
-    expect(v.resourcesMatch(
-      { type: 'resource-type', value: 'wiki-page' },
-      { type: 'resource-type', value: 'wiki-page' }
+      { type: 'system-category', pattern: 'journal' },
+      { type: 'system-category', pattern: 'j*' }
     )).toBe(true);
   });
 
@@ -79,22 +63,6 @@ describe('PolicyValidator — resourcesMatch()', () => {
     expect(v.resourcesMatch(
       { type: 'page', value: 'Home', pattern: 'Home' },
       { type: 'page', value: 'Home', pattern: 'Home' }
-    )).toBe(true);
-  });
-
-  test('matches attachment resources using patternsOverlap', async () => {
-    const v = await makeValidator();
-    expect(v.resourcesMatch(
-      { type: 'attachment', pattern: '*.pdf' },
-      { type: 'attachment', pattern: '*.pdf' }
-    )).toBe(true);
-  });
-
-  test('matches path resources using patternsOverlap', async () => {
-    const v = await makeValidator();
-    expect(v.resourcesMatch(
-      { type: 'path', value: '/admin/*' },
-      { type: 'path', value: '/admin/settings' }
     )).toBe(true);
   });
 

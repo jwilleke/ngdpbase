@@ -52,6 +52,7 @@ interface PolicyEvaluatorLike {
     pageName: string;
     action: string;
     userContext: { username: string; roles: string[]; isAuthenticated: boolean };
+    attributes?: Record<string, unknown>;
   }): Promise<{ allowed: boolean; hasDecision?: boolean; reason?: string; policyName?: string | null }>;
 }
 
@@ -368,7 +369,8 @@ export class PolicyDecisionPoint extends BaseManager {
     const result = await policyEvaluator.evaluateAccess({
       pageName: request.resource?.id ?? '*',
       action,
-      userContext
+      userContext,
+      attributes: request.attributes
     });
     // `hasDecision` false means no policy spoke — NotApplicable, not a deny.
     // The page door has further tiers to try; a capability check has none, and

@@ -21,12 +21,49 @@ interface UserContext {
  * Policy subject definition
  */
 /**
+ * What the request knows about the resource beyond its name, supplied by the
+ * PIP (#1504): today a page's `system-category`.
+ */
+export type ResourceAttributes = Record<string, unknown>;
+
+/**
  * Access evaluation context
  */
 interface AccessContext {
   pageName: string;
   action: string;
   userContext?: UserContext;
+  attributes?: ResourceAttributes;
+}
+
+/**
+ * How each policy resource type matches (#1504). The TYPES are declared in
+ * configuration, `ngdpbase.access.resource-types`, and read through
+ * ConfigurationManager; how a type matches is code, one matcher per type. A
+ * type that is not declared, or that has no matcher here, never matches — a
+ * policy naming it decides nothing (docs/access-policies.md).
+ */
+export const RESOURCE_MATCHERS: Record<string, (pattern: string, pageName: string, attributes?: ResourceAttributes) => boolean> = {
+  /** A page by its name (glob). */
+  page: (pattern, pageName) => micromatch.isMatch(pageName, pattern),
+  /** A page by its `system-category` frontmatter (glob). */
+  'system-category': (pattern, _pageName, attributes) => {
+    const category = attributes?.['system-category'];
+    return typeof category === 'string' && micromatch.isMatch(category, pattern);
+  }
+};
+
+const RESOURCE_TYPES_KEY = 'ngdpbase.access.resource-types';
+
+/**
+ * The resource types configuration declares (#1504), for the evaluator and the
+ * validator alike. When the key is not set at all — a configuration older than
+ * it — the matchers' own types apply, so an older site keeps deciding as it
+ * did; PolicyEvaluator.initialize() warns.
+ */
+export function declaredResourceTypes(getProperty: (key: string, defaultValue: unknown) => unknown): Set<string> {
+  const declared = getProperty(RESOURCE_TYPES_KEY, null);
+  return new Set(declared && typeof declared === 'object' ? Object.keys(declared) : Object.keys(RESOURCE_MATCHERS));
 }
 
 /**
@@ -104,6 +141,18 @@ class PolicyEvaluator extends BaseManager {
     if (!this.configManager) {
       throw new Error('PolicyEvaluator requires ConfigurationManager to be initialized.');
     }
+    // #1504: say when the declared resource types and the matchers disagree.
+    const declared = this.configManager.getProperty(RESOURCE_TYPES_KEY, null) as Record<string, unknown> | null;
+    if (!declared || typeof declared !== 'object') {
+      logger.warn(`[POLICY] ${RESOURCE_TYPES_KEY} is not set; policies use the evaluator's own resource types (${Object.keys(RESOURCE_MATCHERS).join(', ')})`);
+    } else {
+      for (const type of Object.keys(declared)) {
+        if (!RESOURCE_MATCHERS[type]) logger.warn(`[POLICY] resource type '${type}' is declared but nothing matches it; a policy naming it never matches`);
+      }
+      for (const type of Object.keys(RESOURCE_MATCHERS)) {
+        if (!(type in declared)) logger.warn(`[POLICY] resource type '${type}' is not declared in ${RESOURCE_TYPES_KEY}; a policy naming it never matches`);
+      }
+    }
     logger.info('📋 PolicyEvaluator initialized');
   }
 
@@ -164,7 +213,7 @@ class PolicyEvaluator extends BaseManager {
    */
   matches(policy: Policy, context: AccessContext): boolean {
     const subjectMatch = this.matchesSubject(policy.subjects, context.userContext);
-    const resourceMatch = this.matchesResource(policy.resources, context.pageName);
+    const resourceMatch = this.matchesResource(policy.resources, context.pageName, context.attributes);
     const actionMatch = this.matchesAction(policy.actions, context.action);
 
     return subjectMatch && resourceMatch && actionMatch;
@@ -246,16 +295,16 @@ class PolicyEvaluator extends BaseManager {
    * per call: a listing asks this ~18k times, and the per-policy INFO line
    * `evaluateAccess` writes is right for one decision and wrong for a filter.
    */
-  compile(userContext: UserContext | undefined, action: string): (pageName: string) => EvaluationResult {
+  compile(userContext: UserContext | undefined, action: string): (pageName: string, attributes?: ResourceAttributes) => EvaluationResult {
     if (!this.configManager) {
       return () => ({ hasDecision: false, allowed: false, reason: 'PolicyEvaluator not initialized', policyName: null });
     }
     const applicable = this.policies()
       .filter((policy) => this.matchesSubject(policy.subjects, userContext) && this.matchesAction(policy.actions, action));
     logger.debug(`[POLICY] Compiled ${applicable.length} policies for user=${userContext?.username} action=${action}`);
-    return (pageName: string): EvaluationResult => {
+    return (pageName: string, attributes?: ResourceAttributes): EvaluationResult => {
       for (const policy of applicable) {
-        if (this.matchesResource(policy.resources, pageName)) {
+        if (this.matchesResource(policy.resources, pageName, attributes)) {
           return { hasDecision: true, allowed: policy.effect === 'allow', reason: `Policy match: ${policy.id}`, policyName: policy.id };
         }
       }
@@ -263,17 +312,22 @@ class PolicyEvaluator extends BaseManager {
     };
   }
 
-  matchesResource(resources: PolicyResource[] | undefined, pageName: string): boolean {
+  matchesResource(resources: PolicyResource[] | undefined, pageName: string, attributes?: ResourceAttributes): boolean {
     if (!resources || resources.length === 0) {
       return true; // No resources specified means it applies to all.
     }
+    const declared = this.configManager
+      ? declaredResourceTypes((key, def) => this.configManager!.getProperty(key, def))
+      : new Set(Object.keys(RESOURCE_MATCHERS));
     for (const resource of resources) {
-      if (resource.type === 'page' && micromatch.isMatch(pageName, resource.pattern)) {
+      const matcher = declared.has(resource.type) ? RESOURCE_MATCHERS[resource.type] : undefined;
+      if (matcher && matcher(resource.pattern, pageName, attributes)) {
         return true;
       }
     }
     return false;
   }
+
 
   /**
    * Checks if the action matches the policy's actions.

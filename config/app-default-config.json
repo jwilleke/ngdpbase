@@ -1806,6 +1806,15 @@
   "_comment_access_policies": "Access control policies - Role-based with specific action permissions",
   "ngdpbase.access.policies.default-policy": "deny",
   "ngdpbase.access.policies.enabled": true,
+  "_comment_access_resource_types": "Policy resource types (#1504, docs/access-policies.md): the kinds of thing a policy's resources may name. Declared once here and read through ConfigurationManager; the policy evaluator holds one matcher per type, and a type with no matcher, or not declared, never matches.",
+  "ngdpbase.access.resource-types": {
+    "page": {
+      "description": "A page, matched by its name (glob pattern)"
+    },
+    "system-category": {
+      "description": "Every page of a system-category, matched by the page's system-category (glob pattern)"
+    }
+  },
   "ngdpbase.access.policies": [
     {
       "id": "admin-full-access",

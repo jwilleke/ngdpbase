@@ -513,7 +513,9 @@ class PolicyInformationPoint extends BaseManager {
         try {
           const d = await this.policyDecisionPoint().decide(userContext, {
             action: policyAction,
-            resource: { type: 'page', id: pageName }
+            resource: { type: 'page', id: pageName },
+            // #1504: for policies on the page's system-category.
+            attributes: { 'system-category': wikiContext.pageMetadata?.['system-category'] }
           });
           logger.info(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
           return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy' };
@@ -798,7 +800,7 @@ class PolicyInformationPoint extends BaseManager {
         pageManager,
         mayOverrideLock: async () => mayOverrideLock,
         policy: async () => {
-          const p = decidePolicy?.(title);
+          const p = decidePolicy?.(title, { 'system-category': metadata['system-category'] });
           return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
         }
       });
