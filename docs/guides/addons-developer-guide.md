@@ -490,32 +490,12 @@ __You declare the kind. You do not implement encryption, keys, or recovery words
 
 #### Declaring the kind
 
-Declare it in your `package.json`, beside the other manifest keys:
+__Being reworked.__ Until [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) an addon declared its kind in `package.json` `ngdpbase.stores`, and core saved it as `ngdpbase.stores.{id}.owner` / `.encrypt`. That mechanism is gone: no addon used it, and a vault kind is now a __system-category entry with a vault__ (`storageLocation.privatestore`), carrying its own `encrypt` and `owner` ([system-category.md](../system-category.md)). An addon will declare its own system-category, owned by its __slug__ ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), in [#1507](https://github.com/jwilleke/ngdpbase/issues/1507); until that lands an addon cannot declare a vault of its own.
 
-```json
-"ngdpbase": {
-  "stores": [{ "id": "yourphr", "encrypt": true }]
-}
-```
+What does not change:
 
-- `id` is the store kind's id: lowercase letters, digits and hyphens. `recovery` and `import` are reserved (they are instance settings under `ngdpbase.stores.*`).
-- `encrypt` is __your call as the kind's owner__, not the end user's, and must be `true` or `false`. Sensitive or regulated data should be `true`. A copy keeps what it was created with.
-- `label` and `blurb` (optional) are what the store's door calls it and one or two sentences under the name: `"label": "Health records", "blurb": "Your own medical notes, encrypted so only you can read them."` Plain text, at most 60 and 300 characters. They are wording, not policy: read from your manifest whenever the door renders, never saved to configuration, so you can change them in any release.
-
-At your addon's __first load__ core saves the kind to the site's configuration, owned by your addon's __slug__ (the canonical identity from `package.json`, [#927](https://github.com/jwilleke/ngdpbase/issues/927)):
-
-```json
-"ngdpbase.stores.yourphr.owner": "yourphr",
-"ngdpbase.stores.yourphr.encrypt": true
-```
-
-__From then on configuration wins.__ Your manifest is never consulted again for that kind:
-
-- __Changing `encrypt` in a later release changes nothing.__ The declaration is ignored, logged at warn and shown on the admin add-ons screen; your addon loads normally. Every user's copy keeps being made the way existing ones were, so a kind never ends up half sealed.
-- __Declaring an id that another owner holds is refused__ — including `default`, which belongs to the site. It is logged as an error and shown on the admin screen; the rest of your addon still runs.
-- An addon whose slug is `admin` owns nothing: `admin` is the site's own owner name.
-
-`storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` is the only reader of these keys.
+- __`encrypt` is your call as the vault's owner__, not the end user's, and your declaration stands: sensitive or regulated data (a health-record addon, say) declares `encrypt: true`, and nobody turns it off. A copy keeps what it was created with.
+- You do not implement encryption, keys or recovery words; core's door does.
 
 #### When your addon is not running
 
@@ -860,7 +840,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
-- [ ] If the addon holds a user's own data: a store kind is declared (`ngdpbase.stores.<id>.*`), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — planned)
+- [ ] If the addon holds a user's own data: it declares its own system-category with a vault (#1507), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — planned)
 
 ---
 

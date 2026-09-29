@@ -94,9 +94,6 @@
   "ngdpbase.page.provider.filesystem.private.files.userkeys": "user-keys.json",
   "ngdpbase.page.provider.filesystem.private.files.userindex": "user-index.json",
   "ngdpbase.page.provider.filesystem.private.files.storemeta": "store.json",
-  "_comment_stores_default": "Private stores (#1414): the store KIND definitions. A kind is instance-wide; a user's directory under it is that user's security container. encrypt is the kind OWNER's call — admin for 'default', the addon for its own — and is never overruled per user or per instance. 'admin' is a reserved owner slug no addon may claim. Changing a kind governs stores created afterwards; converting existing ones is a whole-store migration, not a config edit. Addon kinds are written here at first load from the addon's package.json ngdpbase.stores.",
-  "ngdpbase.stores.default.encrypt": false,
-  "ngdpbase.stores.default.owner": "admin",
   "_comment_stores_recovery": "Private stores (#1414): how many EXTRA attempts a user gets to confirm their 12 recovery words before the door gives up and they start over. Each attempt shows a NEW set of words — a failed confirmation never re-shows the set that was just missed. 1 = two attempts in all; 0 = one attempt. Nothing is written until an attempt succeeds.",
   "ngdpbase.stores.recovery.confirmretries": 1,
   "_comment_stores_import": "Private stores (#1472): the largest takeout a person may upload to import into their own store, in bytes, and the most it may unpack to. The whole archive and everything in it are held in memory for the import (nothing decrypted is staged on disk), so this is also the most memory one import can use. 256 MB matches the line the instance backup draws for private data.",
@@ -1039,7 +1036,8 @@
         "defaultstore": "pages/",
         "privatestore": "pages/vaults/{user}/default/"
       },
-      "defaultPrivate": false
+      "defaultPrivate": false,
+      "encrypt": false
     },
     "system": {
       "label": "system",
@@ -1119,6 +1117,7 @@
         "privatestore": "pages/vaults/{user}/journal/"
       },
       "defaultPrivate": "choice",
+      "encrypt": false,
       "page-badge": {
         "color": "bg-info",
         "label": "Journal",
@@ -1135,7 +1134,8 @@
         "defaultstore": "pages/",
         "privatestore": "pages/vaults/{user}/capture/"
       },
-      "defaultPrivate": "choice"
+      "defaultPrivate": "choice",
+      "encrypt": false
     }
   },
   "_comment_knowledge_role": "#706 — knowledge-role: opt-in per-page position in the knowledge graph (source / citation / concept). Distinct from system-category (page-type). Absence is valid and means 'not in the graph' (the common case). Present with a value outside this catalog is HARD-REJECTED by ValidationManager. Each entry's page-badge block renders alongside the system-category badge via the v3.14.0 mechanism.",

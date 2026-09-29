@@ -73,7 +73,7 @@ The three levels of checking built on this (the global `PolicyDecisionPoint.perm
 
 ## Decided, not yet built
 
-- __Who may change a system-category's vault settings__ (`defaultPrivate`, `encrypt`) is policy on the `system-category` resource type (operator, 2026-09-28), replacing the `ngdpbase.stores.{kind}.owner` setting; an add-on ships the policies for the system-categories it declares (#1505).
+- __A system-category's vault settings__ (`defaultPrivate`, `encrypt`) are not policy: they are the declaration of the entry's `owner` (`admin`, or the add-on that declared it), and they stand (operator, 2026-09-29, reversing the 2026-09-28 note). A health-record add-on that declares `encrypt: true` keeps its vault sealed.
 - __Making a page private stays the owner's move__ (operator, 2026-09-29). An earlier decision (2026-09-28) let admins make someone's page private too; it was withdrawn because it needs an exception to the vault rule that no role reaches into a user's vault, admin included (`mayActInPrivateContainer`, docs/private-stores.md). An admin who wants a page restricted uses its audience instead.
 - __First use: who may move a page into a system-category__ is decided by policy on the target system-category. By default only admins may move a page into `system` or `documentation` (today this is hard-wired in the save route). See [system-category.md](system-category.md#where-a-pages-master-copy-lives).
 

@@ -1,17 +1,19 @@
 /**
- * An addon declares its private store kind (#1414 step 2).
+ * A vault an addon owns (#1414, #1505): its owner state for the door, and the
+ * warning shown before turning the addon off. The vault is a system-category
+ * entry whose `owner` is the addon's slug (#1505); addons no longer declare
+ * kinds in `package.json`.
  *
  * Real addon folders on disk, loaded by the real AddonsManager; only
- * configuration is a stand-in, so what is asserted is what reaches
- * `setProperty` — the durable write — and what the admin screen and the store
- * door are told.
+ * configuration is a stand-in.
  */
 
 import os from 'os';
 import path from 'path';
 import fs from 'fs-extra';
+import { vaultKindCategories } from '../../test-support/vaults';
 
-describe('AddonsManager — store kinds an addon declares (#1414)', () => {
+describe('AddonsManager — a vault an addon owns (#1414, #1505)', () => {
   let tmpDir: string;
   let AddonsManager: any;
   let config: Record<string, unknown>;
@@ -53,7 +55,7 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'addons-storekinds-'));
-    config = {};
+    config = { 'ngdpbase.system-category': vaultKindCategories({ default: {}, yourphr: { owner: 'yourphr', encrypt: true } }) };
     written = [];
     vi.resetModules();
     const mod = await import('../AddonsManager');
@@ -64,66 +66,8 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
     await fs.remove(tmpDir).catch(() => {});
   });
 
-  test('first load saves the kind to configuration, owned by the addon\'s slug', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
-    config['ngdpbase.addons.yourphr.enabled'] = true;
-
-    await load();
-
-    expect(written.map(w => [w.key, w.value])).toEqual([
-      ['ngdpbase.stores.yourphr.owner', 'yourphr'],
-      ['ngdpbase.stores.yourphr.encrypt', true]
-    ]);
-    // Written by a system context that says why, for the config-change record.
-    expect(written[0].reason).toMatch(/yourphr declares private store kind yourphr/);
-  });
-
-  test('after that configuration wins: a disagreeing manifest is ignored and reported, and the addon loads', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: false }] });
-    Object.assign(config, {
-      'ngdpbase.addons.yourphr.enabled': true,
-      'ngdpbase.stores.yourphr.owner': 'yourphr',
-      'ngdpbase.stores.yourphr.encrypt': true
-    });
-
-    const manager = await load();
-
-    expect(written).toEqual([]);
-    expect(config['ngdpbase.stores.yourphr.encrypt']).toBe(true);
-    const status = (await manager.getStatus()).find((s: { name: string }) => s.name === 'yourphr');
-    expect(status.loaded).toBe(true);
-    expect(status.storeNotices.join(' ')).toMatch(/declared encrypt: false.*holds it as encrypt: true.*ignored/);
-  });
-
-  test('an id another addon owns is refused, and the rest of the addon still runs', async () => {
-    await writeAddon('intruder', { stores: [{ id: 'yourphr', encrypt: false }] });
-    Object.assign(config, {
-      'ngdpbase.addons.intruder.enabled': true,
-      'ngdpbase.stores.yourphr.owner': 'yourphr',
-      'ngdpbase.stores.yourphr.encrypt': true
-    });
-
-    const manager = await load();
-
-    expect(written).toEqual([]);
-    expect(config['ngdpbase.stores.yourphr.owner']).toBe('yourphr');
-    const status = (await manager.getStatus()).find((s: { name: string }) => s.name === 'intruder');
-    expect(status.loaded).toBe(true);
-    expect(status.storeNotices.join(' ')).toMatch(/belongs to add-on yourphr; intruder may not claim it/);
-  });
-
-  test('the kind exists even when the addon then fails to load — its door is closed, not missing', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] }, { throws: true });
-    config['ngdpbase.addons.yourphr.enabled'] = true;
-
-    const manager = await load();
-
-    expect(config['ngdpbase.stores.yourphr.owner']).toBe('yourphr');
-    expect(manager.storeOwnerState('yourphr')).toBe('failed');
-  });
-
-  test('a disabled addon declares nothing, and its owner state says so', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+  test('a disabled addon\'s owner state says so, and so does one never installed', async () => {
+    await writeAddon('yourphr', {});
 
     const manager = await load();
 
@@ -132,8 +76,8 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
     expect(manager.storeOwnerState('never-installed')).toBe('absent');
   });
 
-  test('a loaded addon\'s kind is served', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+  test('a loaded addon\'s owner state is loaded', async () => {
+    await writeAddon('yourphr', {});
     config['ngdpbase.addons.yourphr.enabled'] = true;
 
     const manager = await load();
@@ -142,7 +86,7 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
   });
 
   test('turning the owner off is warned with how many users hold data, never refused', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+    await writeAddon('yourphr', {});
     config['ngdpbase.addons.yourphr.enabled'] = true;
     // Two users walked through the door; a third has only the default store.
     for (const [user, store] of [['molly', 'yourphr'], ['jim', 'yourphr'], ['ann', 'default']]) {
@@ -159,7 +103,7 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
   });
 
   test('no warning when nobody has entered the store', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
+    await writeAddon('yourphr', {});
     config['ngdpbase.addons.yourphr.enabled'] = true;
 
     const manager = await load();
@@ -167,17 +111,12 @@ describe('AddonsManager — store kinds an addon declares (#1414)', () => {
     expect(await manager.storeDisableWarnings('yourphr')).toEqual([]);
   });
 
-  test('the door\'s wording comes from the owning addon, only while it is loaded', async () => {
-    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true, label: 'Health records', blurb: 'Your own medical notes.' }] });
+  test('loading an addon writes nothing about vaults to configuration (#1505)', async () => {
+    await writeAddon('yourphr', { stores: [{ id: 'yourphr', encrypt: true }] });
     config['ngdpbase.addons.yourphr.enabled'] = true;
 
-    const manager = await load();
+    await load();
 
-    expect(manager.storePresentation({ id: 'yourphr', owner: 'yourphr' }))
-      .toEqual({ label: 'Health records', blurb: 'Your own medical notes.' });
-    // Wording is never saved to configuration: only owner and encrypt are.
-    expect(written.map(w => w.key)).toEqual(['ngdpbase.stores.yourphr.owner', 'ngdpbase.stores.yourphr.encrypt']);
-    expect(manager.storePresentation({ id: 'yourphr', owner: 'someone-else' })).toEqual({});
+    expect(written.filter((w) => w.key.startsWith('ngdpbase.stores.'))).toEqual([]);
   });
 });
-

@@ -9,6 +9,7 @@ import WikiRoutes from '../WikiRoutes';
 import { privateUserKeysPath, storeMetaPath } from '../../utils/privateStorePath';
 import { clearUnlockedPrivateStores, dekFor, kekFor } from '../../utils/privateStoreUnlock';
 import { clearPendingWords } from '../../utils/privateStoreDoor';
+import { vaultKindCategories } from '../../test-support/vaults';
 
 type Res = {
   render: ReturnType<typeof vi.fn>;
@@ -32,13 +33,13 @@ describe('store door routes (#1414)', () => {
   let renderError: ReturnType<typeof vi.spyOn>;
   const subject = { username: 'molly', roles: ['Authenticated'], isAuthenticated: true, privateStoreHandle: 'h1' };
 
+  // #1505: vault kinds are system-category entries.
   const config: Record<string, unknown> = {
-    'ngdpbase.stores.default.owner': 'admin',
-    'ngdpbase.stores.default.encrypt': false,
-    'ngdpbase.stores.vault.owner': 'admin',
-    'ngdpbase.stores.vault.encrypt': true,
-    'ngdpbase.stores.yourphr.owner': 'yourphr',
-    'ngdpbase.stores.yourphr.encrypt': false,
+    'ngdpbase.system-category': vaultKindCategories({
+      default: { encrypt: false },
+      vault: { encrypt: true },
+      yourphr: { owner: 'yourphr', encrypt: false }
+    }),
     'ngdpbase.stores.recovery.confirmretries': 1
   };
   /** #1414 step 2: where the addon owning `yourphr` stands. */
@@ -62,8 +63,7 @@ describe('store door routes (#1414)', () => {
       },
       AuditManager: audit,
       AddonsManager: {
-        storeOwnerState: () => ownerState,
-        storePresentation: (k: { id: string }) => (k.id === 'yourphr' ? { label: 'Health records', blurb: 'Your own notes.' } : {})
+        storeOwnerState: () => ownerState
       },
       AuthManager: { authenticate: vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' })) }
     };
@@ -146,13 +146,6 @@ describe('store door routes (#1414)', () => {
     await routes.storeDoorEnter(req('yourphr'), res);
 
     expect(await fs.readJson(storeMetaPath(pagesDir, 'molly', 'yourphr'))).toMatchObject({ kind: 'yourphr', encrypt: false });
-  });
-
-  test('the door shows the owning addon\'s label and blurb', async () => {
-    const res = newRes();
-    await routes.storeDoorPage(req('yourphr'), res);
-
-    expect(res.render.mock.calls.at(-1)?.[1]).toMatchObject({ storeLabel: 'Health records', storeBlurb: 'Your own notes.' });
   });
 
   test('an unknown kind is a 404', async () => {
@@ -245,10 +238,7 @@ describe('GET /admin/stores (#1414)', () => {
     const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'admin-stores-'));
     const pagesDir = path.join(testDir, 'pages');
     const cfg: Record<string, unknown> = {
-      'ngdpbase.stores.default.owner': 'admin',
-      'ngdpbase.stores.default.encrypt': false,
-      'ngdpbase.stores.yourphr.owner': 'yourphr',
-      'ngdpbase.stores.yourphr.encrypt': true,
+      'ngdpbase.system-category': vaultKindCategories({ default: { encrypt: false }, yourphr: { owner: 'yourphr', encrypt: true } }),
       'ngdpbase.stores.recovery.confirmretries': 1
     };
     await fs.outputJson(storeMetaPath(pagesDir, 'molly', 'default'), { kind: 'default' });

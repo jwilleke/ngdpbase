@@ -63,29 +63,17 @@ Every path is joined by a helper in the same module — `privateStoreRoot`, `pri
 
 ## Store kinds and the door
 
-A __store kind__ is instance-wide; a user's directory under it is that user's container. `storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` reads two keys:
+A __store kind__ (a vault kind) is instance-wide; a user's directory under it is that user's container. Since [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) a kind is a __system-category entry that declares a vault__, `storageLocation.privatestore` (see [system-category.md](system-category.md)); `ngdpbase.stores.{kind}` no longer defines kinds and nothing reads it. `storeKindFromConfig()` in `src/utils/privateStoreDoor.ts` returns, for a vault id:
 
-- `ngdpbase.stores.{id}.owner` — a non-empty string. A kind exists when it has an owner; with no owner there is no kind and the door 404s.
-- `ngdpbase.stores.{id}.encrypt` — read strictly as a boolean. The string `"true"` is not a switch.
+- `id` — the vault id, the last folder of the entry's `privatestore` (`general` → `default`, `journal` → `journal`, `capture` → `capture`);
+- `encrypt` — the entry's `encrypt`, read strictly as a boolean (the string `"true"` is not a switch);
+- `owner` — the entry's `owner`, `admin` when absent.
 
-Shipped defaults in `config/app-default-config.json`:
+`owner` is `admin` for the site's own system-categories, or the slug of the add-on that declared one. The owner decides `encrypt` (operator, 2026-09-29) and its declaration stands: a health-record add-on that declares its vault `encrypt: true` keeps it sealed. The end user is never asked, and the value is copied into that user's `store.json` when their copy is created, so changing the entry later does not reinterpret copies that already exist.
 
-```json
-"ngdpbase.stores.default.encrypt": false,
-"ngdpbase.stores.default.owner": "admin",
-"ngdpbase.stores.recovery.confirmretries": 1
-```
+Add-ons no longer declare kinds in `package.json` `ngdpbase.stores` (removed in #1505, unused by any add-on); an add-on declares its own system-category instead ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)). What remains under `ngdpbase.stores.*` are two settings that are not about any one vault: `recovery.confirmretries` (per person) and `import.maxsize` (per site).
 
-`owner` is `admin` for the core `default` kind, or an addon's canonical slug for a kind that addon owns. Whoever owns the kind decides `encrypt`; the end user is never asked, and the value is copied into that user's `store.json` when their copy is created, so changing the kind later does not reinterpret copies that already exist.
-
-An addon declares its kinds in its `package.json`, `ngdpbase.stores: [{ id, encrypt, label?, blurb? }]` ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414)). `AddonsManager.declareStoreKinds` saves `owner` and `encrypt` to configuration at the addon's first load, before `register()`; after that configuration wins:
-
-- a manifest that later disagrees is ignored, logged at warn and shown on the admin add-ons screen (`storeNotices`);
-- an id another owner holds (the site's `default` included) is refused and logged as an error; an addon whose slug is `admin` owns nothing;
-- `recovery` and `import` are reserved ids: they are instance settings under `ngdpbase.stores.*`, and `storeKindFromConfig` ignores them;
-- `label` and `blurb` are wording for the door, read from the loaded addon's manifest (`AddonsManager.storePresentation`), never saved.
-
-The planning and decision rules are pure functions in `src/utils/privateStoreDoor.ts`: `readStoreDeclarations`, `planStoreDeclaration`, `storeDoorState`.
+`storeDoorState` (a pure function in `src/utils/privateStoreDoor.ts`) says whether a kind's door is open: always for the site's own, only while the owning add-on is loaded for an add-on's.
 
 ### The door
 

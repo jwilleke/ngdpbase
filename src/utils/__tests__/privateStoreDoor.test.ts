@@ -22,11 +22,11 @@ import {
   holdWordsForConfirmation,
   storeCopyExists,
   storeKindFromConfig,
-  planStoreDeclaration,
-  readStoreDeclarations,
+  storeKindIds,
   storeDoorState
 } from '../privateStoreDoor';
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
+import { vaultKindCategories } from '../../test-support/vaults';
 
 const config = (values: Record<string, unknown>) =>
   (key: string, def: unknown): unknown => (key in values ? values[key] : def);
@@ -36,18 +36,25 @@ describe('store door (#1414)', () => {
 
   describe('store kinds', () => {
     const get = config({
-      'ngdpbase.stores.default.owner': 'admin',
-      'ngdpbase.stores.default.encrypt': false,
-      'ngdpbase.stores.yourphr.owner': 'yourphr',
-      'ngdpbase.stores.yourphr.encrypt': true,
-      'ngdpbase.stores.odd.owner': 'odd',
-      'ngdpbase.stores.odd.encrypt': 'true'
+      'ngdpbase.system-category': vaultKindCategories({
+        default: { encrypt: false },
+        yourphr: { owner: 'yourphr', encrypt: true },
+        odd: { owner: 'odd', encrypt: 'true' }
+      }),
+      // #1505: the old kind keys are read by nothing.
+      'ngdpbase.stores.legacy.owner': 'admin'
     });
 
-    test('a kind exists when configuration gives it an owner', () => {
+    test('a kind exists when a system-category declares its vault (#1505)', () => {
       expect(storeKindFromConfig(get, 'default')).toEqual({ id: 'default', owner: 'admin', encrypt: false });
       expect(storeKindFromConfig(get, 'yourphr')).toEqual({ id: 'yourphr', owner: 'yourphr', encrypt: true });
       expect(storeKindFromConfig(get, 'nosuch')).toBeNull();
+      expect(storeKindFromConfig(get, 'legacy')).toBeNull();
+    });
+
+    test('every kind is listed, by id, from the system-category entries (#1505)', () => {
+      expect(storeKindIds({ 'ngdpbase.system-category': vaultKindCategories({ default: {}, yourphr: { owner: 'yourphr' } }), 'ngdpbase.stores.legacy.owner': 'admin' }))
+        .toEqual(['default', 'yourphr']);
     });
 
     test('encrypt is the boolean true and nothing else; a store id that is not a slug is no kind', () => {
@@ -172,65 +179,7 @@ describe('store door (#1414)', () => {
   });
 });
 
-describe('addon-declared store kinds (#1414 step 2)', () => {
-  const config = (entries: Record<string, unknown>) => (key: string, def: unknown): unknown =>
-    (key in entries ? entries[key] : def);
-
-  test('reads well-formed declarations and names what is wrong with the rest', () => {
-    const { declarations, problems } = readStoreDeclarations([
-      { id: 'yourphr', encrypt: true },
-      { id: 'notes', encrypt: false },
-      { id: 'Bad Id', encrypt: true },
-      { id: 'import', encrypt: true },
-      { id: 'health', encrypt: 'yes' }
-    ]);
-
-    expect(declarations).toEqual([{ id: 'yourphr', encrypt: true }, { id: 'notes', encrypt: false }]);
-    expect(problems).toHaveLength(3);
-    expect(problems.join(' ')).toMatch(/reserved/);
-    // encrypt says whether someone's data is sealed: a non-boolean is refused, never read as false.
-    expect(problems.join(' ')).toMatch(/health.*encrypt must be true or false/);
-  });
-
-  test('a manifest with no stores declares nothing, and a non-array is a problem', () => {
-    expect(readStoreDeclarations(undefined)).toEqual({ declarations: [], problems: [] });
-    expect(readStoreDeclarations({ id: 'x' }).problems).toEqual(['`stores` must be an array']);
-  });
-
-  test('a new id is persisted; the owner\'s own matching kind is left alone', () => {
-    expect(planStoreDeclaration(config({}), 'yourphr', { id: 'yourphr', encrypt: true })).toEqual({ action: 'persist' });
-    const owned = config({ 'ngdpbase.stores.yourphr.owner': 'yourphr', 'ngdpbase.stores.yourphr.encrypt': true });
-    expect(planStoreDeclaration(owned, 'yourphr', { id: 'yourphr', encrypt: true })).toEqual({ action: 'match' });
-  });
-
-  test('a manifest that later disagrees is stale: config wins', () => {
-    const owned = config({ 'ngdpbase.stores.yourphr.owner': 'yourphr', 'ngdpbase.stores.yourphr.encrypt': true });
-
-    expect(planStoreDeclaration(owned, 'yourphr', { id: 'yourphr', encrypt: false }))
-      .toEqual({ action: 'stale', configEncrypt: true });
-  });
-
-  test('an id another owner holds is denied — the site\'s default store included', () => {
-    const other = config({ 'ngdpbase.stores.yourphr.owner': 'otheraddon' });
-    expect(planStoreDeclaration(other, 'yourphr', { id: 'yourphr', encrypt: true }))
-      .toEqual({ action: 'denied', owner: 'otheraddon' });
-
-    const site = config({ 'ngdpbase.stores.default.owner': 'admin' });
-    expect(planStoreDeclaration(site, 'sneaky', { id: 'default', encrypt: false }))
-      .toEqual({ action: 'denied', owner: 'admin' });
-  });
-
-  test('an addon whose slug is the reserved "admin" owns nothing', () => {
-    expect(planStoreDeclaration(config({}), 'admin', { id: 'x', encrypt: true }))
-      .toEqual({ action: 'denied', owner: 'admin' });
-  });
-
-  test('a reserved id is never a kind, even when configuration names an owner', () => {
-    const cfg = config({ 'ngdpbase.stores.import.owner': 'someone' });
-
-    expect(storeKindFromConfig(cfg, 'import')).toBeNull();
-  });
-
+describe('the store door\'s state (#1414)', () => {
   test('the door: the site\'s kinds always open, an addon\'s only while it is loaded', () => {
     const site = { id: 'default', owner: 'admin', encrypt: false };
     const addon = { id: 'yourphr', owner: 'yourphr', encrypt: true };
@@ -242,17 +191,6 @@ describe('addon-declared store kinds (#1414 step 2)', () => {
     expect(storeDoorState(addon, 'absent')).toMatchObject({ open: false, reason: 'not-installed' });
     // No AddonsManager answering is treated as not installed, never as open.
     expect(storeDoorState(addon, null)).toMatchObject({ open: false, reason: 'not-installed' });
-  });
-
-  test('a label and blurb are carried as plain, trimmed, capped text — and are optional', () => {
-    const { declarations } = readStoreDeclarations([
-      { id: 'yourphr', encrypt: true, label: '  Health   records ', blurb: 'x'.repeat(500) },
-      { id: 'notes', encrypt: false, label: 42 }
-    ]);
-
-    expect(declarations[0].label).toBe('Health records');
-    expect(declarations[0].blurb).toHaveLength(300);
-    expect(declarations[1]).toEqual({ id: 'notes', encrypt: false });
   });
 });
 

@@ -35,8 +35,6 @@ import logger from '../utils/logger.js';
 import type { User } from '../types/User.js';
 import {
   countStoreCopies,
-  planStoreDeclaration,
-  readStoreDeclarations,
   storeKindFromConfig,
   storeKindIds,
   type StoreOwnerState
@@ -289,12 +287,6 @@ interface AddonEntry {
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
 
-  /**
-   * What loading made of the addon's store declarations (#1414), for the
-   * admin add-ons screen: a stale manifest ignored, an id denied, a malformed
-   * entry. Empty when there is nothing to say.
-   */
-  storeNotices?: string[];
 }
 
 /**
@@ -332,8 +324,6 @@ export interface AddonStatus {
   hasTheme?: boolean;
   /** #443: themes/<name>/ already exists in the instance */
   themeDeployed?: boolean;
-  /** #1414: store declarations ignored, denied or malformed at load */
-  storeNotices?: string[];
   /** #1414: what turning this addon off would shut — shown in the Disable confirmation */
   disableWarnings?: string[];
 }
@@ -1336,11 +1326,6 @@ class AddonsManager extends BaseManager {
       // is already visible here — and to the managers that copied the
       // catalogs at boot, which the old runtime injection never reached.
 
-      // #1414: before register(), and before anything can fail: a kind the
-      // addon declares exists from its first load, so a later load failure
-      // leaves the door closed ("temporarily unavailable"), not missing.
-      await this.declareStoreKinds(addonName);
-
       // Inject domainDefaults before register() so the addon can read
       // any applied values from ConfigurationManager during startup
       this.applyDomainDefaults(addonName);
@@ -1375,54 +1360,6 @@ class AddonsManager extends BaseManager {
   }
 
   /**
-   * Save the addon's declared store kinds to configuration (#1414).
-   *
-   * Not `domainDefaults`: those are runtime-only and vanish on restart, so a
-   * disabled addon would leave encrypted data on disk with nothing saying it
-   * is encrypted or whose it is. A kind is written through
-   * `ConfigurationManager.setProperty` — `app-custom-config.json`, with its
-   * `config-change` audit record — owned by this addon's canonical slug,
-   * never by anything the manifest says.
-   *
-   * After the first write configuration wins: a manifest that later disagrees
-   * is ignored and reported, and the addon loads. The one refusal is an id
-   * another owner already holds.
-   */
-  private async declareStoreKinds(addonName: string): Promise<void> {
-    const addon = this.addons.get(addonName);
-    if (!addon) return;
-    const { declarations, problems } = readStoreDeclarations(addon.manifest?.stores);
-    const notices: string[] = problems.map(p => `Store declaration ignored: ${p}.`);
-    if (declarations.length === 0 && notices.length === 0) return;
-
-    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    if (!configManager) return;
-    const getProperty = (key: string, def: unknown): unknown => configManager.getProperty(key, def);
-
-    for (const decl of declarations) {
-      const plan = planStoreDeclaration(getProperty, addonName, decl);
-      if (plan.action === 'persist') {
-        const ctx = systemContext(this.engine, `addon ${addonName} declares private store kind ${decl.id} (#1414)`);
-        await configManager.setProperty(`ngdpbase.stores.${decl.id}.owner`, addonName, ctx);
-        await configManager.setProperty(`ngdpbase.stores.${decl.id}.encrypt`, decl.encrypt, ctx);
-        logger.info(`[AddonsManager] ${addonName}: private store kind '${decl.id}' saved (encrypt: ${decl.encrypt})`);
-      } else if (plan.action === 'stale') {
-        const msg = `Store "${decl.id}" is declared encrypt: ${decl.encrypt}, but this site holds it as encrypt: ${plan.configEncrypt}. `
-          + 'The declaration is ignored; every copy keeps being made the way existing ones were.';
-        notices.push(msg);
-        logger.warn(`[AddonsManager] ${addonName}: ${msg}`);
-      } else if (plan.action === 'denied') {
-        const msg = `Store "${decl.id}" belongs to ${plan.owner === 'admin' ? 'the site' : `add-on ${plan.owner}`}; `
-          + `${addonName} may not claim it. The declaration is refused.`;
-        notices.push(msg);
-        logger.error(`[AddonsManager] ${addonName}: ${msg}`);
-      }
-    }
-    for (const p of problems) logger.warn(`[AddonsManager] ${addonName}: store declaration ignored: ${p}`);
-    addon.storeNotices = notices;
-  }
-
-  /**
    * What turning this addon off would shut (#1414): one line per store kind it
    * owns that users hold data in. Turning it off is warned, never refused —
    * nothing is destroyed, the kind stays in configuration, every copy stays on
@@ -1451,17 +1388,6 @@ class AddonsManager extends BaseManager {
       }
     }
     return warnings;
-  }
-
-  /**
-   * The label and blurb the owning addon gives a store kind, for its door
-   * (#1414) — only from an addon that is loaded and still owns the kind.
-   */
-  storePresentation(kind: { id: string; owner: string }): { label?: string; blurb?: string } {
-    const addon = this.addons.get(kind.owner);
-    if (!addon?.loaded) return {};
-    const decl = readStoreDeclarations(addon.manifest?.stores).declarations.find(d => d.id === kind.id);
-    return decl ? { ...(decl.label ? { label: decl.label } : {}), ...(decl.blurb ? { blurb: decl.blurb } : {}) } : {};
   }
 
   /**
@@ -1518,8 +1444,7 @@ class AddonsManager extends BaseManager {
         loaded: addon.loaded,
         dependencies: addon.module.dependencies || [],
         error: addon.error,
-        type: addon.manifest?.type,
-        ...(addon.storeNotices?.length ? { storeNotices: addon.storeNotices } : {})
+        type: addon.manifest?.type
       };
       if (addon.enabled) {
         const disableWarnings = await this.storeDisableWarnings(name);

@@ -29,6 +29,7 @@ import {
 import {
   isValidStoreId,
   privateUserKeysPath,
+  systemCategoryVaults,
   storeMetaPath,
   type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
@@ -37,108 +38,44 @@ import { listPrivateOwners } from './privateStoreTakeout.js';
 
 type GetProperty = (key: string, defaultValue: unknown) => unknown;
 
-/** A store kind as configuration defines it (`ngdpbase.stores.{id}.*`). */
+/**
+ * A vault kind (#1505): a system-category entry that declares a vault
+ * (`storageLocation.privatestore`). Its id is the vault id, the last folder
+ * of `privatestore`; `encrypt` is the entry's own. `ngdpbase.stores.{kind}`
+ * no longer defines kinds (operator, 2026-09-29).
+ */
 export interface StoreKind {
   id: string;
-  /** Whether a copy of this kind is created sealed — the kind owner's call. */
+  /** Whether a copy of this kind is created sealed: the system-category's `encrypt`. */
   encrypt: boolean;
-  /** `admin`, or the slug of the addon that owns the kind. */
+  /**
+   * Who decides about this vault (operator, 2026-09-29): `admin` for the
+   * site's own system-categories, or the slug of the add-on that declared it.
+   * The owner's declaration stands — an add-on that declares its vault
+   * `encrypt: true` (a health-record add-on, say) keeps it sealed; nobody else
+   * turns that off. The system-category entry's `owner`; absent means `admin`.
+   */
   owner: string;
 }
 
-/**
- * The kind named `id`, or `null` when configuration defines no such kind. A
- * kind exists when it has an owner; `encrypt` is read as the boolean it is and
- * nothing else (a string "true" is not a switch).
- */
-export function storeKindFromConfig(getProperty: GetProperty, id: string): StoreKind | null {
-  if (!isValidStoreId(id) || RESERVED_STORE_IDS.includes(id)) return null;
-  const owner = getProperty(`ngdpbase.stores.${id}.owner`, undefined);
-  if (typeof owner !== 'string' || owner.length === 0) return null;
-  return { id, owner, encrypt: getProperty(`ngdpbase.stores.${id}.encrypt`, false) === true };
-}
-
-/** The owner slug the site itself uses; no addon may claim it. */
+/** The site itself, as the owner of its own vault kinds; no add-on may claim it. */
 export const ADMIN_STORE_OWNER = 'admin';
 
-/**
- * Ids under `ngdpbase.stores.*` that are instance settings, not kinds
- * (`recovery.confirmretries`, `import.maxsize`). A kind by these names would
- * share its keys with a setting, so none may be declared.
- */
-export const RESERVED_STORE_IDS: readonly string[] = ['recovery', 'import'];
-
-/** One kind as an addon declares it in its `package.json` `ngdpbase.stores`. */
-export interface StoreDeclaration {
-  id: string;
-  encrypt: boolean;
-  /**
-   * What the door calls the store ("Health records") and one or two sentences
-   * under it. Wording only: read from the loaded addon's manifest when the
-   * door renders, never saved to configuration — "config wins" is about
-   * policy, not words. Plain text; the door escapes it.
-   */
-  label?: string;
-  blurb?: string;
-}
-
-const MAX_STORE_LABEL = 60;
-const MAX_STORE_BLURB = 300;
-
-/** A trimmed display string, cut to `max`, or undefined when absent or empty. */
-function displayText(value: unknown, max: number): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const text = value.trim().replace(/\s+/g, ' ');
-  return text ? text.slice(0, max) : undefined;
-}
+const SYSTEM_CATEGORY_KEY = 'ngdpbase.system-category';
 
 /**
- * The well-formed declarations in a manifest's `stores` value, and a reason
- * for each one that is not. An `encrypt` that is not a boolean is refused
- * rather than read as false: it is the one field that says whether a
- * person's data is sealed.
+ * The kind named `id`, or `null` when no system-category declares that vault.
+ * `encrypt` is read as the boolean it is and nothing else (a string "true" is
+ * not a switch).
  */
-export function readStoreDeclarations(raw: unknown): { declarations: StoreDeclaration[]; problems: string[] } {
-  const declarations: StoreDeclaration[] = [];
-  const problems: string[] = [];
-  if (raw === undefined || raw === null) return { declarations, problems };
-  if (!Array.isArray(raw)) return { declarations, problems: ['`stores` must be an array'] };
-  for (const entry of raw as unknown[]) {
-    const e = entry as { id?: unknown; encrypt?: unknown; label?: unknown; blurb?: unknown } | null;
-    const id = typeof e?.id === 'string' ? e.id : '';
-    if (!id || !isValidStoreId(id)) { problems.push(`store id ${JSON.stringify(e?.id)} is not a valid store id`); continue; }
-    if (RESERVED_STORE_IDS.includes(id)) { problems.push(`store id "${id}" is reserved for an instance setting`); continue; }
-    if (typeof e?.encrypt !== 'boolean') { problems.push(`store "${id}": encrypt must be true or false`); continue; }
-    const label = displayText(e.label, MAX_STORE_LABEL);
-    const blurb = displayText(e.blurb, MAX_STORE_BLURB);
-    declarations.push({ id, encrypt: e.encrypt, ...(label ? { label } : {}), ...(blurb ? { blurb } : {}) });
-  }
-  return { declarations, problems };
-}
-
-/**
- * What loading an addon does with one of its declarations (#1414).
- *
- * - `persist` — no kind by this id yet: write it, owned by this addon.
- * - `match` — already this addon's, and the manifest agrees.
- * - `stale` — already this addon's, but the manifest now says otherwise.
- *   Config wins; the declaration is ignored and reported, the addon loads.
- * - `denied` — another owner holds this id. One addon reaching into another's
- *   container: refused, and reported loudly.
- */
-export type DeclarationPlan =
-  | { action: 'persist' }
-  | { action: 'match' }
-  | { action: 'stale'; configEncrypt: boolean }
-  | { action: 'denied'; owner: string };
-
-export function planStoreDeclaration(getProperty: GetProperty, slug: string, decl: StoreDeclaration): DeclarationPlan {
-  if (slug === ADMIN_STORE_OWNER) return { action: 'denied', owner: ADMIN_STORE_OWNER };
-  const existing = storeKindFromConfig(getProperty, decl.id);
-  if (!existing) return { action: 'persist' };
-  if (existing.owner !== slug) return { action: 'denied', owner: existing.owner };
-  if (existing.encrypt !== decl.encrypt) return { action: 'stale', configEncrypt: existing.encrypt };
-  return { action: 'match' };
+export function storeKindFromConfig(getProperty: GetProperty, id: string): StoreKind | null {
+  if (!isValidStoreId(id)) return null;
+  const categories = getProperty(SYSTEM_CATEGORY_KEY, null);
+  const vault = systemCategoryVaults(categories).find((v) => v.vaultId === id);
+  if (!vault) return null;
+  const entry = (categories as Record<string, { encrypt?: unknown; owner?: unknown } | null>)[vault.key];
+  const owner = typeof entry?.owner === 'string' && entry.owner ? entry.owner : ADMIN_STORE_OWNER;
+  return { id, owner, encrypt: entry?.encrypt === true };
 }
 
 /** Where the addon that owns a kind stands, as the door needs to know it. */
@@ -166,14 +103,9 @@ export function storeDoorState(kind: StoreKind, ownerState: StoreOwnerState | nu
   }
 }
 
-/** Every kind configuration defines, by id: each `ngdpbase.stores.{id}.owner` key. */
+/** Every vault kind, by id: the vault each system-category declares (#1505). */
 export function storeKindIds(allProperties: Record<string, unknown>): string[] {
-  const ids = new Set<string>();
-  for (const key of Object.keys(allProperties)) {
-    const m = /^ngdpbase\.stores\.([^.]+)\.owner$/.exec(key);
-    if (m && isValidStoreId(m[1]) && !RESERVED_STORE_IDS.includes(m[1])) ids.add(m[1]);
-  }
-  return [...ids].sort();
+  return [...new Set(systemCategoryVaults(allProperties[SYSTEM_CATEGORY_KEY]).map((v) => v.vaultId))].sort();
 }
 
 /**
