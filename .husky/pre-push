@@ -1,0 +1,5 @@
+# #1513: the checks that would have caught most of the red CI runs before
+# they left the machine — types, the tests touched by this branch, and lint.
+npm run typecheck --silent
+npx vitest run --changed origin/master
+npm run lint:code --silent

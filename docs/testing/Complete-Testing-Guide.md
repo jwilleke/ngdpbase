@@ -721,15 +721,14 @@ jobs:
         run: npm run smoke
 ```
 
-### Pre-Commit Hooks
+### Git Hooks
 
-With Husky:
+Husky installs the hooks on `npm install` (`"prepare": "husky"`). Both live in `.husky/`:
 
-```bash
-npm install --save-dev husky
-npx husky install
-npx husky add .husky/pre-commit "npm run test:changed"
-```
+- `pre-commit`: lint-staged, then the docs and guard checks.
+- `pre-push` (#1513): `npm run typecheck`, `npx vitest run --changed origin/master`, and `npm run lint:code`. These catch type errors, tests broken by the branch, and lint before CI does.
+
+`git push --no-verify` skips them when needed.
 
 ---
 
