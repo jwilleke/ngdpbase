@@ -2009,13 +2009,15 @@ class VersioningFileProvider extends FileSystemProvider {
     // Check if page exists using public method. #1415: through the caller's
     // context, so the owner's unlocked sealed page is found in their session
     // catalog — without it every save of a sealed page looked like a new page.
-    const pageExists = this.pageExists(pageName, ctx);
+    // #1505: a page moving to another vault is found where it is now.
+    const currentName = options?.moveFrom ?? pageName;
+    const pageExists = this.pageExists(currentName, ctx);
 
     // Get existing page info if it exists
     let pageInfo: WikiPage | null = null;
     if (pageExists) {
       try {
-        pageInfo = await this.getPage(pageName, ctx);
+        pageInfo = await this.getPage(currentName, ctx);
       } catch {
         // Page might exist but not be readable, treat as new
         pageInfo = null;
@@ -2040,8 +2042,8 @@ class VersioningFileProvider extends FileSystemProvider {
     const privateName = parsePrivatePageName(pageName);
     // Where the page is now: its store (found through the caller's context) or
     // the public index. The global index holds no private page.
-    const previous = this.resolvePageInfo(pageName, ctx);
-    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx);
+    const previous = this.resolvePageInfo(currentName, ctx);
+    const placement = this.privatePlacement(pageName, md, uuid, previous, ctx, options?.moveFrom);
     const isPrivate = placement !== null;
     const newCreator = placement?.owner;
     const location: 'pages' | 'private' = isPrivate ? 'private' : 'pages';

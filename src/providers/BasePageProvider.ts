@@ -109,14 +109,16 @@ abstract class BasePageProvider extends BaseProvider {
    * default. A store id is a plain slug.
    *
    * A save that names a different store for a page that already exists is
-   * refused: moving a page and its history between stores is not supported.
+   * refused unless it is an explicit move (#1505: `moveFrom`), which takes
+   * the page and its history with it.
    *
    * @param requested - `metadata.store` from the save, if any
    * @param existing - the store the page is in now, when it is an existing private page
+   * @param moving - the save is an explicit move to another store
    */
-  protected resolvePrivatePageStore(requested: unknown, existing: string | undefined): string {
+  protected resolvePrivatePageStore(requested: unknown, existing: string | undefined, moving = false): string {
     const named = typeof requested === 'string' && requested.length > 0 ? assertStoreId(requested) : undefined;
-    if (named !== undefined && existing !== undefined && named !== existing) {
+    if (!moving && named !== undefined && existing !== undefined && named !== existing) {
       throw new Error(
         `Cannot save this page into private store '${named}': it is in store '${existing}', and moving between stores is not supported`
       );

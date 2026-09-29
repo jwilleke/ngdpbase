@@ -255,7 +255,9 @@ The door refuses a name under the private prefix that does not read as `private/
 - the owner is the name's owner, else the save's `author`; a private page with no owner is refused
 - the store is the one named by the page's name or the save, else the store the page is in now (found by uuid among the owner's stores), else `defaultstoreid`
 
-So ticking the Private box on a public page moves it into the author's default store, and unticking it on a private page moves it back out to the public space. `BasePageProvider.resolvePrivatePageStore()` refuses a save that names a different store for a page that already lives in one: moving a page between stores is not supported, and for an encrypted store it would mean re-encrypting under another DEK.
+So ticking the Private box on a public page moves it into the author's default store, and unticking it on a private page moves it back out to the public space. `BasePageProvider.resolvePrivatePageStore()` refuses a save that names a different store for a page that already lives in one, unless the save is an explicit move (#1505): `PageManager.movePageToVault(pageName, toVault, ctx)` moves a page into another of its owner's vaults under the same title, taking its history and index entry with it and keeping its `lastModified` and `editor`; the audit record is a rename from the old path to the new. A page never moves out of an encrypted vault into one that is not, since that would write it in the clear.
+
+At boot, captures made before #1505 (a `general` page with the system keyword `capture`, in its author's default vault) are moved into the capture vault with `system-category: capture`, once per vault (`capture-vault` in the vault's `migrations.json`). Only the vaults the system can open are visited, so captures in an encrypted vault stay where they are; the capture page still finds them there.
 
 The store is never written into frontmatter — the path records it, and a copy could disagree with where the file is. `private: true` is written only on a private page.
 

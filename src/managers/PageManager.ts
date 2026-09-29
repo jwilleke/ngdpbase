@@ -45,6 +45,7 @@ import {
 import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
+import { storeFileIO } from '../utils/privateStoreFiles.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -93,6 +94,12 @@ export interface PageSaveOptions {
    * exists to repair.
    */
   rawFrontmatter?: boolean;
+  /**
+   * The private name the page is at now, when this save moves it into
+   * another of its owner's vaults (#1505). Set by {@link PageManager.movePageToVault};
+   * the page, its history and its index entries go with it.
+   */
+  moveFrom?: string;
   /**
    * Rewrite a title that breaks the title rule (#1455) instead of refusing
    * the page: the forbidden characters become `-`, the page records what its
@@ -204,6 +211,8 @@ import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
+/** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
+export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -1772,7 +1781,13 @@ class PageManager extends BaseManager implements CatalogSource {
       logger.info(`[PageManager] Title normalised for '${givenTitle}' → '${normalised}' (#1455)`);
     }
 
-    const existingPage = pageName ? await this.provider.getPage(pageName, ctx) : null;
+    // #1505: a page moving vault is found where it is now, not where it is going.
+    const existingPage = options.moveFrom
+      ? await this.provider.getPage(options.moveFrom, ctx)
+      : pageName ? await this.provider.getPage(pageName, ctx) : null;
+    if (options.moveFrom && !existingPage) {
+      throw new Error('PageManager.savePage: the page to move was not found');
+    }
 
     // #946: the agent this write came through, if any — stamped on the page by
     // the normalisation below and named in the audit record at the end.
@@ -1801,12 +1816,16 @@ class PageManager extends BaseManager implements CatalogSource {
     // `preserveLastModified` reaches the provider: a metadata-only write, such
     // as stamping a shipped page's source hash (#1408), must not push the page
     // to the top of Recent Changes.
-    const saved = options.preserveLastModified
-      ? await this.provider.savePage(pageName, content, enrichedMetadata, ctx, { preserveLastModified: true })
+    const providerOptions = {
+      ...(options.preserveLastModified ? { preserveLastModified: true } : {}),
+      ...(options.moveFrom ? { moveFrom: options.moveFrom } : {})
+    };
+    const saved = Object.keys(providerOptions).length > 0
+      ? await this.provider.savePage(pageName, content, enrichedMetadata, ctx, providerOptions)
       : await this.provider.savePage(pageName, content, enrichedMetadata, ctx);
 
     // #1462: the shared indexes follow the save here, and nowhere else.
-    const previousName = existingPage ? this.nameOf(pageName, existingPage) : null;
+    const previousName = existingPage ? this.nameOf(options.moveFrom ?? pageName, existingPage) : null;
     const previousReferrers = await this.reconcileSharedIndexes({
       ctx,
       name: saved.name,
@@ -1837,9 +1856,10 @@ class PageManager extends BaseManager implements CatalogSource {
       const currentTitle = privateName?.title ?? pageName;
       const finalTitle = (enrichedMetadata as Record<string, unknown>).title as string | undefined || currentTitle;
       const renamedTo = privateName ? formatPrivatePageName(privateName.owner, privateName.store, finalTitle) : finalTitle;
+      // #1505: a move to another vault changes the page's name, its path, so it is a rename.
       const derivedOp: PageMutationOp = !existingPage
         ? 'create'
-        : finalTitle !== currentTitle ? 'rename' : 'edit';
+        : options.moveFrom || finalTitle !== currentTitle ? 'rename' : 'edit';
       const op = options.audit?.op ?? derivedOp;
 
       void recordAuditEvent(
@@ -1850,7 +1870,7 @@ class PageManager extends BaseManager implements CatalogSource {
           ipAddress: options.audit?.ipAddress,
           pageName: op === 'rename' ? renamedTo : pageName,
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
-          fromPageName: op === 'rename' ? pageName : null,
+          fromPageName: op === 'rename' ? options.moveFrom ?? pageName : null,
           rewriteOf: options.audit?.rewriteOf ?? null,
           viaToken: viaToken
         }),
@@ -2955,6 +2975,11 @@ class PageManager extends BaseManager implements CatalogSource {
     } catch (err) {
       logger.warn(`[PageManager] Vault-URL migration of public pages did not complete: ${err instanceof Error ? err.message : String(err)}`);
     }
+    try {
+      await this.moveCapturesToCaptureVault(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Capture move did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -3107,6 +3132,123 @@ class PageManager extends BaseManager implements CatalogSource {
       logger.warn(`[PageManager] Link rewrite failed for a page: ${err instanceof Error ? err.message : String(err)}`);
       return 0;
     }
+  }
+
+  /**
+   * Move a private page into another of its owner's vaults (#1505), under the
+   * same title. The page, its history and its index entries go with it; it
+   * keeps its `lastModified` and `editor`, since nobody edited it. The audit
+   * record is a rename, from the old path to the new.
+   *
+   * Access is not decided here, as for every save: the caller has already
+   * been let into the page. A page is never moved out of an encrypted vault
+   * into one that is not, since that would write it in the clear.
+   *
+   * @param pageName - The page's private name, `vaults/{owner}/{vault}/{title}`
+   * @param toVault - The vault to move it to
+   * @param ctx - Who is acting (#1179)
+   * @param changes - Frontmatter to change in the same write, e.g. its `system-category`
+   * @returns Where the page landed
+   */
+  async movePageToVault(
+    pageName: string,
+    toVault: string,
+    ctx: ActorContext,
+    changes: Partial<PageFrontmatter> = {}
+  ): Promise<PageSaveResult> {
+    if (!ctx) throw new Error('PageManager.movePageToVault requires an ActorContext');
+    const from = parsePrivatePageName(pageName);
+    if (!from) throw new Error('PageManager.movePageToVault: not a private page name');
+    if (!isValidStoreId(toVault)) throw new Error(`'${toVault}' is not a vault id`);
+    if (toVault === from.store) throw new Error('PageManager.movePageToVault: the page is already in that vault');
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (configManager && pagesDirectory) {
+      const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+      const [source, target] = await Promise.all([
+        storeFileIO(ctx, { pagesDirectory, owner: from.owner, store: from.store, layout }),
+        storeFileIO(ctx, { pagesDirectory, owner: from.owner, store: toVault, layout })
+      ]);
+      if (source.sealed && !target.sealed) {
+        throw new Error('A page in an encrypted vault cannot move to one that is not encrypted');
+      }
+    }
+
+    const page = await this.getPage(pageName, ctx);
+    if (!page) throw new Error('PageManager.movePageToVault: the page was not found');
+    return this.savePage(
+      formatPrivatePageName(from.owner, toVault, from.title),
+      page.content ?? '',
+      { ...page.metadata, ...changes },
+      ctx,
+      { moveFrom: pageName, preserveLastModified: true, preserveEditor: true }
+    );
+  }
+
+  /**
+   * Move the captures made before #1505 into the capture vault, with
+   * `system-category: capture`. Until then a capture was a `general` page
+   * carrying the system keyword `capture`, saved in its author's default
+   * vault. A page whose system-category someone changed is left where it is.
+   *
+   * Runs over the vaults `ctx` can open — at boot, the unencrypted ones — and
+   * each vault records that it is done. A page whose title is already taken
+   * in the capture vault stays where it is, and is still found there: the
+   * capture page looks in the capture vault, then the default one.
+   *
+   * @returns How many pages moved
+   */
+  async moveCapturesToCaptureVault(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.moveCapturesToCaptureVault requires an ActorContext');
+    if (!this.provider?.listPrivateStorePages) return 0;
+    const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
+    const captureVault = validationManager?.getVaultId('capture');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!captureVault || !configManager || !pagesDirectory) return 0;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+
+    const byVault = new Map<string, { owner: string; store: string; titles: string[] }>();
+    for (const page of await this.provider.listPrivateStorePages(ctx)) {
+      if (page.store === captureVault) continue;
+      const key = `${page.owner}/${page.store}`;
+      const group = byVault.get(key) ?? { owner: page.owner, store: page.store, titles: [] };
+      group.titles.push(page.title);
+      byVault.set(key, group);
+    }
+
+    let moved = 0;
+    for (const { owner, store, titles } of byVault.values()) {
+      const where = { pagesDirectory, owner, store, layout };
+      try {
+        if (await storeMigrationDone(ctx, where, CAPTURE_VAULT_MIGRATION)) continue;
+        let pages = 0;
+        for (const title of titles) {
+          const pageName = formatPrivatePageName(owner, store, title);
+          try {
+            const page = await this.getPage(pageName, ctx);
+            const md = (page?.metadata ?? {}) as Record<string, unknown>;
+            const keywords = Array.isArray(md['system-keywords']) ? md['system-keywords'] as unknown[] : [];
+            const category = md['system-category'] ?? 'general';
+            if (!keywords.some((kw) => String(kw).toLowerCase() === 'capture') || category !== 'general') continue;
+            await this.movePageToVault(pageName, captureVault, ctx, { 'system-category': 'capture' });
+            pages++;
+          } catch (err) {
+            // #1461: the page is not named — a private title never reaches a log.
+            logger.warn(`[PageManager] A capture in ${layout.privateRoot}/${owner}/${store} was not moved: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        await recordStoreMigration(ctx, where, CAPTURE_VAULT_MIGRATION);
+        moved += pages;
+        if (pages > 0) {
+          logger.info(`[PageManager] Captures: moved ${pages} page(s) from ${layout.privateRoot}/${owner}/${store} to ${layout.privateRoot}/${owner}/${captureVault} (#1505)`);
+        }
+      } catch (err) {
+        logger.warn(`[PageManager] Capture move failed for ${layout.privateRoot}/${owner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return moved;
   }
 
   /**

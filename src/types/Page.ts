@@ -215,6 +215,14 @@ export interface PageSaveOptions {
 
   /** Preserve lastModified from metadata instead of setting to now (for import/migration use) */
   preserveLastModified?: boolean;
+
+  /**
+   * The private name the page is at now, when this save moves it into
+   * another of its owner's vaults (#1505). The page, its history and its
+   * index entry go with it. Only a save that says so changes a page's vault;
+   * one that names another vault without it is refused.
+   */
+  moveFrom?: string;
 }
 
 /**

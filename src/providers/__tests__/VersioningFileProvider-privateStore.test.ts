@@ -314,6 +314,40 @@ describe('private store default/ (#1383)', () => {
       expect(await fs.readFile(storeFile('yourphr'), 'utf8')).toContain('v1');
     });
 
+    // #1505: an explicit move takes the page, its history and its index entry to the other vault.
+    test('a save with moveFrom moves the page and its history to the named vault', async () => {
+      const provider = await newProvider();
+      const inDefault = formatPrivatePageName('molly', 'default', 'Labs');
+      await provider.savePage(inDefault, 'v1', { uuid: UUID, author: 'molly' }, MOLLY);
+      await provider.savePage(inDefault, 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+
+      await provider.savePage(LABS, 'v2', { uuid: UUID, author: 'molly' }, MOLLY, { moveFrom: inDefault });
+
+      expect(await fs.pathExists(storeFile('yourphr'))).toBe(true);
+      expect(await fs.pathExists(storeFile('default'))).toBe(false);
+      expect(await fs.pathExists(storeHistory('yourphr'))).toBe(true);
+      expect(await fs.pathExists(storeHistory('default'))).toBe(false);
+      expect((await readStoreIndex('default')).pages[UUID]).toBeUndefined();
+      expect((await readStoreIndex('yourphr')).pages[UUID].store).toBe('yourphr');
+
+      const restarted = await newProvider();
+      expect(await restarted.getPage(inDefault, MOLLY)).toBeNull();
+      expect((await restarted.getPage(LABS, MOLLY))?.content).toContain('v2');
+      // The history came along, and the move added no version: the body is the same.
+      expect(await restarted.getVersionHistory(LABS, MOLLY)).toHaveLength(2);
+    });
+
+    test('a move goes only to another of the owner\'s vaults, under the same title', async () => {
+      const provider = await newProvider();
+      const inDefault = formatPrivatePageName('molly', 'default', 'Labs');
+      await provider.savePage(inDefault, 'v1', { uuid: UUID, author: 'molly' }, MOLLY);
+
+      await expect(
+        provider.savePage(formatPrivatePageName('molly', 'yourphr', 'Other'), 'v1', { uuid: UUID, author: 'molly' }, MOLLY, { moveFrom: inDefault })
+      ).rejects.toThrow(/moves only to another of its owner's vaults/);
+      expect(await fs.pathExists(storeFile('default'))).toBe(true);
+    });
+
     test('a store id that is not a plain slug is refused before anything is written', async () => {
       const provider = await newProvider();
       for (const bad of ['../../escape', 'Your PHR', 'a/b']) {

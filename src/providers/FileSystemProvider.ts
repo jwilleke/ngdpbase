@@ -730,7 +730,10 @@ class FileSystemProvider extends BasePageProvider {
     // #1456: a private page is named by its path; resolving through the
     // caller's context finds it in its store's own index (sealed ones included)
     // so it is saved in place rather than duplicated under a new UUID.
-    const oldPageInfo = this.resolvePageInfo(pageName, ctx);
+    // #1505: a page moving to another vault is found where it is now.
+    const oldPageInfo = options?.moveFrom
+      ? this.resolvePageInfo(options.moveFrom, ctx)
+      : this.resolvePageInfo(pageName, ctx);
     const uuid = metadata.uuid || oldPageInfo?.uuid || uuidv4();
 
     if (!this.pagesDirectory || !this.requiredPagesDirectory) {
@@ -755,7 +758,7 @@ class FileSystemProvider extends BasePageProvider {
     // name is public unless the box was ticked (a move into the author's
     // default store). The owner is the path's, never frontmatter's.
     const privateName = parsePrivatePageName(pageName);
-    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx);
+    const placement = this.privatePlacement(pageName, md, uuid, oldPageInfo, ctx, options?.moveFrom);
     const isPrivate = placement !== null;
     const pageCreator = placement?.owner;
     const pageStore = placement?.store;
@@ -932,13 +935,17 @@ class FileSystemProvider extends BasePageProvider {
    * page's name, else the save — else the store the page is in now, else the
    * default. "Now" is found by uuid among the owner's stores, so a save under
    * another name cannot leave a second copy of the page in a second store.
+   *
+   * `moveFrom` (#1505) is an explicit move from another of the same owner's
+   * stores: the page's name then names the store it goes to.
    */
   protected privatePlacement(
     pageName: string,
     md: Record<string, unknown>,
     uuid: string,
     previous: PageCacheInfo | null,
-    ctx: ActorContext
+    ctx: ActorContext,
+    moveFrom?: string
   ): { owner: string; store: string } | null {
     const privateName = parsePrivatePageName(pageName);
     const isPrivate = md.private === true || (privateName !== null && md.private !== false);
@@ -951,7 +958,15 @@ class FileSystemProvider extends BasePageProvider {
     const existing = previous?.fromStore?.owner === owner
       ? previous.fromStore.store
       : this.storeHoldingPage(owner, uuid, ctx);
-    return { owner, store: this.resolvePrivatePageStore(privateName?.store ?? md.store, existing) };
+    let moving = false;
+    if (moveFrom !== undefined) {
+      const from = parsePrivatePageName(moveFrom);
+      if (!privateName || !from || from.owner !== privateName.owner || from.title !== privateName.title) {
+        throw new Error(`Cannot move '${moveFrom}': a page moves only to another of its owner's vaults, under the same title`);
+      }
+      moving = true;
+    }
+    return { owner, store: this.resolvePrivatePageStore(privateName?.store ?? md.store, existing, moving) };
   }
 
   /** The owner's stores this context can read, with their page indexes (#1456). */
