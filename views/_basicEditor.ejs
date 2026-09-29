@@ -78,8 +78,15 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                     <div class="col-md-4">
                         <label style="font-weight:bold;">System Category (Admin Only): <%- include('_help-icon', { slug: 'system-category', label: 'System Category' }) %></label>
                         <select class="form-control" id="systemCategory" name="system-category" required>
-                            <% systemCategories.forEach(category => {
+                            <%
                                 const currentCategory = (metadata['system-category'] || defaultCategory || '').toLowerCase();
+                                // #1504: a page keeps a system-category that is not offered (enabled: false); list it so saving never moves the page.
+                                const keepsHidden = metadata['system-category'] && !systemCategories.some(category => category.toLowerCase() === currentCategory);
+                            %>
+                            <% if (keepsHidden) { %>
+                                <option value="<%= metadata['system-category'] %>" selected><%= metadata['system-category'] %></option>
+                            <% } %>
+                            <% systemCategories.forEach(category => {
                                 const isSelected = currentCategory === category.toLowerCase();
                             %>
                                 <option value="<%= category %>" <%= isSelected ? 'selected' : '' %>><%= category %></option>

@@ -1098,7 +1098,7 @@
       "description": "User profile pages",
       "default": false,
       "source": "site",
-      "enabled": true,
+      "enabled": false,
       "storageLocation": {
         "defaultstore": "pages/"
       },

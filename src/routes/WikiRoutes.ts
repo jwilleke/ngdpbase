@@ -167,6 +167,7 @@ import type RenderingManager from '../managers/RenderingManager.js';
 import type TemplateManager from '../managers/TemplateManager.js';
 import type ValidationManager from '../managers/ValidationManager.js';
 import { categorySource } from '../managers/ValidationManager.js';
+import { acceptedSystemCategory } from '../utils/acceptedSystemCategory.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
@@ -3821,11 +3822,14 @@ ${panes}
         return res.status(400).send('A system-category is required');
       }
 
-      // Validate that the submitted category is valid (case-insensitive match)
+      // Validate that the submitted category may be used (case-insensitive).
+      // #1504: an offered one, or the one the page already has — a disabled
+      // system-category is never offered, but a page keeps it.
       const validCategories = this.getSystemCategories();
-      const normalizedSubmitted = systemCategory.trim().toLowerCase();
-      const matchedCategory = validCategories.find(
-        (cat: string) => cat.toLowerCase() === normalizedSubmitted
+      const matchedCategory = acceptedSystemCategory(
+        systemCategory,
+        validCategories,
+        (existingPage?.metadata as Record<string, unknown> | undefined)?.['system-category']
       );
       if (!matchedCategory) {
         const validCategoryList = validCategories.join(', ');

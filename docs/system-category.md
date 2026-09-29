@@ -190,12 +190,13 @@ Shown to people only: in the table of `[{ConfigAccessor type='systemCategories'}
 
 ### `enabled` (boolean, default `true`)
 
-`false` means the system-category is __not offered and not deleted__:
+`false` means the system-category is __not offered__ (built in #1504, operator 2026-09-28): it is __visibility only__.
 
-- It leaves the list of valid system-categories (`ValidationManager`), so the editor, the create form and the ingest API no longer offer or accept it.
-- Pages that already carry it stay on disk and still display.
-- __Saving such a page is refused__: validation fails because the system-category is no longer valid. To edit it, change its system-category first. `developer` is shipped disabled; this is why a page carrying it cannot be saved. __Decided to change__ (operator, 2026-09-28): `enabled` becomes visibility only, and edit/save becomes policy alone (security posture P2). `developer` stays unsaveable because it has no `storageLocation`, not because it is disabled.
+- It leaves the list people choose from, so the create form, the editor's list and the ingest API never offer it, and nobody can move a page into it.
+- A page that already carries it keeps it: saving that page is accepted with its current system-category, and the editor lists the current one even when it is not offered, so a save never moves the page (`acceptedSystemCategory`).
+- Whether a page may be edited or saved at all is policy's decision, never this flag.
 - A disabled entry is never chosen as the default.
+- Shipped disabled: `developer` (never stored on the site: it has no `storageLocation`), `user-profile` (set only through user preferences) and `capture` (set by the capture feature).
 
 ### `default` (boolean)
 
