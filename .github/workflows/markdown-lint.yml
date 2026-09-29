@@ -3,8 +3,11 @@ name: Markdown Lint
 on:
   push:
     branches: [master, main]
+    # #1513: only when markdown or its rules change (TODO.md included).
+    paths: ['**/*.md', '.markdownlint-cli2.jsonc']
   pull_request:
     branches: [master, main]
+    paths: ['**/*.md', '.markdownlint-cli2.jsonc']
 
 jobs:
   markdown-lint:

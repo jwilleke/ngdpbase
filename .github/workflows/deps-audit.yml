@@ -1,0 +1,37 @@
+name: Dependency Audit
+
+# #1513: the lockfile audit moved out of the CI lint chain. Its result depends
+# on the advisory database, not on the commit, so it turned unrelated pushes
+# red. It runs nightly, on a PR that changes a package manifest or lockfile,
+# and by hand.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  pull_request:
+    paths:
+      - '**/package.json'
+      - '**/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Lockfile audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
+
+      - name: Audit every lockfile (#1242)
+        run: npm run lint:audit-deps

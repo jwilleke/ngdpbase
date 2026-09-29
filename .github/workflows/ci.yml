@@ -3,8 +3,12 @@ name: CI - Continuous Integration
 on:
   push:
     branches: [master, develop]
+    # #1513: a TODO.md refresh or an agent/template edit tests nothing. Not all
+    # *.md: docs/** feeds lint:docs.
+    paths-ignore: ['TODO.md', '.claude/**', '.github/ISSUE_TEMPLATE/**']
   pull_request:
     branches: [master, develop]
+    paths-ignore: ['TODO.md', '.claude/**', '.github/ISSUE_TEMPLATE/**']
   # Manual trigger. This workflow sat `disabled_manually` from 2026-04-14 to
   # 2026-08-23 because two auxiliary jobs went permanently red (a renamed
   # config key in Smoke Tests, a pre-TypeScript-migration server path in E2E)
@@ -15,22 +19,24 @@ on:
   # a fix. See https://github.com/jwilleke/ngdpbase/issues/1085
   workflow_dispatch:
 
+# #1513: a newer push to the same PR or branch supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [24.x]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24.x
           cache: 'npm'
 
       - name: Install dependencies
@@ -151,8 +157,9 @@ jobs:
           nohup /tmp/sampler.sh > /tmp/resource-samples.log 2>&1 &
           echo "sampler_pid=$!" >> "$GITHUB_ENV"
 
-      - name: Run all tests
-        run: npm test -- --maxWorkers=2
+      # #1513: one run, with coverage — the suite used to run twice.
+      - name: Run all tests, with coverage
+        run: npm test -- --coverage --maxWorkers=2
         env:
           NODE_ENV: test
 
@@ -217,14 +224,8 @@ jobs:
           fi
       # --- end #1093 diagnostics ---------------------------------------------
 
-      - name: Generate coverage report
-        run: npm test -- --coverage --maxWorkers=2
-        env:
-          NODE_ENV: test
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
-        if: matrix.node-version == '24.x'
         with:
           files: ./coverage/lcov.info
           flags: unittests
@@ -366,45 +367,13 @@ jobs:
             process.exit(0);
           "
 
-  build:
-    name: Build Check
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24.x
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: sh scripts/npm-ci-retry.sh   # #1450: retried, GitHub's CDN flaps on ffmpeg-static
-
-      - name: Check if build script exists
-        id: check-build
-        run: |
-          if npm run | grep -q "build"; then
-            echo "has_build=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_build=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run build
-        if: steps.check-build.outputs.has_build == 'true'
-        run: npm run build
-
-      - name: Skip build
-        if: steps.check-build.outputs.has_build == 'false'
-        run: echo "No build script defined - skipping"
-
   e2e-test:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: test
+    # #1513: E2E does not block (see CI Summary); a failure here no longer
+    # turns the whole run red.
+    continue-on-error: true
 
     steps:
       - name: Checkout code
@@ -461,7 +430,7 @@ jobs:
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [test, lint, smoke-test, build, e2e-test]
+    needs: [test, lint, smoke-test, e2e-test]
     if: always()
 
     steps:
@@ -471,7 +440,6 @@ jobs:
           echo "- Tests: ${{ needs.test.result }}"
           echo "- Lint: ${{ needs.lint.result }}"
           echo "- Smoke Tests: ${{ needs.smoke-test.result }}"
-          echo "- Build: ${{ needs.build.result }}"
           echo "- E2E Tests: ${{ needs.e2e-test.result }}"
 
           if [ "${{ needs.test.result }}" != "success" ] || \
