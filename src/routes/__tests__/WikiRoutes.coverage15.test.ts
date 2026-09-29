@@ -89,12 +89,16 @@ const mockUserManager = {
 // #1431 step 14: decisions are the PDP's.
 const mockPolicyDecisionPoint = {
   permits: vi.fn(),
+  // #1504: hasPermission(action, { 'system-category' }) asks decide().
+  decide: vi.fn(),
   getUserPermissions: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
   // #1431 step 13: the request subject is the PIP's.
   currentSubject: vi.fn(),
+  // #1504: the private-page gate (the owner may act in their own vault).
+  canAccessPrivateContainer: vi.fn(() => true),
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
   removeACLMarkup: vi.fn(),
@@ -291,6 +295,7 @@ function resetMocks() {
 
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
   mockPolicyDecisionPoint.permits.mockResolvedValue(true);
+  mockPolicyDecisionPoint.decide.mockResolvedValue({ permit: true, applicable: true, reason: 'test' });
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
@@ -951,6 +956,28 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe(pageUrl(landed));
       expectNoRouteIndexWork();
+    });
+
+    test('#1504: moving a page out of its vault asks page-public for its system-category, and goes ahead when policy allows', async () => {
+      const res = await request(app)
+        .post('/vaults/adminuser/default/TestPage/save')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'false' });
+      expect(res.status).toBe(302);
+      expect(mockPolicyDecisionPoint.decide).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: 'page-public', attributes: { 'system-category': 'general' } })
+      );
+    });
+
+    test('#1504: moving a page out of its vault is refused when policy does not allow page-public for its system-category', async () => {
+      mockPolicyDecisionPoint.decide.mockResolvedValue({ permit: false, applicable: true, reason: 'test' });
+      const res = await request(app)
+        .post('/vaults/adminuser/default/TestPage/save')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'false' });
+      expect(res.status).toBe(403);
+      expect(mockPageManager.savePage).not.toHaveBeenCalled();
     });
 
     test('a rename rewrites the referrers the door read before the old title left the link graph', async () => {

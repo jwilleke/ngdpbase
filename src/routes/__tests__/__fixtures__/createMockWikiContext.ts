@@ -79,7 +79,11 @@ export interface MockWikiContextDeps {
   /** Mocked PolicyDecisionPoint for hasPermission delegation (#1431 step 14).
    *  When provided, the mocked hasPermission delegates to `permits`. Otherwise
    *  defaults to true (permissive). */
-  mockPolicyDecisionPoint?: { permits?: (u: string, a: string) => Promise<boolean> | boolean };
+  mockPolicyDecisionPoint?: {
+    permits?: (u: string, a: string) => Promise<boolean> | boolean;
+    /** #1504: asked when hasPermission is given a system-category, as the real door does. */
+    decide?: (subject: unknown, request: Record<string, unknown>) => Promise<{ permit: boolean }> | { permit: boolean };
+  };
   /** When true, populate manager properties (pageManager, renderingManager, etc.)
    *  from engine.getManager. Only routes.test.ts needs this; default false. */
   resolveManagers?: boolean;
@@ -138,7 +142,11 @@ export function createMockWikiContext(
 
     // #625 access-control methods — same shape as the real WikiContext
     hasRole: vi.fn((...names: string[]) => names.some(n => roles.includes(n))),
-    hasPermission: vi.fn(async (action: string) => {
+    hasPermission: vi.fn(async (action: string, attributes?: Record<string, unknown>) => {
+      if (attributes && deps.mockPolicyDecisionPoint?.decide) {
+        const d = await deps.mockPolicyDecisionPoint.decide(userContext, { action, resource: { type: 'page', id: '*' }, attributes });
+        return d.permit;
+      }
       if (deps.mockPolicyDecisionPoint?.permits) {
         try {
           return await deps.mockPolicyDecisionPoint.permits(userContext?.username ?? '', action);

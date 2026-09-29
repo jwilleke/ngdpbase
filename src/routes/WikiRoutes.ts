@@ -3926,6 +3926,11 @@ ${panes}
       if (movesStore && existingPage && currentUser?.username !== pageOwner) {
         return await fail(403, 'Access Denied', 'Only the page\'s owner can make it private or public');
       }
+      // #1504: making a page public is `page-public`, decided by policy on the
+      // page's system-category — the owner's move, and only where policy allows.
+      if (movesStore && existingPage && privateName && !(await wikiContext.hasPermission('page-public', { 'system-category': matchedCategory }))) {
+        return await fail(403, 'Access Denied', `Pages in the ${matchedCategory} system-category cannot be made public`);
+      }
       const newTitle = (typeof title === 'string' && title) || privateName?.title || pageName;
 
       // #1017: system-keywords is the automation/provenance bucket (#893) — no

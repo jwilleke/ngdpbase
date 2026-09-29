@@ -1628,6 +1628,11 @@
       "icon": "edit",
       "color": "#007bff"
     },
+    "page-public": {
+      "description": "Make a page public: move it out of its vault (checked by the page's system-category, #1504)",
+      "icon": "globe",
+      "color": "#20c997"
+    },
     "page-create": {
       "description": "Create new pages",
       "icon": "plus",
@@ -2049,6 +2054,56 @@
         "page-read",
         "asset-read",
         "search-page"
+      ]
+    },
+    {
+      "id": "page-public-access",
+      "name": "Make pages public",
+      "description": "Move one's own general, journal and capture pages out of their vault (#1504): the roles that can have private pages today",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "reader"
+        },
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        },
+        {
+          "type": "role",
+          "value": "user-admin"
+        },
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "general"
+        },
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        },
+        {
+          "type": "system-category",
+          "pattern": "capture"
+        }
+      ],
+      "actions": [
+        "page-public"
       ]
     }
   ],

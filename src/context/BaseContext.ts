@@ -101,16 +101,26 @@ export abstract class BaseContext {
    *
    * For a check against a PAGE, ask `canAccess` on a context that has one —
    * resource attributes beat global policy.
+   *
+   * #1504: with `attributes` — today `{ 'system-category': … }` — the same
+   * door asks about pages OF that kind, so a policy on the `system-category`
+   * resource type can decide (e.g. `page-public`: may this person make pages
+   * of this system-category public?). It is the policy question alone: unlike
+   * `canAccess` it walks none of one page's own tiers (private owner,
+   * frontmatter), so a page's owner gets no pass on it.
    */
-  async hasPermission(action: string): Promise<boolean> {
+  async hasPermission(action: string, attributes?: { 'system-category'?: unknown }): Promise<boolean> {
     const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) return false;
-    const cached = this._permissionCache.get(action);
+    const key = attributes ? `${action}\u0000${JSON.stringify(attributes)}` : action;
+    const cached = this._permissionCache.get(key);
     if (cached) return cached;
     // #637: hand over the already-resolved subject so the PDP need not
     // resolve the account and its roles again.
-    const promise = pdp.permits(this.getActor(), action);
-    this._permissionCache.set(action, promise);
+    const promise = attributes
+      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: '*' }, attributes }).then((d) => d.permit)
+      : pdp.permits(this.getActor(), action);
+    this._permissionCache.set(key, promise);
     return promise;
   }
 

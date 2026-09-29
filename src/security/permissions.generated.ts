@@ -33,6 +33,8 @@ export type CorePermission =
   | 'page-edit'
   /** Export pages */
   | 'page-export'
+  /** Make a page public: move it out of its vault (checked by the page's system-category, #1504) */
+  | 'page-public'
   /** View pages */
   | 'page-read'
   /** Rename pages */
@@ -73,6 +75,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'page-delete',
   'page-edit',
   'page-export',
+  'page-public',
   'page-read',
   'page-rename',
   'profile-manage',
