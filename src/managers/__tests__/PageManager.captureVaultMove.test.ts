@@ -161,6 +161,16 @@ describe('PageManager capture vault move (#1505)', () => {
       expect(save.metadata.lastModified).toBe('2024-01-01T00:00:00.000Z');
     });
 
+    test('a page that never had an editor is not given one (the system ran the move, nobody edited it)', async () => {
+      await build([{ store: 'default', title: '2026-09-10-1-journal-jim', category: 'journal' }]);
+      const stored = harness.stored.get(JIM('default', '2026-09-10-1-journal-jim'));
+      delete stored?.metadata.editor;
+
+      await manager.movePagesToCategoryVaults(BOOT);
+
+      expect(harness.saves[0].metadata).not.toHaveProperty('editor');
+    });
+
     test('a page in any other vault was put there on purpose and stays', async () => {
       await build([{ store: 'yourphr', title: '2026-09-10-1-journal-jim', category: 'journal' }]);
       expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(0);

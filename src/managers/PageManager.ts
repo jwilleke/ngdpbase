@@ -1513,10 +1513,17 @@ class PageManager extends BaseManager implements CatalogSource {
     // #1457: `preserveEditor` keeps the stored one. A link migration rewrites
     // syntax, not a revision anybody wrote, so whoever ran it is not the
     // page's editor; the act is recorded as `link-rewrite` in the audit trail.
+    // A page that never had an editor keeps none (#1507): falling back to the
+    // acting context stamped `editor: system` on every page a boot migration
+    // touched.
     const storedEditor = (existingPage?.metadata as Record<string, unknown> | undefined)?.editor;
-    rawMetadata.editor = keepEditor
-      ? (typeof storedEditor === 'string' && storedEditor ? storedEditor : metadata.editor) ?? actingUser
-      : actingUser || metadata.editor || rawMetadata.author;
+    if (keepEditor) {
+      const kept = typeof storedEditor === 'string' && storedEditor ? storedEditor : metadata.editor;
+      if (kept) rawMetadata.editor = kept;
+      else delete rawMetadata.editor;
+    } else {
+      rawMetadata.editor = actingUser || metadata.editor || rawMetadata.author;
+    }
 
     // Strip caller-supplied provenance before stamping our own.
     delete (rawMetadata as Record<string, unknown>)['via-token'];
