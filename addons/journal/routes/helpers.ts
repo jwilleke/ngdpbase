@@ -30,15 +30,20 @@ export function legacyJournalSlug(date: string, username: string): string {
   return `journal-${username}-${date}`;
 }
 
-/** A journal title as the user's private page, in their default store (#1456). */
-function privateJournalName(engine: WikiEngine, username: string, title: string): string {
+/**
+ * A journal title as the user's private page (#1456), in the vault the journal
+ * system-category declares (#1505), or in the user's default vault. A new
+ * entry goes to the first; an entry made before #1505 may be in the second.
+ */
+function privateJournalNames(engine: WikiEngine, username: string, title: string): { journal: string; fallback: string } {
   const configManager = engine.getManager<ConfigurationManager>('ConfigurationManager');
   if (!configManager) throw new Error('ConfigurationManager not available');
-  return formatPrivatePageName(
-    username,
-    privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId,
-    title
-  );
+  const defaultVault = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId;
+  const journalVault = engine.getManager<ValidationManager>('ValidationManager')?.getVaultId('journal') ?? defaultVault;
+  return {
+    journal: formatPrivatePageName(username, journalVault, title),
+    fallback: formatPrivatePageName(username, defaultVault, title)
+  };
 }
 
 /**
@@ -60,8 +65,9 @@ export async function findJournalEntryName(
   const pm = engine.getManager<PageManager>('PageManager');
   if (!pm) return null;
   const title = journalPageName(date, username);
-  const privateName = privateJournalName(engine, username, title);
-  if (await pm.getPage(privateName, ctx)) return privateName;
+  const privateNames = privateJournalNames(engine, username, title);
+  if (await pm.getPage(privateNames.journal, ctx)) return privateNames.journal;
+  if (privateNames.fallback !== privateNames.journal && await pm.getPage(privateNames.fallback, ctx)) return privateNames.fallback;
   if (await pm.getPage(title, ctx)) return title;
   const legacy = await pm.getPageBySlug(legacyJournalSlug(date, username), ctx);
   return legacy?.title ?? null;
@@ -94,7 +100,7 @@ export function journalPrivacy(
  * Visibility (#1504): the journal system-category's `defaultPrivate` — with
  * `choice`, the user's `journal.defaultPrivate` preference, private until set
  * (ValidationManager.getDefaultPrivate). A private entry is
- * named by its path in the user's default store (#1456); a public one by its
+ * named by its path in the journal vault (#1456, #1505); a public one by its
  * title. Title and slug are the same per-user name (#1329, #789).
  */
 export async function createJournalEntry(
@@ -113,7 +119,7 @@ export async function createJournalEntry(
   const defaultAuthorLock = config['defaultAuthorLock'] !== false;
 
   const title = journalPageName(date, username);
-  const name = isPrivate ? privateJournalName(engine, username, title) : title;
+  const name = isPrivate ? privateJournalNames(engine, username, title).journal : title;
 
   const metadata: Record<string, unknown> = {
     title,

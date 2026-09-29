@@ -21,6 +21,8 @@ interface EngineOpts {
   config?: Record<string, unknown>;
   /** The journal system-category's defaultPrivate (#1504); default 'choice'. */
   journalDefaultPrivate?: boolean | 'choice';
+  /** The journal system-category's vault (#1505); default 'journal', null for none declared. */
+  journalVault?: string | null;
 }
 
 function makeEngine(opts: EngineOpts = {}) {
@@ -45,7 +47,13 @@ function makeEngine(opts: EngineOpts = {}) {
       if (name === 'JournalDataManager') return { listByAuthor };
       if (name === 'UserManager') return { getUser };
       if (name === 'ConfigurationManager') return { getProperty };
-      if (name === 'ValidationManager') return { getDefaultPrivate, offersDefaultPrivatePreference: () => declared === 'choice' };
+      if (name === 'ValidationManager') {
+        return {
+          getDefaultPrivate,
+          offersDefaultPrivatePreference: () => declared === 'choice',
+          getVaultId: (category: string) => (category === 'journal' ? (opts.journalVault === undefined ? 'journal' : opts.journalVault) : null)
+        };
+      }
       return undefined;
     })
   } as never;
@@ -74,7 +82,14 @@ describe('findJournalEntryName', () => {
     expect(getPage).not.toHaveBeenCalled();
   });
 
-  it('finds a private entry in the user\'s default store by direct probe', async () => {
+  it('finds a private entry in the journal vault first (#1505)', async () => {
+    const { engine } = makeEngine({
+      names: ['vaults/jim/journal/2026-09-10-1-journal-jim', 'vaults/jim/default/2026-09-10-1-journal-jim']
+    });
+    expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
+  });
+
+  it('finds a private entry made before #1505 in the user\'s default vault', async () => {
     const { engine } = makeEngine({ names: ['vaults/jim/default/2026-09-10-1-journal-jim'] });
     expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
@@ -117,14 +132,14 @@ describe('findJournalEntryName', () => {
 });
 
 describe('createJournalEntry', () => {
-  it('saves a private entry under the user\'s default store and returns that name', async () => {
+  it('saves a private entry in the journal vault and returns that name (#1505)', async () => {
     const { engine, savePage } = makeEngine();
     const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
-    expect(name).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+    expect(name).toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
     expect(savePage).toHaveBeenCalledTimes(1);
     const [pageName, content, metadata, ctx] = savePage.mock.calls[0] as unknown as
       [string, string, Record<string, unknown>, unknown];
-    expect(pageName).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+    expect(pageName).toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
     // #1328: empty, not ' '.
     expect(content).toBe('');
     // #1462 slice 2: the door is handed the entry's author, never a rebuilt actor.
@@ -138,6 +153,11 @@ describe('createJournalEntry', () => {
       private: true,
       'author-lock': true
     });
+  });
+
+  it('saves a private entry in the user\'s default vault when the journal system-category declares none', async () => {
+    const { engine } = makeEngine({ journalVault: null });
+    expect(await createJournalEntry(engine, {}, jim, '2026-09-10')).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 
   it('saves a public entry under its plain title when the journal system-category starts public', async () => {
@@ -156,13 +176,13 @@ describe('createJournalEntry', () => {
 
     const priv = makeEngine({ userPref: true });
     expect(await createJournalEntry(priv.engine, {}, jim, '2026-09-10'))
-      .toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+      .toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
   });
 
   it('a fixed defaultPrivate ignores the preference (#1504)', async () => {
     const fixed = makeEngine({ journalDefaultPrivate: true, userPref: false });
     expect(await createJournalEntry(fixed.engine, {}, jim, '2026-09-10'))
-      .toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+      .toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
   });
 
   it('leaves out the author lock when the deployment turns it off', async () => {
