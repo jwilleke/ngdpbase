@@ -1,6 +1,4 @@
 
-import { existsSync } from 'fs';
-import path from 'path';
 import BaseManager from '../../../dist/src/managers/BaseManager.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
@@ -14,7 +12,7 @@ export interface JournalIndexEntry {
   /**
    * The page's name — what it is opened, saved and deleted by. A public entry
    * is named by its title; a private one by its path,
-   * `private/{user}/{store}/{title}` (#1456).
+   * `vaults/{user}/{vault}/{title}` (#1456).
    */
   name: string;
   slug: string;
@@ -60,34 +58,18 @@ export interface JournalQueryOptions {
  * engine-scoped cache with save-hook invalidation would be the next step.
  */
 class JournalDataManager extends BaseManager {
-  private indexPath: string;
-
   readonly description = 'Journal entry query helpers over SearchManager + PageManager';
 
-  constructor(engine: WikiEngine, dataPath: string) {
+  constructor(engine: WikiEngine) {
     super(engine);
-    this.indexPath = path.join(dataPath, 'journal-index.json');
   }
 
   // ── Persistence (retired — no-ops kept for back-compat) ──────────────────────
+  //
+  // #800 retired the sidecar; #1507 removed `dataPath`, which only located it.
+  // A stale `journal-index.json` left on disk is read by nothing.
 
-  async load(): Promise<void> {
-    // #800 — the legacy sidecar is retired. If a stale file is still on
-    // disk from a previous release, log it once on load so operators
-    // know the file is safe to delete. We do NOT auto-delete — leaving
-    // the file in place is harmless (no code reads it anymore) and
-    // operator action is the safer cleanup path.
-    if (existsSync(this.indexPath)) {
-      // BaseManager exposes a `logger` field via the engine in production;
-      // fall back to console for the rare case where this runs early.
-      const log = (this.engine as unknown as { logger?: { info?: (s: string) => void } })?.logger
-        ?? console;
-      log.info?.(
-        `[JournalDataManager] Stale legacy sidecar detected at ${this.indexPath} — ` +
-        'safe to delete (no longer read or written per EPIC #790 / #800).'
-      );
-    }
-  }
+  async load(): Promise<void> { /* no-op — sidecar retired */ }
 
   async save(): Promise<void> { /* no-op — sidecar retired */ }
 

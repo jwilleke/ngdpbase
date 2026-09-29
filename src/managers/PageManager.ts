@@ -213,6 +213,8 @@ import type CacheManager from './CacheManager.js';
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
 export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
+/** The move of private pages from the default vault into their system-category's own vault (#1507). */
+export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -2980,6 +2982,11 @@ class PageManager extends BaseManager implements CatalogSource {
     } catch (err) {
       logger.warn(`[PageManager] Capture move did not complete: ${err instanceof Error ? err.message : String(err)}`);
     }
+    try {
+      await this.movePagesToCategoryVaults(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Category vault move did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -3201,17 +3208,65 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   async moveCapturesToCaptureVault(ctx: ActorContext): Promise<number> {
     if (!ctx) throw new Error('PageManager.moveCapturesToCaptureVault requires an ActorContext');
-    if (!this.provider?.listPrivateStorePages) return 0;
+    const captureVault = this.engine.getManager<ValidationManager>('ValidationManager')?.getVaultId('capture');
+    if (!captureVault) return 0;
+    return this.moveVaultPages(ctx, CAPTURE_VAULT_MIGRATION, '#1505', (md) => {
+      const keywords = Array.isArray(md['system-keywords']) ? md['system-keywords'] as unknown[] : [];
+      const category = md['system-category'] ?? 'general';
+      if (!keywords.some((kw) => String(kw).toLowerCase() === 'capture') || category !== 'general') return null;
+      return { toVault: captureVault, changes: { 'system-category': 'capture' } };
+    });
+  }
+
+  /**
+   * Move private pages made before #1505 into their system-category's own
+   * vault (#1507). Until then every private page went to its owner's default
+   * vault, whatever its system-category — journal entries included. A page in
+   * the default vault whose system-category declares another vault
+   * (`storageLocation.privatestore`) moves there; a page in any other vault
+   * was put there on purpose and is left alone.
+   *
+   * Same rules as {@link moveCapturesToCaptureVault}: the vaults `ctx` can
+   * open, once per vault, and a page whose title is taken where it would go
+   * stays where it is.
+   *
+   * @returns How many pages moved
+   */
+  async movePagesToCategoryVaults(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.movePagesToCategoryVaults requires an ActorContext');
     const validationManager = this.engine.getManager<ValidationManager>('ValidationManager');
-    const captureVault = validationManager?.getVaultId('capture');
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!validationManager || !configManager) return 0;
+    const defaultVault = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback)).defaultStoreId;
+    return this.moveVaultPages(ctx, CATEGORY_VAULT_MIGRATION, '#1507', (md, store) => {
+      if (store !== defaultVault) return null;
+      const category = typeof md['system-category'] === 'string' ? md['system-category'] : 'general';
+      const toVault = validationManager.getVaultId(category);
+      return toVault && toVault !== store ? { toVault } : null;
+    });
+  }
+
+  /**
+   * One pass of a vault move: every page in the vaults `ctx` can open is
+   * offered to `pick`, which names the vault it goes to (and any frontmatter
+   * to change with it), or null to leave it. Each vault records `migrationId`
+   * once visited, so no later boot reads its pages again; one page's or one
+   * vault's failure never stops the rest.
+   */
+  private async moveVaultPages(
+    ctx: ActorContext,
+    migrationId: string,
+    issue: string,
+    pick: (metadata: Record<string, unknown>, store: string) => { toVault: string; changes?: Partial<PageFrontmatter> } | null
+  ): Promise<number> {
+    if (!this.provider?.listPrivateStorePages) return 0;
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
-    if (!captureVault || !configManager || !pagesDirectory) return 0;
+    if (!configManager || !pagesDirectory) return 0;
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
 
     const byVault = new Map<string, { owner: string; store: string; titles: string[] }>();
     for (const page of await this.provider.listPrivateStorePages(ctx)) {
-      if (page.store === captureVault) continue;
       const key = `${page.owner}/${page.store}`;
       const group = byVault.get(key) ?? { owner: page.owner, store: page.store, titles: [] };
       group.titles.push(page.title);
@@ -3222,30 +3277,28 @@ class PageManager extends BaseManager implements CatalogSource {
     for (const { owner, store, titles } of byVault.values()) {
       const where = { pagesDirectory, owner, store, layout };
       try {
-        if (await storeMigrationDone(ctx, where, CAPTURE_VAULT_MIGRATION)) continue;
-        let pages = 0;
+        if (await storeMigrationDone(ctx, where, migrationId)) continue;
+        const counts = new Map<string, number>();
         for (const title of titles) {
           const pageName = formatPrivatePageName(owner, store, title);
           try {
             const page = await this.getPage(pageName, ctx);
-            const md = (page?.metadata ?? {}) as Record<string, unknown>;
-            const keywords = Array.isArray(md['system-keywords']) ? md['system-keywords'] as unknown[] : [];
-            const category = md['system-category'] ?? 'general';
-            if (!keywords.some((kw) => String(kw).toLowerCase() === 'capture') || category !== 'general') continue;
-            await this.movePageToVault(pageName, captureVault, ctx, { 'system-category': 'capture' });
-            pages++;
+            const target = page ? pick((page.metadata ?? {}), store) : null;
+            if (!target || target.toVault === store) continue;
+            await this.movePageToVault(pageName, target.toVault, ctx, target.changes ?? {});
+            counts.set(target.toVault, (counts.get(target.toVault) ?? 0) + 1);
           } catch (err) {
             // #1461: the page is not named — a private title never reaches a log.
-            logger.warn(`[PageManager] A capture in ${layout.privateRoot}/${owner}/${store} was not moved: ${err instanceof Error ? err.message : String(err)}`);
+            logger.warn(`[PageManager] A page in ${layout.privateRoot}/${owner}/${store} was not moved (${migrationId}): ${err instanceof Error ? err.message : String(err)}`);
           }
         }
-        await recordStoreMigration(ctx, where, CAPTURE_VAULT_MIGRATION);
-        moved += pages;
-        if (pages > 0) {
-          logger.info(`[PageManager] Captures: moved ${pages} page(s) from ${layout.privateRoot}/${owner}/${store} to ${layout.privateRoot}/${owner}/${captureVault} (#1505)`);
+        await recordStoreMigration(ctx, where, migrationId);
+        for (const [toVault, pages] of counts) {
+          moved += pages;
+          logger.info(`[PageManager] Vault move (${migrationId}): moved ${pages} page(s) from ${layout.privateRoot}/${owner}/${store} to ${layout.privateRoot}/${owner}/${toVault} (${issue})`);
         }
       } catch (err) {
-        logger.warn(`[PageManager] Capture move failed for ${layout.privateRoot}/${owner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`[PageManager] Vault move ${migrationId} failed for ${layout.privateRoot}/${owner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     return moved;
