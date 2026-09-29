@@ -13,7 +13,7 @@ vi.unmock('../PageManager');
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
-import PageManager, { CAPTURE_VAULT_MIGRATION, CATEGORY_VAULT_MIGRATION } from '../PageManager';
+import PageManager, { CAPTURE_VAULT_MIGRATION, CATEGORY_VAULT_MIGRATION, VAULT_SLUG_MIGRATION } from '../PageManager';
 import type { ActorContext } from '../../context/ActorContext';
 import { jobContextFromSystem } from '../../context/JobContext';
 import { formatPrivatePageName, storeMetaPath, storeMigrationsPath } from '../../utils/privateStorePath';
@@ -190,6 +190,31 @@ describe('PageManager capture vault move (#1505)', () => {
       expect(typeof record.migrations[CATEGORY_VAULT_MIGRATION]).toBe('string');
       harness.saves.length = 0;
       expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(0);
+    });
+  });
+
+  describe('migratePrivateSlugs (#1507)', () => {
+    test('a page whose slug is private--… is saved again in place, otherwise unchanged', async () => {
+      await build([{ store: 'default', title: 'Diary' }, { store: 'default', title: 'Notes' }]);
+      harness.stored.get(JIM('default', 'Diary')).metadata.slug = 'private--jim-default-diary';
+      harness.stored.get(JIM('default', 'Notes')).metadata.slug = 'vaults--jim-default-notes';
+
+      expect(await manager.migratePrivateSlugs(BOOT)).toBe(1);
+
+      expect(harness.saves).toHaveLength(1);
+      const [save] = harness.saves;
+      expect(save.name).toBe(JIM('default', 'Diary'));
+      expect(save.options).not.toHaveProperty('moveFrom');
+      expect(save.metadata.lastModified).toBe('2024-01-01T00:00:00.000Z');
+      expect(save.metadata.editor).toBe('jim');
+    });
+
+    test('each vault records that it is done', async () => {
+      await build([{ store: 'default', title: 'Diary' }]);
+      harness.stored.get(JIM('default', 'Diary')).metadata.slug = 'private--jim-default-diary';
+      await manager.migratePrivateSlugs(BOOT);
+      const record = JSON.parse(await fs.readFile(storeMigrationsPath(pagesDir, 'jim', 'default'), 'utf8'));
+      expect(typeof record.migrations[VAULT_SLUG_MIGRATION]).toBe('string');
     });
   });
 

@@ -33,7 +33,8 @@ import {
   isValidStoreId,
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
-  PRIVATE_PAGE_NAME_PREFIX
+  PRIVATE_PAGE_NAME_PREFIX,
+  LEGACY_PRIVATE_SLUG_PREFIX
 } from '../utils/privateStorePath.js';
 import {
   matchStoreSearch,
@@ -215,6 +216,8 @@ const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 /** The move of private pages from the default vault into their system-category's own vault (#1507). */
 export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
+/** Private slugs from `private--…` to `vaults--…` (#1507). */
+export const VAULT_SLUG_MIGRATION = 'vault-slugs';
 
 /**
  * Minimal WikiContext interface for type safety
@@ -2994,6 +2997,11 @@ class PageManager extends BaseManager implements CatalogSource {
     } catch (err) {
       logger.warn(`[PageManager] Category vault move did not complete: ${err instanceof Error ? err.message : String(err)}`);
     }
+    try {
+      await this.migratePrivateSlugs(ctx);
+    } catch (err) {
+      logger.warn(`[PageManager] Private slug migration did not complete: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -3254,17 +3262,60 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Private slugs from `private--…` to `vaults--…` (#1507), once per vault.
+   * A private page's slug is made fresh on every save, so each page still
+   * carrying the old form is saved again, unchanged otherwise: same body,
+   * `lastModified` and `editor`.
+   *
+   * @returns How many pages were re-saved
+   */
+  async migratePrivateSlugs(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.migratePrivateSlugs requires an ActorContext');
+    return this.visitVaultPages(ctx, VAULT_SLUG_MIGRATION, '#1507', 'slug', async (pageName, page) => {
+      const slug = (page.metadata as Record<string, unknown> | undefined)?.slug;
+      if (typeof slug !== 'string' || !slug.startsWith(LEGACY_PRIVATE_SLUG_PREFIX)) return null;
+      await this.savePage(pageName, page.content ?? '', { ...page.metadata }, ctx, {
+        preserveLastModified: true,
+        preserveEditor: true
+      });
+      return parsePrivatePageName(pageName)?.store ?? null;
+    });
+  }
+
+  /**
    * One pass of a vault move: every page in the vaults `ctx` can open is
    * offered to `pick`, which names the vault it goes to (and any frontmatter
-   * to change with it), or null to leave it. Each vault records `migrationId`
-   * once visited, so no later boot reads its pages again; one page's or one
-   * vault's failure never stops the rest.
+   * to change with it), or null to leave it.
    */
   private async moveVaultPages(
     ctx: ActorContext,
     migrationId: string,
     issue: string,
     pick: (metadata: Record<string, unknown>, store: string) => { toVault: string; changes?: Partial<PageFrontmatter> } | null
+  ): Promise<number> {
+    return this.visitVaultPages(ctx, migrationId, issue, 'move', async (pageName, page, store) => {
+      const target = pick((page.metadata ?? {}), store);
+      if (!target || target.toVault === store) return null;
+      await this.movePageToVault(pageName, target.toVault, ctx, target.changes ?? {});
+      return target.toVault;
+    });
+  }
+
+  /**
+   * Visit every page in the vaults `ctx` can open — at boot, the unencrypted
+   * ones — once per vault: each vault records `migrationId` when visited, so
+   * no later boot reads its pages again. `visit` returns the vault the page
+   * was written to, or null when it left the page alone; one page's or one
+   * vault's failure never stops the rest.
+   *
+   * @returns How many pages were written
+   */
+  private async visitVaultPages(
+    ctx: ActorContext,
+    migrationId: string,
+    issue: string,
+    verb: string,
+    visit: (pageName: string, page: WikiPage, store: string) => Promise<string | null>
   ): Promise<number> {
     if (!this.provider?.listPrivateStorePages) return 0;
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
@@ -3280,7 +3331,7 @@ class PageManager extends BaseManager implements CatalogSource {
       byVault.set(key, group);
     }
 
-    let moved = 0;
+    let written = 0;
     for (const { owner, store, titles } of byVault.values()) {
       const where = { pagesDirectory, owner, store, layout };
       try {
@@ -3290,25 +3341,24 @@ class PageManager extends BaseManager implements CatalogSource {
           const pageName = formatPrivatePageName(owner, store, title);
           try {
             const page = await this.getPage(pageName, ctx);
-            const target = page ? pick((page.metadata ?? {}), store) : null;
-            if (!target || target.toVault === store) continue;
-            await this.movePageToVault(pageName, target.toVault, ctx, target.changes ?? {});
-            counts.set(target.toVault, (counts.get(target.toVault) ?? 0) + 1);
+            const to = page ? await visit(pageName, page, store) : null;
+            if (to) counts.set(to, (counts.get(to) ?? 0) + 1);
           } catch (err) {
             // #1461: the page is not named — a private title never reaches a log.
-            logger.warn(`[PageManager] A page in ${layout.privateRoot}/${owner}/${store} was not moved (${migrationId}): ${err instanceof Error ? err.message : String(err)}`);
+            logger.warn(`[PageManager] A page in ${layout.privateRoot}/${owner}/${store} was not written (${migrationId}): ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         await recordStoreMigration(ctx, where, migrationId);
-        for (const [toVault, pages] of counts) {
-          moved += pages;
-          logger.info(`[PageManager] Vault move (${migrationId}): moved ${pages} page(s) from ${layout.privateRoot}/${owner}/${store} to ${layout.privateRoot}/${owner}/${toVault} (${issue})`);
+        for (const [to, pages] of counts) {
+          written += pages;
+          const target = to === store ? '' : ` to ${layout.privateRoot}/${owner}/${to}`;
+          logger.info(`[PageManager] Vault ${verb} (${migrationId}): ${pages} page(s) in ${layout.privateRoot}/${owner}/${store}${target} (${issue})`);
         }
       } catch (err) {
-        logger.warn(`[PageManager] Vault move ${migrationId} failed for ${layout.privateRoot}/${owner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`[PageManager] Vault pass ${migrationId} failed for ${layout.privateRoot}/${owner}/${store}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return moved;
+    return written;
   }
 
   /**

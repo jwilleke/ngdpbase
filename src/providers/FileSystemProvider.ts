@@ -836,7 +836,7 @@ class FileSystemProvider extends BasePageProvider {
       uuid: uuid,
       lastModified: now,
       created,
-      // #1456: a private page's slug is `private--{owner}-{store}-{title}`,
+      // #1456: a private page's slug is `vaults--{owner}-{store}-{title}`,
       // unique among its owner's stores; the owner is the path's.
       ...(storeLocation ? {
         private: true,
@@ -1095,7 +1095,7 @@ class FileSystemProvider extends BasePageProvider {
   }
 
   /**
-   * A private page's slug (#1456): `private--{owner}-{store}-{title}`, with
+   * A private page's slug (#1456): `vaults--{owner}-{store}-{title}`, with
    * `-2`, `-3`… when another page among the owner's readable stores already
    * has it. Only the owner's own stores are consulted, so nothing about any
    * other user is revealed; a locked store is not readable and not consulted.

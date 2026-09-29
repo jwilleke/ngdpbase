@@ -237,7 +237,7 @@ The routes, each behind `privatePageRoute()`:
 
 A private title is unique __within its store__; a public title is unique among public pages. `FileSystemProvider.savePage` reads the destination store's own page index and refuses a clash with "A page with this title is already in use in this store" — a message that names no title, because it reaches the logs.
 
-A private page's slug is `private--{owner}-{store}-{title-slug}`, made by `ValidationManager.generatePrivateSlug` and suffixed `-2`, `-3`… against the owner's own readable stores only (`privateSlugFor`). A locked store is not readable and not consulted, and nothing about another user is ever read.
+A private page's slug is `vaults--{owner}-{store}-{title-slug}` (`private--` until #1507; each vault's pages are re-saved once at boot to take the new form, `vault-slugs` in its `migrations.json`), made by `ValidationManager.generatePrivateSlug` and suffixed `-2`, `-3`… against the owner's own readable stores only (`privateSlugFor`). A locked store is not readable and not consulted, and nothing about another user is ever read.
 
 ### The page door
 

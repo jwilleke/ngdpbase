@@ -82,7 +82,7 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`))).toBe(true);
     // Listed in the store's own index, never in the global one (#1456).
-    expect((await storePages())[UUID]).toMatchObject({ title: 'Diary', slug: 'private--molly-default-diary' });
+    expect((await storePages())[UUID]).toMatchObject({ title: 'Diary', slug: 'vaults--molly-default-diary' });
     expect(await provider.getAllPages()).not.toContain('Diary');
     await expect(provider.getPageMetadata(DIARY, MOLLY)).resolves.toMatchObject({ uuid: UUID, private: true });
     await expect(provider.getPageMetadata('Diary', MOLLY)).resolves.toBeNull();
@@ -110,11 +110,11 @@ describe('FileSystemProvider encrypt-on write (#1394)', () => {
     const provider = await newProvider();
     await provider.savePage(DIARY, 'secret', { uuid: UUID }, MOLLY);
     // The editor carries the stored slug forward; the provider re-derives it.
-    await provider.savePage(DIARY, 'now public', { uuid: UUID, private: false, slug: 'private--molly-default-diary' }, MOLLY);
+    await provider.savePage(DIARY, 'now public', { uuid: UUID, private: false, slug: 'vaults--molly-default-diary' }, MOLLY);
     const publicRaw = await fs.readFile(path.join(pagesDir, `${UUID}.md`), 'utf8');
     expect(publicRaw).toMatch(/^slug: diary$/m);
     await provider.savePage('Diary', 'private again', { uuid: UUID, private: true, author: 'molly', slug: 'diary' }, MOLLY);
-    expect(Object.values(await storePages('molly', DEFAULT_PRIVATE_STORE)).map((p) => p.slug)).toEqual(['private--molly-default-diary']);
+    expect(Object.values(await storePages('molly', DEFAULT_PRIVATE_STORE)).map((p) => p.slug)).toEqual(['vaults--molly-default-diary']);
     expect(await fs.pathExists(path.join(pagesDir, `${UUID}.md`))).toBe(false);
   });
 

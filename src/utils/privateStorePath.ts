@@ -212,6 +212,17 @@ export const PRIVATE_URL_SEGMENT = PRIVATE_PAGE_NAME_PREFIX.slice(0, -1);
  */
 export const LEGACY_PRIVATE_ROOT = 'private';
 
+/**
+ * The reserved start of a private page's slug: `vaults--{owner}-{vault}-{title}`.
+ * No public slug contains `--`, so the two can never collide. Was `private--`
+ * until #1507 (operator, 2026-09-29), for the same reason the page name moved
+ * from `private/` to `vaults/` in #1506.
+ */
+export const PRIVATE_SLUG_PREFIX = 'vaults--';
+
+/** The private-slug prefix before #1507. Read only by the one-time slug migration. */
+export const LEGACY_PRIVATE_SLUG_PREFIX = 'private--';
+
 export interface PrivatePageName {
   owner: string;
   store: string;

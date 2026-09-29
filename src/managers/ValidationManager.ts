@@ -11,7 +11,7 @@ import BaseManager from './BaseManager.js';
 import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
-import { parsePrivatestore } from '../utils/privateStorePath.js';
+import { parsePrivatestore, PRIVATE_SLUG_PREFIX } from '../utils/privateStorePath.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -977,13 +977,13 @@ class ValidationManager extends BaseManager {
 
   /**
    * The slug of a private page (#1456, operator 2026-09-22):
-   * `private--{owner}-{store}-{title}`. The `private--` prefix is reserved —
+   * `vaults--{owner}-{store}-{title}` (`private--` until #1507). The prefix is reserved —
    * {@link generateSlug} collapses dash runs, so no public slug can contain
    * `--`, and a public save never has to consult private slugs. A clash among
    * one owner's stores is resolved by the caller, in that owner's stores only.
    */
   generatePrivateSlug(owner: string, store: string, title: string): string {
-    return `private--${this.generateSlug(owner)}-${store}-${this.generateSlug(title)}`;
+    return `${PRIVATE_SLUG_PREFIX}${this.generateSlug(owner)}-${store}-${this.generateSlug(title)}`;
   }
 
   /** Transliteration table for common non-ASCII characters (#295). */

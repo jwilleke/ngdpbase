@@ -134,7 +134,7 @@ class JournalDataManager extends BaseManager {
 
   /**
    * An entry by its slug, title or page name, among those this requester may
-   * list. A private entry's slug is `private--…` (#1456); its title is still
+   * list. A private entry's slug is `vaults--…` (#1456, #1507); its title is still
    * the `{date}-1-journal-{user}` name journal links were made with.
    */
   async getBySlug(slug: string, ctx: ActorContext): Promise<JournalIndexEntry | undefined> {
