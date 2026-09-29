@@ -13,7 +13,7 @@ vi.unmock('../PageManager');
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
-import PageManager, { CAPTURE_VAULT_MIGRATION } from '../PageManager';
+import PageManager, { CAPTURE_VAULT_MIGRATION, CATEGORY_VAULT_MIGRATION } from '../PageManager';
 import type { ActorContext } from '../../context/ActorContext';
 import { jobContextFromSystem } from '../../context/JobContext';
 import { formatPrivatePageName, storeMetaPath, storeMigrationsPath } from '../../utils/privateStorePath';
@@ -74,7 +74,8 @@ describe('PageManager capture vault move (#1505)', () => {
         (key === 'ngdpbase.page.provider.filesystem.storagedir' ? pagesDir : fallback))
     };
     const validationManager = {
-      getVaultId: vi.fn((category: string) => (category === 'capture' ? captureVault : null)),
+      getVaultId: vi.fn((category: string) =>
+        (category === 'capture' ? captureVault : category === 'journal' ? 'journal' : category === 'general' ? 'default' : null)),
       sanitizeMetadata: vi.fn((metadata: unknown) => metadata),
       checkConflicts: vi.fn(async () => ({ hasConflict: false }))
     };
@@ -119,10 +120,10 @@ describe('PageManager capture vault move (#1505)', () => {
     expect(harness.saves).toHaveLength(0);
   });
 
-  test('a page already in the capture vault is not visited', async () => {
+  test('a page already in the capture vault stays where it is', async () => {
     await build([{ store: 'capture', title: 'Captures — jim — 2026-09-29', category: 'capture', keywords: ['capture'] }]);
     expect(await manager.moveCapturesToCaptureVault(BOOT)).toBe(0);
-    expect(harness.provider.getPage).not.toHaveBeenCalled();
+    expect(harness.saves).toHaveLength(0);
   });
 
   test('each vault records that it is done, and a second run moves nothing', async () => {
@@ -141,6 +142,45 @@ describe('PageManager capture vault move (#1505)', () => {
     await build([{ store: 'default', title: 'Captures — jim — 2026-08-03', keywords: ['capture'] }], null);
     expect(await manager.moveCapturesToCaptureVault(BOOT)).toBe(0);
     expect(harness.saves).toHaveLength(0);
+  });
+
+  describe('movePagesToCategoryVaults (#1507)', () => {
+    test('a page in the default vault moves to its system-category\'s own vault, unchanged', async () => {
+      await build([
+        { store: 'default', title: '2026-09-10-1-journal-jim', category: 'journal' },
+        { store: 'default', title: 'Diary' }
+      ]);
+
+      expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(1);
+
+      expect(harness.saves).toHaveLength(1);
+      const [save] = harness.saves;
+      expect(save.name).toBe(JIM('journal', '2026-09-10-1-journal-jim'));
+      expect(save.metadata['system-category']).toBe('journal');
+      expect(save.options).toMatchObject({ moveFrom: JIM('default', '2026-09-10-1-journal-jim'), preserveLastModified: true });
+      expect(save.metadata.lastModified).toBe('2024-01-01T00:00:00.000Z');
+    });
+
+    test('a page in any other vault was put there on purpose and stays', async () => {
+      await build([{ store: 'yourphr', title: '2026-09-10-1-journal-jim', category: 'journal' }]);
+      expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(0);
+      expect(harness.saves).toHaveLength(0);
+    });
+
+    test('a page whose system-category declares no vault stays', async () => {
+      await build([{ store: 'default', title: 'Odd', category: 'system' }]);
+      expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(0);
+      expect(harness.saves).toHaveLength(0);
+    });
+
+    test('each vault records that it is done', async () => {
+      await build([{ store: 'default', title: '2026-09-10-1-journal-jim', category: 'journal' }]);
+      await manager.movePagesToCategoryVaults(BOOT);
+      const record = JSON.parse(await fs.readFile(storeMigrationsPath(pagesDir, 'jim', 'default'), 'utf8'));
+      expect(typeof record.migrations[CATEGORY_VAULT_MIGRATION]).toBe('string');
+      harness.saves.length = 0;
+      expect(await manager.movePagesToCategoryVaults(BOOT)).toBe(0);
+    });
   });
 
   describe('movePageToVault', () => {

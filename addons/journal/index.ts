@@ -6,7 +6,6 @@
  *
  * Configuration keys (in app-custom-config.json):
  *   ngdpbase.addons.journal.enabled               — true/false
- *   ngdpbase.addons.journal.dataPath              — './data/journal'
  *   ngdpbase.addons.journal.defaultAuthorLock      — true
  *   ngdpbase.addons.journal.defaultMoodOptions     — ["happy","content",...]
  *   ngdpbase.addons.journal.streakEnabled          — true
@@ -46,7 +45,6 @@ import type { ActorContext } from '../../dist/src/context/ActorContext.js';
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type NotificationManager from '../../dist/src/managers/NotificationManager.js';
-import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
 import type PolicyInformationPoint from '../../dist/src/security/PolicyInformationPoint.js';
 import JournalDataManager from './managers/JournalDataManager.js';
 import JournalPlugin from './plugins/JournalPlugin.js';
@@ -79,11 +77,6 @@ const journalAddon = {
   dependencies: [] as string[],
 
   async register(engine: WikiEngine, config: Record<string, unknown>): Promise<void> {
-    const cm = engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
-      ? config['dataPath']
-      : (cm?.resolveDataPath('journal') ?? './data/journal');
-
     // #534: capture engine reference + voice-to-text flag for the
     // profileSection / saveProfileSection hooks below.
     // Coerce explicitly — config values arriving as strings ("false", "off",
@@ -93,7 +86,7 @@ const journalAddon = {
     voiceToTextEnabled = !(v === false || v === 'false' || v === 'off' || v === '0');
 
     // ── 1. JournalDataManager ────────────────────────────────────────────────
-    dataManager = new JournalDataManager(engine, dataPath);
+    dataManager = new JournalDataManager(engine);
     await dataManager.load();
     engine.registerManager('JournalDataManager', dataManager);
 

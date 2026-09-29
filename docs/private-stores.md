@@ -259,6 +259,8 @@ So ticking the Private box on a public page moves it into the author's default s
 
 At boot, captures made before #1505 (a `general` page with the system keyword `capture`, in its author's default vault) are moved into the capture vault with `system-category: capture`, once per vault (`capture-vault` in the vault's `migrations.json`). Only the vaults the system can open are visited, so captures in an encrypted vault stay where they are; the capture page still finds them there.
 
+Then every other private page made before #1505 is placed (#1507): a page in its owner's default vault whose system-category declares a different vault moves there, once per vault (`category-vaults`). Journal entries are the case this serves. A page in any vault other than the default was put there on purpose and is left alone.
+
 The store is never written into frontmatter — the path records it, and a copy could disagree with where the file is. `private: true` is written only on a private page.
 
 Before any private byte is written, `BasePageProvider.assertPrivateStoreWritable()` calls `assertContextCanWriteStore()`, which refuses a write into an encrypted store the context holds no DEK for.

@@ -120,7 +120,7 @@ Operators set addon config under `ngdpbase.addons.<addonName>.*` in `data/config
 |--------------------|---------------------------|
 | `ngdpbase.addons.journal.enabled` | `enabled` |
 | `ngdpbase.addons.journal.defaultAuthorLock` | `defaultAuthorLock` |
-| `ngdpbase.addons.journal.dataPath` | `dataPath` |
+| `ngdpbase.addons.journal.streakEnabled` | `streakEnabled` |
 
 Multiple addon paths are supported:
 
