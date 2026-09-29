@@ -3428,6 +3428,11 @@ ${panes}
       // edits.
       const authorLockOnCreate = req.body['author-lock'] === 'true';
       const privateOnCreate = req.body['private'] === 'true';
+      // #1505: a private page goes to its system-category's vault.
+      const createVault = privateOnCreate ? this.vaultForPrivatePage(matchedCategory) : null;
+      if (createVault === false) {
+        return res.status(400).send(`Pages in the ${matchedCategory} system-category cannot be private`);
+      }
 
       // Audience (view access) — mirror the /save handler's parsing at line 2630.
       const submittedAudience = req.body['audience'];
@@ -3445,7 +3450,7 @@ ${panes}
         'user-keywords': Array.isArray(userKeywords) ? userKeywords : userKeywords ? [userKeywords] : [],
         author: currentUser?.username || 'anonymous',
         ...(authorLockOnCreate ? { 'author-lock': true } : {}),
-        ...(privateOnCreate ? { private: true } : {}),
+        ...(privateOnCreate ? { private: true, ...(createVault ? { store: createVault } : {}) } : {}),
         ...(audienceArray.length ? { audience: audienceArray } : {})
       });
 
@@ -3687,6 +3692,10 @@ ${panes}
         content: pageData.content,
         metadata: pageData.metadata,
         pageIsPrivate: this._isPagePrivate(pageName),
+        // #1505: whether this page's system-category can hold private pages.
+        privateAllowed: this.vaultForPrivatePage(
+          typeof pageData.metadata?.['system-category'] === 'string' ? pageData.metadata['system-category'] : 'general'
+        ) !== false,
         systemCategories: systemCategories,
         selectedCategories: selectedCategories,
         userKeywords: userKeywords,
@@ -3931,6 +3940,11 @@ ${panes}
       if (movesStore && existingPage && privateName && !(await wikiContext.hasPermission('page-public', { 'system-category': matchedCategory }))) {
         return await fail(403, 'Access Denied', `Pages in the ${matchedCategory} system-category cannot be made public`);
       }
+      // #1505: a page made private goes to its system-category's vault.
+      const intoVault = privateFlag && !privateName ? this.vaultForPrivatePage(matchedCategory) : null;
+      if (intoVault === false) {
+        return await fail(400, 'Cannot Make Private', `Pages in the ${matchedCategory} system-category cannot be private`);
+      }
       const newTitle = (typeof title === 'string' && title) || privateName?.title || pageName;
 
       // #1017: system-keywords is the automation/provenance bucket (#893) — no
@@ -3977,7 +3991,7 @@ ${panes}
         ...(audienceArray.length ? { audience: audienceArray } : {}),
         ...(authorLock ? { 'author-lock': true } : {}),
         // #1456: an unticked box on a private page is the move out — sent as false.
-        ...(privateFlag ? { private: true } : privateName ? { private: false } : {}),
+        ...(privateFlag ? { private: true, ...(intoVault ? { store: intoVault } : {}) } : privateName ? { private: false } : {}),
         ...(statusValue ? { status: statusValue } : {}),
         author: pageAuthor,
         uuid: existingPage?.metadata?.uuid || undefined
@@ -5656,6 +5670,18 @@ ${panes}
     return validationManager.getDefaultPrivate('capture', preferences);
   }
 
+  /**
+   * The vault a new private page of this system-category goes to (#1505):
+   * the vault id, false when the system-category has no vault (its pages can
+   * never be private), or null when there is no ValidationManager to ask —
+   * the provider's default vault then applies, as before.
+   */
+  private vaultForPrivatePage(category: string): string | false | null {
+    const validationManager = this.engine.getManager('ValidationManager');
+    if (typeof validationManager?.getVaultId !== 'function') return null;
+    return validationManager.getVaultId(category) ?? false;
+  }
+
   private isCaptureEnabled(): boolean {
     const configManager = this.engine.getManager('ConfigurationManager');
     return configManager?.getProperty('ngdpbase.capture.enabled', false) === true;
@@ -5781,19 +5807,23 @@ ${panes}
       const capturePrivate = validationManager ? validationManager.getDefaultPrivate('capture', capturePrefs) : true;
       // #1456: a private page is named by its path. The day's page is the
       // capturer's own private page of that title when there is one, else a
-      // public page of that title; a new one is private (in the capturer's
-      // default store) unless captures start public.
-      const privateTarget = parsePrivatePageName(pageName)
-        ? pageName
-        : formatPrivatePageName(
-          String(currentUser.username),
-          privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId,
-          pageName
-        );
-      const ownPrivate = await pageManager.getPage(privateTarget, req.userContext);
+      // public page of that title; a new one is private unless captures start
+      // public. #1505: a page the capture flow creates is a `capture` page, in
+      // the capture vault; one made before #1505 may still be in the default
+      // vault, so that is looked in second.
+      const defaultVault = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)).defaultStoreId;
+      const captureVault = this.vaultForPrivatePage('capture') || defaultVault;
+      const privateNamed = parsePrivatePageName(pageName) !== null;
+      const privateTarget = privateNamed ? pageName : formatPrivatePageName(String(currentUser.username), captureVault, pageName);
+      const legacyTarget = !privateNamed && captureVault !== defaultVault
+        ? formatPrivatePageName(String(currentUser.username), defaultVault, pageName)
+        : null;
+      const ownPrivateName = (await pageManager.getPage(privateTarget, req.userContext)) ? privateTarget
+        : legacyTarget && (await pageManager.getPage(legacyTarget, req.userContext)) ? legacyTarget : null;
+      const ownPrivate = ownPrivateName ? await pageManager.getPage(ownPrivateName, req.userContext) : null;
       const publicPage = ownPrivate || parsePrivatePageName(pageName) ? null : await pageManager.getPage(pageName, req.userContext);
       const existing = ownPrivate ?? publicPage;
-      const targetName = ownPrivate || (!publicPage && capturePrivate) ? privateTarget : pageName;
+      const targetName = ownPrivateName ?? (!publicPage && capturePrivate ? privateTarget : pageName);
       const permission = existing ? 'page-edit' : 'page-create';
       if (!(await wikiContext0.hasPermission(permission))) {
         return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
@@ -5819,6 +5849,8 @@ ${panes}
         ? { ...(existing.metadata as Record<string, unknown>), editor: currentUser.username }
         : this.buildNewPageMetadata(parsePrivatePageName(targetName)?.title ?? targetName, {
           author: currentUser.username,
+          // #1505: a page the capture flow creates is a capture page.
+          'system-category': 'capture',
           'system-keywords': captureKeywords,
           ...(capturePrivate ? { private: true } : {})
         });

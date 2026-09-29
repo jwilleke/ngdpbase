@@ -87,6 +87,8 @@ const mockUserManager = {
 };
 
 // #1431 step 14: decisions are the PDP's.
+const mockGetVaultId = vi.fn((_category: string): string | null => 'default');
+
 const mockPolicyDecisionPoint = {
   permits: vi.fn(),
   // #1504: hasPermission(action, { 'system-category' }) asks decide().
@@ -211,7 +213,9 @@ vi.mock('../../WikiEngine', () => {
               author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString(),
               ...options // mirror the real implementation: caller options override defaults
             })),
-            getDefaultSystemCategory: vi.fn().mockReturnValue('general')
+            getDefaultSystemCategory: vi.fn().mockReturnValue('general'),
+            // #1505: the vault a private page of the system-category goes to.
+            getVaultId: mockGetVaultId
           },
           TemplateManager: {
             getTemplates: vi.fn().mockReturnValue([]),
@@ -296,6 +300,7 @@ function resetMocks() {
   mockPolicyInformationPoint.currentSubject.mockResolvedValue(adminUser);
   mockPolicyDecisionPoint.permits.mockResolvedValue(true);
   mockPolicyDecisionPoint.decide.mockResolvedValue({ permit: true, applicable: true, reason: 'test' });
+  mockGetVaultId.mockImplementation(() => 'default');
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
@@ -956,6 +961,26 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe(pageUrl(landed));
       expectNoRouteIndexWork();
+    });
+
+    test('#1505: a page made private goes to its system-category\'s vault', async () => {
+      mockGetVaultId.mockImplementation(() => 'notes');
+      await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'true' });
+      const metadata = mockPageManager.savePage.mock.calls[0][2] as Record<string, unknown>;
+      expect(metadata).toMatchObject({ private: true, store: 'notes' });
+    });
+
+    test('#1505: a page whose system-category has no vault cannot be made private', async () => {
+      mockGetVaultId.mockImplementation(() => null);
+      const res = await request(app)
+        .post('/save/TestPage')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ content: '# Hello', title: 'TestPage', 'system-category': 'general', 'private-present': '1', private: 'true' });
+      expect(res.status).toBe(400);
+      expect(mockPageManager.savePage).not.toHaveBeenCalled();
     });
 
     test('#1504: moving a page out of its vault asks page-public for its system-category, and goes ahead when policy allows', async () => {

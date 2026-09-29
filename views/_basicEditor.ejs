@@ -64,6 +64,8 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                     const _legacyPrivateKeyword = Array.isArray(selectedUserKeywords)
                         && selectedUserKeywords.some(kw => String(kw).toLowerCase() === 'private');
                     const _isPrivate = metadata.private === true || _legacyPrivateKeyword || (typeof pageIsPrivate !== 'undefined' && pageIsPrivate);
+                    // #1505: no Private box for a system-category with no vault, unless the page is already private.
+                    const _privateAllowed = _isPrivate || typeof privateAllowed === 'undefined' || privateAllowed;
                 %>
                 <%
                     // Author Lock visibility: admin OR the page author may set/clear it.
@@ -103,6 +105,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                         </div>
                         <input type="hidden" name="author-lock-present" value="1">
                     </div>
+                    <% if (_privateAllowed) { %>
                     <div class="col-md-2">
                         <label style="font-weight:bold;">Private: <%- include('_help-icon', { slug: 'page-private', label: 'Private Page' }) %></label>
                         <div class="form-check mt-2">
@@ -113,6 +116,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                         </div>
                         <input type="hidden" name="private-present" value="1">
                     </div>
+                    <% } %>
                     <% } else { %>
                     <div class="col-md-4">
                         <label style="font-weight:bold;">System Category: <%- include('_help-icon', { slug: 'system-category', label: 'System Category' }) %></label>
@@ -131,6 +135,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                         <input type="hidden" name="author-lock-present" value="1">
                     </div>
                     <% } %>
+                    <% if (_privateAllowed) { %>
                     <div class="col-md-2">
                         <label style="font-weight:bold;">Private: <%- include('_help-icon', { slug: 'page-private', label: 'Private Page' }) %></label>
                         <div class="form-check mt-2">
@@ -141,6 +146,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
                         </div>
                         <input type="hidden" name="private-present" value="1">
                     </div>
+                    <% } %>
                     <% } %>
                     <% if (metadata['author-lock']) { %>
                     <div class="col-12 mt-1">

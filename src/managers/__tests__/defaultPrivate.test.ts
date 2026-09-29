@@ -47,6 +47,12 @@ describe('ValidationManager.canBePrivate (#1504)', () => {
     system: { label: 'system', storageLocation: { defaultstore: 'pages/' } }
   });
 
+  test('getVaultId names the vault a system-category\'s private pages go to (#1505)', () => {
+    expect(withVaults.getVaultId('General')).toBe('default');
+    expect(withVaults.getVaultId('system')).toBeNull();
+    expect(withVaults.getVaultId('nope')).toBeNull();
+  });
+
   test('only a system-category with a vault can hold private pages', () => {
     expect(withVaults.canBePrivate('general')).toBe(true);
     expect(withVaults.canBePrivate('system')).toBe(false);

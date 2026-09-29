@@ -50,6 +50,8 @@ describe('WikiRoutes capture (#881)', () => {
   let captureConfig: Record<string, unknown>;
   // #1504: how a new capture starts, as the capture system-category's defaultPrivate decides.
   let captureStartsPrivate: boolean | undefined;
+  // #1505: the capture system-category's vault, when ValidationManager names one.
+  let captureVault: string | undefined;
 
   beforeEach(() => {
     mockGetPage = vi.fn().mockResolvedValue(null);
@@ -65,6 +67,7 @@ describe('WikiRoutes capture (#881)', () => {
     mockSyncPageAssets = vi.fn().mockResolvedValue(undefined);
     captureConfig = { 'ngdpbase.capture.enabled': true };
     captureStartsPrivate = undefined;
+    captureVault = undefined;
 
     mockEngine = {
       getManager: vi.fn((name) => {
@@ -88,7 +91,11 @@ describe('WikiRoutes capture (#881)', () => {
           return { getProperty: vi.fn((key, def) => (key in captureConfig ? captureConfig[key] : def)) };
         }
         if (name === 'ValidationManager') {
-          return captureStartsPrivate === undefined ? null : { getDefaultPrivate: vi.fn(() => captureStartsPrivate) };
+          if (captureStartsPrivate === undefined && captureVault === undefined) return null;
+          return {
+            getDefaultPrivate: vi.fn(() => captureStartsPrivate ?? true),
+            ...(captureVault !== undefined ? { getVaultId: vi.fn((category: string) => (category === 'capture' ? captureVault : 'default')) } : {})
+          };
         }
         return null;
       })
@@ -391,6 +398,23 @@ describe('WikiRoutes capture (#881)', () => {
       expect(res.render).toHaveBeenCalledWith('capture', expect.objectContaining({
         viewUrl: '/vaults/jim/default/' + encodeURIComponent(body.pageName)
       }));
+    });
+
+    test('#1505: a new capture page is a capture page, in the capture vault', async () => {
+      captureVault = 'capture';
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
+      const [savedName, , savedMetadata] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(`vaults/jim/capture/${body.pageName}`);
+      expect(savedMetadata).toMatchObject({ 'system-category': 'capture', private: true });
+    });
+
+    test('#1505: a capture page made before the capture vault is still found in the default vault', async () => {
+      captureVault = 'capture';
+      pageAt(privateName, '# Mine\n\nOld private capture\n', { private: true });
+      await wikiRoutes.captureSubmit(createMockReq(authedUser, {}, body), createMockRes());
+      const [savedName, savedContent] = mockSaveWithContext.mock.calls[0];
+      expect(savedName).toBe(privateName);
+      expect(savedContent).toContain('Old private capture');
     });
 
     test('appends to an existing public page when there is no private one', async () => {

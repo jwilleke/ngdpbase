@@ -12,6 +12,9 @@ import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
 
+// #1505: which vault a system-category's private pages go to (null: none).
+let mockVaultFor: (category: string) => string | null = () => 'default';
+
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
     getDateFormatOptions: vi.fn().mockReturnValue(['MM/dd/yyyy']),
@@ -212,7 +215,9 @@ vi.mock('../../WikiEngine', () => {
               title, uuid: 'test-uuid-1', 'system-category': 'general', 'user-keywords': [],
               author: 'testuser', created: new Date().toISOString(), modified: new Date().toISOString(),
               ...options
-            }))
+            })),
+            // #1505: the vault a private page of the system-category goes to.
+            getVaultId: (category: string) => mockVaultFor(category)
           },
           VariableManager: { expandVariables: vi.fn().mockReturnValue('') },
           SchemaManager: { getPerson: vi.fn().mockResolvedValue(null), getOrganization: vi.fn().mockResolvedValue(null) }
@@ -574,6 +579,27 @@ describe('WikiRoutes — coverage batch 8', () => {
       const callArgs = mockPageManager.savePage.mock.calls[0];
       const savedMetadata = callArgs[2] as Record<string, unknown>;
       expect(savedMetadata.private).toBe(true);
+      // #1505: into the system-category's vault.
+      expect(savedMetadata.store).toBe('default');
+    });
+
+    test('#1505: a private page of a system-category with no vault is refused', async () => {
+      mockVaultFor = () => null;
+      mockPageManager.getPage.mockImplementation((name: string) => {
+        if (['LeftMenu', 'Footer', 'left-menu-content', 'footer-content', 'PrivateNew'].includes(name)) return Promise.resolve(null);
+        return Promise.resolve(existingPageData);
+      });
+      mockPageManager.savePage.mockClear();
+      try {
+        const res = await request(app)
+          .post('/create')
+          .set('x-csrf-token', 'test-csrf-token')
+          .send({ pageName: 'PrivateNew', templateName: 'blank', 'system-category': 'general', private: 'true' });
+        expect(res.status).toBe(400);
+        expect(mockPageManager.savePage).not.toHaveBeenCalled();
+      } finally {
+        mockVaultFor = () => 'default';
+      }
     });
 
     test('audience: passes a single audience role through to saved metadata', async () => {

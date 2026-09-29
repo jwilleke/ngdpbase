@@ -505,10 +505,19 @@ class ValidationManager extends BaseManager {
     return declared === true;
   }
 
+  /**
+   * The vault a private page of this system-category goes to (#1505): the
+   * vault id its `storageLocation.privatestore` names, or null when it has no
+   * vault (its pages can never be private).
+   */
+  getVaultId(category: string): string | null {
+    const entry = this.getCategoryConfig(category) as { storageLocation?: { privatestore?: unknown } } | null;
+    return parsePrivatestore(entry?.storageLocation?.privatestore)?.vaultId ?? null;
+  }
+
   /** Whether pages of this system-category can be private: it declares a vault (`storageLocation.privatestore`, #1504). */
   canBePrivate(category: string): boolean {
-    const entry = this.getCategoryConfig(category) as { storageLocation?: { privatestore?: unknown } } | null;
-    return parsePrivatestore(entry?.storageLocation?.privatestore) !== null;
+    return this.getVaultId(category) !== null;
   }
 
   /** Whether this system-category lets each person choose (`defaultPrivate: 'choice'`), so a preference is shown (#1504). */
