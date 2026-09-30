@@ -194,16 +194,25 @@ describe('PageManager capture vault move (#1505)', () => {
   });
 
   describe('migratePrivateSlugs (#1507)', () => {
-    test('a page whose slug is private--… is saved again in place, otherwise unchanged', async () => {
-      await build([{ store: 'default', title: 'Diary' }, { store: 'default', title: 'Notes' }]);
+    test('a page whose slug is not vaults--… is saved again in place, otherwise unchanged', async () => {
+      await build([
+        { store: 'default', title: 'Diary' },
+        { store: 'default', title: 'Notes' },
+        { store: 'default', title: 'Plain' },
+        { store: 'default', title: 'None' }
+      ]);
       harness.stored.get(JIM('default', 'Diary')).metadata.slug = 'private--jim-default-diary';
       harness.stored.get(JIM('default', 'Notes')).metadata.slug = 'vaults--jim-default-notes';
+      // From before #1456: a plain slug, which could clash with a public page's.
+      harness.stored.get(JIM('default', 'Plain')).metadata.slug = 'plain';
+      delete harness.stored.get(JIM('default', 'None')).metadata.slug;
 
-      expect(await manager.migratePrivateSlugs(BOOT)).toBe(1);
+      expect(await manager.migratePrivateSlugs(BOOT)).toBe(3);
 
-      expect(harness.saves).toHaveLength(1);
-      const [save] = harness.saves;
-      expect(save.name).toBe(JIM('default', 'Diary'));
+      expect(harness.saves.map((x) => x.name).sort()).toEqual(
+        [JIM('default', 'Diary'), JIM('default', 'None'), JIM('default', 'Plain')].sort()
+      );
+      const save = harness.saves.find((x) => x.name === JIM('default', 'Diary'));
       expect(save.options).not.toHaveProperty('moveFrom');
       expect(save.metadata.lastModified).toBe('2024-01-01T00:00:00.000Z');
       expect(save.metadata.editor).toBe('jim');

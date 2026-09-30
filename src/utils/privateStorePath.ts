@@ -220,9 +220,6 @@ export const LEGACY_PRIVATE_ROOT = 'private';
  */
 export const PRIVATE_SLUG_PREFIX = 'vaults--';
 
-/** The private-slug prefix before #1507. Read only by the one-time slug migration. */
-export const LEGACY_PRIVATE_SLUG_PREFIX = 'private--';
-
 export interface PrivatePageName {
   owner: string;
   store: string;
