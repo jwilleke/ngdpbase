@@ -19,6 +19,7 @@ import path from 'path';
 import os from 'os';
 import ShareManager, { OWNER_ONLY_KEYWORD } from '../ShareManager';
 import type { VaultShareScope } from '../../types/Share';
+import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { ShareRecord } from '../../types/Share';
 
@@ -584,6 +585,43 @@ describe('ShareManager', () => {
       expect(whole.pages.map((p) => p.uuid)).toEqual(['u1', 'u2']);
       const chosen = await sm.resolveScope(vault(['u2']), {});
       expect(chosen.pages.map((p) => p.uuid)).toEqual(['u2']);
+    });
+
+    test('a label is kept for the owner, trimmed and capped, and never reaches the audit record', async () => {
+      const record = await sm.issueVaultShare(vault(), 24, JIM, { label: `  For Dr Smith ${'x'.repeat(200)}` });
+      expect(record.label).toBe(`For Dr Smith ${'x'.repeat(200)}`.slice(0, 100));
+      expect(readShareFile(record.id).label).toBe(record.label);
+      expect(JSON.stringify(auditEvents)).not.toContain('For Dr Smith');
+    });
+
+    test('the owner sees each visit, newest first, and how many there have been', async () => {
+      const record = await sm.issueVaultShare(vault(), 24, JIM);
+      await sm.recordVaultVisit(record.token, { list: true });
+      await sm.recordVaultVisit(record.token, { page: 'u1' });
+      const onDisk = readShareFile(record.id);
+      expect(onDisk.visitCount).toBe(2);
+      expect(onDisk.visits?.map((v) => v.page ?? (v.list ? 'list' : ''))).toEqual(['u1', 'list']);
+    });
+
+    test('a link\'s token never reaches a log line or an audit record (yourphr#462)', async () => {
+      const lines: string[] = [];
+      const capture = (...args: unknown[]) => { lines.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')); };
+      const spies = (['info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(logger, level).mockImplementation(capture as never));
+      try {
+        const vaultLink = await sm.issueVaultShare(vault(), 24, JIM, { label: 'x' });
+        const keywordLink = await sm.issue({ kind: 'keyword', keyword: 'trip' }, '24h', ISSUER('alice'));
+        await sm.recordVaultVisit(vaultLink.token, { page: 'u1' });
+        sm.recordAccess(keywordLink.token);
+        await sm.extend(vaultLink.id, 1, JIM);
+        await sm.revoke(vaultLink.id, 'jim');
+        await sm.revoke(keywordLink.id, 'alice');
+        await sm.shutdown();
+        const written = [...lines, JSON.stringify(auditEvents)].join('\n');
+        expect(lines.length).toBeGreaterThan(0);
+        for (const token of [vaultLink.token, keywordLink.token]) expect(written).not.toContain(token);
+      } finally {
+        spies.forEach((spy) => spy.mockRestore());
+      }
     });
 
     test('every visit is its own share-access record, naming the page by uuid; keyword links stay batched', async () => {

@@ -53,6 +53,7 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 - __Lifetime.__ The maximum is the `shareMaxDays` of the vault's system-category, read by `ValidationManager.getShareMaxDays`. It is 15 days on `general`, `journal` and `capture`, and 15 days where an entry sets none. It is the only say the system-category's `owner` has in sharing, and it limits a link only when the link is made. The owner can choose less, revoke sooner, or extend (`ShareManager.extend`, audited as `share-extend` before the change).
 - __What the recipient sees.__ The link's page list: the vault's current pages, or the chosen ones, listed by `PageManager.listVaultPages` and filtered by the page door. Each page is shown read-only, with the files it uses. They see no history and no search. A file that no covered page uses is not shared, including a copy left behind by a vault move.
 - __For the owner.__ __Share this page…__ in a private page's menu opens `/my/vaults/links` with that page's vault and the page ticked. The same page makes a whole-vault link, lists the owner's links, and extends or revokes them. `/my/vaults` links to it as __Vault links__.
+- __Label and visits__ (from yourphr#462). The owner may give a link a label, such as "For Dr Smith, October", shown only to them and never logged or audited. Each link keeps its last 100 visits (when, and which page, file or list) and a count, on its own record, and `/my/vaults/links` shows them. The audit trail keeps the full record of every visit. `ShareManager.test.ts` holds that a link's token never appears in a log line or an audit record.
 
 ## Decided, not yet built
 
@@ -64,7 +65,6 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
   - Accepted: the recipient needs JavaScript; a change made while the owner's vault is locked reaches the link at the owner's next save; content computed when a page is shown is frozen when it is built.
   - Existing encrypted pages and files are converted to per-item keys once, when their owner next unlocks the vault.
 - __The token on disk.__ The record stores the token itself. From slice 3 the record keeps a fingerprint instead.
-- __From yourphr#462, for slice 1:__ the owner sees each link's visit history on `/my/vaults/links`; each link has a label ("For Dr Smith, October"); a test holds that a link's token never appears in a log or an audit record.
 
 ## Abuse controls and audit
 

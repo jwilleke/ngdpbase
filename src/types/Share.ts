@@ -195,6 +195,29 @@ export interface ShareRecord {
   expiresAt: string | null;
   /** ISO 8601 revocation timestamp — record retained for audit (decision 5). */
   revokedAt?: string;
+  /**
+   * The owner's own note for a vault link, e.g. "For Dr Smith, October"
+   * (#1388). Shown to the owner only: never in a log or an audit record.
+   */
+  label?: string;
+  /** How many times a vault link has been used (#1388). */
+  visitCount?: number;
+  /** The most recent visits through a vault link, newest first, for its owner (#1388). */
+  visits?: ShareVisit[];
+}
+
+/**
+ * One visit through a vault link, as its owner sees it (#1388): when, and
+ * what was opened. The audit trail keeps the full record, with the address.
+ */
+export interface ShareVisit {
+  at: string;
+  /** The page opened, by uuid. */
+  page?: string;
+  /** The file opened, by id. */
+  file?: string;
+  /** The link's page list was opened. */
+  list?: true;
 }
 
 /** A page admitted to a share scope, with fields for a search-result-style listing. */

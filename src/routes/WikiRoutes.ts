@@ -8083,7 +8083,8 @@ ${panes}
         pages = asked.filter((uuid) => present.has(uuid));
         if (pages.length === 0) return res.redirect('/my/vaults/links?error=pages');
       }
-      const record = await shareManager.issueVaultShare({ kind: 'vault', owner: owner.username, vault, pages }, days * 24, owner);
+      const label = typeof body.label === 'string' ? body.label : '';
+      const record = await shareManager.issueVaultShare({ kind: 'vault', owner: owner.username, vault, pages }, days * 24, owner, { label });
       return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error creating a vault link:', err);

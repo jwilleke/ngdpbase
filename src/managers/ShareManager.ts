@@ -57,6 +57,10 @@ export { OWNER_ONLY_KEYWORD };
 const HOUR_MS = 60 * 60 * 1000;
 /** The most one extension may add to a link's lifetime (operator, 2026-09-29, #1388). */
 export const SHARE_EXTEND_MAX_HOURS = 24;
+/** The longest label an owner may give a vault link (#1388). */
+export const SHARE_LABEL_MAX = 100;
+/** How many recent visits a vault link keeps for its owner (#1388). */
+const SHARE_VISITS_KEPT = 100;
 
 const TTL_MS: Record<Exclude<ShareTtl, null>, number> = {
   '24h': 24 * 60 * 60 * 1000,
@@ -161,11 +165,13 @@ export default class ShareManager extends BaseManager {
    * @param scope - The vault, and its page uuids or null for the whole vault
    * @param lifetimeHours - How long the link lasts, in hours
    * @param issuer - The owner, as the request's own subject
+   * @param options - `label`: the owner's note for the link, never logged or audited
    */
   async issueVaultShare(
     scope: VaultShareScope,
     lifetimeHours: number,
-    issuer: PermissionSubject
+    issuer: PermissionSubject,
+    options: { label?: string } = {}
   ): Promise<ShareRecord> {
     if (!this.enabled) throw new Error('ShareManager: shares are disabled');
     if (!issuer.username || issuer.username !== scope.owner) {
@@ -178,7 +184,14 @@ export default class ShareManager extends BaseManager {
       throw new Error(`ShareManager: a link to this vault lasts at most ${maxHours} hours`);
     }
     const pages = scope.pages === null ? null : [...new Set(scope.pages)];
-    return this.create({ ...scope, pages }, new Date(Date.now() + lifetimeHours * HOUR_MS).toISOString(), issuer, {});
+    const label = (options.label ?? '').trim().slice(0, SHARE_LABEL_MAX);
+    return this.create(
+      { ...scope, pages },
+      new Date(Date.now() + lifetimeHours * HOUR_MS).toISOString(),
+      issuer,
+      {},
+      label ? { label } : {}
+    );
   }
 
   /** The longest a new link to `vault` may last, in days (#1388). */
@@ -217,7 +230,8 @@ export default class ShareManager extends BaseManager {
     scope: ShareScope,
     expiresAt: string | null,
     issuer: PermissionSubject,
-    options: { actions?: readonly string[]; resources?: readonly ShareResource[] }
+    options: { actions?: readonly string[]; resources?: readonly ShareResource[] },
+    extra: Pick<ShareRecord, 'label'> = {}
   ): Promise<ShareRecord> {
     if (!issuer.username) throw new Error('ShareManager: a share needs an issuer');
     const actions = [...new Set(options.actions ?? DEFAULT_SHARE_ACTIONS)];
@@ -239,7 +253,8 @@ export default class ShareManager extends BaseManager {
       resources,
       createdBy: issuer.username,
       createdAt: new Date().toISOString(),
-      expiresAt
+      expiresAt,
+      ...extra
     };
 
     // #1202: share-create is CRITICAL — a share is an anonymous-access
@@ -447,6 +462,10 @@ export default class ShareManager extends BaseManager {
       },
       (err) => logger.warn(`[ShareManager] Audit logging failed for share-access ${record.id}: ${String(err)}`)
     );
+    // The owner's view of it: newest first, a bounded list on the link's own record.
+    record.visitCount = (record.visitCount ?? 0) + 1;
+    record.visits = [{ at: new Date().toISOString(), ...what }, ...(record.visits ?? [])].slice(0, SHARE_VISITS_KEPT);
+    this.persist(record);
   }
 
   private async resolveKeywordScope(keyword: string): Promise<ResolvedShareScope> {

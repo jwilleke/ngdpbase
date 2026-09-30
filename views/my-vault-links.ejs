@@ -51,6 +51,10 @@
                     <% const pickMax = (vaults.find(function(v) { return v.id === pickVault; }) || { maxDays: 15 }).maxDays; %>
                     <div class="row g-2 align-items-end">
                         <div class="col-auto">
+                            <label for="pick-label" class="form-label small mb-0">Label (only you see it)</label>
+                            <input type="text" class="form-control form-control-sm" id="pick-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                        </div>
+                        <div class="col-auto">
                             <label for="pick-days" class="form-label small mb-0">Lasts (days, up to <%= pickMax %>)</label>
                             <input type="number" class="form-control form-control-sm" id="pick-days" name="days" min="1" max="<%= pickMax %>" value="<%= Math.min(7, pickMax) %>" required>
                         </div>
@@ -79,6 +83,10 @@
                         </select>
                     </div>
                     <div class="col-auto">
+                        <label for="whole-label" class="form-label small mb-0">Label (only you see it)</label>
+                        <input type="text" class="form-control form-control-sm" id="whole-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                    </div>
+                    <div class="col-auto">
                         <label for="whole-days" class="form-label small mb-0">Lasts (days)</label>
                         <input type="number" class="form-control form-control-sm" id="whole-days" name="days" min="1" max="<%= vaults[0].maxDays %>" value="<%= Math.min(7, vaults[0].maxDays) %>" required>
                     </div>
@@ -97,12 +105,13 @@
         <div class="table-responsive">
             <table class="table table-sm align-middle">
                 <thead>
-                    <tr><th>What</th><th>Link</th><th>Status</th><th>Expires</th><th></th></tr>
+                    <tr><th>What</th><th>Link</th><th>Status</th><th>Expires</th><th>Visits</th><th></th></tr>
                 </thead>
                 <tbody>
                     <% links.forEach(function(l) { %>
                         <tr class="<%= l.id === createdId ? 'table-success' : '' %>">
                             <td>
+                                <% if (l.label) { %><div class="fw-semibold"><%= l.label %></div><% } %>
                                 <strong><%= l.scope.vault %></strong>:
                                 <% if (l.scope.pages === null) { %>whole vault<% } else { %>
                                     <%= l.scope.pages.map(function(u) { return titles[u] || '(page no longer here)'; }).join(', ') %>
@@ -117,6 +126,18 @@
                                 <span class="badge <%= l.status === 'active' ? 'bg-success' : l.status === 'expired' ? 'bg-secondary' : 'bg-danger' %>"><%= l.status %></span>
                             </td>
                             <td class="small"><%= l.expiresAt ? new Date(l.expiresAt).toLocaleString() : '' %></td>
+                            <td class="small">
+                                <% if (!l.visitCount) { %><span class="text-muted">none yet</span><% } else { %>
+                                    <details>
+                                        <summary><%= l.visitCount %> — last <%= new Date(l.visits[0].at).toLocaleString() %></summary>
+                                        <ul class="list-unstyled mb-0 mt-1">
+                                            <% l.visits.forEach(function(v) { %>
+                                                <li><%= new Date(v.at).toLocaleString() %> — <%= v.list ? 'the page list' : v.page ? (titles[v.page] || 'a page no longer here') : 'a file' %></li>
+                                            <% }); %>
+                                        </ul>
+                                    </details>
+                                <% } %>
+                            </td>
                             <td class="text-nowrap">
                                 <% if (l.status === 'active') { %>
                                     <form method="post" action="/my/vaults/links/<%= l.id %>/extend" class="d-inline-flex align-items-center gap-1">

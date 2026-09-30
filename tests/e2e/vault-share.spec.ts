@@ -57,6 +57,7 @@ test.describe('Vault links', () => {
     await page.goto(`/my/vaults/links?page=${encodeURIComponent(sharedName)}`);
     const form = page.locator('form[action="/my/vaults/links"]').filter({ has: page.locator('input[name="scope"][value="pages"]') });
     await expect(form.locator('input[name="pages"]:checked')).toHaveCount(1);
+    await form.locator('input[name="label"]').fill('For the E2E visitor');
     await Promise.all([
       page.waitForURL(/created=/),
       form.locator('button[type="submit"]').click()
@@ -80,9 +81,13 @@ test.describe('Vault links', () => {
     const refused = await visitor.goto(`/share/${token}/page/${encodeURIComponent(siblingName)}`);
     expect(refused?.status()).toBe(404);
 
-    // Revoked: the same link opens nothing, at once.
+    // The owner sees the label and the visits.
     await page.goto('/my/vaults/links');
     const row = page.locator('tr', { has: page.locator(`input[value$="${token}"]`) });
+    await expect(row).toContainText('For the E2E visitor');
+    await expect(row.locator('details summary')).toContainText(/^\d+ — last /);
+
+    // Revoked: the same link opens nothing, at once.
     await Promise.all([
       page.waitForURL(/notice=revoked/),
       row.locator('form[action$="/revoke"] button').click()
