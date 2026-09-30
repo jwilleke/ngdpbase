@@ -210,6 +210,7 @@ import type AttachmentManager from './AttachmentManager.js';
 import type FootnoteManager from './FootnoteManager.js';
 import type AssetManager from './AssetManager.js';
 import type CacheManager from './CacheManager.js';
+import type ShareManager from './ShareManager.js';
 /** The site's record of one-time migrations over its public pages (#1506), in the instance data folder. */
 const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 /** The move of existing captures into the capture vault (#1505), recorded per vault it moved them out of. */
@@ -2398,6 +2399,13 @@ class PageManager extends BaseManager implements CatalogSource {
     // index is kept in step here — the one place a page write reconciles its
     // indexes, so a new save path cannot forget one and not the other.
     await step('store search', () => this.reconcileStoreSearch(change));
+
+    // #1388: a link to an encrypted vault holds a locked copy of each page it
+    // covers, prepared while the vault is open. This save is such a moment.
+    if (parsePrivatePageName(name ?? '') || parsePrivatePageName(previousName ?? '')) {
+      await step('vault links', () => this.engine.getManager<ShareManager>('ShareManager')
+        ?.refreshLockboxesForPage(change.ctx, { name, uuid: change.uuid, previousName }));
+    }
 
     const referrers = new Set<string>();
     const previousReferrers = isPublic(previousName) ? (rendering?.getReferringPages(previousName) ?? []) : [];

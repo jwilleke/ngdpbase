@@ -58,6 +58,8 @@ import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
+import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
+import { storeFileIO } from '../utils/privateStoreFiles.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
@@ -8046,7 +8048,11 @@ ${panes}
       return res.render('my-vault-links', {
         ...commonData,
         title: 'Vault links',
-        vaults: vaults.map((v) => ({ id: v, maxDays: shareManager.maxShareDays(v) })),
+        vaults: await Promise.all(vaults.map(async (v) => ({
+          id: v,
+          maxDays: shareManager.maxShareDays(v),
+          encrypted: await shareManager.isEncryptedVault(owner.username, v)
+        }))),
         pickVault,
         pickPages,
         preselected,
@@ -8065,30 +8071,59 @@ ${panes}
 
   /** POST /my/vaults/links — make a link to a whole vault, or chosen pages of it. */
   async myVaultLinksCreate(req: Request, res: Response) {
+    // #1388: a link to an encrypted vault is made by the owner's browser, which
+    // sends the public half of the link's key as JSON and builds the link itself;
+    // every other link comes from the plain form.
+    const asJson = req.is('application/json') === 'application/json';
+    const fail = (error: string, status = 400) => (asJson ? res.status(status).json({ error }) : res.redirect(`/my/vaults/links?error=${error}`));
     try {
       const request = await this.vaultLinkRequest(req, res);
       if (!request) return;
       const { owner, vaults, shareManager } = request;
       const body = req.body as Record<string, unknown>;
       const vault = typeof body.vault === 'string' ? body.vault : '';
-      if (!vaults.includes(vault)) return res.redirect('/my/vaults/links?error=vault');
+      if (!vaults.includes(vault)) return fail('vault');
       const days = Number(body.days);
-      if (!Number.isFinite(days) || days <= 0 || days > shareManager.maxShareDays(vault)) {
-        return res.redirect('/my/vaults/links?error=days');
-      }
+      if (!Number.isFinite(days) || days <= 0 || days > shareManager.maxShareDays(vault)) return fail('days');
       let pages: string[] | null = null;
       if (body.scope !== 'whole') {
         const asked = (Array.isArray(body.pages) ? body.pages : body.pages ? [body.pages] : []).map(String);
         const present = new Set((await this.engine.getManager('PageManager').listVaultPages(owner, owner.username, vault)).map((p) => p.uuid));
         pages = asked.filter((uuid) => present.has(uuid));
-        if (pages.length === 0) return res.redirect('/my/vaults/links?error=pages');
+        if (pages.length === 0) return fail('pages');
       }
       const label = typeof body.label === 'string' ? body.label : '';
-      const record = await shareManager.issueVaultShare({ kind: 'vault', owner: owner.username, vault, pages }, days * 24, owner, { label });
+
+      const encrypted = await shareManager.isEncryptedVault(owner.username, vault);
+      let lockedFor: LinkPublicKey | undefined;
+      if (encrypted) {
+        const parsed = parseLinkPublicKey(body.publicKey);
+        if (!parsed) return fail('needs-browser');
+        lockedFor = parsed;
+        // Its pages are prepared now, so the vault must be open in this session.
+        const configManager = this.engine.getManager('ConfigurationManager');
+        const pagesDirectory = configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+        const layout = privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def));
+        try {
+          await storeFileIO(owner, { pagesDirectory, owner: owner.username, store: vault, layout });
+        } catch {
+          return fail('locked', 409);
+        }
+      }
+
+      const record = await shareManager.issueVaultShare(
+        { kind: 'vault', owner: owner.username, vault, pages },
+        days * 24,
+        owner,
+        { label, ...(lockedFor ? { lockedFor } : {}) }
+      );
+      if (record.lockedFor) await shareManager.prepareLockboxes(record, owner);
+      // The token is the path of the link; the key after `#` never came here.
+      if (asJson) return res.json({ id: record.id, token: record.token });
       return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
     } catch (err: unknown) {
       logger.error('[vault-links] Error creating a vault link:', err);
-      return res.status(500).send('Internal server error');
+      return asJson ? res.status(500).json({ error: 'server' }) : res.status(500).send('Internal server error');
     }
   }
 
@@ -15338,6 +15373,10 @@ ${panes}
     app.get('/share/:token/thumb/:id', (req: Request, res: Response) => void this.shareThumb(req, res));
     app.get('/share/:token/page/:name', (req: Request, res: Response) => void this.sharePage(req, res));
     app.get('/share/:token/attachment/:id', (req: Request, res: Response) => void this.shareAttachment(req, res));
+    // #1388: locked copies for a link to an encrypted vault, opened in the browser.
+    app.get('/share/:token/lockbox/manifest', (req: Request, res: Response) => void this.shareLockbox(req, res, 'manifest'));
+    app.get('/share/:token/lockbox/pages/:key', (req: Request, res: Response) => void this.shareLockbox(req, res, 'pages'));
+    app.get('/share/:token/lockbox/files/:key', (req: Request, res: Response) => void this.shareLockbox(req, res, 'files'));
 
     // Share management routes (#854) — admin/editor (epic #842 slice 3)
     app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
@@ -18662,6 +18701,11 @@ ${description}
       const scope = this.shareScopeOf(res);
       const shareManager = this.engine.getManager('ShareManager');
       if (!shareManager) return res.status(404).send('Not Found');
+      // #1388: a link to an encrypted vault is opened in the recipient's browser;
+      // the server hands out a viewer and locked copies, never a page.
+      if (shareManager.isLockedLink(req.params.token)) {
+        return res.render('share-locked', { token: req.params.token, title: 'Shared with you' });
+      }
       const candidates = await shareManager.resolveScope(scope, req.userContext);
       const mediaManager = this.engine.getManager('MediaManager');
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
@@ -18708,6 +18752,31 @@ ${description}
    */
   async shareThumb(req: Request, res: Response) {
     return this.mediaThumb(req, res);
+  }
+
+  /**
+   * GET /share/:token/lockbox/manifest, /lockbox/pages/:key, /lockbox/files/:key
+   * A locked copy for the recipient's browser to open (#1388): the link's page
+   * list, a page, or a file. Opaque to the server; an unknown link, a link that
+   * is not locked, and a missing item are the same 404.
+   */
+  async shareLockbox(req: Request, res: Response, kind: 'manifest' | 'pages' | 'files') {
+    try {
+      const shareManager = this.engine.getManager('ShareManager');
+      const box = shareManager?.getLockbox(req.params.token, kind, req.params.key);
+      if (!box) return res.status(404).send('Not Found');
+      await shareManager?.recordVaultVisit(
+        req.params.token,
+        kind === 'manifest' ? { list: true } : kind === 'pages' ? { page: req.params.key } : { file: req.params.key },
+        req.ip
+      );
+      // The URL carries the link's token: no shared cache may keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
+      return res.json(box);
+    } catch (err: unknown) {
+      logger.error('[share] Error serving a lockbox:', err);
+      return res.status(500).send('Internal server error');
+    }
   }
 
   /**

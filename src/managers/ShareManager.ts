@@ -48,8 +48,13 @@ import { keywordsCollide } from '../utils/keywordNormalizer.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ValidationManager from './ValidationManager.js';
 import { DEFAULT_SHARE_MAX_DAYS } from './ValidationManager.js';
-import { isValidStoreId } from '../utils/privateStorePath.js';
+import { isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
+import { readStoreMeta } from '../utils/privateStoreMeta.js';
+import { isLockbox, sealForLink, type LinkPublicKey, type Lockbox } from '../utils/shareLockbox.js';
+import WikiContext from '../context/WikiContext.js';
+import type RenderingManager from './RenderingManager.js';
+import type AttachmentManager from './AttachmentManager.js';
 
 export { OWNER_ONLY_KEYWORD };
 
@@ -112,6 +117,7 @@ export default class ShareManager extends BaseManager {
     }
     fs.mkdirSync(this.sharesDir, { recursive: true });
     this.loadShares();
+    this.sweepLockboxes();
     logger.debug(`ShareManager initialized (${this.byId.size} shares loaded)`);
   }
 
@@ -165,13 +171,16 @@ export default class ShareManager extends BaseManager {
    * @param scope - The vault, and its page uuids or null for the whole vault
    * @param lifetimeHours - How long the link lasts, in hours
    * @param issuer - The owner, as the request's own subject
-   * @param options - `label`: the owner's note for the link, never logged or audited
+   * @param options - `label`: the owner's note for the link, never logged or
+   *   audited. `lockedFor`: for an encrypted vault, the public half of the
+   *   link's key pair, made in the owner's browser — required there, refused
+   *   anywhere else.
    */
   async issueVaultShare(
     scope: VaultShareScope,
     lifetimeHours: number,
     issuer: PermissionSubject,
-    options: { label?: string } = {}
+    options: { label?: string; lockedFor?: LinkPublicKey } = {}
   ): Promise<ShareRecord> {
     if (!this.enabled) throw new Error('ShareManager: shares are disabled');
     if (!issuer.username || issuer.username !== scope.owner) {
@@ -183,6 +192,14 @@ export default class ShareManager extends BaseManager {
     if (!Number.isFinite(lifetimeHours) || lifetimeHours <= 0 || lifetimeHours > maxHours) {
       throw new Error(`ShareManager: a link to this vault lasts at most ${maxHours} hours`);
     }
+    // #1388: a link to an encrypted vault is locked for its own key; any other is not.
+    const encrypted = await this.isEncryptedVault(scope.owner, scope.vault);
+    if (encrypted && !options.lockedFor) {
+      throw new Error('ShareManager: a link to an encrypted vault needs the public half of its key');
+    }
+    if (!encrypted && options.lockedFor) {
+      throw new Error('ShareManager: only a link to an encrypted vault is locked for a key');
+    }
     const pages = scope.pages === null ? null : [...new Set(scope.pages)];
     const label = (options.label ?? '').trim().slice(0, SHARE_LABEL_MAX);
     return this.create(
@@ -190,8 +207,22 @@ export default class ShareManager extends BaseManager {
       new Date(Date.now() + lifetimeHours * HOUR_MS).toISOString(),
       issuer,
       {},
-      label ? { label } : {}
+      { ...(label ? { label } : {}), ...(options.lockedFor ? { lockedFor: options.lockedFor } : {}) }
     );
+  }
+
+  /** Whether `owner`'s vault is encrypted: read from its `store.json`, the one file of a vault that is never sealed. */
+  async isEncryptedVault(owner: string, vault: string): Promise<boolean> {
+    const place = this.vaultPlace();
+    if (!place) return false;
+    return (await readStoreMeta(place.pagesDirectory, owner, vault, place.layout)).encrypt === true;
+  }
+
+  private vaultPlace(): { pagesDirectory: string; layout: ReturnType<typeof privateStoreLayoutFromConfig> } | null {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return null;
+    return { pagesDirectory, layout: privateStoreLayoutFromConfig((key, def) => configManager.getProperty(key, def)) };
   }
 
   /** The longest a new link to `vault` may last, in days (#1388). */
@@ -231,7 +262,7 @@ export default class ShareManager extends BaseManager {
     expiresAt: string | null,
     issuer: PermissionSubject,
     options: { actions?: readonly string[]; resources?: readonly ShareResource[] },
-    extra: Pick<ShareRecord, 'label'> = {}
+    extra: Pick<ShareRecord, 'label' | 'lockedFor'> = {}
   ): Promise<ShareRecord> {
     if (!issuer.username) throw new Error('ShareManager: a share needs an issuer');
     const actions = [...new Set(options.actions ?? DEFAULT_SHARE_ACTIONS)];
@@ -342,6 +373,8 @@ export default class ShareManager extends BaseManager {
 
     record.revokedAt = revokedAt;
     this.persist(record);
+    // #1388: whatever was locked for the link goes with it.
+    if (record.lockedFor) this.dropLockboxes(record.id);
 
     logger.info(`[ShareManager] Share ${id} revoked by ${revokedBy}`);
     return true;
@@ -536,6 +569,156 @@ export default class ShareManager extends BaseManager {
     if (Array.isArray(meta.audience) && meta.audience.length > 0) return true;
     if (meta.access && typeof meta.access === 'object' && Object.keys(meta.access).length > 0) return true;
     return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lockboxes — links to encrypted vaults (#1388)
+  // ---------------------------------------------------------------------------
+  //
+  // A link to an encrypted vault serves no page the server can read. Its
+  // pages and files are prepared while the owner's vault is open — when the
+  // link is made, and when a covered page is saved — and locked for the
+  // link's public key. The recipient's browser opens them. On disk:
+  // `{sharesDir}/lockboxes/{id}/manifest.json`, `pages/{uuid}.json`,
+  // `files/{fileId}.json`.
+
+  /** Prepare and lock everything a link to an encrypted vault covers. `ownerCtx` must hold the vault's key. */
+  async prepareLockboxes(record: ShareRecord, ownerCtx: ActorContext): Promise<number> {
+    if (!record.lockedFor || record.scope.kind !== 'vault') return 0;
+    const { owner, vault } = record.scope;
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const pages = (pageManager ? await pageManager.listVaultPages(ownerCtx, owner, vault) : [])
+      .filter((p) => this.coversPage(record, p.uuid));
+    for (const page of pages) await this.lockPage(record, ownerCtx, page.name);
+    await this.lockManifest(record, ownerCtx);
+    return pages.length;
+  }
+
+  /**
+   * A page of `owner`'s vault changed (#1388): refresh it in every live link
+   * to that vault that covers it — or take it out, when it was deleted or
+   * moved away. Called by PageManager with the saving owner's context, which
+   * holds the vault key. Best-effort: one link's failure never stops a save.
+   */
+  async refreshLockboxesForPage(ownerCtx: ActorContext, change: { name: string | null; uuid?: string; previousName?: string | null }): Promise<void> {
+    const now = parsePrivatePageName(change.name ?? '');
+    const before = parsePrivatePageName(change.previousName ?? '');
+    const where = now ?? before;
+    if (!where || !change.uuid) return;
+    for (const record of this.byId.values()) {
+      if (!record.lockedFor || record.scope.kind !== 'vault' || !this.liveRecord(record.token)) continue;
+      if (record.scope.owner !== where.owner) continue;
+      try {
+        const inThisVault = now && now.store === record.scope.vault;
+        const wasInThisVault = before && before.store === record.scope.vault;
+        if (!inThisVault && !wasInThisVault) continue;
+        if (inThisVault && this.coversPage(record, change.uuid)) {
+          await this.lockPage(record, ownerCtx, change.name as string);
+        } else {
+          fs.rmSync(this.lockboxPath(record.id, 'pages', change.uuid), { force: true });
+        }
+        await this.lockManifest(record, ownerCtx);
+      } catch (err) {
+        logger.warn(`[ShareManager] Could not refresh link ${record.id} after a page change: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /**
+   * A lockbox of a live link, for the recipient's browser to open — or null,
+   * the same for an unknown link, one that is not locked, and a missing item.
+   */
+  getLockbox(token: string, kind: 'manifest' | 'pages' | 'files', key?: string): Lockbox | null {
+    const record = this.liveRecord(token);
+    if (!record?.lockedFor) return null;
+    if (kind !== 'manifest' && (!key || !/^[A-Za-z0-9._-]+$/.test(key))) return null;
+    try {
+      const box = JSON.parse(fs.readFileSync(this.lockboxPath(record.id, kind, key), 'utf-8')) as unknown;
+      return isLockbox(box) ? box : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** True when a link is locked for a key, and so is opened in the recipient's browser (#1388). */
+  isLockedLink(token: string): boolean {
+    return !!this.liveRecord(token)?.lockedFor;
+  }
+
+  private coversPage(record: ShareRecord, uuid: string): boolean {
+    return record.scope.kind === 'vault' && (record.scope.pages === null || record.scope.pages.includes(uuid));
+  }
+
+  private lockboxPath(id: string, kind: 'manifest' | 'pages' | 'files', key?: string): string {
+    const dir = path.join(this.sharesDir, 'lockboxes', id);
+    return kind === 'manifest' ? path.join(dir, 'manifest.json') : path.join(dir, kind, `${key}.json`);
+  }
+
+  private async writeLockbox(record: ShareRecord, kind: 'manifest' | 'pages' | 'files', key: string | undefined, content: unknown): Promise<void> {
+    const box = await sealForLink(record.lockedFor as LinkPublicKey, new TextEncoder().encode(JSON.stringify(content)));
+    const file = this.lockboxPath(record.id, kind, key);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(box), 'utf-8');
+  }
+
+  /**
+   * Render one page as the link's own subject — so nothing the link could not
+   * see reaches it through an include or a plugin — from the text the owner's
+   * context read, then lock it, and each vault file it uses, for the link.
+   */
+  private async lockPage(record: ShareRecord, ownerCtx: ActorContext, pageName: string): Promise<void> {
+    if (record.scope.kind !== 'vault') return;
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const renderingManager = this.engine.getManager<RenderingManager>('RenderingManager');
+    const subject = this.subjectFor(record.token);
+    const page = pageManager ? await pageManager.getPage(pageName, ownerCtx) : null;
+    if (!page?.uuid || !renderingManager || !subject) return;
+    const wikiContext = new WikiContext(this.engine, { context: WikiContext.CONTEXT.VIEW, pageName, userContext: { ...subject } });
+    let html = await renderingManager.textToHTML(wikiContext, page.content ?? '');
+
+    // The page's pictures and attachments: from this vault only, locked for the link,
+    // and referred to by id so the viewer can put them back.
+    const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    const files: string[] = [];
+    const ids = new Set([...html.matchAll(/\/attachments\/(?:thumb\/)?([A-Za-z0-9._-]+)/g)].map((m) => m[1]));
+    for (const id of ids) {
+      const found = attachmentManager ? await attachmentManager.getPrivateStoreAttachment(id, ownerCtx).catch(() => null) : null;
+      if (!found || (found.metadata as { store?: string }).store !== record.scope.vault) continue;
+      await this.writeLockbox(record, 'files', id, {
+        name: found.metadata.name ?? id,
+        type: (found.metadata as { encodingFormat?: string }).encodingFormat ?? 'application/octet-stream',
+        data: found.buffer.toString('base64')
+      });
+      files.push(id);
+    }
+    html = html.replace(/(["'])\/attachments\/(?:thumb\/)?([A-Za-z0-9._-]+)(\?[^"']*)?\1/g,
+      (whole, quote: string, id: string) => (files.includes(id) ? `${quote}lockbox-file:${id}${quote}` : whole));
+    await this.writeLockbox(record, 'pages', page.uuid, { uuid: page.uuid, title: page.title ?? pageName, html, files });
+  }
+
+  /** The link's list of pages, locked: titles are the owner's, so they are never served in the clear. */
+  private async lockManifest(record: ShareRecord, ownerCtx: ActorContext): Promise<void> {
+    if (record.scope.kind !== 'vault') return;
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const pages = (pageManager ? await pageManager.listVaultPages(ownerCtx, record.scope.owner, record.scope.vault) : [])
+      .filter((p) => this.coversPage(record, p.uuid) && fs.existsSync(this.lockboxPath(record.id, 'pages', p.uuid)))
+      .map((p) => ({ uuid: p.uuid, title: p.title }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+    await this.writeLockbox(record, 'manifest', undefined, { sharedBy: record.scope.owner, pages });
+  }
+
+  private dropLockboxes(id: string): void {
+    fs.rmSync(path.join(this.sharesDir, 'lockboxes', id), { recursive: true, force: true });
+  }
+
+  /** Lockboxes of links that have expired or been revoked go at start-up, whatever was missed. */
+  private sweepLockboxes(): void {
+    const dir = path.join(this.sharesDir, 'lockboxes');
+    if (!fs.existsSync(dir)) return;
+    for (const id of fs.readdirSync(dir)) {
+      const record = this.byId.get(id);
+      if (!record || !this.liveRecord(record.token)) this.dropLockboxes(id);
+    }
   }
 
   // ---------------------------------------------------------------------------

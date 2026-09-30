@@ -19,6 +19,7 @@ import path from 'path';
 import os from 'os';
 import ShareManager, { OWNER_ONLY_KEYWORD } from '../ShareManager';
 import type { VaultShareScope } from '../../types/Share';
+import { newLinkKeyPair, openLockbox } from '../../utils/shareLockbox';
 import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { ShareRecord } from '../../types/Share';
@@ -61,9 +62,20 @@ const mockSearchManager = {
 
 let pageMetas: Record<string, Record<string, unknown> | null>;
 let vaultPages: Array<{ name: string; title: string; uuid: string }>;
+let vaultPageBodies: Record<string, { uuid: string; title: string; content: string }>;
 const mockPageManager = {
   getPageMetadata: vi.fn(async (name: string) => pageMetas[name] ?? null),
-  listVaultPages: vi.fn(async () => vaultPages)
+  listVaultPages: vi.fn(async () => vaultPages),
+  getPage: vi.fn(async (name: string) => vaultPageBodies[name] ?? null)
+};
+// #1388: pages render as the link's own subject; the stand-in echoes the text and who rendered it.
+const mockRenderingManager = {
+  textToHTML: vi.fn(async (ctx: { userContext?: { viaShare?: { id: string } } }, text: string) =>
+    `<div data-via="${ctx.userContext?.viaShare ? 'share' : 'other'}">${text}</div>`)
+};
+let vaultFiles: Record<string, { buffer: Buffer; metadata: Record<string, unknown> }>;
+const mockAttachmentManager = {
+  getPrivateStoreAttachment: vi.fn(async (id: string) => vaultFiles[id] ?? null)
 };
 
 // #1221: issuing checks every delegated action against the issuer's live
@@ -91,7 +103,9 @@ const mockEngine = {
       PolicyDecisionPoint: mockPolicyDecisionPoint,
       MediaManager: mockMediaManager,
       SearchManager: mockSearchManager,
-      PageManager: mockPageManager
+      PageManager: mockPageManager,
+      RenderingManager: mockRenderingManager,
+      AttachmentManager: mockAttachmentManager
     };
     return managers[name] ?? null;
   })
@@ -115,6 +129,8 @@ describe('ShareManager', () => {
     searchResults = [];
     pageMetas = {};
     vaultPages = [];
+    vaultPageBodies = {};
+    vaultFiles = {};
     sm = new ShareManager(mockEngine);
     await sm.initialize();
   });
@@ -632,6 +648,111 @@ describe('ShareManager', () => {
       const visits = auditEvents.filter((e) => e.eventType === 'share-access');
       expect(visits).toHaveLength(2);
       expect(visits[0]).toMatchObject({ resource: record.id, ipAddress: '10.0.0.1', metadata: { page: 'u1', vault: 'jim/journal' } });
+    });
+  });
+
+  // #1388: links to an ENCRYPTED vault — locked copies the server cannot open.
+  describe('links to an encrypted vault (#1388)', () => {
+    const JIM = ISSUER('jim', ['reader']);
+    const scope = (pages: string[] | null = null): VaultShareScope => ({ kind: 'vault', owner: 'jim', vault: 'sealed', pages });
+    const OWNER_CTX = { username: 'jim', isAuthenticated: true, roles: ['reader'] } as never;
+    const open = async (linkKey: string, box: unknown) =>
+      JSON.parse(new TextDecoder().decode(await openLockbox(linkKey, box))) as Record<string, unknown>;
+
+    beforeEach(() => {
+      // The vault's store.json says it is encrypted; the shares dir stands in for the pages dir here.
+      fs.mkdirSync(path.join(tmpDir, 'vaults', 'jim', 'sealed'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'vaults', 'jim', 'sealed', 'store.json'), JSON.stringify({ encrypt: true }));
+      vaultPages = [
+        { name: 'vaults/jim/sealed/Labs', title: 'Labs', uuid: 'u1' },
+        { name: 'vaults/jim/sealed/Notes', title: 'Notes', uuid: 'u2' }
+      ];
+      vaultPageBodies = {
+        'vaults/jim/sealed/Labs': { uuid: 'u1', title: 'Labs', content: 'cholesterol 180 <img src="/attachments/f1.png">' },
+        'vaults/jim/sealed/Notes': { uuid: 'u2', title: 'Notes', content: 'private notes' }
+      };
+      vaultFiles = { 'f1.png': { buffer: Buffer.from('PNGBYTES'), metadata: { name: 'x.png', encodingFormat: 'image/png', store: 'sealed' } } };
+    });
+
+    test('a link to an encrypted vault must carry a public key, and one to a plain vault must not', async () => {
+      const { publicKey } = await newLinkKeyPair();
+      await expect(sm.issueVaultShare(scope(), 24, JIM)).rejects.toThrow(/public half/);
+      await expect(sm.issueVaultShare({ ...scope(), vault: 'journal' }, 24, JIM, { lockedFor: publicKey })).rejects.toThrow(/only a link to an encrypted vault/);
+      const record = await sm.issueVaultShare(scope(), 24, JIM, { lockedFor: publicKey });
+      expect(record.lockedFor).toEqual(publicKey);
+    });
+
+    test('the covered pages and their files are locked for the link, rendered as the link\'s subject, and open only with its key', async () => {
+      const link = await newLinkKeyPair();
+      const record = await sm.issueVaultShare(scope(['u1']), 24, JIM, { lockedFor: link.publicKey });
+      expect(await sm.prepareLockboxes(record, OWNER_CTX)).toBe(1);
+
+      const manifest = await open(link.linkKey, sm.getLockbox(record.token, 'manifest'));
+      expect(manifest).toEqual({ sharedBy: 'jim', pages: [{ uuid: 'u1', title: 'Labs' }] });
+      const page = await open(link.linkKey, sm.getLockbox(record.token, 'pages', 'u1'));
+      expect(page.html).toContain('data-via="share"');
+      expect(page.html).toContain('lockbox-file:f1.png');
+      expect(page.html).not.toContain('/attachments/f1.png');
+      const file = await open(link.linkKey, sm.getLockbox(record.token, 'files', 'f1.png'));
+      expect(Buffer.from(String(file.data), 'base64').toString()).toBe('PNGBYTES');
+
+      // Nothing on disk is readable without the key, and the uncovered page was never locked.
+      const onDisk = fs.readdirSync(path.join(tmpDir, 'lockboxes', record.id), { recursive: true })
+        .map((f) => path.join(tmpDir, 'lockboxes', record.id, String(f)))
+        .filter((f) => fs.statSync(f).isFile())
+        .map((f) => fs.readFileSync(f, 'utf-8')).join('');
+      expect(onDisk).not.toContain('cholesterol');
+      expect(onDisk).not.toContain('Labs');
+      expect(sm.getLockbox(record.token, 'pages', 'u2')).toBeNull();
+      const other = await newLinkKeyPair();
+      await expect(openLockbox(other.linkKey, sm.getLockbox(record.token, 'manifest') as never)).rejects.toThrow();
+    });
+
+    test('a file from another vault is not locked for the link, even if the page points at it', async () => {
+      vaultFiles['f1.png'].metadata.store = 'default';
+      const link = await newLinkKeyPair();
+      const record = await sm.issueVaultShare(scope(['u1']), 24, JIM, { lockedFor: link.publicKey });
+      await sm.prepareLockboxes(record, OWNER_CTX);
+      expect(sm.getLockbox(record.token, 'files', 'f1.png')).toBeNull();
+      const page = await open(link.linkKey, sm.getLockbox(record.token, 'pages', 'u1'));
+      expect(page.files).toEqual([]);
+    });
+
+    test('a save refreshes a covered page; a new page reaches a whole-vault link; a deleted page leaves it', async () => {
+      const link = await newLinkKeyPair();
+      const record = await sm.issueVaultShare(scope(), 24, JIM, { lockedFor: link.publicKey });
+      await sm.prepareLockboxes(record, OWNER_CTX);
+
+      vaultPageBodies['vaults/jim/sealed/Labs'].content = 'cholesterol 170';
+      await sm.refreshLockboxesForPage(OWNER_CTX, { name: 'vaults/jim/sealed/Labs', uuid: 'u1', previousName: 'vaults/jim/sealed/Labs' });
+      expect(String((await open(link.linkKey, sm.getLockbox(record.token, 'pages', 'u1'))).html)).toContain('170');
+
+      vaultPages.push({ name: 'vaults/jim/sealed/New', title: 'New', uuid: 'u3' });
+      vaultPageBodies['vaults/jim/sealed/New'] = { uuid: 'u3', title: 'New', content: 'added later' };
+      await sm.refreshLockboxesForPage(OWNER_CTX, { name: 'vaults/jim/sealed/New', uuid: 'u3', previousName: null });
+      expect(sm.getLockbox(record.token, 'pages', 'u3')).not.toBeNull();
+
+      vaultPages = vaultPages.filter((p) => p.uuid !== 'u2');
+      await sm.refreshLockboxesForPage(OWNER_CTX, { name: null, uuid: 'u2', previousName: 'vaults/jim/sealed/Notes' });
+      expect(sm.getLockbox(record.token, 'pages', 'u2')).toBeNull();
+      const manifest = await open(link.linkKey, sm.getLockbox(record.token, 'manifest'));
+      expect((manifest.pages as Array<{ uuid: string }>).map((p) => p.uuid).sort()).toEqual(['u1', 'u3']);
+    });
+
+    test('revoking deletes everything locked for the link', async () => {
+      const link = await newLinkKeyPair();
+      const record = await sm.issueVaultShare(scope(), 24, JIM, { lockedFor: link.publicKey });
+      await sm.prepareLockboxes(record, OWNER_CTX);
+      expect(fs.existsSync(path.join(tmpDir, 'lockboxes', record.id))).toBe(true);
+      await sm.revoke(record.id, 'jim');
+      expect(fs.existsSync(path.join(tmpDir, 'lockboxes', record.id))).toBe(false);
+      expect(sm.getLockbox(record.token, 'manifest')).toBeNull();
+    });
+
+    test('a link to a plain vault is not a locked link and has no lockboxes', async () => {
+      const record = await sm.issueVaultShare({ ...scope(), vault: 'journal' }, 24, JIM);
+      expect(sm.isLockedLink(record.token)).toBe(false);
+      expect(sm.getLockbox(record.token, 'manifest')).toBeNull();
     });
   });
 });

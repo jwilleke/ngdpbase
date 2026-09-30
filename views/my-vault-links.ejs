@@ -9,6 +9,17 @@
 
     <p class="text-muted">A vault link lets anyone who has it read, download and print what you chose, without an account, until it expires or you revoke it. They see only the current pages, never earlier versions. Every visit is recorded.</p>
 
+    <%# #1388: a link to an encrypted vault is made in this browser and shown once, here. %>
+    <div id="lockedLinkResult" class="alert alert-success d-none">
+        <p class="mb-2"><i class="fas fa-lock"></i> <strong>Link to your encrypted vault made.</strong> Copy it now: this is the only time the full link is shown. Its key, the part after <code>#</code>, never reached this site, so it cannot be shown again.</p>
+        <div class="input-group">
+            <input type="text" class="form-control" id="lockedLinkUrl" readonly>
+            <button type="button" class="btn btn-outline-secondary" id="lockedLinkCopy"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+        <p class="small mb-0 mt-2">The person you send it to opens it in their browser, which unlocks the pages; it needs JavaScript. A page you change while your vault is locked reaches the link the next time you save it.</p>
+    </div>
+    <div id="lockedLinkError" class="alert alert-danger d-none"></div>
+
     <% if (createdId) { %>
         <div class="alert alert-success"><i class="fas fa-check-circle"></i> Link made. Copy it below and send it to whoever should see it.</div>
     <% } %>
@@ -36,9 +47,10 @@
         <div class="card mb-4">
             <div class="card-body">
                 <h2 class="h6 card-title">Share pages from your <%= pickVault %> vault</h2>
-                <form method="post" action="/my/vaults/links">
+                <% const pickEncrypted = (vaults.find(function(v) { return v.id === pickVault; }) || {}).encrypted === true; %>
+                <form method="post" action="/my/vaults/links" data-vault-link data-base-url="<%= baseUrl %>">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <input type="hidden" name="vault" value="<%= pickVault %>">
+                    <input type="hidden" name="vault" value="<%= pickVault %>" data-encrypted="<%= pickEncrypted ? 'true' : 'false' %>">
                     <input type="hidden" name="scope" value="pages">
                     <div class="border rounded p-2 mb-2" style="max-height: 16rem; overflow-y: auto;">
                         <% pickPages.forEach(function(p) { %>
@@ -71,14 +83,14 @@
             <div class="card-body">
                 <h2 class="h6 card-title">Share a whole vault</h2>
                 <p class="text-muted small mb-2">Includes every current page and the files they use, and pages you add while the link is live.</p>
-                <form method="post" action="/my/vaults/links" class="row g-2 align-items-end">
+                <form method="post" action="/my/vaults/links" class="row g-2 align-items-end" data-vault-link data-base-url="<%= baseUrl %>">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <input type="hidden" name="scope" value="whole">
                     <div class="col-auto">
                         <label for="whole-vault" class="form-label small mb-0">Vault</label>
                         <select class="form-select form-select-sm" id="whole-vault" name="vault">
                             <% vaults.forEach(function(v) { %>
-                                <option value="<%= v.id %>" data-max="<%= v.maxDays %>"><%= v.id %> (up to <%= v.maxDays %> days)</option>
+                                <option value="<%= v.id %>" data-max="<%= v.maxDays %>" data-encrypted="<%= v.encrypted ? 'true' : 'false' %>"><%= v.id %><%= v.encrypted ? ' (encrypted)' : '' %> (up to <%= v.maxDays %> days)</option>
                             <% }); %>
                         </select>
                     </div>
@@ -119,7 +131,11 @@
                             </td>
                             <td>
                                 <% if (l.status === 'active') { %>
+                                    <% if (l.lockedFor) { %>
+                                        <span class="small text-muted" title="The key part of this link was shown once, when you made it. It was never sent to this site.">Encrypted link — its key was shown once</span>
+                                    <% } else { %>
                                     <input type="text" class="form-control form-control-sm" readonly value="<%= baseUrl %>/share/<%= l.token %>" onclick="this.select()">
+                                    <% } %>
                                 <% } else { %><span class="text-muted">—</span><% } %>
                             </td>
                             <td>
@@ -177,5 +193,7 @@
         });
     })();
 </script>
+
+<script src="/js/vault-link-create.js"></script>
 
 <%- include('footer') %>
