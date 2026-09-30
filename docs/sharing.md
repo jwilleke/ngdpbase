@@ -56,13 +56,15 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 
 ## Decided, not yet built
 
-- __Encrypted vaults__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), slices 2 and 3). Today a link to an encrypted vault opens nothing, because it carries no key. The agreed design:
-  - Each page and each file in an encrypted vault gets its own key. The vault key locks those keys, and it also locks each page's history.
-  - A link to chosen pages carries only those pages' keys and their files' keys, locked with a secret that exists only in the link. The encryption itself stops it from opening anything else, earlier versions included.
-  - Whole-vault links on one vault share one bundle. A sharing lock, separate from the vault key, holds each current item key once. Each link carries only the key to that lock. A new page is locked into the bundle once, and the server can close that lock but not open it. The bundle is deleted when the last whole-vault link ends.
-  - The server keeps a fingerprint of the link, not the link. When a link expires or is revoked, its locked keys are deleted. Pages are unlocked in memory to be shown, as they are for the owner; nothing is written back in the clear.
+- __Encrypted vaults__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), slices 2 and 3). Today a link to an encrypted vault opens nothing, because it carries no key. The agreed design keeps the key away from the server entirely, as SMART Health Links do (operator, 2026-09-30, from yourphr#462):
+  - Each page and each file in an encrypted vault gets its own key. The vault key locks those keys, and each page's history.
+  - A link to an encrypted vault is `https://site/share/<id>#<key>`. Browsers never send the part after `#`, so the server sees only the id; the key is never in a request, a log or a proxy.
+  - The server stores the shared pages already built and sealed for the link, with a key it never holds. The recipient's browser fetches the sealed page, opens it with the key from the link, and shows it; download and print work there.
+  - Pages are built and sealed while the owner's vault is unlocked: when the link is made, and at each later save of a covered page. Each link has a lock the server can close but not open (a public key), so a new or edited page is sealed for every live link. Whole-vault links on one vault share one bundle, deleted when the last of them ends.
+  - Accepted: the recipient needs JavaScript; a change made while the owner's vault is locked reaches the link at the owner's next save; content computed when a page is shown is frozen when it is built.
   - Existing encrypted pages and files are converted to per-item keys once, when their owner next unlocks the vault.
-- __The token on disk.__ The record stores the token itself. Encrypted-vault links need the link's secret kept off the server, so from slice 3 the record keeps a fingerprint instead.
+- __The token on disk.__ The record stores the token itself. From slice 3 the record keeps a fingerprint instead.
+- __From yourphr#462, for slice 1:__ the owner sees each link's visit history on `/my/vaults/links`; each link has a label ("For Dr Smith, October"); a test holds that a link's token never appears in a log or an audit record.
 
 ## Abuse controls and audit
 
