@@ -57,13 +57,14 @@ The data in a vault is always the user's, so sharing it is the owner's decision 
 
 ## Decided, not yet built
 
-- __Encrypted vaults__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), slices 2 and 3). Today a link to an encrypted vault opens nothing, because it carries no key. The agreed design keeps the key away from the server entirely, as SMART Health Links do (operator, 2026-09-30, from yourphr#462):
-  - Each page and each file in an encrypted vault gets its own key. The vault key locks those keys, and each page's history.
+- __Encrypted vaults__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), the next slice). Today a link to an encrypted vault opens nothing, because it carries no key. The agreed design keeps the key away from the server entirely, as SMART Health Links do (operator, 2026-09-30, from yourphr#462):
   - A link to an encrypted vault is `https://site/share/<id>#<key>`. Browsers never send the part after `#`, so the server sees only the id; the key is never in a request, a log or a proxy.
-  - The server stores the shared pages already built and sealed for the link, with a key it never holds. The recipient's browser fetches the sealed page, opens it with the key from the link, and shows it; download and print work there.
-  - Pages are built and sealed while the owner's vault is unlocked: when the link is made, and at each later save of a covered page. Each link has a lock the server can close but not open (a public key), so a new or edited page is sealed for every live link. Whole-vault links on one vault share one bundle, deleted when the last of them ends.
-  - Accepted: the recipient needs JavaScript; a change made while the owner's vault is locked reaches the link at the owner's next save; content computed when a page is shown is frozen when it is built.
-  - Existing encrypted pages and files are converted to per-item keys once, when their owner next unlocks the vault.
+  - Each such link has its own key pair. The server keeps the public half; the private half is the part after `#`.
+  - The server prepares each covered page, and the files it uses, and locks them for the link's public key: when the link is made, and whenever a covered page is saved while the owner's vault is unlocked. A whole-vault link also gets new pages that way. Each link has its own locked copies.
+  - The recipient's viewer fetches the locked copies, opens them in the browser with the private key, and shows each page isolated in a frame; download and print work there.
+  - Revoking or expiry deletes everything locked for that link.
+  - Accepted: the recipient needs JavaScript; a change made while the owner's vault is locked reaches the link at the owner's next save; content computed when a page is shown is frozen when it is prepared; storage grows with one copy per link.
+  - A key per page and per file was built and dropped ([#1530](https://github.com/jwilleke/ngdpbase/pull/1530)): links do not need it, and carrying it would give a permanent key to the page's file on disk and in backups, which outlives revoking.
 - __The token on disk.__ The record stores the token itself. From slice 3 the record keeps a fingerprint instead.
 
 ## Abuse controls and audit
