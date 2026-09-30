@@ -153,7 +153,8 @@ function initEditIndexAutocomplete() {
         maxSuggestions: 10,
         onSelect: function(suggestion) {
             // Navigate to edit the selected page
-            window.location.href = `/edit/${encodeURIComponent(suggestion.name)}`;
+            // A private page's `name` is its link text (`vault/Title`); `editUrl` is where it is.
+            window.location.href = suggestion.editUrl || `/edit/${encodeURIComponent(suggestion.name)}`;
         }
     });
 

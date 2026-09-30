@@ -16342,28 +16342,35 @@ ${panes}
    * `name` is the link syntax, `store/Title`, because that is what the editor
    * wraps in brackets on select — the owner of the page being edited is the
    * caller, so the link resolves in these very stores.
+   *
+   * `url` and `editUrl` are where the page actually is: a caller that opens
+   * the page (the header search, the edit index) must use them, since
+   * `/view/{name}` would look `store/Title` up as a public page and not find it.
    */
   private async getOwnPrivateSuggestions(
     ctx: PermissionSubject | undefined,
     queryLower: string,
     limit: number
-  ): Promise<Array<{ name: string; slug: string; title: string; category: string; isPrivate: boolean }>> {
-    const matches: string[] = [];
-    for (const { store, title } of await this.ownPrivatePages(ctx)) {
+  ): Promise<Array<{ name: string; slug: string; title: string; category: string; isPrivate: boolean; url: string; editUrl: string }>> {
+    const matches: Array<{ target: string; full: string }> = [];
+    for (const { owner, store, title } of await this.ownPrivatePages(ctx)) {
       const target = `${store}/${title}`;
-      if (target.toLowerCase().includes(queryLower)) matches.push(target);
+      if (target.toLowerCase().includes(queryLower)) matches.push({ target, full: formatPrivatePageName(owner, store, title) });
     }
+    const order = suggestionOrder(queryLower);
     return matches
-      .sort(suggestionOrder(queryLower))
+      .sort((a, b) => order(a.target, b.target))
       .slice(0, limit)
-      .map((target) => ({
+      .map(({ target, full }) => ({
         name: target,
         slug: target,
         // #1457: shown as it is inserted — two pages of the same title in
         // different stores are different pages, and the store says which.
         title: target,
         category: `private store: ${target.slice(0, target.indexOf('/'))}`,
-        isPrivate: true
+        isPrivate: true,
+        url: pageUrl(full),
+        editUrl: pageUrl(full, 'edit')
       }));
   }
 

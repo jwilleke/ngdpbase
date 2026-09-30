@@ -2113,7 +2113,8 @@ function initHeaderAutocomplete() {
             maxSuggestions: 10,
             onSelect: function(suggestion) {
                 // Navigate directly to the selected page
-                window.location.href = `/view/${encodeURIComponent(suggestion.name)}`;
+                // A private page's `name` is its link text (`vault/Title`); `url` is where it is.
+                window.location.href = suggestion.url || `/view/${encodeURIComponent(suggestion.name)}`;
             }
         });
 

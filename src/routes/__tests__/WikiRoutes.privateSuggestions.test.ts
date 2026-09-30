@@ -83,6 +83,22 @@ describe('WikiRoutes.getPageSuggestions — private pages (#1457)', () => {
     expect(byName.get('Diary Rules')?.isPrivate).toBe(false);
   });
 
+  // Found testing #1388: picking a private page in the header search opened /view/vault/Diary, a public lookup that 404s.
+  test('a private suggestion carries where the page really is, to view and to edit', async () => {
+    const { routes } = makeRoutes({
+      publicPages: [],
+      creatorPages: [{ name: 'vaults/jim/test-sealed/Clara sealed page 1', title: 'Clara sealed page 1', isPrivate: true }]
+    });
+    const res = makeRes();
+
+    await routes.getPageSuggestions(makeReq({ q: 'sealed' }, 'jim'), res);
+
+    const [suggestion] = res.json.mock.calls[0][0].suggestions;
+    expect(suggestion.name).toBe('test-sealed/Clara sealed page 1');
+    expect(suggestion.url).toBe('/vaults/jim/test-sealed/Clara%20sealed%20page%201');
+    expect(suggestion.editUrl).toBe('/vaults/jim/test-sealed/Clara%20sealed%20page%201/edit');
+  });
+
   test('never another user\'s private page, whatever the store index returns', async () => {
     const { routes, getPagesByCreator } = makeRoutes({
       publicPages: [],
