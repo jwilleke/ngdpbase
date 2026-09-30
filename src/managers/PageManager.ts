@@ -2071,6 +2071,25 @@ class PageManager extends BaseManager implements CatalogSource {
     });
   }
 
+  /**
+   * The current pages of one vault, as `ctx` may enter it (#1388): its owner,
+   * or a share link the owner issued that names this vault. Anyone else gets
+   * an empty list, the same as a vault with nothing in it. Whether each page
+   * may then be read is still the page door's answer.
+   */
+  async listVaultPages(
+    ctx: ActorContext,
+    owner: string,
+    vault: string
+  ): Promise<Array<{ name: string; title: string; uuid: string }>> {
+    if (!ctx) throw new Error('PageManager.listVaultPages requires an ActorContext');
+    if (!this.provider?.listPrivateStorePages || !isValidStoreId(vault)) return [];
+    if (!mayActInPrivateContainer(ctx, owner, { vault })) return [];
+    return (await this.provider.listPrivateStorePages(ctx, owner))
+      .filter((p) => p.store === vault)
+      .map((p) => ({ name: formatPrivatePageName(owner, vault, p.title), title: p.title, uuid: p.uuid }));
+  }
+
   /** The store ids the requester has of their own (#1387). */
   async listOwnStoreIds(ctx: ActorContext): Promise<string[]> {
     if (!ctx) throw new Error('PageManager.listOwnStoreIds requires an ActorContext');
@@ -2896,7 +2915,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!name) return null;
     const subject = wikiContext.userContext as ActorContext | undefined;
     if (!subject) return false;
-    return mayActInPrivateContainer(subject, name.owner);
+    return mayActInPrivateContainer(subject, name.owner, { vault: name.store });
   }
 
   /**

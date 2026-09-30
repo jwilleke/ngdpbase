@@ -31,7 +31,8 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
       "privatestore": "pages/vaults/{user}/default/"
     },
     "defaultPrivate": false,
-    "encrypt": false
+    "encrypt": false,
+    "shareMaxDays": 15
   },
   "system": {
     "label": "system",
@@ -81,7 +82,8 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
       "privatestore": "pages/vaults/{user}/capture/"
     },
     "defaultPrivate": "choice",
-    "encrypt": false
+    "encrypt": false,
+    "shareMaxDays": 15
   }
 }
 ```
@@ -100,6 +102,7 @@ The `journal` entry is not in core configuration. The journal add-on declares it
   },
   "defaultPrivate": "choice",
   "encrypt": false,
+  "shareMaxDays": 15,
   "page-badge": { "color": "bg-info", "label": "Journal", "title": "Journal entry" }
 }
 ```
@@ -122,6 +125,7 @@ Each field of a system-category entry, what it represents, and what its absence 
 | `defaultPrivate` | Whether a new page of this system-category starts private (operator, 2026-09-28). `true`: always private; `false`: always public; with either, no preference is offered to users. `choice`: each person sets it in their preferences (one preference per system-category), and a person who has not set it starts private. Either way the editor's Private box moves a single page, where policy allows. Replaces `ngdpbase.addons.journal.defaultPrivate` and the journal's own `journal.defaultPrivate` preference | `true` / `false` / `choice` | `false` | Core, or the add-on; changing it is policy |
 | `encrypt` | Whether pages in this system-category's vault are sealed with the page owner's key. Present only with a `privatestore`. Replaces `ngdpbase.stores.{kind}.encrypt` | `true` / `false`. `true` means always private | `false` | The entry's `owner` |
 | `owner` | Who decides about this system-category's vault (operator, 2026-09-29): its `encrypt` and `defaultPrivate` are the owner's declaration, and they stand. A health-record add-on that declares its vault `encrypt: true` keeps it sealed; an admin cannot turn that off. Replaces `ngdpbase.stores.{kind}.owner` | `admin` for the site's own entries, or the declaring add-on's `ngdpbase.slug` (#927) | `admin` | Core, or the add-on |
+| `shareMaxDays` | The longest a new share link to this system-category's vault may last, in days (#1388, operator 2026-09-30). The vault's owner picks any lifetime up to it and can extend a live link by up to 24 hours at a time, past it. The only say the system-category's `owner` has in sharing | Positive number. Present only with a `privatestore` | `15` | The entry's `owner` |
 
 `general` carries what `ngdpbase.stores.default.*` holds today. The build warns at startup when more than one entry has `default: true`.
 

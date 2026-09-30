@@ -12,7 +12,7 @@
 <%# Standalone share view (#853) — deliberately chrome-free: no site nav,
     no user menu, nothing an anonymous share visitor shouldn't see. %>
 <div class="container mt-4 mb-5">
-    <h1 class="mb-1"><i class="fas fa-share-nodes"></i> <%= keyword %></h1>
+    <h1 class="mb-1"><i class="fas fa-share-nodes"></i> <%= shareLabel %></h1>
     <p class="text-muted">Shared content — <%= media.length %> media item<%= media.length !== 1 ? 's' : '' %><% if (pages.length > 0) { %>, <%= pages.length %> page<%= pages.length !== 1 ? 's' : '' %><% } %></p>
 
     <% if (pages.length > 0) { %>

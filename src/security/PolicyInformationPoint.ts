@@ -18,7 +18,7 @@ import type RoleManager from '../managers/RoleManager.js';
 import type { Request } from 'express';
 import type PolicyEvaluator from '../managers/PolicyEvaluator.js';
 import type { PageFrontmatter } from '../types/Page.js';
-import { shareCoversResource, type ShareGrant } from '../types/Share.js';
+import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
 
@@ -447,10 +447,8 @@ class PolicyInformationPoint extends BaseManager {
         {
           action: policyAction,
           resource: { type: 'page', id: pageName },
-          resourceCoverage: (shareResources: readonly PolicyResource[]) => {
-            const keywords = wikiContext.pageMetadata?.['user-keywords'];
-            return !!wikiContext.pageMetadata && shareCoversResource(shareResources, 'page', (keywords as string[]) ?? []);
-          }
+          resourceCoverage: (shareResources: readonly PolicyResource[]) =>
+            !!wikiContext.pageMetadata && shareCoversPage(shareResources, pageName, wikiContext.pageMetadata)
         }
       )
       : null;
@@ -625,14 +623,18 @@ class PolicyInformationPoint extends BaseManager {
    * @param owner - the container's owner (a private file's `creator`)
    * @param resource - what is being reached, for the record (e.g. `attachment:<id>`)
    * @param action - the action asked for (e.g. `view`)
+   * @param vault - the vault inside the container, when the question is about one:
+   *   a share link the owner issued gets in only for a vault it names (#1388)
    */
   canAccessPrivateContainer(
     userContext: UserContext | null | undefined,
     owner: string,
     resource: string,
-    action: string
+    action: string,
+    vault?: string
   ): boolean {
-    const allowed = Boolean(userContext && owner) && mayActInPrivateContainer(userContext as ActorContext, owner);
+    const allowed = Boolean(userContext && owner)
+      && mayActInPrivateContainer(userContext as ActorContext, owner, vault === undefined ? {} : { vault });
     if (!allowed) {
       this.logAccessDecision({
         user: userContext ?? undefined, pageName: resource, action, allowed: false, reason: 'private_deny',
@@ -787,7 +789,7 @@ class PolicyInformationPoint extends BaseManager {
       if (!metadata) continue;
       // The share's cover is per PAGE, so it is checked here rather than in
       // the subject's ceiling above.
-      if (viaShare && !shareCoversResource(viaShare.resources, 'page', metadata['user-keywords'] ?? [])) continue;
+      if (viaShare && !shareCoversPage(viaShare.resources, title, metadata)) continue;
 
       // The same tiers the decider walks, in the same order (#1431 7c).
       const decision = await this.walkPageTiers({

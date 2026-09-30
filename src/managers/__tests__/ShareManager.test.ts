@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import ShareManager, { OWNER_ONLY_KEYWORD } from '../ShareManager';
+import type { VaultShareScope } from '../../types/Share';
 import type { WikiEngine } from '../../types/WikiEngine';
 import type { ShareRecord } from '../../types/Share';
 
@@ -58,8 +59,10 @@ const mockSearchManager = {
 };
 
 let pageMetas: Record<string, Record<string, unknown> | null>;
+let vaultPages: Array<{ name: string; title: string; uuid: string }>;
 const mockPageManager = {
-  getPageMetadata: vi.fn(async (name: string) => pageMetas[name] ?? null)
+  getPageMetadata: vi.fn(async (name: string) => pageMetas[name] ?? null),
+  listVaultPages: vi.fn(async () => vaultPages)
 };
 
 // #1221: issuing checks every delegated action against the issuer's live
@@ -110,6 +113,7 @@ describe('ShareManager', () => {
     mediaItems = [];
     searchResults = [];
     pageMetas = {};
+    vaultPages = [];
     sm = new ShareManager(mockEngine);
     await sm.initialize();
   });
@@ -518,6 +522,78 @@ describe('ShareManager', () => {
       expect(loaded?.resources).toEqual([{ type: 'page', pattern: 'keyword:trip' }, { type: 'media', pattern: 'keyword:trip' }]);
       const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'old-1.json'), 'utf8')) as { actions?: string[] };
       expect(onDisk.actions).toEqual(['page-read', 'asset-read']);
+    });
+  });
+
+  // #1388: links to a vault's content.
+  describe('vault links (#1388)', () => {
+    const JIM = ISSUER('jim', ['reader']);
+    const vault = (pages: string[] | null = null): VaultShareScope => ({ kind: 'vault', owner: 'jim', vault: 'journal', pages });
+    const HOUR = 60 * 60 * 1000;
+
+    test('only the vault\'s owner can issue one, whatever the role', async () => {
+      await expect(sm.issueVaultShare(vault(), 24, ISSUER('admin', ['admin']))).rejects.toThrow(/only a vault's owner/);
+      const record = await sm.issueVaultShare(vault(), 24, JIM);
+      expect(record.createdBy).toBe('jim');
+      expect(record.resources).toEqual([{ type: 'page', pattern: 'vault:jim/journal' }]);
+    });
+
+    test('the generic door refuses a vault scope', async () => {
+      await expect(sm.issue(vault(), '24h', JIM)).rejects.toThrow(/issueVaultShare/);
+    });
+
+    test('a link to chosen pages names each page by uuid', async () => {
+      const record = await sm.issueVaultShare(vault(['u1', 'u2', 'u1']), 24, JIM);
+      expect(record.resources).toEqual([
+        { type: 'page', pattern: 'vault-page:jim/journal/u1' },
+        { type: 'page', pattern: 'vault-page:jim/journal/u2' }
+      ]);
+      await expect(sm.issueVaultShare(vault([]), 24, JIM)).rejects.toThrow(/at least one page/);
+    });
+
+    test('a new link lasts at most the vault\'s maximum, 15 days by default, and always expires', async () => {
+      await expect(sm.issueVaultShare(vault(), 15 * 24 + 1, JIM)).rejects.toThrow(/at most 360 hours/);
+      await expect(sm.issueVaultShare(vault(), 0, JIM)).rejects.toThrow();
+      const record = await sm.issueVaultShare(vault(), 15 * 24, JIM);
+      expect(Date.parse(record.expiresAt ?? '') - Date.parse(record.createdAt)).toBeCloseTo(15 * 24 * HOUR, -3);
+    });
+
+    test('its issuer can extend a live link by up to 24 hours, past the maximum', async () => {
+      const record = await sm.issueVaultShare(vault(), 15 * 24, JIM);
+      const before = Date.parse(record.expiresAt ?? '');
+      const after = await sm.extend(record.id, 24, JIM);
+      expect(Date.parse(after ?? '') - before).toBe(24 * HOUR);
+      expect(readShareFile(record.id).expiresAt).toBe(after);
+      expect(auditEvents.some((e) => e.eventType === 'share-extend' && e.resource === record.id)).toBe(true);
+      await expect(sm.extend(record.id, 25, JIM)).rejects.toThrow(/at most 24 hours/);
+    });
+
+    test('nobody else extends it, and a revoked link is not extended', async () => {
+      const record = await sm.issueVaultShare(vault(), 24, JIM);
+      expect(await sm.extend(record.id, 1, ISSUER('admin', ['admin']))).toBeNull();
+      await sm.revoke(record.id, 'jim');
+      expect(await sm.extend(record.id, 1, JIM)).toBeNull();
+    });
+
+    test('its scope lists the vault\'s current pages, or only the chosen ones', async () => {
+      vaultPages = [
+        { name: 'vaults/jim/journal/B', title: 'B', uuid: 'u2' },
+        { name: 'vaults/jim/journal/A', title: 'A', uuid: 'u1' }
+      ];
+      const whole = await sm.resolveScope(vault(), {});
+      expect(whole.pages.map((p) => p.uuid)).toEqual(['u1', 'u2']);
+      const chosen = await sm.resolveScope(vault(['u2']), {});
+      expect(chosen.pages.map((p) => p.uuid)).toEqual(['u2']);
+    });
+
+    test('every visit is its own share-access record, naming the page by uuid; keyword links stay batched', async () => {
+      const record = await sm.issueVaultShare(vault(), 24, JIM);
+      sm.recordAccess(record.token);
+      await sm.recordVaultVisit(record.token, { page: 'u1' }, '10.0.0.1');
+      await sm.recordVaultVisit(record.token, { file: 'f1' });
+      const visits = auditEvents.filter((e) => e.eventType === 'share-access');
+      expect(visits).toHaveLength(2);
+      expect(visits[0]).toMatchObject({ resource: record.id, ipAddress: '10.0.0.1', metadata: { page: 'u1', vault: 'jim/journal' } });
     });
   });
 });

@@ -15177,6 +15177,7 @@ ${panes}
     app.get('/share/:token/file/:id', (req: Request, res: Response) => void this.shareFile(req, res));
     app.get('/share/:token/thumb/:id', (req: Request, res: Response) => void this.shareThumb(req, res));
     app.get('/share/:token/page/:name', (req: Request, res: Response) => void this.sharePage(req, res));
+    app.get('/share/:token/attachment/:id', (req: Request, res: Response) => void this.shareAttachment(req, res));
 
     // Share management routes (#854) — admin/editor (epic #842 slice 3)
     app.get('/shares', (req: Request, res: Response) => void this.sharesList(req, res));
@@ -18467,6 +18468,24 @@ ${description}
     return res.locals.shareScope as ShareScope;
   }
 
+  /** The heading a shared view shows: the keyword, or whose vault it is (#1388). */
+  private shareLabelOf(scope: ShareScope): string {
+    return scope.kind === 'vault' ? `Shared by ${scope.owner}` : scope.keyword;
+  }
+
+  /**
+   * #1388: a vault page's pictures and attachments are `/attachments/{id}`
+   * URLs, which look only in the visitor's own vaults. Through a link they
+   * are served by the link's own attachment route instead.
+   */
+  private rewriteVaultAttachmentUrls(html: string, token: string): string {
+    return html.replace(
+      /(\b(?:src|href)=["'])\/attachments\/(?:thumb\/)?([A-Za-z0-9._-]+)(\?[^"']*)?(["'])/g,
+      (_m, lead: string, id: string, _query: string | undefined, quote: string) =>
+        `${lead}/share/${encodeURIComponent(token)}/attachment/${encodeURIComponent(id)}${quote}`
+    );
+  }
+
   /**
    * GET /share/:token
    * Anonymous album view: thumbnail grid of media + list of pages the share
@@ -18483,7 +18502,7 @@ ${description}
       const scope = this.shareScopeOf(res);
       const shareManager = this.engine.getManager('ShareManager');
       if (!shareManager) return res.status(404).send('Not Found');
-      const candidates = await shareManager.resolveScope(scope);
+      const candidates = await shareManager.resolveScope(scope, req.userContext);
       const mediaManager = this.engine.getManager('MediaManager');
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
 
@@ -18498,12 +18517,14 @@ ${description}
         if (item) media.push(item);
       }
 
+      if (scope.kind === 'vault') await shareManager.recordVaultVisit(req.params.token, { list: true }, req.ip);
+      const shareLabel = this.shareLabelOf(scope);
       return res.render('share-album', {
         token: req.params.token,
-        keyword: scope.keyword,
+        shareLabel,
         media,
         pages,
-        title: `Shared — ${scope.keyword}`
+        title: `Shared — ${shareLabel}`
       });
     } catch (err: unknown) {
       logger.error('[share] Error rendering share album:', err);
@@ -18527,6 +18548,32 @@ ${description}
    */
   async shareThumb(req: Request, res: Response) {
     return this.mediaThumb(req, res);
+  }
+
+  /**
+   * GET /share/:token/attachment/:id
+   * A picture or attachment of a page shared through a vault link (#1388),
+   * served from the owner's vault. Only a file one of the link's current pages
+   * uses; any other id is the same 404 as one that does not exist.
+   */
+  async shareAttachment(req: Request, res: Response) {
+    try {
+      const scope = this.shareScopeOf(res);
+      if (scope.kind !== 'vault') return res.status(404).send('Not Found');
+      const attachmentManager = this.engine.getManager('AttachmentManager');
+      const found = attachmentManager ? await attachmentManager.getVaultShareAttachment(req.params.id, req.userContext) : null;
+      if (!found) return res.status(404).send('Not Found');
+      await this.engine.getManager('ShareManager')?.recordVaultVisit(req.params.token, { file: req.params.id }, req.ip);
+      const name = String(found.metadata.name ?? req.params.id);
+      res.setHeader('Content-Type', String(found.metadata.encodingFormat ?? 'application/octet-stream'));
+      // The URL carries the capability token: no shared cache may keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Disposition', `inline; filename="${name.replace(/["\\\r\n]/g, '_')}"`);
+      return res.send(found.buffer);
+    } catch (err: unknown) {
+      logger.error('[share] Error serving a vault link attachment:', err);
+      return res.status(500).send('Internal server error');
+    }
   }
 
   /**
@@ -18556,11 +18603,16 @@ ${description}
         pageName: name,
         response: res
       });
-      const html = await renderingManager.textToHTML(wikiContext, markdown);
+      const scope = this.shareScopeOf(res);
+      const rendered = await renderingManager.textToHTML(wikiContext, markdown);
+      const html = scope.kind === 'vault' ? this.rewriteVaultAttachmentUrls(rendered, req.params.token) : rendered;
+      if (scope.kind === 'vault') {
+        await this.engine.getManager('ShareManager')?.recordVaultVisit(req.params.token, { page: metadata?.uuid }, req.ip);
+      }
       const pageTitle = metadata?.title ?? name;
       return res.render('share-page', {
         token: req.params.token,
-        keyword: this.shareScopeOf(res).keyword,
+        shareLabel: this.shareLabelOf(scope),
         pageName: name,
         pageTitle,
         html,

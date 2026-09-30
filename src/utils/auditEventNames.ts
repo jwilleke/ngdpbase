@@ -39,6 +39,7 @@ export const AUDIT_EVENT = {
   SHARE_CREATE: 'share-create',
   SHARE_ACCESS: 'share-access',
   SHARE_REVOKE: 'share-revoke',
+  SHARE_EXTEND: 'share-extend',
   SYSTEM_START: 'system-start',
   SYSTEM_SHUTDOWN: 'system-shutdown',
   CONFIG_CHANGE: 'config-change',

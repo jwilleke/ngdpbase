@@ -27,7 +27,8 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
-import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { shareCoversVaultPage, vaultOfShare } from '../types/Share.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { privateStoreIdsOf, storeFileIO } from '../utils/privateStoreFiles.js';
@@ -930,6 +931,62 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       buffer: bytes.bytes,
       metadata: AttachmentManager.storeFileMetadata(found.entry, found.location.owner, found.location.store)
     };
+  }
+
+  /**
+   * A file served through a vault link (#1388): from the one vault the link
+   * names, and only when a current page the link covers uses it. A file no
+   * covered page uses — including a copy nobody uses any more (#1517) — is
+   * not shared. `ctx` is the link's subject; the container rule and the share
+   * ceiling decide as for every other door.
+   */
+  async getVaultShareAttachment(
+    attachmentId: string,
+    ctx: ActorContext
+  ): Promise<{ buffer: Buffer; metadata: AttachmentMetadata } | null> {
+    const grant = ctx?.viaShare;
+    const target = grant ? vaultOfShare(grant.resources) : null;
+    if (!this.attachmentProvider || !grant || !target) return null;
+    const { owner, vault } = target;
+    if (!this.mayReachVault(ctx, owner, vault, `attachment:${attachmentId}`)) return null;
+    const pdp = this.engine.getManager<{ ceiling(s: unknown, r: { action: string }): Promise<{ permit: boolean } | null> }>('PolicyDecisionPoint');
+    if (!(await pdp?.ceiling(ctx, { action: 'asset-read' }))?.permit) return null;
+
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return null;
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    let location: StoreFileLocation;
+    try {
+      location = { owner, store: vault, io: await storeFileIO(ctx, { pagesDirectory, owner, store: vault, layout }) };
+    } catch {
+      // An encrypted vault: a link carries no key yet (#1388's encrypted slices).
+      return null;
+    }
+    const entry = (await this.attachmentProvider.listFilesInStore(location)).find((f) => f.id === attachmentId);
+    if (!entry) return null;
+
+    const pageManager = this.engine.getManager<{ getPageMetadata(name: string, c: ActorContext): Promise<{ uuid?: string } | null> }>('PageManager');
+    let covered = false;
+    for (const mention of entry.mentions) {
+      const page = parsePrivatePageName(mention);
+      if (!page || page.owner !== owner || page.store !== vault) continue;
+      const meta = await pageManager?.getPageMetadata(mention, ctx).catch(() => null);
+      if (meta?.uuid && shareCoversVaultPage(grant.resources, owner, vault, meta.uuid)) { covered = true; break; }
+    }
+    if (!covered) return null;
+
+    const bytes = await this.attachmentProvider.getFileInStore(location, attachmentId);
+    if (!bytes) return null;
+    return { buffer: bytes.bytes, metadata: AttachmentManager.storeFileMetadata(entry, owner, vault) };
+  }
+
+  /** The container rule for one vault, as the link's subject may enter it (#1388). */
+  private mayReachVault(ctx: ActorContext, owner: string, vault: string, resource: string): boolean {
+    const pip = this.engine.getManager<{
+      canAccessPrivateContainer(subject: unknown, owner: string, resource: string, action: string, vault?: string): boolean;
+        }>('PolicyInformationPoint');
+    return Boolean(pip?.canAccessPrivateContainer(ctx, owner, resource, 'view', vault));
   }
 
   /**
