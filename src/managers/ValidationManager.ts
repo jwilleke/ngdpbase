@@ -53,6 +53,9 @@ export interface ContentValidationResult {
  * stored on the site. Replaces the old storageLocation words one for one
  * (regular → site, required → shipped, github → repo).
  */
+/** A new share link's maximum lifetime when a vault's system-category sets none (operator, 2026-09-30, #1388). */
+export const DEFAULT_SHARE_MAX_DAYS = 15;
+
 export type CategorySource = 'site' | 'shipped' | 'repo';
 
 const CATEGORY_SOURCES: readonly string[] = ['site', 'shipped', 'repo'];
@@ -513,6 +516,23 @@ class ValidationManager extends BaseManager {
   getVaultId(category: string): string | null {
     const entry = this.getCategoryConfig(category) as { storageLocation?: { privatestore?: unknown } } | null;
     return parsePrivatestore(entry?.storageLocation?.privatestore)?.vaultId ?? null;
+  }
+
+  /**
+   * The longest a new share link to this vault may last, in days (#1388): the
+   * `shareMaxDays` of the system-category whose `privatestore` names the vault,
+   * set by that entry's `owner`. {@link DEFAULT_SHARE_MAX_DAYS} when the entry
+   * sets none or no entry names the vault. It limits a link only when it is
+   * made; the owner may extend a live link past it.
+   */
+  getShareMaxDays(vaultId: string): number {
+    for (const entry of Object.values(this.systemCategoriesConfig ?? {})) {
+      const cfg = entry as { storageLocation?: { privatestore?: unknown }; shareMaxDays?: unknown } | null;
+      if (parsePrivatestore(cfg?.storageLocation?.privatestore)?.vaultId !== vaultId) continue;
+      const days = cfg?.shareMaxDays;
+      return typeof days === 'number' && Number.isFinite(days) && days > 0 ? days : DEFAULT_SHARE_MAX_DAYS;
+    }
+    return DEFAULT_SHARE_MAX_DAYS;
   }
 
   /** Whether pages of this system-category can be private: it declares a vault (`storageLocation.privatestore`, #1504). */

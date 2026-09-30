@@ -511,8 +511,9 @@ audited.
 | `policy-evaluate` | Security policy evaluated; emitter exists, nothing in production calls it | continue | yes |
 | `security-event` | Security violation detected; the kind is in metadata.securityEventType | continue | yes |
 | `share-create` | Share link created; mints an anonymous-access credential, the same shape as token-mint | refuse | yes |
-| `share-access` | Share link used; batched counts | continue | yes |
+| `share-access` | Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388) | continue | yes |
 | `share-revoke` | Share link revoked; pairs with token-revoke | refuse | yes |
+| `share-extend` | Share link's lifetime extended by its issuer, by up to 24 hours (#1388) | refuse | yes |
 | `system-start` | Instance started; reports whether the previous run ended cleanly | refuse | yes |
 | `system-shutdown` | Instance shut down cleanly; its absence before the next start is the signal | refuse | yes |
 | `config-change` | Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI | continue | yes |

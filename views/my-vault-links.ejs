@@ -1,0 +1,181 @@
+<%- include('header', { pageName: 'Vault links' }) %>
+
+<%# #1388: the owner's read-only links to their own vaults — a whole vault, or chosen pages of one. %>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1><i class="fas fa-share-nodes"></i> Vault links</h1>
+        <a href="/my/vaults" class="btn btn-sm btn-secondary"><i class="fas fa-arrow-left"></i> My vaults</a>
+    </div>
+
+    <p class="text-muted">A vault link lets anyone who has it read, download and print what you chose, without an account, until it expires or you revoke it. They see only the current pages, never earlier versions. Every visit is recorded.</p>
+
+    <% if (createdId) { %>
+        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Link made. Copy it below and send it to whoever should see it.</div>
+    <% } %>
+    <% if (notice === 'revoked') { %>
+        <div class="alert alert-info"><i class="fas fa-ban"></i> Link revoked. It stopped working at once.</div>
+    <% } else if (notice === 'extended') { %>
+        <div class="alert alert-info"><i class="fas fa-clock"></i> Link extended.</div>
+    <% } else if (notice === 'not-extended') { %>
+        <div class="alert alert-warning">That link can no longer be extended: it has expired or was revoked.</div>
+    <% } %>
+    <% if (error === 'vault') { %>
+        <div class="alert alert-danger">Choose one of your vaults.</div>
+    <% } else if (error === 'days') { %>
+        <div class="alert alert-danger">Choose a lifetime within that vault's limit.</div>
+    <% } else if (error === 'pages') { %>
+        <div class="alert alert-danger">Choose at least one page.</div>
+    <% } else if (error === 'hours') { %>
+        <div class="alert alert-danger">A link is extended by 1 to 24 hours at a time.</div>
+    <% } %>
+
+    <% if (vaults.length === 0) { %>
+        <div class="alert alert-info"><i class="fas fa-info-circle"></i> You have no vaults yet. Make a page private to start one.</div>
+    <% } else { %>
+        <% if (pickVault) { %>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 card-title">Share pages from your <%= pickVault %> vault</h2>
+                <form method="post" action="/my/vaults/links">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="vault" value="<%= pickVault %>">
+                    <input type="hidden" name="scope" value="pages">
+                    <div class="border rounded p-2 mb-2" style="max-height: 16rem; overflow-y: auto;">
+                        <% pickPages.forEach(function(p) { %>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="pages" value="<%= p.uuid %>" id="pg-<%= p.uuid %>" <%= p.uuid === preselected ? 'checked' : '' %>>
+                                <label class="form-check-label" for="pg-<%= p.uuid %>"><%= p.title %></label>
+                            </div>
+                        <% }); %>
+                    </div>
+                    <% const pickMax = (vaults.find(function(v) { return v.id === pickVault; }) || { maxDays: 15 }).maxDays; %>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label for="pick-label" class="form-label small mb-0">Label (only you see it)</label>
+                            <input type="text" class="form-control form-control-sm" id="pick-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                        </div>
+                        <div class="col-auto">
+                            <label for="pick-days" class="form-label small mb-0">Lasts (days, up to <%= pickMax %>)</label>
+                            <input type="number" class="form-control form-control-sm" id="pick-days" name="days" min="1" max="<%= pickMax %>" value="<%= Math.min(7, pickMax) %>" required>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-link"></i> Make link</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <% } %>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="h6 card-title">Share a whole vault</h2>
+                <p class="text-muted small mb-2">Includes every current page and the files they use, and pages you add while the link is live.</p>
+                <form method="post" action="/my/vaults/links" class="row g-2 align-items-end">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="scope" value="whole">
+                    <div class="col-auto">
+                        <label for="whole-vault" class="form-label small mb-0">Vault</label>
+                        <select class="form-select form-select-sm" id="whole-vault" name="vault">
+                            <% vaults.forEach(function(v) { %>
+                                <option value="<%= v.id %>" data-max="<%= v.maxDays %>"><%= v.id %> (up to <%= v.maxDays %> days)</option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label for="whole-label" class="form-label small mb-0">Label (only you see it)</label>
+                        <input type="text" class="form-control form-control-sm" id="whole-label" name="label" maxlength="100" placeholder="e.g. For Dr Smith, October">
+                    </div>
+                    <div class="col-auto">
+                        <label for="whole-days" class="form-label small mb-0">Lasts (days)</label>
+                        <input type="number" class="form-control form-control-sm" id="whole-days" name="days" min="1" max="<%= vaults[0].maxDays %>" value="<%= Math.min(7, vaults[0].maxDays) %>" required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-link"></i> Make link</button>
+                    </div>
+                </form>
+                <p class="text-muted small mt-2 mb-0">To share only some pages, open a private page and choose <em>Share this page</em> from its menu.</p>
+            </div>
+        </div>
+    <% } %>
+
+    <% if (links.length === 0) { %>
+        <div class="alert alert-info"><i class="fas fa-info-circle"></i> No vault links yet.</div>
+    <% } else { %>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr><th>What</th><th>Link</th><th>Status</th><th>Expires</th><th>Visits</th><th></th></tr>
+                </thead>
+                <tbody>
+                    <% links.forEach(function(l) { %>
+                        <tr class="<%= l.id === createdId ? 'table-success' : '' %>">
+                            <td>
+                                <% if (l.label) { %><div class="fw-semibold"><%= l.label %></div><% } %>
+                                <strong><%= l.scope.vault %></strong>:
+                                <% if (l.scope.pages === null) { %>whole vault<% } else { %>
+                                    <%= l.scope.pages.map(function(u) { return titles[u] || '(page no longer here)'; }).join(', ') %>
+                                <% } %>
+                            </td>
+                            <td>
+                                <% if (l.status === 'active') { %>
+                                    <input type="text" class="form-control form-control-sm" readonly value="<%= baseUrl %>/share/<%= l.token %>" onclick="this.select()">
+                                <% } else { %><span class="text-muted">—</span><% } %>
+                            </td>
+                            <td>
+                                <span class="badge <%= l.status === 'active' ? 'bg-success' : l.status === 'expired' ? 'bg-secondary' : 'bg-danger' %>"><%= l.status %></span>
+                            </td>
+                            <td class="small"><%= l.expiresAt ? new Date(l.expiresAt).toLocaleString() : '' %></td>
+                            <td class="small">
+                                <% if (!l.visitCount) { %><span class="text-muted">none yet</span><% } else { %>
+                                    <details>
+                                        <summary><%= l.visitCount %> — last <%= new Date(l.visits[0].at).toLocaleString() %></summary>
+                                        <ul class="list-unstyled mb-0 mt-1">
+                                            <% l.visits.forEach(function(v) { %>
+                                                <li><%= new Date(v.at).toLocaleString() %> — <%= v.list ? 'the page list' : v.page ? (titles[v.page] || 'a page no longer here') : 'a file' %></li>
+                                            <% }); %>
+                                        </ul>
+                                    </details>
+                                <% } %>
+                            </td>
+                            <td class="text-nowrap">
+                                <% if (l.status === 'active') { %>
+                                    <form method="post" action="/my/vaults/links/<%= l.id %>/extend" class="d-inline-flex align-items-center gap-1">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <select name="hours" class="form-select form-select-sm" aria-label="Extend by">
+                                            <option value="1">1 hour</option>
+                                            <option value="6">6 hours</option>
+                                            <option value="12">12 hours</option>
+                                            <option value="24" selected>24 hours</option>
+                                        </select>
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Extend"><i class="fas fa-clock"></i> Extend</button>
+                                    </form>
+                                    <form method="post" action="/my/vaults/links/<%= l.id %>/revoke" class="d-inline">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Revoke"><i class="fas fa-ban"></i> Revoke</button>
+                                    </form>
+                                <% } %>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</div>
+
+<script>
+    // The whole-vault form's lifetime follows the chosen vault's limit.
+    (function () {
+        var select = document.getElementById('whole-vault');
+        var days = document.getElementById('whole-days');
+        if (!select || !days) return;
+        select.addEventListener('change', function () {
+            var max = Number(select.options[select.selectedIndex].getAttribute('data-max')) || 15;
+            days.max = String(max);
+            if (Number(days.value) > max) days.value = String(max);
+        });
+    })();
+</script>
+
+<%- include('footer') %>

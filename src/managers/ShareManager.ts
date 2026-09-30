@@ -23,7 +23,7 @@
  *
  * Enabled via config: ngdpbase.share.enabled
  *
- * @see docs/planning/keyword-share-links.md — design + signed-off decisions
+ * @see docs/sharing.md — the source of truth for all sharing
  * @see MagicLinkAuthProvider — token-lifecycle prior art
  */
 
@@ -42,14 +42,26 @@ import type SearchManager from './SearchManager.js';
 import type PageManager from './PageManager.js';
 import type { PageFrontmatter } from '../types/Page.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
-import { DEFAULT_SHARE_ACTIONS, OWNER_ONLY_KEYWORD, resourcesForScope, type ShareGrant, type ShareRecord, type ShareResource, type ShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
+import { DEFAULT_SHARE_ACTIONS, OWNER_ONLY_KEYWORD, resourcesForScope, type ShareGrant, type ShareRecord, type ShareResource, type ShareScope, type VaultShareScope, type ShareTtl, type SharePageEntry } from '../types/Share.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from './UserManager.js';
 import { keywordsCollide } from '../utils/keywordNormalizer.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import type ValidationManager from './ValidationManager.js';
+import { DEFAULT_SHARE_MAX_DAYS } from './ValidationManager.js';
+import { isValidStoreId } from '../utils/privateStorePath.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 export { OWNER_ONLY_KEYWORD };
 
 /** Fixed TTL choices in milliseconds (decision 4). */
+const HOUR_MS = 60 * 60 * 1000;
+/** The most one extension may add to a link's lifetime (operator, 2026-09-29, #1388). */
+export const SHARE_EXTEND_MAX_HOURS = 24;
+/** The longest label an owner may give a vault link (#1388). */
+export const SHARE_LABEL_MAX = 100;
+/** How many recent visits a vault link keeps for its owner (#1388). */
+const SHARE_VISITS_KEPT = 100;
+
 const TTL_MS: Record<Exclude<ShareTtl, null>, number> = {
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
@@ -135,7 +147,93 @@ export default class ShareManager extends BaseManager {
       throw new Error(`ShareManager: invalid ttl '${String(ttl)}'`);
     }
     if (!issuer.username) throw new Error('ShareManager: a share needs an issuer');
+    // #1388: a vault link has its own door, which holds the owner-only rule and the lifetime cap.
+    if (scope.kind === 'vault') throw new Error('ShareManager: a vault link is issued by issueVaultShare');
 
+    const now = Date.now();
+    return this.create(scope, ttl === null ? null : new Date(now + TTL_MS[ttl]).toISOString(), issuer, options);
+  }
+
+  /**
+   * Issue a link to a vault's content (#1388): chosen pages, or the whole vault.
+   *
+   * Only the vault's owner issues one — no role, admin included, shares
+   * someone else's vault. The lifetime is the owner's choice, up to the
+   * `shareMaxDays` of the vault's system-category; there is no link that never
+   * expires. Read-only, like every share.
+   *
+   * @param scope - The vault, and its page uuids or null for the whole vault
+   * @param lifetimeHours - How long the link lasts, in hours
+   * @param issuer - The owner, as the request's own subject
+   * @param options - `label`: the owner's note for the link, never logged or audited
+   */
+  async issueVaultShare(
+    scope: VaultShareScope,
+    lifetimeHours: number,
+    issuer: PermissionSubject,
+    options: { label?: string } = {}
+  ): Promise<ShareRecord> {
+    if (!this.enabled) throw new Error('ShareManager: shares are disabled');
+    if (!issuer.username || issuer.username !== scope.owner) {
+      throw new Error('ShareManager: only a vault\'s owner can share it');
+    }
+    if (!isValidStoreId(scope.vault)) throw new Error(`ShareManager: '${scope.vault}' is not a vault id`);
+    if (scope.pages !== null && scope.pages.length === 0) throw new Error('ShareManager: a link to chosen pages needs at least one page');
+    const maxHours = this.maxShareDays(scope.vault) * 24;
+    if (!Number.isFinite(lifetimeHours) || lifetimeHours <= 0 || lifetimeHours > maxHours) {
+      throw new Error(`ShareManager: a link to this vault lasts at most ${maxHours} hours`);
+    }
+    const pages = scope.pages === null ? null : [...new Set(scope.pages)];
+    const label = (options.label ?? '').trim().slice(0, SHARE_LABEL_MAX);
+    return this.create(
+      { ...scope, pages },
+      new Date(Date.now() + lifetimeHours * HOUR_MS).toISOString(),
+      issuer,
+      {},
+      label ? { label } : {}
+    );
+  }
+
+  /** The longest a new link to `vault` may last, in days (#1388). */
+  maxShareDays(vault: string): number {
+    return this.engine.getManager<ValidationManager>('ValidationManager')?.getShareMaxDays(vault) ?? DEFAULT_SHARE_MAX_DAYS;
+  }
+
+  /**
+   * Extend a live link by up to {@link SHARE_EXTEND_MAX_HOURS} hours (#1388).
+   * Only its issuer may, as often as they like, and past the lifetime maximum:
+   * that limits a link only when it is made. An expired, revoked or
+   * never-expiring link is not extended.
+   *
+   * @returns The new expiry, or null when there was nothing to extend
+   */
+  async extend(id: string, hours: number, by: PermissionSubject): Promise<string | null> {
+    if (!this.enabled) return null;
+    const record = this.byId.get(id);
+    if (!record || !by.username || record.createdBy !== by.username) return null;
+    if (!Number.isFinite(hours) || hours <= 0 || hours > SHARE_EXTEND_MAX_HOURS) {
+      throw new Error(`ShareManager: a link is extended by at most ${SHARE_EXTEND_MAX_HOURS} hours at a time`);
+    }
+    if (!this.liveRecord(record.token) || record.expiresAt === null) return null;
+    const expiresAt = new Date(Date.parse(record.expiresAt) + hours * HOUR_MS).toISOString();
+    // Recorded before the link changes, like create and revoke: a lifetime
+    // change to a credential that cannot be written to the audit trail is refused.
+    await this.audit(AUDIT_EVENT.SHARE_EXTEND, by.username, { ...record, expiresAt });
+    record.expiresAt = expiresAt;
+    this.persist(record);
+    logger.info(`[ShareManager] Share ${id} extended by ${by.username} by ${hours}h, to ${expiresAt}`);
+    return expiresAt;
+  }
+
+  /** The one place a share record is made: the issuer's delegation checked, audited, then stored. */
+  private async create(
+    scope: ShareScope,
+    expiresAt: string | null,
+    issuer: PermissionSubject,
+    options: { actions?: readonly string[]; resources?: readonly ShareResource[] },
+    extra: Pick<ShareRecord, 'label'> = {}
+  ): Promise<ShareRecord> {
+    if (!issuer.username) throw new Error('ShareManager: a share needs an issuer');
     const actions = [...new Set(options.actions ?? DEFAULT_SHARE_ACTIONS)];
     const resources = [...(options.resources ?? resourcesForScope(scope))];
 
@@ -147,7 +245,6 @@ export default class ShareManager extends BaseManager {
       }
     }
 
-    const now = Date.now();
     const record: ShareRecord = {
       id: randomUUID(),
       token: crypto.randomBytes(32).toString('hex'),
@@ -155,8 +252,9 @@ export default class ShareManager extends BaseManager {
       actions,
       resources,
       createdBy: issuer.username,
-      createdAt: new Date(now).toISOString(),
-      expiresAt: ttl === null ? null : new Date(now + TTL_MS[ttl]).toISOString()
+      createdAt: new Date().toISOString(),
+      expiresAt,
+      ...extra
     };
 
     // #1202: share-create is CRITICAL — a share is an anonymous-access
@@ -170,7 +268,11 @@ export default class ShareManager extends BaseManager {
     this.byToken.set(record.token, record);
     this.byId.set(record.id, record);
 
-    logger.info(`[ShareManager] Share ${record.id} created by ${issuer.username} (${record.scope.kind}: ${record.scope.keyword}; ${actions.join(', ')}; expires ${record.expiresAt ?? 'never'})`);
+    // #1461: a vault link is described by its vault, never its pages' titles.
+    const what = record.scope.kind === 'vault'
+      ? `vault ${record.scope.owner}/${record.scope.vault}, ${record.scope.pages === null ? 'whole' : `${record.scope.pages.length} page(s)`}`
+      : `keyword: ${record.scope.keyword}`;
+    logger.info(`[ShareManager] Share ${record.id} created by ${issuer.username} (${what}; ${actions.join(', ')}; expires ${record.expiresAt ?? 'never'})`);
     return record;
   }
 
@@ -289,7 +391,8 @@ export default class ShareManager extends BaseManager {
    */
   recordAccess(token: string): void {
     const record = this.byToken.get(token);
-    if (!record) return;
+    // #1388: a vault link records each visit itself (recordVaultVisit).
+    if (!record || record.scope.kind === 'vault') return;
     const now = Date.now();
     let entry = this.accessCounts.get(record.id);
     if (!entry) {
@@ -310,11 +413,59 @@ export default class ShareManager extends BaseManager {
    * Resolve a validated scope to its current content set, applying the
    * safe-by-construction exclusions (decisions 1 and 3).
    */
-  async resolveScope(scope: ShareScope): Promise<ResolvedShareScope> {
+  async resolveScope(scope: ShareScope, ctx: ActorContext): Promise<ResolvedShareScope> {
     switch (scope.kind) {
     case 'keyword':
       return this.resolveKeywordScope(scope.keyword);
+    case 'vault':
+      return this.resolveVaultScope(scope, ctx);
     }
+  }
+
+  /**
+   * The candidate pages of a vault link (#1388): the vault's current pages,
+   * or just the chosen ones, read as the share subject `ctx`. Whether each may
+   * be shown is still the page door's answer, asked by the route.
+   */
+  private async resolveVaultScope(scope: VaultShareScope, ctx: ActorContext): Promise<ResolvedShareScope> {
+    const pageManager = this.engine.getManager<PageManager>('PageManager');
+    const listed = pageManager ? await pageManager.listVaultPages(ctx, scope.owner, scope.vault) : [];
+    const chosen = scope.pages === null ? null : new Set(scope.pages);
+    const pages: SharePageEntry[] = listed
+      .filter((p) => chosen === null || chosen.has(p.uuid))
+      .map((p) => ({ name: p.name, title: p.title, uuid: p.uuid }))
+      .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
+    return { media: [], pages };
+  }
+
+  /**
+   * Record one visit through a vault link (#1388): every page or file opened
+   * is its own `share-access` record, naming it by uuid or file id, never by
+   * title. Keyword links keep their batched counts.
+   */
+  async recordVaultVisit(token: string, what: { page?: string; file?: string; list?: true }, ipAddress?: string): Promise<void> {
+    const record = this.liveRecord(token);
+    if (!record || record.scope.kind !== 'vault') return;
+    const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
+    await recordAuditEvent(
+      sink,
+      {
+        eventType: AUDIT_EVENT.SHARE_ACCESS,
+        user: 'anonymous',
+        ipAddress,
+        resource: record.id,
+        resourceType: 'share',
+        action: 'view',
+        result: 'success',
+        severity: 'low',
+        metadata: { issuer: record.createdBy, vault: `${record.scope.owner}/${record.scope.vault}`, ...what }
+      },
+      (err) => logger.warn(`[ShareManager] Audit logging failed for share-access ${record.id}: ${String(err)}`)
+    );
+    // The owner's view of it: newest first, a bounded list on the link's own record.
+    record.visitCount = (record.visitCount ?? 0) + 1;
+    record.visits = [{ at: new Date().toISOString(), ...what }, ...(record.visits ?? [])].slice(0, SHARE_VISITS_KEPT);
+    this.persist(record);
   }
 
   private async resolveKeywordScope(keyword: string): Promise<ResolvedShareScope> {
@@ -471,7 +622,7 @@ export default class ShareManager extends BaseManager {
         ipAddress: undefined,
         resource: record.id,
         resourceType: 'share',
-        action: eventType === AUDIT_EVENT.SHARE_CREATE ? 'create' : 'revoke',
+        action: eventType === AUDIT_EVENT.SHARE_CREATE ? 'create' : eventType === AUDIT_EVENT.SHARE_EXTEND ? 'extend' : 'revoke',
         result: 'success',
         severity: 'medium',
         metadata: {

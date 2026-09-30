@@ -9,9 +9,16 @@
             <i class="fas <%= icon %>"></i> <%= title %>
             <span class="badge bg-secondary ms-2"><%= items.length %></span>
           </h4>
-          <a href="/profile" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-arrow-left"></i> Back to Profile
-          </a>
+          <div class="d-flex gap-2">
+            <% if (typeof listAction !== 'undefined' && listAction && typeof shareEnabled !== 'undefined' && shareEnabled) { %>
+              <a href="<%= listAction.href %>" class="btn btn-sm btn-outline-primary">
+                <i class="fas <%= listAction.icon %>"></i> <%= listAction.label %>
+              </a>
+            <% } %>
+            <a href="/profile" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-arrow-left"></i> Back to Profile
+            </a>
+          </div>
         </div>
         <div class="card-body">
           <% if (typeof notice !== 'undefined' && notice) { %>

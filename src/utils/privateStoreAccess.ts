@@ -1,30 +1,35 @@
 /**
  * Who may act inside a user's private container — `pages/vaults/{user}/` and
- * every store below it (docs/private-stores.md, Access).
+ * every vault below it (docs/private-stores.md, Access).
  *
- * The owner, or a delegate of the owner. No role reaches in, admin included.
+ * The owner, or a share link the owner issued. No role reaches in, admin
+ * included.
  *
- * A delegate is a share the owner issued (`viaShare.issuer === owner`). The
- * share ceiling — the action is delegated, the share has not expired, the
- * issuer still holds the action — is applied by `hasPermission` as it is for
- * every share; this adds only the container rule. A store lets delegates in
- * only when its Share switch is on (#1388). Until that switch exists every
- * store is Share Off, so today only the owner passes.
+ * A share link gets in only for a vault it names (#1388), and only when the
+ * caller names that vault: a question about the owner's container as a whole
+ * — their list of vaults, their trash, their takeout — is the owner's alone.
+ * Which pages of the vault the link may read, that it has not expired, and
+ * that its issuer still holds the action, are the share ceiling's to decide
+ * (`PolicyDecisionPoint.ceiling`), as for every share; this is only the
+ * container rule.
  *
- * An encrypted store additionally needs the owner's DEK in the session
- * (`assertContextCanWriteStore`); a delegate carries none until a share
- * can wrap a store DEK.
+ * An encrypted vault additionally needs a key in the session
+ * (`assertContextCanWriteStore`); a share link carries none until #1388's
+ * encrypted slices.
  */
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { shareNamesVault } from '../types/Share.js';
 
 export function mayActInPrivateContainer(
   ctx: ActorContext,
   owner: string,
-  opts: { storeShared?: boolean } = {}
+  opts: { vault?: string } = {}
 ): boolean {
   if (!owner) return false;
   if (ctx.viaShare) {
-    return opts.storeShared === true && ctx.viaShare.issuer === owner;
+    return opts.vault !== undefined
+      && ctx.viaShare.issuer === owner
+      && shareNamesVault(ctx.viaShare.resources, owner, opts.vault);
   }
   // A request must be an authenticated session of the owner: an anonymous
   // visitor never matches, even a page whose recorded owner is `Anonymous`.

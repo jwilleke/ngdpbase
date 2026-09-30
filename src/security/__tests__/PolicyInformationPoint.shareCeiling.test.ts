@@ -10,8 +10,11 @@
  * what lets a share work on an instance whose policy gives anonymous nothing.
  */
 
+vi.unmock('../../managers/PageManager');
+
 import PolicyInformationPoint from '../PolicyInformationPoint';
 import PolicyDecisionPoint from '../PolicyDecisionPoint';
+import PageManager from '../../managers/PageManager';
 import type { ShareGrant } from '../../types/Share';
 
 /** What jim holds live. Mutated to simulate a revoked role. */
@@ -173,5 +176,72 @@ describe('PolicyInformationPoint share ceiling — attribution (#1222)', () => {
     expect(deny).toBeDefined();
     expect(deny?.user).toBe('Anonymous');
     expect(deny?.metadata).toMatchObject({ viaShareId: 'share-1', viaShareIssuer: 'jim' });
+  });
+});
+
+/**
+ * #1388: a vault link. The page is private, so Tier 0 — the vault's container
+ * rule — must let the link in, and the ceiling must find the page covered by
+ * uuid or by its whole vault. Everything else in the owner's vaults stays shut.
+ */
+describe('PolicyInformationPoint share ceiling — vault links (#1388)', () => {
+  let acl: PolicyInformationPoint;
+
+  function vaultEngine() {
+    const base = makeEngine() as unknown as { getManager: (name: string) => unknown };
+    return {
+      getManager: (name: string): unknown => (name === 'PageManager'
+        // The real rule, with no instance state: it reads only the name and the subject.
+        ? { checkPrivatePageAccess: (wc: never, pageName: string) => PageManager.prototype.checkPrivatePageAccess.call({}, wc, pageName) }
+        : base.getManager(name))
+    } as never;
+  }
+
+  function vaultCtx(pageName: string, uuid: string, resources: ShareGrant['resources'], issuer = 'jim') {
+    return {
+      pageName,
+      content: 'hello',
+      context: 'view',
+      userContext: {
+        username: 'Anonymous',
+        roles: ['anonymous'],
+        isAuthenticated: false,
+        viaShare: { ...grant, issuer, resources }
+      },
+      pageMetadata: { uuid, private: true, author: 'jim' }
+    } as never;
+  }
+
+  beforeEach(async () => {
+    issuerHolds = ['page-read'];
+    denials = [];
+    acl = new PolicyInformationPoint(vaultEngine());
+    await acl.initialize();
+  });
+
+  const WHOLE = [{ type: 'page', pattern: 'vault:jim/journal' }];
+  const ONE = [{ type: 'page', pattern: 'vault-page:jim/journal/u1' }];
+
+  test('a page link reads its page, and only its page', async () => {
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Diary', 'u1', ONE), 'view')).toBe(true);
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Other', 'u2', ONE), 'view')).toBe(false);
+  });
+
+  test('a whole-vault link reads every page in that vault, and none in another', async () => {
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Other', 'u2', WHOLE), 'view')).toBe(true);
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/default/Diary', 'u3', WHOLE), 'view')).toBe(false);
+  });
+
+  test('a link is read-only', async () => {
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Diary', 'u1', WHOLE), 'edit')).toBe(false);
+  });
+
+  test('a link to jim\'s vault issued by anyone but jim opens nothing', async () => {
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Diary', 'u1', WHOLE, 'admin'), 'view')).toBe(false);
+  });
+
+  test('a keyword link never reaches a vault page, whatever its keywords', async () => {
+    const keyword = [{ type: 'page', pattern: 'keyword:trip' }];
+    expect(await acl.checkPagePermissionWithContext(vaultCtx('vaults/jim/journal/Diary', 'u1', keyword), 'view')).toBe(false);
   });
 });

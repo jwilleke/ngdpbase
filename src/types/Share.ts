@@ -1,3 +1,5 @@
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
+
 /**
  * Share links (#842) — capability tokens granting anonymous access to a
  * defined scope of content.
@@ -13,8 +15,23 @@ export interface KeywordShareScope {
   keyword: string;
 }
 
-/** Union of all scope kinds. v1: keyword only. */
-export type ShareScope = KeywordShareScope;
+/**
+ * A vault's content, shared by its owner (#1388): chosen pages, or the whole
+ * vault. Pages are named by uuid, so renaming one does not break the link.
+ * Only the current pages are covered, never their history.
+ */
+export interface VaultShareScope {
+  kind: 'vault';
+  /** The vault's owner — the only one who may issue, extend or revoke it. */
+  owner: string;
+  /** The vault id: `pages/vaults/{owner}/{vault}/`. */
+  vault: string;
+  /** Page uuids, or null for the whole vault, including pages added while the link is live. */
+  pages: string[] | null;
+}
+
+/** Union of all scope kinds. */
+export type ShareScope = KeywordShareScope | VaultShareScope;
 
 /** Fixed expiry choices (decision 4). `null` = until cancelled. */
 export type ShareTtl = '24h' | '7d' | '30d' | null;
@@ -67,8 +84,12 @@ export interface ShareGrant {
   expiresAt: string | null;
 }
 
-/** The prefix of the one pattern grammar a share resource speaks. */
+/** The prefix of the keyword pattern grammar a share resource speaks. */
 const KEYWORD_PATTERN = 'keyword:';
+/** `vault:{owner}/{vault}` — every current page in the vault (#1388). */
+const VAULT_PATTERN = 'vault:';
+/** `vault-page:{owner}/{vault}/{uuid}` — one page in the vault (#1388). */
+const VAULT_PAGE_PATTERN = 'vault-page:';
 
 /**
  * Does a share cover a resource of `type` carrying `keywords`?
@@ -92,8 +113,63 @@ export function shareCoversResource(
   );
 }
 
+/**
+ * Does a share name the vault `owner/vault` at all — whole, or any page in it?
+ * The container half of a vault share: who may step into the vault. Which
+ * pages it may then read is {@link shareCoversVaultPage}.
+ */
+export function shareNamesVault(resources: readonly ShareResource[], owner: string, vault: string): boolean {
+  const whole = `${VAULT_PATTERN}${owner}/${vault}`;
+  const pagePrefix = `${VAULT_PAGE_PATTERN}${owner}/${vault}/`;
+  return resources.some((r) => r.type === 'page' && (r.pattern === whole || r.pattern.startsWith(pagePrefix)));
+}
+
+/**
+ * Does a share cover this page? The one rule both page doors ask (the decider
+ * and the list filter): a page in a vault by its uuid or its whole vault
+ * (#1388), any other page by its user-keywords.
+ */
+export function shareCoversPage(
+  resources: readonly ShareResource[],
+  pageName: string,
+  metadata: { uuid?: string; 'user-keywords'?: string[] }
+): boolean {
+  const vaultPage = parsePrivatePageName(pageName);
+  if (vaultPage) return shareCoversVaultPage(resources, vaultPage.owner, vaultPage.store, metadata.uuid);
+  return shareCoversResource(resources, 'page', metadata['user-keywords'] ?? []);
+}
+
+/** The vault a vault link covers, read from its resources, or null for any other share (#1388). */
+export function vaultOfShare(resources: readonly ShareResource[]): { owner: string; vault: string } | null {
+  for (const r of resources) {
+    if (r.type !== 'page') continue;
+    const rest = r.pattern.startsWith(VAULT_PATTERN) ? r.pattern.slice(VAULT_PATTERN.length)
+      : r.pattern.startsWith(VAULT_PAGE_PATTERN) ? r.pattern.slice(VAULT_PAGE_PATTERN.length) : null;
+    if (rest === null) continue;
+    const [owner, vault] = rest.split('/');
+    if (owner && vault) return { owner, vault };
+  }
+  return null;
+}
+
+/** Does a share cover the page `uuid` in the vault `owner/vault`? */
+export function shareCoversVaultPage(
+  resources: readonly ShareResource[],
+  owner: string,
+  vault: string,
+  uuid: string | undefined
+): boolean {
+  const whole = `${VAULT_PATTERN}${owner}/${vault}`;
+  const one = uuid ? `${VAULT_PAGE_PATTERN}${owner}/${vault}/${uuid}` : null;
+  return resources.some((r) => r.type === 'page' && (r.pattern === whole || (one !== null && r.pattern === one)));
+}
+
 /** The resources a scope names, in the shape the evaluator matches. */
 export function resourcesForScope(scope: ShareScope): ShareResource[] {
+  if (scope.kind === 'vault') {
+    if (scope.pages === null) return [{ type: 'page', pattern: `${VAULT_PATTERN}${scope.owner}/${scope.vault}` }];
+    return scope.pages.map((uuid) => ({ type: 'page', pattern: `${VAULT_PAGE_PATTERN}${scope.owner}/${scope.vault}/${uuid}` }));
+  }
   return [
     { type: 'page', pattern: `keyword:${scope.keyword}` },
     { type: 'media', pattern: `keyword:${scope.keyword}` }
@@ -119,6 +195,29 @@ export interface ShareRecord {
   expiresAt: string | null;
   /** ISO 8601 revocation timestamp — record retained for audit (decision 5). */
   revokedAt?: string;
+  /**
+   * The owner's own note for a vault link, e.g. "For Dr Smith, October"
+   * (#1388). Shown to the owner only: never in a log or an audit record.
+   */
+  label?: string;
+  /** How many times a vault link has been used (#1388). */
+  visitCount?: number;
+  /** The most recent visits through a vault link, newest first, for its owner (#1388). */
+  visits?: ShareVisit[];
+}
+
+/**
+ * One visit through a vault link, as its owner sees it (#1388): when, and
+ * what was opened. The audit trail keeps the full record, with the address.
+ */
+export interface ShareVisit {
+  at: string;
+  /** The page opened, by uuid. */
+  page?: string;
+  /** The file opened, by id. */
+  file?: string;
+  /** The link's page list was opened. */
+  list?: true;
 }
 
 /** A page admitted to a share scope, with fields for a search-result-style listing. */

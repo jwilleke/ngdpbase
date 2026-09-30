@@ -4,12 +4,14 @@
  */
 import { mayActInPrivateContainer } from '../privateStoreAccess';
 
-const share = (issuer: string) => ({
-  username: 'Anonymous',
+const share = (issuer: string, resources: Array<{ type: string; pattern: string }> = []) => ({
+  username: '',
   isAuthenticated: false,
   roles: ['anonymous'],
-  viaShare: { id: 's1', issuer, actions: ['asset-upload'], resources: [] }
+  viaShare: { id: 's1', issuer, actions: ['page-read'], resources, expiresAt: null }
 }) as never;
+const wholeVault = (owner: string, vault: string) => [{ type: 'page', pattern: `vault:${owner}/${vault}` }];
+const onePage = (owner: string, vault: string, uuid: string) => [{ type: 'page', pattern: `vault-page:${owner}/${vault}/${uuid}` }];
 
 describe('mayActInPrivateContainer', () => {
   test('the owner passes; nobody else does, admin included', () => {
@@ -24,10 +26,19 @@ describe('mayActInPrivateContainer', () => {
     expect(mayActInPrivateContainer(job('System'), 'alice')).toBe(false);
   });
 
-  test('a delegate is the owner\'s share, and only when the store is shared', () => {
-    expect(mayActInPrivateContainer(share('alice'), 'alice')).toBe(false);
-    expect(mayActInPrivateContainer(share('alice'), 'alice', { storeShared: true })).toBe(true);
-    expect(mayActInPrivateContainer(share('bob'), 'alice', { storeShared: true })).toBe(false);
+  test('a share link gets in only to a vault its owner shared through it (#1388)', () => {
+    expect(mayActInPrivateContainer(share('alice', wholeVault('alice', 'journal')), 'alice', { vault: 'journal' })).toBe(true);
+    expect(mayActInPrivateContainer(share('alice', onePage('alice', 'journal', 'u1')), 'alice', { vault: 'journal' })).toBe(true);
+  });
+
+  test('a share link never reaches another vault, another owner, or the container as a whole (#1388)', () => {
+    const link = share('alice', wholeVault('alice', 'journal'));
+    expect(mayActInPrivateContainer(link, 'alice', { vault: 'default' })).toBe(false);
+    expect(mayActInPrivateContainer(link, 'alice')).toBe(false);
+    // Issued by someone else: bob cannot share alice's vault, whatever it names.
+    expect(mayActInPrivateContainer(share('bob', wholeVault('alice', 'journal')), 'alice', { vault: 'journal' })).toBe(false);
+    // A keyword link names no vault.
+    expect(mayActInPrivateContainer(share('alice', [{ type: 'page', pattern: 'keyword:x' }]), 'alice', { vault: 'journal' })).toBe(false);
   });
 
   test('an unauthenticated subject never matches, even an owner recorded as Anonymous', () => {

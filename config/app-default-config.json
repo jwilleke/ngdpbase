@@ -445,11 +445,15 @@
     },
     "share-access": {
       "on-failure": "continue",
-      "description": "Share link used; batched counts"
+      "description": "Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388)"
     },
     "share-revoke": {
       "on-failure": "refuse",
       "description": "Share link revoked; pairs with token-revoke"
+    },
+    "share-extend": {
+      "on-failure": "refuse",
+      "description": "Share link's lifetime extended by its issuer, by up to 24 hours (#1388)"
     },
     "system-start": {
       "on-failure": "refuse",
@@ -1037,7 +1041,8 @@
         "privatestore": "pages/vaults/{user}/default/"
       },
       "defaultPrivate": false,
-      "encrypt": false
+      "encrypt": false,
+      "shareMaxDays": 15
     },
     "system": {
       "label": "system",
@@ -1118,6 +1123,7 @@
       },
       "defaultPrivate": "choice",
       "encrypt": false,
+      "shareMaxDays": 15,
       "page-badge": {
         "color": "bg-info",
         "label": "Journal",
@@ -1135,7 +1141,8 @@
         "privatestore": "pages/vaults/{user}/capture/"
       },
       "defaultPrivate": "choice",
-      "encrypt": false
+      "encrypt": false,
+      "shareMaxDays": 15
     }
   },
   "_comment_knowledge_role": "#706 — knowledge-role: opt-in per-page position in the knowledge graph (source / citation / concept). Distinct from system-category (page-type). Absence is valid and means 'not in the graph' (the common case). Present with a value outside this catalog is HARD-REJECTED by ValidationManager. Each entry's page-badge block renders alongside the system-category badge via the v3.14.0 mechanism.",

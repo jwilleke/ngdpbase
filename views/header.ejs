@@ -326,6 +326,18 @@
                                         ? metadata['user-keywords'].filter(function(k) { return k && k !== 'owner-only'; }).slice(0, 6)
                                         : [];
                                 %>
+                                <%
+                                    // #1388: the owner of a private page can share it, and more of its vault, by link.
+                                    const _ownVaultPage = typeof shareEnabled !== 'undefined' && shareEnabled
+                                        && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.username
+                                        && typeof pageName === 'string' && pageName.indexOf('vaults/' + currentUser.username + '/') === 0;
+                                %>
+                                <% if (_ownVaultPage) { %>
+                                    <li><a class="dropdown-item" href="/my/vaults/links?page=<%= encodeURIComponent(pageName) %>" title="Make a read-only link to this page, and others in its vault">
+                                        <i class="fas fa-link"></i> Share this page&hellip;
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                <% } %>
                                 <% if (_shareKws.length > 0) { %>
                                     <% _shareKws.forEach(function(kw) { %>
                                         <li><a class="dropdown-item" href="/shares?keyword=<%= encodeURIComponent(kw) %>" title="Create a share link for everything tagged '<%= kw %>'">

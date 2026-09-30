@@ -185,10 +185,10 @@ The matching boot passes (`migratePrivateLinksAtBoot`, `buildStoreSearchIndexesA
 
 One function decides: `mayActInPrivateContainer(ctx, owner, opts)` in `src/utils/privateStoreAccess.ts`.
 
-- a context acting `viaShare` passes only when `opts.storeShared === true` and the share's issuer is the owner
+- a context acting `viaShare` (a share link) passes only when its issuer is the owner, the caller names a vault (`opts.vault`), and the link names that vault (#1388). A question about the owner's container as a whole (their list of vaults, their trash, their takeout) names no vault, so a link never passes it
 - otherwise the context must be a job acting for the owner, or an authenticated session (`isAuthenticated === true`) whose username is the owner
 
-No role reaches in. An anonymous visitor never matches, even a page whose recorded owner is `Anonymous`. No caller passes `storeShared: true` today, so in the shipped code the answer is the owner and nobody else.
+No role reaches in. An anonymous visitor without a link never matches, even a page whose recorded owner is `Anonymous`.
 
 The `PolicyInformationPoint` applies it in two places:
 
@@ -384,11 +384,13 @@ It brings back pages and files, never history or trash.
 
 ---
 
-## Not built
+## Sharing a vault by link
 
-One thing in this area does not exist. Nothing in the code implements it, and it should not be described to users as available.
+The owner of a vault can share chosen pages, or the whole vault, through a read-only link ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). __How it works is [sharing.md](sharing.md#vault-links)__, the source of truth for all sharing. What matters here, inside the vault:
 
-- __Sharing a store through a token__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). There is no per-store Share switch. `mayActInPrivateContainer` has the branch a share would use — it requires `opts.storeShared === true` and a share issued by the owner — and no caller passes it, so every store is closed to delegates and only the owner acts in one. A delegate would also need a wrapped store DEK, and nothing wraps one for a share.
+- the vault rule above lets a link in only to a vault it names, and only when the caller names that vault; the owner's container as a whole never admits one
+- a link shows only current pages and the files they use, never history, and a file no covered page uses is not shared
+- a link to an encrypted vault opens nothing yet: it carries no key. The agreed key-per-item design is in [sharing.md](sharing.md#decided-not-yet-built)
 
 ---
 
