@@ -23,7 +23,7 @@
  *
  * Enabled via config: ngdpbase.share.enabled
  *
- * @see docs/planning/keyword-share-links.md — design + signed-off decisions
+ * @see docs/sharing.md — the source of truth for all sharing
  * @see MagicLinkAuthProvider — token-lifecycle prior art
  */
 

@@ -386,22 +386,11 @@ It brings back pages and files, never history or trash.
 
 ## Sharing a vault by link
 
-The owner of a vault can share chosen pages, or the whole vault, through a read-only link ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), where every decision is recorded). The data in a vault is always the user's; the system-category's `owner` has no say, except for the longest a new link may last.
+The owner of a vault can share chosen pages, or the whole vault, through a read-only link ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)). __How it works is [sharing.md](sharing.md#vault-links)__, the source of truth for all sharing. What matters here, inside the vault:
 
-- __Scope.__ `VaultShareScope` (`src/types/Share.ts`): owner, vault, and page uuids or `null` for the whole vault. Its resources are `vault:{owner}/{vault}` or one `vault-page:{owner}/{vault}/{uuid}` per page, so renaming a page does not break a link. A whole-vault link covers pages added while it is live.
-- __Issuing.__ `ShareManager.issueVaultShare` accepts only the vault's owner, whatever their role; an admin cannot share someone else's vault. The generic `issue()` refuses a vault scope.
-- __Lifetime.__ The owner chooses it, up to the `shareMaxDays` of the vault's system-category (15 by default, `ValidationManager.getShareMaxDays`); no vault link lasts forever. `ShareManager.extend` lets the issuer add up to 24 hours at a time to a live link, as often as they like, past that maximum. The owner can revoke at any time.
-- __Reading.__ The link's subject enters the vault through the container rule above, and the share ceiling (`shareCoversPage`) admits only the pages it covers. It is read-only (`page-read`, `asset-read`), which includes download and print. Only the current pages are shown, never their history.
-- __Files.__ `/share/{token}/attachment/{id}` → `AttachmentManager.getVaultShareAttachment`: from the linked vault only, and only a file a covered current page uses. A file no page uses is not shared. A shared page's `/attachments/…` URLs are rewritten to that route.
-- __Audit.__ `share-create`, `share-extend` and `share-revoke` are recorded before the link changes. Every page, file or list opened through a vault link is its own `share-access` record, naming the page by uuid.
-
-### The owner's controls
-
-`/my/vaults/links` (linked from `/my/vaults` as __Vault links__) lists the owner's vault links and makes new ones: a whole vault, or chosen pages of one. __Share this page…__ in a private page's menu opens it with that page's vault and the page preselected. A live link can be extended by 1 to 24 hours or revoked from the list. Only the owner sees or acts on their vault links: `/shares`, the keyword-link list, leaves them out even for an admin, and refuses to revoke one.
-
-### Not built yet
-
-- __Encrypted vaults.__ A link to an encrypted vault opens nothing: it carries no key. The agreed design is a key per page and per file, locked by the vault key, with links carrying only the item keys they cover (#1388, slices 2 and 3).
+- the vault rule above lets a link in only to a vault it names, and only when the caller names that vault; the owner's container as a whole never admits one
+- a link shows only current pages and the files they use, never history, and a file no covered page uses is not shared
+- a link to an encrypted vault opens nothing yet: it carries no key. The agreed key-per-item design is in [sharing.md](sharing.md#decided-not-yet-built)
 
 ---
 

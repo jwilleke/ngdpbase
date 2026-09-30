@@ -31,18 +31,19 @@ test.describe('Vault links', () => {
     await page.locator('#pageName, input[name="pageName"]').first().fill(title);
     const box = page.locator('#privateFlag');
     if (!(await box.isChecked())) await box.check();
+    // A private page opens at its vault address: /vaults/{owner}/{vault}/{title}/edit.
     await Promise.all([
-      page.waitForURL(/\/(edit|view)\//, { timeout: 30000 }),
+      page.waitForURL(/\/vaults\/[^/]+\/[^/]+\/[^/]+\/edit$/, { timeout: 30000 }),
       page.locator('button:has-text("Create Page"), form[action="/create"] button[type="submit"]').first().click()
     ]);
-    const name = decodeURIComponent(new URL(page.url()).pathname.replace(/^\/(edit|view)\//, ''));
+    const name = new URL(page.url()).pathname.replace(/\/edit$/, '').slice(1).split('/').map(decodeURIComponent).join('/');
     expect(name).toMatch(/^vaults\//);
     created.push(name);
     const editor = page.locator('textarea#editorContent, textarea[name="content"], .CodeMirror textarea');
     await editor.first().waitFor({ state: 'visible', timeout: 15000 });
     await editor.first().fill(body);
     await Promise.all([
-      page.waitForURL(/\/view\//, { timeout: 30000 }),
+      page.waitForURL((u) => u.pathname.startsWith('/vaults/') && !u.pathname.endsWith('/edit'), { timeout: 30000 }),
       page.locator('button[type="submit"]:has-text("Save"), #saveButton').first().click()
     ]);
     return name;
