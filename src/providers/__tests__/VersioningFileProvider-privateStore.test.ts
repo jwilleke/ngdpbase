@@ -26,6 +26,8 @@ import {
   unlockPrivateStores
 } from '../../utils/privateStoreUnlock';
 import { vaultCategories } from '../../test-support/vaults';
+import logger from '../../utils/logger';
+import { redactPrivateNames } from '../../utils/redactPrivateNames';
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 // The owner writes her own private pages; the handle reaches her unlocked keys (#1382).
@@ -201,6 +203,23 @@ describe('private store default/ (#1383)', () => {
     await newProvider();
     expect(await fs.pathExists(legacyVer)).toBe(false);
     expect(await fs.pathExists(path.join(pagesDir, 'vaults', 'molly', 'default', 'versions', UUID, 'manifest.json'))).toBe(true);
+  });
+
+  // #1520: a private page saved under its bare title (the create form does this)
+  // must be named in the log by its vault name, which redaction hides.
+  test('a private page saved under its bare title never has that title in a log line', async () => {
+    const lines: string[] = [];
+    const capture = (...args: unknown[]) => { lines.push(redactPrivateNames(args.map(String).join(' '))); };
+    const spies = (['info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(logger, level).mockImplementation(capture as never));
+    try {
+      const provider = await newProvider();
+      await provider.savePage('Secret Diary Title', 'v1', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+      await provider.savePage(formatPrivatePageName('molly', DEFAULT_PRIVATE_STORE, 'Secret Diary Title'), 'v2', { uuid: UUID, author: 'molly' }, MOLLY);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join('\n')).not.toContain('Secret Diary Title');
   });
 
   test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {

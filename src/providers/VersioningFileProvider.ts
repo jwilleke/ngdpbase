@@ -2065,10 +2065,10 @@ class VersioningFileProvider extends FileSystemProvider {
     if (from && (from.location !== to.location || from.creator !== to.creator || from.store !== to.store)) {
       try {
         await this.moveVersionDirectory(uuid, from, to);
-        logger.info(`[VersioningFileProvider] Moved history of '${pageName}' (${uuid}) from '${from.location}' to '${location}'`);
+        logger.info(`[VersioningFileProvider] Moved history of page ${uuid} from '${from.location}' to '${location}'`);
       } catch (moveError) {
         const errorMessage = moveError instanceof Error ? moveError.message : String(moveError);
-        logger.error(`[VersioningFileProvider] Failed to move history for '${pageName}':`, errorMessage);
+        logger.error(`[VersioningFileProvider] Failed to move history for page ${uuid}:`, errorMessage);
       }
     }
 
@@ -2108,14 +2108,14 @@ class VersioningFileProvider extends FileSystemProvider {
         // Existing page: create new version with diff. A sealed page always
         // comes this way: createNewVersion starts v1 only when there is no
         // manifest, so a page file that failed to open cannot reset history.
-        await this.createNewVersion(uuid, pageName, content, metadata, location, pageInfo, versions);
+        await this.createNewVersion(uuid, saved.name, content, metadata, location, pageInfo, versions);
       } else {
         // New page: create initial version
-        await this.createInitialVersion(uuid, pageName, content, metadata, location, versions);
+        await this.createInitialVersion(uuid, saved.name, content, metadata, location, versions);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`[VersioningFileProvider] Failed to create version for ${pageName}:`, errorMessage);
+      logger.error(`[VersioningFileProvider] Failed to create version for ${saved.name}:`, errorMessage);
       // Page content is already persisted; a versioning failure is non-fatal.
     }
 
@@ -2158,7 +2158,9 @@ class VersioningFileProvider extends FileSystemProvider {
       });
     }
 
-    logger.info(`[VersioningFileProvider] Saved page '${pageName}' with versioning`);
+    // #1520: the page's own name, which for a private page is its vault name
+    // (redacted in every log line), never the bare title a caller saved it under.
+    logger.info(`[VersioningFileProvider] Saved page '${saved.name}' with versioning`);
     return saved;
   }
 

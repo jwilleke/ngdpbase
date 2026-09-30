@@ -2778,7 +2778,8 @@ ${panes}
         // their browser's URL bar).
         const ownPrivate = await this.ownPrivatePageNamed(pageName, req.userContext);
         if (ownPrivate) {
-          logger.info(`[VIEW] '${pageName}' is a page in this requester's own store (302)`);
+          // #1520: the name is left out — it is a private title, and this line says so.
+          logger.info('[VIEW] a plain name is a page in this requester\'s own store (302)');
           return res.redirect(302, pageUrl(ownPrivate));
         }
 

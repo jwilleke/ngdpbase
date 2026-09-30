@@ -85,6 +85,19 @@ describe('PageManager.savePage() audit emission (#1121)', () => {
     expect(events[0]).toMatchObject({ eventType: 'page-edit' });
   });
 
+  // #1520: the create form saves a private page under its bare title; the
+  // provider answers with its vault name, and that is what the record names.
+  test('a private page saved under its bare title is recorded by its vault name', async () => {
+    const { manager, provider, events } = makeManager();
+    provider.savePage.mockImplementationOnce(async () => ({ name: 'vaults/jim/default/Secret Diary', uuid: 'uuid-1' }));
+    await manager.savePage('Secret Diary', 'body', { title: 'Secret Diary', private: true }, JIM);
+    await settle();
+
+    expect(events[0]).toMatchObject({ eventType: 'page-create' });
+    expect(JSON.stringify(events[0])).toContain('vaults/jim/default/Secret Diary');
+    expect(JSON.stringify(events[0])).not.toMatch(/"pageName":"Secret Diary"/);
+  });
+
   test('a renamed private page is named by its new path, not its bare title (#1456)', async () => {
     const name = 'vaults/jim/default/Diary';
     const { manager, events } = makeManager([

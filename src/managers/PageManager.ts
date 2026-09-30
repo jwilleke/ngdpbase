@@ -1881,7 +1881,9 @@ class PageManager extends BaseManager implements CatalogSource {
           op,
           username: actingUser,
           ipAddress: options.audit?.ipAddress,
-          pageName: op === 'rename' ? renamedTo : pageName,
+          // #1520: a private page is named by its vault name, which the audit
+          // redacts; a bare title it was saved under would go in as it is.
+          pageName: op === 'rename' ? renamedTo : (parsePrivatePageName(saved.name) ? saved.name : pageName),
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
           fromPageName: op === 'rename' ? options.moveFrom ?? pageName : null,
           rewriteOf: options.audit?.rewriteOf ?? null,
