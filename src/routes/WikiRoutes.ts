@@ -3455,10 +3455,11 @@ ${panes}
       });
 
       // #1462: the door brings the shared indexes in step with the new page.
-      await pageManager.savePage(pageName, content, metadata, currentUser);
+      const saved = await pageManager.savePage(pageName, content, metadata, currentUser);
 
-      // Redirect to edit the new page
-      res.redirect(`/edit/${pageName}`);
+      // Edit the page where it landed: a private page is in its vault, and a
+      // plain `/edit/{title}` would open a new public page instead (#1388).
+      res.redirect(pageUrl(saved.name, 'edit'));
     } catch (err: unknown) {
       // #1037: content validation now happens in PageManager, so it reaches
       // this path too — POST /create is the header's "Create New Page" and
