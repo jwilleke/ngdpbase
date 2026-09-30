@@ -399,6 +399,8 @@ interface IPageManager {
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
   /** #1387: the requester's own store ids, and a decrypted takeout of one. */
   listOwnStoreIds(ctx: ActorContext): Promise<string[]>;
+  /** #1388: one vault's current pages, as `ctx` may enter it. */
+  listVaultPages(ctx: ActorContext, owner: string, vault: string): Promise<Array<{ name: string; title: string; uuid: string }>>;
   buildOwnStoreTakeout(
     ctx: ActorContext,
     options: { store: string; pagesOnly?: boolean }
@@ -7970,8 +7972,158 @@ ${panes}
       title: 'My Private Pages',
       icon: 'fa-eye-slash',
       onlyPrivate: true,
-      emptyMessage: 'You don\'t have any private pages yet.'
+      emptyMessage: 'You don\'t have any private pages yet.',
+      // #1388: the owner's links to their vaults.
+      action: { href: '/my/vaults/links', label: 'Vault links', icon: 'fa-link' }
     });
+  }
+
+  // ==========================================================================
+  // Vault links (#1388) — the owner shares chosen pages or a whole vault
+  // ==========================================================================
+
+  /**
+   * Everything a vault-link request needs, or null when it has been answered:
+   * a signed-in owner, and share links switched on. Every vault question below
+   * is asked as this owner, so the container rule — owner only, no role —
+   * decides what they can reach.
+   */
+  private async vaultLinkRequest(req: Request, res: Response): Promise<{
+    owner: NonNullable<WikiContext['userContext']> & { username: string };
+    vaults: string[];
+    shareManager: ShareManager;
+  } | null> {
+    const wikiContext = this.createWikiContext(req);
+    const currentUser = wikiContext.userContext;
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return null;
+    if (!currentUser?.username) {
+      await this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+      return null;
+    }
+    const shareManager = this.engine.getManager('ShareManager');
+    if (!shareManager?.isEnabled()) {
+      await this.renderError(req, res, 404, 'Not Found', 'Share links are switched off on this site.');
+      return null;
+    }
+    const vaults = await this.engine.getManager('PageManager').listOwnStoreIds(currentUser);
+    // The request's own subject, forwarded — never rebuilt (#1164).
+    return { owner: currentUser, vaults, shareManager };
+  }
+
+  /**
+   * GET /my/vaults/links — the owner's vault links, and the forms that make
+   * them: a whole vault, or chosen pages of one (`?page=` preselects a page).
+   */
+  async myVaultLinksPage(req: Request, res: Response) {
+    try {
+      const request = await this.vaultLinkRequest(req, res);
+      if (!request) return;
+      const { owner, vaults, shareManager } = request;
+      const pageManager = this.engine.getManager('PageManager');
+
+      // A page named in the query picks its vault; its siblings are offered too.
+      const asked = typeof req.query.page === 'string' ? parsePrivatePageName(req.query.page) : null;
+      const pickVault = asked && asked.owner === owner.username && vaults.includes(asked.store) ? asked.store : null;
+      const pickPages = pickVault ? await pageManager.listVaultPages(owner, owner.username, pickVault) : [];
+      const preselected = asked ? pickPages.find((p) => p.title === asked.title)?.uuid ?? null : null;
+
+      const now = Date.now();
+      const links = shareManager.list(owner.username)
+        .filter((r) => r.scope.kind === 'vault')
+        .map((r) => ({
+          ...r,
+          status: r.revokedAt ? 'revoked' : (r.expiresAt && now > Date.parse(r.expiresAt)) ? 'expired' : 'active'
+        }));
+      // Titles for the chosen pages of each link, read as the owner.
+      const titles: Record<string, string> = {};
+      for (const vault of new Set(links.map((l) => (l.scope.kind === 'vault' ? l.scope.vault : '')))) {
+        if (!vault || !vaults.includes(vault)) continue;
+        for (const p of await pageManager.listVaultPages(owner, owner.username, vault)) titles[p.uuid] = p.title;
+      }
+
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('my-vault-links', {
+        ...commonData,
+        title: 'Vault links',
+        vaults: vaults.map((v) => ({ id: v, maxDays: shareManager.maxShareDays(v) })),
+        pickVault,
+        pickPages,
+        preselected,
+        links,
+        titles,
+        baseUrl: this.shareBaseUrl(req),
+        createdId: typeof req.query.created === 'string' ? req.query.created : null,
+        notice: typeof req.query.notice === 'string' ? req.query.notice : null,
+        error: typeof req.query.error === 'string' ? req.query.error : null
+      });
+    } catch (err: unknown) {
+      logger.error('[vault-links] Error rendering vault links:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /** POST /my/vaults/links — make a link to a whole vault, or chosen pages of it. */
+  async myVaultLinksCreate(req: Request, res: Response) {
+    try {
+      const request = await this.vaultLinkRequest(req, res);
+      if (!request) return;
+      const { owner, vaults, shareManager } = request;
+      const body = req.body as Record<string, unknown>;
+      const vault = typeof body.vault === 'string' ? body.vault : '';
+      if (!vaults.includes(vault)) return res.redirect('/my/vaults/links?error=vault');
+      const days = Number(body.days);
+      if (!Number.isFinite(days) || days <= 0 || days > shareManager.maxShareDays(vault)) {
+        return res.redirect('/my/vaults/links?error=days');
+      }
+      let pages: string[] | null = null;
+      if (body.scope !== 'whole') {
+        const asked = (Array.isArray(body.pages) ? body.pages : body.pages ? [body.pages] : []).map(String);
+        const present = new Set((await this.engine.getManager('PageManager').listVaultPages(owner, owner.username, vault)).map((p) => p.uuid));
+        pages = asked.filter((uuid) => present.has(uuid));
+        if (pages.length === 0) return res.redirect('/my/vaults/links?error=pages');
+      }
+      const record = await shareManager.issueVaultShare({ kind: 'vault', owner: owner.username, vault, pages }, days * 24, owner);
+      return res.redirect(`/my/vaults/links?created=${encodeURIComponent(record.id)}`);
+    } catch (err: unknown) {
+      logger.error('[vault-links] Error creating a vault link:', err);
+      return res.status(500).send('Internal server error');
+    }
+  }
+
+  /** POST /my/vaults/links/:id/extend — add up to 24 hours to one of the owner's live links. */
+  async myVaultLinksExtend(req: Request, res: Response) {
+    try {
+      const request = await this.vaultLinkRequest(req, res);
+      if (!request) return;
+      const hours = Number((req.body as Record<string, unknown>).hours);
+      const record = request.shareManager.get(req.params.id);
+      if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
+        return res.status(404).send('Not Found');
+      }
+      const extended = await request.shareManager.extend(record.id, hours, request.owner);
+      return res.redirect(`/my/vaults/links?notice=${extended ? 'extended' : 'not-extended'}`);
+    } catch (err: unknown) {
+      logger.error('[vault-links] Error extending a vault link:', err);
+      return res.redirect('/my/vaults/links?error=hours');
+    }
+  }
+
+  /** POST /my/vaults/links/:id/revoke — the owner ends one of their links, at once. */
+  async myVaultLinksRevoke(req: Request, res: Response) {
+    try {
+      const request = await this.vaultLinkRequest(req, res);
+      if (!request) return;
+      const { shareManager } = request;
+      const record = shareManager.get(req.params.id);
+      if (!record || record.scope.kind !== 'vault' || record.createdBy !== request.owner.username) {
+        return res.status(404).send('Not Found');
+      }
+      await shareManager.revoke(record.id, request.owner.username);
+      return res.redirect('/my/vaults/links?notice=revoked');
+    } catch (err: unknown) {
+      logger.error('[vault-links] Error revoking a vault link:', err);
+      return res.status(500).send('Internal server error');
+    }
   }
 
   // ==========================================================================
@@ -8507,7 +8659,7 @@ ${panes}
   private async renderMyContributionsList(
     req: Request,
     res: Response,
-    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string; systemKeywords?: string[] }
+    spec: { title: string; icon: string; onlyPrivate: boolean; emptyMessage: string; systemKeywords?: string[]; action?: { href: string; label: string; icon: string } }
   ) {
     try {
       const wikiContext = this.createWikiContext(req);
@@ -8537,7 +8689,8 @@ ${panes}
         totalItems: pagedList.totalItems,
         paginationHtml: pagedList.paginationHtml,
         listKind: 'pages',
-        emptyMessage: spec.emptyMessage
+        emptyMessage: spec.emptyMessage,
+        listAction: spec.action ?? null
       });
     } catch (err) {
       logger.error('Error rendering My Contributions list:', err);
@@ -14788,6 +14941,11 @@ ${panes}
     // #640: My Contributions surfaces
     app.get('/my/pages', (req: Request, res: Response) => this.myPagesPage(req, res));
     app.get('/my/vaults', (req: Request, res: Response) => this.myPrivatePagesPage(req, res));
+    // #1388: the owner's links to their vaults.
+    app.get('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksPage(req, res));
+    app.post('/my/vaults/links', (req: Request, res: Response) => void this.myVaultLinksCreate(req, res));
+    app.post('/my/vaults/links/:id/extend', (req: Request, res: Response) => void this.myVaultLinksExtend(req, res));
+    app.post('/my/vaults/links/:id/revoke', (req: Request, res: Response) => void this.myVaultLinksRevoke(req, res));
     // #1414: the store door — core owns it; an addon links to it.
     // #1448: registered before `/stores/:kind` and under its own prefix, so no
     // store kind can ever shadow it.
@@ -18672,7 +18830,9 @@ ${description}
       const isAdmin = await wikiContext.hasPermission('admin-system');
       const username = wikiContext.userContext?.username ?? '';
       const now = Date.now();
-      const shares = shareManager.list(isAdmin ? undefined : username).map(r => ({
+      // #1388: vault links are the owner's alone, managed on /my/vaults/links;
+      // an admin's list of everyone's links never shows one.
+      const shares = shareManager.list(isAdmin ? undefined : username).filter(r => r.scope.kind !== 'vault').map(r => ({
         ...r,
         status: r.revokedAt
           ? 'revoked'
@@ -18787,7 +18947,8 @@ ${description}
       }
 
       const record = shareManager.get(req.params.id);
-      if (!record) {
+      // #1388: a vault link is revoked by its owner, on /my/vaults/links.
+      if (!record || record.scope.kind === 'vault') {
         return res.status(404).send('Not Found');
       }
       const username = wikiContext.userContext?.username ?? '';

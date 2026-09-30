@@ -395,10 +395,13 @@ The owner of a vault can share chosen pages, or the whole vault, through a read-
 - __Files.__ `/share/{token}/attachment/{id}` → `AttachmentManager.getVaultShareAttachment`: from the linked vault only, and only a file a covered current page uses. A file no page uses is not shared. A shared page's `/attachments/…` URLs are rewritten to that route.
 - __Audit.__ `share-create`, `share-extend` and `share-revoke` are recorded before the link changes. Every page, file or list opened through a vault link is its own `share-access` record, naming the page by uuid.
 
+### The owner's controls
+
+`/my/vaults/links` (linked from `/my/vaults` as __Vault links__) lists the owner's vault links and makes new ones: a whole vault, or chosen pages of one. __Share this page…__ in a private page's menu opens it with that page's vault and the page preselected. A live link can be extended by 1 to 24 hours or revoked from the list. Only the owner sees or acts on their vault links: `/shares`, the keyword-link list, leaves them out even for an admin, and refuses to revoke one.
+
 ### Not built yet
 
 - __Encrypted vaults.__ A link to an encrypted vault opens nothing: it carries no key. The agreed design is a key per page and per file, locked by the vault key, with links carrying only the item keys they cover (#1388, slices 2 and 3).
-- __The owner's controls__: making, extending and revoking a vault link from the page and from `/my/vaults`.
 
 ---
 
