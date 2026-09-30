@@ -94,6 +94,8 @@ const mockShareManager = {
   subjectFor: vi.fn((token: string) => (shareState.validToken !== null && token === shareState.validToken ? { ...SHARE_SUBJECT } : null)),
   resolveScope: vi.fn(async () => ({ media: shareState.media, pages: shareState.pages })),
   recordAccess: vi.fn(),
+  // #1388: none of these links is locked for a key.
+  isLockedLink: vi.fn(() => false),
   issue: vi.fn(async (scope: unknown, ttl: unknown, issuer: { username?: string }) => ({
     id: 'new-share-id',
     token: 'b'.repeat(64),

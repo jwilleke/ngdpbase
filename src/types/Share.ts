@@ -204,6 +204,13 @@ export interface ShareRecord {
   visitCount?: number;
   /** The most recent visits through a vault link, newest first, for its owner (#1388). */
   visits?: ShareVisit[];
+  /**
+   * For a link to an encrypted vault (#1388): the public half of the link's
+   * key pair, made in the owner's browser. The server locks the link's pages
+   * and files for it and can never open them; the private half is in the
+   * link after `#` and never reaches the server.
+   */
+  lockedFor?: import('../utils/shareLockbox.js').LinkPublicKey;
 }
 
 /**
