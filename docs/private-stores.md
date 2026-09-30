@@ -145,6 +145,8 @@ A file in an encrypted store is written by `sealBytes()`: the ASCII magic `NGDPS
 
 Every file in a store goes through that I/O — the page files, their version blobs, the trash blobs, the attachments, and all five indexes. `store.json` is the one exception and cannot be sealed: it holds the wrapped DEK needed to open everything else.
 
+__A key per page and per file__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388), slice 2). A page (`{vault}/{uuid}.md`) and a file (`{vault}/attachments/…`) of an encrypted vault are written by `writeItemText` / `writeItemBytes` as __item files__, `sealItemBytes()`: the magic `NGDPSEAL2`, the item's own key wrapped by the DEK (IV, tag, 32 bytes), then the IV, tag and ciphertext under that item key. An item keeps its key for life: each later write reuses it (`StoreFileIO.itemKey`), so a share link carrying the key goes on opening the page after it changes, and only that page (`openItemBytes`). History, trash and the indexes stay sealed with the DEK itself, so an item key opens none of them. `openBytes()` reads both forms with the DEK. Pages and files written before slice 2 are re-sealed once per vault at the owner's unlock (`PageManager.convertOwnVaultPagesToItemKeys`, `AttachmentManager.convertOwnVaultFilesToItemKeys`, recorded as `item-keys-pages` / `item-keys-files` in the vault's `migrations.json`); a page first saved after that is an item file already.
+
 Because encryption is per file rather than a container, anyone with disk or backup access can still see how many items a store holds, their sizes and their dates. Names disclose nothing — pages are `{uuid}.md`, files `{uuid}.ext`.
 
 ### The session key bag

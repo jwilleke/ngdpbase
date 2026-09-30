@@ -35,7 +35,10 @@ function sealedIO(dek: Buffer): StoreFileIO {
     readText: async (f) => openBytes(dek, await fs.readFile(f)).toString('utf8'),
     writeText: (f, t) => writeFileAtomic(f, sealBytes(dek, Buffer.from(t, 'utf8'))),
     readBytes: async (f) => openBytes(dek, await fs.readFile(f)),
-    writeBytes: (f, b) => writeFileAtomic(f, sealBytes(dek, b))
+    writeBytes: (f, b) => writeFileAtomic(f, sealBytes(dek, b)),
+    writeItemText: (f, t) => writeFileAtomic(f, sealBytes(dek, Buffer.from(t, 'utf8'))),
+    writeItemBytes: (f, b) => writeFileAtomic(f, sealBytes(dek, b)),
+    itemKey: () => Promise.resolve(null)
   };
 }
 

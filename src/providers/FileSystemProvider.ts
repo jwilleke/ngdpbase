@@ -852,7 +852,8 @@ class FileSystemProvider extends BasePageProvider {
     // #1062: temp-then-rename. Writing over the live path truncates it first,
     // so a kill mid-write left the page neither old nor new. Containers are
     // killed on deploy, OOM and eviction, so this is routine rather than rare.
-    await io.writeText(filePath, fileContent, this.encoding);
+    // #1388: a page of an encrypted vault is sealed with a key of its own, kept across saves.
+    await io.writeItemText(filePath, fileContent, this.encoding);
 
     // #1456: a page that moved — between the public space and a store, or
     // between stores — leaves nothing behind where it was.

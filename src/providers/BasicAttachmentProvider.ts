@@ -986,7 +986,7 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     const fileName = `${id}${safeStoredExtension(file.originalName, file.mimeType)}`;
     const target = this.storeFilePath(location, fileName);
     await fs.ensureDir(path.dirname(target));
-    await location.io.writeBytes(target, bytes);
+    await location.io.writeItemBytes(target, bytes);
 
     const entry: StoreFileEntry = {
       id,

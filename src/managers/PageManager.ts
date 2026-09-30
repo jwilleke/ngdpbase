@@ -47,6 +47,7 @@ import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { convertOwnVaults } from '../utils/convertOwnVaults.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -216,6 +217,8 @@ const SITE_MIGRATIONS_FILE = 'site-migrations.json';
 export const CAPTURE_VAULT_MIGRATION = 'capture-vault';
 /** The move of private pages from the default vault into their system-category's own vault (#1507). */
 export const CATEGORY_VAULT_MIGRATION = 'category-vaults';
+/** An encrypted vault's pages re-sealed with keys of their own (#1388, slice 2). */
+export const ITEM_KEY_PAGES_MIGRATION = 'item-keys-pages';
 /** Private slugs from `private--…` to `vaults--…` (#1507). */
 export const VAULT_SLUG_MIGRATION = 'vault-slugs';
 
@@ -2605,6 +2608,21 @@ class PageManager extends BaseManager implements CatalogSource {
       }
     }
     return built;
+  }
+
+  /**
+   * Give the pages of the owner's encrypted vaults keys of their own (#1388,
+   * slice 2), once per vault, at unlock: the owner's session is the only one
+   * that can open them. A page already sealed with its own key, and every
+   * page saved from now on, needs nothing. History stays on the vault key.
+   * One vault's failure never stops the others.
+   *
+   * @param ctx - The owner's context, holding the unlocked vault keys
+   * @returns How many pages were re-sealed
+   */
+  async convertOwnVaultPagesToItemKeys(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('PageManager.convertOwnVaultPagesToItemKeys requires an ActorContext');
+    return convertOwnVaults(this.engine, ctx, 'pages', ITEM_KEY_PAGES_MIGRATION);
   }
 
   /**

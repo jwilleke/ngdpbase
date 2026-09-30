@@ -29,6 +29,10 @@ import type {
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
 import { parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { shareCoversVaultPage, vaultOfShare } from '../types/Share.js';
+import { convertOwnVaults } from '../utils/convertOwnVaults.js';
+
+/** An encrypted vault's files re-sealed with keys of their own (#1388, slice 2). */
+export const ITEM_KEY_FILES_MIGRATION = 'item-keys-files';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { privateStoreIdsOf, storeFileIO } from '../utils/privateStoreFiles.js';
@@ -979,6 +983,19 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const bytes = await this.attachmentProvider.getFileInStore(location, attachmentId);
     if (!bytes) return null;
     return { buffer: bytes.bytes, metadata: AttachmentManager.storeFileMetadata(entry, owner, vault) };
+  }
+
+  /**
+   * Give the files of the owner's encrypted vaults keys of their own (#1388,
+   * slice 2), once per vault, at unlock — the files half of what
+   * `PageManager.convertOwnVaultPagesToItemKeys` does for pages.
+   *
+   * @param ctx - The owner's context, holding the unlocked vault keys
+   * @returns How many files were re-sealed
+   */
+  async convertOwnVaultFilesToItemKeys(ctx: ActorContext): Promise<number> {
+    if (!ctx) throw new Error('AttachmentManager.convertOwnVaultFilesToItemKeys requires an ActorContext');
+    return convertOwnVaults(this.engine, ctx, 'files', ITEM_KEY_FILES_MIGRATION);
   }
 
   /** The container rule for one vault, as the link's subject may enter it (#1388). */

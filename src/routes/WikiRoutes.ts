@@ -396,6 +396,8 @@ interface IPageManager {
   migratePrivateLinks(ctx: ActorContext, owner?: string): Promise<number>;
   /** At unlock (#1458): a sealed store with no saved search index gets one. */
   buildMissingStoreSearchIndexes(ctx: ActorContext, owner?: string): Promise<number>;
+  /** At unlock (#1388): pages sealed with the vault key get keys of their own. */
+  convertOwnVaultPagesToItemKeys(ctx: ActorContext): Promise<number>;
   /** #1459: the requester's OWN private trash — listing, restore, purge, retention. */
   /** #1387: the requester's own store ids, and a decrypted takeout of one. */
   listOwnStoreIds(ctx: ActorContext): Promise<string[]>;
@@ -8540,6 +8542,9 @@ ${panes}
     await pageManager.migratePrivateLinks(ctx, username);
     await pageManager.buildMissingStoreSearchIndexes(ctx, username);
     await pageManager.purgeExpiredOwnPrivateTrash(ctx);
+    // #1388, slice 2: pages and files still sealed with the vault key get keys of their own, once per vault.
+    await pageManager.convertOwnVaultPagesToItemKeys(ctx);
+    await this.engine.getManager('AttachmentManager')?.convertOwnVaultFilesToItemKeys(ctx);
   }
 
   /**

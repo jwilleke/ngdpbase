@@ -41,6 +41,8 @@ describe('private store unlock door (#1448)', () => {
   let migratePrivateLinks: ReturnType<typeof vi.fn>;
   let buildMissingStoreSearchIndexes: ReturnType<typeof vi.fn>;
   let purgeExpiredOwnPrivateTrash: ReturnType<typeof vi.fn>;
+  let convertOwnVaultPagesToItemKeys: ReturnType<typeof vi.fn>;
+  let convertOwnVaultFilesToItemKeys: ReturnType<typeof vi.fn>;
 
   /** The restart case: the session still names a key-bag handle, the bag is empty. */
   const owner = { username: 'molly', roles: ['reader'], isAuthenticated: true, privateStoreHandle: 'h1' };
@@ -76,6 +78,8 @@ describe('private store unlock door (#1448)', () => {
     migratePrivateLinks = vi.fn(async () => 0);
     buildMissingStoreSearchIndexes = vi.fn(async () => 0);
     purgeExpiredOwnPrivateTrash = vi.fn(async () => 0);
+    convertOwnVaultPagesToItemKeys = vi.fn(async () => 0);
+    convertOwnVaultFilesToItemKeys = vi.fn(async () => 0);
     throttle = null;
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
@@ -92,8 +96,10 @@ describe('private store unlock door (#1448)', () => {
         adoptUserPageCatalog,
         migratePrivateLinks,
         buildMissingStoreSearchIndexes,
-        purgeExpiredOwnPrivateTrash
-      }
+        purgeExpiredOwnPrivateTrash,
+        convertOwnVaultPagesToItemKeys
+      },
+      AttachmentManager: { convertOwnVaultFilesToItemKeys }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);
@@ -139,6 +145,9 @@ describe('private store unlock door (#1448)', () => {
       expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }),
       'molly'
     );
+    // #1388, slice 2: and the vault's pages and files get keys of their own, for the same reason.
+    expect(convertOwnVaultPagesToItemKeys).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
+    expect(convertOwnVaultFilesToItemKeys).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
   });
 
   test('a wrong password leaves it locked and says so', async () => {

@@ -230,35 +230,105 @@ export function decryptJson<T>(key: Buffer, blob: WrappedBlob): T {
  * the GCM tag and the ciphertext. Binary, so page text and attachment bytes
  * (#1400) share one format; the magic lets a reader tell a sealed file from a
  * plaintext one without trying the key.
+ *
+ * A page or a file of an encrypted vault is sealed with a key of its own
+ * (#1388, slice 2): `ITEM_MAGIC`, the item key wrapped by the vault DEK (IV,
+ * tag, 32 bytes), then the IV, tag and ciphertext under the item key. A share
+ * link can then carry that one key and open that one item, never the vault.
+ * History and the vault's indexes stay sealed with the DEK itself.
  */
 const SEALED_MAGIC = Buffer.from('NGDPSEAL1', 'ascii');
+const ITEM_MAGIC = Buffer.from('NGDPSEAL2', 'ascii');
 const TAGLEN = 16;
+/** IV, tag and wrapped key of an item file's key, right after `ITEM_MAGIC`. */
+const WRAPPED_ITEM_KEY_LEN = IVLEN + TAGLEN + KEYLEN;
 
-/** True when `bytes` start with the sealed-file magic. */
+/** True when `bytes` start with a sealed-file magic, either form. */
 export function isSealedBytes(bytes: Buffer): boolean {
+  if (bytes.length >= ITEM_MAGIC.length + WRAPPED_ITEM_KEY_LEN + IVLEN + TAGLEN
+    && bytes.subarray(0, ITEM_MAGIC.length).equals(ITEM_MAGIC)) return true;
   return bytes.length >= SEALED_MAGIC.length + IVLEN + TAGLEN
     && bytes.subarray(0, SEALED_MAGIC.length).equals(SEALED_MAGIC);
+}
+
+/** True when `bytes` are an item file: sealed with a key of its own (#1388). */
+export function isItemSealedBytes(bytes: Buffer): boolean {
+  return isSealedBytes(bytes) && bytes.subarray(0, ITEM_MAGIC.length).equals(ITEM_MAGIC);
+}
+
+function gcmSeal(key: Buffer, plaintext: Buffer): Buffer {
+  const iv = randomBytes(IVLEN);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ct]);
+}
+
+function gcmOpen(key: Buffer, sealed: Buffer): Buffer {
+  const decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, IVLEN));
+  decipher.setAuthTag(sealed.subarray(IVLEN, IVLEN + TAGLEN));
+  return Buffer.concat([decipher.update(sealed.subarray(IVLEN + TAGLEN)), decipher.final()]);
 }
 
 /** Encrypt the bytes of one store file with the store DEK. */
 export function sealBytes(dek: Buffer, plaintext: Buffer): Buffer {
   if (dek.length !== KEYLEN) throw new Error('encrypted store is locked: missing DEK');
-  const iv = randomBytes(IVLEN);
-  const cipher = createCipheriv('aes-256-gcm', dek, iv);
-  const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-  return Buffer.concat([SEALED_MAGIC, iv, cipher.getAuthTag(), ct]);
+  return Buffer.concat([SEALED_MAGIC, gcmSeal(dek, plaintext)]);
 }
 
-/** Decrypt a store file written by {@link sealBytes}. */
+/** A fresh key for one page or file of an encrypted vault (#1388). */
+export function newItemKey(): Buffer {
+  return randomBytes(KEYLEN);
+}
+
+/**
+ * Encrypt one page or file with its own `itemKey`, and keep that key in the
+ * file, wrapped by the vault DEK (#1388).
+ */
+export function sealItemBytes(dek: Buffer, itemKey: Buffer, plaintext: Buffer): Buffer {
+  if (dek.length !== KEYLEN) throw new Error('encrypted store is locked: missing DEK');
+  if (itemKey.length !== KEYLEN) throw new Error('an item key is 32 bytes');
+  return Buffer.concat([ITEM_MAGIC, gcmSeal(dek, itemKey), gcmSeal(itemKey, plaintext)]);
+}
+
+/**
+ * The key an item file was sealed with, unwrapped by the vault DEK, or null
+ * for a file sealed with the DEK itself (#1388).
+ */
+export function itemKeyOf(dek: Buffer, sealed: Buffer): Buffer | null {
+  if (!isItemSealedBytes(sealed)) return null;
+  try {
+    return gcmOpen(dek, sealed.subarray(ITEM_MAGIC.length, ITEM_MAGIC.length + WRAPPED_ITEM_KEY_LEN));
+  } catch {
+    throw new Error('cannot open sealed store file');
+  }
+}
+
+/**
+ * Open an item file with its own key alone, without the vault DEK: what a
+ * share link can do with the key it carries (#1388).
+ */
+export function openItemBytes(itemKey: Buffer, sealed: Buffer): Buffer {
+  if (!isItemSealedBytes(sealed)) throw new Error('not an item file');
+  try {
+    return gcmOpen(itemKey, sealed.subarray(ITEM_MAGIC.length + WRAPPED_ITEM_KEY_LEN));
+  } catch {
+    throw new Error('cannot open sealed store file');
+  }
+}
+
+/** Decrypt a store file written by {@link sealBytes} or {@link sealItemBytes}, with the vault DEK. */
 export function openBytes(dek: Buffer, sealed: Buffer): Buffer {
   if (!isSealedBytes(sealed)) throw new Error('not a sealed store file');
-  const ivStart = SEALED_MAGIC.length;
-  const tagStart = ivStart + IVLEN;
-  const ctStart = tagStart + TAGLEN;
+  const itemKey = itemKeyOf(dek, sealed);
+  if (itemKey) {
+    try {
+      return openItemBytes(itemKey, sealed);
+    } finally {
+      itemKey.fill(0);
+    }
+  }
   try {
-    const decipher = createDecipheriv('aes-256-gcm', dek, sealed.subarray(ivStart, tagStart));
-    decipher.setAuthTag(sealed.subarray(tagStart, ctStart));
-    return Buffer.concat([decipher.update(sealed.subarray(ctStart)), decipher.final()]);
+    return gcmOpen(dek, sealed.subarray(SEALED_MAGIC.length));
   } catch {
     throw new Error('cannot open sealed store file');
   }

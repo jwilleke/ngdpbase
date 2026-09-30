@@ -19,7 +19,7 @@ import {
   storeMetaPath,
   storePageIndexPath
 } from '../../utils/privateStorePath';
-import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, unwrapDek } from '../../utils/privateStoreCrypto';
+import { TEST_PRIVATE_STORE_KDF, createEncryptedStore, createUserKeys, isItemSealedBytes, itemKeyOf, openItemBytes, unwrapDek } from '../../utils/privateStoreCrypto';
 import {
   clearUnlockedPrivateStores,
   setUnlockedDek,
@@ -235,6 +235,37 @@ describe('private store default/ (#1383)', () => {
     expect((await readIndex()).pages[UUID]).toBeUndefined();
     expect((await fs.readFile(storePageIndexPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE))).toString('utf8')).not.toContain('Diary');
     expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('secret');
+  });
+
+  // #1388, slice 2: the page has a key of its own, kept across saves; its history stays on the vault key.
+  test('in an encrypted vault a page is sealed with its own key, kept across saves; its history is not', async () => {
+    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const record = createEncryptedStore(kek);
+    await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
+    await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);
+    const dek = unwrapDek(kek, record);
+    unlockPrivateStores('sid', 'molly', kek);
+    setUnlockedDek('sid', DEFAULT_PRIVATE_STORE, dek);
+
+    const provider = await newProvider();
+    await provider.savePage('Diary', 'first secret', { uuid: UUID, private: true, author: 'molly' }, MOLLY);
+    const pageFile = path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, `${UUID}.md`);
+    const key1 = itemKeyOf(dek, await fs.readFile(pageFile));
+    expect(key1).not.toBeNull();
+
+    await provider.savePage(DIARY, 'second secret', { uuid: UUID, author: 'molly' }, MOLLY);
+    const onDisk = await fs.readFile(pageFile);
+    expect(itemKeyOf(dek, onDisk)?.equals(key1 as Buffer)).toBe(true);
+    expect(openItemBytes(key1 as Buffer, onDisk).toString()).toContain('second secret');
+
+    // History and the vault's index are sealed with the vault key, so the page's key opens none of them.
+    const historyDir = path.join(pagesDir, 'vaults', 'molly', DEFAULT_PRIVATE_STORE, 'versions', UUID);
+    for (const f of await fs.readdir(historyDir, { recursive: true }) as string[]) {
+      const full = path.join(historyDir, f);
+      if ((await fs.stat(full)).isFile()) expect(isItemSealedBytes(await fs.readFile(full))).toBe(false);
+    }
+    expect(isItemSealedBytes(await fs.readFile(storePageIndexPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)))).toBe(false);
+    expect((await provider.getPage(DIARY, MOLLY))?.content).toContain('second secret');
   });
 
   test('config privateroot sealed joins versions as versions/sealed and writes under sealed/', async () => {
