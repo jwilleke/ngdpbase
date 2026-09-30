@@ -34,7 +34,7 @@ import {
   parsePrivatePageName,
   privateStoreLayoutFromConfig,
   PRIVATE_PAGE_NAME_PREFIX,
-  LEGACY_PRIVATE_SLUG_PREFIX
+  PRIVATE_SLUG_PREFIX
 } from '../utils/privateStorePath.js';
 import {
   matchStoreSearch,
@@ -3281,10 +3281,11 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Private slugs from `private--…` to `vaults--…` (#1507), once per vault.
-   * A private page's slug is made fresh on every save, so each page still
-   * carrying the old form is saved again, unchanged otherwise: same body,
-   * `lastModified` and `editor`.
+   * Every private slug in the `vaults--…` form (#1507), once per vault. A
+   * private page's slug is made fresh on every save, so each page whose slug
+   * is anything else is saved again, unchanged otherwise: same body,
+   * `lastModified` and `editor`. That is `private--…` from before #1507, and a
+   * plain slug from before #1456, which could clash with a public page's.
    *
    * @returns How many pages were re-saved
    */
@@ -3292,7 +3293,7 @@ class PageManager extends BaseManager implements CatalogSource {
     if (!ctx) throw new Error('PageManager.migratePrivateSlugs requires an ActorContext');
     return this.visitVaultPages(ctx, VAULT_SLUG_MIGRATION, '#1507', 'slug', async (pageName, page) => {
       const slug = (page.metadata as Record<string, unknown> | undefined)?.slug;
-      if (typeof slug !== 'string' || !slug.startsWith(LEGACY_PRIVATE_SLUG_PREFIX)) return null;
+      if (typeof slug === 'string' && slug.startsWith(PRIVATE_SLUG_PREFIX)) return null;
       await this.savePage(pageName, page.content ?? '', { ...page.metadata }, ctx, {
         preserveLastModified: true,
         preserveEditor: true
