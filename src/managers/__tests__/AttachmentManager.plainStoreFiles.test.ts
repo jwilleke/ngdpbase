@@ -60,7 +60,7 @@ describe('AttachmentManager — files in an unencrypted private store (#1460)', 
       (name === DIARY ? { creator: 'molly', store: STORE } : null);
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      PolicyDecisionPoint: { permits: () => Promise.resolve(true) },
+      PolicyDecisionPoint: { permits: () => Promise.resolve(true), decide: () => Promise.resolve({ permit: true }) },
       AuditManager: { logAuditEvent: audit, flushAuditQueue: () => Promise.resolve() },
       PageManager: { getPrivatePageOwner: (name: string) => Promise.resolve(pageOwner(name)) },
       // The container rule itself — owner or delegate, never a role.
@@ -276,7 +276,7 @@ describe('AttachmentManager — the move out of the shared index (#1460 migratio
     };
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      PolicyDecisionPoint: { permits: () => Promise.resolve(true) },
+      PolicyDecisionPoint: { permits: () => Promise.resolve(true), decide: () => Promise.resolve({ permit: true }) },
       AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() },
       PageManager: {
         getPrivatePageOwner: (name: string) =>

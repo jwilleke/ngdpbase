@@ -303,10 +303,13 @@
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <% } %>
-                                <% if ((typeof can === 'function' && can('page-create'))) { %>
+                                <% if (typeof canCreatePage !== 'undefined' && canCreatePage) { %>
+                                    <%# #1539: also for a reader who can create only in their own vault. %>
                                     <li><a class="dropdown-item" href="/create">
                                         <i class="fas fa-plus"></i> Create New Page
                                     </a></li>
+                                <% } %>
+                                <% if ((typeof can === 'function' && can('page-create'))) { %>
                                     <li><a class="dropdown-item" href="#" onclick="showUploadAttachment()">
                                         <i class="fas fa-paperclip"></i> Upload Attachment
                                     </a></li>
@@ -424,6 +427,7 @@
               const _hasPage = typeof pageName !== 'undefined' && pageName;
               const _authed = typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated;
               const _canCreate = (typeof can === 'function' && can('page-create'));   // #1198: policy, not a role name
+              const _canCreatePage = typeof canCreatePage !== 'undefined' && canCreatePage;   // #1539: also vault-only creators
               const _journalEntry = typeof listKind !== 'undefined' && listKind === 'journal' && typeof journalEnabled !== 'undefined' && journalEnabled && _authed;
               // #785: pin any URL, not just wiki pages — derive a canonical URL for the current
               // route so /my/journal, /profile, /search?q=foo, etc. are bookmarkable.
@@ -437,7 +441,7 @@
                   if (p && p.pageName && _hasPage) return p.pageName === pageName;
                   return false;
               });
-              const _showPageActions = _hasPage || _canCreate || _journalEntry || (_authed && _pinUrl);
+              const _showPageActions = _hasPage || _canCreate || _canCreatePage || _journalEntry || (_authed && _pinUrl);
               const _hideOC = "bootstrap.Offcanvas.getInstance(this.closest('.offcanvas')).hide();";
               const _escJs = function(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); };
             %>
@@ -488,10 +492,12 @@
                     <i class="fas fa-book-reader me-2"></i> Reader View
                 </a>
                 <% } %>
-                <% if (_canCreate) { %>
+                <% if (_canCreatePage) { %>
                 <a class="nav-link py-2" href="/create">
                     <i class="fas fa-plus me-2"></i> Create New Page
                 </a>
+                <% } %>
+                <% if (_canCreate) { %>
                 <a class="nav-link py-2" href="#" onclick="showUploadAttachment(); <%- _hideOC %> return false;">
                     <i class="fas fa-paperclip me-2"></i> Upload Attachment
                 </a>

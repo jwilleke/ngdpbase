@@ -40,7 +40,7 @@ describe('AttachmentManager.listOwnUnusedVaultFiles (#1517)', () => {
     };
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      PolicyDecisionPoint: { permits: () => Promise.resolve(true) },
+      PolicyDecisionPoint: { permits: () => Promise.resolve(true), decide: () => Promise.resolve({ permit: true }) },
       AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() },
       PageManager: {
         getPrivatePageOwner: (name: string) => Promise.resolve(name === DIARY ? { creator: 'molly', store: 'default' } : null),
@@ -111,6 +111,6 @@ describe('AttachmentManager.listOwnUnusedVaultFiles (#1517)', () => {
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'sealed')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'sealed'), { encrypt: true });
     const result = await manager.listOwnUnusedVaultFiles(MOLLY);
-    expect(result).toContainEqual({ vault: 'sealed', locked: true, files: [] });
+    expect(result).toContainEqual({ vault: 'sealed', locked: true, canDelete: false, files: [] });
   });
 });

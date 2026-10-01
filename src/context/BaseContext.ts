@@ -30,7 +30,7 @@
 import type { PermissionSubject } from '../managers/UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
-import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 
 /** The engine surface this door needs — `getManager`, nothing more. */
 export interface EngineLike {
@@ -112,24 +112,20 @@ export abstract class BaseContext {
    * frontmatter), so a page's owner gets no pass on it.
    */
   async hasPermission(action: string, attributes?: { 'system-category'?: unknown }): Promise<boolean> {
-    return this.decideCached(action, '*', attributes);
-  }
-
-  /**
-   * One cached PDP decision per (action, resource, attributes) for this
-   * request — the door `hasPermission` and `hasPermissionOn` share.
-   */
-  private decideCached(action: string, resourceId: string, attributes?: Record<string, unknown>): Promise<boolean> {
     const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!pdp) return Promise.resolve(false);
-    const key = attributes || resourceId !== '*' ? `${action}\u0000${resourceId}\u0000${JSON.stringify(attributes ?? {})}` : action;
-    const cached = this._permissionCache.get(key);
-    if (cached) return cached;
+    if (!pdp) return false;
     // #637: hand over the already-resolved subject so the PDP need not
     // resolve the account and its roles again.
-    const promise = attributes || resourceId !== '*'
-      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: resourceId }, attributes }).then((d) => d.permit)
-      : pdp.permits(this.getActor(), action);
+    return this.cached(attributes ? `${action}\u0000${JSON.stringify(attributes)}` : action, () => (attributes
+      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: '*' }, attributes }).then((d) => d.permit)
+      : pdp.permits(this.getActor(), action)));
+  }
+
+  /** One answer per question for this request — `hasPermission` and `hasPermissionOn` share it. */
+  private cached(key: string, decide: () => Promise<boolean>): Promise<boolean> {
+    const hit = this._permissionCache.get(key);
+    if (hit) return hit;
+    const promise = decide();
     this._permissionCache.set(key, promise);
     return promise;
   }
@@ -147,8 +143,10 @@ export abstract class BaseContext {
   async hasPermissionOn(action: string, pageName: string): Promise<boolean> {
     const name = parsePrivatePageName(pageName);
     if (!name) return this.hasPermission(action);
-    if (!this.hasSubject() || !mayActInPrivateContainer(this.getActor(), name.owner, { vault: name.store })) return false;
-    return this.decideCached(action, pageName, { vault: name.store });
+    if (!this.hasSubject()) return false;
+    const pdp = this.engineRef.getManager<VaultDecider>('PolicyDecisionPoint');
+    return this.cached(`${action}\u0000${pageName}`, () =>
+      permitsInVault(pdp, this.getActor(), action, { owner: name.owner, vault: name.store, resource: pageName }));
   }
 
   /**

@@ -206,7 +206,7 @@
                                                             <a href="/attachments/<%= encodeURIComponent(f.id) %>" target="_blank" rel="noopener"><%= f.name %></a>
                                                             <small class="text-muted ms-2"><%= (f.contentSize / 1024).toFixed(0) %> KB · added <%= new Date(f.dateCreated).toLocaleDateString() %></small>
                                                         </span>
-                                                        <% if (typeof can === 'function' && can('asset-delete')) { %>
+                                                        <% if (v.canDelete) { %>
                                                             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-unused="<%= f.id %>" data-name="<%= f.name %>"><i class="fas fa-trash"></i> Delete</button>
                                                         <% } %>
                                                     </li>

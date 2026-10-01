@@ -59,6 +59,7 @@ describe('AttachmentManager — files through a vault link (#1388)', () => {
       ConfigurationManager: configManager,
       PolicyDecisionPoint: {
         permits: () => Promise.resolve(true),
+        decide: () => Promise.resolve({ permit: true }),
         ceiling: () => Promise.resolve({ permit: ceilingPermits })
       },
       AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('evt'), flushAuditQueue: () => Promise.resolve() },

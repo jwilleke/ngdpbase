@@ -96,10 +96,12 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     });
 
     test('should deny access for unauthenticated users', async () => {
-      // Setup - no user context
+      // #1539: the manager is the door; its refusal is classified 401 here.
+      mockAttachmentManager.uploadAttachment.mockRejectedValue(new Error('Permission denied: You do not have permission to upload attachments'));
       const mockReq = createMockReq(ANONYMOUS_SUBJECT,  // Not authenticated
         { page: 'TestPage' },
-        {}
+        {},
+        { buffer: Buffer.from('x'), originalname: 'x.pdf', mimetype: 'application/pdf', size: 1 }
       );
       const mockRes = createMockRes();
 
@@ -117,10 +119,12 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     test('should deny access when user is not authenticated', async () => {
       // Setup - user context exists but isAuthenticated is false
       // #1198: policy decides; the anonymous subject is refused and 401 classifies it.
+      mockAttachmentManager.uploadAttachment.mockRejectedValue(new Error('Permission denied: You do not have permission to upload attachments'));
       const mockReq = createMockReq(
         { username: 'anonymous', isAuthenticated: false, roles: ['anonymous', 'All'] },
         { page: 'TestPage' },
-        {}
+        {},
+        { buffer: Buffer.from('x'), originalname: 'x.pdf', mimetype: 'application/pdf', size: 1 }
       );
       const mockRes = createMockRes();
 
@@ -263,10 +267,7 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       await wikiRoutes.uploadAttachment(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: false,
-        error: 'Permission denied: you cannot upload to this page'
-      });
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
     });
   });
 
@@ -416,7 +417,8 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
     // through, so the assertions live there too.
 
     test('should deny delete access for unauthenticated users', async () => {
-      // Setup
+      // #1539: the manager is the door; its refusal is classified 401 here.
+      mockAttachmentManager.deleteAttachment.mockRejectedValue(new Error('Permission denied: You do not have permission to delete attachments'));
       const mockReq = createMockReq(ANONYMOUS_SUBJECT,  // Not authenticated
         { attachmentId: 'test-attachment-id' }
       );

@@ -95,6 +95,35 @@ describe('can() reflects the caller’s permissions (#1034)', () => {
   });
 });
 
+describe('the header’s Create entry (#1539)', () => {
+  function routesWithVault(global: string[], inVault: string[]) {
+    const routes = makeRoutes(global);
+    const engine = (routes as unknown as { engine: { getManager: (n: string) => unknown } }).engine;
+    const base = engine.getManager;
+    const pdp = {
+      permits: vi.fn((_s: unknown, p: string) => Promise.resolve(global.includes(p))),
+      decide: vi.fn((_s: unknown, { action, attributes }: { action: string; attributes?: { vault?: string } }) =>
+        Promise.resolve({ permit: (attributes?.vault ? inVault : global).includes(action) }))
+    };
+    engine.getManager = (n: string) => (n === 'PolicyDecisionPoint' ? pdp
+      : n === 'ValidationManager' ? { getVaultId: (c: string) => (c === 'general' ? 'default' : null) }
+        : base(n));
+    vi.spyOn(routes as never, 'getSystemCategories').mockReturnValue(['general'] as never);
+    return routes;
+  }
+
+  test('shows for a reader who can create only in their own vault', async () => {
+    const data = await routesWithVault(['page-read'], ['page-create']).getCommonTemplateData(req()) as unknown as { canCreatePage: boolean; can: (p: string) => boolean };
+    expect(data.canCreatePage).toBe(true);
+    expect(data.can('page-create')).toBe(false);
+  });
+
+  test('is hidden for one who can create nowhere', async () => {
+    const data = await routesWithVault(['page-read'], []).getCommonTemplateData(req()) as unknown as { canCreatePage: boolean };
+    expect(data.canCreatePage).toBe(false);
+  });
+});
+
 describe('lockedUnless() disables and explains (#1034)', () => {
   test('emits nothing when the permission is held, so the control works normally', async () => {
     const data = await templateData(['admin-system']);

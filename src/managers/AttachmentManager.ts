@@ -27,10 +27,10 @@ import type {
   RebuildOpts
 } from '../types/Schema.js';
 import type BasicAttachmentProvider from '../providers/BasicAttachmentProvider.js';
-import { parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { shareCoversVaultPage, vaultOfShare } from '../types/Share.js';
 import { assertContextCanWriteStore } from '../utils/privateStoreUnlock.js';
-import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { mayActInPrivateContainer, permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 import { privateStoreIdsOf, storeFileIO } from '../utils/privateStoreFiles.js';
 import { transformImage, parseSize } from '../utils/imageTransform.js';
 import { localizeNcmImages, type NcmImageDeps } from '../converters/ncm/index.js';
@@ -205,6 +205,11 @@ export interface AttachmentBackupData extends BackupData {
  * Based on:
  * https://github.com/apache/jspwiki/blob/master/jspwiki-main/src/main/java/org/apache/wiki/attachment/AttachmentManager.java
  */
+
+/** What is done to a file in a private store, and the permission it is (#1539). */
+type StoreFileAction = 'view' | 'edit' | 'delete';
+const STORE_FILE_PERMISSION: Record<StoreFileAction, string> = { view: 'asset-read', edit: 'asset-edit', delete: 'asset-delete' };
+
 class AttachmentManager extends BaseManager implements CatalogSource {
   /** CatalogSource identifier (Slice 5 of #755 / #759). */
   readonly sourceId = 'attachments';
@@ -577,12 +582,6 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Attachment provider not initialized');
     }
 
-    // Check permission
-    const allowed = await this.checkPermission('asset-upload', ctx);
-    if (!allowed) {
-      throw new Error('Permission denied: You do not have permission to upload attachments');
-    }
-
     // The uploader, from the context. A request subject built from a session
     // carries the account's fields; a JobContext carries a name only.
     const user = {
@@ -618,6 +617,11 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (!pageOwner && options.private === true && ctx.viaShare) {
       throw new Error('Permission denied: a shared link cannot store private files');
     }
+    // #1539: a private upload is asked with the vault it lands in (below); a
+    // public one, site-wide.
+    if (!(pageOwner || options.private === true) && !(await this.checkPermission('asset-upload', ctx))) {
+      throw new Error('Permission denied: You do not have permission to upload attachments');
+    }
     if (pageOwner || options.private === true) {
       const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
       if (!configManager) {
@@ -629,6 +633,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       isPrivatePage = true;
       pageCreator = pageOwner ? pageOwner.creator : ctx.username;
       pageStore = pageOwner ? pageOwner.store : (options.store ?? layout.defaultStoreId);
+      if (!(await this.mayInVault(ctx, 'asset-upload', pageCreator, pageStore, 'upload'))) {
+        throw new Error('Permission denied: You do not have permission to upload attachments');
+      }
 
       // #1394: sealed-store writes need the session DEK. Not a PageManager field.
       const pagesDirectory = configManager.getResolvedDataPath?.(
@@ -898,7 +905,28 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   private async findOwnStoreFile(
     ctx: ActorContext,
     attachmentId: string,
-    action: string
+    action: StoreFileAction
+  ): Promise<{ location: StoreFileLocation; entry: StoreFileEntry } | null> {
+    const found = await this.locateOwnStoreFile(ctx, attachmentId, action);
+    if (!found) return null;
+    return (await this.mayInVault(ctx, STORE_FILE_PERMISSION[action], found.location.owner, found.location.store, attachmentId)) ? found : null;
+  }
+
+  /**
+   * May `ctx` do `permission` to `what` in `owner`'s vault `store` (#1539)?
+   * The container rule, then the capability asked with the vault, so
+   * `vault-owner` decides — the same rule as a vault page.
+   */
+  private mayInVault(ctx: ActorContext, permission: string, owner: string, store: string, what: string): Promise<boolean> {
+    return permitsInVault(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), ctx, permission,
+      { owner, vault: store, resource: formatPrivatePageName(owner, store, `attachment:${what}`) });
+  }
+
+  /** The requester's own store file and its entry, before the capability is asked — see {@link findOwnStoreFile}. */
+  private async locateOwnStoreFile(
+    ctx: ActorContext,
+    attachmentId: string,
+    action: StoreFileAction
   ): Promise<{ location: StoreFileLocation; entry: StoreFileEntry } | null> {
     if (!this.attachmentProvider) return null;
     for (const location of await this.ownPrivateStores(ctx)) {
@@ -999,11 +1027,14 @@ class AttachmentManager extends BaseManager implements CatalogSource {
    * in step. An encrypted vault this session cannot open is reported as
    * locked rather than as empty.
    *
-   * @returns One entry per vault with unused files, or locked
+   * @returns One entry per vault with unused files, or locked; `canDelete` is
+   *   whether this context may delete files there — the delete's own question
+   *   (#1539), so the page offers the button exactly when the delete would work
    */
   async listOwnUnusedVaultFiles(ctx: ActorContext): Promise<Array<{
     vault: string;
     locked: boolean;
+    canDelete: boolean;
     files: Array<{ id: string; name: string; contentSize: number; dateCreated: string }>;
   }>> {
     const owner = ctx?.username;
@@ -1014,13 +1045,13 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
     const pageManager = this.engine.getManager<{ listVaultPages(c: ActorContext, o: string, v: string): Promise<Array<{ name: string }>> }>('PageManager');
 
-    const out: Array<{ vault: string; locked: boolean; files: Array<{ id: string; name: string; contentSize: number; dateCreated: string }> }> = [];
+    const out: Array<{ vault: string; locked: boolean; canDelete: boolean; files: Array<{ id: string; name: string; contentSize: number; dateCreated: string }> }> = [];
     for (const vault of await privateStoreIdsOf(pagesDirectory, owner, layout)) {
       let io: StoreFileLocation['io'];
       try {
         io = await storeFileIO(ctx, { pagesDirectory, owner, store: vault, layout });
       } catch {
-        out.push({ vault, locked: true, files: [] });
+        out.push({ vault, locked: true, canDelete: false, files: [] });
         continue;
       }
       const pages = new Set((pageManager ? await pageManager.listVaultPages(ctx, owner, vault) : []).map((p) => p.name));
@@ -1028,7 +1059,9 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         .filter((f) => !f.mentions.some((m) => pages.has(m)))
         .map((f) => ({ id: f.id, name: f.name, contentSize: f.contentSize, dateCreated: f.dateCreated }))
         .sort((a, b) => b.contentSize - a.contentSize);
-      if (unused.length > 0) out.push({ vault, locked: false, files: unused });
+      if (unused.length > 0) {
+        out.push({ vault, locked: false, canDelete: await this.mayInVault(ctx, 'asset-delete', owner, vault, 'unused'), files: unused });
+      }
     }
     return out;
   }
@@ -1306,8 +1339,12 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       throw new Error('Attachment provider not initialized');
     }
 
-    // Check permission
-    const allowed = await this.checkPermission('asset-delete', context);
+    // #1539: a file in the requester's own vault is asked with that vault —
+    // vault-owner decides; anything else, site-wide.
+    const own = await this.locateOwnStoreFile(context, attachmentId, 'delete');
+    const allowed = own
+      ? await this.mayInVault(context, 'asset-delete', own.location.owner, own.location.store, attachmentId)
+      : await this.checkPermission('asset-delete', context);
     if (!allowed) {
       throw new Error('Permission denied: You do not have permission to delete attachments');
     }
@@ -1328,7 +1365,6 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // The container rule refuses anyone else, which is the whole of the
     // decision for a plain store: there is no key to fail to hold.
     if (!meta) {
-      const own = await this.findOwnStoreFile(context, attachmentId, 'delete');
       if (own) {
         await this.recordAttachmentEvent('delete', context, {
           attachmentId,

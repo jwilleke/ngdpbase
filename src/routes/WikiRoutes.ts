@@ -1074,6 +1074,13 @@ class WikiRoutes {
     }
     grantedPermissions['admin-read'] = canViewAdmin;
 
+    // #1539: the header's Create entry — a public page, or one in the
+    // person's own vault (a reader holding vault-owner creates there).
+    const canCreatePage = permissionContext
+      ? grantedPermissions['page-create'] === true
+        || Object.values((await this.createChoices(permissionContext)).mayCreatePrivate).some(Boolean)
+      : false;
+
     /** Does the caller hold `permission`? */
     const can = (permission: string): boolean => grantedPermissions[permission] === true;
 
@@ -1157,6 +1164,7 @@ class WikiRoutes {
       allowRegistration: boolean;
       magicLinkSignup: boolean;
       canViewAdmin: boolean;
+      canCreatePage: boolean;
       can: (permission: string) => boolean;
       lockedUnless: (permission: string) => string;
       registrationRedirectPage: string;
@@ -1209,6 +1217,7 @@ class WikiRoutes {
       allowRegistration,
       magicLinkSignup,
       canViewAdmin,
+      canCreatePage,
       can,
       lockedUnless,
       registrationRedirectPage,
@@ -2277,6 +2286,26 @@ class WikiRoutes {
   }
 
   /**
+   * What `wikiContext`'s subject may create (#1539): a public page
+   * (`page-create`), and, per system-category, a private page in that
+   * category's vault — asked about a page in their own vault, so `vault-owner`
+   * decides. Shared by GET /create and the header's Create entry.
+   */
+  private async createChoices(wikiContext: WikiContext): Promise<{ systemCategories: string[]; mayCreatePublic: boolean; mayCreatePrivate: Record<string, boolean> }> {
+    const rawCategories = this.getSystemCategories();
+    const systemCategories: string[] = Array.isArray(rawCategories) ? rawCategories : [];
+    const username = wikiContext.userContext?.username;
+    const mayCreatePublic = await wikiContext.hasPermission('page-create');
+    const mayCreatePrivate: Record<string, boolean> = {};
+    for (const category of systemCategories) {
+      const vault = this.vaultForPrivatePage(category);
+      mayCreatePrivate[category] = typeof vault === 'string' && !!username
+        && await wikiContext.hasPermissionOn('page-create', formatPrivatePageName(String(username), vault, 'New page'));
+    }
+    return { systemCategories, mayCreatePublic, mayCreatePrivate };
+  }
+
+  /**
    * Why this subject may not edit the page on `wikiContext`, or null when they
    * may — the page door (`evaluatePagePermission`: the page's own rules, then
    * policy). Shared by GET /edit and POST /save (#1542), so a save asks exactly
@@ -3207,20 +3236,11 @@ ${panes}
         currentUser?.username
       );
 
-      // #1539: what this person may create, per system-category: a public page
-      // (page-create), and a private one in that category's vault (asked about
-      // a page in their own vault, so vault-owner decides). The form opens when
-      // either is possible anywhere; POST /create asks again for the real page.
+      // #1539: the form opens when this person may create a page anywhere —
+      // publicly, or in a system-category's vault; POST /create asks again for
+      // the real page.
       const validationManager = this.engine.getManager('ValidationManager');
-      const rawCategories = this.getSystemCategories();
-      const systemCategories: string[] = Array.isArray(rawCategories) ? rawCategories : [];
-      const mayCreatePublic = await wikiContext.hasPermission('page-create');
-      const mayCreatePrivate: Record<string, boolean> = {};
-      for (const category of systemCategories) {
-        const vault = this.vaultForPrivatePage(category);
-        mayCreatePrivate[category] = typeof vault === 'string' && !!currentUser?.username
-          && await wikiContext.hasPermissionOn('page-create', formatPrivatePageName(String(currentUser.username), vault, 'New page'));
-      }
+      const { systemCategories, mayCreatePublic, mayCreatePrivate } = await this.createChoices(wikiContext);
 
       // #1198: policy is the door; the login redirect is the refusal for an
       // anonymous subject, decided after the denial, not before it.
@@ -5566,10 +5586,11 @@ ${panes}
         : (typeof req.body.pageName === 'string' ? req.body.pageName : undefined);
       const attachmentManager = this.engine.getManager('AttachmentManager');
 
-      // 🔒 SECURITY: Check authentication
+      // #1539: AttachmentManager.uploadAttachment is the door — asset-upload,
+      // asked with the vault for a private upload, site-wide for a public one.
+      // A refusal comes back as 'Permission denied' and refuse() classifies it.
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!(await this.permitted(wikiContext, 'asset-upload', req, res, 'json'))) return;
 
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -5635,8 +5656,11 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error uploading attachment:', err);
       const message = getErrorMessage(err) || 'Error uploading file';
-      // A refusal from the door (permission, private container) is a 403, not a failure.
-      return res.status(message.startsWith('Permission denied') ? 403 : 500).json({
+      // A refusal from the door (permission, private container) is a refusal, not a failure.
+      if (message.startsWith('Permission denied')) {
+        return this.refuse(this.createWikiContext(req), req, res, 'json', 'asset-upload');
+      }
+      return res.status(500).json({
         success: false,
         error: message
       });
@@ -6134,10 +6158,11 @@ ${panes}
       const { attachmentId } = req.params;
       const attachmentManager = this.engine.getManager('AttachmentManager');
 
-      // 🔒 SECURITY: Check authentication
+      // #1539: AttachmentManager.deleteAttachment is the door — asset-delete,
+      // asked with the vault for a file in the requester's own vault (the
+      // profile page's unused vault files), site-wide otherwise.
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!(await this.permitted(wikiContext, 'asset-delete', req, res, 'json'))) return;
 
       // #1183: the filename/size pre-read moved into AttachmentManager, so
       // every caller's record names what was lost, not only this route's.
@@ -6191,6 +6216,9 @@ ${panes}
       });
     } catch (err: unknown) {
       logger.error('Error deleting attachment:', err);
+      if ((getErrorMessage(err) || '').startsWith('Permission denied')) {
+        return this.refuse(this.createWikiContext(req), req, res, 'json', 'asset-delete');
+      }
       return res.status(500).json({
         success: false,
         error: getErrorMessage(err) || 'Error deleting attachment'

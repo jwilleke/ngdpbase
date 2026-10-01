@@ -18,7 +18,16 @@
  * encrypted slices.
  */
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
+import { toPermissionSubject } from '../context/JobContext.js';
 import { shareNamesVault } from '../types/Share.js';
+
+/** The PDP surface a vault decision needs. */
+export interface VaultDecider {
+  decide(
+    subject: unknown,
+    request: { action: string; resource: { type: string; id: string }; attributes: Record<string, unknown> }
+  ): Promise<{ permit: boolean }>;
+}
 
 export function mayActInPrivateContainer(
   ctx: ActorContext,
@@ -36,4 +45,24 @@ export function mayActInPrivateContainer(
   // A job carries who asked for it.
   if (!isJobContext(ctx) && ctx.isAuthenticated !== true) return false;
   return ctx.username === owner;
+}
+
+/**
+ * May `ctx` do `action` inside `owner`'s vault `vault` (#1539)? The container
+ * rule first — the owner, or a share link of theirs for this vault; never a
+ * role — then the capability asked with the vault, so a policy on the `vault`
+ * resource type (`vault-owner`) decides. `resource` names what is acted on (a
+ * vault page's name, or a file in the vault); it never matches `page: *`, so a
+ * site-wide role does not reach in. The one rule for vault pages
+ * (`BaseContext.hasPermissionOn`) and vault files (`AttachmentManager`).
+ */
+export async function permitsInVault(
+  pdp: VaultDecider | null | undefined,
+  ctx: ActorContext,
+  action: string,
+  where: { owner: string; vault: string; resource: string }
+): Promise<boolean> {
+  if (!pdp || !mayActInPrivateContainer(ctx, where.owner, { vault: where.vault })) return false;
+  const subject = isJobContext(ctx) ? toPermissionSubject(ctx) : ctx;
+  return (await pdp.decide(subject, { action, resource: { type: 'page', id: where.resource }, attributes: { vault: where.vault } })).permit;
 }

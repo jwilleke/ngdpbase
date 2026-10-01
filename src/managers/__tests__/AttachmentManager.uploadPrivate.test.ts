@@ -54,7 +54,7 @@ function makeManager(opts: {
     getManager: (name: string) => {
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint') {
-        return { permits: () => Promise.resolve(opts.allow !== false) };
+        return { permits: () => Promise.resolve(opts.allow !== false), decide: () => Promise.resolve({ permit: opts.allow !== false }) };
       }
       if (name === 'AuditManager') {
         return { logAuditEvent: vi.fn().mockResolvedValue('id'), flushAuditQueue: () => Promise.resolve() };

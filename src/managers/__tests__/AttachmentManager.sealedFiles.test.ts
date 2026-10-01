@@ -63,7 +63,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
     audit = vi.fn().mockResolvedValue('evt');
     const managers: Record<string, unknown> = {
       ConfigurationManager: configManager,
-      PolicyDecisionPoint: { permits: () => Promise.resolve(true) },
+      PolicyDecisionPoint: { permits: () => Promise.resolve(true), decide: () => Promise.resolve({ permit: true }) },
       AuditManager: { logAuditEvent: audit, flushAuditQueue: () => Promise.resolve() },
       // The container rule itself — owner or delegate, never a role.
       PolicyInformationPoint: {
