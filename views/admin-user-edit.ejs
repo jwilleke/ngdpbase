@@ -82,12 +82,17 @@
                   <input class="form-check-input role-checkbox" type="checkbox"
                          value="<%= role.name %>"
                          id="editRole_<%= role.name %>"
+                         data-role="<%= role.name %>" data-role-label="<%= role.displayname || role.name %>"
                          <%= (editUser.roles || []).includes(role.name) ? 'checked' : '' %>>
                   <label class="form-check-label" for="editRole_<%= role.name %>">
                     <%= role.displayname %> <small class="text-muted">— <%= role.description %></small>
                   </label>
+                  <%- include('_role-grants', { role: role.name, roleGrants: roleGrants }) %>
                 </div>
               <% }); %>
+              <%# #1521: say when one ticked role already includes another. %>
+              <div id="roleCoverNote" class="form-text text-info d-none"></div>
+              <script type="application/json" id="roleGrantsData"><%- jsonForScript(roleGrants) %></script>
             </div>
 
             <div class="mb-3">
@@ -260,4 +265,5 @@
 })();
 </script>
 
+<script src="/js/role-grants.js"></script>
 <%- include('footer') %>

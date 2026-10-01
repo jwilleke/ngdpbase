@@ -1,0 +1,15 @@
+<%# #1521: what a role is granted, read from the access policies. Display only:
+    whether a request is allowed is still the evaluator's decision.
+    Expects `role` (its name) and `roleGrants` (from utils/roleGrants). %>
+<% const g = (typeof roleGrants !== 'undefined' && roleGrants) ? roleGrants[role] : null; %>
+<% if (g && (g.allows.length || g.denies.length)) { %>
+  <details class="small text-muted ms-1">
+    <summary>Grants <%= g.allows.length %> permission<%= g.allows.length === 1 ? '' : 's' %><%= g.denies.length ? ', denies ' + g.denies.length : '' %></summary>
+    <div>
+      <%= g.allows.map(function(a) { return a.action + (a.limited ? ' (some pages only)' : ''); }).join(', ') %>
+      <% if (g.denies.length) { %><br>Denied: <%= g.denies.join(', ') %><% } %>
+    </div>
+  </details>
+<% } else { %>
+  <span class="small text-muted ms-1">No policy grants this role anything.</span>
+<% } %>
