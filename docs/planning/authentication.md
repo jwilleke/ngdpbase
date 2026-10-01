@@ -75,6 +75,34 @@ Points where the issues disagree with a later decision, or where nothing is deci
 
 ---
 
+## Standards
+
+Pages on jimstest that define the terms and standards this plan relies on.
+
+- [Identity Assurance Level](https://jminim4.nerdsbythehour.com:3000/view/Identity%20Assurance%20Level) — how sure we are a person is who they claim at enrolment (NIST SP 800-63A IAL1–3); what sign-up and account recovery are held to
+- [Level Of Assurance](https://jminim4.nerdsbythehour.com:3000/view/Level%20Of%20Assurance) — the umbrella term the three NIST levels sit under
+- [NIST.SP.800-63](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63) — Digital Identity Guidelines — the standard the factor model is measured against
+- [NIST.SP.800-63A](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63A) — enrolment and identity proofing (IAL)
+- [NIST.SP.800-63B](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63B) — authentication and authenticators (AAL): why email is not an out-of-band authenticator and SMS is restricted ([#1527](https://github.com/jwilleke/ngdpbase/issues/1527), [#1528](https://github.com/jwilleke/ngdpbase/issues/1528))
+- [NIST.SP.800-63C](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63C) — federation (FAL): signing in through Google, Cloudflare Access or Authentik, and an identity provider that already did MFA ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523))
+- [Multi-Factor Authentication](https://jminim4.nerdsbythehour.com:3000/view/Multi-Factor%20Authentication) — the target of the epic
+- [Passkeys](https://jminim4.nerdsbythehour.com:3000/view/Passkeys) — the factor that is complete on its own ([#448](https://github.com/jwilleke/ngdpbase/issues/448))
+- [WebAuthN](https://jminim4.nerdsbythehour.com:3000/view/WebAuthN) — the browser API passkeys use ([#448](https://github.com/jwilleke/ngdpbase/issues/448))
+- [FIDO2](https://jminim4.nerdsbythehour.com:3000/view/FIDO2) — WebAuthn plus CTAP, the passkey standard
+- [RFC 6238](https://jminim4.nerdsbythehour.com:3000/view/RFC%206238) — TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421))
+- [RFC 8628](https://jminim4.nerdsbythehour.com:3000/view/RFC%208628) — OAuth 2.0 device authorization grant ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526))
+- [RFC 6750](https://jminim4.nerdsbythehour.com:3000/view/RFC%206750) — bearer tokens in the Authorization header, the shape of agent tokens and UserInfo ([#1529](https://github.com/jwilleke/ngdpbase/issues/1529))
+- [OAuth 2.0](https://jminim4.nerdsbythehour.com:3000/view/OAuth%202.0) — the framework RFC 8628 and RFC 6750 belong to
+- [OpenID Connect](https://jminim4.nerdsbythehour.com:3000/view/OpenID%20Connect) — UserInfo ([#1529](https://github.com/jwilleke/ngdpbase/issues/1529)) and the Google sign-in provider
+- [JSON Web Token](https://jminim4.nerdsbythehour.com:3000/view/JSON%20Web%20Token) — the Cloudflare Access and Authentik bearer credentials
+- [Identity Proofing](https://jminim4.nerdsbythehour.com:3000/view/Identity%20Proofing) — what IAL measures; relevant to self-registration and recovery
+- [Credential Service Provider](https://jminim4.nerdsbythehour.com:3000/view/Credential%20Service%20Provider) — the role ngdpbase plays when it issues and checks credentials
+- [Mnemonic](https://jminim4.nerdsbythehour.com:3000/view/Mnemonic) — the BIP39 recovery words, proposed as a factor ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523))
+- [Phishing](https://jminim4.nerdsbythehour.com:3000/view/Phishing) — what passkeys and step-up approval are chosen to resist ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525), [#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
+- [HIPAA Security Rule](https://jminim4.nerdsbythehour.com:3000/view/HIPAA%20Security%20Rule) — the downstream requirement YourPHR brings to this epic
+
+---
+
 ## Related
 
 - [AuthManager.md](../managers/AuthManager.md) — the manager and its providers today
