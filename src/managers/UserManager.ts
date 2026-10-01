@@ -182,17 +182,6 @@ interface UserUpdateInput {
 }
 
 /**
- * External user data from OAuth/JWT
- */
-interface ExternalUserData {
-  username: string;
-  email: string;
-  displayName?: string;
-  roles?: string[];
-  provider: string;
-}
-
-/**
  * UserManager - Handles user authentication, authorization, and roles
  *
  * Similar to JSPWiki's UserManager with role-based permissions. This manager
@@ -566,67 +555,6 @@ class UserManager extends BaseManager {
     // `admin-read`, which is exactly what the read-only demo role grants
     // (#1029). The operator already knows the password: they set it.
     logger.info('👤 Created bootstrap admin user (username: admin)');
-  }
-
-  /**
-   * Create or update external user from OAuth/JWT token
-   * @param {ExternalUserData} externalUserData - User data from external provider
-   * @returns {Omit<User, 'password'>} User object
-   */
-  async createOrUpdateExternalUser(externalUserData: ExternalUserData): Promise<Omit<User, 'password'>> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
-
-    const { username, email, displayName, roles = ['reader'], provider } = externalUserData;
-
-    let user = await this.provider.getUser(username);
-    const existedBefore = !!user;
-    const oldRoles = existedBefore ? await this.roleManager().resolveUserRoles(username) : [];
-
-    if (!user) {
-      // Create new external user
-      user = {
-        username,
-        email,
-        displayName: displayName || username,
-        password: '', // No password for external users
-        isActive: true,
-        isSystem: false,
-        isExternal: true,
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        loginCount: 1,
-        preferences: {}
-      };
-
-      await this.provider.createUser(user);
-      logger.info(`👤 Created external user: ${username} (${provider})`);
-    } else {
-      // Update existing external user
-      user.email = email;
-      user.displayName = displayName || user.displayName;
-      user.lastLogin = new Date().toISOString();
-      user.loginCount = (user.loginCount || 0) + 1;
-
-      await this.provider.updateUser(username, user);
-      logger.info(`👤 Updated external user: ${username} (${provider})`);
-    }
-
-    // #617 iteration 3b: external users now go through Person + Role sync,
-    // closing the gap left in iterations 1+2. Person record is created on
-    // first sight; role memberships diffed against the current state in
-    // RoleManager (= [] for new users).
-    if (!existedBefore) {
-      await this.syncPersonOnCreate(user);
-    } else {
-      await this.syncPersonOnUpdate(username, { displayName: user.displayName, email: user.email });
-    }
-    await this.roleManager().applyRoleDiff(username, oldRoles, roles);
-
-    // Return user without password
-    const { password: _pwd, ...userWithoutPassword } = user;
-    return userWithoutPassword;
   }
 
   /**

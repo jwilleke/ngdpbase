@@ -584,17 +584,20 @@ For a UI listing of what a user's roles give them, the PDP's `getUserPermissions
 
 ### 4. Handle External Users
 
-✅ __Create OAuth users properly:__
+✅ __Create external users through `createUser`, like every account:__
 
 ```javascript
-const user = await userManager.createOrUpdateExternalUser({
+const user = await userManager.createUser({
   username: 'john.google',
   email: 'john@gmail.com',
   displayName: 'John Doe',
+  password: '',
   roles: ['reader'],
-  provider: 'google'
-});
+  isExternal: true
+}, ctx);
 ```
+
+`createUser` is the one door for accounts: it records the actor, writes the account-created audit event, and refuses reserved names ([#1538](https://github.com/jwilleke/ngdpbase/issues/1538)).
 
 ---
 

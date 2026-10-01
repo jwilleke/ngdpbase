@@ -104,7 +104,6 @@ __Key API:__
 |---|---|
 | `authenticateUser(username, password)` | Verify credentials → `User \| null` |
 | `createUser(data)` | Create user; syncs Schema.org Person |
-| `createOrUpdateExternalUser(data)` | OAuth / magic-link upsert |
 | `getUser(username)` | Fetch without password |
 | `searchUsers(query, options?)` | Filtered user list |
 | `createSession(username, data)` | Return session ID |

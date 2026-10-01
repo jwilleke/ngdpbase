@@ -254,30 +254,6 @@ Create default admin user
 
 ***
 
-### createOrUpdateExternalUser()
-
-> __createOrUpdateExternalUser__(`externalUserData`): `Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
-
-Defined in: [src/managers/UserManager.ts:468](https://github.com/jwilleke/ngdpbase/blob/b6a859c7c9297966de89735ea5e8f953df289ac1/src/managers/UserManager.ts#L468)
-
-Create or update external user from OAuth/JWT token
-
-#### Parameters
-
-##### externalUserData
-
-`ExternalUserData`
-
-User data from external provider
-
-#### Returns
-
-`Promise`\<`Omit`\<[`User`](../../../types/User/interfaces/User.md), `"password"`\>\>
-
-User object
-
-***
-
 ### createRole()
 
 > __createRole__(`roleData`): `never`
