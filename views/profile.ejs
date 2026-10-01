@@ -184,6 +184,42 @@
                     </div>
                     <% } %>
 
+                    <!-- #1517: files in your own vaults that no page there uses -->
+                    <% if (typeof unusedVaultFiles !== 'undefined' && unusedVaultFiles.length > 0) { %>
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-box-open"></i> Unused files in your vaults</h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="small text-muted">Files in your vaults that no page in that vault uses — for example a copy left behind when a page moved to another vault. Only you see this.</p>
+                                    <% unusedVaultFiles.forEach(function(v) { %>
+                                        <h6 class="mt-3"><i class="fas fa-lock"></i> <%= v.vault %></h6>
+                                        <% if (v.locked) { %>
+                                            <p class="small text-muted mb-0">This vault is locked. Sign in with your password to see its files.</p>
+                                        <% } else { %>
+                                            <ul class="list-group list-group-flush">
+                                                <% v.files.forEach(function(f) { %>
+                                                    <li class="list-group-item d-flex align-items-center justify-content-between" data-unused-file="<%= f.id %>">
+                                                        <span>
+                                                            <a href="/attachments/<%= encodeURIComponent(f.id) %>" target="_blank" rel="noopener"><%= f.name %></a>
+                                                            <small class="text-muted ms-2"><%= (f.contentSize / 1024).toFixed(0) %> KB · added <%= new Date(f.dateCreated).toLocaleDateString() %></small>
+                                                        </span>
+                                                        <% if (typeof can === 'function' && can('asset-delete')) { %>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-unused="<%= f.id %>" data-name="<%= f.name %>"><i class="fas fa-trash"></i> Delete</button>
+                                                        <% } %>
+                                                    </li>
+                                                <% }); %>
+                                            </ul>
+                                        <% } %>
+                                    <% }); %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #946: Agent API Tokens — delegate your own permissions to an agent -->
                     <% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
                     <div class="row mb-4">
@@ -919,5 +955,26 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 </script>
 <% } %>
+
+<%# #1517: delete an unused vault file, through the attachment door. %>
+<script>
+(function () {
+  document.querySelectorAll('[data-delete-unused]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      const id = button.getAttribute('data-delete-unused');
+      if (!window.confirm('Delete "' + button.getAttribute('data-name') + '" for good? No page in its vault uses it.')) return;
+      button.disabled = true;
+      const response = await window.csrfFetch('/attachments/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'same-origin' });
+      if (response.ok) {
+        const row = document.querySelector('[data-unused-file="' + CSS.escape(id) + '"]');
+        if (row) row.remove();
+      } else {
+        button.disabled = false;
+        window.alert('The file could not be deleted.');
+      }
+    });
+  });
+})();
+</script>
 
 <%- include('footer') %>
