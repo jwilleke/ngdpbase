@@ -59,6 +59,8 @@ import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
+import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
+import type { Policy } from '../types/Policy.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
@@ -10655,6 +10657,12 @@ ${panes}
   /**
    * Admin users management
    */
+  /** What each role's policies grant on this site (#1521), for the user forms. Display only. */
+  private currentRoleGrants(): Record<string, RoleGrants> {
+    const pdp = this.engine.getManager('PolicyDecisionPoint') as { policies?: () => Policy[] } | null;
+    return roleGrants(pdp?.policies?.() ?? []);
+  }
+
   async adminUsers(req: Request, res: Response) {
     try {
       const userManager = this.engine.getManager('UserManager');
@@ -10705,6 +10713,8 @@ ${panes}
         users: users,
         statFiltersHtml,
         roles: roles,
+        // #1521: what each role is granted, from the merged policies.
+        roleGrants: this.currentRoleGrants(),
         successMessage: req.query.success || null,
         errorMessage: req.query.error || null,
         csrfToken: req.session.csrfToken
@@ -10775,6 +10785,8 @@ ${panes}
         title: `Edit User: ${username}`,
         editUser: user,
         roles,
+        // #1521: what each role is granted, from the merged policies.
+        roleGrants: this.currentRoleGrants(),
         extendedFields,
         csrfToken: req.session.csrfToken
       });
@@ -10809,7 +10821,8 @@ ${panes}
         email,
         displayName,
         password,
-        roles: Array.isArray(roles) ? roles : [roles],
+        // #1521: no role is ticked in advance, so none may be sent.
+        roles: roles === undefined ? [] : Array.isArray(roles) ? roles : [roles],
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
       }, currentUser);
 
