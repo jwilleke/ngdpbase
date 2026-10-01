@@ -10821,7 +10821,8 @@ ${panes}
         email,
         displayName,
         password,
-        roles: Array.isArray(roles) ? roles : [roles],
+        // #1521: no role is ticked in advance, so none may be sent.
+        roles: roles === undefined ? [] : Array.isArray(roles) ? roles : [roles],
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
       }, currentUser);
 
