@@ -990,6 +990,50 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The files in the requester's own vaults that no page in that vault uses
+   * (#1517) — for their profile page, so a copy left behind by a vault move,
+   * or a file whose page was deleted, can be seen and removed.
+   *
+   * Only the requester's own vaults, through the container rule. "Used" is a
+   * current page of that vault in the file's mentions, which every save keeps
+   * in step. An encrypted vault this session cannot open is reported as
+   * locked rather than as empty.
+   *
+   * @returns One entry per vault with unused files, or locked
+   */
+  async listOwnUnusedVaultFiles(ctx: ActorContext): Promise<Array<{
+    vault: string;
+    locked: boolean;
+    files: Array<{ id: string; name: string; contentSize: number; dateCreated: string }>;
+  }>> {
+    const owner = ctx?.username;
+    if (!this.attachmentProvider || !owner || !mayActInPrivateContainer(ctx, owner)) return [];
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const pagesDirectory = configManager?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+    if (!configManager || !pagesDirectory) return [];
+    const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+    const pageManager = this.engine.getManager<{ listVaultPages(c: ActorContext, o: string, v: string): Promise<Array<{ name: string }>> }>('PageManager');
+
+    const out: Array<{ vault: string; locked: boolean; files: Array<{ id: string; name: string; contentSize: number; dateCreated: string }> }> = [];
+    for (const vault of await privateStoreIdsOf(pagesDirectory, owner, layout)) {
+      let io: StoreFileLocation['io'];
+      try {
+        io = await storeFileIO(ctx, { pagesDirectory, owner, store: vault, layout });
+      } catch {
+        out.push({ vault, locked: true, files: [] });
+        continue;
+      }
+      const pages = new Set((pageManager ? await pageManager.listVaultPages(ctx, owner, vault) : []).map((p) => p.name));
+      const unused = (await this.attachmentProvider.listFilesInStore({ owner, store: vault, io }))
+        .filter((f) => !f.mentions.some((m) => pages.has(m)))
+        .map((f) => ({ id: f.id, name: f.name, contentSize: f.contentSize, dateCreated: f.dateCreated }))
+        .sort((a, b) => b.contentSize - a.contentSize);
+      if (unused.length > 0) out.push({ vault, locked: false, files: unused });
+    }
+    return out;
+  }
+
+  /**
    * Is `attachmentId` a file in one of the requester's own private stores?
    * An index read, no bytes — for a caller that has to treat a private file
    * differently without reading it twice (#1460).

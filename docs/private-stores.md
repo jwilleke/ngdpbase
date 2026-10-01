@@ -353,6 +353,8 @@ Reading back, `AttachmentManager.ownPrivateStores()` applies the container rule 
 
 ---
 
+__Unused files__ ([#1517](https://github.com/jwilleke/ngdpbase/issues/1517)). The profile page lists, per vault, the files no current page of that vault uses (`AttachmentManager.listOwnUnusedVaultFiles`: the file's mentions name no page the vault holds), such as a copy left behind when a page moved to another vault. Only the owner's own vaults are read; an encrypted vault this session cannot open is shown as locked. Deleting one goes through the attachment door (`DELETE /attachments/:id`), so it needs `asset-delete`, which the shipped policies give to editors and above.
+
 ## Takeout and backup
 
 Two ways out, which differ in kind ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387)):

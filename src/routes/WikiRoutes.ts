@@ -7842,9 +7842,16 @@ ${panes}
           ?.getProperty('ngdpbase.auth.agent-token.enabled', false)
       );
 
+      // #1517: files in the user's own vaults that no page there uses. Best-effort:
+      // a failure leaves the section out rather than the profile.
+      const unusedVaultFiles = currentUser?.username
+        ? await this.engine.getManager('AttachmentManager')?.listOwnUnusedVaultFiles?.(currentUser).catch(() => []) ?? []
+        : [];
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
         user: freshUser || currentUser, // Use fresh user data if available
