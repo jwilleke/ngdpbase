@@ -91,7 +91,13 @@ const mockPolicyDecisionPoint = {
     if (action === 'page-read' || action === 'asset-read') return true;
     if (action === 'page-delete') return roles.includes('admin');
     return roles.includes('admin') || roles.includes('editor');
-  })
+  }),
+  // #1539: asked with a vault — the shipped vault-owner policy grants these there.
+  decide: vi.fn(async (subject: { roles?: string[] }, { action, attributes }: { action: string; attributes?: { vault?: string } }) => ({
+    permit: attributes?.vault !== undefined
+      && (subject.roles ?? []).includes('vault-owner')
+      && ['page-read', 'asset-read', 'share-manage'].includes(action)
+  }))
 };
 
 const mockEngine = {
@@ -544,9 +550,15 @@ describe('ShareManager', () => {
 
   // #1388: links to a vault's content.
   describe('vault links (#1388)', () => {
-    const JIM = ISSUER('jim', ['reader']);
+    const JIM = ISSUER('jim', ['reader', 'vault-owner']);
     const vault = (pages: string[] | null = null): VaultShareScope => ({ kind: 'vault', owner: 'jim', vault: 'journal', pages });
     const HOUR = 60 * 60 * 1000;
+
+    test('the owner needs share-manage in the vault — vault-owner — to issue or extend one (#1539)', async () => {
+      await expect(sm.issueVaultShare(vault(), 24, ISSUER('jim', ['editor']))).rejects.toThrow(/share-manage/);
+      const record = await sm.issueVaultShare(vault(), 24, JIM);
+      await expect(sm.extend(record.id, 1, ISSUER('jim', ['editor']))).rejects.toThrow(/share-manage/);
+    });
 
     test('only the vault\'s owner can issue one, whatever the role', async () => {
       await expect(sm.issueVaultShare(vault(), 24, ISSUER('admin', ['admin']))).rejects.toThrow(/only a vault's owner/);
@@ -653,7 +665,7 @@ describe('ShareManager', () => {
 
   // #1388: links to an ENCRYPTED vault — locked copies the server cannot open.
   describe('links to an encrypted vault (#1388)', () => {
-    const JIM = ISSUER('jim', ['reader']);
+    const JIM = ISSUER('jim', ['reader', 'vault-owner']);
     const scope = (pages: string[] | null = null): VaultShareScope => ({ kind: 'vault', owner: 'jim', vault: 'sealed', pages });
     const OWNER_CTX = { username: 'jim', isAuthenticated: true, roles: ['reader'] } as never;
     const open = async (linkKey: string, box: unknown) =>

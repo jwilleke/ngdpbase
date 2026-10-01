@@ -48,7 +48,8 @@ import { keywordsCollide } from '../utils/keywordNormalizer.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import type ValidationManager from './ValidationManager.js';
 import { DEFAULT_SHARE_MAX_DAYS } from './ValidationManager.js';
-import { isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { formatPrivatePageName, isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { isLockbox, sealForLink, type LinkPublicKey, type Lockbox } from '../utils/shareLockbox.js';
@@ -187,6 +188,10 @@ export default class ShareManager extends BaseManager {
       throw new Error('ShareManager: only a vault\'s owner can share it');
     }
     if (!isValidStoreId(scope.vault)) throw new Error(`ShareManager: '${scope.vault}' is not a vault id`);
+    // #1539: sharing is share-manage, asked in the vault — vault-owner's grant.
+    if (!(await this.permitsInScope(issuer, 'share-manage', scope))) {
+      throw new Error(`ShareManager: ${issuer.username} does not hold 'share-manage' in this vault`);
+    }
     if (scope.pages !== null && scope.pages.length === 0) throw new Error('ShareManager: a link to chosen pages needs at least one page');
     const maxHours = this.maxShareDays(scope.vault) * 24;
     if (!Number.isFinite(lifetimeHours) || lifetimeHours <= 0 || lifetimeHours > maxHours) {
@@ -246,6 +251,10 @@ export default class ShareManager extends BaseManager {
       throw new Error(`ShareManager: a link is extended by at most ${SHARE_EXTEND_MAX_HOURS} hours at a time`);
     }
     if (!this.liveRecord(record.token) || record.expiresAt === null) return null;
+    // #1539: a longer life is more access — asked as issuing it was.
+    if (record.scope.kind === 'vault' && !(await this.permitsInScope(by, 'share-manage', record.scope))) {
+      throw new Error(`ShareManager: ${by.username} does not hold 'share-manage' in this vault`);
+    }
     const expiresAt = new Date(Date.parse(record.expiresAt) + hours * HOUR_MS).toISOString();
     // Recorded before the link changes, like create and revoke: a lifetime
     // change to a credential that cannot be written to the audit trail is refused.
@@ -254,6 +263,12 @@ export default class ShareManager extends BaseManager {
     this.persist(record);
     logger.info(`[ShareManager] Share ${id} extended by ${by.username} by ${hours}h, to ${expiresAt}`);
     return expiresAt;
+  }
+
+  /** Does `who` hold `action` inside the vault a vault link names (#1539)? The container rule, then vault-owner. */
+  private permitsInScope(who: PermissionSubject, action: string, scope: VaultShareScope): Promise<boolean> {
+    return permitsInVault(this.engine.getManager<VaultDecider>('PolicyDecisionPoint'), who, action,
+      { owner: scope.owner, vault: scope.vault, resource: formatPrivatePageName(scope.owner, scope.vault, 'share') });
   }
 
   /** The one place a share record is made: the issuer's delegation checked, audited, then stored. */
@@ -271,7 +286,8 @@ export default class ShareManager extends BaseManager {
     const pdp = this.engine.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
     if (!pdp) throw new Error('ShareManager: cannot verify the issuer without the PolicyDecisionPoint');
     for (const action of actions) {
-      if (!(await pdp.permits(issuer, action))) {
+      // #1539: a vault link delegates what the issuer holds IN that vault.
+      if (!(scope.kind === 'vault' ? await this.permitsInScope(issuer, action, scope) : await pdp.permits(issuer, action))) {
         throw new Error(`ShareManager: ${issuer.username} does not hold '${action}' and cannot delegate it`);
       }
     }
