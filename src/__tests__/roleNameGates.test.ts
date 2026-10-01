@@ -9,10 +9,19 @@
  * the hook. Sabotage: put `WikiContext.userHasRole(userContext, 'admin')`
  * back in a plugin and this goes red.
  */
-import { run } from '../../scripts/check-permission-gates';
+import { run, checkSource } from '../../scripts/check-permission-gates';
 
 describe('#1198 no role-name gate and no isAuthenticated allow outside the justified list', () => {
   test('the permission-gates guard reports nothing', () => {
     expect(run().map((v) => `${v.file}:${v.line} [${v.rule}] ${v.detail}`)).toEqual([]);
+  });
+
+  // #1539: `(ctx.roles ?? []).includes('admin')` decided journal access in an
+  // add-on while this guard was green — the parenthesised fallback hid it.
+  test.each([
+    "const isAdmin = (ctx.roles ?? []).includes('admin');",
+    'if ((user.roles || []).includes("editor")) {'
+  ])('a role name read through a fallback array is caught: %s', (line) => {
+    expect(checkSource('addons/demo/routes/x.ts', `function handler() {\n  ${line}\n}\n`).map((v) => v.rule)).toContain('role-name-gate');
   });
 });

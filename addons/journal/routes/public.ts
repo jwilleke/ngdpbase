@@ -19,7 +19,7 @@ import type RenderingManager from '../../../dist/src/managers/RenderingManager.j
 import type AttachmentManager from '../../../dist/src/managers/AttachmentManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
-import { getLeftMenu } from './helpers.js';
+import { getLeftMenu, mayOnEntry } from './helpers.js';
 
 export default function publicRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
   const router = Router();
@@ -181,10 +181,9 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           return;
         }
 
-        // Ownership check — only author or admin may view
-        const isOwner = entry.author === ctx.username;
-        const isAdmin = (ctx.roles ?? []).includes('admin');
-        if (!isOwner && !isAdmin) {
+        // #1539: the page door — the owner for a private entry, the page's
+        // own rules for a public one — not an author-or-admin-role check (P2).
+        if (!(await mayOnEntry(engine, req.userContext, entry.name, 'view'))) {
           res.status(403).send('Access denied.');
           return;
         }
@@ -218,7 +217,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           renderedContent,
           attachments,
           sidebar,
-          canEdit:         isOwner || isAdmin,
+          canEdit:         await mayOnEntry(engine, req.userContext, entry.name, 'edit'),   // #1539: the page door
           csrfToken:       req.session?.csrfToken,
           leftMenu
         });

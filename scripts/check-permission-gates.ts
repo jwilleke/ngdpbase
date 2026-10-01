@@ -64,7 +64,10 @@ const AUTH_FLAG_ALLOWED: Record<string, string> = {
 // PageManager and `userRoles.includes('admin')` in ACLManager shipped while
 // this guard was green, because `\.hasRole\(` misses `?.(` and
 // `\broles\??\.includes` misses `userRoles`/`selectedRoles`.
-const ROLE_GATE = /\buserHasRole\(|\.hasRole\??\.?\(|\brequireRole\(|\b\w*[Rr]oles\??\.includes\(\s*['"]/;
+// #1539: and `(ctx.roles ?? []).includes('admin')` — the parenthesised
+// fallback array put `)` between `roles` and `.includes`, and three journal
+// add-on gates shipped past the guard that way.
+const ROLE_GATE = /\buserHasRole\(|\.hasRole\??\.?\(|\brequireRole\(|\b\w*[Rr]oles\??\.includes\(\s*['"]|\b\w*[Rr]oles\s*(?:\?\?|\|\|)\s*\[\]\s*\)\??\.includes\(\s*['"]/;
 const AUTH_FLAG = /isAuthenticated/;
 const AUTH_DECISION = /if \(|\? |const anonymous =/;
 

@@ -26,7 +26,7 @@ import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
-import { getLeftMenu, findJournalEntryName, createJournalEntry, journalPrivacy } from './helpers.js';
+import { getLeftMenu, findJournalEntryName, createJournalEntry, journalPrivacy, mayOnEntry } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -151,7 +151,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
         // If there is an entry for the date already, go straight to its editor.
         const name = await findJournalEntryName(engine, date, username, req.userContext)
-          ?? await createJournalEntry(engine, config, req.userContext, date);
+          ?? await createJournalEntry(engine, config, req.userContext, date, ctx);
         res.redirect(pageUrl(name, 'edit'));
       } catch (err) {
         handleError(err, res);
@@ -178,10 +178,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const entry = await jdm()?.getBySlug(slug, req.userContext);
         if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
-        const author = entry.author;
-        const isOwner = author === ctx.username;
-        const isAdmin = (ctx.roles ?? []).includes('admin');
-        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
+        // #1539: the page door, not the author-or-admin-role check (P2).
+        if (!(await mayOnEntry(engine, req.userContext, entry.name, 'edit'))) { res.status(403).send('Access denied.'); return; }
 
         res.redirect(pageUrl(entry.name, 'edit'));
       } catch (err) {
@@ -206,11 +204,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const entry = await jdm()?.getBySlug(slug, req.userContext);
         if (!entry) { res.status(404).send('Journal entry not found.'); return; }
 
-        const author = entry.author;
         const uuid   = entry.uuid;
-        const isOwner = author === ctx.username;
-        const isAdmin = (ctx.roles ?? []).includes('admin');
-        if (!isOwner && !isAdmin) { res.status(403).send('Access denied.'); return; }
+        // #1539: the page door, not the author-or-admin-role check (P2).
+        if (!(await mayOnEntry(engine, req.userContext, entry.name, 'delete'))) { res.status(403).send('Access denied.'); return; }
 
         // #1462 slice 3: one delete door — the entry's page name and the
         // requester's own subject, with no WikiContext built to carry them.

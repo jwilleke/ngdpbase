@@ -49,7 +49,8 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
     void (async () => {
       try {
         const ctx = ApiContext.from(req, engine);
-        await ctx.requirePermission('journal-read'); // #1430: policy, not a signed-in check
+        // #1539: this can CREATE an entry, so it is journal-write, not journal-read.
+        await ctx.requirePermission('journal-write');
         ctx.actingUsername();
 
         const username = ctx.username!;
@@ -57,7 +58,7 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
 
         // The entry for the date if there is one, else a new one — then its editor.
         const name = await findJournalEntryName(engine, date, username, req.userContext)
-          ?? await createJournalEntry(engine, config, req.userContext, date);
+          ?? await createJournalEntry(engine, config, req.userContext, date, ctx);
         res.redirect(pageUrl(name, 'edit'));
       } catch (err) {
         handleError(err, res);

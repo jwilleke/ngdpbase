@@ -131,10 +131,13 @@ describe('findJournalEntryName', () => {
   });
 });
 
+/** #1539: the request's permission door, allowing everything — the decision itself is tested in core. */
+const OPEN_DOOR = { hasPermissionOn: async () => true };
+
 describe('createJournalEntry', () => {
   it('saves a private entry in the journal vault and returns that name (#1505)', async () => {
     const { engine, savePage } = makeEngine();
-    const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
+    const name = await createJournalEntry(engine, {}, jim, '2026-09-10', OPEN_DOOR);
     expect(name).toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
     expect(savePage).toHaveBeenCalledTimes(1);
     const [pageName, content, metadata, ctx] = savePage.mock.calls[0] as unknown as
@@ -155,14 +158,22 @@ describe('createJournalEntry', () => {
     });
   });
 
+  it('asks page-create about the entry\'s own page, and creates nothing when refused (#1539)', async () => {
+    const { engine, savePage } = makeEngine();
+    const door = { hasPermissionOn: vi.fn(async () => false) };
+    await expect(createJournalEntry(engine, {}, jim, '2026-09-10', door)).rejects.toThrow(/permission/);
+    expect(door.hasPermissionOn).toHaveBeenCalledWith('page-create', 'vaults/jim/journal/2026-09-10-1-journal-jim');
+    expect(savePage).not.toHaveBeenCalled();
+  });
+
   it('saves a private entry in the user\'s default vault when the journal system-category declares none', async () => {
     const { engine } = makeEngine({ journalVault: null });
-    expect(await createJournalEntry(engine, {}, jim, '2026-09-10')).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
+    expect(await createJournalEntry(engine, {}, jim, '2026-09-10', OPEN_DOOR)).toBe('vaults/jim/default/2026-09-10-1-journal-jim');
   });
 
   it('saves a public entry under its plain title when the journal system-category starts public', async () => {
     const { engine, savePage } = makeEngine({ journalDefaultPrivate: false });
-    const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
+    const name = await createJournalEntry(engine, {}, jim, '2026-09-10', OPEN_DOOR);
     expect(name).toBe('2026-09-10-1-journal-jim');
     const [pageName, , metadata] = savePage.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
     expect(pageName).toBe('2026-09-10-1-journal-jim');
@@ -172,36 +183,36 @@ describe('createJournalEntry', () => {
 
   it('under choice, the user\'s preference decides (#1504)', async () => {
     const pub = makeEngine({ userPref: false });
-    expect(await createJournalEntry(pub.engine, {}, jim, '2026-09-10')).toBe('2026-09-10-1-journal-jim');
+    expect(await createJournalEntry(pub.engine, {}, jim, '2026-09-10', OPEN_DOOR)).toBe('2026-09-10-1-journal-jim');
 
     const priv = makeEngine({ userPref: true });
-    expect(await createJournalEntry(priv.engine, {}, jim, '2026-09-10'))
+    expect(await createJournalEntry(priv.engine, {}, jim, '2026-09-10', OPEN_DOOR))
       .toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
   });
 
   it('a fixed defaultPrivate ignores the preference (#1504)', async () => {
     const fixed = makeEngine({ journalDefaultPrivate: true, userPref: false });
-    expect(await createJournalEntry(fixed.engine, {}, jim, '2026-09-10'))
+    expect(await createJournalEntry(fixed.engine, {}, jim, '2026-09-10', OPEN_DOOR))
       .toBe('vaults/jim/journal/2026-09-10-1-journal-jim');
   });
 
   it('leaves out the author lock when the deployment turns it off', async () => {
     const { engine, savePage } = makeEngine();
-    await createJournalEntry(engine, { defaultAuthorLock: false }, jim, '2026-09-10');
+    await createJournalEntry(engine, { defaultAuthorLock: false }, jim, '2026-09-10', OPEN_DOOR);
     const metadata = savePage.mock.calls[0][2] as unknown as Record<string, unknown>;
     expect(metadata['author-lock']).toBeUndefined();
   });
 
   it('a just-created private entry is found by direct probe, before it is listed', async () => {
     const { engine, listByAuthor } = makeEngine();
-    const name = await createJournalEntry(engine, {}, jim, '2026-09-10');
+    const name = await createJournalEntry(engine, {}, jim, '2026-09-10', OPEN_DOOR);
     expect(await findJournalEntryName(engine, '2026-09-10', 'jim', jim)).toBe(name);
     expect(listByAuthor).toHaveBeenCalledWith('jim', jim);
   });
 
   it('refuses an entry with no author', async () => {
     const { engine, savePage } = makeEngine();
-    await expect(createJournalEntry(engine, {}, { username: '' } as never, '2026-09-10')).rejects.toThrow(/author/);
+    await expect(createJournalEntry(engine, {}, { username: '' } as never, '2026-09-10', OPEN_DOOR)).rejects.toThrow(/author/);
     expect(savePage).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import { type UserContext } from '../../../dist/src/context/WikiContext.js';
 import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../dist/src/utils/privateStorePath.js';
 import { v4 as uuidv4 } from 'uuid';
+import { ApiError } from '../../../dist/src/context/ApiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 
 /**
@@ -94,6 +95,27 @@ export function journalPrivacy(
   };
 }
 
+/** The request's own permission door — an `ApiContext` (#1539). */
+export interface PageDoor {
+  hasPermissionOn(action: string, pageName: string): Promise<boolean>;
+}
+
+/**
+ * May this request do `action` to a journal entry's page (#1539)? The page
+ * door — for a private entry, its owner through `vault-owner`; for a public
+ * one, the page's own rules and policy. Replaces the author-or-`admin`-role
+ * check, which was a role name deciding access (P2).
+ */
+export async function mayOnEntry(
+  engine: WikiEngine,
+  userContext: UserContext,
+  entryName: string,
+  action: 'view' | 'edit' | 'delete'
+): Promise<boolean> {
+  const pip = engine.getManager<{ canUserAccessPage(subject: unknown, pageName: string, action: string): Promise<boolean> }>('PolicyInformationPoint');
+  return !!pip && await pip.canUserAccessPage(userContext, entryName, action);
+}
+
 /**
  * Create the user's empty entry for a date and return its page name (#540).
  *
@@ -107,7 +129,8 @@ export async function createJournalEntry(
   engine: WikiEngine,
   config: Record<string, unknown>,
   userContext: UserContext,
-  date: string
+  date: string,
+  door: PageDoor
 ): Promise<string> {
   const pm = engine.getManager<PageManager>('PageManager');
   if (!pm) throw new Error('PageManager not available');
@@ -132,6 +155,12 @@ export async function createJournalEntry(
     ...(defaultAuthorLock ? { 'author-lock': true } : {}),
     ...(isPrivate ? { private: true } : {})
   };
+
+  // #1539: creating the entry is creating a page — asked about that page, so
+  // a private entry goes through the vault check (the owner, vault-owner).
+  if (!(await door.hasPermissionOn('page-create', name))) {
+    throw new ApiError(403, 'You do not have permission to create this journal entry');
+  }
 
   // #1328: empty, not ' ' — the author's first keystroke starts the line.
   // #1462 slice 2: straight through the page door, as the entry's author.
