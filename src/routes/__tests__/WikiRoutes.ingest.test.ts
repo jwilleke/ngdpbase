@@ -82,6 +82,8 @@ function makeEngine(pageManager: Record<string, unknown>) {
       case 'SearchManager':        return searchManager;
       case 'CacheManager':         return cacheManager;
       case 'ConfigurationManager': return configManager;
+      // #1542: an existing page is updated through the page door.
+      case 'PolicyInformationPoint': return { evaluatePagePermission: vi.fn(async () => ({ allowed: true, reason: 'policy' })) };
       default:                     return null;
       }
     }),

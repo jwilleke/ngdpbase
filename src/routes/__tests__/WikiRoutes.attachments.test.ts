@@ -501,6 +501,10 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
         if (name === 'PolicyDecisionPoint') {
           return { permits: mockPermits };
         }
+        // #1542: the append asks the page door, as the editor does.
+        if (name === 'PolicyInformationPoint') {
+          return { evaluatePagePermission: vi.fn(async () => ({ allowed: true, reason: 'policy' })) };
+        }
         if (name === 'RenderingManager') {
           return { addPageToCache: vi.fn(), updatePageInLinkGraph: vi.fn() };
         }

@@ -100,7 +100,7 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     // Admin, for the test-artifact route's gate.
     vi.spyOn(routes, 'createWikiContext').mockImplementation((...args: unknown[]) => {
       const opts = (args[1] ?? {}) as Record<string, unknown>;
-      return { ...opts, userContext: (args[0] as any).userContext, hasPermission: vi.fn(async () => true) };
+      return { ...opts, userContext: (args[0] as any).userContext, hasPermission: vi.fn(async () => true), hasPermissionOn: vi.fn(async () => true) };
     });
   });
 
@@ -125,6 +125,17 @@ describe('WikiRoutes JSON page routes leave the shared indexes to the door (#146
     expect(pageManager.deletePage).toHaveBeenCalledTimes(1);
     expect(pageManager.deletePage).toHaveBeenCalledWith('Old Title', expect.objectContaining({ username: expect.any(String) }));
     expectNoRouteIndexWork();
+  });
+
+  it('a vault page addressed by its vault name is deleted by that name, not by its bare title (#1539)', async () => {
+    const vaultName = 'vaults/jim/default/Old Title';
+    pageManager.getPage.mockImplementation(async (name: string) => (name === vaultName || name === 'Old Title' ? page : null));
+    const r = res();
+    await routes.apiDeletePage(req({ identifier: vaultName }), r);
+
+    // The door and the delete name the vault page; a bare 'Old Title' would be
+    // the public page of the same title.
+    expect(pageManager.deletePage).toHaveBeenCalledWith(vaultName, expect.anything());
   });
 
   it('a version restore goes through the door and the route reindexes nothing', async () => {

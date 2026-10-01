@@ -649,6 +649,17 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(res.status).toBe(400);
     });
 
+    test('returns 403 when the page door refuses edit on the footnote’s page (#1542)', async () => {
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
+      mockFootnoteManager.addFootnote.mockClear();
+      const res = await request(app)
+        .post('/api/footnotes/uuid-1')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ display: 'Note 1', url: 'http://example.com' });
+      expect(res.status).toBe(403);
+      expect(mockFootnoteManager.addFootnote).not.toHaveBeenCalled();
+    });
+
     test('returns 200 when footnote added', async () => {
       const res = await request(app)
         .post('/api/footnotes/uuid-1')

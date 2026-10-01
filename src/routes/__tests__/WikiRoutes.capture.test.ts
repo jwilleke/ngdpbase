@@ -79,7 +79,10 @@ describe('WikiRoutes capture (#881)', () => {
           };
         }
         // #1431 step 14: decisions are the PDP's.
-        if (name === 'PolicyDecisionPoint') return { permits: mockPermits };
+        // #1539: a capture into the capturer's vault is asked with the vault (decide).
+        if (name === 'PolicyDecisionPoint') return { permits: mockPermits, decide: vi.fn(async (subject, { action }) => ({ permit: await mockPermits(subject, action), applicable: true, reason: 'test' })) };
+        // #1542: an existing page is appended to through the page door.
+        if (name === 'PolicyInformationPoint') return { evaluatePagePermission: vi.fn(async () => ({ allowed: true, reason: 'policy' })) };
         if (name === 'RenderingManager') return { addPageToCache: mockAddPageToCache, updatePageInLinkGraph: mockUpdatePageInLinkGraph };
         if (name === 'SearchManager') return { updatePageInIndex: mockUpdatePageInIndex };
         if (name === 'CacheManager') return { isInitialized: () => false };
@@ -297,6 +300,15 @@ describe('WikiRoutes capture (#881)', () => {
       expect(savedContent).toContain('Old capture');
       expect(savedContent.indexOf('Old capture')).toBeLessThan(savedContent.indexOf('line one'));
       expect(mockPermits).toHaveBeenCalledWith(expect.anything(), 'page-edit');
+    });
+
+    test('a capture into another person’s vault page is refused, not appended (#1539)', async () => {
+      mockGetPage.mockResolvedValue({ name: 'vaults/molly/default/Diary', content: '# Molly', metadata: { title: 'Diary', uuid: 'm1', author: 'molly', private: true } });
+      const req = createMockReq(authedUser, {}, { ...body, pageName: 'vaults/molly/default/Diary' });
+      const res = createMockRes();
+      await wikiRoutes.captureSubmit(req, res);
+      expect(mockSaveWithContext).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
     });
 
     test('sanitizes pipes and brackets out of the link label', async () => {

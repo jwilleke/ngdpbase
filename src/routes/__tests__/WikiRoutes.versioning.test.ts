@@ -28,7 +28,8 @@ describe('WikiRoutes - Version Management API', () => {
     mockPageManager = {
       provider: mockProvider,
       pageExists: vi.fn(),
-      getPage: vi.fn(),
+      // #1542: a restore opens the current page and asks the page door.
+      getPage: vi.fn(async () => ({ content: '# Test', metadata: { title: 'TestPage', uuid: 'u1' } })),
       restoreVersion: vi.fn()
     };
 
@@ -39,6 +40,8 @@ describe('WikiRoutes - Version Management API', () => {
         // #1198: restoring asks page-edit of policy; the test user holds it.
         // #1431 step 14: decisions are the PDP's.
         if (name === 'PolicyDecisionPoint') return { permits: vi.fn(policyShaped) };
+        // #1542: the page door — the page's own rules, then policy.
+        if (name === 'PolicyInformationPoint') return { evaluatePagePermission: vi.fn(async () => ({ allowed: true, reason: 'policy' })) };
         if (name === 'ConfigurationManager') {
           return {
             getProperty: vi.fn((key, defaultValue) => defaultValue)
@@ -313,6 +316,19 @@ describe('WikiRoutes - Version Management API', () => {
   // ============================================================================
 
   describe('POST /api/page/:identifier/restore/:version', () => {
+    it('is refused when the page door refuses edit, even to a holder of page-edit (#1542)', async () => {
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'PageManager') return mockPageManager;
+        if (name === 'PolicyDecisionPoint') return { permits: vi.fn(async () => true) };
+        if (name === 'PolicyInformationPoint') return { evaluatePagePermission: vi.fn(async () => ({ allowed: false, reason: 'frontmatter_deny' })) };
+        if (name === 'ConfigurationManager') return { getProperty: vi.fn((_k: string, d: unknown) => d) };
+        return null;
+      });
+      const response = await request(app).post('/api/page/TestPage/restore/2');
+      expect(response.status).toBe(403);
+      expect(mockPageManager.restoreVersion).not.toHaveBeenCalled();
+    });
+
     it('should restore version successfully', async () => {
       mockPageManager.restoreVersion.mockResolvedValue({ name: 'TestPage', uuid: 'u1', version: 4 });
 

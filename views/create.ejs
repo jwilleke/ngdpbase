@@ -140,20 +140,26 @@
 <script>
     // #1504: the Private box starts as the chosen system-category says, and is
     // hidden for one with no vault. It only sets the start; the person can
-    // still change it before creating the page.
+    // still change it before creating the page — unless they may only create
+    // private pages (#1539, `locked`): then it stays ticked. The server asks
+    // again for the real page either way.
     (function () {
         const starts = JSON.parse(document.getElementById('ngdpPrivateStart').textContent || 'null');
         const category = document.getElementById('systemCategory');
         const box = document.getElementById('privateFlag');
         const column = document.getElementById('privateFlagColumn');
         if (!starts || !category || !box || !column) return;
+        let locked = false;
         function apply() {
             const s = starts[category.value] || { can: true, start: false };
+            locked = !!s.locked;
             column.style.display = s.can ? '' : 'none';
             box.checked = s.can && s.start;
+            box.title = locked ? 'You can create pages only in your own vaults' : '';
         }
         apply();
         category.addEventListener('change', apply);
+        box.addEventListener('click', function (e) { if (locked) e.preventDefault(); });
     })();
 
     // Form submission validation for system-category and user-keywords.

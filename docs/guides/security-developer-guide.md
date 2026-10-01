@@ -16,6 +16,7 @@ What a developer has to do so that a new route, manager method or addon authoriz
 | --- | --- | --- |
 | May this subject perform this kind of action at all? | `wikiContext.hasPermission('page-delete')` / `ctx.requirePermission('admin-system')` | The subject, the action, the policies, deny policies, an inactive account, the agent-token scope ceiling |
 | May they do it on this page? | `wikiContext.canAccess('edit', pageName)` | All of the above plus the page's own access markup, audience and private flags, and ACL frontmatter. Resource attributes beat global policy |
+| May they do this kind of action to this page — create it, write it? | `wikiContext.hasPermissionOn('page-create', pageName)` | The capability, asked about the page itself. For a vault page: the owner only (the container rule), then the capability with the page's `vault`, so `vault-owner` decides and a site-wide role does not reach in ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)). A route that writes an existing page also asks the page door (`WikiRoutes.writeRefusal`), as the editor does ([#1542](https://github.com/jwilleke/ngdpbase/issues/1542)) |
 
 Nothing else is an allow or a deny:
 

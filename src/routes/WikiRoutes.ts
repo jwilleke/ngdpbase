@@ -2284,6 +2284,8 @@ class WikiRoutes {
    */
   private async editRefusal(wikiContext: WikiContext): Promise<string | null> {
     const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    // No page door to ask: refuse, never fall through.
+    if (!policyInformationPoint) return 'You do not have permission to edit this page';
     // Many test fixtures mock only the boolean form; same outcome, generic message.
     let decision: { allowed: boolean; reason: string };
     if (typeof policyInformationPoint.evaluatePagePermission === 'function') {
@@ -2296,6 +2298,24 @@ class WikiRoutes {
     return decision.reason === 'author_lock_deny'
       ? 'This page is author-locked. Only the page author and administrators can edit it.'
       : 'You do not have permission to edit this page';
+  }
+
+  /**
+   * Why this request may not write `pageName`, or null when it may — the one
+   * write decision for every route that saves a page (#1542, #1539). A new
+   * page needs `page-create`; an existing one needs `page-edit` and then the
+   * page door (its own rules), as the editor asks. Both are asked about the
+   * page itself, so a vault page goes through the vault check — the owner,
+   * and `vault-owner` — not the caller's site-wide role.
+   */
+  private async writeRefusal(req: Request, pageName: string, existing: { metadata?: unknown } | null): Promise<string | null> {
+    const ctx = this.createWikiContext(req, { pageName });
+    if (!existing) {
+      return (await ctx.hasPermissionOn('page-create', pageName)) ? null : 'You do not have permission to create pages';
+    }
+    if (!(await ctx.hasPermissionOn('page-edit', pageName))) return 'You do not have permission to edit this page';
+    (ctx as { pageMetadata: unknown }).pageMetadata = existing.metadata ?? null;
+    return this.editRefusal(ctx);
   }
 
   /**
@@ -3187,29 +3207,26 @@ ${panes}
         currentUser?.username
       );
 
+      // #1539: what this person may create, per system-category: a public page
+      // (page-create), and a private one in that category's vault (asked about
+      // a page in their own vault, so vault-owner decides). The form opens when
+      // either is possible anywhere; POST /create asks again for the real page.
+      const validationManager = this.engine.getManager('ValidationManager');
+      const rawCategories = this.getSystemCategories();
+      const systemCategories: string[] = Array.isArray(rawCategories) ? rawCategories : [];
+      const mayCreatePublic = await wikiContext.hasPermission('page-create');
+      const mayCreatePrivate: Record<string, boolean> = {};
+      for (const category of systemCategories) {
+        const vault = this.vaultForPrivatePage(category);
+        mayCreatePrivate[category] = typeof vault === 'string' && !!currentUser?.username
+          && await wikiContext.hasPermissionOn('page-create', formatPrivatePageName(String(currentUser.username), vault, 'New page'));
+      }
+
       // #1198: policy is the door; the login redirect is the refusal for an
       // anonymous subject, decided after the denial, not before it.
-      if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
-
-      const hasPermission = await this.engine.getManager('PolicyDecisionPoint').permits(
-        currentUser,
-        'page-create'
-      );
-      logger.debug('[CREATE-DEBUG] hasPermission result:', hasPermission);
-
-      // Check if user has permission to create pages
-      if (!hasPermission) {
-        logger.debug(
-          '[CREATE-DEBUG] Permission denied for user:',
-          currentUser.username
-        );
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to create pages. Please contact an administrator.'
-        );
+      if (!mayCreatePublic && !Object.values(mayCreatePrivate).some(Boolean)) {
+        await this.refuse(wikiContext, req, res, 'page', 'page-create');
+        return;
       }
 
       const templateManager = this.engine.getManager('TemplateManager');
@@ -3220,16 +3237,13 @@ ${panes}
       // Get available templates
       const templates = templateManager.getTemplates();
 
-      // Get categories and keywords for the form (defensive array handling)
-      const rawCategories = this.getSystemCategories();
-      const systemCategories = Array.isArray(rawCategories) ? rawCategories : [];
+      // Keywords for the form (defensive array handling)
       const rawKeywords = await this.getUserKeywordsWithDescriptions();
       const userKeywords = Array.isArray(rawKeywords) ? rawKeywords : [];
 
       const configManager = this.engine.getManager('ConfigurationManager');
 
       // Get default system category from ValidationManager (falls back to config)
-      const validationManager = this.engine.getManager('ValidationManager');
       const defaultCategory = validationManager?.getDefaultSystemCategory?.() || 'general';
 
       // #1504: per system-category, whether a page can be private (it has a
@@ -3241,7 +3255,8 @@ ${panes}
         const start = can && typeof validationManager?.getDefaultPrivate === 'function'
           ? validationManager.getDefaultPrivate(category, creatorPrefs)
           : false;
-        return [category, { can, start }];
+        // #1539: `locked` — this person may only create it private here.
+        return [category, { can: can && (mayCreatePublic ? true : mayCreatePrivate[category]), start: start || !mayCreatePublic, locked: !mayCreatePublic }];
       }));
 
       // Build availableRoles for the audience picker (mirror edit handler at line 2316)
@@ -3394,21 +3409,20 @@ ${panes}
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
 
-      // #1198: policy first; anonymous is sent to log in by the refusal.
-      if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
-
-      // Check if user has permission to create pages
-      if (
-        !(await wikiContext.hasPermission('page-create'))
-      ) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to create pages. Please contact an administrator.'
-        );
+      // #1505: a private page goes to its system-category's vault.
+      const privateOnCreate = req.body['private'] === 'true';
+      const createVault = privateOnCreate ? this.vaultForPrivatePage(matchedCategory) : null;
+      if (createVault === false) {
+        return res.status(400).send(`Pages in the ${matchedCategory} system-category cannot be private`);
       }
+
+      // #1198: policy first; anonymous is sent to log in by the refusal.
+      // #1539: asked about the page being made — in the creator's vault for a
+      // private page, so vault-owner decides there, not their site-wide role.
+      const createTarget = typeof createVault === 'string' && currentUser?.username
+        ? formatPrivatePageName(String(currentUser.username), createVault, pageName)
+        : pageName;
+      if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page', createTarget))) return;
 
       // Check if page already exists
       const existingPage = await pageManager.getPage(pageName, req.userContext);
@@ -3460,12 +3474,6 @@ ${panes}
       // the /save flow's stricter "admin or author" gate applies on subsequent
       // edits.
       const authorLockOnCreate = req.body['author-lock'] === 'true';
-      const privateOnCreate = req.body['private'] === 'true';
-      // #1505: a private page goes to its system-category's vault.
-      const createVault = privateOnCreate ? this.vaultForPrivatePage(matchedCategory) : null;
-      if (createVault === false) {
-        return res.status(400).send(`Pages in the ${matchedCategory} system-category cannot be private`);
-      }
 
       // Audience (view access) — mirror the /save handler's parsing at line 2630.
       const submittedAudience = req.body['audience'];
@@ -4095,17 +4103,12 @@ ${panes}
         ) {
           return await fail(403, 'Access Denied', 'Only administrators can edit this page or assign a system category');
         }
-      } else if (existingPage) {
-        // #1542: an existing page is saved through the editor's door — the
-        // page's own rules, then policy — not the page-create capability.
-        (wikiContext as { pageMetadata: unknown }).pageMetadata = existingPage.metadata;
-        const refusal = await this.editRefusal(wikiContext);
+      } else {
+        // #1542: the editor's doors. A new page had no check at all — anyone,
+        // signed out included, could create one — and an existing page asked
+        // only the page-create capability.
+        const refusal = currentUser ? await this.writeRefusal(req, pageName, existingPage) : 'You do not have permission to create pages';
         if (refusal) return await fail(403, 'Access Denied', refusal);
-      } else if (!currentUser || !(await wikiContext.hasPermissionOn('page-create', pageName))) {
-        // #1542: a new page needs page-create, asked about this page so a
-        // vault page goes through the vault check (#1539). There was no check
-        // here at all: anyone, signed out included, could create a page.
-        return await fail(403, 'Access Denied', 'You do not have permission to create pages');
       }
 
       // Save-time validation (#596). Delegates to ValidationManager which
@@ -4524,6 +4527,20 @@ ${panes}
    * and checks the caller's permission for `action`. Returns null once a
    * response has been sent.
    */
+  /**
+   * The name a page an identifier opened is known by: its title — the
+   * identifier may be a uuid or slug, and every downstream index is keyed by
+   * title — or, for a vault page, its vault name (#1539). A vault page's bare
+   * title is a PUBLIC page's name, so the door would judge, and a write would
+   * hit, a different page.
+   */
+  private static canonicalPageName(identifier: string, pageData: { metadata?: { title?: string } | null }): string {
+    const privateName = parsePrivatePageName(identifier);
+    return privateName
+      ? formatPrivatePageName(privateName.owner, privateName.store, pageData.metadata?.title || privateName.title)
+      : pageData.metadata?.title || identifier;
+  }
+
   private async prepareApiPageMutation(
     req: Request,
     res: Response,
@@ -4556,9 +4573,7 @@ ${panes}
       return null;
     }
 
-    // Resolve to the canonical title: the identifier may be a uuid or slug, and
-    // every downstream index is keyed by title.
-    const pageName = (pageData.metadata?.title) || identifier;
+    const pageName = WikiRoutes.canonicalPageName(identifier, pageData);
 
     const wikiContext = this.createWikiContext(req, {
       context: WikiContext.CONTEXT.NONE,
@@ -5648,10 +5663,11 @@ ${panes}
       if (!page) {
         return `page "${pageName}" not found — attachment stored but not linked`;
       }
-      const permContext = this.createWikiContext(req, { pageName });
-      if (!(await permContext.hasPermission('page-edit'))) {
+      // #1542: the editor's doors, about the page itself (#1539).
+      if (await this.writeRefusal(req, pageName, page)) {
         return 'no page-edit permission — attachment stored but not linked';
       }
+      const permContext = this.createWikiContext(req, { pageName });
       if (page.content.includes(`src='${filename}'`)) {
         return undefined; // already referenced — nothing to append, still "attached"
       }
@@ -5763,7 +5779,8 @@ ${panes}
       if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
       const wikiContext0 = this.createWikiContext(req);
       const currentUser = wikiContext0.userContext;
-      if (!(await this.permitted(wikiContext0, 'page-create', req, res, 'text'))) return;
+      // #1539: the write is asked once the target is known (below) — usually
+      // the capturer's capture vault, where vault-owner decides.
       const pageName = (typeof req.body.pageName === 'string' ? req.body.pageName : '').trim().slice(0, 255);
       const url = (typeof req.body.url === 'string' ? req.body.url : '').trim().slice(0, 2048);
       const title = (typeof req.body.title === 'string' ? req.body.title : '').trim().slice(0, 300);
@@ -5843,8 +5860,11 @@ ${panes}
       const existing = ownPrivate ?? publicPage;
       const targetName = ownPrivateName ?? (!publicPage && capturePrivate ? privateTarget : pageName);
       const permission = existing ? 'page-edit' : 'page-create';
-      if (!(await wikiContext0.hasPermission(permission))) {
-        return renderErr(`You do not have permission to ${existing ? 'edit' : 'create'} this page`, 403);
+      // #1542/#1539: the editor's doors, about the target page — the owner's
+      // own vault only, and the page's own rules.
+      if (await this.writeRefusal(req, targetName, existing)) {
+        await this.refuse(wikiContext0, req, res, 'text', permission);
+        return;
       }
 
       // #1018: separator BEFORE each entry except the first on the page. The
@@ -9904,9 +9924,7 @@ ${panes}
       const baseContext = this.createWikiContext(req);
       const currentUser = baseContext.userContext;
       // #1198: the create-or-edit permission is asked once the target is known
-      // (below); this asks the one every ingest needs, so an anonymous or
-      // out-of-scope subject is refused before the body is read.
-      if (!(await this.permitted(baseContext, 'page-create', req, res, 'json'))) return;
+      // (below), about that page (#1539: a vault page by the vault check).
 
       const body = req.body as {
         pageName?: unknown; markdown?: unknown; category?: unknown; keywords?: unknown;
@@ -9960,11 +9978,9 @@ ${panes}
 
       // Permission: create vs edit, mirroring createPageFromTemplate / savePage.
       const permission = existing ? 'page-edit' : 'page-create';
-      if (!(await baseContext.hasPermission(permission))) {
-        return res.status(403).json({
-          success: false,
-          error: `You do not have permission to ${existing ? 'edit' : 'create'} pages`
-        });
+      if (await this.writeRefusal(req, pageName, existing)) {
+        await this.refuse(baseContext, req, res, 'json', permission);
+        return;
       }
 
       // Build frontmatter: preserve existing on update, generate on create.
@@ -10206,11 +10222,26 @@ ${panes}
     }
   }
 
+  /**
+   * Refuse a footnote change the page's own rules forbid (#1542): the page is
+   * found by uuid and asked through `writeRefusal`, as the editor asks. Sends
+   * the 404 / 403 itself and returns true when it did.
+   */
+  private async footnotePageRefusal(req: Request, res: Response, pageUuid: string): Promise<boolean> {
+    const page = await this.engine.getManager('PageManager')?.getPage(pageUuid, req.userContext);
+    if (!page) { res.status(404).json({ success: false, error: 'Page not found' }); return true; }
+    const refusal = await this.writeRefusal(req, WikiRoutes.canonicalPageName(pageUuid, page), page);
+    if (refusal) { res.status(403).json({ success: false, error: refusal }); return true; }
+    return false;
+  }
+
   async addFootnote(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
+      // #1542: a footnote edits its page — the editor's doors, about that page.
+      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
 
       const { pageUuid } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
@@ -10243,6 +10274,8 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
+      // #1542: a footnote edits its page — the editor's doors, about that page.
+      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
 
       const { pageUuid, footnoteId } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
@@ -10290,6 +10323,8 @@ ${panes}
       const currentUser = wikiContext.userContext;
       // #1198: page-edit is the door; own-or-admin decides below.
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
+      // #1542: a footnote edits its page — the editor's doors, about that page.
+      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
 
       const { pageUuid, footnoteId } = req.params;
       const footnoteManager = this.engine.getManager('FootnoteManager');
@@ -16688,17 +16723,25 @@ ${panes}
         });
       }
 
-      // #1198: restoring a version writes the page — page-edit is the door.
-      const restoreContext = this.createWikiContext(req);
-      if (!(await this.permitted(restoreContext, 'page-edit', req, res, 'json'))) return;
-      // Policy allowed but there is nobody to act as — refuse, never fall through.
-      if (!restoreContext.userContext) return this.refuse(restoreContext, req, res, 'json', 'page-edit');
-
       const pageManager = this.engine.getManager('PageManager');
 
       if (!pageManager) {
         return res.status(500).json({ error: 'PageManager not available' });
       }
+
+      // #1198: restoring a version writes the page — page-edit is the door.
+      // #1542: and the page's own rules, as the editor asks: the page door,
+      // about the page itself (#1539: a vault page by its vault name).
+      const current = await pageManager.getPage(identifier, req.userContext);
+      if (!current) return res.status(404).json({ error: 'Page not found', identifier });
+      const pageName = WikiRoutes.canonicalPageName(identifier, current);
+      const restoreContext = this.createWikiContext(req, { pageName });
+      if (!(await this.permitted(restoreContext, 'page-edit', req, res, 'json', pageName))) return;
+      // Policy allowed but there is nobody to act as — refuse, never fall through.
+      if (!restoreContext.userContext) return this.refuse(restoreContext, req, res, 'json', 'page-edit');
+      (restoreContext as { pageMetadata: unknown }).pageMetadata = current.metadata ?? null;
+      const refusal = await this.editRefusal(restoreContext);
+      if (refusal) return res.status(403).json({ error: 'Access denied', message: refusal });
 
       // Check if provider supports versioning. The restore itself goes through
       // the page door (#1462 slice 3) — this only asks whether there is any
