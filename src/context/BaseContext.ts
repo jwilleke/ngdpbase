@@ -29,6 +29,8 @@
 
 import type { PermissionSubject } from '../managers/UserManager.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 
 /** The engine surface this door needs — `getManager`, nothing more. */
 export interface EngineLike {
@@ -110,18 +112,43 @@ export abstract class BaseContext {
    * frontmatter), so a page's owner gets no pass on it.
    */
   async hasPermission(action: string, attributes?: { 'system-category'?: unknown }): Promise<boolean> {
+    return this.decideCached(action, '*', attributes);
+  }
+
+  /**
+   * One cached PDP decision per (action, resource, attributes) for this
+   * request — the door `hasPermission` and `hasPermissionOn` share.
+   */
+  private decideCached(action: string, resourceId: string, attributes?: Record<string, unknown>): Promise<boolean> {
     const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
-    if (!pdp) return false;
-    const key = attributes ? `${action}\u0000${JSON.stringify(attributes)}` : action;
+    if (!pdp) return Promise.resolve(false);
+    const key = attributes || resourceId !== '*' ? `${action}\u0000${resourceId}\u0000${JSON.stringify(attributes ?? {})}` : action;
     const cached = this._permissionCache.get(key);
     if (cached) return cached;
     // #637: hand over the already-resolved subject so the PDP need not
     // resolve the account and its roles again.
-    const promise = attributes
-      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: '*' }, attributes }).then((d) => d.permit)
+    const promise = attributes || resourceId !== '*'
+      ? pdp.decide(this.getActor(), { action, resource: { type: 'page', id: resourceId }, attributes }).then((d) => d.permit)
       : pdp.permits(this.getActor(), action);
     this._permissionCache.set(key, promise);
     return promise;
+  }
+
+  /**
+   * A capability asked about the page it is for (#1539). For a page in a
+   * vault: the container rule first — the owner, never a role, the same rule
+   * as Tier 0 of the page tiers — then the capability with the page's
+   * `vault`, asked about the page itself as the page tiers do — a `page: *`
+   * grant does not match a vault page's name, so only a policy on the `vault`
+   * resource type (`vault-owner`) decides there. For any other page, `hasPermission(action)`. A route that acts on
+   * a named page asks this instead of the bare capability, so a vault page is
+   * not judged by the caller's site-wide role.
+   */
+  async hasPermissionOn(action: string, pageName: string): Promise<boolean> {
+    const name = parsePrivatePageName(pageName);
+    if (!name) return this.hasPermission(action);
+    if (!this.hasSubject() || !mayActInPrivateContainer(this.getActor(), name.owner, { vault: name.store })) return false;
+    return this.decideCached(action, pageName, { vault: name.store });
   }
 
   /**

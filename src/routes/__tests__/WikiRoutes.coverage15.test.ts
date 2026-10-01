@@ -681,8 +681,10 @@ describe('WikiRoutes — coverage batch 15', () => {
       expect(saved.mood).toBe('calm');
     });
 
-    test('returns 403 when user lacks page-create permission for non-required page', async () => {
-      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+    test('returns 403 when the page door refuses edit on an existing page (#1542)', async () => {
+      // #1542: an existing page is saved through the editor's door, not the
+      // page-create capability.
+      mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
       const res = await request(app)
         .post('/save/TestPage')
         .set('x-csrf-token', 'test-csrf-token')

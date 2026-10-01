@@ -2277,6 +2277,28 @@ class WikiRoutes {
   }
 
   /**
+   * Why this subject may not edit the page on `wikiContext`, or null when they
+   * may — the page door (`evaluatePagePermission`: the page's own rules, then
+   * policy). Shared by GET /edit and POST /save (#1542), so a save asks exactly
+   * what opening the editor asked.
+   */
+  private async editRefusal(wikiContext: WikiContext): Promise<string | null> {
+    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
+    // Many test fixtures mock only the boolean form; same outcome, generic message.
+    let decision: { allowed: boolean; reason: string };
+    if (typeof policyInformationPoint.evaluatePagePermission === 'function') {
+      decision = await policyInformationPoint.evaluatePagePermission(wikiContext, 'edit');
+    } else {
+      const allowed = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
+      decision = { allowed, reason: allowed ? 'legacy_allow' : 'legacy_deny' };
+    }
+    if (decision.allowed) return null;
+    return decision.reason === 'author_lock_deny'
+      ? 'This page is author-locked. Only the page author and administrators can edit it.'
+      : 'You do not have permission to edit this page';
+  }
+
+  /**
    * The door for a route (#1198): may this subject perform `permission`?
    * Policy decides; `refuse()` answers when it says no. Returns true to
    * proceed. The subject is the request's own context, so an agent token's
@@ -2289,9 +2311,12 @@ class WikiRoutes {
     permission: CorePermission,
     req: Request,
     res: Response,
-    mode: 'json' | 'page' | 'text'
+    mode: 'json' | 'page' | 'text',
+    // #1539: the page the action is on, when there is one — a vault page is
+    // then asked through the vault check, not the caller's site-wide role.
+    pageName?: string
   ): Promise<boolean> {
-    if (await wikiContext.hasPermission(permission)) return true;
+    if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) return true;
     await this.refuse(wikiContext, req, res, mode, permission);
     return false;
   }
@@ -3500,11 +3525,10 @@ ${panes}
       // Extract user from WikiContext (single source of truth)
       const currentUser = wikiContext.userContext;
       const pageManager = this.engine.getManager('PageManager');
-      const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // #1198: policy is the door. The page's own rules (private, audience,
       // author-lock) are evaluated below as before; this asks the capability.
-      if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page'))) return;
+      if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page', pageName))) return;
 
       // Get page data to check ACL (if page exists)
       let pageData = await pageManager.getPage(pageName, req.userContext);
@@ -3565,34 +3589,21 @@ ${panes}
           // that sat below this block is now deleted — the same check
           // lives at ACL Tier 0.5 (added in Slice A) and the rich-return
           // reason restores its specific 403 message at the route layer.
-          let decision: { allowed: boolean; reason: string };
-          if (typeof policyInformationPoint.evaluatePagePermission === 'function') {
-            decision = await policyInformationPoint.evaluatePagePermission(wikiContext, 'edit');
-          } else {
-            const allowed = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
-            decision = { allowed, reason: allowed ? 'legacy_allow' : 'legacy_deny' };
-          }
-
-          if (!decision.allowed) {
-            const message = decision.reason === 'author_lock_deny'
-              ? 'This page is author-locked. Only the page author and administrators can edit it.'
-              : 'You do not have permission to edit this page';
+          const refusal = await this.editRefusal(wikiContext);
+          if (refusal) {
             return await this.renderError(
               req,
               res,
               403,
               'Access Denied',
-              message
+              refusal
             );
           }
         } else {
-          // For new pages, check general page creation permission
+          // For new pages, check page creation, asked about this page (#1539)
           if (
             !currentUser ||
-            !(await this.engine.getManager('PolicyDecisionPoint').permits(
-              currentUser,
-              'page-create'
-            ))
+            !(await wikiContext.hasPermissionOn('page-create', pageName))
           ) {
             return await this.renderError(
               req,
@@ -4084,19 +4095,17 @@ ${panes}
         ) {
           return await fail(403, 'Access Denied', 'Only administrators can edit this page or assign a system category');
         }
-      } else {
-        // For existing pages, check ACL edit permission
-        if (existingPage) {
-          if (
-            !currentUser ||
-            !(await this.engine.getManager('PolicyDecisionPoint').permits(
-              currentUser,
-              'page-create'
-            ))
-          ) {
-            return await fail(403, 'Access Denied', 'You do not have permission to create pages');
-          }
-        }
+      } else if (existingPage) {
+        // #1542: an existing page is saved through the editor's door — the
+        // page's own rules, then policy — not the page-create capability.
+        (wikiContext as { pageMetadata: unknown }).pageMetadata = existingPage.metadata;
+        const refusal = await this.editRefusal(wikiContext);
+        if (refusal) return await fail(403, 'Access Denied', refusal);
+      } else if (!currentUser || !(await wikiContext.hasPermissionOn('page-create', pageName))) {
+        // #1542: a new page needs page-create, asked about this page so a
+        // vault page goes through the vault check (#1539). There was no check
+        // here at all: anyone, signed out included, could create a page.
+        return await fail(403, 'Access Denied', 'You do not have permission to create pages');
       }
 
       // Save-time validation (#596). Delegates to ValidationManager which

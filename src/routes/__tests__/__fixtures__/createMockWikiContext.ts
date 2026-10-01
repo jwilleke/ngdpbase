@@ -156,6 +156,11 @@ export function createMockWikiContext(
       }
       return true;
     }),
+    // #1539: the capability asked about a named page. The fixture does not model
+    // vaults, so it answers as hasPermission does for the action.
+    hasPermissionOn: vi.fn(async function (this: { hasPermission: (a: string) => Promise<boolean> }, action: string) {
+      return this.hasPermission(action);
+    }),
     canAccess: vi.fn().mockResolvedValue(true),
     getPrincipals: vi.fn(() => {
       const username = userContext?.username;

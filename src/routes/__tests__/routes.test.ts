@@ -62,6 +62,12 @@ vi.mock('../../context/WikiContext', () => {
         if (!pdp) return true;
         return await pdp.permits(userContext, action);
       }),
+      // #1539: the capability asked about a named page; no vaults modelled here.
+      hasPermissionOn: vi.fn(async (action: string) => {
+        const pdp = mockHolder.policyDecisionPoint;
+        if (!pdp) return true;
+        return await pdp.permits(userContext, action);
+      }),
       canAccess: vi.fn().mockResolvedValue(true),
       getPrincipals: vi.fn(() => {
         const uc = (options.userContext as { roles?: string[]; username?: string } | null | undefined) || mockUserContext;
