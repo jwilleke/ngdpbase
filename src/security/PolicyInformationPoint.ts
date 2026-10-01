@@ -4,6 +4,7 @@ import PolicyDecisionPoint from './PolicyDecisionPoint.js';
 import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -505,7 +506,7 @@ class PolicyInformationPoint extends BaseManager {
       // Asked only if the page is author-locked and the subject is not its
       // author — the author needs no override.
       mayOverrideLock: () => subjectMayDo(this.engine, userContext, 'admin-system'),
-      policy: async () => {
+      policy: async (extra) => {
         // An evaluator fault denies; it never opens the page. There is no tier
         // below this one to fall through to (Tier 3 was removed in #1431 7a).
         try {
@@ -513,7 +514,7 @@ class PolicyInformationPoint extends BaseManager {
             action: policyAction,
             resource: { type: 'page', id: pageName },
             // #1504: for policies on the page's system-category.
-            attributes: { 'system-category': wikiContext.pageMetadata?.['system-category'] }
+            attributes: { 'system-category': wikiContext.pageMetadata?.['system-category'], ...extra }
           });
           logger.info(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
           return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy' };
@@ -559,6 +560,10 @@ class PolicyInformationPoint extends BaseManager {
    * - __Tier 0, private.__ Through `PageManager.checkPrivatePageAccess` — the
    *   page-index creator, owner or delegate, never a role (#711). Frontmatter
    *   `private` + `author` is the fallback where there is no PageManager.
+   *   It only REFUSES (#1539): a subject it admits still faces policy, asked
+   *   with the page's `vault`, so the owner's rights in their own vaults come
+   *   from a policy on the `vault` resource type — the same door as any page.
+   *   Tier 1 is skipped for a vault page: `audience` grants nothing there.
    * - __Tier 0.5, author-lock__, `edit` only. It only denies: an author, or a
    *   subject holding `admin-system` (#1431 7b), falls through to Tier 1+.
    * - __Tier 1, frontmatter__ `access[action]` / `audience`. Page-level, and
@@ -578,17 +583,22 @@ class PolicyInformationPoint extends BaseManager {
     privateCtx: WikiContext;
     pageManager: PrivateAccessCheck | null | undefined;
     mayOverrideLock: () => Promise<boolean>;
-    policy: () => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
+    policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
   }): Promise<{ allowed: boolean; reason: string }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
 
-    // Tier 0: private.
+    // Tier 0: private. Refuses only (#1539); an admitted subject goes on to
+    // policy with the page's vault. The frontmatter fallback (no PageManager)
+    // names no vault, so its page is taken to be in the default one.
+    let vault: string | undefined;
     if (args.pageManager?.checkPrivatePageAccess) {
       const decision = await args.pageManager.checkPrivatePageAccess(args.privateCtx, pageName);
-      if (decision !== null) return { allowed: decision, reason: decision ? 'private_match' : 'private_deny' };
+      if (decision === false) return { allowed: false, reason: 'private_deny' };
+      if (decision === true) vault = parsePrivatePageName(pageName)?.store;
     } else if (metadata?.private === true) {
       const allowed = userContext ? mayActInPrivateContainer(userContext, metadata.author ?? '') : false;
-      return { allowed, reason: allowed ? 'private_match' : 'private_deny' };
+      if (!allowed) return { allowed: false, reason: 'private_deny' };
+      vault = 'default';
     }
 
     // Tier 0.5: author-lock denies a non-author edit; it grants nothing.
@@ -599,15 +609,16 @@ class PolicyInformationPoint extends BaseManager {
       }
     }
 
-    // Tier 1: frontmatter audience / access, when it states a rule.
-    if (metadata) {
+    // Tier 1: frontmatter audience / access, when it states a rule. Not on a
+    // vault page — its container already decided who may be here.
+    if (metadata && vault === undefined) {
       const fm = this.checkFrontmatterAccess(metadata, userContext, action);
       if (fm.decided) return { allowed: fm.allowed, reason: fm.reason };
     }
 
     // Tier 2: the share is the policy for a share visitor; global policy otherwise.
     if (viaShare) return { allowed: true, reason: 'share_grant' };
-    const policy = await args.policy();
+    const policy = await args.policy(vault === undefined ? {} : { vault });
     if (policy?.applicable) return { allowed: policy.permit, reason: policy.reason };
 
     return { allowed: false, reason: 'default_deny' };
@@ -801,8 +812,8 @@ class PolicyInformationPoint extends BaseManager {
         privateCtx,
         pageManager,
         mayOverrideLock: async () => mayOverrideLock,
-        policy: async () => {
-          const p = decidePolicy?.(title, { 'system-category': metadata['system-category'] });
+        policy: async (extra) => {
+          const p = decidePolicy?.(title, { 'system-category': metadata['system-category'], ...extra });
           return p?.hasDecision ? { applicable: true, permit: p.allowed, reason: 'global_policy' } : null;
         }
       });

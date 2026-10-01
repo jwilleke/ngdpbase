@@ -100,6 +100,16 @@ describe('PolicyInformationPoint', () => {
     return { pageName, content, userContext, pageMetadata };
   }
 
+  // #1539: Tier 0 only refuses. An owner it admits faces policy, asked with the
+  // page's vault; this stands in for the shipped vault-owner policy.
+  function grantInVault() {
+    mockPolicyEvaluator = {
+      evaluateAccess: vi.fn(({ attributes }: { attributes?: { vault?: string } }) => (attributes?.vault
+        ? { hasDecision: true, allowed: true, reason: 'Policy match: vault-owner-permissions', policyName: 'vault-owner-permissions' }
+        : { hasDecision: false, allowed: false, reason: 'No matching policy', policyName: null }))
+    };
+  }
+
   // #639 Slice E: the legacy "Tier 0 — private user-keyword" describe block
   // was removed alongside the back-compat fallback. The four cases it covered
   // (admin / creator / non-creator / audience-doesn't-override) are still
@@ -116,7 +126,8 @@ describe('PolicyInformationPoint', () => {
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'view')).toBe(false);
     });
 
-    test('private: true + page-creator → allow', async () => {
+    test('private: true + page-creator → policy decides, asked with the vault (#1539)', async () => {
+      grantInVault();
       const ctx = makeWikiContext({
         pageMetadata: { title: 'Test', uuid: 'x', lastModified: '', private: true, author: 'alice' },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
@@ -163,6 +174,7 @@ describe('PolicyInformationPoint', () => {
     });
 
     test('both signals present (migrated page with stale keyword) → tier 0 fires once', async () => {
+      grantInVault();
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -322,7 +334,8 @@ describe('PolicyInformationPoint', () => {
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(false);
     });
 
-    test('edit + private:true + author-lock + page-creator → Tier 0 wins (allow by private; Tier 0.5 never consulted)', async () => {
+    test('edit + private:true + author-lock + page-creator → the author passes Tier 0.5 and policy decides (#1539)', async () => {
+      grantInVault();
       const ctx = makeWikiContext({
         pageMetadata: {
           title: 'Test', uuid: 'x', lastModified: '',
@@ -331,9 +344,8 @@ describe('PolicyInformationPoint', () => {
         },
         userContext: { username: 'alice', roles: ['editor'], isAuthenticated: true }
       });
-      // The interesting precedence case: private grants alice access; we
-      // don't want Tier 0.5 to then deny her because she "isn't admin".
-      // Tier 0 returns early → allow.
+      // Tier 0 admits alice (owner); Tier 0.5 lets the author through without
+      // asking for an override; policy, asked with the vault, allows.
       expect(await policyInformationPoint.checkPagePermissionWithContext(ctx, 'edit')).toBe(true);
     });
 

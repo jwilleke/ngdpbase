@@ -334,6 +334,7 @@ class UserManager extends BaseManager {
         }
         await this.createDefaultAdmin();
       }
+      await this.grantAccountRolesToExistingAccounts();
     }
 
     const userCount = this.provider ? (await this.provider.getAllUsers()).size : 0;
@@ -499,6 +500,39 @@ class UserManager extends BaseManager {
   }
 
   /**
+   * The roles an account is made with: those its sign-up path or the admin
+   * chose, plus `ngdpbase.user.account-roles`, the roles every account gets
+   * (#1539 — `vault-owner`, without which a person's own vaults refuse them).
+   */
+  private withAccountRoles(chosen: readonly string[]): string[] {
+    return [...new Set([...chosen, ...this.accountRoles()])];
+  }
+
+  /** `ngdpbase.user.account-roles`: the roles every account holds (#1539). */
+  private accountRoles(): string[] {
+    const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.user.account-roles', []);
+    return Array.isArray(configured) ? configured.filter((r): r is string => typeof r === 'string') : [];
+  }
+
+  /**
+   * Accounts made before a role joined `ngdpbase.user.account-roles` get it
+   * once, at boot (#1539) — RoleManager decides "once" and records each grant.
+   */
+  private async grantAccountRolesToExistingAccounts(): Promise<void> {
+    const roles = this.accountRoles();
+    if (!this.provider || roles.length === 0) return;
+    // The provider contract is Map<string, User>; a store of any other shape
+    // is not one to act on (the same guard as the bootstrap check above).
+    const all = await this.provider.getAllUsers();
+    if (!(all instanceof Map)) return;
+    const usernames = [...all.keys()];
+    const ctx = systemContext(this.engine, `give ${roles.join(', ')} to accounts made before it was given to every account`);
+    for (const role of roles) {
+      await this.roleManager().grantToEveryAccountOnce(role, usernames, ctx);
+    }
+  }
+
+  /**
    * Create the bootstrap admin account.
    *
    * Called only when the user store is empty. Throws when no bootstrap
@@ -547,7 +581,7 @@ class UserManager extends BaseManager {
     });
 
     await this.syncPersonOnCreate(adminUser);
-    await this.roleManager().applyRoleDiff(adminUser.username, [], ['admin']);
+    await this.roleManager().applyRoleDiff(adminUser.username, [], this.withAccountRoles(['admin']));
 
     // Never log the value. `2b48d838` removed the equivalent echo from the
     // startup banner but left this one, which writes the live credential into
@@ -759,7 +793,8 @@ class UserManager extends BaseManager {
       throw new Error('Provider not initialized');
     }
 
-    const { username, email, displayName, password, roles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
+    const { username, email, displayName, password, roles: chosenRoles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
+    const roles = this.withAccountRoles(chosenRoles);
 
     if (this.policyInformationPoint().isSystemPrincipal(username)) {
       // #631: the system principal is an identity named in .env, not an

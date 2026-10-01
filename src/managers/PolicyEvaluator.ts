@@ -50,6 +50,15 @@ export const RESOURCE_MATCHERS: Record<string, (pattern: string, pageName: strin
   'system-category': (pattern, _pageName, attributes) => {
     const category = attributes?.['system-category'];
     return typeof category === 'string' && micromatch.isMatch(category, pattern);
+  },
+  /**
+   * A page or file in a private vault, by the vault id (#1539). The PIP
+   * supplies `vault` only for vault content, so a capability check (no
+   * resource) never matches — a vault grant cannot leak site-wide.
+   */
+  vault: (pattern, _pageName, attributes) => {
+    const vault = attributes?.vault;
+    return typeof vault === 'string' && micromatch.isMatch(vault, pattern);
   }
 };
 

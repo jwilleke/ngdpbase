@@ -95,12 +95,15 @@ None. The role catalogue is read with `ConfigurationManager.getProperty('ngdpbas
   "ngdpbase.user.provider.storagedir": "./users",
   "ngdpbase.user.security.passwordsalt": "ngdpbase-salt",
   "ngdpbase.user.security.sessionexpiration": 86400000,
+  "ngdpbase.user.account-roles": ["vault-owner"],
   "ngdpbase.roles.definitions": {
     "admin": { "name": "admin", "displayname": "Administrator" },
     "editor": { "name": "editor", "displayname": "Editor" }
   }
 }
 ```
+
+`ngdpbase.user.account-roles` names the roles every account holds ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)). `createUser` adds them to whatever roles the sign-up path or the admin chose, and so does the bootstrap admin's creation. Accounts made before a role was listed get it once, at boot, through `RoleManager.grantToEveryAccountOnce`. It ships as `["vault-owner"]`, the role that lets a person work in their own vaults.
 
 ## User record
 

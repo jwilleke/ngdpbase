@@ -23,6 +23,7 @@ Moved here from `UserManager` in [#1431](https://github.com/jwilleke/ngdpbase/is
 | `assignRole(username, roleName, ctx)` / `removeRole(…)` | one role, for an existing account and a declared role; recorded as `user-edit` |
 | `applyRoleDiff(username, oldRoles, newRoles)` | what `UserManager` calls when an account is created or edited; the account write records the audit event |
 | `removeAllMemberships(username)` | a deleted account's Person leaves every role |
+| `grantToEveryAccountOnce(roleName, usernames, ctx)` | a role every account must hold, given at boot to the accounts that predate it — once: the role's record not existing is the record that it was never given, so a later removal stands; each grant recorded as `user-edit` under the system context ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)) |
 
 A write that cannot happen (no Person, no anchor Organization) is logged with its cause and does not throw, so an account write still succeeds when role storage is degraded (#1027).
 

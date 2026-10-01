@@ -50,7 +50,7 @@ __Add-ons__ declare their own permissions and policies in their own `config/defa
 | `priority` | Evaluation order: higher is checked first | Number | `0` |
 | `effect` | What a match decides | `allow` / `deny` | Not a valid policy; ignored |
 | `subjects` | Who the policy is about | A list of `{ "type": "role", "value": "<role>" }`. Only `role` is matched | The policy applies to everyone |
-| `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
+| `resources` | What the policy is about | A list of `{ "type": "<resource type>", "pattern": "<glob>" }`. `page` matches the page name; `system-category` matches the page's `system-category` frontmatter; `vault` matches the id of the vault a page or file is in (micromatch). Only types declared in `ngdpbase.access.resource-types` that the evaluator has a matcher for ever match | The policy applies to every resource |
 | `actions` | Which permissions the policy decides | Permission names from the catalogue, or `*` for all | The policy applies to every action |
 
 ### How a decision is made
@@ -63,7 +63,7 @@ In `PolicyEvaluator.evaluateAccess` (`src/managers/PolicyEvaluator.ts`), with th
 - __The first matching policy decides__, allow or deny. Later policies are not consulted.
 - __No matching policy means deny.__
 
-__Resource types (#1504, built).__ Declared once, in `ngdpbase.access.resource-types`, and read only through ConfigurationManager, so add-on and instance configuration count. The evaluator holds one matcher per type (`RESOURCE_MATCHERS` in `PolicyEvaluator`): `page` by name, `system-category` by the page's `system-category`, which the PIP passes with the request. A declared type with no matcher, or a matcher whose type is not declared, is warned about at startup, and a policy naming such a type never matches. The validator accepts only declared types. A configuration without the key uses the matchers' own types, with a startup warning, so an older site keeps deciding as before.
+__Resource types (#1504, built).__ Declared once, in `ngdpbase.access.resource-types`, and read only through ConfigurationManager, so add-on and instance configuration count. The evaluator holds one matcher per type (`RESOURCE_MATCHERS` in `PolicyEvaluator`): `page` by name, `system-category` by the page's `system-category`, `vault` by the vault a page or file is in ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)); the PIP passes the attributes with the request. A `vault` attribute is supplied only for vault content, so a capability check with no resource never matches a `vault` policy and a vault grant cannot apply outside vaults. A `page: *` policy does not match a vault page (its name contains `/`), so inside a vault only `vault` policies decide. A declared type with no matcher, or a matcher whose type is not declared, is warned about at startup, and a policy naming such a type never matches. The validator accepts only declared types. A configuration without the key uses the matchers' own types, with a startup warning, so an older site keeps deciding as before.
 
 __Making a page public (#1504, built).__ Unticking Private moves a page out of its vault. It is the owner's move, and it needs the permission `page-public`, asked as `hasPermission('page-public', { 'system-category': … })`: the same door, with the page's system-category as the resource attribute, so a policy on the `system-category` resource type decides. The shipped policy `page-public-access` grants it on `general`, `journal` and `capture` to the roles that can have private pages (`reader`, `contributor`, `editor`, `user-admin`, `admin`, `demo-admin`). Making a page private stays the owner's move alone (operator, 2026-09-29; see below).
 
@@ -79,7 +79,7 @@ The three levels of checking built on this (the global `PolicyDecisionPoint.perm
 
 ## Consolidation
 
-Four older documents describe policies. They overlap, and some describe more than the code does: the schema document lists resource types `attachment`, `category`, `tag`, `resource-type` and `path`, and subject types beyond `role`, none of which the evaluator matches (the declared resource types are `page` and `system-category`).
+Four older documents describe policies. They overlap, and some describe more than the code does: the schema document lists resource types `attachment`, `category`, `tag`, `resource-type` and `path`, and subject types beyond `role`, none of which the evaluator matches (the declared resource types are `page`, `system-category` and `vault`).
 
 | Document | What it holds | Plan |
 |---|---|---|

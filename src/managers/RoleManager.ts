@@ -11,6 +11,8 @@ import type { Organization } from '../types/Organization.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { recordSystemAction, type SystemActionEvent } from '../context/bootActions.js';
+import type { JobContext } from '../context/JobContext.js';
 
 interface RoleProviderConstructor {
   new (engine: WikiEngine): RoleProvider;
@@ -285,6 +287,32 @@ class RoleManager extends BaseManager {
     }
   }
 
+  /**
+   * Give `roleName` to every account in `usernames`, once (#1539).
+   *
+   * For a role every account must hold — `ngdpbase.user.account-roles` — that
+   * arrives on an instance which already has people. The role's record not
+   * existing is the record that it was never given: this adds every account,
+   * which creates the record, and from then on finds the record and does
+   * nothing, so an admin's later removal from one person stands. Each grant is
+   * a role change and is recorded as one, under the system context `ctx`,
+   * deferred until the audit sink is up when this runs at boot.
+   *
+   * @returns how many accounts were given the role (0 once it has been given)
+   */
+  async grantToEveryAccountOnce(roleName: string, usernames: readonly string[], ctx: JobContext): Promise<number> {
+    const installOrg = await this.engine.getManager<OrganizationManager>('OrganizationManager')?.getInstallOrg();
+    if (!installOrg) return 0;
+    if (await this.getByOrgAndPosition(installOrg['@id'], roleName)) return 0;
+    for (const username of usernames) {
+      await this.addMember(username, roleName);
+      await recordSystemAction(this.engine, ctx, roleChangeEvent(username, 'assign', roleName));
+    }
+    await this.getOrCreateRoleRecord(installOrg, roleName);
+    logger.info(`🔑 Gave '${roleName}' to ${usernames.length} existing account(s), once (#1539)`);
+    return usernames.length;
+  }
+
   /** Remove a deleted account's Person from every role it held. */
   async removeAllMemberships(username: string): Promise<void> {
     const personManager = this.engine.getManager<PersonManager>('PersonManager');
@@ -421,16 +449,12 @@ class RoleManager extends BaseManager {
   /** #1204: a role assigned or removed is a user-edit; what the account may do changed. */
   private async recordRoleChange(username: string, op: 'assign' | 'remove', roleName: string, ctx: ActorContext): Promise<void> {
     const who = actorOf(ctx);
+    const event = roleChangeEvent(username, op, roleName);
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager') ?? null, {
-      eventType: AUDIT_EVENT.USER_EDIT,
+      ...event,
       user: who.user,
       ipAddress: who.ipAddress,
-      action: 'user-edit',
-      result: 'success',
-      severity: 'high',
-      resource: username,
-      resourceType: 'user',
-      metadata: { username, fields: ['roles'], role: { [op]: roleName }, ...who.metadata }
+      metadata: { ...event.metadata, ...who.metadata }
     }, (err) => logger.warn(`[RoleManager] Audit record failed for user-edit (${op} ${roleName}) of ${username}:`, err));
   }
 
@@ -463,6 +487,19 @@ class RoleManager extends BaseManager {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join('');
   }
+}
+
+/** #1204: a role assigned or removed is a user-edit; what the account may do changed. Who did it is the caller's to add. */
+function roleChangeEvent(username: string, op: 'assign' | 'remove', roleName: string): SystemActionEvent {
+  return {
+    eventType: AUDIT_EVENT.USER_EDIT,
+    action: 'user-edit',
+    result: 'success',
+    severity: 'high',
+    resource: username,
+    resourceType: 'user',
+    metadata: { username, fields: ['roles'], role: { [op]: roleName } }
+  };
 }
 
 export default RoleManager;

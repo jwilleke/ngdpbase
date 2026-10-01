@@ -211,6 +211,10 @@
   "_comment_user_security_defaultpassword": "Password given to the bootstrap 'admin' account, applied ONLY on the boot that finds an empty user store. Ships as 'admin123' so a fresh install comes up unattended and the setup wizard is reachable. Change it on first login — the startup banner warns until you do. To supply it from the environment instead, set this key to \"$NGDPBASE_ADMIN_PASSWORD\" in app-custom-config.json and put the value in .env; a bare $VAR ref is strict, so an unset variable stops the boot rather than quietly falling back. Read inside createDefaultAdmin(), never at startup, so an instance that already has an admin never resolves it.",
   "ngdpbase.user.security.defaultpassword": "admin123",
   "ngdpbase.user.security.sessionexpiration": 86400000,
+  "_comment_user_account_roles": "Roles every account is given when UserManager.createUser makes it, on top of the roles its sign-up path or the admin chose (#1539). vault-owner is what lets a person work in their own vaults; without it their vaults are refused to them. Existing accounts are given these roles once, at upgrade. Removing a role from one person afterwards is an admin's call and is not undone.",
+  "ngdpbase.user.account-roles": [
+    "vault-owner"
+  ],
   "_comment_auth": "Authentication provider chain — ngdpbase.auth.required-factors is an ordered list of provider IDs that must be satisfied for login (e.g. ['password'] or ['password','totp'] for MFA)",
   "ngdpbase.auth.required-factors": [
     "password"
@@ -1798,6 +1802,14 @@
       "icon": "eye",
       "color": "#6c757d"
     },
+    "vault-owner": {
+      "name": "vault-owner",
+      "displayname": "Vault Owner",
+      "description": "Everything inside your own vaults — pages and files: read, create, edit, rename, delete, upload, share by link. Applies only in vaults you own; not deleting a vault. Given to every account (#1539)",
+      "issystem": true,
+      "icon": "lock",
+      "color": "#198754"
+    },
     "reader": {
       "name": "reader",
       "displayname": "Reader",
@@ -1825,6 +1837,9 @@
     },
     "system-category": {
       "description": "Every page of a system-category, matched by the page's system-category (glob pattern)"
+    },
+    "vault": {
+      "description": "A page or file in a private vault, matched by the vault id (glob pattern; `*` is every vault). Only the vault's owner gets past the private-container check, so a policy naming it applies to the owner's own vaults (#1539)"
     }
   },
   "ngdpbase.access.policies": [
@@ -2037,6 +2052,39 @@
         "comment-create",
         "search-user",
         "store-create"
+      ]
+    },
+    {
+      "id": "vault-owner-permissions",
+      "name": "Vault Owner Permissions",
+      "description": "Everything inside the subject's own vaults — pages and files. The private-container check admits only the owner, so `vault: *` means their own vaults (#1539)",
+      "priority": 65,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "vault-owner"
+        }
+      ],
+      "resources": [
+        {
+          "type": "vault",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "page-read",
+        "page-create",
+        "page-edit",
+        "page-rename",
+        "page-delete",
+        "page-export",
+        "asset-read",
+        "media-read",
+        "asset-upload",
+        "asset-edit",
+        "asset-delete",
+        "share-manage"
       ]
     },
     {

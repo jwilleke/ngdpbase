@@ -26,8 +26,10 @@ export interface RoleGrants {
   denies: string[];
 }
 
+// Every page: no resources named, or `page: *`. `*` on another type covers only
+// what that type names — `vault: *` is every vault, not every page (#1539).
 const everyResource = (policy: Policy): boolean =>
-  !policy.resources || policy.resources.length === 0 || policy.resources.some((r) => r.pattern === '*');
+  !policy.resources || policy.resources.length === 0 || policy.resources.some((r) => r.type === 'page' && r.pattern === '*');
 
 /** Every role a policy names, with what its policies allow and deny. */
 export function roleGrants(policies: readonly Policy[]): Record<string, RoleGrants> {

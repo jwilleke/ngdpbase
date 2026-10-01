@@ -26,6 +26,13 @@ describe('roleGrants (#1521)', () => {
     ]);
   });
 
+  test('a grant inside vaults only is limited, even with pattern * (#1539)', () => {
+    const grants = roleGrants([
+      { id: 'v', effect: 'allow', subjects: [{ type: 'role', value: 'vault-owner' }], resources: [{ type: 'vault', pattern: '*' }], actions: ['page-delete'] }
+    ] as never);
+    expect(grants['vault-owner'].allows).toEqual([{ action: 'page-delete', limited: true }]);
+  });
+
   test('deny policies are listed as denies, not grants', () => {
     const grants = roleGrants([
       { id: 'd', effect: 'deny', subjects: [{ type: 'role', value: 'demo-admin' }], actions: ['page-edit'] }
