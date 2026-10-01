@@ -1042,9 +1042,13 @@ class WikiRoutes {
     // header used to test `roles.includes('admin')` — a hardcoded role name —
     // so a role holding `admin-read` could open /admin by typing the URL but
     // was never shown the link. Ask the same question the route asks.
-    const canViewAdmin = userContext?.isAuthenticated
-      ? (await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-read'))
-        || (await this.engine.getManager('PolicyDecisionPoint').permits(userContext, 'admin-system'))
+    //
+    // #1539: asked through the request's own door, `WikiContext.hasPermission`,
+    // not a second loop over the PDP — one implementation, and its per-request
+    // cache is shared with the route that later asks the same question.
+    const permissionContext = userContext?.isAuthenticated && req.userContext ? this.createWikiContext(req) : null;
+    const canViewAdmin = permissionContext
+      ? (await permissionContext.hasPermission('admin-read')) || (await permissionContext.hasPermission('admin-system'))
       : false;
 
     // #1034: admin templates need to know what the caller may actually DO, not
@@ -1063,12 +1067,9 @@ class WikiRoutes {
     // not. `can(permission)` is the same question the route asks.
     const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage'] as const;
     const grantedPermissions: Record<string, boolean> = {};
-    if (userContext?.isAuthenticated) {
+    if (permissionContext) {
       for (const permission of adminPermissions) {
-        grantedPermissions[permission] = await this.engine.getManager('PolicyDecisionPoint').permits(
-          userContext,
-          permission
-        );
+        grantedPermissions[permission] = await permissionContext.hasPermission(permission);
       }
     }
     grantedPermissions['admin-read'] = canViewAdmin;

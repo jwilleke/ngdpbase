@@ -19,6 +19,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import WikiContext from '../../context/WikiContext';
 
 function makeRoutes(granted: string[]) {
   const managers: Record<string, unknown> = {
@@ -77,6 +78,20 @@ describe('can() reflects the caller’s permissions (#1034)', () => {
 
     expect(data.can('admin-system')).toBe(false);
     expect(data.canViewAdmin).toBe(false);
+  });
+
+  test('answers through the request’s own door, WikiContext.hasPermission — not a second copy of it (#1539)', async () => {
+    const door = vi.spyOn(WikiContext.prototype, 'hasPermission');
+    try {
+      const data = await templateData(['page-edit', 'admin-read']);
+
+      expect(data.can('page-edit')).toBe(true);
+      expect(data.canViewAdmin).toBe(true);
+      const asked = door.mock.calls.map((c) => c[0]);
+      expect(asked).toEqual(expect.arrayContaining(['admin-read', 'page-edit', 'share-manage']));
+    } finally {
+      door.mockRestore();
+    }
   });
 });
 
