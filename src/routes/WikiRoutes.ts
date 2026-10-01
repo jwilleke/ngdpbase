@@ -3314,49 +3314,6 @@ ${panes}
     }
   }
 
-  /**
-   * Handle /edit route without page parameter
-   */
-  async editPageIndex(req: Request, res: Response) {
-    try {
-      const wikiContext = this.createWikiContext(req);
-
-      // #1198: policy first; anonymous is sent to log in by the refusal.
-      if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page'))) return;
-
-      // Check if user has permission to edit pages
-      if (
-        !(await wikiContext.hasPermission('page-edit'))
-      ) {
-        return await this.renderError(
-          req,
-          res,
-          403,
-          'Access Denied',
-          'You do not have permission to edit pages. Please contact an administrator.'
-        );
-      }
-
-      // The pages this caller may edit — the listing door, not the index (#1219).
-      const pageManager = this.engine.getManager('PageManager');
-      const allPages = await pageManager.listPagesFor(req.userContext, 'edit');
-
-      // Sort pages alphabetically
-      const sortedPages = allPages.sort((a: string, b: string) => a.localeCompare(b));
-
-      // Get common template data with user context
-      const commonData = await this.getCommonTemplateData(req);
-
-      res.render('edit-index', {
-        ...commonData,
-        title: 'Select Page to Edit',
-        pages: sortedPages
-      });
-    } catch (err: unknown) {
-      logger.error('Error loading edit page index:', err);
-      res.status(500).send('Error loading edit page selector');
-    }
-  }
 
   /**
    * Create a new page from template
@@ -6014,17 +5971,7 @@ ${panes}
       const { attachmentId } = req.params;
       const attachmentManager = this.engine.getManager('AttachmentManager');
 
-      // #1059: asset-read gates attachment bytes. Anonymous holds it in the
-      // default catalogue, so out of the box nothing changes — the gate exists
-      // so revoking asset-read from a role actually revokes something.
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('asset-read'))) {
-        return res.status(403).render('error', {
-          code: 403,
-          message: 'You do not have permission to access attachments',
-          currentUser: req.userContext
-        });
-      }
 
       // #1460: a file in one of the requester's own private stores, encrypted
       // or not. Found only through the context whose container it is in;
@@ -6032,6 +5979,8 @@ ${panes}
       // locked store find nothing here and get the 404 a missing file gets.
       // Nothing serves a plain store's readable bytes on the strength of the
       // file existing: this is the only way in, and it is the container rule.
+      // #1539: asked first, and it asks asset-read IN the vault (vault-owner) —
+      // a site-wide asset-read grant neither lets an owner in nor keeps them out.
       const own = await attachmentManager.getPrivateStoreAttachment(attachmentId, wikiContext.userContext);
       if (own) {
         const ownName = String(own.metadata.name ?? 'attachment');
@@ -6040,6 +5989,17 @@ ${panes}
         res.setHeader('Content-Length', String(own.buffer.length));
         res.setHeader('Cache-Control', 'private, no-store');
         return res.send(own.buffer);
+      }
+
+      // #1059: asset-read gates every other file's bytes. Anonymous holds it in
+      // the default catalogue, so out of the box nothing changes — the gate
+      // exists so revoking asset-read from a role actually revokes something.
+      if (!(await wikiContext.hasPermission('asset-read'))) {
+        return res.status(403).render('error', {
+          code: 403,
+          message: 'You do not have permission to access attachments',
+          currentUser: req.userContext
+        });
       }
 
       // 🔒 PRIVACY: a private file lives in its owner's private container
@@ -6128,9 +6088,12 @@ ${panes}
       }
 
       // #1059: same asset-read gate as serveAttachment — a thumbnail is the
-      // attachment's bytes at a smaller size, not a separate surface.
+      // attachment's bytes at a smaller size, not a separate surface. #1539: a
+      // file in the requester's own vault is asked in the vault (the manager's
+      // door); every other file, site-wide.
       const wikiContext = this.createWikiContext(req);
-      if (!(await wikiContext.hasPermission('asset-read'))) {
+      const ownFile = await attachmentManager.isOwnPrivateStoreFile(attachmentId, wikiContext.userContext);
+      if (!ownFile && !(await wikiContext.hasPermission('asset-read'))) {
         return res.status(403).send('Forbidden');
       }
       // #1460: the manager merges the requester's own private stores, and a
@@ -6139,10 +6102,9 @@ ${panes}
       if (!buffer) {
         return res.status(404).send('Thumbnail not available');
       }
-      const isPrivateThumb = await attachmentManager.isOwnPrivateStoreFile(attachmentId, wikiContext.userContext);
       res.set('Content-Type', 'image/jpeg');
       // A private file's thumbnail must not be cached by a shared proxy.
-      res.set('Cache-Control', isPrivateThumb ? 'private, no-store' : 'public, max-age=86400');
+      res.set('Cache-Control', ownFile ? 'private, no-store' : 'public, max-age=86400');
       return res.send(buffer);
     } catch (err: unknown) {
       logger.error('[attachments] Error generating thumbnail:', err);
@@ -7845,7 +7807,8 @@ ${panes}
       );
 
       const commonData = await this.getCommonTemplateData(req);
-      const userPermissions = await this.engine.getManager('PolicyDecisionPoint').getUserPermissions(
+      // #1539: with where each applies, so vault-owner's read "in your own vaults".
+      const userPermissions = await this.engine.getManager('PolicyDecisionPoint').getUserGrants(
         currentUser.username ?? ''
       );
 
@@ -11036,13 +10999,16 @@ ${panes}
       // was a display copy kept matched by hand (#713), so this page could
       // state something the evaluator would never do.
       const grantedByRole = this.engine.getManager('PolicyDecisionPoint').rolePermissionLists();
+      const roleGrantsNow = this.currentRoleGrants();
 
       return res.render('admin-roles', {
         ...commonData,
         title: 'Roles and Permissions',
         roles: Object.values(roles).map((role) => ({
           ...role,
-          permissions: grantedByRole[role.name] ?? []
+          permissions: grantedByRole[role.name] ?? [],
+          // #1539: the grants that apply only somewhere (vault-owner: in vaults).
+          limited: Object.fromEntries((roleGrantsNow[role.name]?.allows ?? []).filter((g) => g.limited).map((g) => [g.action, g.where]))
         })),
         permissions: Object.entries(permissions).map(([key, def]) => ({
           key,

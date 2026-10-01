@@ -90,7 +90,8 @@ const mockUserManager = {
 // #1431 step 14: decisions are the PDP's.
 const mockPolicyDecisionPoint = {
   permits: vi.fn(),
-  getUserPermissions: vi.fn()
+  getUserPermissions: vi.fn(),
+  getUserGrants: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -289,6 +290,7 @@ function resetMocks() {
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserGrants.mockReturnValue([{ action: 'read', limited: false, where: [] }, { action: 'write', limited: false, where: [] }]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
   mockUserManager.updateUser.mockResolvedValue(true);

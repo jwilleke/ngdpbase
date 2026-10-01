@@ -148,27 +148,6 @@ Shows: SystemInfo, System Variables...
 Result: Navigate to selected page
 ```
 
-### 4. Edit Index Page (views/edit-index.ejs)
-
-__Location:__ Page search at `/edit-index`
-
-__Trigger:__ Type 2+ characters in "Search Pages" field
-
-__Behavior:__
-
-- Shows autocomplete alongside list filtering
-- Both dropdown and filtered list work together
-- Selecting from dropdown navigates to edit page
-- Typing also filters the visible list
-
-__Example:__
-
-```
-Search: home
-Shows: HomePage, HomePages (autocomplete)
-Also:  List filters to show only matching pages
-```
-
 ---
 
 ## Editor Integration
@@ -397,8 +376,7 @@ public/
 views/
 ├── edit.ejs                       # Editor integration
 ├── search-results.ejs             # Search page integration
-├── header.ejs                     # Header search integration
-└── edit-index.ejs                 # Edit index integration
+└── header.ejs                     # Header search integration
 ```
 
 ### Data Flow

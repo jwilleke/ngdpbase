@@ -146,7 +146,8 @@ vi.mock('../../WikiEngine', () => {
   const mockPolicyDecisionPoint = {
     permits: vi.fn().mockReturnValue(true),
     rolePermissionLists: vi.fn(() => ({})),
-    getUserPermissions: vi.fn().mockResolvedValue(['read', 'write'])
+    getUserPermissions: vi.fn().mockResolvedValue(['read', 'write']),
+    getUserGrants: vi.fn().mockResolvedValue([{ action: 'read', limited: false, where: [] }, { action: 'write', limited: false, where: [] }])
   };
 
   const mockPageManager = {
@@ -494,6 +495,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     });
     mockPolicyDecisionPoint.permits.mockReturnValue(true);
     mockPolicyDecisionPoint.getUserPermissions.mockResolvedValue(['read', 'write']);
+    mockPolicyDecisionPoint.getUserGrants.mockResolvedValue([{ action: 'read', limited: false, where: [] }, { action: 'write', limited: false, where: [] }]);
     mockUserManager.getUser.mockResolvedValue({
       username: 'testuser',
       email: 'test@example.com',

@@ -21,8 +21,8 @@ describe('roleGrants (#1521)', () => {
       { id: 'y', effect: 'allow', subjects: [{ type: 'role', value: 'reader' }], resources: [{ type: 'page', pattern: '*' }], actions: ['page-read'] }
     ] as never);
     expect(grants.reader.allows).toEqual([
-      { action: 'page-public', limited: true },
-      { action: 'page-read', limited: false }
+      { action: 'page-public', limited: true, where: ['system-category'] },
+      { action: 'page-read', limited: false, where: [] }
     ]);
   });
 
@@ -30,7 +30,17 @@ describe('roleGrants (#1521)', () => {
     const grants = roleGrants([
       { id: 'v', effect: 'allow', subjects: [{ type: 'role', value: 'vault-owner' }], resources: [{ type: 'vault', pattern: '*' }], actions: ['page-delete'] }
     ] as never);
-    expect(grants['vault-owner'].allows).toEqual([{ action: 'page-delete', limited: true }]);
+    expect(grants['vault-owner'].allows).toEqual([{ action: 'page-delete', limited: true, where: ['vault'] }]);
+  });
+
+  test('a higher-priority deny takes a grant away; a lower-priority one does not (#1539, the evaluator\'s order)', () => {
+    const grants = roleGrants([
+      { id: 'a', effect: 'allow', priority: 50, subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit', 'page-read'] },
+      { id: 'd', effect: 'deny', priority: 90, subjects: [{ type: 'role', value: 'r' }], actions: ['page-edit'] },
+      { id: 'low', effect: 'deny', priority: 10, subjects: [{ type: 'role', value: 'r' }], actions: ['page-read'] }
+    ] as never);
+    expect(grants.r.allows.map((g) => g.action)).toEqual(['page-read']);
+    expect(grants.r.denies).toEqual(['page-edit', 'page-read']);
   });
 
   test('deny policies are listed as denies, not grants', () => {

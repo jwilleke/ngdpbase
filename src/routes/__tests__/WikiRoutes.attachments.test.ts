@@ -272,6 +272,29 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
   });
 
   describe('serveAttachment', () => {
+    test('a file in the caller\'s own vault is answered by the vault-aware read, not site-wide asset-read (#1539)', async () => {
+      const mockReq = createMockReq({ username: 'molly', isAuthenticated: true, roles: ['vault-owner'] }, { attachmentId: 'own-1' });
+      const mockRes = { ...createMockRes(), setHeader: vi.fn(), send: vi.fn() };
+      const original = mockEngine.getManager.getMockImplementation();
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') {
+          return { ...mockAttachmentManager, getPrivateStoreAttachment: vi.fn(async () => ({ buffer: Buffer.from('x'), metadata: { name: 'x.txt', encodingFormat: 'text/plain' } })) };
+        }
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
+        return null;
+      });
+      mockPolicyDecisionPoint.permits.mockClear();
+
+      try {
+        await wikiRoutes.serveAttachment(mockReq, mockRes);
+        expect(mockRes.send).toHaveBeenCalledWith(Buffer.from('x'));
+        // The site-wide asset-read was never the question.
+        expect(mockPolicyDecisionPoint.permits).not.toHaveBeenCalledWith(expect.anything(), 'asset-read');
+      } finally {
+        mockEngine.getManager.mockImplementation(original);
+      }
+    });
+
     test('should serve attachments to authorized users', async () => {
       // Setup - serveAttachment uses attachmentId param
       const mockReq = createMockReq(
@@ -360,7 +383,8 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       const mockRes = createMockRes();
       const getThumbnail = vi.fn();
       mockEngine.getManager.mockImplementation((name) => {
-        if (name === 'AttachmentManager') return { ...mockAttachmentManager, getThumbnail };
+        // #1539: not a file in the caller's own vault, so the site-wide asset-read decides.
+        if (name === 'AttachmentManager') return { ...mockAttachmentManager, getThumbnail, isOwnPrivateStoreFile: vi.fn(async () => false) };
         if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
         return null;
       });

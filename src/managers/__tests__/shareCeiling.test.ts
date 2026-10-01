@@ -29,8 +29,10 @@ let issuerActive = true;
 /** A real decider (#1431 step 14) over this policy; jim holds `issuerRoles`, live. */
 function makeManager() {
   return makeDecider({
-    evaluateAccess: ({ userContext, action }) => {
+    evaluateAccess: ({ userContext, action, attributes }) => {
       const roles = userContext.roles;
+      // #1539: asked with a vault, only vault-owner grants — as the shipped policy.
+      if ((attributes as { vault?: string } | undefined)?.vault) return Promise.resolve({ allowed: roles.includes('vault-owner') });
       if (roles.includes('anonymous')) return Promise.resolve({ allowed: anonymousAllowed });
       if (action === 'page-delete') return Promise.resolve({ allowed: roles.includes('admin') });
       return Promise.resolve({ allowed: roles.includes('editor') || roles.includes('admin') });
@@ -123,5 +125,20 @@ describe('#1222 — expiry is re-read at every decision', () => {
       viaShare: { ...grant, expiresAt: new Date(Date.now() + 60_000).toISOString() }
     };
     expect(await m.permits(live, 'page-read')).toBe(true);
+  });
+});
+
+describe('#1539 — a vault link is bounded by what its issuer holds IN the vault', () => {
+  const vaultGrant: ShareGrant = { ...grant, resources: [{ type: 'page', pattern: 'vault:jim/default' }] };
+  const vaultVisit: PermissionSubject = { ...ANONYMOUS_SUBJECT, viaShare: vaultGrant };
+
+  test('an issuer holding vault-owner keeps the link working', async () => {
+    issuerRoles = ['reader', 'vault-owner'];
+    expect(await makeManager().permits(vaultVisit, 'page-read')).toBe(true);
+  });
+
+  test('a site-wide role is not enough — an editor without vault-owner takes the link with them', async () => {
+    issuerRoles = ['editor'];
+    expect(await makeManager().permits(vaultVisit, 'page-read')).toBe(false);
   });
 });

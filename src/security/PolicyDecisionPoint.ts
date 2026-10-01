@@ -33,6 +33,10 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type { Decision, DecisionRequest, Policy } from '../types/Policy.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { normalizeUsername } from '../utils/username.js';
+import { roleGrants, type RoleGrant } from '../utils/roleGrants.js';
+import { vaultOfShare } from '../types/Share.js';
+import { permitsInVault } from '../utils/privateStoreAccess.js';
+import { formatPrivatePageName } from '../utils/privateStorePath.js';
 
 export const POLICIES_KEY = 'ngdpbase.access.policies';
 export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
@@ -112,25 +116,32 @@ export class PolicyDecisionPoint extends BaseManager {
    * matched by hand (#713); this derives the table from the policies instead.
    */
   rolePermissions(): Map<string, Set<string>> {
+    // #1539: read through roleGrants, the one reading of what a role grants.
     const granted = new Map<string, Set<string>>();
-    const ordered = [...this.policies()].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    for (const policy of ordered) {
-      const roles = (policy.subjects ?? [])
-        .filter((s) => s.type === 'role' && typeof s.value === 'string' && s.value)
-        .map((s) => s.value);
-      for (const role of roles) {
-        let set = granted.get(role);
-        if (!set) {
-          set = new Set<string>();
-          granted.set(role, set);
-        }
-        for (const action of policy.actions ?? []) {
-          if (policy.effect === 'deny') set.delete(action);
-          else set.add(action);
-        }
-      }
+    for (const [role, g] of Object.entries(roleGrants(this.policies()))) {
+      granted.set(role, new Set(g.allows.map((a) => a.action)));
     }
     return granted;
+  }
+
+  /**
+   * What the given roles grant together, each with where it applies (#1539):
+   * an action is limited only when every role granting it is limited, and
+   * `where` collects the places those limited grants name — so `vault-owner`'s
+   * actions read "in your own vaults". A summary, never an answer.
+   */
+  grantsForRoles(roles: readonly string[]): RoleGrant[] {
+    const all = roleGrants(this.policies());
+    const merged = new Map<string, RoleGrant>();
+    for (const role of roles) {
+      for (const g of all[role]?.allows ?? []) {
+        const seen = merged.get(g.action);
+        merged.set(g.action, seen
+          ? { action: g.action, limited: seen.limited && g.limited, where: seen.limited && g.limited ? [...new Set([...seen.where, ...g.where])].sort() : [] }
+          : { ...g });
+      }
+    }
+    return [...merged.values()].sort((a, b) => a.action.localeCompare(b.action));
   }
 
   /** {@link rolePermissions} as plain sorted arrays — for template data and JSON. */
@@ -187,6 +198,13 @@ export class PolicyDecisionPoint extends BaseManager {
     return (await this.decide(subject, { action })).permit;
   }
 
+  /** Does the named issuer of a vault link still hold `action` inside that vault (#1539)? The vault rule, resolved live. */
+  private async issuerHoldsInVault(issuer: string, action: string, where: { owner: string; vault: string }): Promise<boolean> {
+    const subject = await this.informationPoint()?.subjectFor(issuer);
+    if (!subject) return false;
+    return permitsInVault(this, subject, action, { owner: where.owner, vault: where.vault, resource: formatPrivatePageName(where.owner, where.vault, 'share') });
+  }
+
   /**
    * Does this NAMED USER hold a permission? (#1173)
    *
@@ -220,12 +238,18 @@ export class PolicyDecisionPoint extends BaseManager {
    * always {@link permits} with the subject.
    */
   async getUserPermissions(username: string): Promise<string[]> {
-    if (!username || normalizeUsername(username) === 'anonymous') {
-      return this.permissionsForRoles(['anonymous']);
-    }
-    const subject = await this.informationPoint()?.subjectFor(username);
-    if (!subject) return [];
-    return this.permissionsForRoles(subject.roles);
+    return this.permissionsForRoles(await this.rolesForSummary(username));
+  }
+
+  /** {@link getUserPermissions} with where each applies (#1539) — for the profile. */
+  async getUserGrants(username: string): Promise<RoleGrant[]> {
+    return this.grantsForRoles(await this.rolesForSummary(username));
+  }
+
+  /** The roles a user's summary is drawn from: theirs, live, or anonymous's. */
+  private async rolesForSummary(username: string): Promise<string[]> {
+    if (!username || normalizeUsername(username) === 'anonymous') return ['anonymous'];
+    return (await this.informationPoint()?.subjectFor(username))?.roles ?? [];
   }
 
   /**
@@ -297,7 +321,11 @@ export class PolicyDecisionPoint extends BaseManager {
         logger.info(`[PDP] share ${viaShare.id} expired ${viaShare.expiresAt} — denied`);
         return { permit: false, applicable: true, reason: 'share_expired' };
       }
-      const issuerHolds = await this.userHoldsPermission(viaShare.issuer, action);
+      // #1539: a vault link delegates what its issuer holds IN that vault.
+      const sharedVault = vaultOfShare(viaShare.resources);
+      const issuerHolds = sharedVault
+        ? await this.issuerHoldsInVault(viaShare.issuer, action, sharedVault)
+        : await this.userHoldsPermission(viaShare.issuer, action);
       if (!issuerHolds) {
         logger.info(`[PDP] share ${viaShare.id}: issuer ${viaShare.issuer} no longer holds '${action}' — denied`);
         return { permit: false, applicable: true, reason: 'share_issuer_deny' };

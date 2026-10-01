@@ -61,8 +61,10 @@
                                 </div>
                                 <div class="card-body" style="max-height: 200px; overflow-y: auto;">
                                     <% if (permissions && permissions.length > 0) { %>
-                                        <% permissions.forEach(permission => { %>
-                                            <span class="badge bg-success me-1 mb-1"><%= permission %></span>
+                                        <%# #1539: a grant that applies only somewhere says where. %>
+                                        <% permissions.forEach(grant => { %>
+                                            <% const _p = typeof grant === 'string' ? { action: grant, limited: false, where: [] } : grant; %>
+                                            <span class="badge <%= _p.limited ? 'bg-info text-dark' : 'bg-success' %> me-1 mb-1"<% if (_p.limited) { %> title="<%= _p.where.includes('vault') ? 'Only in your own vaults' : 'Only on some pages' %>"<% } %>><%= _p.action %><% if (_p.limited) { %> <small>(<%= _p.where.includes('vault') ? 'your vaults' : 'some pages' %>)</small><% } %></span>
                                         <% }) %>
                                     <% } else { %>
                                         <p class="text-muted">No specific permissions assigned</p>

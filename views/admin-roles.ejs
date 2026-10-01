@@ -101,7 +101,10 @@
                         </td>
                         <% roles.forEach(role => { %>
                         <td class="text-center">
-                            <% if (role.permissions && role.permissions.includes(perm.key)) { %>
+                            <% if (role.permissions && role.permissions.includes(perm.key) && role.limited && role.limited[perm.key]) { %>
+                            <%# #1539: granted only somewhere — vault-owner's grants apply in the holder's own vaults. %>
+                            <i class="fas fa-adjust text-info" title="Only <%= role.limited[perm.key].includes('vault') ? 'in the holder\'s own vaults' : 'on some pages' %>"></i>
+                            <% } else if (role.permissions && role.permissions.includes(perm.key)) { %>
                             <i class="fas fa-check text-success"></i>
                             <% } else { %>
                             <i class="fas fa-times text-muted"></i>

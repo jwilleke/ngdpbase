@@ -180,7 +180,7 @@ __Tracked in__: [#596 — FilterChain configured but filterChain.execute() never
 
 | File | Role |
 |---|---|
-| `src/routes/WikiRoutes.ts` | HTTP entry points — `savePage()`, `editPage()`, `editPageIndex()` |
+| `src/routes/WikiRoutes.ts` | HTTP entry points — `savePage()`, `editPage()` |
 | `src/managers/PageManager.ts` | `savePageWithContext()` — orchestrates save pipeline |
 | `src/managers/ValidationManager.ts` | `sanitizeMetadata()`, `checkConflicts()` |
 | `src/managers/PolicyInformationPoint.ts` | `checkPermission()` — access control |

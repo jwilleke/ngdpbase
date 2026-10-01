@@ -55,6 +55,9 @@ function makeEngine() {
   const pdp = new PolicyDecisionPoint(engine);
   vi.spyOn(pdp, 'userHoldsPermission').mockImplementation(async (username: string, action: string) =>
     username === 'jim' && issuerHolds.includes(action));
+  // #1539: a vault link asks what the issuer holds IN the vault — the same stub.
+  vi.spyOn(pdp as never, 'issuerHoldsInVault').mockImplementation((async (username: string, action: string) =>
+    username === 'jim' && issuerHolds.includes(action)));
   return engine as never;
 }
 

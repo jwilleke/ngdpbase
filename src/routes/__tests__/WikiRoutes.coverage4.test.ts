@@ -116,7 +116,8 @@ const mockUserManager = {
 const mockPolicyDecisionPoint = {
   permits: vi.fn(),
   rolePermissionLists: vi.fn(() => ({})),
-  getUserPermissions: vi.fn()
+  getUserPermissions: vi.fn(),
+  getUserGrants: vi.fn()
 };
 
 const mockPolicyInformationPoint = {
@@ -307,6 +308,7 @@ function resetMocks() {
   mockUserManager.getUser.mockResolvedValue({ username: 'testuser', email: 'test@example.com', displayName: 'Test User', preferences: {} });
   mockUserManager.getUsers.mockResolvedValue([]);
   mockPolicyDecisionPoint.getUserPermissions.mockReturnValue(['read', 'write']);
+  mockPolicyDecisionPoint.getUserGrants.mockReturnValue([{ action: 'read', limited: false, where: [] }, { action: 'write', limited: false, where: [] }]);
   mockUserManager.searchUsers.mockResolvedValue([{ username: 'testuser', displayName: 'Test' }]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });

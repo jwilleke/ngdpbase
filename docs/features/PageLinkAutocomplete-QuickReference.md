@@ -153,14 +153,6 @@ __Quick page navigation:__
 3. Navigate immediately
 ```
 
-__Find page to edit:__
-
-```
-1. /edit-index search: test
-2. Autocomplete shows options
-3. Click to edit
-```
-
 ---
 
 ### 💡 Pro Tips
