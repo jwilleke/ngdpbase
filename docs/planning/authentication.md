@@ -59,6 +59,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 - __Independent of the order__
   - [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) OIDC UserInfo endpoint, "who is this caller" in the standard shape. Blocks [yourphr#804](https://github.com/jwilleke/yourphr/issues/804)
   - [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) Communication channels as a user profile setting, with consent, for sign-in links and notices
+- __A separate epic__: [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) Account recovery
 
 ### The configuration shape (decided)
 
@@ -81,6 +82,15 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 - The BIP39 recovery words are __not__ a factor and have no entry: they are only for account recovery after a lost password or lost keys (operator, 2026-10-02)
 
 With passkey and password both at `0`, a second factor stays optional until an operator raises password to `1`.
+
+__Prompting and the admin default__ (operator, 2026-10-02):
+
+- __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
+- __A known device counts as the second factor.__ After a second factor on a browser, that browser is remembered and signing in there again does not prompt; a new or forgotten device does. The remembered-device period is configuration, so a regulated deployment can shorten it (NIST AAL2 expects re-authentication every 12 hours)
+- __No constant prompting.__ A second factor is asked for only on a new or forgotten device, and step-up only for rare sensitive actions ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)). A passkey is the sign-in and adds no prompt
+- __An account is only as strong as its weakest way in.__ A passkey protects only the passkey path; while the password alone can still sign the account in, a stolen password still works. The admin default and a known device close that for admins without prompting on every sign-in
+
+Account recovery — a lost password, passkey, second factor, known device or private-store keys — is its own epic, [#1545](https://github.com/jwilleke/ngdpbase/issues/1545).
 
 ---
 
