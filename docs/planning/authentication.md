@@ -87,6 +87,7 @@ __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
 - __A known device counts as the second factor.__ After a second factor on a browser, that browser is remembered and signing in there again does not prompt; a new or forgotten device does. The remembered-device period is configuration, so a regulated deployment can shorten it (NIST AAL2 expects re-authentication every 12 hours)
+- __A factor is disabled until it is truly available__ — its provider registered and fully configured (SMS with its transport, for example); listed but unavailable is never offered. __The server refuses to start__ when the required policy cannot be met: an unknown provider, or a requirement such as the admin second factor that no available factor can satisfy ([#1194](https://github.com/jwilleke/ngdpbase/issues/1194) is the precedent)
 - __No constant prompting.__ A second factor is asked for only on a new or forgotten device, and step-up only for rare sensitive actions ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)). A passkey is the sign-in and adds no prompt
 - __An account is only as strong as its weakest way in.__ A passkey protects only the passkey path; while the password alone can still sign the account in, a stolen password still works. The admin default and a known device close that for admins without prompting on every sign-in
 
