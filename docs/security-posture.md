@@ -325,7 +325,7 @@ What remains, grouped as the admin section would group them:
 |---|---|
 | Egress boundary | `security.egress.allowed-ranges`, `security.egress.denied-ranges` |
 | Session and cookie | `session.secure`, `session.http-only`, `session.max-age`, `server.trust-proxy` |
-| Identity and registration | `auth.password.enabled`, `auth.required-factors`, `application.registration`, `application.registration.password`, `auth.user.default-external`, `auth.magic-link.auto-provision`, `auth.magic-link.ttl-minutes`, `auth.google-oidc.auto-provision` |
+| Identity and registration | `auth.password.enabled`, `auth.factors`, `application.registration`, `application.registration.password`, `auth.user.default-external`, `auth.magic-link.auto-provision`, `auth.magic-link.ttl-minutes`, `auth.google-oidc.auto-provision` |
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
 | Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
@@ -338,7 +338,7 @@ What remains, grouped as the admin section would group them:
 Two things this survey turned up that the view will make visible, and both are the point of having it:
 
 - __`ngdpbase.filters.security.enabled` ships `false`__ (`SecurityFilter.ts:177`, where it sets `renderFiltering`), while every sub-flag beneath it — `prevent-xss`, `sanitize-html`, `strip-dangerous-content` — ships `true`. Rendered as a list, that reads as a row of controls switched on underneath a master switch that is off.
-- __`auth.required-factors` ships `["password"]`__, which is where the absence of MFA ([#421](https://github.com/jwilleke/ngdpbase/issues/421), [#448](https://github.com/jwilleke/ngdpbase/issues/448)) becomes a visible fact rather than a gap somebody has to know about.
+- __`auth.factors` offers only single factors__ (password, email link, identity providers), which is where the absence of MFA ([#421](https://github.com/jwilleke/ngdpbase/issues/421), [#448](https://github.com/jwilleke/ngdpbase/issues/448)) becomes a visible fact rather than a gap somebody has to know about.
 
 __Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__. Two of the ingredients it surveys have their own issues: MFA's absence is [#421](https://github.com/jwilleke/ngdpbase/issues/421) and [#448](https://github.com/jwilleke/ngdpbase/issues/448).
 

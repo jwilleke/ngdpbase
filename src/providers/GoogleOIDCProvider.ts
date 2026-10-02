@@ -22,7 +22,8 @@ import { OAuth2Client } from 'google-auth-library';
 import type {
   AuthProvider,
   AuthVerifyCredentials,
-  AuthResult
+  AuthResult,
+  FactorDescription
 } from './BaseAuthProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
@@ -48,6 +49,11 @@ interface StateEntry {
 export class GoogleOIDCProvider implements AuthProvider {
   readonly id = 'google-oidc';
   readonly displayName = 'Google';
+  /**
+   * An identity provider: AAL1 with no `amr` until the IdP's own reported
+   * `amr` / `acr` are read at sign-in (`"amr": ["trust"]` in config, #1523).
+   */
+  readonly factor: FactorDescription = { amr: [], aal: 1, primary: true };
 
   private client: OAuth2Client;
   /** nonce → entry */

@@ -33,7 +33,8 @@ import type UserManager from '../managers/UserManager.js';
 import type {
   AuthProvider,
   AuthVerifyCredentials,
-  AuthResult
+  AuthResult,
+  FactorDescription
 } from './BaseAuthProvider.js';
 
 /**
@@ -65,6 +66,8 @@ export interface CloudflareAccessConfig {
 export class CloudflareAccessAuthProvider implements AuthProvider {
   readonly id = 'cloudflare-access';
   readonly displayName = 'Cloudflare Access';
+  /** An identity provider, as Google: AAL1 with no `amr` of its own (#1523). */
+  readonly factor: FactorDescription = { amr: [], aal: 1, primary: true };
 
   private readonly engine: WikiEngine;
   private readonly config: CloudflareAccessConfig;

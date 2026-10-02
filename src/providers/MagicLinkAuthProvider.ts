@@ -27,7 +27,8 @@ import type {
   AuthProvider,
   AuthInitiateContext,
   AuthVerifyCredentials,
-  AuthResult
+  AuthResult,
+  FactorDescription
 } from './BaseAuthProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -64,6 +65,8 @@ export interface MagicLinkConfig {
 export class MagicLinkAuthProvider implements AuthProvider {
   readonly id = 'magic-link';
   readonly displayName = 'Magic Link';
+  /** Email is never phishing-resistant and never above AAL1: SP 800-63B §5.1.3.1 bars it as out-of-band (#1523). */
+  readonly factor: FactorDescription = { amr: ['email'], aal: 1, primary: true };
 
   /** token → entry */
   private tokens: Map<string, TokenEntry>;

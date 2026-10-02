@@ -5,9 +5,11 @@
  * calls to the appropriate provider. Routes call only AuthManager — never
  * individual providers directly.
  *
- * The `ngdpbase.auth.required-factors` config key defines which providers
- * must be satisfied (in order) for a full login. Currently single-factor
- * only; multi-factor state management is deferred to a future issue.
+ * `ngdpbase.auth.factors` lists the methods offered (#1523): one entry per
+ * provider, with the `amr` / `aal` / `acr` it gives — lowered to what the
+ * provider's own code declares, never raised. What a sign-in must reach is set
+ * per role (`required-aal`), not here. Signing in still uses one factor; the
+ * multi-factor flow, the per-role check and the boot refusal follow under #1523.
  *
  * Built-in providers, each gated on its own config key and all registered
  * through the public {@link AuthManager.registerProvider} (#1050):
@@ -34,9 +36,12 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
 import type {
+  Aal,
   AuthProvider,
   AuthInitiateContext,
   AuthVerifyCredentials,
+  FactorDescription,
+  PhishingResistance,
   ViaToken
 } from '../providers/BaseAuthProvider.js';
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
@@ -48,9 +53,67 @@ import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
 
+/** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
+export interface FactorEntry {
+  authproviderid: string;
+  primary?: boolean;
+  amr?: string[];
+  aal?: Aal;
+  acr?: PhishingResistance;
+  enabled?: boolean;
+}
+
+/** A factor as offered: its entry lowered to what the provider's code gives. */
+export interface Factor {
+  provider: string;
+  primary: boolean;
+  amr: string[];
+  aal: Aal;
+  acr?: PhishingResistance;
+}
+
+/** A factor a sign-in satisfied, and when — what step-up asks about (#1525). */
+export interface SatisfiedFactor extends Omit<Factor, 'primary'> {
+  at: string;
+}
+
+/** NIST SP 800-63 factor type. */
+export type FactorType = 'know' | 'have' | 'are';
+
+/** What a set of satisfied factors amounts to (#1523). */
+export interface Assurance {
+  /** The combined RFC 8176 `amr` array. */
+  amr: string[];
+  aal: Aal;
+  /** What we claim, strongest first: `phrh`, `phr`, then the AAL. Never overstated. */
+  acr: PhishingResistance | 'aal1' | 'aal2' | 'aal3';
+  /** Two or more distinct factor types — what MFA means here, not two providers. */
+  mfa: boolean;
+}
+
+/**
+ * The factor type each RFC 8176 `amr` value gives. Values not listed give no
+ * type: `user` (a presence test), `mfa`, `mca`, `rba`, `geo`, `wia` describe a
+ * method or a signal, not a factor someone holds.
+ */
+const FACTOR_TYPE: Readonly<Record<string, FactorType>> = {
+  pwd: 'know', pin: 'know', kba: 'know',
+  otp: 'have', sms: 'have', tel: 'have', swk: 'have', hwk: 'have', sc: 'have', email: 'have', push: 'have',
+  fpt: 'are', face: 'are', iris: 'are', retina: 'are', vbm: 'are'
+};
+
+/** `amr` values that never lift a sign-in's AAL (SP 800-63B §5.1.3.1). */
+const NEVER_LIFTS: ReadonlySet<string> = new Set(['email']);
+
+const PHR_RANK: Readonly<Record<PhishingResistance, number>> = { phr: 1, phrh: 2 };
+
 export interface AuthenticateResult {
   success: boolean;
   username?: string;
+  /** The provider that verified this sign-in (#1523). */
+  provider?: string;
+  /** The factors satisfied, each with its time; empty for a delegated credential (#1523). */
+  factors?: SatisfiedFactor[];
   /**
    * #946 — set by token-based providers. Carries the delegating token's
    * identity and scopes so the caller can enforce the scope ceiling and stamp
@@ -66,12 +129,15 @@ export interface AuthenticateResult {
 
 class AuthManager extends BaseManager {
   private providers: Map<string, AuthProvider>;
-  private requiredFactors: string[];
+  private factorEntries: FactorEntry[];
+  /** Built on first use and dropped on registration, since add-ons register late. */
+  private factorCache: Factor[] | null;
 
   constructor(engine: WikiEngine) {
     super(engine);
     this.providers = new Map();
-    this.requiredFactors = ['password'];
+    this.factorEntries = [{ authproviderid: 'password' }];
+    this.factorCache = null;
   }
 
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
@@ -180,11 +246,112 @@ class AuthManager extends BaseManager {
       this.registerProvider(new AgentTokenAuthProvider(this.engine));
     }
 
-    // Load required-factors chain
-    const factors = configManager?.getProperty('ngdpbase.auth.required-factors', ['password']);
-    this.requiredFactors = Array.isArray(factors) ? (factors as string[]) : ['password'];
+    this.factorEntries = this.readFactorEntries(configManager);
+    this.factorCache = null;
 
-    logger.info(`[AuthManager] Initialized — required factors: [${this.requiredFactors.join(', ')}]`);
+    logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
+  }
+
+  /**
+   * `ngdpbase.auth.factors`, or the retired flat `required-factors` list
+   * converted to entries when a site still sets only that (#1523).
+   */
+  private readFactorEntries(configManager: ConfigurationManager | null | undefined): FactorEntry[] {
+    if (!configManager) return [{ authproviderid: 'password' }];
+    const legacy = configManager.getCustomProperty('ngdpbase.auth.required-factors');
+    const custom = configManager.getCustomProperty('ngdpbase.auth.factors');
+    if (Array.isArray(legacy)) {
+      logger.warn(
+        '[AuthManager] ngdpbase.auth.required-factors is retired — ' +
+        (custom === undefined
+          ? 'converted to ngdpbase.auth.factors entries; rename it in custom config. (#1523)'
+          : 'ignored, because ngdpbase.auth.factors is also set; remove it from custom config. (#1523)')
+      );
+      if (custom === undefined) {
+        return legacy.filter((id): id is string => typeof id === 'string').map(id => ({ authproviderid: id }));
+      }
+    }
+    const entries = configManager.getProperty('ngdpbase.auth.factors', [{ authproviderid: 'password' }]);
+    if (!Array.isArray(entries)) {
+      logger.error('[AuthManager] ngdpbase.auth.factors is not a list — offering password only. (#1523)');
+      return [{ authproviderid: 'password' }];
+    }
+    return entries.filter((e): e is FactorEntry =>
+      typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string');
+  }
+
+  /**
+   * The factors offered, in configuration order (#1523).
+   *
+   * An entry counts only when it is enabled and its provider is registered and
+   * declares itself a factor; listed but unavailable is never offered. Each
+   * value is the lower of the entry and the provider's code: an entry that
+   * overstates is lowered to the truth, with a warning naming the key.
+   */
+  getFactors(): Factor[] {
+    if (this.factorCache) return this.factorCache;
+    const factors: Factor[] = [];
+    for (const entry of this.factorEntries) {
+      if (entry.enabled === false) continue;
+      const declared = this.providers.get(entry.authproviderid)?.factor;
+      if (!declared) continue;
+      factors.push(this.lowered(entry, declared));
+    }
+    this.factorCache = factors;
+    return factors;
+  }
+
+  private lowered(entry: FactorEntry, declared: FactorDescription): Factor {
+    const id = entry.authproviderid;
+    const overstated = (what: string): void => {
+      logger.warn(`[AuthManager] ngdpbase.auth.factors entry '${id}' overstates ${what} — lowered to what the provider gives. (#1523)`);
+    };
+
+    // "trust" is config-only: take the identity provider's reported values at sign-in.
+    const configured = entry.amr?.filter(v => v !== 'trust');
+    let amr = declared.amr;
+    if (configured && configured.length > 0) {
+      if (configured.every(v => declared.amr.includes(v))) amr = configured;
+      else overstated(`amr [${configured.join(', ')}]`);
+    }
+    let aal = declared.aal;
+    if (entry.aal !== undefined) {
+      if (entry.aal > declared.aal) overstated(`aal ${entry.aal}`);
+      else aal = entry.aal;
+    }
+    let acr = declared.acr;
+    if (entry.acr !== undefined) {
+      if (!acr || PHR_RANK[entry.acr] > PHR_RANK[acr]) overstated(`acr ${entry.acr}`);
+      else acr = entry.acr;
+    }
+    const primary = entry.primary === undefined ? declared.primary : entry.primary && declared.primary;
+    if (entry.primary && !declared.primary) overstated('primary');
+    return acr ? { provider: id, primary, amr, aal, acr } : { provider: id, primary, amr, aal };
+  }
+
+  /**
+   * What a set of satisfied factors amounts to (#1523), by NIST SP 800-63B.
+   *
+   * - `aal` is the strongest single factor's, lifted to AAL2 when the factors
+   *   cover two or more distinct types — email excepted: it never lifts a
+   *   sign-in above AAL1 (§5.1.3.1), though it still counts towards `mfa`.
+   * - `acr` is `phrh`, then `phr`, then the AAL — what we claim, never more.
+   * - `mfa` is two or more distinct types, which is what we require.
+   */
+  assess(factors: ReadonlyArray<Pick<Factor, 'amr' | 'aal' | 'acr'>>): Assurance {
+    const amr = [...new Set(factors.flatMap(f => f.amr))];
+    const typesOf = (values: string[]): Set<FactorType> =>
+      new Set(values.map(v => FACTOR_TYPE[v]).filter((t): t is FactorType => t !== undefined));
+
+    let aal = factors.reduce<Aal>((max, f) => (f.aal > max ? f.aal : max), 0);
+    const lifting = factors.filter(f => !f.amr.some(v => NEVER_LIFTS.has(v)));
+    if (aal < 2 && typesOf(lifting.flatMap(f => f.amr)).size >= 2) aal = 2;
+
+    const strongest = factors.reduce<PhishingResistance | undefined>(
+      (best, f) => (f.acr && (!best || PHR_RANK[f.acr] > PHR_RANK[best]) ? f.acr : best), undefined);
+    const acr: Assurance['acr'] = strongest ?? (aal >= 3 ? 'aal3' : aal === 2 ? 'aal2' : 'aal1');
+
+    return { amr, aal, acr, mfa: typesOf(amr).size >= 2 };
   }
 
   /**
@@ -217,12 +384,19 @@ class AuthManager extends BaseManager {
         }
       }
 
+      // #1523: say how — the provider, and the factor it satisfied with its
+      // time. A delegated credential is never a factor, so it records none.
+      const factor = this.getFactors().find(f => f.provider === providerId);
+      const factors: SatisfiedFactor[] = factor
+        ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
+        : [];
+
       // #946: pass through a token provider's viaToken detail, if any.
       // #1048: read directly — `AuthResult` now declares the field, so the
       // compiler checks both ends instead of a cast asserting one of them.
       return result.viaToken
-        ? { success: true, username: result.username, viaToken: result.viaToken }
-        : { success: true, username: result.username };
+        ? { success: true, username: result.username, provider: providerId, factors, viaToken: result.viaToken }
+        : { success: true, username: result.username, provider: providerId, factors };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
       return { success: false };
@@ -277,7 +451,7 @@ class AuthManager extends BaseManager {
    *
    * AuthManager initializes before AddonsManager (WikiEngine), so an addon
    * registering during its own startup is registering late by definition. Such
-   * a provider is absent from `getRequiredFactors()` and cannot serve a request
+   * a provider is absent from `getFactors()` until it registers and cannot serve a request
    * that arrives first. Both are acceptable; neither is silent.
    *
    * ## There is no unregisterProvider()
@@ -314,6 +488,7 @@ class AuthManager extends BaseManager {
     }
 
     this.providers.set(provider.id, provider);
+    this.factorCache = null;
     // info, not debug: which auth providers are live is a security-relevant
     // fact about a running instance, and the boot log is where an operator
     // checks it. Callers add a second line only when they carry config detail
@@ -389,11 +564,6 @@ class AuthManager extends BaseManager {
     const provider = this.providers.get(providerId);
     if (!provider?.provisionIfNew) return undefined;
     return provider.provisionIfNew(handle);
-  }
-
-  /** Returns the ordered list of required auth factors from config. */
-  getRequiredFactors(): string[] {
-    return this.requiredFactors;
   }
 
   /** Returns true if the provider is registered. */

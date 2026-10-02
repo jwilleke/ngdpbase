@@ -1167,7 +1167,7 @@ function displayAuthMethods(configManager: ConfigurationManager, isAdmin: boolea
     if (!k.startsWith('ngdpbase.auth.')) continue;
     const rest = k.slice('ngdpbase.auth.'.length);
     const dot = rest.indexOf('.');
-    if (dot === -1) continue; // e.g. ngdpbase.auth.required-factors — include under a special group
+    if (dot === -1) continue; // e.g. ngdpbase.auth.factors — include under a special group
     const method = rest.slice(0, dot);
     const subkey = rest.slice(dot + 1);
     if (!methods[method]) methods[method] = {};
