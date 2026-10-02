@@ -46,7 +46,7 @@ __Target factor model__ (from the epic): a passkey alone, __or__ a password plus
 The blocked-by relations on GitHub give this order. Nothing in the first step depends on anything else.
 
 - __First — the two foundations__
-  - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `required-factors` becomes a list of provider entries (`authproviderid`, `primary`, `factors`, `priority`, `enabled`). Its decisions are in its comments
+  - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `ngdpbase.auth.factors` provider entries (`authproviderid`, `primary`, `amr` / `aal` / `acr`, `trust-amr`, `enabled`) and a per-role `required-aal`. Its body states the design, its comments the decisions
   - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider, with a migration that copies each password hash into one row
 - __Then — the factors__, each blocked by both foundations
   - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1)
@@ -64,25 +64,28 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 
 ### The configuration shape (decided)
 
-Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 2026-09-30 to 2026-10-02); its body states the decided design, its comments the record of each decision. `ngdpbase.auth.required-factors` becomes a list of provider entries:
+Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 2026-09-30 to 2026-10-02); its body states the design, its comments the record of each decision.
+
+`ngdpbase.auth.factors` (renamed from `required-factors`) lists the methods __offered__; what is __required__ lives on each role (`required-aal`). Decided 2026-10-02:
 
 ```json
-"ngdpbase.auth.required-factors": [
-  { "authproviderid": "passkey",  "primary": true,  "factors": 0, "priority": 0, "enabled": true },
-  { "authproviderid": "password", "primary": true,  "factors": 0, "priority": 1, "enabled": true },
-  { "authproviderid": "totp",     "primary": false,               "priority": 2, "enabled": true }
+"ngdpbase.auth.factors": [
+  { "authproviderid": "passkey",      "primary": true,  "amr": ["swk", "user"], "aal": 2, "acr": "phr",  "enabled": true },
+  { "authproviderid": "security-key", "primary": true,  "amr": ["hwk", "pin"],  "aal": 3, "acr": "phrh", "enabled": true },
+  { "authproviderid": "google",       "primary": true,  "trust-amr": true,                                 "enabled": true },
+  { "authproviderid": "password",     "primary": true,  "amr": ["pwd"],         "aal": 1,                "enabled": true },
+  { "authproviderid": "totp",         "primary": false, "amr": ["otp"],         "aal": 1,                "enabled": true },
+  { "authproviderid": "email-link",   "primary": false, "amr": ["email"],       "aal": 1,                "enabled": true },
+  { "authproviderid": "known-device", "primary": false, "amr": [],              "aal": 0, "carry-forward": "24h", "remember": "30d", "enabled": true }
 ]
 ```
 
-- `primary: true` — the provider can start a sign-in; `factors` is how many __additional__ factors a sign-in through it must pass. `0`: none required, so a second factor is optional
-- `primary: false` — only ever a second factor; it has no `factors`
-- ~~`priority`~~ — dropped (operator, 2026-10-02): enrolled methods are offered __strongest first__, worked out from `acr` and `aal`, the rest behind "use another way"
-- `enabled` — an entry turned off is not offered
-- A second factor delivered by message is a non-primary entry. The message carries a __link__ that returns to the server as the verification (a confirm page; its POST approves the waiting sign-in), and the same message carries a code for autofill; whichever is used first completes the sign-in and voids the other (operator, 2026-10-02)
-- Which channel the message goes by — email, SMS or another — is the __person's preference__ in their profile ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533)), not a fixed provider; SMS needs an operator-configured transport
-- The BIP39 recovery words are __not__ a factor and have no entry: they are only for account recovery after a lost password or lost keys (operator, 2026-10-02)
-
-With passkey and password both at `0`, a second factor stays optional until an operator raises password to `1`.
+- `authproviderid` — the registered provider; one provider may give several `amr` values, several providers the same one
+- `primary: true` — the provider can start a sign-in; exactly one primary starts each sign-in. Every enabled provider can also be an additional factor except the one that started
+- `amr`, `aal`, `acr` — what the provider gives, as declared in its __code__; config may __lower__ them (be stricter), never raise them. An overstated value is lowered to the truth with a warning (log, admin dashboard, posture report). Type (know / have / are) and device-boundness (`hwk` / `swk`) are derived from `amr`
+- `trust-amr` — identity providers only (OIDC): take the provider's reported `amr` / `acr`; off unless the operator trusts that provider
+- `enabled` — off is never offered; a provider that is not fully available (SMS without a transport) counts as off
+- No `factors` count and no `priority`: requirements are per role, and enrolled methods are offered strongest first (`phrh`, `phr`, then by `aal`)
 
 __Factor types__ (operator, 2026-10-02). Every factor is classified by its NIST SP 800-63 type: __know__ (knowledge), __have__ (possession) or __are__ (inherence). Exactly one primary starts the sign-in; MFA means the factors satisfied cover __two or more distinct types__, not merely two providers. Each provider declares the types it gives; an OIDC identity provider reports what it did through RFC 8176 `amr` values.
 
