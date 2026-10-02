@@ -95,6 +95,8 @@ __Factor types__ (operator, 2026-10-02). Every factor is classified by its NIST 
 | Single-factor cryptographic | security key without PIN | have |
 | Multi-factor cryptographic | passkey with user verification; key with PIN | have + know or are — MFA on its own |
 
+__How a factor is described__ (operator, 2026-10-02): each factor declares its RFC 8176 `amr` value(s) and whether it is phishing-resistant; its type and whether it is device-bound (`hwk` vs `swk`) are derived from `amr`. An email link uses the unregistered `"email"` ([Email Magic Link](https://jminim4.nerdsbythehour.com:3000/view/Email%20Magic%20Link)); an SMS link the registered `sms`. A sign-in carries the combined `amr` array and one computed `acr`.
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
