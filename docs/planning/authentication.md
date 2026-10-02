@@ -83,6 +83,18 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 
 With passkey and password both at `0`, a second factor stays optional until an operator raises password to `1`.
 
+__Factor types__ (operator, 2026-10-02). Every factor is classified by its NIST SP 800-63 type: __know__ (knowledge), __have__ (possession) or __are__ (inherence). Exactly one primary starts the sign-in; MFA means the factors satisfied cover __two or more distinct types__, not merely two providers. Each provider declares the types it gives; an OIDC identity provider reports what it did through RFC 8176 `amr` values.
+
+| NIST SP 800-63B authenticator | Example | Type(s) |
+| --- | --- | --- |
+| Password | password, passphrase | know |
+| Look-up secret | backup codes | have |
+| Out-of-band device | link or code to a phone | have (email is not accepted as out-of-band) |
+| Single-factor OTP | TOTP app | have |
+| Multi-factor OTP | OTP device unlocked by PIN or biometric | have + know or are |
+| Single-factor cryptographic | security key without PIN | have |
+| Multi-factor cryptographic | passkey with user verification; key with PIN | have + know or are — MFA on its own |
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
@@ -191,7 +203,9 @@ Pages on jimstest that define the terms and standards this plan relies on.
 - [NIST.SP.800-63A](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63A) — enrolment and identity proofing (IAL)
 - [NIST.SP.800-63B](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63B) — authentication and authenticators (AAL): why email is not an out-of-band authenticator and SMS is restricted ([#1527](https://github.com/jwilleke/ngdpbase/issues/1527), [#1528](https://github.com/jwilleke/ngdpbase/issues/1528))
 - [NIST.SP.800-63C](https://jminim4.nerdsbythehour.com:3000/view/NIST.SP.800-63C) — federation (FAL): signing in through Google, Cloudflare Access or Authentik, and an identity provider that already did MFA ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523))
-- [Multi-Factor Authentication](https://jminim4.nerdsbythehour.com:3000/view/Multi-Factor%20Authentication) — the target of the epic
+- [Multi-Factor Authentication](https://jminim4.nerdsbythehour.com:3000/view/Multi-Factor%20Authentication) — the target of the epic: two or more __independent__ factors
+- [Something You Know](https://jminim4.nerdsbythehour.com:3000/view/Something%20You%20Know), [Something You Have](https://jminim4.nerdsbythehour.com:3000/view/Something%20You%20Have), [Something You Are](https://jminim4.nerdsbythehour.com:3000/view/Something%20You%20Are) — the three factor types every factor is classified by; [Something You Do](https://jminim4.nerdsbythehour.com:3000/view/Something%20You%20Do) is not a NIST factor type
+- [RFC 8176](https://jminim4.nerdsbythehour.com:3000/view/RFC%208176) — Authentication Method Reference (`amr`) values, how an identity provider reports the factors it checked
 - [Passkeys](https://jminim4.nerdsbythehour.com:3000/view/Passkeys) — the factor that is complete on its own ([#448](https://github.com/jwilleke/ngdpbase/issues/448))
 - [WebAuthN](https://jminim4.nerdsbythehour.com:3000/view/WebAuthN) — the browser API passkeys use ([#448](https://github.com/jwilleke/ngdpbase/issues/448))
 - [FIDO2](https://jminim4.nerdsbythehour.com:3000/view/FIDO2) — WebAuthn plus CTAP, the passkey standard
