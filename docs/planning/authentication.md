@@ -103,6 +103,13 @@ __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is com
 
 __The required level is per role__ (operator, 2026-10-02). Each role declares the assurance level its holders must reach — AAL1, AAL2, AAL3, with phishing resistance as an extra — and a person must meet the __highest__ among their roles. The sign-in's computed `acr` is compared with it; short of it, the next factor is asked for. "Admins need a second factor" becomes the `admin` role's level. There is __no "MFA" step__ (operator, 2026-10-02): the levels are NIST's only, so password plus an email link (AAL1) never meets a role at AAL2. Still open: how a known device meets a role above AAL1.
 
+__Known devices and misclassification__ (operator, 2026-10-02):
+
+- A known device is `{ "authproviderid": "known-device", "amr": [], "aal": 0, "carry-forward": "24h", "remember": "30d", "enabled": true }`. On re-entry of the primary factor it carries the level the device last reached for at most 24 hours (NIST allows an AAL2 re-authentication with one factor plus the session secret within that window); after that it only skips the prompt, and the sign-in reports what was entered
+- Over-limit security settings are __lowered with a warning__ (log, admin dashboard, posture report), not refused. Config may lower a provider's `amr` / `aal` / `acr`, never raise it; the truth is in the provider's code. Refusing to start is only for a required level no available factor can reach
+- Known devices are rows in the credentials store ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)), kind `device`, storing the `amr` of the sign-in that created them — never a level, which is recomputed at use. The person sees and removes them; a password change or sign-out-everywhere clears them
+- Tamper protection: each row is signed with a key from the environment and references the audit record of the sign-in that created it, anchored by the hash-chained audit log. A row that fails either check is treated as unknown and recorded as a security event. Config changes are already audited (security-posture D19)
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
