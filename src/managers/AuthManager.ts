@@ -35,6 +35,7 @@ import type { BackupData } from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
+import type { PermissionSubject } from './UserManager.js';
 import type {
   Aal,
   AuthProvider,
@@ -52,6 +53,17 @@ import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthPro
 import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
+import { randomUUID } from 'node:crypto';
+import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
+import {
+  CREDENTIALS_KEY_ENV,
+  type CredentialKind,
+  type CredentialRecord,
+  type RejectedCredential
+} from '../providers/BaseCredentialsProvider.js';
+import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
+import { recordAuditEvent } from '../utils/auditEvents.js';
+import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -107,6 +119,20 @@ const NEVER_LIFTS: ReadonlySet<string> = new Set(['email']);
 
 const PHR_RANK: Readonly<Record<PhishingResistance, number>> = { phr: 1, phrh: 2 };
 
+/** A credential as shown to a person: never its secret (#1524). */
+export type CredentialView = Omit<CredentialRecord, 'secret'>;
+
+/** What enrolling a credential supplies; id and times are the store's. */
+export interface CredentialInput {
+  kind: CredentialKind;
+  subject: string;
+  secret: string;
+  label: string;
+}
+
+/** Kinds that can start a sign-in on their own — what "a way in" counts (#1524). */
+const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email']);
+
 export interface AuthenticateResult {
   success: boolean;
   username?: string;
@@ -132,6 +158,8 @@ class AuthManager extends BaseManager {
   private factorEntries: FactorEntry[];
   /** Built on first use and dropped on registration, since add-ons register late. */
   private factorCache: Factor[] | null;
+  /** The credentials store (#1524); null when it could not be opened. */
+  private credentials: BaseCredentialsProvider | null = null;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -249,6 +277,8 @@ class AuthManager extends BaseManager {
     this.factorEntries = this.readFactorEntries(configManager);
     this.factorCache = null;
 
+    await this.openCredentialsStore(configManager);
+
     logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
   }
 
@@ -278,6 +308,145 @@ class AuthManager extends BaseManager {
     }
     return entries.filter((e): e is FactorEntry =>
       typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string');
+  }
+
+  /**
+   * Open the credentials store (#1524). Without the key nothing can be
+   * verified, so the store stays closed and the manager says so; boot itself
+   * never runs without the key, because bootstrap-env generates it.
+   */
+  private async openCredentialsStore(configManager: ConfigurationManager | null | undefined): Promise<void> {
+    this.credentials = null;
+    const key = process.env[CREDENTIALS_KEY_ENV] ?? '';
+    const file = configManager?.getResolvedDataPath?.('ngdpbase.auth.credentials.file', './data/users/credentials.json');
+    if (!file) return;
+    if (!key) {
+      this.markDegraded(`${CREDENTIALS_KEY_ENV} is not set, so the credentials store is closed`, CREDENTIALS_KEY_ENV);
+      return;
+    }
+    const store = new FileCredentialsProvider(file, key);
+    try {
+      await store.initialize((rejected) => this.raiseRejectedCredentials(store.location(), rejected));
+    } catch (err) {
+      this.markDegraded(`The credentials store ${file} could not be read: ${(err as Error).message}`, 'ngdpbase.auth.credentials.file');
+      return;
+    }
+    this.credentials = store;
+  }
+
+  /**
+   * A row that does not verify was planted or damaged (#1524). It has already
+   * been dropped; this makes it impossible to miss: a critical security event,
+   * an escalating admin notification, and a degraded AuthManager until the
+   * store is put right.
+   */
+  private raiseRejectedCredentials(file: string, rejected: RejectedCredential[]): void {
+    const summary = rejected.map(r => `${r.row.kind ?? '?'} ${r.row.id ?? '?'} for ${r.row.username ?? '?'} (${r.reason})`).join('; ');
+    const message = `${rejected.length} credential row(s) in ${file} failed verification and were ignored: ${summary}. ` +
+      'A row that does not verify was written without the instance key — treat it as an attempt to plant a way into an account.';
+    logger.error(`🚨 [AuthManager] SECURITY: ${message}`);
+    void recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.SECURITY_EVENT,
+      user: 'system',
+      ipAddress: undefined,
+      action: 'credential-rejected',
+      result: 'deny',
+      severity: 'high', // the highest AuditSeverity; the notification escalates
+      resource: file,
+      resourceType: 'credentials-store',
+      reason: message,
+      metadata: { securityEventType: 'credential-rejected', rows: rejected.map(r => ({ id: r.row.id, username: r.row.username, kind: r.row.kind, reason: r.reason })) }
+    });
+    const nm = this.engine.getManager('NotificationManager') as { addNotification?: (n: unknown) => Promise<string> } | null;
+    nm?.addNotification?.({
+      type: 'system',
+      level: 'error',
+      title: 'Security alert: credential rows rejected',
+      message
+    }).catch(() => { /* the audit record and the degraded state still stand */ });
+    this.markDegraded(message, 'ngdpbase.auth.credentials.file');
+  }
+
+  /**
+   * Whether `ctx` may act on `username`'s credentials: their own under
+   * `profile-manage`, anyone else's under `user-edit` (#1524). No PDP, no answer,
+   * no access.
+   */
+  private async mayManageCredentials(ctx: PermissionSubject, username: string): Promise<boolean> {
+    const pdp = this.engine.getManager('PolicyDecisionPoint') as
+      { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
+    if (!pdp || !ctx.isAuthenticated) return false;
+    return pdp.permits(ctx, ctx.username === username ? 'profile-manage' : 'user-edit');
+  }
+
+  private requireCredentialsStore(): BaseCredentialsProvider {
+    if (!this.credentials) throw new Error('The credentials store is not available (#1524)');
+    return this.credentials;
+  }
+
+  /** `username`'s credentials, without their secrets (#1524). */
+  async listCredentials(ctx: PermissionSubject, username: string): Promise<CredentialView[]> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    return this.requireCredentialsStore().list(username).map(({ secret: _secret, ...view }) => view);
+  }
+
+  /** Enrol a credential for `username`; returns its id. Audited (#1524). */
+  async addCredential(ctx: PermissionSubject, username: string, input: CredentialInput): Promise<string> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const store = this.requireCredentialsStore();
+    const record: CredentialRecord = {
+      id: randomUUID(),
+      username,
+      kind: input.kind,
+      subject: input.subject,
+      secret: input.secret,
+      label: input.label,
+      createdAt: new Date().toISOString()
+    };
+    await store.add(record);
+    this.auditCredentialChange(ctx, username, 'credential-add', record);
+    return record.id;
+  }
+
+  /**
+   * Remove one of `username`'s credentials. Refused when it is their last way
+   * in: no password and no other credential that can start a sign-in (#1524).
+   */
+  async removeCredential(ctx: PermissionSubject, username: string, id: string): Promise<boolean> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const store = this.requireCredentialsStore();
+    const row = store.get(id);
+    if (!row || row.username !== username) return false;
+    if (WAY_IN_KINDS.has(row.kind)) {
+      const others = store.list(username).filter(r => r.id !== id && WAY_IN_KINDS.has(r.kind)).length;
+      if (others === 0 && !(await this.hasPassword(username))) {
+        throw new Error('This is the last way into the account; add another before removing it');
+      }
+    }
+    const removed = await store.remove(id);
+    if (removed) this.auditCredentialChange(ctx, username, 'credential-remove', row);
+    return removed;
+  }
+
+  /** Whether the account signs in with a password — the field stays on the user record (#1524). */
+  private async hasPassword(username: string): Promise<boolean> {
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    const user = await userManager?.getUser(username) as { password?: string; isExternal?: boolean } | null | undefined;
+    return Boolean(user && !user.isExternal && user.password);
+  }
+
+  private auditCredentialChange(ctx: PermissionSubject, username: string, action: 'credential-add' | 'credential-remove', row: CredentialRecord): void {
+    void recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.USER_EDIT,
+      user: ctx.username,
+      ipAddress: (ctx as { ipAddress?: string }).ipAddress,
+      action,
+      result: 'success',
+      severity: 'medium',
+      resource: username,
+      resourceType: 'user',
+      metadata: { credentialId: row.id, kind: row.kind, label: row.label }
+    });
   }
 
   /**
