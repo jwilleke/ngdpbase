@@ -8,7 +8,11 @@ Mostly an index: where an issue holds a design, this page points at it and says 
 
 ## Where it stands
 
-`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in uses __one factor__: `ngdpbase.auth.required-factors` is declared but not enforced as multi-factor.
+`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in still uses __one factor__. What is built towards multi-factor (2026-10-02):
+
+- __Factor configuration__ ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523), first slice): `ngdpbase.auth.factors` replaced the flat `required-factors` list (a site's old key is still converted). Each provider declares in code the `amr` / `aal` / `acr` it gives; config may lower them, never raise them. `AuthManager.assess()` gives the combined `amr`, the AAL, the `acr` and whether it is MFA, and a sign-in result records its provider and factors with their times. Not yet: per-role `required-aal`, the second-factor flow, known devices, factors in the session.
+- __Credentials store__ ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)): passkeys, TOTP, verified email/phone and known devices, many per account, in `${FAST_STORAGE}/users/credentials.json` (owner-only). Passwords are __not__ copied there; they stay on the user record. Every row is signed with `NGDPBASE_CREDENTIALS_KEY` (generated into the instance `.env`); a row that does not verify is ignored and raised as a security alert. Empty until a factor enrols into it; the profile list comes with the first such factor.
+- __Session idle timeout__ ([#1546](https://github.com/jwilleke/ngdpbase/issues/1546), first slice): `ngdpbase.session.idle-timeout-minutes`, site-wide, `0` = off, enforced server-side and audited. Not yet: a shorter value per role, the warning before logoff.
 
 Providers in the code (`src/providers/`):
 
@@ -39,7 +43,7 @@ Closed work that shapes what comes next. Each issue is the record of what was de
 
 All open authentication work sits under one epic, [#1522](https://github.com/jwilleke/ngdpbase/issues/1522) — multi-factor sign-in, step-up re-authentication and RFC 8628 device authorization. It is built in ngdpbase first and then ported to YourPHR, whose [authorization-framework.md](https://github.com/jwilleke/yourphr/blob/main/docs/planning/authorization-framework.md) is the source of truth for the downstream needs.
 
-__Target factor model__ (from the epic): a passkey alone, __or__ a password plus __any one__ enrolled second factor. Every factor is a registered `AuthProvider`; how many factors each provider needs is configuration.
+__Target factor model__ (from the epic): a passkey alone, __or__ a password plus __any one__ enrolled second factor. Every factor is a registered `AuthProvider`; what a sign-in must reach is each role's `required-aal`, not a count per provider.
 
 ### Build order
 
@@ -47,7 +51,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 
 - __First — the two foundations__
   - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `ngdpbase.auth.factors` provider entries (`authproviderid`, `primary`, `amr` / `aal` / `acr`, `enabled`) and a per-role `required-aal`. Its body states the design, its comments the decisions
-  - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider, with a migration that copies each password hash into one row
+  - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider owned by AuthManager. Built (2026-10-02); passwords are not migrated into it
 - __Then — the factors__, each blocked by both foundations
   - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1). A passkey alone signs a person in from day one, as NIST specifies (a multi-factor cryptographic authenticator suffices for AAL2; synced passkeys meet AAL2; device-bound keys can reach AAL3). Passkeys are tied to the host of `ngdpbase.application.base-url`, never the request, and stay off until that key is set explicitly — the magic link's rule ([#642](https://github.com/jwilleke/ngdpbase/issues/642)); the admin page names the host, and changing it while passkeys are enrolled warns
   - [#421](https://github.com/jwilleke/ngdpbase/issues/421) TOTP (P2)
@@ -59,10 +63,10 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 - __Then — device authorization__: [#1526](https://github.com/jwilleke/ngdpbase/issues/1526) RFC 8628 for devices, AI/MCP clients and CLIs; approval uses step-up (blocked by #1525). A device grant lasts until revoked (operator, 2026-10-02 — not YourPHR's 30 days); the client is the phone's health app or a home bridge, not the sensor; rotating keys via refresh tokens where the client supports them, a long-lived token accepted where it cannot; add-only scope, paused after 90 days without an upload, revocable from the profile, audited. __Scope names come from the host__ (operator, 2026-10-02): the authorization server enforces any scope generically — a ceiling, add-only, shown in plain words on the approval page — and each host registers its own names and labels. YourPHR uses [SMART on FHIR v2](https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html) scopes as they are, so a wearable bridge gets `patient/Observation.c` (create only: it cannot read, change or delete); the package offers SMART v2 as an optional preset. ngdpbase keeps its agent-token scopes (permission names)
 - __Independent of the order__
   - [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) OIDC UserInfo endpoint, "who is this caller" in the standard shape. Blocks [yourphr#804](https://github.com/jwilleke/yourphr/issues/804)
-- __The authorization server__ for #1526 and #1529 is [node-oidc-provider](https://github.com/panva/node-oidc-provider), embedded (operator, 2026-10-02): MIT, OpenID Certified; RFC 8628, UserInfo, refresh rotation, PKCE, dynamic registration and CIMD for MCP clients. Every sign-in and approval inside it is ours (`AuthManager`, factors, step-up, the approval page); no new service. activescott/auth's #83 hardening list is the review checklist
   - [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) Communication channels as a user profile setting, with consent, for sign-in links and notices
   - [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) Session idle timeout
   - [#1549](https://github.com/jwilleke/ngdpbase/issues/1549) __[EPIC] SMS / RCS transports__ for sign-in messages and notices: [#1547](https://github.com/jwilleke/ngdpbase/issues/1547) Twilio Messaging (own number, RCS-capable, US registration) and [#1548](https://github.com/jwilleke/ngdpbase/issues/1548) Android gateway (hobby sites), both help wanted. Twilio Verify ([#1528](https://github.com/jwilleke/ngdpbase/issues/1528)) is an __auth provider, not an SMS transport__ — it delivers and checks its own code — so it sits outside it
+- __The authorization server__ for #1526 and #1529 is [node-oidc-provider](https://github.com/panva/node-oidc-provider), embedded through the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package (its own repo, so YourPHR and other apps use the same server) (operator, 2026-10-02): MIT, OpenID Certified; RFC 8628, UserInfo, refresh rotation, PKCE, dynamic registration and CIMD for MCP clients. Every sign-in and approval inside it is ours (`AuthManager`, factors, step-up, the approval page); no new service. activescott/auth's #83 hardening list is the review checklist
 - __A separate epic__: [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) Account recovery
 
 ### The configuration shape (decided)
@@ -243,12 +247,13 @@ Not covered, by decision (operator, 2026-10-02): __identity proofing (IAL2)__ �
 
 ## Open questions and conflicts
 
-Points where the issues disagree with a later decision, or where nothing is decided yet. Each is settled on its own issue, not here.
+Points where an issue disagrees with a later decision, or where nothing is decided yet. Each is settled on its own issue, not here.
 
-- __SMS carries codes only?__ [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) says SMS never carries notices or links. [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) supersedes that: the person chooses and consents to each channel, for sign-in links and notices separately.
-- __`factors` in YourPHR.__ [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) now states the decided shape (rewritten 2026-10-02): `factors` counts __additional__ factors (`password` plus one = `"factors": 1`). YourPHR's document still describes per-provider `auth-factors` where `2` meant "this provider plus one"; ported as written, every password policy would be off by one.
-- __Passkey storage.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448)'s original plan stores passkey fields on the user record. [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) replaces that with the credentials store, as its comment says; the body still shows the old plan.
+- __Passkey storage.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448)'s body still stores passkey fields on the user record. The credentials store ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)) is built and is where they go; the body needs updating before #448 starts.
+- __When the admin AAL2 default takes effect.__ `admin` and `user-admin` default to `required-aal: AAL2`, and the server refuses to start when a role's level cannot be reached by any available factor. Today no AAL2-capable factor exists, so shipping the default before passkeys or TOTP would refuse every boot. It has to arrive with the first such factor, together with an enrol-now step instead of a lockout ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523)).
 - __Communication channels__ — [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) is marked "to be detailed later" for verification, consent records and per-purpose consent.
+
+Settled since the last revision: SMS is Twilio Verify, an auth provider, and our own messages carry a link by the person's channel choice ([#1528](https://github.com/jwilleke/ngdpbase/issues/1528), [#1533](https://github.com/jwilleke/ngdpbase/issues/1533)); YourPHR's plan now points here and no longer uses per-provider factor counts (yourphr 9e41c1a6b); every credential row is signed, not only known devices ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)).
 
 ---
 
@@ -289,3 +294,6 @@ Pages on jimstest that define the terms and standards this plan relies on.
 - [security-developer-guide.md](../guides/security-developer-guide.md) — how a route or manager authorises
 - [private-stores.md](../private-stores.md) — keys that follow sign-in, and the recovery words
 - [sharing.md](../sharing.md) — share links, the other delegated credential
+- [#1557](https://github.com/jwilleke/ngdpbase/issues/1557) — people see their own notifications; where an approval request, a new-sign-in alert or the idle-timeout warning will appear
+- [#1560](https://github.com/jwilleke/ngdpbase/issues/1560), [#1561](https://github.com/jwilleke/ngdpbase/issues/1561) — secret files owner-only, and backups encrypted with an `.env` key; the user store and credentials store are in every backup
+- [#1556](https://github.com/jwilleke/ngdpbase/issues/1556) — MarqueePlugin `fetch=` runs any manager method from page text; the planned admin issue banner waits on it
