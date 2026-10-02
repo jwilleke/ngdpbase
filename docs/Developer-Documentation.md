@@ -30,9 +30,9 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 39 | 44 | Core system managers |
+| [Managers](#managers) | 40 | 45 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 36 | 37 | Storage and service providers |
+| [Providers](#providers) | 38 | 39 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -64,6 +64,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | CatalogManager | ✅ [doc](managers/CatalogManager.md) | Two-registry coordinator — controlled-vocabulary providers (#424) + asset-source providers (#755). Fans out term lookup and asset queries across registered providers. |
 | CommentManager | ✅ [doc](managers/CommentManager.md) | Per-page comment storage + CRUD; sidecar JSON keyed by page UUID |
 | ConfigurationManager | 📘 [doc](managers/ConfigurationManager.md) + [guide](managers/ConfigurationManager-Complete-Guide.md) | Loads and merges app-default-config.json + app-custom-config.json; the single source of truth for runtime config |
+| DatabaseManager | ✅ [doc](managers/DatabaseManager.md) | The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger |
 | EmailManager | ✅ [doc](managers/EmailManager.md) | Shared outbound email transport — pluggable provider (console / SMTP) |
 | ExportManager | 📘 [doc](managers/ExportManager.md) + [guide](managers/ExportManager-Complete-Guide.md) | Per-page export to HTML or Markdown with frontmatter stripping and link rewriting |
 | FeedManager | ✅ [doc](managers/FeedManager.md) | Runtime of the feeds addon (#685) — one record store + CatalogSource per configured external feed; runs the ingest pipeline (adapter fetch → parse → change-detected upsert) on a poll scheduler. |
@@ -161,6 +162,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | BaseAuthProvider | ✅ [doc](providers/BaseAuthProvider.md) | Pluggable authentication provider interface — all auth methods implement this and register with AuthManager |
 | BaseBackupProvider | ✅ [doc](providers/BaseBackupProvider.md) | Abstract base class for backup storage providers — abstracts the storage target only (#170) |
 | BaseCacheProvider | ✅ [doc](providers/BaseCacheProvider.md) | Abstract cache provider interface — extension surface for cache backends (in-process, Redis, etc.) |
+| BaseDatabaseProvider | ✅ [doc](providers/BaseDatabaseProvider.md) | Abstract application-database provider — the connection, integrity check, storage report and close that DatabaseManager hands out (#1536) |
 | BaseLoggingProvider | ✅ [doc](providers/BaseLoggingProvider.md) | Abstract base class for logging providers — engine-free winston transport/format factory (#169) |
 | BaseMediaProvider | ✅ [doc](providers/BaseMediaProvider.md) | Abstract base class for asset/media providers — defines the AssetService-facing interface |
 | BasePageProvider | ✅ [doc](providers/BasePageProvider.md) | Abstract interface for page storage providers — the canonical extension surface for new page backends |
@@ -189,6 +191,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | NullCacheProvider | ✅ [doc](providers/NullCacheProvider.md) | No-op cache — every get is a miss; every set is discarded |
 | PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
+| SqliteDatabaseProvider | ✅ [doc](providers/SqliteDatabaseProvider.md) | The application database as one SQLite file, SQLCipher-encrypted when NGDPBASE_DATABASE_KEY is set; WAL mode, fsynced, migrated at open (#1536) |
 | VersioningFileProvider | 📘 [doc](providers/VersioningFileProvider.md) + [guide](providers/VersioningFileProvider-Complete-Guide.md) | File-based page storage with delta-compressed version history; the default PageManager backend |
 <!-- AUTO:providers-table END -->
 
@@ -328,11 +331,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 39/39 with quick-reference docs (100%); 17 with Complete Guides.
+__Managers:__ 40/40 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 36/36 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 38/38 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.
