@@ -49,8 +49,8 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
   - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `required-factors` becomes a list of provider entries (`authproviderid`, `primary`, `factors`, `priority`, `enabled`). Its decisions are in its comments
   - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider, with a migration that copies each password hash into one row
 - __Then — the factors__, each blocked by both foundations
-  - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn
-  - [#421](https://github.com/jwilleke/ngdpbase/issues/421) TOTP
+  - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1)
+  - [#421](https://github.com/jwilleke/ngdpbase/issues/421) TOTP (P2)
   - [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) Email as a second factor
   - [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) SMS as a second factor, off by default, operator-configured transport
   - [#1532](https://github.com/jwilleke/ngdpbase/issues/1532) Link-based second factor that approves the waiting sign-in from any device (blocked by #1523)
@@ -177,7 +177,6 @@ Points where the issues disagree with a later decision, or where nothing is deci
 - __SMS carries codes only?__ [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) says SMS never carries notices or links. [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) supersedes that: the person chooses and consents to each channel, for sign-in links and notices separately.
 - __`factors` in YourPHR.__ [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) now states the decided shape (rewritten 2026-10-02): `factors` counts __additional__ factors (`password` plus one = `"factors": 1`). YourPHR's document still describes per-provider `auth-factors` where `2` meant "this provider plus one"; ported as written, every password policy would be off by one.
 - __Passkey storage.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448)'s original plan stores passkey fields on the user record. [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) replaces that with the credentials store, as its comment says; the body still shows the old plan.
-- __Priority of passkey and TOTP.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448) and [#421](https://github.com/jwilleke/ngdpbase/issues/421) are no longer `deferred` (2026-10-01) and await a priority.
 - __Communication channels__ — [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) is marked "to be detailed later" for verification, consent records and per-purpose consent.
 
 ---
