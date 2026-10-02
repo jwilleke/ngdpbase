@@ -37,6 +37,11 @@
 
     /* Advanced */
     "resolveJsonModule": true,
+    /* better-sqlite3-multiple-ciphers ships index.d.ts but its package "exports" map does not
+       name it, so NodeNext resolution cannot find the types (#1536). Point at them directly. */
+    "paths": {
+      "better-sqlite3-multiple-ciphers": ["./node_modules/better-sqlite3-multiple-ciphers/index.d.ts"]
+    },
     "incremental": true,
     "tsBuildInfoFile": "./.tsbuildinfo"
   },

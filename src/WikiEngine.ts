@@ -5,6 +5,7 @@ import type { WikiConfig } from './types/Config.js';
 
 // Managers
 import ConfigurationManager from './managers/ConfigurationManager.js';
+import DatabaseManager from './managers/DatabaseManager.js';
 import NotificationManager from './managers/NotificationManager.js';
 import PageManager from './managers/PageManager.js';
 import PluginManager from './managers/PluginManager.js';
@@ -155,6 +156,13 @@ class WikiEngine extends Engine {
       if (reason === 'unset' || reason === 'env-ref') continue; // ordinary, not worth a line
       logger.warn(`[redact] ${key} will NOT be redacted from logs (${reason})`);
     }
+
+    // 1a. DatabaseManager (#1536) — the one door to the application database,
+    //     open before any manager that stores rows. Off unless
+    //     ngdpbase.database.provider is 'sqlite'.
+    const databaseManager = new DatabaseManager(this);
+    this.registerManager('DatabaseManager', databaseManager);
+    await databaseManager.initialize();
 
     // 1b. Initialize CatalogManager right after ConfigurationManager so all later
     //     managers (including addons) can call getManager('CatalogManager')
