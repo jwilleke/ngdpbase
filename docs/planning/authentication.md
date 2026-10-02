@@ -59,6 +59,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 - __Independent of the order__
   - [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) OIDC UserInfo endpoint, "who is this caller" in the standard shape. Blocks [yourphr#804](https://github.com/jwilleke/yourphr/issues/804)
   - [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) Communication channels as a user profile setting, with consent, for sign-in links and notices
+  - [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) Session idle timeout
 - __A separate epic__: [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) Account recovery
 
 ### The configuration shape (decided)
@@ -194,6 +195,29 @@ __Ideas to take__, each on the issue it belongs to:
 - __A reusable authorization server__ ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526), [#1529](https://github.com/jwilleke/ngdpbase/issues/1529)). [auth#83](https://github.com/activescott/auth/issues/83), started 2026-10-01 for fernfiles' MCP server, ports an OIDC/OAuth authorization server so apps can register OAuth clients. It is the nearest outside work to RFC 8628 device authorization and UserInfo; worth coordinating before building ours
 - __Admin views__ — a read-only users page (each user's identities, created and last used) and a configuration page with secrets removed; an admin allowlist matched against every identity a user owns; a non-admin gets 404, not 403
 - __End-to-end tests without a mail server__ — a capture transport records the last link and code per recipient, and a test-only readback route (test mode plus a shared-secret header) hands them to the browser test
+
+---
+
+## Regulated deployments — a guideline
+
+> __Guidance, not legal advice.__ This section describes what a regulated deployment typically configures. It is not legal advice and does not make any deployment compliant: the operator alone is accountable for their configuration and for meeting the rules that apply to them, and should take advice from someone qualified in those rules. When authentication ships, this moves into the Security Posture Recommendations page ([#1146](https://github.com/jwilleke/ngdpbase/issues/1146), [security-posture.md](../security-posture.md) D17), which carries the same disclaimer; until then it lives here.
+
+| Setting | Regulated guideline | Why |
+| --- | --- | --- |
+| Role `required-aal` | `aal2` for every role that reads regulated data; phishing-resistant for `admin` | HIPAA §164.312(d) person authentication (the 2025 proposed rule makes MFA mandatory); PCI DSS 4.0 Req. 8.4 MFA for all access to card data; NIST 800-171 3.5.3 MFA for privileged access; OMB M-22-09 phishing-resistant MFA |
+| Session idle timeout | 15 minutes | PCI DSS 4.0 Req. 8.2.8; NIST SP 800-63B-4 AAL3 (AAL2: 60 minutes); HIPAA §164.312(a)(2)(iii) automatic logoff names no figure |
+| Known device `carry-forward` | 12 hours or less | NIST re-authentication limits (12 hours in revision 3, 24 in revision 4) |
+| Known device `remember` | 7 days or less | shorter exposure if a device is lost |
+| `ngdpbase.audit.retentiondays` | 2190 (six years) | HIPAA keeps required documentation six years (§164.316(b)(2)); PCI DSS keeps audit history one year |
+| SMS as a second-factor channel | off | NIST SP 800-63B classes SMS as restricted |
+| Email link as a second factor | allowed, but never counted toward AAL2 | email is not an out-of-band authenticator (§5.1.3.1) |
+
+Not covered, by decision (operator, 2026-10-02): __identity proofing (IAL2)__ — checking a real-world identity document at enrolment — is an HR / onboarding process, not an application setting. Sign-in factors never change IAL.
+
+### Settings this needs
+
+- __Session idle timeout — new__, [#1546](https://github.com/jwilleke/ngdpbase/issues/1546). Today a session expires only on `ngdpbase.session.max-age` (24 hours) and renews with use. Proposed: `ngdpbase.session.idle-timeout-minutes`, `0` = off (today's behaviour) up to `1440` (24 hours); a role may set a __shorter__ value and a person gets the shortest among their roles — the same never-loosen rule as `required-aal`. A value above the limit is lowered with a warning
+- __Audit retention — exists.__ `ngdpbase.audit.retentiondays` (default `90`), in days; six years is `2190`
 
 ---
 
