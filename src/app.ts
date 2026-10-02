@@ -49,6 +49,7 @@ import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
+import { idleExpired, idleTimeoutMs, shouldTouch } from './utils/sessionIdle.js';
 import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 
@@ -737,19 +738,45 @@ void (async (): Promise<void> => {
     }
 
     void (async (): Promise<void> => {
+      // Ends the signed-in session in place; its private-store keys are dropped with it.
+      const signOut = (why: string): void => {
+        const handle = req.session.privateStoreHandle;
+        if (typeof handle === 'string' && handle) lockPrivateStores(handle);
+        logger.info(`[SESSION] Signed out ${req.session.username}: ${why}`);
+        delete req.session.username;
+        delete req.session.privateStoreHandle;
+        delete req.session.sessionGeneration;
+        delete req.session.lastActivity;
+        req.session.isAuthenticated = false;
+      };
+
       // #1482: a session signed in before the account's password last changed
-      // is over — every other session ends when the password does. Its
-      // private-store keys are dropped with it.
+      // is over — every other session ends when the password does.
       if (req.session?.username && req.session.isAuthenticated) {
         const account = await userManager.getUser(req.session.username);
         if (account && !sessionIsCurrent(req.session.sessionGeneration, account)) {
-          const handle = req.session.privateStoreHandle;
-          if (typeof handle === 'string' && handle) lockPrivateStores(handle);
-          logger.info(`[SESSION] Signed out ${req.session.username}: the password changed after this session signed in (#1482)`);
-          delete req.session.username;
-          delete req.session.privateStoreHandle;
-          delete req.session.sessionGeneration;
-          req.session.isAuthenticated = false;
+          signOut('the password changed after this session signed in (#1482)');
+        }
+      }
+
+      // #1546: a session idle past ngdpbase.session.idle-timeout-minutes is over,
+      // and the end is audited with its reason. Read per request, so a change
+      // takes effect without a restart.
+      if (req.session?.username && req.session.isAuthenticated) {
+        const timeoutMs = idleTimeoutMs(configManager.getProperty('ngdpbase.session.idle-timeout-minutes', 0));
+        const now = Date.now();
+        if (idleExpired(req.session.lastActivity, now, timeoutMs)) {
+          const username = req.session.username;
+          signOut('idle past ngdpbase.session.idle-timeout-minutes (#1546)');
+          const audit = engine.getManager('AuditManager') as {
+            logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<unknown>;
+          } | null;
+          void audit?.logAuthentication?.(
+            { username, ipAddress: req.ip, userAgent: req.get('user-agent'), loginMethod: 'session' },
+            'logout', 'idle-timeout'
+          ).catch((err: unknown) => logger.warn('[SESSION] Audit of an idle sign-out failed:', err));
+        } else if (shouldTouch(req.session.lastActivity, now, timeoutMs)) {
+          req.session.lastActivity = now;
         }
       }
 
