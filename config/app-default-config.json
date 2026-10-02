@@ -55,6 +55,8 @@
   ],
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 86400000,
+  "_comment_session_idle": "#1546 — end a signed-in session after this many minutes with no request; 0 = off. Enforced server-side on the next request. Separate from max-age (the absolute lifetime): a value at or above it has no effect. Read per request, so no restart. Regulated guides: PCI DSS 4.0 8.2.8 15 minutes; NIST SP 800-63B-4 AAL2 60, AAL3 15.",
+  "ngdpbase.session.idle-timeout-minutes": 0,
   "ngdpbase.session.secure": false,
   "ngdpbase.session.http-only": true,
   "_comment_session_storage": "Session storage directory - high I/O, consider fast storage (SSD)",
@@ -609,6 +611,10 @@
     "ngdpbase.session.max-age": {
       "group": "Session and cookie",
       "restart": true
+    },
+    "ngdpbase.session.idle-timeout-minutes": {
+      "group": "Session and cookie",
+      "restart": false
     },
     "ngdpbase.server.trust-proxy": {
       "group": "Session and cookie",

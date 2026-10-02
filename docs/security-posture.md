@@ -324,7 +324,7 @@ What remains, grouped as the admin section would group them:
 | Group | Ingredients |
 |---|---|
 | Egress boundary | `security.egress.allowed-ranges`, `security.egress.denied-ranges` |
-| Session and cookie | `session.secure`, `session.http-only`, `session.max-age`, `server.trust-proxy` |
+| Session and cookie | `session.secure`, `session.http-only`, `session.max-age`, `session.idle-timeout-minutes`, `server.trust-proxy` |
 | Identity and registration | `auth.password.enabled`, `auth.factors`, `application.registration`, `application.registration.password`, `auth.user.default-external`, `auth.magic-link.auto-provision`, `auth.magic-link.ttl-minutes`, `auth.google-oidc.auto-provision` |
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
