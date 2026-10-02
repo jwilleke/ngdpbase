@@ -41,6 +41,11 @@
     <!-- CSRF token helpers (#663) — must load before any script that does fetch -->
     <script src="/js/csrf.js"></script>
 
+    <!-- Session idle timeout warning (#1546): only when a limit applies to this signed-in person -->
+    <% if (typeof idleTimeoutMs !== 'undefined' && idleTimeoutMs > 0 && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated) { %>
+    <script src="/js/idle-warning.js" data-timeout-ms="<%= idleTimeoutMs %>" defer></script>
+    <% } %>
+
     <!-- In-page message box: showPageMessage(level, message, details) (#1369) -->
     <script src="/js/page-message.js"></script>
 

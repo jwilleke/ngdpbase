@@ -3,7 +3,7 @@
  * when its last activity is written.
  */
 
-import { idleExpired, idleTimeoutMs, shouldTouch, touchEveryMs } from '../sessionIdle';
+import { effectiveIdleTimeoutMs, idleExpired, idleRemainingMs, idleTimeoutMs, shouldTouch, touchEveryMs, warnBeforeMs } from '../sessionIdle';
 
 const MIN = 60_000;
 
@@ -58,3 +58,41 @@ describe('shouldTouch', () => {
     expect(shouldTouch(undefined, now, 0)).toBe(false);
   });
 });
+
+describe('effectiveIdleTimeoutMs — the shortest positive value applies', () => {
+  test('nothing set anywhere: off', () => {
+    expect(effectiveIdleTimeoutMs(0, [])).toBe(0);
+    expect(effectiveIdleTimeoutMs(0, [undefined, 0])).toBe(0);
+  });
+
+  test('a role shortens the site value', () => {
+    expect(effectiveIdleTimeoutMs(60, [15])).toBe(15 * MIN);
+  });
+
+  test('a role never lengthens it', () => {
+    expect(effectiveIdleTimeoutMs(15, [60])).toBe(15 * MIN);
+  });
+
+  test('with the site off, a role still sets a limit for its holders', () => {
+    expect(effectiveIdleTimeoutMs(0, [30, undefined])).toBe(30 * MIN);
+  });
+
+  test('of several roles, the shortest wins', () => {
+    expect(effectiveIdleTimeoutMs(0, [30, 10, 20])).toBe(10 * MIN);
+  });
+});
+
+describe('warnBeforeMs and idleRemainingMs', () => {
+  test('warn two minutes before, or a quarter of a shorter limit', () => {
+    expect(warnBeforeMs(30 * MIN)).toBe(2 * MIN);
+    expect(warnBeforeMs(4 * MIN)).toBe(MIN);
+  });
+
+  test('remaining time, never negative; null without a limit', () => {
+    expect(idleRemainingMs(1_000_000 - 5 * MIN, 1_000_000, 15 * MIN)).toBe(10 * MIN);
+    expect(idleRemainingMs(0, 1_000_000_000, 15 * MIN)).toBe(0);
+    expect(idleRemainingMs(undefined, 1, 15 * MIN)).toBe(15 * MIN);
+    expect(idleRemainingMs(1, 1, 0)).toBeNull();
+  });
+});
+

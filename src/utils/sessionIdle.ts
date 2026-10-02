@@ -41,3 +41,30 @@ export function shouldTouch(lastActivity: unknown, now: number, timeoutMs: numbe
   if (typeof lastActivity !== 'number' || !Number.isFinite(lastActivity)) return true;
   return now - lastActivity >= touchEveryMs(timeoutMs);
 }
+
+/**
+ * The limit that applies to one person (#1546): the shortest positive value
+ * among the site setting and their roles' `idle-timeout-minutes`. A role can
+ * only shorten the site value, never lengthen it; 0 or absent means "no limit
+ * from here", so with nothing set anywhere the timeout stays off.
+ */
+export function effectiveIdleTimeoutMs(siteMinutes: unknown, roleMinutes: readonly unknown[] = []): number {
+  const candidates = [siteMinutes, ...roleMinutes].map(idleTimeoutMs).filter(ms => ms > 0);
+  return candidates.length === 0 ? 0 : Math.min(...candidates);
+}
+
+/** How long before sign-out the page warns: two minutes, or a quarter of a shorter limit. */
+export function warnBeforeMs(timeoutMs: number): number {
+  return Math.min(120_000, Math.floor(timeoutMs / 4));
+}
+
+/** What is left of the limit, never negative; null when no limit applies. */
+export function idleRemainingMs(lastActivity: unknown, now: number, timeoutMs: number): number | null {
+  if (timeoutMs <= 0) return null;
+  if (typeof lastActivity !== 'number' || !Number.isFinite(lastActivity)) return timeoutMs;
+  return Math.max(0, timeoutMs - (now - lastActivity));
+}
+
+/** The status poll does not count as activity, or the warning would keep the session alive by itself. */
+export const IDLE_STATUS_PATH = '/api/session/idle-status';
+
