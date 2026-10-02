@@ -113,6 +113,8 @@ __Known devices and misclassification__ (operator, 2026-10-02):
 
 __Link approval__ (operator, 2026-10-02; [#1532](https://github.com/jwilleke/ngdpbase/issues/1532)): on every channel the message says what is asking, from which browser and device, roughly where and when, with __Approve__ and __This wasn't me__; opening the link alone does nothing. No number matching — it only guards unsolicited approvals, and an email link never satisfies an AAL2 role. One pending request at a time, short-lived, repeats throttled; several "wasn't me" answers or a burst of requests alert the person.
 
+One link opens the approval page; __the button press (POST) is the approval__ — opening a link changes nothing, because scanners and chat previews open links on their own. The server records the device, known-device cookie, IP and browser of both the open and the press. __An approval from an unknown device is always flagged__ (audit, sign-in record, a notice to the person): accepted for a role at AAL1; for a role at AAL2 it does not count toward AAL2 and step-up asks for another factor.
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
