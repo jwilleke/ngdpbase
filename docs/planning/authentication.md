@@ -49,7 +49,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
   - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `ngdpbase.auth.factors` provider entries (`authproviderid`, `primary`, `amr` / `aal` / `acr`, `enabled`) and a per-role `required-aal`. Its body states the design, its comments the decisions
   - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider, with a migration that copies each password hash into one row
 - __Then — the factors__, each blocked by both foundations
-  - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1). A passkey alone signs a person in from day one, as NIST specifies (a multi-factor cryptographic authenticator suffices for AAL2; synced passkeys meet AAL2; device-bound keys can reach AAL3)
+  - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1). A passkey alone signs a person in from day one, as NIST specifies (a multi-factor cryptographic authenticator suffices for AAL2; synced passkeys meet AAL2; device-bound keys can reach AAL3). Passkeys are tied to the host of `ngdpbase.application.base-url`, never the request, and stay off until that key is set explicitly — the magic link's rule ([#642](https://github.com/jwilleke/ngdpbase/issues/642)); the admin page names the host, and changing it while passkeys are enrolled warns
   - [#421](https://github.com/jwilleke/ngdpbase/issues/421) TOTP (P2)
   - [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) Email as a second factor
   - [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) SMS as a second factor, off by default, operator-configured transport
