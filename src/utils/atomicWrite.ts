@@ -62,12 +62,16 @@ let sequence = 0;
  * @param encoding - defaults to utf8
  * @param options.fsync - also flush to the device. Off by default; see the file
  *   header for why, and for the measured cost.
+ * @param options.mode - permission bits for the file, e.g. `0o600` for a file
+ *   holding secrets (#1524, #1560). Set on the temp file before any data is
+ *   written, so the secret is never on disk with wider permissions; the rename
+ *   keeps them. Absent: the process default, as before.
  */
 export async function writeFileAtomic(
   filePath: string,
   data: string | Buffer,
   encoding: BufferEncoding = 'utf8',
-  options: { fsync?: boolean } = {}
+  options: { fsync?: boolean; mode?: number } = {}
 ): Promise<void> {
   const dir = path.dirname(filePath);
   const tempPath = path.join(
@@ -78,7 +82,9 @@ export async function writeFileAtomic(
   let handle: FileHandle | undefined;
   try {
     await fs.ensureDir(dir);
-    handle = await open(tempPath, 'w');
+    handle = await open(tempPath, 'w', options.mode);
+    // open()'s mode is filtered by the umask; chmod sets it exactly.
+    if (options.mode !== undefined) await handle.chmod(options.mode);
     await handle.write(typeof data === 'string' ? Buffer.from(data, encoding) : data);
     if (options.fsync) {
       // Only when the caller asks: see the cost note in the file header.

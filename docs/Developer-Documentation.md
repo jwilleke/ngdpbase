@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 40 | 45 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 38 | 39 | Storage and service providers |
+| [Providers](#providers) | 40 | 41 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -162,6 +162,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | BaseAuthProvider | ✅ [doc](providers/BaseAuthProvider.md) | Pluggable authentication provider interface — all auth methods implement this and register with AuthManager |
 | BaseBackupProvider | ✅ [doc](providers/BaseBackupProvider.md) | Abstract base class for backup storage providers — abstracts the storage target only (#170) |
 | BaseCacheProvider | ✅ [doc](providers/BaseCacheProvider.md) | Abstract cache provider interface — extension surface for cache backends (in-process, Redis, etc.) |
+| BaseCredentialsProvider | ✅ [doc](providers/BaseCredentialsProvider.md) | Abstract credentials store — an account's passkeys, TOTP, verified addresses and known devices, signed rows, AuthManager the only door (#1524) |
 | BaseDatabaseProvider | ✅ [doc](providers/BaseDatabaseProvider.md) | Abstract application-database provider — the connection, integrity check, storage report and close that DatabaseManager hands out (#1536) |
 | BaseLoggingProvider | ✅ [doc](providers/BaseLoggingProvider.md) | Abstract base class for logging providers — engine-free winston transport/format factory (#169) |
 | BaseMediaProvider | ✅ [doc](providers/BaseMediaProvider.md) | Abstract base class for asset/media providers — defines the AssetService-facing interface |
@@ -176,6 +177,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | ElasticsearchSearchProvider | 📘 [doc](providers/ElasticsearchSearchProvider.md) + [guide](providers/ElasticsearchSearchProvider-Complete-Guide.md) | Elasticsearch backend for SearchManager — full-text and (optionally) vector search over pages |
 | FileAuditProvider | ✅ [doc](providers/FileAuditProvider.md) | Appends audit events to JSONL files on local disk — the default backend |
 | FileBackupProvider | ✅ [doc](providers/FileBackupProvider.md) | Default backup storage provider — local filesystem against ngdpbase.backup.directory (#170) |
+| FileCredentialsProvider | ✅ [doc](providers/FileCredentialsProvider.md) | The credentials store as one signed JSON file beside the user store, written owner-only (#1524) |
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
 | FileOrganizationProvider | ✅ [doc](providers/FileOrganizationProvider.md) | File-backed Organization storage — one JSON file per organization under data/organizations/ |
 | FilePersonProvider | ✅ [doc](providers/FilePersonProvider.md) | File-backed Person storage — one JSON file per Person record under data/persons/ |
@@ -335,7 +337,7 @@ __Managers:__ 40/40 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 38/38 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 40/40 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.
