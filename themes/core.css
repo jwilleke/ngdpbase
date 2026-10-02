@@ -1601,3 +1601,19 @@ table[data-zebra] tbody tr.zebra-hover,
 .plugin-table > tbody > tr:hover > td {
     background-color: var(--table-hover);
 }
+
+/* ── Collapsible sections (<details>/<summary>) ──────────────────────────────
+ * Declared once here instead of an inline style on each <summary> (#1541).
+ * A summary is clickable, so it shows the pointer everywhere; .card-summary is
+ * the header line of a collapsible card: icon, title, hint and a badge pushed
+ * right with ms-auto.
+ */
+summary {
+  cursor: pointer;
+}
+
+.card-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

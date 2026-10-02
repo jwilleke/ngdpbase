@@ -161,7 +161,7 @@
                     </div>
                     <% if (requiredPages && requiredPages.length > 0) { %>
                         <details>
-                            <summary class="text-muted" style="cursor: pointer;">
+                            <summary class="text-muted">
                                 <small><i class="fas fa-list me-1"></i>View <%= requiredPages.length %> installed required pages</small>
                             </summary>
                             <div class="d-flex flex-wrap gap-2 mt-2">
@@ -415,7 +415,7 @@
             <div class="card">
                 <div class="card-body py-2">
                     <details>
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-puzzle-piece"></i>
                             <strong>Add-ons</strong>
                             <span class="badge bg-secondary ms-auto"><%= addonsSummary ? addonsSummary.total : 0 %></span>
@@ -485,7 +485,7 @@
             <div class="card">
                 <div class="card-body py-2">
                     <details id="share-manager-admin">
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-share-nodes"></i>
                             <strong>Share Manager</strong>
                             <span class="text-muted small">
@@ -516,7 +516,7 @@
             <div class="card">
                 <div class="card-body py-2">
                     <details id="agent-tokens-admin">
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-robot"></i>
                             <strong>Agent API Tokens</strong>
                             <span class="text-muted small">
@@ -549,7 +549,7 @@
             <div class="card">
                 <div class="card-body py-2">
                     <details>
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-database"></i>
                             <strong>Catalog Sources</strong>
                             <% var _catalogStale = (catalogSources || []).filter(function(s) { return s.isStale; }).length; %>
@@ -602,7 +602,7 @@
             <div class="card h-100">
                 <div class="card-body py-2">
                     <details>
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-chart-line"></i>
                             <strong>Metrics</strong>
                             <span class="badge bg-success ms-auto">active</span>
@@ -629,7 +629,7 @@
             <div class="card mb-4">
                 <div class="card-body py-2">
                     <details>
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-history"></i>
                             <strong>Recent Activity</strong>
                             <span class="badge bg-secondary ms-auto"><%= recentActivity ? recentActivity.length : 0 %></span>
@@ -660,7 +660,7 @@
             <div class="card mb-4">
                 <div class="card-body py-2">
                     <details id="session-manager-details">
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-id-badge"></i>
                             <strong>Session Manager</strong>
                             <span class="badge bg-secondary" id="session-manager-count">—</span>
@@ -949,7 +949,7 @@
             <div class="card mb-4">
                 <div class="card-body py-2">
                     <details>
-                        <summary class="d-flex align-items-center gap-2" style="cursor: pointer;">
+                        <summary class="card-summary">
                             <i class="fas fa-bell"></i>
                             <strong>System Notifications</strong>
                             <span class="badge bg-primary ms-auto"><%= notifications ? notifications.length : 0 %></span>
