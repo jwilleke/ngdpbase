@@ -1292,6 +1292,10 @@ async function dashboardMediaRebuild() {
                 <i class="fas fa-arrow-up"></i> v${data.latestVersion} available</a>`;
         } else if (data.latestVersion) {
             el.innerHTML = '<span class="text-muted"><i class="fas fa-check"></i> Up to date</span>';
+        } else {
+            // #1487: GitHub unreachable or rate-limited — the route answers with
+            // no latestVersion. Say so, rather than leaving the indicator blank.
+            el.innerHTML = '<span class="text-muted" title="GitHub could not be reached; try again later"><i class="fas fa-question-circle"></i> Update check unavailable</span>';
         }
     } catch {
         // Silently ignore — network may be offline
