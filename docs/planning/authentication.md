@@ -60,6 +60,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
   - [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) OIDC UserInfo endpoint, "who is this caller" in the standard shape. Blocks [yourphr#804](https://github.com/jwilleke/yourphr/issues/804)
   - [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) Communication channels as a user profile setting, with consent, for sign-in links and notices
   - [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) Session idle timeout
+  - [#1547](https://github.com/jwilleke/ngdpbase/issues/1547) Twilio Messaging SMS transport — our own link-and-code message, so link approval works by SMS (help wanted)
 - __A separate epic__: [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) Account recovery
 
 ### The configuration shape (decided)
@@ -169,7 +170,7 @@ __SMS__ has no real free option in the US:
 - Textbelt: one free text a day
 - Real application-to-person sending needs A2P 10DLC registration (or a verified toll-free number): a few dollars a month in fees, then about a cent a message
 - Carrier email-to-SMS gateways are no longer dependable (AT&T shut its own down in 2025)
-- Closest to free: an Android phone as the gateway (for example the open-source SMS Gateway for Android, with an HTTP API), sending on your own phone plan. Fine for a handful of messages; carriers' terms usually forbid automated sending
+- Closest to free: an Android phone as the gateway — an app on the phone exposes an HTTP API and sends through the phone's own SIM and plan. Open source and active: [SMS Gateway for Android](https://github.com/capcom6/android-sms-gateway) (Apache-2.0), [textbee](https://github.com/textbee/textbee) (MIT), [httpSMS](https://github.com/NdoleStudio/httpsms) (AGPL-3.0). Fine for a handful of messages; the phone must stay on, delivery is not guaranteed, unregistered US application traffic may be filtered, and carriers' terms usually forbid automated sending
 
 __RCS__ (RCS Business Messaging) needs a registered, verified sender approved per carrier, through Google or resellers (Twilio, Sinch, Infobip), is billed per message at SMS prices or more, and falls back to SMS. Not free; heavy paperwork for a self-hosted site.
 
