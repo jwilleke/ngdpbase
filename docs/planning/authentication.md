@@ -76,7 +76,7 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 
 - `primary: true` — the provider can start a sign-in; `factors` is how many __additional__ factors a sign-in through it must pass. `0`: none required, so a second factor is optional
 - `primary: false` — only ever a second factor; it has no `factors`
-- `priority` — `0` is highest. The sign-in page offers the person's highest-priority __enrolled__ primary method first, the others behind "use another way"; second factors the same
+- ~~`priority`~~ — dropped (operator, 2026-10-02): enrolled methods are offered __strongest first__, worked out from `acr` and `aal`, the rest behind "use another way"
 - `enabled` — an entry turned off is not offered
 - A second factor delivered by message is a non-primary entry. The message carries a __link__ that returns to the server as the verification (a confirm page; its POST approves the waiting sign-in), and the same message carries a code for autofill; whichever is used first completes the sign-in and voids the other (operator, 2026-10-02)
 - Which channel the message goes by — email, SMS or another — is the __person's preference__ in their profile ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533)), not a fixed provider; SMS needs an operator-configured transport
