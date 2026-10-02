@@ -46,7 +46,7 @@ __Target factor model__ (from the epic): a passkey alone, __or__ a password plus
 The blocked-by relations on GitHub give this order. Nothing in the first step depends on anything else.
 
 - __First — the two foundations__
-  - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `ngdpbase.auth.factors` provider entries (`authproviderid`, `primary`, `amr` / `aal` / `acr`, `trust-amr`, `enabled`) and a per-role `required-aal`. Its body states the design, its comments the decisions
+  - [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) Auth factor configuration: `ngdpbase.auth.factors` provider entries (`authproviderid`, `primary`, `amr` / `aal` / `acr`, `enabled`) and a per-role `required-aal`. Its body states the design, its comments the decisions
   - [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) Credentials store: more than one credential per account, behind a provider, with a migration that copies each password hash into one row
 - __Then — the factors__, each blocked by both foundations
   - [#448](https://github.com/jwilleke/ngdpbase/issues/448) Passkey / WebAuthn (P1)
@@ -72,7 +72,7 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 "ngdpbase.auth.factors": [
   { "authproviderid": "passkey",      "primary": true,  "amr": ["swk", "user"], "aal": 2, "acr": "phr",  "enabled": true },
   { "authproviderid": "security-key", "primary": true,  "amr": ["hwk", "pin"],  "aal": 3, "acr": "phrh", "enabled": true },
-  { "authproviderid": "google",       "primary": true,  "trust-amr": true,                                 "enabled": true },
+  { "authproviderid": "google",       "primary": true,  "amr": ["trust"],                                     "enabled": true },
   { "authproviderid": "password",     "primary": true,  "amr": ["pwd"],         "aal": 1,                "enabled": true },
   { "authproviderid": "totp",         "primary": false, "amr": ["otp"],         "aal": 1,                "enabled": true },
   { "authproviderid": "email-link",   "primary": false, "amr": ["email"],       "aal": 1,                "enabled": true },
@@ -83,7 +83,7 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 - `authproviderid` — the registered provider; one provider may give several `amr` values, several providers the same one
 - `primary: true` — the provider can start a sign-in; exactly one primary starts each sign-in. Every enabled provider can also be an additional factor except the one that started
 - `amr`, `aal`, `acr` — what the provider gives, as declared in its __code__; config may __lower__ them (be stricter), never raise them. An overstated value is lowered to the truth with a warning (log, admin dashboard, posture report). Type (know / have / are) and device-boundness (`hwk` / `swk`) are derived from `amr`
-- `trust-amr` — identity providers only (OIDC): take the provider's reported `amr` / `acr`; off unless the operator trusts that provider
+- `"amr": ["trust"]` — identity providers only (OIDC): take the provider's reported `amr` / `acr` at sign-in. `"trust"` is config-only, never stored or reported; a provider that reports nothing gives `[]` at AAL1. An untrusted provider is written with plain values (`"amr": [], "aal": 1`)
 - `enabled` — off is never offered; a provider that is not fully available (SMS without a transport) counts as off
 - No `factors` count and no `priority`: requirements are per role, and enrolled methods are offered strongest first (`phrh`, `phr`, then by `aal`)
 
@@ -105,7 +105,7 @@ __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is com
 
 __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is computed by SP 800-63B, strongest first — `phrh`, `phr`, AAL2, AAL1 — and is what we __claim__ (session, audit, UserInfo); it never overstates. Email is never phishing-resistant and never lifts a sign-in above AAL1 (§5.1.3.1 bars email as out-of-band): password plus an email link is AAL1. Our MFA rule — two or more distinct types — is what we __require__, and is separate: password plus an email link satisfies it. Only WebAuthn and smart cards (PIV) are phishing-resistant. Sign-in factors never change IAL, which is identity proofing at enrolment.
 
-__The required level is per role__ (operator, 2026-10-02). Each role declares the assurance level its holders must reach — AAL1, AAL2, AAL3, with phishing resistance as an extra — and a person must meet the __highest__ among their roles. The sign-in's computed `acr` is compared with it; short of it, the next factor is asked for. "Admins need a second factor" becomes the `admin` role's level. There is __no "MFA" step__ (operator, 2026-10-02): the levels are NIST's only, so password plus an email link (AAL1) never meets a role at AAL2. Still open: how a known device meets a role above AAL1.
+__The required level is per role__ (operator, 2026-10-02). Each role declares the assurance level its holders must reach — AAL1, AAL2, AAL3, with phishing resistance as an extra — and a person must meet the __highest__ among their roles. The sign-in's computed `acr` is compared with it; short of it, the next factor is asked for. "Admins need a second factor" becomes the `admin` role's level. Shipped defaults (approved for the catalogue): `admin` and `user-admin` AAL2; `editor`, `contributor`, `reader`, `vault-owner`, `demo-admin` AAL1; `anonymous` none. There is __no "MFA" step__ (operator, 2026-10-02): the levels are NIST's only, so password plus an email link (AAL1) never meets a role at AAL2. Still open: how a known device meets a role above AAL1.
 
 __Known devices and misclassification__ (operator, 2026-10-02):
 
