@@ -222,20 +222,31 @@ class FileSystemMediaProvider extends BaseMediaProvider {
     if (folders.length === 0) {
       return true; // no folders configured — nothing to check
     }
-    let reachable = 0;
-    for (const folder of folders) {
-      try {
-        await fs.access(folder, fs.constants.R_OK);
-        reachable++;
-      } catch {
-        logger.warn(`[FileSystemMediaProvider] healthCheck — folder unreachable: ${folder}`);
-      }
+    const unreachable = await this.unreachableFolders();
+    for (const folder of unreachable) {
+      logger.warn(`[FileSystemMediaProvider] healthCheck — folder unreachable: ${folder}`);
     }
-    if (reachable === 0) {
+    if (unreachable.length === folders.length) {
       logger.warn('[FileSystemMediaProvider] healthCheck failed — all configured folders are unreachable');
       return false;
     }
     return true;
+  }
+
+  /**
+   * The configured folders this process cannot read (#1167): missing, unmounted
+   * or without read permission. Read-only — it never touches the files.
+   */
+  async unreachableFolders(): Promise<string[]> {
+    const unreachable: string[] = [];
+    for (const folder of this.config.folders ?? []) {
+      try {
+        await fs.access(folder, fs.constants.R_OK);
+      } catch {
+        unreachable.push(folder);
+      }
+    }
+    return unreachable;
   }
 
   /**

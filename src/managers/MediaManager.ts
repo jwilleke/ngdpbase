@@ -56,6 +56,8 @@ class MediaManager extends BaseManager implements CatalogSource {
   readonly currentSchemaVersion = MediaManager.CURRENT_SCHEMA_VERSION;
   /** Active media provider (null when not yet initialized) */
   private _provider: BaseMediaProvider | null = null;
+  /** The configured media folders, for the degraded-state reason (#1167). */
+  private mediaFolders: string[] = [];
 
   /** Return the active media provider for use by AssetManager. */
   get provider(): BaseMediaProvider | null {
@@ -124,7 +126,8 @@ class MediaManager extends BaseManager implements CatalogSource {
     const extensionList = configManager.getProperty('ngdpbase.media.extensions', DEFAULT_MEDIA_EXTENSIONS) as string[];
     const extensions = new Set(extensionList.map(e => e.toLowerCase().replace(/^\./, '')));
 
-    this._provider = new FileSystemMediaProvider({
+    this.mediaFolders = folders;
+    const fileSystemProvider = new FileSystemMediaProvider({
       folders,
       ignoreDirs,
       maxDepth,
@@ -135,9 +138,15 @@ class MediaManager extends BaseManager implements CatalogSource {
       readonly: true,
       extensions
     });
+    this._provider = fileSystemProvider;
 
     // Load persisted index so queries work before the first background scan
     await this._provider.initialize();
+
+    // #1167: an unreadable configured folder is a degraded manager, visible on
+    // the dashboard and in the manager status — not one boot-time warn line.
+    // Checked now rather than at the first scan, which may be an hour away.
+    this.recordFolderState(await fileSystemProvider.unreachableFolders());
 
     const scanInterval = configManager.getProperty('ngdpbase.media.scaninterval', 3600000) as number;
     if (scanInterval > 0) {
@@ -264,6 +273,25 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Degraded while any configured media folder cannot be read, ready otherwise (#1167).
+   *
+   * Degraded rather than a warning, even for one folder in fourteen: the
+   * operator asked for those files to be indexed and they are not, which is
+   * what degraded means (#1155) — configured, wanted, not working.
+   */
+  private recordFolderState(unreachable: string[]): void {
+    if (unreachable.length === 0) {
+      this.markReady();
+      return;
+    }
+    const total = Math.max(this.mediaFolders.length, unreachable.length);
+    this.markDegraded(
+      `${unreachable.length} of ${total} configured media folder(s) cannot be read: ${unreachable.join(', ')}`,
+      'ngdpbase.media.folders'
+    );
+  }
+
+  /**
    * Surface scan/rebuild anomalies to admins via /admin/notifications and the
    * server log (#807). Missing folders, capture-date gaps, and processing
    * errors otherwise pass silently — admins only see them if they read the log.
@@ -283,6 +311,9 @@ class MediaManager extends BaseManager implements CatalogSource {
         nm.addNotification({ type: 'system', ...n }).catch(() => { /* ignore */ });
       }
     };
+
+    // #1167: every scan re-judges the folders, so a remounted volume clears the state.
+    this.recordFolderState(result.missingFolders ?? []);
 
     if (result.missingFolders && result.missingFolders.length > 0) {
       for (const folder of result.missingFolders) {
