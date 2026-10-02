@@ -10,7 +10,6 @@ describe('AuthManager', () => {
       const values = {
         'ngdpbase.auth.magic-link.enabled': overrides.magicLinkEnabled ?? false,
         'ngdpbase.auth.magic-link.ttl-minutes': 15,
-        'ngdpbase.auth.required-factors': overrides.requiredFactors ?? ['password'],
         ...overrides.properties
       };
       return values[key] ?? defaultValue;
@@ -18,6 +17,8 @@ describe('AuthManager', () => {
     // #642 Iteration 3: AuthManager checks this before registering magic-link.
     // Defaults to true so existing tests behave as before; override per-test
     // to exercise the refuse-to-register path.
+    // #1523: the retired flat list is read only from custom config.
+    getCustomProperty: vi.fn((key) => (overrides.custom ?? {})[key]),
     isBaseUrlExplicit: vi.fn().mockReturnValue(overrides.baseUrlExplicit ?? true),
     getBaseURL: vi.fn().mockReturnValue('https://wiki.example.com')
   });
@@ -86,12 +87,135 @@ describe('AuthManager', () => {
       expect(manager.isEnabled('magic-link')).toBe(true);
     });
 
-    test('getRequiredFactors() returns value from config', async () => {
-      const cm = makeConfigManager({ requiredFactors: ['password', 'totp'] });
-      const manager = new AuthManager(makeEngine(cm));
-      await manager.initialize();
+  });
 
-      expect(manager.getRequiredFactors()).toEqual(['password', 'totp']);
+  // #1523 — what each method gives, lowered to the provider's code, and what a
+  // set of satisfied factors amounts to.
+  describe('factors (#1523)', () => {
+    const PWD = { amr: ['pwd'], aal: 1 };
+    const OTP = { amr: ['otp'], aal: 1 };
+    const EMAIL = { amr: ['email'], aal: 1 };
+    const PASSKEY = { amr: ['swk', 'user'], aal: 2, acr: 'phr' };
+    const SECURITY_KEY = { amr: ['hwk', 'pin'], aal: 3, acr: 'phrh' };
+
+    const started = async (properties = {}, custom = {}) => {
+      const manager = new AuthManager(makeEngine(makeConfigManager({ properties, custom })));
+      await manager.initialize();
+      return manager;
+    };
+    const fake = (id, factor) => ({ id, displayName: id, factor, verify: vi.fn() });
+
+    test('with no configuration, password is the one factor offered', async () => {
+      const manager = await started();
+      expect(manager.getFactors()).toEqual([{ provider: 'password', primary: true, amr: ['pwd'], aal: 1 }]);
+    });
+
+    test('a listed provider that is not registered is never offered', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'passkey' }] });
+      expect(manager.getFactors().map(f => f.provider)).toEqual(['password']);
+    });
+
+    test('a disabled entry is never offered', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password', enabled: false }] });
+      expect(manager.getFactors()).toEqual([]);
+    });
+
+    test('a delegated credential is never a factor, even when listed', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'agent-token' }] });
+      manager.registerProvider({ id: 'agent-token', displayName: 'Agent', verify: vi.fn() });
+      expect(manager.getFactors()).toEqual([]);
+    });
+
+    test('a provider an add-on registers late is offered once registered', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'totp' }] });
+      expect(manager.getFactors()).toHaveLength(1);
+      manager.registerProvider(fake('totp', { ...OTP, primary: false }), 'totp-addon');
+      expect(manager.getFactors().map(f => f.provider)).toEqual(['password', 'totp']);
+    });
+
+    test('config may lower what a provider gives', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'key', aal: 2, acr: 'phr', primary: false }] });
+      manager.registerProvider(fake('key', { ...SECURITY_KEY, primary: true }));
+      expect(manager.getFactors()).toEqual([{ provider: 'key', primary: false, amr: ['hwk', 'pin'], aal: 2, acr: 'phr' }]);
+    });
+
+    test('config never raises what a provider gives: an overstated value is lowered to the code', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [
+        { authproviderid: 'password', aal: 3, acr: 'phrh', amr: ['hwk'] },
+        { authproviderid: 'totp', primary: true }
+      ] });
+      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      expect(manager.getFactors()).toEqual([
+        { provider: 'password', primary: true, amr: ['pwd'], aal: 1 },
+        { provider: 'totp', primary: false, amr: ['otp'], aal: 1 }
+      ]);
+    });
+
+    test('"trust" is config-only and never reported as an amr value', async () => {
+      const manager = await started({ 'ngdpbase.auth.factors': [{ authproviderid: 'idp', amr: ['trust'] }] });
+      manager.registerProvider(fake('idp', { amr: [], aal: 1, primary: true }));
+      expect(manager.getFactors()).toEqual([{ provider: 'idp', primary: true, amr: [], aal: 1 }]);
+    });
+
+    test('the retired required-factors list in custom config is converted', async () => {
+      const manager = await started({}, { 'ngdpbase.auth.required-factors': ['password', 'totp'] });
+      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      expect(manager.getFactors().map(f => [f.provider, f.primary])).toEqual([['password', true], ['totp', false]]);
+    });
+
+    test('the retired list is ignored when ngdpbase.auth.factors is also set in custom config', async () => {
+      const factors = [{ authproviderid: 'password' }];
+      const manager = await started({ 'ngdpbase.auth.factors': factors },
+        { 'ngdpbase.auth.factors': factors, 'ngdpbase.auth.required-factors': ['password', 'totp'] });
+      manager.registerProvider(fake('totp', { ...OTP, primary: false }));
+      expect(manager.getFactors().map(f => f.provider)).toEqual(['password']);
+    });
+
+    describe('assess()', () => {
+      let manager;
+      beforeEach(async () => { manager = await started(); });
+
+      test('a password alone is AAL1, one type, not MFA', () => {
+        expect(manager.assess([PWD])).toEqual({ amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false });
+      });
+
+      test('a password and an OTP are two types: MFA at AAL2', () => {
+        expect(manager.assess([PWD, OTP])).toEqual({ amr: ['pwd', 'otp'], aal: 2, acr: 'aal2', mfa: true });
+      });
+
+      test('email counts towards MFA but never lifts a sign-in above AAL1', () => {
+        expect(manager.assess([PWD, EMAIL])).toEqual({ amr: ['pwd', 'email'], aal: 1, acr: 'aal1', mfa: true });
+      });
+
+      test('a password, an email link and an OTP reach AAL2 without the email', () => {
+        expect(manager.assess([PWD, EMAIL, OTP]).aal).toBe(2);
+      });
+
+      test('two factors of one type are not MFA', () => {
+        expect(manager.assess([PWD, { amr: ['kba'], aal: 1 }])).toMatchObject({ aal: 1, mfa: false });
+      });
+
+      test('a passkey alone is AAL2 and phishing-resistant', () => {
+        expect(manager.assess([PASSKEY])).toMatchObject({ aal: 2, acr: 'phr' });
+      });
+
+      test('the strongest phishing resistance wins the acr', () => {
+        expect(manager.assess([PASSKEY, SECURITY_KEY])).toMatchObject({ aal: 3, acr: 'phrh' });
+      });
+
+      test('nothing satisfied is AAL0', () => {
+        expect(manager.assess([])).toMatchObject({ aal: 0, mfa: false, amr: [] });
+      });
+    });
+
+    test('a successful sign-in reports its provider and the factor satisfied, with its time', async () => {
+      const userManager = { authenticateUser: vi.fn().mockResolvedValue({ username: 'alice' }), getUser: vi.fn().mockResolvedValue({ username: 'alice' }) };
+      const manager = new AuthManager(makeEngine(makeConfigManager(), { UserManager: userManager }));
+      await manager.initialize();
+      const result = await manager.authenticate('password', { username: 'alice', password: 'secret' });
+      expect(result).toMatchObject({ success: true, username: 'alice', provider: 'password' });
+      expect(result.factors).toEqual([{ provider: 'password', amr: ['pwd'], aal: 1, at: expect.any(String) }]);
+      expect(Number.isNaN(Date.parse(result.factors[0].at))).toBe(false);
     });
   });
 
@@ -115,7 +239,7 @@ describe('AuthManager', () => {
       await manager.initialize();
 
       const result = await manager.authenticate('password', { username: 'alice', password: 'secret' });
-      expect(result).toEqual({ success: true, username: 'alice' });
+      expect(result).toMatchObject({ success: true, username: 'alice' });
       expect(mockUserManager.authenticateUser).toHaveBeenCalledWith('alice', 'secret');
     });
 
@@ -161,7 +285,7 @@ describe('AuthManager', () => {
 
         const result = await manager.authenticate('stub-token', { token: 'anything' });
 
-        expect(result).toEqual({ success: true, username: 'alice', viaToken: VIA_TOKEN });
+        expect(result).toEqual({ success: true, username: 'alice', provider: 'stub-token', factors: [], viaToken: VIA_TOKEN });
       });
 
       test('omits the key entirely when the provider returns none', async () => {
@@ -171,7 +295,7 @@ describe('AuthManager', () => {
 
         const result = await manager.authenticate('stub-token', { token: 'anything' });
 
-        expect(result).toEqual({ success: true, username: 'alice' });
+        expect(result).toEqual({ success: true, username: 'alice', provider: 'stub-token', factors: [] });
         expect('viaToken' in result).toBe(false);
       });
 
@@ -446,7 +570,7 @@ describe('AuthManager', () => {
       );
 
       expect(await manager.authenticate('addon-sso', { token: 't' }))
-        .toEqual({ success: true, username: 'alice' });
+        .toEqual({ success: true, username: 'alice', provider: 'addon-sso', factors: [] });
     });
 
     test('backup() reports a contributed provider alongside the built-ins', async () => {

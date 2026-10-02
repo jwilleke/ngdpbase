@@ -80,6 +80,32 @@ export interface AuthResult {
 }
 
 /**
+ * NIST SP 800-63B authenticator assurance level a factor gives on its own (#1523).
+ * 0 is "not a factor" — a known device skips a prompt but proves nothing.
+ */
+export type Aal = 0 | 1 | 2 | 3;
+
+/** Phishing resistance, strongest last: `phr`, then `phrh` (hardware) (#1523). */
+export type PhishingResistance = 'phr' | 'phrh';
+
+/**
+ * What a provider gives as a sign-in factor, declared in its code (#1523).
+ *
+ * Configuration (`ngdpbase.auth.factors`) may lower these, never raise them:
+ * the code is the ceiling because the code is what actually checks the
+ * credential. Know / have / are and device-boundness are derived from `amr`,
+ * so there is one source for them.
+ */
+export interface FactorDescription {
+  /** RFC 8176 `amr` values, plus the unregistered `email` and `push`. */
+  amr: string[];
+  aal: Aal;
+  acr?: PhishingResistance;
+  /** Can start a sign-in, rather than only follow one as an additional factor. */
+  primary: boolean;
+}
+
+/**
  * Interface all authentication providers must implement.
  */
 export interface AuthProvider {
@@ -88,6 +114,14 @@ export interface AuthProvider {
 
   /** Human-readable name shown in admin UIs */
   readonly displayName: string;
+
+  /**
+   * What this provider gives as a sign-in factor (#1523). Absent on providers
+   * that carry delegated credentials (agent tokens, bearer JWTs): a delegated
+   * credential is a scope ceiling, never a factor, and is never offered at
+   * sign-in.
+   */
+  readonly factor?: FactorDescription;
 
   /**
    * Initiate a challenge-based auth flow.

@@ -7,7 +7,7 @@
  * other keys, with nothing presenting them as one subject. Two of them are
  * actively misleading as they ship — `ngdpbase.filters.security.enabled` is
  * `false` while every sub-flag beneath it is `true`, and
- * `ngdpbase.auth.required-factors` is `["password"]`, which is where the
+ * `ngdpbase.auth.factors` offers only single factors, which is where the
  * absence of MFA becomes a visible fact rather than tribal knowledge.
  *
  * __This is a view, not a resolution layer (D3).__ Every item is an ordinary

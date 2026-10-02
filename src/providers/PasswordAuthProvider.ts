@@ -5,13 +5,15 @@
  * AuthManager as the default provider (always enabled).
  */
 
-import type { AuthProvider, AuthVerifyCredentials, AuthResult } from './BaseAuthProvider.js';
+import type { AuthProvider, AuthVerifyCredentials, AuthResult, FactorDescription } from './BaseAuthProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type UserManager from '../managers/UserManager.js';
 
 export class PasswordAuthProvider implements AuthProvider {
   readonly id = 'password';
   readonly displayName = 'Username & Password';
+  /** Something you know (#1523). */
+  readonly factor: FactorDescription = { amr: ['pwd'], aal: 1, primary: true };
 
   constructor(private engine: WikiEngine) {}
 

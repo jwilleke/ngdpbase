@@ -217,9 +217,12 @@
   "ngdpbase.user.account-roles": [
     "vault-owner"
   ],
-  "_comment_auth": "Authentication provider chain — ngdpbase.auth.required-factors is an ordered list of provider IDs that must be satisfied for login (e.g. ['password'] or ['password','totp'] for MFA)",
-  "ngdpbase.auth.required-factors": [
-    "password"
+  "_comment_auth": "Sign-in methods offered (#1523; docs/planning/authentication.md). One entry per provider: authproviderid; primary (can start a sign-in); amr (RFC 8176 values), aal (1-3) and acr (phr | phrh) — what the provider gives, which config may LOWER but never raise (an overstated value is lowered with a warning); enabled. amr [\"trust\"] on an identity provider means take what it reports. A listed provider that is not registered or not fully configured is never offered. What a sign-in must REACH is per role (required-aal), not here. Replaces ngdpbase.auth.required-factors, which is still read from custom config and converted.",
+  "ngdpbase.auth.factors": [
+    { "authproviderid": "password", "primary": true, "amr": ["pwd"], "aal": 1, "enabled": true },
+    { "authproviderid": "magic-link", "primary": true, "amr": ["email"], "aal": 1, "enabled": true },
+    { "authproviderid": "google-oidc", "primary": true, "amr": ["trust"], "enabled": true },
+    { "authproviderid": "cloudflare-access", "primary": true, "amr": ["trust"], "enabled": true }
   ],
   "_comment_auth_throttle": "Login throttling (#1044) — failed password attempts are counted per username AND per client IP; a success clears the count. Locks always EXPIRE: a permanent lock on a known username like admin would be a denial-of-service vector against the operator. Consecutive lockouts double the wait, capped by max-lock-minutes.",
   "ngdpbase.auth.throttle.enabled": true,
@@ -629,7 +632,7 @@
       "group": "Identity and registration",
       "restart": false
     },
-    "ngdpbase.auth.required-factors": {
+    "ngdpbase.auth.factors": {
       "group": "Identity and registration",
       "restart": false
     },
