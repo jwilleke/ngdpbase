@@ -101,6 +101,8 @@ __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is com
 
 __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is computed by SP 800-63B, strongest first — `phrh`, `phr`, AAL2, AAL1 — and is what we __claim__ (session, audit, UserInfo); it never overstates. Email is never phishing-resistant and never lifts a sign-in above AAL1 (§5.1.3.1 bars email as out-of-band): password plus an email link is AAL1. Our MFA rule — two or more distinct types — is what we __require__, and is separate: password plus an email link satisfies it. Only WebAuthn and smart cards (PIV) are phishing-resistant. Sign-in factors never change IAL, which is identity proofing at enrolment.
 
+__The required level is per role__ (operator, 2026-10-02). Each role declares the assurance level its holders must reach — AAL1, AAL2, AAL3, with phishing resistance as an extra — and a person must meet the __highest__ among their roles. The sign-in's computed `acr` is compared with it; short of it, the next factor is asked for. "Admins need a second factor" becomes the `admin` role's level. Still open: an "MFA" step between AAL1 and AAL2 (two types, email allowed), and how a known device meets a role above AAL1.
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
