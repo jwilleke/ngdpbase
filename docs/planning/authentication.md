@@ -216,7 +216,7 @@ Not covered, by decision (operator, 2026-10-02): __identity proofing (IAL2)__ �
 
 ### Settings this needs
 
-- __Session idle timeout — new__, [#1546](https://github.com/jwilleke/ngdpbase/issues/1546). Today a session expires only on `ngdpbase.session.max-age` (24 hours) and renews with use. Proposed: `ngdpbase.session.idle-timeout-minutes`, `0` = off (today's behaviour) up to `1440` (24 hours); a role may set a __shorter__ value and a person gets the shortest among their roles — the same never-loosen rule as `required-aal`. A value above the limit is lowered with a warning
+- __Session idle timeout — new__, [#1546](https://github.com/jwilleke/ngdpbase/issues/1546). Today a session ends only at `ngdpbase.session.max-age` (24 hours, an absolute lifetime from sign-in), with no inactivity limit. Proposed: `ngdpbase.session.idle-timeout-minutes`, `0` = off, otherwise any number of minutes — no fixed cap, since a value at or above `max-age` simply has no effect (the posture report says so). A role may set a __shorter__ value and a person gets the shortest among their roles — the same never-loosen rule as `required-aal`
 - __Audit retention — exists.__ `ngdpbase.audit.retentiondays` (default `90`), in days; six years is `2190`
 
 ---
