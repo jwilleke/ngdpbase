@@ -76,7 +76,8 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 - `primary: false` — only ever a second factor; it has no `factors`
 - `priority` — `0` is highest. The sign-in page offers the person's highest-priority __enrolled__ primary method first, the others behind "use another way"; second factors the same
 - `enabled` — an entry turned off is not offered
-- Email and SMS are non-primary entries, delivered as a __link__, not a typed code; SMS needs an operator-configured transport
+- A second factor delivered by message is a non-primary entry. The message carries a __link__ that returns to the server as the verification (a confirm page; its POST approves the waiting sign-in), and the same message carries a code for autofill; whichever is used first completes the sign-in and voids the other (operator, 2026-10-02)
+- Which channel the message goes by — email, SMS or another — is the __person's preference__ in their profile ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533)), not a fixed provider; SMS needs an operator-configured transport
 - The BIP39 recovery words are one more entry (operator, 2026-10-01); its `primary` and `factors` are undecided
 
 With passkey and password both at `0`, a second factor stays optional until an operator raises password to `1`.
@@ -161,7 +162,6 @@ __Ideas to take__, each on the issue it belongs to:
 
 Points where the issues disagree with a later decision, or where nothing is decided yet. Each is settled on its own issue, not here.
 
-- __Email and SMS: code or link?__ [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) and [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) propose a typed 6–8 digit code. The decision recorded on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 2026-09-30) is that email and SMS are delivered __as a link, not a typed code__, and [#1532](https://github.com/jwilleke/ngdpbase/issues/1532) builds that link. Both issues need their proposals brought in line before they are built. activescott/auth sends both in one message — a link with a confirm page and an autofilled code — which would satisfy both (see Prior art).
 - __SMS carries codes only?__ [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) says SMS never carries notices or links. [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) supersedes that: the person chooses and consents to each channel, for sign-in links and notices separately.
 - __`factors` means two things.__ The decided shape counts __additional__ factors (`password` plus one = `"factors": 1`). The body and title of [#1523](https://github.com/jwilleke/ngdpbase/issues/1523), and YourPHR's document, still describe per-provider `auth-factors` where `2` meant "this provider plus one". Ported as written, every password policy would be off by one.
 - __Recovery words as a factor.__ The operator noted on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (2026-10-01) that the BIP39 recovery words are an authentication factor, config-gated like the others. No issue builds it yet, and `factors` / `primary` for it are undecided.
