@@ -111,6 +111,8 @@ __Known devices and misclassification__ (operator, 2026-10-02):
 - Known devices are rows in the credentials store ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)), kind `device`, storing the `amr` of the sign-in that created them — never a level, which is recomputed at use. The person sees and removes them; a password change or sign-out-everywhere clears them
 - Tamper protection: each row is signed with a key from the environment and references the audit record of the sign-in that created it, anchored by the hash-chained audit log. A row that fails either check is treated as unknown and recorded as a security event. Config changes are already audited (security-posture D19)
 
+__Link approval__ (operator, 2026-10-02; [#1532](https://github.com/jwilleke/ngdpbase/issues/1532)): on every channel the message says what is asking, from which browser and device, roughly where and when, with __Approve__ and __This wasn't me__; opening the link alone does nothing. No number matching — it only guards unsolicited approvals, and an email link never satisfies an AAL2 role. One pending request at a time, short-lived, repeats throttled; several "wasn't me" answers or a burst of requests alert the person.
+
 __Prompting and the admin default__ (operator, 2026-10-02):
 
 - __Admins require a second factor by default.__ A role may raise the factor count, and the shipped default does so for `admin`
