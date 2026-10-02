@@ -22,7 +22,7 @@ export const NETWORK_FILESYSTEMS: Readonly<Record<number, string>> = {
   0x6969: 'NFS',
   0x517b: 'SMB',
   0xff534d42: 'CIFS',
-  0xfe534d42: 'SMB2',
+  0xfe534d42: 'SMB2'
 };
 
 export interface StatFsLike { type: number }

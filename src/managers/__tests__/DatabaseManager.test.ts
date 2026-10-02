@@ -18,7 +18,7 @@ describe('DatabaseManager (#1536)', () => {
       getProperty: (key: string, def: unknown) => (key in props ? props[key] : def),
       getResolvedDataPath: (_key: string, def: string) => (props['ngdpbase.database.file'] as string | undefined) ?? def
     };
-    const manager = new DatabaseManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) } as never);
+    const manager = new DatabaseManager({ getManager: (n: string) => (n === 'ConfigurationManager' ? configManager : null) });
     await manager.initialize();
     return manager;
   };

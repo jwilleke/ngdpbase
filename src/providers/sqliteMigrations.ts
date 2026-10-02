@@ -110,7 +110,7 @@ export function runMigrations(db: InstanceType<typeof Database>, registry: Migra
     } catch (err) {
       db.exec('ROLLBACK');
       // The id in the error is what makes a 2am failure debuggable from the log line alone.
-      throw new Error(`migration ${migration.id} (${migration.description}) failed and was rolled back: ${(err as Error).message}`);
+      throw new Error(`migration ${migration.id} (${migration.description}) failed and was rolled back: ${(err as Error).message}`, { cause: err });
     }
     report.applied.push(migration.id);
   }

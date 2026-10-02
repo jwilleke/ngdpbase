@@ -39,7 +39,8 @@ class DatabaseManager extends BaseManager {
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
     await super.initialize(config);
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
-    const kind = String(configManager?.getProperty('ngdpbase.database.provider', 'none') ?? 'none').toLowerCase();
+    const configured = configManager?.getProperty('ngdpbase.database.provider', 'none');
+    const kind = (typeof configured === 'string' ? configured : 'none').toLowerCase();
 
     if (kind === 'none') {
       logger.info('[DatabaseManager] No application database (ngdpbase.database.provider is none)');
