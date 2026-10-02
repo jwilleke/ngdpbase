@@ -1,6 +1,5 @@
 /**
  * Script to set 'editor: system' for all required pages in page-index.json
- * Companion script to fix-required-pages-editor.js
  * Fixes issue #150 - Required pages should show 'system' as editor
  */
 

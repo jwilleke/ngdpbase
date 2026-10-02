@@ -22,14 +22,11 @@ const NOT_YET_IN_PROJECT = [
   'scripts/configurationmanage-get-config.ts',
   'scripts/dom-performance.ts',
   'scripts/fix-page-index-editor.ts',
-  'scripts/fix-required-pages-editor.ts',
   'scripts/maintain-versions.ts',
   'scripts/migrate-br-to-backslash.ts',
-  'scripts/migrate-config-keys.ts',
   'scripts/migrate-developer-pages.ts',
   'scripts/migrate-to-versioning.ts',
   'scripts/performance-test.ts',
-  'scripts/test-bulk-import.ts',
   'scripts/test-mcp-bulk-upload.ts',
   'scripts/validate-pages.ts'
 ];
