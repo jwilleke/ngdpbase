@@ -208,6 +208,20 @@ describe('AuthManager', () => {
       });
     });
 
+    describe('signInRecord()', () => {
+      test('a successful sign-in becomes provider, factors and their assessment', async () => {
+        const manager = await started();
+        const record = manager.signInRecord({ success: true, username: 'molly', provider: 'password', factors: [{ provider: 'password', amr: ['pwd'], aal: 1, at: 't' }] });
+        expect(record).toEqual({ provider: 'password', factors: [{ provider: 'password', amr: ['pwd'], aal: 1, at: 't' }], amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false, at: expect.any(String) });
+      });
+
+      test('a failed result or a delegated credential never becomes a session record', async () => {
+        const manager = await started();
+        expect(manager.signInRecord({ success: false })).toBeNull();
+        expect(manager.signInRecord({ success: true, username: 'bot', provider: 'agent-token', factors: [], viaToken: { id: 't', name: 'n', scopes: [] } })).toBeNull();
+      });
+    });
+
     test('a successful sign-in reports its provider and the factor satisfied, with its time', async () => {
       const userManager = { authenticateUser: vi.fn().mockResolvedValue({ username: 'alice' }), getUser: vi.fn().mockResolvedValue({ username: 'alice' }) };
       const manager = new AuthManager(makeEngine(makeConfigManager(), { UserManager: userManager }));

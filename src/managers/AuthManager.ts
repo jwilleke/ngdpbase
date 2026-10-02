@@ -133,6 +133,18 @@ export interface CredentialInput {
 /** Kinds that can start a sign-in on their own — what "a way in" counts (#1524). */
 const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email']);
 
+/**
+ * How a session signed in (#1523): kept on the session so step-up (#1525) can
+ * ask "was a factor satisfied within N minutes", the audit record can say how,
+ * and UserInfo (#1529) can report `amr` / `acr` without overstating them.
+ */
+export interface SignInRecord extends Assurance {
+  provider: string;
+  factors: SatisfiedFactor[];
+  /** When the sign-in completed, RFC 3339. */
+  at: string;
+}
+
 export interface AuthenticateResult {
   success: boolean;
   username?: string;
@@ -570,6 +582,17 @@ class AuthManager extends BaseManager {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
       return { success: false };
     }
+  }
+
+  /**
+   * What a successful sign-in amounts to, for the session (#1523): its provider,
+   * the factors it satisfied with their times, and their assessment. Null for a
+   * failed result or a delegated credential, which never starts a session.
+   */
+  signInRecord(result: AuthenticateResult): SignInRecord | null {
+    if (!result.success || !result.provider || result.viaToken) return null;
+    const factors = result.factors ?? [];
+    return { provider: result.provider, factors, ...this.assess(factors), at: new Date().toISOString() };
   }
 
   /**

@@ -152,6 +152,7 @@ import type AssetService from '../managers/AssetService.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
+import type { AuthenticateResult } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
@@ -6680,6 +6681,19 @@ ${panes}
     req.session.sessionGeneration = sessionGenerationOf(account);
   }
 
+  /**
+   * Record on the session how it signed in (#1523): provider, factors with
+   * their times, and the amr / aal / acr they amount to. Every sign-in path
+   * calls this right after setting `isAuthenticated`, so none can forget it.
+   */
+  private stampSignIn(req: Request, result: AuthenticateResult): void {
+    if (!req.session) return;
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const record = authManager?.signInRecord?.(result) ?? null;
+    if (record) req.session.signIn = record;
+    else delete req.session.signIn;
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
       const { username, password } = req.body;
@@ -6772,6 +6786,7 @@ ${panes}
       // Store username in express-session
       req.session.username = result.username || username;
       req.session.isAuthenticated = true;
+      this.stampSignIn(req, result);
       await this.stampSessionGeneration(req);
 
       // #1391: KEK/DEK live in the process bag, keyed by a random handle — never
@@ -7017,6 +7032,8 @@ ${panes}
 
       req.session.username = result.username;
       req.session.isAuthenticated = true;
+
+      this.stampSignIn(req, result);
       await this.stampSessionGeneration(req);
 
       logger.info(`👤 User logged in via magic link: ${result.username}`);
@@ -7097,6 +7114,8 @@ ${panes}
 
       req.session.username = result.username;
       req.session.isAuthenticated = true;
+
+      this.stampSignIn(req, result);
       await this.stampSessionGeneration(req);
 
       logger.info(`👤 User logged in via Google: ${result.username}`);

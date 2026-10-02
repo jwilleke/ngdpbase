@@ -35,6 +35,8 @@ declare module 'express-session' {
     privateStoreHandle?: string;
     /** The account's password-change generation when this session signed in (#1482). */
     sessionGeneration?: number;
+    /** How this session signed in: provider, factors with their times, amr / aal / acr (#1523). */
+    signIn?: import('../managers/AuthManager.js').SignInRecord;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     [key: string]: unknown;
