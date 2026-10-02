@@ -78,7 +78,7 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 - `enabled` — an entry turned off is not offered
 - A second factor delivered by message is a non-primary entry. The message carries a __link__ that returns to the server as the verification (a confirm page; its POST approves the waiting sign-in), and the same message carries a code for autofill; whichever is used first completes the sign-in and voids the other (operator, 2026-10-02)
 - Which channel the message goes by — email, SMS or another — is the __person's preference__ in their profile ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533)), not a fixed provider; SMS needs an operator-configured transport
-- The BIP39 recovery words are one more entry (operator, 2026-10-01); its `primary` and `factors` are undecided
+- The BIP39 recovery words are __not__ a factor and have no entry: they are only for account recovery after a lost password or lost keys (operator, 2026-10-02)
 
 With passkey and password both at `0`, a second factor stays optional until an operator raises password to `1`.
 
@@ -164,7 +164,6 @@ Points where the issues disagree with a later decision, or where nothing is deci
 
 - __SMS carries codes only?__ [#1528](https://github.com/jwilleke/ngdpbase/issues/1528) says SMS never carries notices or links. [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) supersedes that: the person chooses and consents to each channel, for sign-in links and notices separately.
 - __`factors` means two things.__ The decided shape counts __additional__ factors (`password` plus one = `"factors": 1`). The body and title of [#1523](https://github.com/jwilleke/ngdpbase/issues/1523), and YourPHR's document, still describe per-provider `auth-factors` where `2` meant "this provider plus one". Ported as written, every password policy would be off by one.
-- __Recovery words as a factor.__ The operator noted on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (2026-10-01) that the BIP39 recovery words are an authentication factor, config-gated like the others. No issue builds it yet, and `factors` / `primary` for it are undecided.
 - __Passkey storage.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448)'s original plan stores passkey fields on the user record. [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) replaces that with the credentials store, as its comment says; the body still shows the old plan.
 - __Priority of passkey and TOTP.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448) and [#421](https://github.com/jwilleke/ngdpbase/issues/421) are no longer `deferred` (2026-10-01) and await a priority.
 - __Communication channels__ — [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) is marked "to be detailed later" for verification, consent records and per-purpose consent.
@@ -193,7 +192,7 @@ Pages on jimstest that define the terms and standards this plan relies on.
 - [JSON Web Token](https://jminim4.nerdsbythehour.com:3000/view/JSON%20Web%20Token) — the Cloudflare Access and Authentik bearer credentials
 - [Identity Proofing](https://jminim4.nerdsbythehour.com:3000/view/Identity%20Proofing) — what IAL measures; relevant to self-registration and recovery
 - [Credential Service Provider](https://jminim4.nerdsbythehour.com:3000/view/Credential%20Service%20Provider) — the role ngdpbase plays when it issues and checks credentials
-- [Mnemonic](https://jminim4.nerdsbythehour.com:3000/view/Mnemonic) — the BIP39 recovery words, proposed as a factor ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523))
+- [Mnemonic](https://jminim4.nerdsbythehour.com:3000/view/Mnemonic) — the BIP39 recovery words, used for account recovery only ([#1452](https://github.com/jwilleke/ngdpbase/issues/1452), [#1453](https://github.com/jwilleke/ngdpbase/issues/1453))
 - [Phishing](https://jminim4.nerdsbythehour.com:3000/view/Phishing) — what passkeys and step-up approval are chosen to resist ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525), [#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
 - [HIPAA Security Rule](https://jminim4.nerdsbythehour.com:3000/view/HIPAA%20Security%20Rule) — the downstream requirement YourPHR brings to this epic
 
