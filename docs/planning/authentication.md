@@ -8,11 +8,29 @@ Mostly an index: where an issue holds a design, this page points at it and says 
 
 ## Where it stands
 
-`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in still uses __one factor__. What is built towards multi-factor (2026-10-02):
+`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in still uses __one factor__.
 
-- __Factor configuration__ ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523), first slice): `ngdpbase.auth.factors` replaced the flat `required-factors` list (a site's old key is still converted). Each provider declares in code the `amr` / `aal` / `acr` it gives; config may lower them, never raise them. `AuthManager.assess()` gives the combined `amr`, the AAL, the `acr` and whether it is MFA, and a sign-in result records its provider and factors with their times. The session records how it signed in (`req.session.signIn`). Per-role `required-aal` is built with every role at AAL1, and boot refuses a level no available factor reaches. Not yet: the check at sign-in and the second-factor flow, known devices.
-- __Credentials store__ ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)): passkeys, TOTP, verified email/phone and known devices, many per account, in `${FAST_STORAGE}/users/credentials.json` (owner-only). Passwords are __not__ copied there; they stay on the user record. Every row is signed with `NGDPBASE_CREDENTIALS_KEY` (generated into the instance `.env`); a row that does not verify is ignored and raised as a security alert. Empty until a factor enrols into it; the profile list comes with the first such factor.
-- __Session idle timeout__ ([#1546](https://github.com/jwilleke/ngdpbase/issues/1546), first slice): `ngdpbase.session.idle-timeout-minutes`, site-wide, `0` = off, enforced server-side and audited. Not yet: a shorter value per role, the warning before logoff.
+__Implementation status__, checked against the code on 2026-10-03, not against the issues:
+
+| Capability | Issue | Status |
+| --- | --- | --- |
+| Factor configuration: `ngdpbase.auth.factors`; each provider declares `amr` / `aal` / `acr`; config may lower, never raise; `assess()` | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1551](https://github.com/jwilleke/ngdpbase/pull/1551)) |
+| The session records how it signed in (`req.session.signIn`) on every sign-in path | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1566](https://github.com/jwilleke/ngdpbase/pull/1566)) |
+| Per-role `required-aal` (every role AAL1, `anonymous` none); boot refuses a level no available factor reaches | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1568](https://github.com/jwilleke/ngdpbase/pull/1568)) |
+| `required-aal` checked at sign-in; the second-factor flow and its single-use pending handle | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started |
+| Known devices | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started |
+| Credentials store: passkeys, TOTP, email/phone, devices; signed rows; owner-only file; no passwords | [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) | Built ([#1564](https://github.com/jwilleke/ngdpbase/pull/1564)); the profile list waits for the first enrollable factor |
+| Session idle timeout: site value, a shorter one per role, the warning before sign-out | [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) | Built ([#1552](https://github.com/jwilleke/ngdpbase/pull/1552), [#1567](https://github.com/jwilleke/ngdpbase/pull/1567)); the posture note at or above `max-age` is not |
+| Passkeys / WebAuthn | [#448](https://github.com/jwilleke/ngdpbase/issues/448) | Not started |
+| TOTP | [#421](https://github.com/jwilleke/ngdpbase/issues/421) | Not started |
+| Email link as an additional factor | [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) | Not started (the magic link exists as a sign-in) |
+| Twilio Verify; Web Push | [#1528](https://github.com/jwilleke/ngdpbase/issues/1528), [#1550](https://github.com/jwilleke/ngdpbase/issues/1550) | Not started |
+| Approval page for a message second factor | [#1532](https://github.com/jwilleke/ngdpbase/issues/1532) | Not started |
+| Step-up re-authentication | [#1525](https://github.com/jwilleke/ngdpbase/issues/1525) | Not started (the session record it reads is built) |
+| Communication channels as a profile setting | [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) | Not started |
+| Authorization server: the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package | — | Built in its own repo: the provider factory, the host sign-in seam, hashed token storage, UserInfo, RFC 8628 with a host approval page, refresh rotation with reuse detection, client registration with SSRF-guarded client ID metadata, the audit hook. Not released (its #13); hardening-checklist tests still open (its #12) |
+| RFC 8628 device authorization and OIDC UserInfo in ngdpbase | [#1526](https://github.com/jwilleke/ngdpbase/issues/1526), [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) | Not started: ngdpbase does not depend on the package yet |
+| Account recovery | [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) | Recovery words exist ([#1451](https://github.com/jwilleke/ngdpbase/issues/1451)); the epic's own work is not started |
 
 Providers in the code (`src/providers/`):
 
