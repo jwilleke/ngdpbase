@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { normalizeUsername } from '../utils/username.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { ensureSecretDir, secureExistingSecretFile, SECRET_FILE_MODE } from '../utils/secretFileMode.js';
 import logger from '../utils/logger.js';
 import { User, UserUpdateData, UserSession } from '../types/index.js';
 
@@ -80,8 +81,13 @@ class FileUserProvider extends BaseUserProvider {
       'sessions.json'
     ) as string;
 
-    // Create storage directory
-    await fs.mkdir(this.usersDirectory, { recursive: true });
+    // Create storage directory — owner-only: it holds password hashes (#1560)
+    const dirWarning = ensureSecretDir(this.usersDirectory);
+    if (dirWarning) logger.warn(dirWarning);
+    for (const file of [this.usersFile, this.sessionsFile]) {
+      const tightened = secureExistingSecretFile(path.join(this.usersDirectory, file));
+      if (tightened) logger.warn(tightened);
+    }
 
     // Load users and sessions
     await this.loadUsers();
@@ -169,7 +175,7 @@ class FileUserProvider extends BaseUserProvider {
       //
       // fsync deliberately off, per atomicWrite's default: the failure here is
       // a process dying or two processes racing, and rename alone covers both.
-      await writeFileAtomic(usersFilePath, JSON.stringify(users, null, 2));
+      await writeFileAtomic(usersFilePath, JSON.stringify(users, null, 2), 'utf8', { mode: SECRET_FILE_MODE }); // #1560
       logger.debug(`📁 Saved ${this.users.size} users to ${usersFilePath}`);
     } catch (err) {
       logger.error('Error saving users:', err);
@@ -233,7 +239,7 @@ class FileUserProvider extends BaseUserProvider {
       await fs.mkdir(path.dirname(sessionsFilePath), { recursive: true });
       // #1438: same reason as the user store, though this one fails softly —
       // a corrupt sessions file costs everyone their login, not the site.
-      await writeFileAtomic(sessionsFilePath, JSON.stringify(sessionsObject, null, 2));
+      await writeFileAtomic(sessionsFilePath, JSON.stringify(sessionsObject, null, 2), 'utf8', { mode: SECRET_FILE_MODE }); // #1560
       logger.debug(`📁 Saved ${this.sessions.size} sessions to ${sessionsFilePath}`);
     } catch (err) {
       logger.error(`Error saving sessions to ${sessionsFilePath}:`, err);
