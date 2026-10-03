@@ -693,7 +693,8 @@ void (async (): Promise<void> => {
       if (!token || typeof token !== 'string') { next(); return; }
       if (req.session?.username) { next(); return; }
       const authManager = engine.getManager('AuthManager') as {
-        authenticate?: (id: string, creds: { token?: string }) => Promise<{ success: boolean; username?: string }>;
+        authenticate?: (id: string, creds: { token?: string }) => Promise<import('./managers/AuthManager.js').AuthenticateResult>;
+        signInRecord?: (result: import('./managers/AuthManager.js').AuthenticateResult) => import('./managers/AuthManager.js').SignInRecord | null;
         getProviders?: () => Array<{ id: string }>;
       } | null;
       const hasCf = authManager?.getProviders?.().some(p => p.id === 'cloudflare-access');
@@ -701,6 +702,9 @@ void (async (): Promise<void> => {
       const result = await authManager.authenticate('cloudflare-access', { token });
       if (result.success && result.username && req.session) {
         req.session.username = result.username;
+        // #1523: how this session signed in, as every other sign-in path records it.
+        const record = authManager.signInRecord?.(result);
+        if (record) req.session.signIn = record;
         // #1482: stamped at sign-in, like every other sign-in path.
         const users = engine.getManager('UserManager') as { getUser(u: string): Promise<{ sessionGeneration?: number } | null> } | null;
         req.session.sessionGeneration = sessionGenerationOf(await users?.getUser(result.username));
@@ -751,6 +755,7 @@ void (async (): Promise<void> => {
         delete req.session.privateStoreHandle;
         delete req.session.sessionGeneration;
         delete req.session.lastActivity;
+        delete req.session.signIn;
         req.session.isAuthenticated = false;
       };
 

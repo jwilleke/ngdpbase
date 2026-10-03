@@ -15,6 +15,21 @@ import 'express-session';
  * in place beside its source (seen on every satellite after v4.15.0). A
  * `.d.ts` must not import a `.ts` module.
  */
+/**
+ * How a session signed in (#1523), structurally identical to `SignInRecord`
+ * in `src/managers/AuthManager.ts`. Inline for the reason above: importing it
+ * would compile AuthManager and everything it imports into every addon build.
+ */
+interface SessionSignIn {
+  provider: string;
+  factors: Array<{ provider: string; amr: string[]; aal: 0 | 1 | 2 | 3; acr?: 'phr' | 'phrh'; at: string }>;
+  amr: string[];
+  aal: 0 | 1 | 2 | 3;
+  acr: 'phr' | 'phrh' | 'aal1' | 'aal2' | 'aal3';
+  mfa: boolean;
+  at: string;
+}
+
 interface RequestShareGrant {
   id: string;
   issuer: string;
@@ -35,6 +50,8 @@ declare module 'express-session' {
     privateStoreHandle?: string;
     /** The account's password-change generation when this session signed in (#1482). */
     sessionGeneration?: number;
+    /** How this session signed in: provider, factors with their times, amr / aal / acr (#1523). */
+    signIn?: SessionSignIn;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     [key: string]: unknown;
