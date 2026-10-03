@@ -31,6 +31,7 @@ import AuditManager from './managers/AuditManager.js';
 import AddonsManager from './managers/AddonsManager.js';
 import ImportManager from './managers/ImportManager.js';
 import AuthManager from './managers/AuthManager.js';
+import OidcManager from './managers/OidcManager.js';
 import AgentTokenManager from './managers/AgentTokenManager.js';
 import EmailManager from './managers/EmailManager.js';
 import MetricsManager from './managers/MetricsManager.js';
@@ -239,6 +240,12 @@ class WikiEngine extends Engine {
     const authManager = new AuthManager(this);
     this.registerManager('AuthManager', authManager);
     await authManager.initialize();
+
+    // #1570: always registered so its state is reported; the oidc-auth-server
+    // package is imported only when oidc-auth-server.enabled is true.
+    const oidcManager = new OidcManager(this);
+    this.registerManager('OidcManager', oidcManager);
+    await oidcManager.initialize();
 
     // 4. Initialize other managers that may depend on the above
     const notificationManager = new NotificationManager(this);

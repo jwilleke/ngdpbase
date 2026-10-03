@@ -52,6 +52,7 @@ import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration
 import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
 import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
+import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
 // __dirname would resolve to dist/src/ after compilation, so it cannot be used for
@@ -457,6 +458,24 @@ void (async (): Promise<void> => {
   }
 
   // 5. Now that the engine is ready, set up the remaining middleware and routes
+
+  // #1570: the OpenID Connect provider at /oidc, mounted BEFORE the body
+  // parsers, the session and CSRF. node-oidc-provider reads the raw body
+  // itself, and its protocol endpoints answer machine clients with their own
+  // protections (PKCE, client authentication, the device pages' xsrf), so CSRF
+  // never sees them and needs no exemption list (#1573). ngdpbase's own
+  // sign-in and consent route, /oidc/interaction/*, is passed on: it needs the
+  // session and keeps CSRF. Mounted only when the manager is configured; the
+  // server itself starts once `trust proxy` is resolved below.
+  const oidcManager = engine.getManager<OidcManager>('OidcManager');
+  let oidcHandler: ((req: Request, res: Response) => Promise<void>) | null = null;
+  if (oidcManager?.getIssuer()) {
+    app.use(OIDC_MOUNT, (req: Request, res: Response, next: NextFunction) => {
+      if (!oidcHandler || req.url.startsWith(OIDC_INTERACTION_PREFIX)) { next(); return; }
+      oidcHandler(req, res).catch(next);
+    });
+  }
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
@@ -537,6 +556,9 @@ void (async (): Promise<void> => {
     const origin = sessionSecurity.trustProxyDerived ? ' (derived from session.secure)' : '';
     console.log(`🔒 trust proxy enabled: ${JSON.stringify(sessionSecurity.trustProxy)}${origin}`);
   }
+  // #1574: the provider believes X-Forwarded-* exactly when Express does —
+  // one decision, made once, for both.
+  oidcHandler = oidcManager?.start({ trustProxy: sessionSecurity.trustProxy !== false }) ?? null;
   if (sessionSecurity.misconfigured) {
     logger.warn(
       '⚠️  ngdpbase.session.secure is on while ngdpbase.server.trust-proxy is explicitly false. ' +

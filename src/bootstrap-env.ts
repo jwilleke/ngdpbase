@@ -37,14 +37,13 @@
 
 import path from 'path';
 import fs from 'fs';
-import { randomBytes } from 'crypto';
 import dotenv from 'dotenv';
 import {
   ensureSessionSecret,
   SESSION_SECRET_ENV,
   type SessionSecretOrigin
 } from './utils/sessionSecret.js';
-import { ensureInstanceEnvSecret, type InstanceEnvFs } from './utils/instanceEnvSecret.js';
+import { ensureInstanceEnvSecret, nodeInstanceEnvFs as instanceEnvFs } from './utils/instanceEnvSecret.js';
 import { secureExistingSecretFile } from './utils/secretFileMode.js';
 import { CREDENTIALS_KEY_ENV } from './providers/BaseCredentialsProvider.js';
 
@@ -86,23 +85,6 @@ dotenv.config({ path: rootEnvPath, quiet: true });
  * file that cannot be appended to, refuses boot here — before the logger
  * exists, so the message goes to stderr.
  */
-/** The real filesystem behind every generated `.env` secret. */
-const instanceEnvFs: InstanceEnvFs = {
-  readFile: (p) => {
-    try {
-      return fs.readFileSync(p, 'utf8');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw err;
-    }
-  },
-  appendFile: (p, line, mode) => {
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.appendFileSync(p, line, { mode });
-  },
-  randomSecret: () => randomBytes(32).toString('base64')
-};
-
 export let sessionSecretOrigin: SessionSecretOrigin;
 try {
   // #1560: the instance .env holds every generated secret. Owner-only, and
