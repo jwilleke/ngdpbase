@@ -54,6 +54,16 @@
                     <p class="text-center small mt-2 mb-0">
                         <a href="/recover-password">Forgot your password? Use your recovery words</a>
                     </p>
+                    <% if (typeof passkeyEnabled !== 'undefined' && passkeyEnabled) { %>
+                    <%# #448: shown by passkey.js only where the browser supports passkeys. %>
+                    <hr>
+                    <button type="button" class="btn btn-outline-primary w-100 d-none" data-passkey-signin
+                            data-redirect="<%= redirect || '/' %>" data-error-target="passkey-error">
+                        <i class="fas fa-key"></i> Sign in with a passkey
+                    </button>
+                    <div id="passkey-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
+                    <script src="/js/passkey.js" defer></script>
+                    <% } %>
                     <% if (magicLinkEnabled) { %>
                     <hr>
                     <p class="text-center text-muted small mb-2">Or sign in without a password</p>

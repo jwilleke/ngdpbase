@@ -719,6 +719,11 @@ void (async (): Promise<void> => {
   const debugSession = configManager.getProperty('ngdpbase.logging.debug.session', false);
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
 
+  const authManagerForRoles = engine.getManager('AuthManager') as {
+    rolesAtSignIn?(roles: readonly string[], signInAal: number): { kept: string[]; steppedDown: string[] };
+    hasCredential?(username: string, kind: 'passkey'): boolean;
+    passkeyRelyingParty?(): unknown;
+  } | null;
   const roleManager = engine.getManager('RoleManager') as {
     roleIdleTimeouts?(): Record<string, number>;
     resolveUserRoles(username: string): Promise<string[]>;
@@ -802,8 +807,21 @@ void (async (): Promise<void> => {
           // #1179: the address travels on the subject, so a manager records it from the context it is handed.
           // #1382: so does the handle to this session's private-store keys — never the session id.
           const privateStoreHandle = req.session.privateStoreHandle;
+          // #448: a role whose required-aal is above this session's sign-in
+          // steps down — the person acts without it until they sign in strongly
+          // enough. One rule, here where the request's roles are set. A session
+          // from before sign-ins were recorded counts as AAL1.
+          const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1);
+          if (stepDown && stepDown.steppedDown.length > 0) {
+            res.locals.aalStepDown = {
+              roles: stepDown.steppedDown,
+              hasPasskey: authManagerForRoles?.hasCredential?.(sessionContext.username, 'passkey') ?? false,
+              passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
+            };
+          }
           req.userContext = {
             ...sessionContext,
+            ...(stepDown ? { roles: stepDown.kept } : {}),
             ipAddress: req.ip,
             ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {})
           };
@@ -1035,8 +1053,10 @@ void (async (): Promise<void> => {
   // actually available — checked here, once add-ons have registered theirs. A
   // role nobody can sign in to is a lockout, so the server refuses to start,
   // as it does without a session secret (#1194).
-  const unreachable = (engine.getManager('AuthManager') as { unreachableRequiredAal?(): string[] } | null)
-    ?.unreachableRequiredAal?.() ?? [];
+  // #448: only a level the operator set refuses; a shipped default no factor
+  // reaches degrades instead, so an upgrade never locks an instance out.
+  const unreachable = (engine.getManager('AuthManager') as { checkRequiredAal?(): string[] } | null)
+    ?.checkRequiredAal?.() ?? [];
   if (unreachable.length > 0) {
     console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
     for (const problem of unreachable) console.error(`  - ${problem}`);

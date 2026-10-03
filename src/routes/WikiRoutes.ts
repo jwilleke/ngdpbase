@@ -6489,6 +6489,7 @@ ${panes}
         magic: req.query.magic,
         redirect: req.query.redirect,
         magicLinkEnabled: authManager?.isEnabled('magic-link') ?? false,
+        passkeyEnabled: authManager?.isEnabled('passkey') ?? false, // #448
         googleOIDCEnabled: authManager?.isEnabled('google-oidc') ?? false,
         passwordAuthEnabled: authManager?.isEnabled('password') ?? true,
         csrfToken: req.session?.csrfToken || ''
@@ -6718,6 +6719,119 @@ ${panes}
     const timeoutMs = typeof res.locals.idleTimeoutMs === 'number' ? res.locals.idleTimeoutMs : 0;
     if (timeoutMs > 0) req.session.lastActivity = Date.now();
     res.json({ signedIn: true, remainingMs: idleRemainingMs(req.session.lastActivity, Date.now(), timeoutMs) });
+  }
+
+  /** Keep a WebAuthn challenge for one later verify, five minutes at most (#448). */
+  private keepPasskeyChallenge(req: Request, value: string, purpose: 'register' | 'authenticate'): void {
+    req.session.passkeyChallenge = { value, purpose, expires: Date.now() + 5 * 60_000 };
+  }
+
+  /** Take the pending challenge for `purpose`, once; null when absent, expired or for the other purpose. */
+  private takePasskeyChallenge(req: Request, purpose: 'register' | 'authenticate'): string | null {
+    const pending = req.session?.passkeyChallenge;
+    if (req.session) delete req.session.passkeyChallenge;
+    if (!pending || pending.purpose !== purpose || Date.now() > pending.expires) return null;
+    return pending.value;
+  }
+
+  /** GET /auth/passkey/register/options — enrol a passkey for the signed-in person (#448). */
+  async passkeyRegisterOptions(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    try {
+      const user = wikiContext.userContext;
+      const options = await this.engine.getManager('AuthManager').passkeyRegistrationOptions(
+        user, user.username, String((user as { displayName?: string }).displayName ?? user.username)
+      ) as { challenge: string };
+      this.keepPasskeyChallenge(req, options.challenge, 'register');
+      res.json(options);
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  }
+
+  /** POST /auth/passkey/register/verify — store the passkey if it answers the kept challenge (#448). */
+  async passkeyRegisterVerify(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    const challenge = this.takePasskeyChallenge(req, 'register');
+    if (!challenge) {
+      res.status(400).json({ error: 'The enrolment request expired; try again' });
+      return;
+    }
+    try {
+      const body = req.body as { response?: unknown; label?: unknown };
+      const user = wikiContext.userContext;
+      const id = await this.engine.getManager('AuthManager').passkeyRegister(
+        user, user.username, body.response, challenge, typeof body.label === 'string' ? body.label : ''
+      );
+      if (!id) {
+        res.status(400).json({ error: 'The passkey could not be verified' });
+        return;
+      }
+      res.json({ ok: true, id });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  }
+
+  /** GET /auth/passkey/authenticate/options — anyone may start a passkey sign-in (#448). */
+  async passkeyAuthenticateOptions(req: Request, res: Response): Promise<void> {
+    try {
+      const options = await this.engine.getManager('AuthManager').passkeyAuthenticationOptions() as { challenge: string };
+      this.keepPasskeyChallenge(req, options.challenge, 'authenticate');
+      res.json(options);
+    } catch (err) {
+      res.status(404).json({ error: (err as Error).message });
+    }
+  }
+
+  /**
+   * POST /auth/passkey/authenticate/verify — sign in with a passkey (#448): the
+   * same steps as every other sign-in path (new session id, identity, how it
+   * signed in, password generation), then the destination as JSON.
+   */
+  async passkeyAuthenticateVerify(req: Request, res: Response): Promise<void> {
+    const challenge = this.takePasskeyChallenge(req, 'authenticate');
+    if (!challenge) {
+      res.status(400).json({ error: 'The sign-in request expired; try again' });
+      return;
+    }
+    const body = req.body as { response?: unknown; redirect?: unknown };
+    const authManager = this.engine.getManager('AuthManager');
+    const result = await authManager.authenticate('passkey', { webauthn: { response: body.response, expectedChallenge: challenge } });
+    if (!result.success || !result.username) {
+      await this.auditAuthentication(req, undefined, 'failure', 'passkey');
+      res.status(401).json({ error: 'Sign-in with that passkey failed' });
+      return;
+    }
+    await this.regenerateSession(req); // #1043
+    req.session.username = result.username;
+    req.session.isAuthenticated = true;
+    this.stampSignIn(req, result);
+    await this.stampSessionGeneration(req);
+    await this.auditAuthentication(req, result.username, 'success', 'passkey');
+    logger.info(`👤 User logged in with a passkey: ${result.username}`);
+    req.session.save((err) => {
+      if (err) {
+        res.status(500).json({ error: 'Session save failed' });
+        return;
+      }
+      res.json({ ok: true, redirect: safeRedirect(body.redirect) }); // #1041
+    });
+  }
+
+  /** POST /profile/credentials/:id/remove — remove one of your own credentials (#1524). */
+  async removeOwnCredential(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    try {
+      const user = wikiContext.userContext;
+      const removed = await this.engine.getManager('AuthManager').removeCredential(user, user.username, req.params.id);
+      res.redirect(`/profile?${removed ? 'success=Credential+removed' : 'error=Credential+not+found'}`);
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}`);
+    }
   }
 
   async processLogin(req: Request, res: Response) {
@@ -7916,9 +8030,18 @@ ${panes}
         ? await this.engine.getManager('AttachmentManager')?.listOwnUnusedVaultFiles?.(currentUser).catch(() => []) ?? []
         : [];
 
+      // #448 / #1524: the person's own credentials (never their secrets) and the host passkeys are tied to.
+      const authManagerForProfile = this.engine.getManager('AuthManager');
+      const credentials = currentUser?.username
+        ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch(() => []) ?? []
+        : [];
+      const passkeyHost = authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null;
+
       res.render('profile', {
         ...commonData,
         title: 'Profile',
+        credentials, // #1524
+        passkeyHost, // #448
         unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
@@ -15064,6 +15187,12 @@ ${panes}
     app.get('/admin/login', (req: Request, res: Response) => this.adminLoginPage(req, res));
     app.post('/login', (req: Request, res: Response) => this.processLogin(req, res));
     app.post('/auth/magic-link', (req: Request, res: Response) => this.requestMagicLink(req, res));
+    // #448: passkeys. Enrolling needs a signed-in person; signing in does not.
+    app.get('/auth/passkey/register/options', (req: Request, res: Response) => { void this.passkeyRegisterOptions(req, res); });
+    app.post('/auth/passkey/register/verify', (req: Request, res: Response) => { void this.passkeyRegisterVerify(req, res); });
+    app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });
+    app.post('/auth/passkey/authenticate/verify', (req: Request, res: Response) => { void this.passkeyAuthenticateVerify(req, res); });
+    app.post('/profile/credentials/:id/remove', (req: Request, res: Response) => { void this.removeOwnCredential(req, res); });
     // #1019: GET renders a confirmation interstitial and consumes nothing;
     // POST is where the token is spent. Splitting them is what stops an email
     // scanner's pre-fetch from burning the link.

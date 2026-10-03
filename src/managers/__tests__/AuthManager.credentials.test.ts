@@ -30,7 +30,8 @@ describe('AuthManager credentials (#1524)', () => {
         getProperty: (_k: string, d: unknown) => d,
         getCustomProperty: () => undefined,
         getResolvedDataPath: (k: string, d: string) => (k === 'ngdpbase.auth.credentials.file' ? file : d),
-        isBaseUrlExplicit: () => true
+        isBaseUrlExplicit: () => true,
+        getBaseURL: () => 'https://wiki.example.com'
       },
       PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve((granted[s.username] ?? []).includes(action)) },
       UserManager: { getUser: (u: string) => Promise.resolve(users[u] ?? null) },

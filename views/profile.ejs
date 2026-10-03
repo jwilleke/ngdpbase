@@ -222,6 +222,57 @@
                     </div>
                     <% } %>
 
+                    <!-- #448 / #1524: Sign-in methods — passkeys and other credentials beyond the password -->
+                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-key"></i> Sign-in methods</h6>
+                                </div>
+                                <div class="card-body">
+                                    <% if (typeof credentials !== 'undefined' && credentials.length > 0) { %>
+                                    <table class="table table-sm align-middle mb-3">
+                                        <thead><tr><th>Name</th><th>Kind</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+                                        <tbody>
+                                            <% credentials.forEach(function (c) { %>
+                                            <tr>
+                                                <td><%= c.label %></td>
+                                                <td><%= c.kind %></td>
+                                                <td class="small text-muted"><%= (c.createdAt || '').slice(0, 10) %></td>
+                                                <td class="small text-muted"><%= c.lastUsedAt ? c.lastUsedAt.slice(0, 10) : 'never' %></td>
+                                                <td class="text-end">
+                                                    <form action="/profile/credentials/<%= encodeURIComponent(c.id) %>/remove" method="POST" class="d-inline">
+                                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                            <% }) %>
+                                        </tbody>
+                                    </table>
+                                    <% } else { %>
+                                    <p class="text-muted small">You sign in with your password only.</p>
+                                    <% } %>
+                                    <% if (typeof passkeyHost !== 'undefined' && passkeyHost) { %>
+                                    <p class="small text-muted mb-2">
+                                        A passkey signs you in with your device's fingerprint, face or PIN, with no password. It works only on <strong><%= passkeyHost %></strong>.
+                                    </p>
+                                    <div class="input-group input-group-sm" style="max-width: 28rem;">
+                                        <input type="text" class="form-control" id="passkey-label" maxlength="60" placeholder="Name this device, e.g. My phone">
+                                        <button type="button" class="btn btn-primary d-none" data-passkey-enrol data-label-input="passkey-label" data-error-target="passkey-enrol-error">
+                                            <i class="fas fa-plus"></i> Add a passkey
+                                        </button>
+                                    </div>
+                                    <div id="passkey-enrol-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
+                                    <script src="/js/passkey.js" defer></script>
+                                    <% } %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #946: Agent API Tokens — delegate your own permissions to an agent -->
                     <% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
                     <div class="row mb-4">

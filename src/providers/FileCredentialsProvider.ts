@@ -115,10 +115,16 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
     return true;
   }
 
-  async touch(id: string, at: string): Promise<void> {
+  findBySubject(kind: CredentialRecord['kind'], subject: string): CredentialRecord | null {
+    for (const r of this.rows.values()) if (r.kind === kind && r.subject === subject) return r;
+    return null;
+  }
+
+  async touch(id: string, at: string, secret?: string): Promise<void> {
     const r = this.rows.get(id);
     if (!r) return;
     r.lastUsedAt = at;
+    if (secret !== undefined) r.secret = secret;
     await this.save();
   }
 

@@ -42,6 +42,8 @@ export interface AuthVerifyCredentials {
   password?: string;
   /** One-time token — used by MagicLinkAuthProvider */
   token?: string;
+  /** A WebAuthn assertion and the single-use challenge it must answer — used by PasskeyAuthProvider (#448). */
+  webauthn?: { response: unknown; expectedChallenge: string };
 }
 
 /**

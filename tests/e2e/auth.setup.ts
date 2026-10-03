@@ -1,4 +1,4 @@
-import { test as setup, expect } from '@playwright/test';
+import { test as setup, expect, type Page } from '@playwright/test';
 import { waitForServerReady, TEST_PAGE_PREFIX } from './fixtures/helpers';
 
 const STORAGE_STATE = './tests/e2e/.auth/user.json';
@@ -41,6 +41,10 @@ setup('authenticate', async ({ page }) => {
   // keeps persistent polling connections open (#460)
   await page.waitForLoadState('domcontentloaded');
 
+  // #448: admin requires AAL2, so a password session acts without admin.
+  // Upgrade it with a passkey from a virtual authenticator, then save that.
+  await upgradeToPasskeySession(page);
+
   // Save authentication state
   await page.context().storageState({ path: STORAGE_STATE });
 
@@ -62,6 +66,58 @@ setup('authenticate', async ({ page }) => {
   await deleteStaleLiveTestPages(page);
   await purgeStaleTestPages(page);
 });
+
+const E2E_PASSKEY_LABEL = 'e2e-virtual';
+
+/** Remove every passkey this suite enrolled — leftovers from a crashed run, or this run's. */
+async function removeE2EPasskeys(page: Page): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await page.goto('/profile');
+    const row = page.locator('tr', { has: page.locator(`td:text-is("${E2E_PASSKEY_LABEL}")`) }).first();
+    if ((await row.count()) === 0) return;
+    await row.getByRole('button', { name: 'Remove' }).click();
+    await page.waitForURL(/\/profile\?/);
+  }
+}
+
+/**
+ * #448: admin and user-admin require AAL2, and a password sign-in is AAL1, so
+ * the admin acts without those roles until they sign in with a passkey. Where
+ * the instance offers passkeys, enrol one on a Chromium virtual authenticator,
+ * sign out, sign back in with it, then REMOVE it: the session keeps its AAL2
+ * sign-in record, so nothing stays in the instance's credentials store — the
+ * suite also runs against real instances. Where passkeys are off, the admin's
+ * AAL2 default is unreachable and acts at AAL1, so the password session stands.
+ */
+async function upgradeToPasskeySession(page: Page): Promise<void> {
+  await page.goto('/profile');
+  const enrol = page.locator('[data-passkey-enrol]');
+  if ((await enrol.count()) === 0) return; // passkeys are off on this instance
+
+  await removeE2EPasskeys(page);
+
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true }
+  });
+  try {
+    await page.goto('/profile');
+    await page.fill('#passkey-label', E2E_PASSKEY_LABEL);
+    await page.locator('[data-passkey-enrol]').click();
+    await page.waitForURL(/\/profile\?success=Passkey/);
+
+    await page.goto('/logout');
+    await page.goto('/login');
+    await page.locator('[data-passkey-signin]').click();
+    await expect(page).not.toHaveURL(/\/login/);
+    await page.waitForLoadState('domcontentloaded');
+
+    await removeE2EPasskeys(page);
+  } finally {
+    await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId }).catch(() => undefined);
+  }
+}
 
 /**
  * Delete live pages left behind by a run that crashed before its cleanup (#970).
