@@ -31,6 +31,12 @@ Multi-factor sign-in, step-up and device authorization are epic #1522; the order
 - [BaseAuthProvider](../providers/BaseAuthProvider.md) — the abstract contract
 - [PasswordAuthProvider](../providers/PasswordAuthProvider.md), [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md), [CloudflareAccessAuthProvider](../providers/CloudflareAccessAuthProvider.md), [GoogleOIDCProvider](../providers/GoogleOIDCProvider.md)
 
+## Required assurance level per role (#1523)
+
+Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the NIST level a sign-in must reach to hold it. A person needs the highest among their roles (`requiredAalFor(roles)`). Every role ships at 1, and `anonymous` has none. `admin` and `user-admin` move to 2 in the same change that ships the first AAL2-capable factor (passkeys or TOTP), together with an enrol-now step (decided 2026-10-03).
+
+`unreachableRequiredAal()` lists every role whose level the available factors cannot reach: one factor declaring that level, or distinct factor types lifting a sign-in to AAL2, with email never lifting. After add-ons register their providers, `app.ts` refuses to start when that list is not empty, naming the role, the level and what `ngdpbase.auth.factors` offers. A role nobody can sign in to is a lockout, so it is found at boot rather than at the door. The check at sign-in itself comes with the second-factor flow.
+
 ## Credentials store (#1524)
 
 AuthManager is the only door to an account's credentials beyond its password: passkeys, TOTP, verified email/phone and known devices ([BaseCredentialsProvider](../providers/BaseCredentialsProvider.md), stored by [FileCredentialsProvider](../providers/FileCredentialsProvider.md)). Passwords stay on the user record and are never copied here.
