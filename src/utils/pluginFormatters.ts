@@ -812,32 +812,34 @@ export function formatPaginationLinks(
 
 /** Outcome of resolveManagerFetch — lets callers reproduce their own messaging. */
 export type ManagerFetchResult =
-  | { status: 'ok'; text: string }   // method resolved and returned text
-  | { status: 'not-found' }          // spec well-formed but manager/method absent
+  | { status: 'ok'; text: string }   // toMarqueeText resolved and returned text
+  | { status: 'not-found' }          // spec well-formed but the manager or its toMarqueeText is absent
+  | { status: 'refused' }            // spec names a method other than toMarqueeText (#1556)
   | { status: 'no-spec' };           // no spec, no engine, or malformed — caller should ignore
 
+/** The one manager method page text may reach (#1556). */
+export const FETCHABLE_METHOD = 'toMarqueeText';
+
 /**
- * Resolve the `fetch='ManagerName.methodName(k=v,...)'` plugin convention to text.
+ * Resolve the `fetch='ManagerName.toMarqueeText(k=v,...)'` plugin convention to text.
  *
- * Extracted from MarqueePlugin (#685 slice 2) so any plugin can inline a value
- * from a registered manager through one shared, tested implementation rather
- * than re-parsing the spec per plugin. The canonical method is the
- * `BaseManager.toMarqueeText()` convention; the raw `{k: v}` args object is
- * passed straight to the method (the manager owns its own option parsing via
- * `managerUtils.ts`).
+ * Extracted from MarqueePlugin (#685 slice 2). Page text names the manager and
+ * the method, so this is reachable by anyone who can edit a page and runs on
+ * every render, for every viewer (#1556). Two rules make that safe:
  *
- * Behaviour is intentionally identical to the prior MarqueePlugin inline code:
- * a malformed spec or missing engine yields `no-spec` (caller falls through),
- * a well-formed spec whose target is absent yields `not-found`.
+ * - __Only `toMarqueeText`.__ Any other method — an index rebuild, a scan,
+ *   anything with a side effect — is refused, whatever the manager offers.
+ *   `BaseManager.toMarqueeText()` is the convention, and the only method any
+ *   shipped page or doc uses.
+ * - __The viewer's context goes with it__ (every call carries a context). The
+ *   manager decides what that viewer may see; nothing runs as the server.
  *
- * NOTE (security): this resolves an arbitrary `Manager.method` from page
- * content — same surface as the original MarqueePlugin code. An allow-list /
- * read-only restriction is a deliberate follow-up (security-policy change,
- * tracked separately), not folded into this behaviour-preserving extraction.
+ * The raw `{k: v}` args object is passed as the first argument (the manager
+ * owns its own option parsing via `managerUtils.ts`), the viewer second.
  */
 export async function resolveManagerFetch(
   spec: string | undefined,
-  context: { engine?: { getManager(name: string): unknown } }
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
 ): Promise<ManagerFetchResult> {
   if (!spec || !context.engine) return { status: 'no-spec' };
 
@@ -845,6 +847,8 @@ export async function resolveManagerFetch(
   if (!match) return { status: 'no-spec' };
 
   const [, managerName, methodName, argsStr] = match;
+  if (methodName !== FETCHABLE_METHOD) return { status: 'refused' };
+
   const fetchArgs: Record<string, string> = {};
   if (argsStr) {
     for (const pair of argsStr.split(',')) {
@@ -854,9 +858,8 @@ export async function resolveManagerFetch(
   }
 
   const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
-  if (manager && typeof manager[methodName] === 'function') {
-    const text = String(await (manager[methodName] as (o: Record<string, string>) => unknown)(fetchArgs));
-    return { status: 'ok', text };
-  }
-  return { status: 'not-found' };
+  const method = manager?.[FETCHABLE_METHOD];
+  if (typeof method !== 'function') return { status: 'not-found' };
+  const text = String(await (method as (o: Record<string, string>, viewer: unknown) => unknown).call(manager, fetchArgs, context.userContext));
+  return { status: 'ok', text };
 }
