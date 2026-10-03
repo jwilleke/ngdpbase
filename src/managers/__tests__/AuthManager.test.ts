@@ -209,9 +209,9 @@ describe('AuthManager', () => {
     });
 
     describe('required-aal (#1523)', () => {
-      const withRoles = async (levels: Record<string, number>, properties = {}) => {
+      const withRoles = async (levels: Record<string, number>, properties = {}, operator: Record<string, number> = levels) => {
         const cm = makeConfigManager({ properties });
-        const manager = new AuthManager(makeEngine(cm, { RoleManager: { roleRequiredAal: () => levels } }));
+        const manager = new AuthManager(makeEngine(cm, { RoleManager: { roleRequiredAal: () => levels, operatorRequiredAal: () => operator } }));
         await manager.initialize();
         return manager;
       };
@@ -239,6 +239,29 @@ describe('AuthManager', () => {
         const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'totp' }] });
         manager.registerProvider(fake('totp', { amr: ['otp'], aal: 1, primary: false }), 'totp-addon');
         expect(manager.unreachableRequiredAal()).toEqual([]);
+      });
+
+      test('a SHIPPED level no factor reaches acts at what is reachable and degrades; it does not refuse the boot (#448)', async () => {
+        const manager = await withRoles({ admin: 2, reader: 1 }, {}, {});
+        expect(manager.checkRequiredAal()).toEqual([]);
+        expect(manager.getManagerStatus()).toEqual(expect.objectContaining({ state: 'degraded', configKey: 'ngdpbase.auth.factors' }));
+        expect(manager.requiredAalFor(['admin'])).toBe(1);
+        expect(manager.rolesAtSignIn(['admin', 'reader'], 1)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
+      });
+
+      test('an OPERATOR level no factor reaches refuses the boot, and is never lowered', async () => {
+        const manager = await withRoles({ admin: 2, reader: 1 }, {}, { admin: 2 });
+        expect(manager.checkRequiredAal()).toEqual([expect.stringMatching(/role 'admin' requires AAL2 \(set in app-custom-config.json\)/)]);
+        expect(manager.requiredAalFor(['admin'])).toBe(2);
+      });
+
+      test('where AAL2 is reachable, a password session steps admin down and keeps the rest', async () => {
+        const manager = await withRoles({ admin: 2, reader: 1 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'key' }] }, {});
+        manager.registerProvider(fake('key', { amr: ['swk', 'user'], aal: 2, acr: 'phr', primary: true }));
+        expect(manager.checkRequiredAal()).toEqual([]);
+        expect(manager.getManagerStatus().state).not.toBe('degraded');
+        expect(manager.rolesAtSignIn(['admin', 'vault-owner', 'Authenticated'], 1)).toEqual({ kept: ['vault-owner', 'Authenticated'], steppedDown: ['admin'] });
+        expect(manager.rolesAtSignIn(['admin', 'vault-owner'], 2)).toEqual({ kept: ['admin', 'vault-owner'], steppedDown: [] });
       });
 
       test('an email link never lifts the reachable level', async () => {

@@ -654,40 +654,91 @@ class AuthManager extends BaseManager {
     }
   }
 
-  /** Each role's `required-aal`, read through the catalogue's owner (#1523). */
-  private roleRequiredAal(): Record<string, Aal> {
-    const roleManager = this.engine.getManager('RoleManager') as { roleRequiredAal?(): Record<string, Aal> } | null;
-    return roleManager?.roleRequiredAal?.() ?? {};
+  /** Each role's `required-aal`, and whether the operator set it, read through the catalogue's owner (#1523, #448). */
+  private requiredLevels(): Array<{ role: string; aal: Aal; operatorSet: boolean }> {
+    const roleManager = this.engine.getManager('RoleManager') as {
+      roleRequiredAal?(): Record<string, Aal>;
+      operatorRequiredAal?(): Record<string, Aal>;
+    } | null;
+    const all = roleManager?.roleRequiredAal?.() ?? {};
+    const operator = roleManager?.operatorRequiredAal?.() ?? {};
+    return Object.entries(all).map(([role, aal]) => ({ role, aal, operatorSet: operator[role] === aal }));
+  }
+
+  /** The highest level the available factors reach together; 0 without a primary factor (#1523). */
+  reachableAal(): Aal {
+    const factors = this.getFactors();
+    return factors.some(f => f.primary) ? this.assess(factors).aal : 0;
   }
 
   /**
-   * The level a sign-in must reach for someone holding `roles` (#1523): the
-   * highest `required-aal` among them, 0 when none sets one.
+   * A role's level as enforced (#448): its `required-aal`, except that a
+   * SHIPPED default no available factor reaches counts as what is reachable —
+   * an upgrade never locks an instance out. An operator's own level is never
+   * lowered; the boot refuses it instead (`checkRequiredAal`).
    */
+  private effectiveLevels(): Map<string, Aal> {
+    const reachable = this.reachableAal();
+    return new Map(this.requiredLevels().map(({ role, aal, operatorSet }) =>
+      [role, (!operatorSet && aal > reachable ? Math.max(reachable, 1) : aal) as Aal]));
+  }
+
+  /** The level a sign-in must reach for someone holding `roles`: the highest effective level among them (#1523). */
   requiredAalFor(roles: readonly string[]): Aal {
-    const byRole = this.roleRequiredAal();
+    const levels = this.effectiveLevels();
     return roles.reduce<Aal>((max, r) => {
-      const aal = byRole[r];
+      const aal = levels.get(r);
       return aal !== undefined && aal > max ? aal : max;
     }, 0);
   }
 
   /**
-   * Roles whose `required-aal` no available factor can reach (#1523). The
-   * highest reachable level is what every available factor together amounts
-   * to: one factor declaring it, or distinct factor types lifting to AAL2
-   * (email excepted). Non-empty means the server must not start — a role no one
-   * can sign in to is a lockout, found at boot rather than at the door.
-   * Called once add-ons have registered their providers.
+   * Which of `roles` a session signed in at `signInAal` may act with (#448,
+   * decided 2026-10-03): a role whose effective level is above it steps down
+   * for this session — the person acts without it until they sign in strongly
+   * enough. Roles without a level are always kept, so a signed-in person keeps
+   * `profile-manage` and can reach their profile to enrol.
    */
+  rolesAtSignIn(roles: readonly string[], signInAal: number): { kept: string[]; steppedDown: string[] } {
+    const levels = this.effectiveLevels();
+    const kept: string[] = [];
+    const steppedDown: string[] = [];
+    for (const role of roles) ((levels.get(role) ?? 0) > signInAal ? steppedDown : kept).push(role);
+    return { kept, steppedDown };
+  }
+
+  /** Every role whose configured level the available factors cannot reach, described (#1523). */
   unreachableRequiredAal(): string[] {
-    const factors = this.getFactors();
-    const reachable = factors.some(f => f.primary) ? this.assess(factors).aal : 0;
-    const offered = factors.map(f => `${f.provider} (AAL${f.aal})`).join(', ') || 'none';
-    return Object.entries(this.roleRequiredAal())
-      .filter(([, aal]) => aal > reachable)
-      .map(([role, aal]) =>
-        `role '${role}' requires AAL${aal} (ngdpbase.roles.definitions → required-aal), but the available sign-in factors reach AAL${reachable} — ngdpbase.auth.factors offers: ${offered}`);
+    const reachable = this.reachableAal();
+    const offered = this.getFactors().map(f => `${f.provider} (AAL${f.aal})`).join(', ') || 'none';
+    return this.requiredLevels()
+      .filter(({ aal }) => aal > reachable)
+      .map(({ role, aal, operatorSet }) =>
+        `role '${role}' requires AAL${aal} (${operatorSet ? 'set in app-custom-config.json' : 'shipped default'}), but the available sign-in factors reach AAL${reachable} — ngdpbase.auth.factors offers: ${offered}`);
+  }
+
+  /**
+   * The start-up check, once add-ons have registered their providers (#1523,
+   * #448). Returns the problems that must refuse the boot: a level the operator
+   * set that no factor reaches. A shipped default that cannot be reached instead
+   * marks AuthManager degraded, naming what to do; those roles act at what is
+   * reachable meanwhile.
+   */
+  checkRequiredAal(): string[] {
+    const reachable = this.reachableAal();
+    const unreachable = this.requiredLevels().filter(({ aal }) => aal > reachable);
+    const shipped = unreachable.filter(u => !u.operatorSet);
+    if (shipped.length > 0) {
+      const roles = shipped.map(u => `${u.role} (AAL${u.aal})`).join(', ');
+      this.markDegraded(`${roles} require a stronger sign-in than this site offers, so they act at AAL${Math.max(reachable, 1)} for now. Set ngdpbase.application.base-url (https) so passkeys can be enabled.`, 'ngdpbase.auth.factors');
+    }
+    const descriptions = this.unreachableRequiredAal();
+    return unreachable.flatMap((u, i) => (u.operatorSet ? [descriptions[i]] : []));
+  }
+
+  /** Whether `username` has enrolled a credential of `kind` — for the step-down banner (#448). */
+  hasCredential(username: string, kind: CredentialKind): boolean {
+    return Boolean(this.credentials?.list(username).some(c => c.kind === kind));
   }
 
   /**

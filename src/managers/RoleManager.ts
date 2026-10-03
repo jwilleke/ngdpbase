@@ -242,6 +242,23 @@ class RoleManager extends BaseManager {
   }
 
   /**
+   * The `required-aal` levels the OPERATOR set in their own config (#448,
+   * #1523), as opposed to the shipped defaults. An operator's level that no
+   * factor can reach refuses the boot; a shipped default that cannot be reached
+   * only degrades, so an upgrade never locks an instance out.
+   */
+  operatorRequiredAal(): Record<string, 1 | 2 | 3> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const custom = (configManager?.getCustomProperty?.('ngdpbase.roles.definitions') ?? {}) as Record<string, Record<string, unknown>>;
+    const out: Record<string, 1 | 2 | 3> = {};
+    for (const [name, def] of Object.entries(custom)) {
+      const aal = def?.['required-aal'];
+      if (aal === 1 || aal === 2 || aal === 3) out[name] = aal;
+    }
+    return out;
+  }
+
+  /**
    * The roles that set their own idle timeout (#1546): role name → minutes,
    * from each definition's optional `idle-timeout-minutes`. Only positive
    * numbers count; empty when no role sets one, which is the shipped default.

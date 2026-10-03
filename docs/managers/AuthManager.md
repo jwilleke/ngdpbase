@@ -31,11 +31,14 @@ Multi-factor sign-in, step-up and device authorization are epic #1522; the order
 - [BaseAuthProvider](../providers/BaseAuthProvider.md) — the abstract contract
 - [PasswordAuthProvider](../providers/PasswordAuthProvider.md), [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md), [CloudflareAccessAuthProvider](../providers/CloudflareAccessAuthProvider.md), [GoogleOIDCProvider](../providers/GoogleOIDCProvider.md)
 
-## Required assurance level per role (#1523)
+## Required assurance level per role (#1523, #448)
 
-Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the NIST level a sign-in must reach to hold it. A person needs the highest among their roles (`requiredAalFor(roles)`). Every role ships at 1, and `anonymous` has none. `admin` and `user-admin` move to 2 in the same change that ships the first AAL2-capable factor (passkeys or TOTP), together with an enrol-now step (decided 2026-10-03).
+Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the NIST level a sign-in must reach to act with that role. `admin` and `user-admin` ship at 2 (since passkeys); every other role at 1; `anonymous` has none.
 
-`unreachableRequiredAal()` lists every role whose level the available factors cannot reach: one factor declaring that level, or distinct factor types lifting a sign-in to AAL2, with email never lifting. After add-ons register their providers, `app.ts` refuses to start when that list is not empty, naming the role, the level and what `ngdpbase.auth.factors` offers. A role nobody can sign in to is a lockout, so it is found at boot rather than at the door. The check at sign-in itself comes with the second-factor flow.
+- __Roles step down__ (decided 2026-10-03). In a session signed in below a role's level, the person acts without that role: `rolesAtSignIn(roles, signInAal)` splits the roles into kept and stepped down, and the session middleware sets the request's roles to the kept ones. A banner says which roles are off and offers "Sign in with your passkey" or "Add a passkey". A session from before sign-ins were recorded counts as AAL1.
+- __No lockout:__ the `signed-in-self-service` policy grants `profile-manage` to `vault-owner`, the role every account is given, so a person whose site role stepped down can still reach their profile and enrol a passkey.
+- __Shipped default vs operator's level:__ a shipped level that no available factor reaches (no explicit https `base-url`, so no passkeys) acts at what is reachable, and AuthManager is `degraded` saying how to fix it. A level set in `app-custom-config.json` that no factor reaches refuses the boot (`checkRequiredAal()`, run by `app.ts` once add-ons have registered their providers). An operator's level is never lowered.
+- `requiredAalFor(roles)` is the highest effective level among the roles; `reachableAal()` what the available factors reach together; `unreachableRequiredAal()` describes every role above it.
 
 ## Passkeys (#448)
 

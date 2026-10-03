@@ -583,6 +583,22 @@
             </nav>
 
             <main role="main" class="col-12 col-md-9 col-lg-10 px-md-4 px-2 jspwiki-content main-content">
+                <% if (typeof aalStepDown !== 'undefined' && aalStepDown && aalStepDown.roles.length > 0) { %>
+                <%# #448: a role above this sign-in's level is off for this session; say so, and offer the way back. %>
+                <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert">
+                    <i class="fas fa-key"></i>
+                    <span>
+                        Your <strong><%= aalStepDown.roles.join(', ') %></strong> role<%= aalStepDown.roles.length === 1 ? ' needs' : 's need' %> a passkey sign-in, so <%= aalStepDown.roles.length === 1 ? 'it is' : 'they are' %> off while you are signed in with a password.
+                    </span>
+                    <% if (aalStepDown.hasPasskey) { %>
+                    <button type="button" class="btn btn-sm btn-warning d-none ms-auto" data-passkey-signin data-redirect="<%= typeof originalUrl !== 'undefined' && originalUrl ? originalUrl : '/' %>" data-error-target="aal-stepdown-error">Sign in with your passkey</button>
+                    <script src="/js/passkey.js" defer></script>
+                    <% } else if (aalStepDown.passkeysAvailable) { %>
+                    <a class="btn btn-sm btn-warning ms-auto" href="/profile">Add a passkey</a>
+                    <% } %>
+                    <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
+                </div>
+                <% } %>
 <%# #1448: this session has not unwrapped the signed-in owner's store key — after
     a restart, typically — so their private pages 404 and are absent from lists.
     About the user's STATE only: it never names a page, because while locked the
