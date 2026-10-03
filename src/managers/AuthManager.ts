@@ -584,6 +584,42 @@ class AuthManager extends BaseManager {
     }
   }
 
+  /** Each role's `required-aal`, read through the catalogue's owner (#1523). */
+  private roleRequiredAal(): Record<string, Aal> {
+    const roleManager = this.engine.getManager('RoleManager') as { roleRequiredAal?(): Record<string, Aal> } | null;
+    return roleManager?.roleRequiredAal?.() ?? {};
+  }
+
+  /**
+   * The level a sign-in must reach for someone holding `roles` (#1523): the
+   * highest `required-aal` among them, 0 when none sets one.
+   */
+  requiredAalFor(roles: readonly string[]): Aal {
+    const byRole = this.roleRequiredAal();
+    return roles.reduce<Aal>((max, r) => {
+      const aal = byRole[r];
+      return aal !== undefined && aal > max ? aal : max;
+    }, 0);
+  }
+
+  /**
+   * Roles whose `required-aal` no available factor can reach (#1523). The
+   * highest reachable level is what every available factor together amounts
+   * to: one factor declaring it, or distinct factor types lifting to AAL2
+   * (email excepted). Non-empty means the server must not start — a role no one
+   * can sign in to is a lockout, found at boot rather than at the door.
+   * Called once add-ons have registered their providers.
+   */
+  unreachableRequiredAal(): string[] {
+    const factors = this.getFactors();
+    const reachable = factors.some(f => f.primary) ? this.assess(factors).aal : 0;
+    const offered = factors.map(f => `${f.provider} (AAL${f.aal})`).join(', ') || 'none';
+    return Object.entries(this.roleRequiredAal())
+      .filter(([, aal]) => aal > reachable)
+      .map(([role, aal]) =>
+        `role '${role}' requires AAL${aal} (ngdpbase.roles.definitions → required-aal), but the available sign-in factors reach AAL${reachable} — ngdpbase.auth.factors offers: ${offered}`);
+  }
+
   /**
    * What a successful sign-in amounts to, for the session (#1523): its provider,
    * the factors it satisfied with their times, and their assessment. Null for a

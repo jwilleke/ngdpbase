@@ -257,6 +257,22 @@ class RoleManager extends BaseManager {
     return out;
   }
 
+  /**
+   * The assurance level each role requires of a sign-in (#1523): role name →
+   * AAL 1–3, from each definition's `required-aal`. A role without one (or
+   * `anonymous`) requires nothing beyond being signed in.
+   */
+  roleRequiredAal(): Record<string, 1 | 2 | 3> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declared = (configManager?.getProperty('ngdpbase.roles.definitions', {}) ?? {}) as Record<string, Record<string, unknown>>;
+    const out: Record<string, 1 | 2 | 3> = {};
+    for (const [name, def] of Object.entries(declared)) {
+      const aal = def?.['required-aal'];
+      if (aal === 1 || aal === 2 || aal === 3) out[name] = aal;
+    }
+    return out;
+  }
+
   async hasRole(username: string, roleName: string): Promise<boolean> {
     return (await this.resolveUserRoles(username)).includes(roleName);
   }

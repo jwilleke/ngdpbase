@@ -1774,10 +1774,11 @@
       "color": "#dc3545"
     }
   },
-  "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it. Optional idle-timeout-minutes on a role shortens the session idle limit for its holders (#1546); none ships with one.",
+  "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it. Optional idle-timeout-minutes on a role shortens the session idle limit for its holders (#1546); none ships with one. required-aal (1-3) is the NIST assurance level a sign-in must reach to hold the role (#1523); a person needs the highest among their roles; anonymous has none. Every role ships at 1: admin and user-admin move to 2 in the same change that ships the first AAL2-capable factor (passkeys #448 or TOTP #421), with an enrol-now step (decided 2026-10-03). The server refuses to start when a role requires a level the available ngdpbase.auth.factors cannot reach.",
   "ngdpbase.roles.definitions": {
     "admin": {
       "name": "admin",
+      "required-aal": 1,
       "displayname": "Administrator",
       "description": "Full system access to all features",
       "issystem": true,
@@ -1786,6 +1787,7 @@
     },
     "user-admin": {
       "name": "user-admin",
+      "required-aal": 1,
       "displayname": "User Administrator",
       "description": "Can manage users — create, edit, deactivate, delete",
       "issystem": true,
@@ -1794,6 +1796,7 @@
     },
     "editor": {
       "name": "editor",
+      "required-aal": 1,
       "displayname": "Editor",
       "description": "Can create, edit, delete, and rename pages",
       "issystem": true,
@@ -1802,6 +1805,7 @@
     },
     "contributor": {
       "name": "contributor",
+      "required-aal": 1,
       "displayname": "Contributor",
       "description": "Can create and edit pages",
       "issystem": true,
@@ -1810,6 +1814,7 @@
     },
     "demo-admin": {
       "name": "demo-admin",
+      "required-aal": 1,
       "displayname": "Demo Administrator",
       "description": "Read-only access to the admin dashboard. For public demo instances: can view every admin screen but change nothing, and cannot see the user list.",
       "issystem": false,
@@ -1818,6 +1823,7 @@
     },
     "vault-owner": {
       "name": "vault-owner",
+      "required-aal": 1,
       "displayname": "Vault Owner",
       "description": "Everything inside your own vaults — pages and files: read, create, edit, rename, delete, upload, share by link. Applies only in vaults you own; not deleting a vault. Given to every account (#1539)",
       "issystem": true,
@@ -1826,6 +1832,7 @@
     },
     "reader": {
       "name": "reader",
+      "required-aal": 1,
       "displayname": "Reader",
       "description": "Read-only access to content",
       "issystem": true,

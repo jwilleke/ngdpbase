@@ -208,6 +208,46 @@ describe('AuthManager', () => {
       });
     });
 
+    describe('required-aal (#1523)', () => {
+      const withRoles = async (levels: Record<string, number>, properties = {}) => {
+        const cm = makeConfigManager({ properties });
+        const manager = new AuthManager(makeEngine(cm, { RoleManager: { roleRequiredAal: () => levels } }));
+        await manager.initialize();
+        return manager;
+      };
+
+      test('a person needs the highest level among their roles', async () => {
+        const manager = await withRoles({ admin: 2, reader: 1 });
+        expect(manager.requiredAalFor(['reader'])).toBe(1);
+        expect(manager.requiredAalFor(['reader', 'admin'])).toBe(2);
+        expect(manager.requiredAalFor(['anonymous'])).toBe(0);
+      });
+
+      test('every role at AAL1 with a password available: nothing unreachable', async () => {
+        const manager = await withRoles({ admin: 1, reader: 1 });
+        expect(manager.unreachableRequiredAal()).toEqual([]);
+      });
+
+      test('AAL2 with only a password available is unreachable, named with what is offered', async () => {
+        const manager = await withRoles({ admin: 2, reader: 1 });
+        const problems = manager.unreachableRequiredAal();
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatch(/role 'admin' requires AAL2.*reach AAL1.*password \(AAL1\)/);
+      });
+
+      test('AAL2 becomes reachable once a second factor of another type is available', async () => {
+        const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'totp' }] });
+        manager.registerProvider(fake('totp', { amr: ['otp'], aal: 1, primary: false }), 'totp-addon');
+        expect(manager.unreachableRequiredAal()).toEqual([]);
+      });
+
+      test('an email link never lifts the reachable level', async () => {
+        const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'mail' }] });
+        manager.registerProvider(fake('mail', { amr: ['email'], aal: 1, primary: false }));
+        expect(manager.unreachableRequiredAal()).toHaveLength(1);
+      });
+    });
+
     describe('signInRecord()', () => {
       test('a successful sign-in becomes provider, factors and their assessment', async () => {
         const manager = await started();

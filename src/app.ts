@@ -1031,6 +1031,19 @@ void (async (): Promise<void> => {
   //     normally and inherit CSRF protection on their own POST routes.
   await engine.initializeAddons();
 
+  // #1523: every role's required-aal must be reachable by the sign-in factors
+  // actually available — checked here, once add-ons have registered theirs. A
+  // role nobody can sign in to is a lockout, so the server refuses to start,
+  // as it does without a session secret (#1194).
+  const unreachable = (engine.getManager('AuthManager') as { unreachableRequiredAal?(): string[] } | null)
+    ?.unreachableRequiredAal?.() ?? [];
+  if (unreachable.length > 0) {
+    console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
+    for (const problem of unreachable) console.error(`  - ${problem}`);
+    console.error('Lower the role\'s required-aal, or enable a factor that reaches it (passkeys, TOTP), then restart.');
+    process.exit(1);
+  }
+
   // 7. Register Routes
   const installRoutes = new InstallRoutes(engine);
   app.use('/install', installRoutes.getRouter());
