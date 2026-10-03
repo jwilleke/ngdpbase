@@ -105,6 +105,7 @@
     "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
     "@opentelemetry/exporter-prometheus": "^0.222.0",
     "@opentelemetry/sdk-metrics": "^2.7.0",
+    "@simplewebauthn/server": "^13.3.3",
     "@types/turndown": "^5.0.6",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
@@ -153,6 +154,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@levischuck/tiny-cbor": "^0.2.11",
     "@playwright/test": "^1.63.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.5",

@@ -55,6 +55,7 @@ import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
+import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
 import {
   CREDENTIALS_KEY_ENV,
   type CredentialKind,
@@ -290,6 +291,7 @@ class AuthManager extends BaseManager {
     this.factorCache = null;
 
     await this.openCredentialsStore(configManager);
+    this.registerPasskeys(configManager);
 
     logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
   }
@@ -344,6 +346,74 @@ class AuthManager extends BaseManager {
       return;
     }
     this.credentials = store;
+  }
+
+  /**
+   * Passkeys (#448), registered only when they can work: the credentials store
+   * is open, `ngdpbase.auth.passkey.enabled` is not false, and base-url is set
+   * explicitly and is a secure context. The relying party is that host — never
+   * the request — so a passkey made here works only on that hostname.
+   */
+  private registerPasskeys(configManager: ConfigurationManager | null | undefined): void {
+    if (!configManager || configManager.getProperty('ngdpbase.auth.passkey.enabled', true) === false) return;
+    if (!this.credentials) {
+      logger.warn('[AuthManager] Passkeys NOT registered: the credentials store is not available (#448)');
+      return;
+    }
+    if (!configManager.isBaseUrlExplicit()) {
+      logger.info('[AuthManager] Passkeys off: ngdpbase.application.base-url is not set explicitly, and a passkey is tied to that host (#448)');
+      return;
+    }
+    const rp = relyingPartyFrom(configManager.getBaseURL(), String(configManager.getProperty('ngdpbase.application-name', 'ngdpbase')));
+    if (!rp) {
+      logger.warn(`[AuthManager] Passkeys off: base-url ${configManager.getBaseURL()} is not https (or localhost), where browsers allow WebAuthn (#448)`);
+      return;
+    }
+    const store = this.credentials;
+    this.registerProvider(new PasskeyAuthProvider(rp, {
+      find: (credentialId) => store.findBySubject('passkey', credentialId),
+      used: (id, at, secret) => store.touch(id, at, secret)
+    }));
+    logger.info(`[AuthManager] passkeys tied to ${rp.rpID}`);
+  }
+
+  private passkeyProvider(): PasskeyAuthProvider | null {
+    const p = this.providers.get('passkey');
+    return p instanceof PasskeyAuthProvider ? p : null;
+  }
+
+  /** The host passkeys are tied to, or null when passkeys are off (#448). */
+  passkeyRelyingParty(): PasskeyRelyingParty | null {
+    return this.passkeyProvider()?.relyingParty() ?? null;
+  }
+
+  /** Options for `username` to enrol a passkey (#448); the caller keeps `challenge` for verify. */
+  async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const provider = this.passkeyProvider();
+    if (!provider) throw new Error('Passkeys are not available on this site');
+    const existing = this.requireCredentialsStore().list(username).filter(c => c.kind === 'passkey');
+    return provider.registrationOptions(username, displayName, existing);
+  }
+
+  /**
+   * Verify an enrolment against the challenge the caller kept, and store the
+   * passkey (#448). Returns the credential id, or null when it does not verify.
+   */
+  async passkeyRegister(ctx: PermissionSubject, username: string, response: unknown, expectedChallenge: string, label: string): Promise<string | null> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const provider = this.passkeyProvider();
+    if (!provider) throw new Error('Passkeys are not available on this site');
+    const verified = await provider.verifyRegistration(response as never, expectedChallenge);
+    if (!verified) return null;
+    return this.addCredential(ctx, username, { kind: 'passkey', subject: verified.subject, secret: verified.secret, label: label.trim().slice(0, 60) || 'Passkey' });
+  }
+
+  /** Options for signing in with a passkey (#448); anyone may ask. */
+  async passkeyAuthenticationOptions(): Promise<unknown> {
+    const provider = this.passkeyProvider();
+    if (!provider) throw new Error('Passkeys are not available on this site');
+    return provider.authenticationOptions();
   }
 
   /**

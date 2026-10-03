@@ -58,8 +58,11 @@ abstract class BaseCredentialsProvider extends BaseProvider {
   /** Remove a row; returns whether it existed. */
   abstract remove(id: string): Promise<boolean>;
 
-  /** Record that a credential was just used. */
-  abstract touch(id: string, at: string): Promise<void>;
+  /** The row with this kind and subject, which are unique together; null when none. */
+  abstract findBySubject(kind: CredentialKind, subject: string): CredentialRecord | null;
+
+  /** Record that a credential was just used, and its new secret when that changes (a passkey's counter). */
+  abstract touch(id: string, at: string, secret?: string): Promise<void>;
 
   /** Where it is kept, for the admin view. */
   abstract location(): string;

@@ -37,6 +37,10 @@ Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the 
 
 `unreachableRequiredAal()` lists every role whose level the available factors cannot reach: one factor declaring that level, or distinct factor types lifting a sign-in to AAL2, with email never lifting. After add-ons register their providers, `app.ts` refuses to start when that list is not empty, naming the role, the level and what `ngdpbase.auth.factors` offers. A role nobody can sign in to is a lockout, so it is found at boot rather than at the door. The check at sign-in itself comes with the second-factor flow.
 
+## Passkeys (#448)
+
+[PasskeyAuthProvider](../providers/PasskeyAuthProvider.md) is registered once the credentials store is open, when `ngdpbase.application.base-url` is set explicitly and is https (or localhost), and `ngdpbase.auth.passkey.enabled` is not `false`. AuthManager owns the store and hands the provider only "find this passkey" and "record its use". The routes talk to `passkeyRegistrationOptions()`, `passkeyRegister()` and `passkeyAuthenticationOptions()`, and sign in through `authenticate('passkey', { webauthn })`. `passkeyRelyingParty()` names the host passkeys are tied to.
+
 ## Credentials store (#1524)
 
 AuthManager is the only door to an account's credentials beyond its password: passkeys, TOTP, verified email/phone and known devices ([BaseCredentialsProvider](../providers/BaseCredentialsProvider.md), stored by [FileCredentialsProvider](../providers/FileCredentialsProvider.md)). Passwords stay on the user record and are never copied here.

@@ -19,9 +19,9 @@ __Implementation status__, checked against the code on 2026-10-03, not against t
 | Per-role `required-aal` (every role AAL1, `anonymous` none); boot refuses a level no available factor reaches | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1568](https://github.com/jwilleke/ngdpbase/pull/1568)) |
 | `required-aal` checked at sign-in; the second-factor flow and its single-use pending handle | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started |
 | Known devices | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started |
-| Credentials store: passkeys, TOTP, email/phone, devices; signed rows; owner-only file; no passwords | [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) | Built ([#1564](https://github.com/jwilleke/ngdpbase/pull/1564)); the profile list waits for the first enrollable factor |
+| Credentials store: passkeys, TOTP, email/phone, devices; signed rows; owner-only file; no passwords | [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) | Built ([#1564](https://github.com/jwilleke/ngdpbase/pull/1564)); the profile's "Sign-in methods" list with remove comes with passkeys ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569)) |
 | Session idle timeout: site value, a shorter one per role, the warning before sign-out | [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) | Built ([#1552](https://github.com/jwilleke/ngdpbase/pull/1552), [#1567](https://github.com/jwilleke/ngdpbase/pull/1567)); the posture note at or above `max-age` is not |
-| Passkeys / WebAuthn | [#448](https://github.com/jwilleke/ngdpbase/issues/448) | Not started |
+| Passkeys / WebAuthn: enrol from the profile, sign in from the login page, list and remove | [#448](https://github.com/jwilleke/ngdpbase/issues/448) | Built ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569), draft); the admin AAL2 default and enrol-now step are not yet |
 | TOTP | [#421](https://github.com/jwilleke/ngdpbase/issues/421) | Not started |
 | Email link as an additional factor | [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) | Not started (the magic link exists as a sign-in) |
 | Twilio Verify; Web Push | [#1528](https://github.com/jwilleke/ngdpbase/issues/1528), [#1550](https://github.com/jwilleke/ngdpbase/issues/1550) | Not started |
