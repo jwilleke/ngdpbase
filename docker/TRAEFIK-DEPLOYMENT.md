@@ -8,7 +8,7 @@ This guide explains how to deploy ngdpbase behind Traefik reverse proxy with Aut
   - Docker provider enabled
   - External network `traefik_net` created
   - Let's Encrypt certificate resolver configured
-- Authelia running and accessible at `auth.deby.nerdsbythehour.com`
+- Authelia running and accessible at `auth.deby.example.com`
 - Docker and Docker Compose installed on the deployment host
 - DNS record pointing your domain to the Traefik server (192.168.68.71)
 
@@ -36,7 +36,7 @@ cp .env.example .env
 Edit `.env` and set your domain (see "Traefik Reverse Proxy" section):
 
 ```bash
-# Example: wiki.deby.nerdsbythehour.com
+# Example: wiki.deby.example.com
 NGDPBASE_DOMAIN=wiki.example.com
 
 # Set user permissions (optional)

@@ -15,7 +15,7 @@ Unlike the interactive [GoogleOIDCProvider](GoogleOIDCProvider.md) code-exchange
 ## Configuration
 
 - `ngdpbase.auth.authentik-bearer.enabled` = `true`
-- `ngdpbase.auth.authentik-bearer.issuer` — OIDC issuer, e.g. `https://auth.nerdsbythehour.com/application/o/ngdpbase/`
+- `ngdpbase.auth.authentik-bearer.issuer` — OIDC issuer, e.g. `https://auth.example.com/application/o/ngdpbase/`
 - `ngdpbase.auth.authentik-bearer.jwks-url` — JWKS URI, e.g. `<issuer>jwks/`
 - `ngdpbase.auth.authentik-bearer.audience` — expected audience (the Authentik provider's client-id)
 - `ngdpbase.auth.authentik-bearer.default-role` — role for JIT-provisioned users (default `occupant`)

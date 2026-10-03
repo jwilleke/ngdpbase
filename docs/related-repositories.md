@@ -10,15 +10,15 @@ The useful distinction is not "which repo" but __what each one consumes, and how
 
 | Site or repository | What it takes from ngdpbase | How it takes it |
 |---|---|---|
-| [ngdpbase-demo.nerdsbythehour.com](https://ngdpbase-demo.nerdsbythehour.com) | the published image, unmodified | pulled by tag, deployed by Flux |
+| [ngdpbase-demo.example.com](https://ngdpbase-demo.example.com) | the published image, unmodified | pulled by tag, deployed by Flux |
 | [geohazardwatch](https://github.com/jwilleke/geohazardwatch) | the published image, as a base | derived image built `FROM` it |
 | [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | the source, cloned and run | direct install on a host |
 | [ngdpbase-addon-template](https://github.com/jwilleke/ngdpbase-addon-template) | nothing at runtime | reference shape for new addons |
 | jimstest | this working tree | run in place from the checkout |
 
-## ngdpbase-demo.nerdsbythehour.com — stock ngdpbase, nothing added
+## ngdpbase-demo.example.com — stock ngdpbase, nothing added
 
-<https://ngdpbase-demo.nerdsbythehour.com>
+<https://ngdpbase-demo.example.com>
 
 A plain instance of ngdpbase with no addon enabled, running the published `ghcr.io/jwilleke/ngdpbase` image exactly as it ships. It exists to show what the platform is on its own, so it is also the honest answer to "what do you get before anyone extends it".
 
@@ -34,7 +34,7 @@ A volcano and geology platform: ngdpbase plus one domain addon. This is the more
 
 - `addons/geohazardwatch/` is published to GitHub Packages as `@jwilleke/geohazardwatch-addon`
 - its `Dockerfile` is a two-stage build: an installer stage `FROM ghcr.io/jwilleke/ngdpbase:<version>-devtools` installs and compiles that package, and the runtime stage `FROM ghcr.io/jwilleke/ngdpbase:<version>` copies the result in
-- that produces `ghcr.io/jwilleke/geohazardwatch`, deployed to `geohazardwatch.nerdsbythehour.com` from mj-infra-flux under `apps/production/geohazardwatch/`
+- that produces `ghcr.io/jwilleke/geohazardwatch`, deployed to `geohazardwatch.example.com` from mj-infra-flux under `apps/production/geohazardwatch/`
 
 The two stages are the point. `-devtools` is the runtime image with npm retained, so a derived build can install into it; the deployed artefact is built from the plain image, which has no npm. A deployed image should never be the `-devtools` one.
 

@@ -18,7 +18,7 @@ import {
 } from 'jose';
 import { AuthentikBearerAuthProvider } from '../AuthentikBearerAuthProvider';
 
-const ISSUER = 'https://auth.nerdsbythehour.com/application/o/ngdpbase/';
+const ISSUER = 'https://auth.example.com/application/o/ngdpbase/';
 const JWKS_URL = `${ISSUER}jwks/`;
 const AUDIENCE = 'ngdpbase-client-id-12345';
 

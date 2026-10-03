@@ -15,7 +15,7 @@ Issue: #864
 
 ## Background
 
-`maps.nerdsbythehour.com` (Dawarich, self-hosted location-history/Google-Timeline replacement) supports plotting geotagged photos on the map and inside trips, but only by talking to a real Immich or PhotoPrism instance over their native APIs — it has no "point at a folder" mode of its own.
+`maps.example.com` (Dawarich, self-hosted location-history/Google-Timeline replacement) supports plotting geotagged photos on the map and inside trips, but only by talking to a real Immich or PhotoPrism instance over their native APIs — it has no "point at a folder" mode of its own.
 
 We evaluated deploying Immich for this and rejected it: Immich's "external library" feature (index an existing folder without importing/duplicating it) is read-only by default, and removing the `:ro` mount to allow metadata edits gives Immich direct write/delete access to the originals — an unacceptable risk across 50k+ photos. There's also a confirmed upstream bug where metadata edits on a read-only external library silently report success while doing nothing ([immich-app/immich#10538](https://github.com/immich-app/immich/issues/10538)).
 

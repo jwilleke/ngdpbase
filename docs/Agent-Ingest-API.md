@@ -70,7 +70,7 @@ ngdpbase verifies an Authentik-issued RS256 JWT against Authentik's JWKS — see
 ### 1. Mint a token (client-credentials grant)
 
 ```bash
-TOKEN=$(curl -s -X POST https://auth.nerdsbythehour.com/application/o/token/ \
+TOKEN=$(curl -s -X POST https://auth.example.com/application/o/token/ \
   -d grant_type=client_credentials \
   -d client_id="$AUTHENTIK_CLIENT_ID" \
   -d client_secret="$AUTHENTIK_CLIENT_SECRET" \
@@ -101,8 +101,8 @@ ngdpbase config files use __flat dotted keys__, not nested objects — a nested 
 ```jsonc
 {
   "ngdpbase.auth.authentik-bearer.enabled": true,
-  "ngdpbase.auth.authentik-bearer.issuer": "https://auth.nerdsbythehour.com/application/o/ngdpbase/",
-  "ngdpbase.auth.authentik-bearer.jwks-url": "https://auth.nerdsbythehour.com/application/o/ngdpbase/jwks/",
+  "ngdpbase.auth.authentik-bearer.issuer": "https://auth.example.com/application/o/ngdpbase/",
+  "ngdpbase.auth.authentik-bearer.jwks-url": "https://auth.example.com/application/o/ngdpbase/jwks/",
   "ngdpbase.auth.authentik-bearer.audience": "<the Authentik provider client_id>",
   "ngdpbase.auth.authentik-bearer.default-role": "reader",
   "ngdpbase.auth.authentik-bearer.group-map": {}

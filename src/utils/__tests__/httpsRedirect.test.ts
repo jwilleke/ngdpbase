@@ -81,8 +81,8 @@ describe('#1163 — the Host header cannot redirect somewhere else', () => {
     // with no port. Taking the base URL wholesale would redirect to port 443,
     // which on a direct-port deployment is not open — a dead connection
     // instead of the handshake error, which is worse than doing nothing.
-    expect(resolveRedirectHost('jminim4.nerdsbythehour.com:3000', 'https://jminim4.nerdsbythehour.com'))
-      .toBe('jminim4.nerdsbythehour.com:3000');
+    expect(resolveRedirectHost('jminim4.example.com:3000', 'https://jminim4.example.com'))
+      .toBe('jminim4.example.com:3000');
   });
 
   test('a mismatched host falls back to the configured one', () => {
@@ -91,8 +91,8 @@ describe('#1163 — the Host header cannot redirect somewhere else', () => {
   });
 
   test('host matching ignores case', () => {
-    expect(resolveRedirectHost('JMINIM4.Nerdsbythehour.com:3000', 'https://jminim4.nerdsbythehour.com'))
-      .toBe('JMINIM4.Nerdsbythehour.com:3000');
+    expect(resolveRedirectHost('JMINIM4.example.com:3000', 'https://jminim4.example.com'))
+      .toBe('JMINIM4.example.com:3000');
   });
 
   test('an unparseable base URL falls back rather than refusing to redirect', () => {

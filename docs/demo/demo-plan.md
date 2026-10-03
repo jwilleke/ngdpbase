@@ -1,6 +1,6 @@
 # Demo addon — plan
 
-Tracking issue: [#1029](https://github.com/jwilleke/ngdpbase/issues/1029). Live instance: `https://ngdpbase-demo.nerdsbythehour.com`.
+Tracking issue: [#1029](https://github.com/jwilleke/ngdpbase/issues/1029). Live instance: `https://ngdpbase-demo.example.com`.
 
 ## Why an addon
 

@@ -35,8 +35,8 @@ Config keys (instance custom config / env; __no secret server-side__):
 
 ```
 ngdpbase.auth.authentik-bearer.enabled    = true
-ngdpbase.auth.authentik-bearer.issuer     = https://auth.nerdsbythehour.com/application/o/ngdpbase/
-ngdpbase.auth.authentik-bearer.jwks-url   = https://auth.nerdsbythehour.com/application/o/ngdpbase/jwks/
+ngdpbase.auth.authentik-bearer.issuer     = https://auth.example.com/application/o/ngdpbase/
+ngdpbase.auth.authentik-bearer.jwks-url   = https://auth.example.com/application/o/ngdpbase/jwks/
 ngdpbase.auth.authentik-bearer.audience   = <provider client_id>
 ngdpbase.auth.authentik-bearer.default-role = occupant
 ngdpbase.auth.authentik-bearer.group-map  = {}
@@ -72,7 +72,7 @@ Live end-to-end on __jimstest__ with a real Authentik token: token claims confir
 ## How to use (quick)
 
 ```zsh
-TOKEN=$(curl -s -X POST https://auth.nerdsbythehour.com/application/o/token/ \
+TOKEN=$(curl -s -X POST https://auth.example.com/application/o/token/ \
   -d grant_type=client_credentials -d client_id="$NGDPBASE_CLIENT_ID" \
   -d client_secret="$NGDPBASE_CLIENT_SECRET" -d 'scope=openid email profile' \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")

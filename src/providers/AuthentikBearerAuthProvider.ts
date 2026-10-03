@@ -51,7 +51,7 @@ interface AuthentikJwtPayload extends JWTPayload {
 }
 
 export interface AuthentikBearerConfig {
-  /** OIDC issuer, e.g. `https://auth.nerdsbythehour.com/application/o/ngdpbase/`. */
+  /** OIDC issuer, e.g. `https://auth.example.com/application/o/ngdpbase/`. */
   issuer: string;
   /** JWKS URI, e.g. `<issuer>jwks/`. */
   jwksUrl: string;

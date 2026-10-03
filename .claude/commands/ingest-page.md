@@ -19,7 +19,7 @@ Read these from the environment. The `client_secret` is sensitive: do __not__ pr
 | Var | Default | Notes |
 | --- | --- | --- |
 | `NGDPBASE_INGEST_URL` | `http://localhost:3000/api/page/ingest` | target instance endpoint |
-| `AUTHENTIK_TOKEN_URL` | `https://auth.nerdsbythehour.com/application/o/token/` | OAuth token endpoint |
+| `AUTHENTIK_TOKEN_URL` | `https://auth.example.com/application/o/token/` | OAuth token endpoint |
 | `NGDPBASE_CLIENT_ID` | — (required) | Authentik provider client_id (= JWT audience) |
 | `NGDPBASE_CLIENT_SECRET` | — (required) | service-account credential |
 
@@ -35,7 +35,7 @@ export NGDPBASE_CLIENT_SECRET=$(sops decrypt apps/production/jimsmcp/ngdpbase-in
 ### Step 1: Mint a token
 
 ```zsh
-TOKEN=$(curl -s -X POST "${AUTHENTIK_TOKEN_URL:-https://auth.nerdsbythehour.com/application/o/token/}" \
+TOKEN=$(curl -s -X POST "${AUTHENTIK_TOKEN_URL:-https://auth.example.com/application/o/token/}" \
   -d grant_type=client_credentials \
   -d client_id="$NGDPBASE_CLIENT_ID" \
   -d client_secret="$NGDPBASE_CLIENT_SECRET" \
