@@ -20,6 +20,8 @@ import BaseCredentialsProvider, {
 } from './BaseCredentialsProvider.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
+import { secureExistingSecretFile } from '../utils/secretFileMode.js';
+import logger from '../utils/logger.js';
 
 interface StoredFile {
   version: 1;
@@ -66,6 +68,8 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
   async initialize(onRejected: (rejected: RejectedCredential[]) => void): Promise<void> {
     this.rows.clear();
     if (!(await fs.pathExists(this.file))) return;
+    const tightened = secureExistingSecretFile(this.file); // #1560
+    if (tightened) logger.warn(tightened);
     const parsed = JSON.parse(await fs.readFile(this.file, 'utf8')) as Partial<StoredFile>;
     const rejected: RejectedCredential[] = [];
     for (const raw of Array.isArray(parsed.rows) ? parsed.rows : []) {

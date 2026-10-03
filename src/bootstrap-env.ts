@@ -45,6 +45,7 @@ import {
   type SessionSecretOrigin
 } from './utils/sessionSecret.js';
 import { ensureInstanceEnvSecret, type InstanceEnvFs } from './utils/instanceEnvSecret.js';
+import { secureExistingSecretFile } from './utils/secretFileMode.js';
 import { CREDENTIALS_KEY_ENV } from './providers/BaseCredentialsProvider.js';
 
 const rootEnvPath = path.join(process.cwd(), '.env');
@@ -104,6 +105,11 @@ const instanceEnvFs: InstanceEnvFs = {
 
 export let sessionSecretOrigin: SessionSecretOrigin;
 try {
+  // #1560: the instance .env holds every generated secret. Owner-only, and
+  // owned by the account the server runs as — checked before anything reads it.
+  const tightened = secureExistingSecretFile(path.join(resolveInstanceDataDir(), '.env'));
+  if (tightened) console.warn(tightened);
+
   const result = ensureSessionSecret(process.env, resolveInstanceDataDir(), instanceEnvFs);
   process.env[SESSION_SECRET_ENV] = result.secret;
   sessionSecretOrigin = result.origin;
