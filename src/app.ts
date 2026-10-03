@@ -49,7 +49,7 @@ import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
-import { idleExpired, idleTimeoutMs, shouldTouch } from './utils/sessionIdle.js';
+import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
 import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 
@@ -719,6 +719,10 @@ void (async (): Promise<void> => {
   const debugSession = configManager.getProperty('ngdpbase.logging.debug.session', false);
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
 
+  const roleManager = engine.getManager('RoleManager') as {
+    roleIdleTimeouts?(): Record<string, number>;
+    resolveUserRoles(username: string): Promise<string[]>;
+  } | null;
   const userManager = engine.getManager('UserManager') as {
     getUser(username: string): Promise<{ isActive?: boolean; roles?: string[]; username?: string; sessionGeneration?: number; [key: string]: unknown } | null>;
     isAdminUsingDefaultPassword(): Promise<boolean>;
@@ -730,7 +734,7 @@ void (async (): Promise<void> => {
     subjectFor(username: string): Promise<NonNullable<Request['userContext']> | null>;
   };
 
-  app.use((req: Request, _res: Response, next: NextFunction): void => {
+  app.use((req: Request, res: Response, next: NextFunction): void => {
     if (debugRequests) {
       console.log(`📨 ${req.method} ${req.url}`);
     }
@@ -768,7 +772,14 @@ void (async (): Promise<void> => {
       // and the end is audited with its reason. Read per request, so a change
       // takes effect without a restart.
       if (req.session?.username && req.session.isAuthenticated) {
-        const timeoutMs = idleTimeoutMs(configManager.getProperty('ngdpbase.session.idle-timeout-minutes', 0));
+        // A role may shorten the site value (#1546). Roles are looked up only
+        // when some role sets one, so the default costs nothing per request.
+        const roleTimeouts = roleManager?.roleIdleTimeouts?.() ?? {};
+        const roleMinutes = Object.keys(roleTimeouts).length === 0
+          ? []
+          : (await roleManager?.resolveUserRoles(req.session.username) ?? []).map(r => roleTimeouts[r]);
+        const timeoutMs = effectiveIdleTimeoutMs(configManager.getProperty('ngdpbase.session.idle-timeout-minutes', 0), roleMinutes);
+        res.locals.idleTimeoutMs = timeoutMs;
         const now = Date.now();
         if (idleExpired(req.session.lastActivity, now, timeoutMs)) {
           const username = req.session.username;
@@ -780,7 +791,7 @@ void (async (): Promise<void> => {
             { username, ipAddress: req.ip, userAgent: req.get('user-agent'), loginMethod: 'session' },
             'logout', 'idle-timeout'
           ).catch((err: unknown) => logger.warn('[SESSION] Audit of an idle sign-out failed:', err));
-        } else if (shouldTouch(req.session.lastActivity, now, timeoutMs)) {
+        } else if (req.path !== IDLE_STATUS_PATH && shouldTouch(req.session.lastActivity, now, timeoutMs)) {
           req.session.lastActivity = now;
         }
       }
