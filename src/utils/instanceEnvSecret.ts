@@ -16,6 +16,10 @@
  * launches from the checkout.
  */
 
+import fs from 'fs';
+import path from 'path';
+import { randomBytes } from 'crypto';
+
 /** Filesystem seams, injected so the backfill is testable in a scratch dir. */
 export interface InstanceEnvFs {
   readFile: (path: string) => string | null;
@@ -84,3 +88,20 @@ export function readEnvLine(content: string, name: string): string | null {
   }
   return found === '' ? null : found;
 }
+
+/** The real filesystem behind every generated `.env` secret. */
+export const nodeInstanceEnvFs: InstanceEnvFs = {
+  readFile: (p) => {
+    try {
+      return fs.readFileSync(p, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+  },
+  appendFile: (p, line, mode) => {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.appendFileSync(p, line, { mode });
+  },
+  randomSecret: () => randomBytes(32).toString('base64')
+};
