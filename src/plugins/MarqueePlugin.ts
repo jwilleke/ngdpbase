@@ -61,12 +61,15 @@ const MarqueePlugin: SimplePlugin = {
     let text = String(params.text ?? '').trim();
 
     // If fetch param is set, call the specified manager method to get text.
-    // Syntax: fetch='ManagerName.methodName(k=v,...)' — e.g. fetch='HansDataManager.toMarqueeText(limit=3)'
+    // Syntax: fetch='ManagerName.toMarqueeText(k=v,...)' — e.g. fetch='HansDataManager.toMarqueeText(limit=3)'. Only toMarqueeText (#1556).
     // Shared convention helper (#685 slice 2); the manager owns its own arg parsing.
     if (params.fetch) {
       const result = await resolveManagerFetch(String(params.fetch), context);
       if (result.status === 'ok') {
         text = result.text;
+      } else if (result.status === 'refused') {
+        // #1556: page text may reach only toMarqueeText, never another method.
+        return `<span class="text-muted"><em>[MarqueePlugin: fetch may only call toMarqueeText — '${escapeHtml(String(params.fetch))}' is not allowed]</em></span>`;
       } else if (result.status === 'not-found') {
         return `<span class="text-muted"><em>[MarqueePlugin: fetch target '${escapeHtml(String(params.fetch))}' not found]</em></span>`;
       }

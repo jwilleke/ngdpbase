@@ -53,7 +53,7 @@ __Source:__ `plugins/MarqueePlugin.ts`
 | Parameter | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `text` | string | — | Yes (unless `fetch` used) | The message to scroll. |
-| `fetch` | string | — | No | `'ManagerName.methodName(k=v,...)'` — calls a manager method to get text dynamically. Takes precedence over `text`. See [Manager Feed](#manager-feed-fetch-parameter) below. |
+| `fetch` | string | — | No | `'ManagerName.toMarqueeText(k=v,...)'` — calls that manager's `toMarqueeText` to get text dynamically; no other method (#1556). Takes precedence over `text`. See [Manager Feed](#manager-feed-fetch-parameter) below. |
 | `speed` | string \| number | `medium` | No | `slow` (30 s), `medium` (20 s), `fast` (10 s), or a number of seconds per cycle. |
 | `direction` | string | `left` | No | `left` or `right`. |
 | `behavior` | string | `scroll` | No | `scroll` (seamless loop), `slide` (enter and stop), `alternate` (bounce). |
@@ -137,7 +137,7 @@ movement is controlled by `direction`.
 
 ## Manager Feed (`fetch=` parameter)
 
-`fetch='ManagerName.methodName(k=v,...)'` calls any registered manager method
+`fetch='ManagerName.toMarqueeText(k=v,...)'` calls that registered manager's `toMarqueeText`, and only that ([#1556](https://github.com/jwilleke/ngdpbase/issues/1556)): page text reaches it on every render, for every viewer, so any other method — an index rebuild, a scan — is refused with a "not allowed" message. The viewer's context is passed as the second argument, so the manager shows only what that viewer may see. Previously it called any registered manager method
 and uses the returned string as the banner text.  This allows live data to
 flow into the banner without hardcoding text in the page.
 

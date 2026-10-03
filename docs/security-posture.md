@@ -551,6 +551,21 @@ __The constraint that shaped the mechanism.__ `AuditManager` is the last manager
 
 Two paths were re-read on the way and found to be wiring after all: `FileAuditProvider.initialize` (opens the log, writes nothing until an event arrives) and `BasicAttachmentProvider.initialize` (creates an empty metadata file when none exists — storage, not content).
 
+### D25 — Files that hold secrets are owner-only
+
+Decided with Jim, 2026-10-02 ([#1560](https://github.com/jwilleke/ngdpbase/issues/1560)). The files that hold secrets are written `0600` (owner read and write), in `0700` directories:
+
+- the user store (`users.json`, `sessions.json`), which holds password hashes;
+- the credentials store (`credentials.json`);
+- the instance `.env`, which holds every generated key;
+- backups, which contain the user and credentials stores.
+
+Every other file the app writes (pages, indexes, logs) keeps the process's default mode, so a sync or backup tool running as another account still works.
+
+At boot, an existing secret file that is wider than `0600` is tightened and logged. One owned by a different account than the server runs as refuses the boot, naming both UIDs. No UID is configured: the mode is set on write, so the owner is whoever runs the server (a login account, `node` in the image, the pod's user). Backups that go to a filesystem that does not honour modes (an SMB share) log a warning rather than fail.
+
+__What this does not protect against:__ permissions keep out other local accounts and processes, not root. Anyone with root on the host, with the disk, or with a copy of a backup is outside what they protect. Backups are encrypted for that ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)), and the instance `.env` should be kept somewhere other than the server.
+
 ## Deferred to implementation
 
 Not decisions — settled things that must not be lost when this document is read for its decisions.

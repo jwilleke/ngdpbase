@@ -431,6 +431,9 @@ abstract class BaseManager {
    * from the raw options object passed by the caller.
    *
    * @param _options  Parsed fetch args from the plugin invocation.
+   * @param _viewer   The viewer's context (#1556): show only what they may see.
+   *                  Page text reaches this method, and only this method, on
+   *                  every render for every viewer.
    * @returns Plain text, or '' if this manager has nothing to display.
    *
    * @example
@@ -439,7 +442,7 @@ abstract class BaseManager {
    *   return 'Recent: ' + pages.map(p => p.name).join('  •  ');
    * }
    */
-  async toMarqueeText(_options: ManagerFetchOptions = {}): Promise<string> {
+  async toMarqueeText(_options: ManagerFetchOptions = {}, _viewer?: unknown): Promise<string> {
     return '';
   }
 

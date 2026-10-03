@@ -33,6 +33,12 @@ describe('FileBackupProvider (#170)', () => {
     await fs.remove(tmpDir);
   });
 
+  test('a backup is written owner-only, in an owner-only directory (#1560)', async () => {
+    const full = await provider.writeBackup('secret.json.gz', Buffer.from('payload'));
+    expect((await fs.stat(full)).mode & 0o777).toBe(0o600);
+    expect((await fs.stat(tmpDir)).mode & 0o777).toBe(0o700);
+  });
+
   test('is a BaseBackupProvider and reports identity', () => {
     expect(provider).toBeInstanceOf(BaseBackupProvider);
     expect(provider.getProviderInfo().name).toBe('FileBackupProvider');

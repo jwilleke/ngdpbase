@@ -563,9 +563,28 @@ describe('resolveManagerFetch', () => {
   });
 
   test('stringifies a non-string return value', async () => {
-    const ctx = makeContext({ M: { count: async () => 42 } });
-    const r = await resolveManagerFetch('M.count()', ctx);
+    const ctx = makeContext({ M: { toMarqueeText: async () => 42 } });
+    const r = await resolveManagerFetch('M.toMarqueeText()', ctx);
     expect(r).toEqual({ status: 'ok', text: '42' });
+  });
+
+  // #1556: page text reaches this on every render, for every viewer.
+  test('any method other than toMarqueeText is refused, and never called', async () => {
+    const rebuildIndex = vi.fn(async () => 'rebuilt');
+    const ctx = makeContext({ SearchManager: { rebuildIndex, toMarqueeText: async () => 'ok' } });
+    expect(await resolveManagerFetch('SearchManager.rebuildIndex()', ctx)).toEqual({ status: 'refused' });
+    expect(await resolveManagerFetch('SearchManager.constructor()', ctx)).toEqual({ status: 'refused' });
+    expect(rebuildIndex).not.toHaveBeenCalled();
+  });
+
+  test('the viewer\'s context is passed to toMarqueeText, bound to its manager', async () => {
+    const viewer = { username: 'molly', roles: ['reader'], isAuthenticated: true };
+    const manager = {
+      name: 'M',
+      async toMarqueeText(this: { name: string }, _o: unknown, who: unknown) { return `${this.name}:${(who as { username: string }).username}`; }
+    };
+    const r = await resolveManagerFetch('M.toMarqueeText()', { engine: { getManager: () => manager }, userContext: viewer });
+    expect(r).toEqual({ status: 'ok', text: 'M:molly' });
   });
 
   test('returns not-found when the manager is absent', async () => {

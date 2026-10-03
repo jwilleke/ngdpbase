@@ -306,6 +306,8 @@ interface IConfigManager {
   setProperty(key: string, value: unknown, ctx: ActorContext): Promise<void> | void;
   getCustomProperty(key: string): unknown;
   getCustomProperties(): unknown;
+  /** Whether base-url was set explicitly rather than defaulted (#1190). */
+  isBaseUrlExplicit?(): boolean;
   getDefaultProperties(): unknown;
   getAllProperties(): unknown;
   /** #1089: keys the environment owns, key -> variable name. */
@@ -3068,7 +3070,9 @@ ${panes}
       // page→Article mapping; replaces the direct buildPageJsonLd call from
       // Slice 6a (#765). `stringifyJsonLdForScript` escapes < / > / & as
       // \uXXXX so attacker-controlled metadata can't close the <script> tag.
-      const baseUrl = configManager?.getProperty('ngdpbase.base-url', '');
+      // #1190: the configured base-url, not the legacy `ngdpbase.base-url` key (migrated away
+      // at boot, so it always read ''). Relative ids, as before, when none is set explicitly.
+      const baseUrl = configManager?.isBaseUrlExplicit?.() ? (configManager.getBaseURL?.() ?? '') : '';
       // pageManager is in scope from line ~1633; reuse it. Cast to the
       // CatalogSource-shaped subset we need — IPageManager doesn't declare
       // toCreativeWork yet (it's a Slice 4 / #772 addition).
@@ -12030,7 +12034,8 @@ ${panes}
         availableThemes,
         themeInfo: themeManager.paths.themeInfo,
         maxFileSizeMB: Math.round(maxFileSizeBytes / (1024 * 1024)),
-        allowRegistration: configManager?.getProperty('ngdpbase.user.allowregistration', true),
+        // #1190: the real setting; `ngdpbase.user.allowregistration` was read and written but nothing enforced it.
+        allowRegistration: configManager?.getProperty('ngdpbase.application.registration', true),
         sessionTimeoutHours: Math.round(sessionMaxAgeMs / 3600000)
       };
 
@@ -12101,7 +12106,7 @@ ${panes}
         await configManager.setProperty('ngdpbase.session.max-age', sessionTimeoutHours * 3600000, currentUser);
       }
 
-      await configManager.setProperty('ngdpbase.user.allowregistration', body.allowRegistration === 'on', currentUser);
+      await configManager.setProperty('ngdpbase.application.registration', body.allowRegistration === 'on', currentUser); // #1190
 
       logger.info(`Admin general settings updated by ${currentUser.username}`);
       return res.redirect('/admin/settings?success=Settings+saved&restart=1');
@@ -19464,7 +19469,9 @@ ${description}
         return res.status(404).json({ error: `No vocabulary scheme: ${schemeId}` });
       }
       const configManager = this.engine.getManager('ConfigurationManager');
-      const baseUrl = configManager?.getProperty('ngdpbase.base-url', '');
+      // #1190: the configured base-url, not the legacy `ngdpbase.base-url` key (migrated away
+      // at boot, so it always read ''). Relative ids, as before, when none is set explicitly.
+      const baseUrl = configManager?.isBaseUrlExplicit?.() ? (configManager.getBaseURL?.() ?? '') : '';
       const scheme = buildConceptSchemeJsonLd(schemeId, data.displayName, data.terms, {
         baseUrl: baseUrl || undefined
       });

@@ -19,6 +19,8 @@ import BaseBackupProvider, {
   BackupObjectInfo,
   BackupProviderInfo
 } from './BaseBackupProvider.js';
+import { chmodSecretFile, ensureSecretDir, SECRET_FILE_MODE } from '../utils/secretFileMode.js';
+import logger from '../utils/logger.js';
 
 class FileBackupProvider extends BaseBackupProvider {
   private backupDirectory = '';
@@ -48,13 +50,17 @@ class FileBackupProvider extends BaseBackupProvider {
 
   async ensureContainer(): Promise<void> {
     if (this.backupDirectory) {
-      await fs.ensureDir(this.backupDirectory);
+      // #1560: backups hold the user store; owner-only where the filesystem allows.
+      const warning = ensureSecretDir(this.backupDirectory);
+      if (warning) logger.warn(warning);
     }
   }
 
   async writeBackup(filename: string, data: string | Buffer): Promise<string> {
     const target = path.join(this.backupDirectory, filename);
-    await fs.writeFile(target, data);
+    await fs.writeFile(target, data, { mode: SECRET_FILE_MODE });
+    const warning = chmodSecretFile(target); // #1560: the mode above is filtered by the umask
+    if (warning) logger.warn(warning);
     return target;
   }
 

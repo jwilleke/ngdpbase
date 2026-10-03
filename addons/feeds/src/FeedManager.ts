@@ -6,7 +6,7 @@ import { resolveEgressPolicy, type ConfigReader } from '../../../dist/src/http/e
  * FeedCatalogSource with CatalogManager, and runs the ingest pipeline
  * (adapter.fetch → adapter.parse → RecordStore.upsertAll with DeltaStorage
  * change-detection). Registered with the engine as 'FeedManager' so the
- * `fetch='FeedManager.latest(...)'` consumer convention can reach it (slice 5).
+ * `fetch='FeedManager.toMarqueeText(...)'` consumer convention can reach it (slice 5; only toMarqueeText may be fetched, #1556).
  *
  * No scheduler yet — ingest() is triggered manually/by tests; the cron tick
  * (BackupManager pattern) lands in slice 6.
