@@ -3,7 +3,7 @@
   "entries": [
     {
       "advisory": "GHSA-vfj7-8cjw-p6xm",
-      "issue": "https://github.com/jwilleke/ngdpbase/issues/1582",
+      "issue": "#1582",
       "reason": "braces 3.0.3: no patched version. Reached only through micromatch (admin-written policy globs), pm2 -> chokidar (operator watch config) and dev tooling; no user-supplied input. Hygiene, not a vulnerability.",
       "reviewBy": "2026-12-31"
     }
