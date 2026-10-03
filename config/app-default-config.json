@@ -58,7 +58,7 @@
   "ngdpbase.database.provider": "none",
   "ngdpbase.database.file": "${FAST_STORAGE}/ngdpbase.db",
   "ngdpbase.session.max-age": 86400000,
-  "_comment_session_idle": "#1546 — end a signed-in session after this many minutes with no request; 0 = off. Enforced server-side on the next request. Separate from max-age (the absolute lifetime): a value at or above it has no effect. Read per request, so no restart. Regulated guides: PCI DSS 4.0 8.2.8 15 minutes; NIST SP 800-63B-4 AAL2 60, AAL3 15.",
+  "_comment_session_idle": "#1546 — end a signed-in session after this many minutes with no request; 0 = off. Enforced server-side on the next request. Separate from max-age (the absolute lifetime): a value at or above it has no effect. Read per request, so no restart. Regulated guides: PCI DSS 4.0 8.2.8 15 minutes; NIST SP 800-63B-4 AAL2 60, AAL3 15. A role may set a SHORTER limit with idle-timeout-minutes on its entry in ngdpbase.roles.definitions; a person gets the shortest among the site value and their roles, never a longer one. The page warns shortly before sign-out with a Stay signed in button.",
   "ngdpbase.session.idle-timeout-minutes": 0,
   "ngdpbase.session.secure": false,
   "ngdpbase.session.http-only": true,
@@ -1774,7 +1774,7 @@
       "color": "#dc3545"
     }
   },
-  "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it.",
+  "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it. Optional idle-timeout-minutes on a role shortens the session idle limit for its holders (#1546); none ships with one.",
   "ngdpbase.roles.definitions": {
     "admin": {
       "name": "admin",

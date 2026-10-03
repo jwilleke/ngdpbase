@@ -241,6 +241,22 @@ class RoleManager extends BaseManager {
     }
   }
 
+  /**
+   * The roles that set their own idle timeout (#1546): role name → minutes,
+   * from each definition's optional `idle-timeout-minutes`. Only positive
+   * numbers count; empty when no role sets one, which is the shipped default.
+   */
+  roleIdleTimeouts(): Record<string, number> {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const declared = (configManager?.getProperty('ngdpbase.roles.definitions', {}) ?? {}) as Record<string, Record<string, unknown>>;
+    const out: Record<string, number> = {};
+    for (const [name, def] of Object.entries(declared)) {
+      const minutes = def?.['idle-timeout-minutes'];
+      if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) out[name] = minutes;
+    }
+    return out;
+  }
+
   async hasRole(username: string, roleName: string): Promise<boolean> {
     return (await this.resolveUserRoles(username)).includes(roleName);
   }

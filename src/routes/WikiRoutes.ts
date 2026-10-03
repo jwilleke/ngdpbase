@@ -38,6 +38,7 @@ import {
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
@@ -6678,6 +6679,27 @@ ${panes}
     const userManager = this.engine.getManager<IUserManager>('UserManager');
     const account = (await userManager?.getUser(username)) as { sessionGeneration?: number } | null | undefined;
     req.session.sessionGeneration = sessionGenerationOf(account);
+  }
+
+  /**
+   * Where this session stands against its idle limit (#1546). `limited: false`
+   * when no limit applies; a signed-out caller is told so, so the page can go
+   * to the sign-in screen with the reason.
+   */
+  idleStatus(req: Request, res: Response): void {
+    const signedIn = Boolean(req.session?.username && req.session.isAuthenticated);
+    const timeoutMs = typeof res.locals.idleTimeoutMs === 'number' ? res.locals.idleTimeoutMs : 0;
+    const remainingMs = signedIn ? idleRemainingMs(req.session.lastActivity, Date.now(), timeoutMs) : null;
+    res.json({ signedIn, limited: remainingMs !== null, remainingMs, warnBeforeMs: warnBeforeMs(timeoutMs) });
+  }
+
+  /** "Stay signed in" (#1546): counts as activity now, whatever the write throttle would say. */
+  async keepAlive(req: Request, res: Response): Promise<void> {
+    // profile-manage: every signed-in role holds it, anonymous never does (#1198).
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'json'))) return;
+    const timeoutMs = typeof res.locals.idleTimeoutMs === 'number' ? res.locals.idleTimeoutMs : 0;
+    if (timeoutMs > 0) req.session.lastActivity = Date.now();
+    res.json({ signedIn: true, remainingMs: idleRemainingMs(req.session.lastActivity, Date.now(), timeoutMs) });
   }
 
   async processLogin(req: Request, res: Response) {
@@ -15370,6 +15392,12 @@ ${panes}
       '/admin/organizations/:identifier/schema',
       this.adminGetOrganizationSchema.bind(this)
     );
+
+    // #1546: the idle-timeout warning. The status poll is not activity (the
+    // session middleware skips it), so it can never keep a session alive on its
+    // own; only the person pressing "Stay signed in" does.
+    app.get(IDLE_STATUS_PATH, (req: Request, res: Response) => this.idleStatus(req, res));
+    app.post('/api/session/keepalive', (req: Request, res: Response) => { void this.keepAlive(req, res); });
 
     app.get('/api/session-count', (req: Request, res: Response) => {
       void this.getActiveSesssionCount(req, res);
