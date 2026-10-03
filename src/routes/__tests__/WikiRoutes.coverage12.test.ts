@@ -537,6 +537,17 @@ describe('WikiRoutes — coverage batch 12', () => {
         .send({ maxFileSizeMB: '10', sessionTimeoutHours: '24', allowRegistration: 'true' });
       expect(res.status).toBe(302);
     });
+
+    // #1190: the toggle wrote ngdpbase.user.allowregistration, which nothing read.
+    test('the registration toggle writes the setting that is enforced', async () => {
+      mockConfigManager.setProperty.mockClear();
+      await request(app)
+        .post('/admin/settings/general')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ maxFileSizeMB: '10', sessionTimeoutHours: '24' });
+      expect(mockConfigManager.setProperty).toHaveBeenCalledWith('ngdpbase.application.registration', false, expect.anything());
+      expect(mockConfigManager.setProperty).not.toHaveBeenCalledWith('ngdpbase.user.allowregistration', expect.anything(), expect.anything());
+    });
   });
 
   // ── Admin Maintenance Toggle ─────────────────────────────────────────────────
