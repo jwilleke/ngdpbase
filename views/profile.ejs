@@ -247,10 +247,16 @@
                                             <% } %>
                                             <% credentials.forEach(function (c) { %>
                                             <tr>
-                                                <td><%= c.label %></td>
+                                                <td>
+                                                    <form action="/profile/credentials/<%= encodeURIComponent(c.id) %>/rename" method="POST" class="input-group input-group-sm" style="max-width: 18rem;">
+                                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                        <input type="text" name="label" class="form-control" value="<%= c.label %>" maxlength="60" required aria-label="Name">
+                                                        <button type="submit" class="btn btn-outline-secondary">Rename</button>
+                                                    </form>
+                                                </td>
                                                 <td><%= c.kind %></td>
-                                                <td class="small text-muted"><%= (c.createdAt || '').slice(0, 10) %></td>
-                                                <td class="small text-muted"><%= c.lastUsedAt ? c.lastUsedAt.slice(0, 10) : 'never' %></td>
+                                                <td class="small text-muted"><%= (c.createdAt || '').slice(0, 16).replace('T', ' ') %> UTC</td>
+                                                <td class="small text-muted"><%= c.lastUsedAt ? c.lastUsedAt.slice(0, 16).replace('T', ' ') + ' UTC' : 'never' %></td>
                                                 <td class="text-end">
                                                     <form action="/profile/credentials/<%= encodeURIComponent(c.id) %>/remove" method="POST" class="d-inline">
                                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -269,7 +275,7 @@
                                         A passkey signs you in with your device's fingerprint, face or PIN, with no password. It works only on <strong><%= passkeyHost %></strong>.
                                     </p>
                                     <div class="input-group input-group-sm" style="max-width: 28rem;">
-                                        <input type="text" class="form-control" id="passkey-label" maxlength="60" placeholder="Name this device, e.g. My phone">
+                                        <input type="text" class="form-control" id="passkey-label" maxlength="60" required aria-label="Name for the new passkey" placeholder="Name it, e.g. Chrome on Mac">
                                         <button type="button" class="btn btn-primary d-none" data-passkey-enrol data-label-input="passkey-label" data-error-target="passkey-enrol-error">
                                             <i class="fas fa-plus"></i> Add a passkey
                                         </button>

@@ -6837,6 +6837,19 @@ ${panes}
     }
   }
 
+  /** POST /profile/credentials/:id/rename — rename one of your own credentials. */
+  async renameOwnCredential(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    try {
+      const user = wikiContext.userContext;
+      const renamed = await this.engine.getManager('AuthManager').renameCredential(user, user.username, req.params.id, (req.body as { label?: unknown }).label);
+      res.redirect(`/profile?${renamed ? 'success=Renamed' : 'error=Credential+not+found'}`);
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}`);
+    }
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
       const { username, password } = req.body;
@@ -15209,6 +15222,7 @@ ${panes}
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });
     app.post('/auth/passkey/authenticate/verify', (req: Request, res: Response) => { void this.passkeyAuthenticateVerify(req, res); });
     app.post('/profile/credentials/:id/remove', (req: Request, res: Response) => { void this.removeOwnCredential(req, res); });
+    app.post('/profile/credentials/:id/rename', (req: Request, res: Response) => { void this.renameOwnCredential(req, res); });
     // #1019: GET renders a confirmation interstitial and consumes nothing;
     // POST is where the token is spent. Splitting them is what stops an email
     // scanner's pre-fetch from burning the link.

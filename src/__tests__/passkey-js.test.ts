@@ -17,8 +17,9 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CODE = readFileSync(path.resolve(__dirname, '../../public/js/passkey.js'), 'utf8');
 
-function page(markup: string, loads: number): { dom: JSDOM; fetched: string[] } {
+function page(markup: string, loads: number, userAgent?: string): { dom: JSDOM; fetched: string[] } {
   const dom = new JSDOM(`<!doctype html><body>${markup}</body>`, { runScripts: 'outside-only' });
+  if (userAgent) Object.defineProperty(dom.window.navigator, 'userAgent', { value: userAgent, configurable: true });
   const fetched: string[] = [];
   const win = dom.window as unknown as Record<string, unknown>;
   win.PublicKeyCredential = function PublicKeyCredential() {};
@@ -57,3 +58,29 @@ describe('passkey.js binds once (#448)', () => {
     expect(fetched).toHaveLength(1);
   });
 });
+
+const MAC_CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
+const ANDROID_CHROME = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
+const ENROL = '<input id="label"><div id="err" class="d-none"></div><button data-passkey-enrol data-label-input="label" data-error-target="err" class="d-none">Add</button>';
+
+describe('passkey names (operator, 2026-10-04)', () => {
+  it('pre-fills the name from the browser and device', () => {
+    expect((page(ENROL, 1, MAC_CHROME).dom.window.document.getElementById('label') as HTMLInputElement).value).toBe('Chrome on Mac');
+    expect((page(ENROL, 1, ANDROID_CHROME).dom.window.document.getElementById('label') as HTMLInputElement).value).toBe('Chrome on Android phone');
+  });
+
+  it('never overwrites a name already typed', () => {
+    const doc = page(ENROL.replace('<input id="label">', '<input id="label" value="Work laptop">'), 1, MAC_CHROME).dom.window.document;
+    expect((doc.getElementById('label') as HTMLInputElement).value).toBe('Work laptop');
+  });
+
+  it('refuses an empty name before asking the server for anything', () => {
+    const { dom, fetched } = page(ENROL, 1, MAC_CHROME);
+    const doc = dom.window.document;
+    (doc.getElementById('label') as HTMLInputElement).value = '  ';
+    (doc.querySelector('[data-passkey-enrol]') as HTMLButtonElement).click();
+    expect(fetched).toEqual([]);
+    expect(doc.getElementById('err')!.textContent).toMatch(/Give this passkey a name/);
+  });
+});
+
