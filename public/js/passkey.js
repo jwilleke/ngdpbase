@@ -8,6 +8,12 @@
  */
 (function () {
   if (!window.PublicKeyCredential) return;
+  // Bind once per page, however many times the script is included: the
+  // step-down banner (header) and the profile both load it, and two handlers
+  // on one button fetched two challenges for one click — the second replaced
+  // the first in the session, so the passkey's answer never verified.
+  if (window.__ngdpbasePasskeyBound) return;
+  window.__ngdpbasePasskeyBound = true;
 
   function toBuffer(b64url) {
     var b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
