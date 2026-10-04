@@ -1,6 +1,30 @@
 # Addons developer guide
 
-> See also: [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) for platform overview and roadmap.
+> This is the document an addon author starts from. Load order, the full slug inventory, page sync, and the packaged image are depth: [architecture](../platform/addon-architecture.md), [identity contract](../platform/addon-identity-contract.md), [page handling](../platform/addon-page-handling.md), [packaged distribution](../platform/deployment/addon-packaged.md).
+
+## Start here
+
+Read this page and you can load a permission-correct addon on a local instance. You do not need the platform docs for a first addon.
+
+### Before you write code
+
+- __Node.js `>=24.0.0` and npm `>=11.0.0`.__ That is `engines` in this repo's `package.json`.
+- __A local instance.__ `./server.sh start`. Instance config is the operator file in [Configuration](#configuration).
+- __An account whose password you set.__ The shipped `admin` password is `admin123`. Change it on first login, or set `NGDPBASE_ADMIN_PASSWORD` and point `ngdpbase.user.security.defaultpassword` at `"$NGDPBASE_ADMIN_PASSWORD"` before the first boot ([SETUP.md](../../SETUP.md)). Do not build or test an addon against the shipped password.
+- __A place for the code.__
+  - A first-party addon ships in this repository. Fork, branch, and open a pull request that adds `addons/<slug>/`.
+  - An addon you own lives in its own repository. Develop it as a drop-in directory. Ship production as a packaged npm addon, or as the wrapper image in [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image).
+
+### Choose a starting point
+
+- __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
+- __A whole repository__ (wrapper `Dockerfile`, Renovate, rename checklist): [`jwilleke/ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template), a GitHub template repository.
+
+Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
+
+Then set `ngdpbase.addons.<slug>.enabled` to `true`, run `./server.sh restart`, and confirm the addon under `/admin` → Add-ons. Every addon starts disabled, including one discovered outside `./addons`.
+
+The rules that have to be right before that restart: [identity](#identity), [where it is loaded](#where-it-is-loaded), [configuration](#configuration), [permissions](#permissions), [seed pages](#seed-wiki-pages), and [testing](#testing-and-lint).
 
 ## Standing rules
 
@@ -13,9 +37,162 @@
   - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
-- `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value.
+- `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
 - Import host HTTP as `../../dist/src/http/guardedFetch.js`, never `src/http/`.
+
+---
+
+## Identity
+
+The slug is the addon's identity. `resolveAddonSlug` (`src/utils/addonsPathResolver.ts`) computes it without loading the module:
+
+1. `package.json` `ngdpbase.slug`, when that field is set.
+2. Otherwise the folder name.
+3. An npm package with no slug drops a trailing `-addon` from the package directory name, so `@scope/geohazardwatch-addon` is `geohazardwatch`. A directory addon (bundled or drop-in) keeps its folder name verbatim, including a folder that ends in `-addon`.
+
+`npm run create:addon` rejects an `--id` that ends in `-addon`. That is the scaffolder's check. Directory discovery keeps the folder name, as in the rule above.
+
+The `name` exported from `index.ts` or `index.js` is a display label that must equal the slug. On a mismatch the slug is the identity that is used. The config key read is `ngdpbase.addons.<slug>.enabled`. A key written under the module's `name` is ignored. A domain addon logs the mismatch at error; any other addon warns. Dependencies, dedup, and the boot check that an enabled addon exists all key off the slug too.
+
+The same string has to be the one you mount (`/api/<slug>`, `/addons/<slug>`), pass to `engine.setCapability`, put on a dashboard card as `addonName`, prefix job ids with, and stamp as `addon:` on a seed page. A dependency name is the other addon's slug.
+
+What breaks when they disagree:
+
+- The addon stays disabled, because the enable key you wrote does not match the slug.
+- A declared dependency does not resolve, and startup errors.
+- A later rename leaves the old config keys, the old URLs, and the pages already seeded under the old uuid. Seeding does not move them.
+
+Every other place the slug is written down is the [identity contract](../platform/addon-identity-contract.md). That page is the inventory; the rules above are the ones that decide whether the addon loads.
+
+## Where it is loaded
+
+Three ways an addon reaches a running instance. The slug, the module, and `register()` are the same. Pick by who owns the addon.
+
+| Model | Use it when | Minimum to load |
+| --- | --- | --- |
+| __bundled__ | First-party, released with ngdpbase | `addons/<slug>/` in this repo, with `index.ts` or `index.js`. Set `ngdpbase.addons.<slug>.enabled` to `true` in the operator file ([Configuration](#configuration)). The default `ngdpbase.managers.addons-manager.addons-path` is `./addons`. |
+| __drop-in__ | Your own repo, edited in place | The same directory. Add its parent to `addons-path` (a string, or an array that also keeps `./addons`). Set the same enable key. `./server.sh restart`. |
+| __packaged__ | Production of an independent addon | An npm package named `@scope/<slug>-addon`, with `ngdpbase.slug`, `main` pointing at `index.js`, and module `name` equal to the slug. Add `node_modules:@scope/*-addon` to `addons-path`, and set the same enable key. |
+
+`addons-path` is a string or an array. Directory entries are scanned first. A `node_modules:<glob>` entry is expanded after that, and a directory addon of the same slug wins a collision. The runtime image has no npm, so a packaged install is a two-stage copy of `node_modules` — that recipe is [addon-packaged.md](../platform/deployment/addon-packaged.md). The `FROM` image in [section 12](#12-shipping-your-addon-as-a-container-image) is the drop-in wrapper, not the packaged model.
+
+Enabled defaults to false for every addon, on every path. An addon copied into a non-default directory stays off until the enable key is set ([#686](https://github.com/jwilleke/ngdpbase/issues/686) is the open request to change that for non-default paths). The keys, the file they live in, and what `register()` is handed are [Configuration](#configuration).
+
+## Configuration
+
+An addon's settings are ordinary configuration keys. Three layers, and the later one wins: shipped `config/app-default-config.json`, then each enabled addon's `config/default-config.json`, then the operator file. `domainDefaults` is a separate boot-only write, at the end of this section.
+
+### The namespace
+
+Keys for this addon are `ngdpbase.addons.<slug>.*`. `<slug>` is the canonical identity from [Identity](#identity), and the `name` exported from `index.ts` or `index.js` must be that same string. A key written under a different `name` is not read.
+
+`getAddonConfig` collects every key with that prefix, resolves env-var references (below), strips `ngdpbase.addons.<slug>.`, and passes the rest to `register(engine, config)`. One remaining segment stays a property. Further dots become a nested object.
+
+| Key in the file | `config` in `register()` |
+| --- | --- |
+| `ngdpbase.addons.journal.enabled` | `config.enabled` |
+| `ngdpbase.addons.journal.defaultAuthorLock` | `config.defaultAuthorLock` |
+| `ngdpbase.addons.journal.streakEnabled` | `config.streakEnabled` |
+| `ngdpbase.addons.demo.admin-account.password` | `config['admin-account'].password` |
+
+### Defaults the addon ships
+
+`addons/<slug>/config/default-config.json` holds fully qualified keys. `npm run create:addon` writes it. The [template repository](https://github.com/jwilleke/ngdpbase-addon-template) ships one. Writing the file by hand is the same shape. A key whose name starts with `_` is a comment and is dropped.
+
+The file is a merge layer, and only once the addon is enabled. Maps merge per entry. An array of objects that each have an `id` merges by that id, so the file can add `ngdpbase.permissions.definitions` and `ngdpbase.access.policies` without replacing the catalogs. A plain array replaces wholesale. The operator file still wins over the addon file. The permission recipe is [Permissions](#permissions).
+
+### Where the operator overrides it
+
+The operator file is `<instance data folder>/config/app-custom-config.json`.
+
+The instance data folder is `FAST_STORAGE`, otherwise `INSTANCE_DATA_FOLDER`, otherwise `./data`. `INSTANCE_CONFIG_FILE` changes the filename. On a checkout that sets `FAST_STORAGE`, the file is `$FAST_STORAGE/config/app-custom-config.json`.
+
+### The enable key and `addons-path`
+
+- `ngdpbase.addons.<slug>.enabled` — default `false`, on every discovery path. Set it to `true` in the operator file. The copy of this key inside `default-config.json` does not turn the addon on: that file is read only after the shipped-plus-operator view already says enabled.
+- `ngdpbase.managers.addons-manager.addons-path` — where discovery looks. Shipped value `./addons`. A string or an array of directory paths, plus `node_modules:<glob>` entries for packaged addons. See [Where it is loaded](#where-it-is-loaded).
+- `ngdpbase.managers.addons-manager.enabled` — shipped `true`. `false` discovers nothing.
+
+### Secrets
+
+A secret is an environment variable, not a literal in either JSON file. `default-config.json` ships with the addon. The operator file is still a config file.
+
+The process loads environment variables in this order, highest first: the ambient environment, then `<instance data folder>/.env`, then `<cwd>/.env` (`src/bootstrap-env.ts`). `./server.sh` sources the same files before Node starts.
+
+Point the config key at the variable with a bare whole-value reference. The name is uppercase letters, digits, and underscores:
+
+```json
+"ngdpbase.addons.my-addon.apiKey": "$MY_ADDON_API_KEY"
+```
+
+`getProperty` resolves that before `register()` sees `config.apiKey`. If `MY_ADDON_API_KEY` is unset, that one key is omitted and a warning is logged; the addon still loads. Treat a missing `config.apiKey` as "not configured".
+
+`${VAR}` is the other form, for a path inside a longer string (`"${FAST_STORAGE}/my-addon"`). An unset variable is left as the literal `${VAR}`. A value that should start with a dollar sign is written `$$`.
+
+### `domainDefaults`
+
+`package.json` `ngdpbase.domainDefaults` is a map of fully qualified keys applied at load, before `register()`, when the operator file does not already set that key. The write is `setRuntimeProperty`: this boot only, not saved to the operator file. A domain addon uses it for a site default such as the active theme:
+
+```json
+{
+  "ngdpbase": {
+    "slug": "my-addon",
+    "type": "domain",
+    "domainDefaults": { "ngdpbase.theme.active": "my-addon" }
+  }
+}
+```
+
+Any addon may set the field. The operator file wins.
+
+## Permissions
+
+Declare the permission and grant it in the addon's own `config/default-config.json`. That file is the merge layer in [Configuration](#configuration): maps merge per entry, and an `id` array merges by id. Do not append to a role's `permissions` array.
+
+```json
+{
+  "ngdpbase.permissions.definitions": {
+    "my-addon-manage": {
+      "description": "Create and edit my-addon records",
+      "icon": "cog",
+      "color": "#0d6efd"
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "my-addon-manage-access",
+      "name": "My addon management",
+      "priority": 90,
+      "effect": "allow",
+      "subjects": [{ "type": "role", "value": "admin" }],
+      "resources": [{ "type": "page", "pattern": "*" }],
+      "actions": ["my-addon-manage"]
+    }
+  ]
+}
+```
+
+A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
+
+A route asks `await ctx.requirePermission('my-addon-manage')` or `await ctx.hasPermission('my-addon-manage')` on an `ApiContext`. A page door asks `canAccess` or `hasPermissionOn`. The route shape is [Writing Routes](#7-writing-routes). Deny policies, the token ceiling, and vault-owner are [security-developer-guide.md](security-developer-guide.md).
+
+Worked examples: `addons/journal/config/default-config.json` declares `journal-read`, `journal-write`, and `journal-export` in one policy, `journal-access`. `addons/calendar/config/default-config.json` declares `calendar-manage` and `calendar-reserve`.
+
+## Testing and lint
+
+An addon under `addons/` is linted with the host. These run in `npm run lint`, in `lint:ci`, and (for the ones named) on the pre-commit hook:
+
+- `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
+- `npm run lint:addons` — no addon value-import of host `src/`, and no compiled `.js` left under `src/`. On the pre-commit hook.
+- `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
+- `npm run lint:audit` — declared audit events are emitted. On the pre-commit hook.
+
+`npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
+
+Unit tests sit beside the addon (`addons/<slug>/__tests__/**/*.ts` or `addons/<slug>/*.test.ts`). `npm test` includes them. A test teardown removes only the directories that test created. It must not delete `./data/` wholesale.
+
+A TypeScript addon in this repo needs `npm run build:addons` before `./server.sh restart`. When `index.js` is present, that is the file discovery loads.
 
 ---
 
@@ -53,8 +230,8 @@ Two things the scaffolder gets right that are easy to get wrong by hand:
 - __Identity.__ The `ngdpbase.slug` in `package.json` and the `name` exported
   from `index.ts` are emitted from one value, so they cannot disagree — the
   mismatch [#927](https://github.com/jwilleke/ngdpbase/issues/927) exists to
-  catch. A trailing `-addon` in `--id` is rejected, because `AddonsManager`
-  strips it when deriving identity and the config key would not match the folder.
+  catch. A trailing `-addon` in `--id` is rejected by the scaffolder. The
+  load-time rules are [Identity](#identity).
 - __Page UUIDs.__ Seed pages get a real v4 UUID, generated with the same `uuid`
   package `ValidationManager` uses. A hand-copied or placeholder UUID makes
   `AddonsManager` skip the page with a warning and an admin notification. The
@@ -78,27 +255,19 @@ prefer the template when you want a whole repository with deployment wiring.
 
 ---
 
-## Prerequisites
-
-- ngdpbase instance running locally (`./server.sh start`)
-- Node.js 24+ (`engines.node` is `>=24.0.0`)
-- A separate Git repository for your add-on (recommended)
-
----
-
 ## 1. Repository Setup
 
-Create a new repo (e.g. `github.com/you/my-addon`) with this layout:
+A first-party addon is `addons/<slug>/` in this repository. An addon you own is the same shape inside its own repo. The layout:
 
 ```
 my-addon-repo/
 └── addons/
     └── my-addon/
-        ├── index.js          ← required entry point
+        ├── index.js          ← entry point (index.ts is accepted; index.js wins if both exist)
         ├── managers/
         ├── routes/
         ├── plugins/
-        ├── pages/            ← wiki pages seeded into the instance on startup
+        ├── pages/            ← pages seeded into the instance on startup
         ├── theme/            ← optional; auto-deployed to themes/<addon>/ on first boot (theme.json required)
         ├── public/           ← static assets (CSS, JS, images)
         └── README.md
@@ -106,14 +275,17 @@ my-addon-repo/
 
 The `addons/` subdirectory is what gets wired into ngdpbase via config.
 You can host multiple add-ons in one repo under the same `addons/` directory.
+Which of the three models you are in, and the minimum config for each, is [Where it is loaded](#where-it-is-loaded).
 
-Use [`addons/calendar/`](../../addons/calendar/) or [`addons/forms/`](../../addons/forms/) in the ngdpbase repo as reference implementations. Both are TypeScript with their own `tsconfig.json`, compiled in place by `npm run build:addons`. `AddonsManager` loads `index.js` when that file is present, and `index.ts` only when it is not.
+Use [`addons/journal/`](../../addons/journal/) and [`addons/calendar/`](../../addons/calendar/) as the reference implementations. Calendar depends on [`addons/forms/`](../../addons/forms/). All three are TypeScript with their own `tsconfig.json`, compiled in place by `npm run build:addons`. `AddonsManager` loads `index.js` when that file is present, and `index.ts` only when it is not.
 
 ---
 
 ## 2. Wire into Your Running Instance
 
-Add to `$FAST_STORAGE/config/app-custom-config.json`:
+This is the drop-in wire-up. A bundled addon uses the default `./addons` path and only needs the enable key. A packaged addon uses a `node_modules:<glob>` entry. See [Where it is loaded](#where-it-is-loaded). The file below is the operator file from [Configuration](#configuration): `<instance data folder>/config/app-custom-config.json`.
+
+Add to that file:
 
 ```json
 {
@@ -157,7 +329,7 @@ Your `index.js` must export an object (or `module.exports =` in CommonJS):
 ```javascript
 /** @type {import('../src/managers/AddonsManager').AddonModule} */
 module.exports = {
-  name: 'my-addon',          // must match folder name and config key
+  name: 'my-addon',          // must equal the canonical slug; see Identity
   version: '1.0.0',
   description: 'What this add-on does',
   author: 'Your Name',
@@ -180,19 +352,12 @@ module.exports = {
 
 ### The `config` parameter
 
-`config` contains everything under `ngdpbase.addons.my-addon.*` in the instance config:
-
-```json
-{
-  "ngdpbase.addons.my-addon.enabled": true,
-  "ngdpbase.addons.my-addon.dataPath": "./data/my-addon",
-  "ngdpbase.addons.my-addon.apiKey": "..."
-}
-```
+`config` is the addon's namespace with the prefix stripped and env-var references resolved. The rules are [Configuration](#configuration).
 
 ```javascript
 async register(engine, config) {
   const dataPath = config.dataPath || './data/my-addon';
+  const apiKey = config.apiKey; // set only when $MY_ADDON_API_KEY was set
 }
 ```
 
@@ -441,12 +606,9 @@ Behaviour:
 - __Never overwrites.__ If `themes/<addon-name>/` already exists, the copy is
   skipped — operator customisations to the deployed theme are preserved. The
   add-on source is *not* re-synced automatically (it's a snapshot).
-- __Activate it.__ Set the active theme via `domainDefaults` in your add-on so
-  it takes effect without operator config:
-
-  ```json
-  { "ngdpbase.theme.active": "my-addon" }
-  ```
+- __Activate it.__ Set `ngdpbase.theme.active` to the addon slug through
+  `domainDefaults`, so it takes effect without operator config. The
+  `package.json` shape is [Configuration](#configuration).
 
 - __Manual re-deploy.__ `/admin/addons` shows a __Deploy Theme__ button
   (__Redeploy Theme__ once deployed) for any add-on that ships a theme. This
@@ -759,7 +921,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 
 `ApiError` carries a `status` number — catch it and forward to `res.status(err.status)`.
 
-There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission the action is, grant it in a policy in the addon's `config/default-config.json`, and ask for it. The journal and calendar addons are worked examples:
+There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 
 - the journal declares `journal-read`, `journal-write` and `journal-export`, in one `journal-access` policy;
 - calendar declares `calendar-manage` (admin) and `calendar-reserve` (every role that can sign in).
@@ -855,7 +1017,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ## 12. Shipping Your Addon as a Container Image
 
-This section is for addon authors whose addon lives in __its own repo__ (drop-in distribution model — see [`addon-architecture.md` § Distribution Models](../platform/addon-architecture.md#distribution-models)) and who want to ship their site as a container. It does not apply to bundled addons, which are baked into the upstream `ghcr.io/jwilleke/ngdpbase` image automatically.
+This section is the drop-in wrapper: an addon in __its own repo__, layered onto the published ngdpbase image with `COPY addons`. It does not apply to bundled addons, which are already in `ghcr.io/jwilleke/ngdpbase`. The packaged model (an npm package, no `COPY addons`) is [Where it is loaded](#where-it-is-loaded) and [addon-packaged.md](../platform/deployment/addon-packaged.md).
 
 ### What ngdpbase publishes for you
 
@@ -960,9 +1122,14 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 | Resource | Contents |
 |----------|----------|
-| [`addons/calendar/`](../../addons/calendar/) | Event calendar with FullCalendar UI — TypeScript reference implementation |
-| [`addons/forms/`](../../addons/forms/) | Schema-driven forms with submission storage — TypeScript, same compile step as calendar |
-| [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview, use-case analysis, roadmap |
+| [`addons/journal/`](../../addons/journal/) | Worked example — personal journal, permissions in `config/default-config.json` |
+| [`addons/calendar/`](../../addons/calendar/) | Worked example — calendar; depends on `forms` |
+| [`addons/forms/`](../../addons/forms/) | Schema-driven forms. Enable it when you enable calendar |
+| [`docs/platform/addon-architecture.md`](../platform/addon-architecture.md) | Load order and the module contract |
+| [`docs/platform/addon-identity-contract.md`](../platform/addon-identity-contract.md) | Every place a slug is written |
+| [`docs/platform/addon-page-handling.md`](../platform/addon-page-handling.md) | What syncs to an existing instance |
+| [`docs/platform/deployment/addon-packaged.md`](../platform/deployment/addon-packaged.md) | npm discovery and the two-stage image |
+| [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview and roadmap |
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
 | [`docs/private-stores.md`](../private-stores.md) | Private stores: layout, store kinds and the door, keys and recovery words, access, pages, links, search, trash and files |
 | [AddonsManager source](../../src/managers/AddonsManager.ts) | Discovery, loading, lifecycle implementation |
@@ -973,15 +1140,14 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 ## How you know you are done
 
-- `npm run lint:addons`
-- `npm run check:addon-load`
+- The checks in [Testing and lint](#testing-and-lint), including `npm run lint:addons` and, after a build, `npm run check:addon-load`
 - The security guide's and the audit guide's "How you know you are done" checks
-- `npm run create:addon -- --id …` then enable and restart
+- `npm run create:addon -- --id …`, then the enable key, then `./server.sh restart`, and the addon listed under `/admin` → Add-ons
 
 ## Known gaps
 
-- [#686](https://github.com/jwilleke/ngdpbase/issues/686)
-- [#1209](https://github.com/jwilleke/ngdpbase/issues/1209)
+- [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
+- [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
 

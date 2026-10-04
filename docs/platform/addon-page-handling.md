@@ -1,6 +1,6 @@
 # Addon Page Handling
 
-> See also: [`addon-development-guide.md`](./addon-development-guide.md) for the how-to, and [`addon-architecture.md`](./addon-architecture.md) for load order. This document is the reference for __where addon pages live, how they're named, and what does (and does not) sync__ to a running instance.
+> See also: [`addons-developer-guide.md` → Seed Wiki Pages](../guides/addons-developer-guide.md#seed-wiki-pages) for the how-to, and [`addon-architecture.md`](./addon-architecture.md) for load order. This document is the reference for __where addon pages live, how they're named, and what does (and does not) sync__ to a running instance.
 
 ---
 
@@ -11,7 +11,7 @@ An addon page exists in two distinct places with different rules:
 | | Path | Naming | Mutability |
 |---|---|---|---|
 | __Source__ (ships with the addon) | `addons/<addon>/pages/*.md` | __Name-based__ (`geohazardwatch-about.md`, `Landslides.md`) | Read-only seed material; edited in the addon repo |
-| __Runtime__ (in the instance) | `<data>/pages/{uuid}.md` (private → `<data>/pages/private/{creator}/{uuid}.md`) | __UUID-based, always__ | The live page; operator-editable |
+| __Runtime__ (in the instance) | `<data>/pages/{uuid}.md` (a vault page → `<data>/pages/vaults/{owner}/{vault}/{uuid}.md`) | __UUID-based, always__ | The live page; operator-editable |
 
 `<data>` is the instance pages directory (`ngdpbase.page.provider.filesystem.storagedir`, under `SLOW_STORAGE`). It is the __same store as every other page__ — addon pages are not kept in the addon directory at runtime.
 
@@ -28,7 +28,7 @@ An addon page exists in two distinct places with different rules:
 
 Since [#1406](https://github.com/jwilleke/ngdpbase/issues/1406) the addon seed hands each folder to `PageManager.seedShippedPages()`, the same seeder required pages use:
 
-1. Parse frontmatter — a valid __`uuid`__ (UUID v4), a __`title`__ and a __`slug`__ are required, and two files may not share a uuid; otherwise the file is reported (an error for a domain addon, a warning otherwise, plus an admin notification).
+1. Parse frontmatter — a valid __`uuid`__ (the 8-4-4-4-12 hex form, not only UUID v4), a __`title`__ and a __`slug`__ are required, and two files may not share a uuid; otherwise the file is reported (an error for a domain addon, a warning otherwise, plus an admin notification).
 2. __Lookup by uuid__ — a page this site holds under that uuid first gets its `addon-source-hash` backfilled if it has none and its text matches the source ([#1408](https://github.com/jwilleke/ngdpbase/issues/1408); a metadata-only save that keeps `lastModified` and writes no version). A page with no stamp whose text differs is left unstamped and logged. The page is then left to the addon's own steps (the #971 / #1003 metadata tidy-ups and the opt-in [content-aware reseed](#content-aware-reseed-920)), then re-indexed for search by title.
 3. __Seeded once per site__ — the site's record, `${FAST_STORAGE}/seeded-shipped-pages.json` (source `addon:<name>`), lists every page it has seeded. A recorded page that is no longer live was removed on this site and is not seeded again, whatever the provider. A uuid in the trash is recorded and skipped. A site without a record starts it from its live and trashed pages.
 4. Otherwise `pageManager.savePage(title, content, metadata)` writes `<data>/pages/{uuid}.md` with `addon`, `system-category` (`addon` if absent), `addon-source-category`, a default `access` for the category, `addon-source-hash`, `created` and `lastModified`, and indexes it for search by title.
@@ -83,18 +83,13 @@ Removal is __opt-in, per page, from Required Pages Sync__. The server re-verifie
 
 The idempotency guard exists so an addon upgrade can never clobber a page the operator edited in-app. By default updates therefore don't propagate. The [content-aware reseed](#content-aware-reseed-920) above lifts this __for unmodified pages only__ when explicitly enabled — operator-edited pages are always left alone. Removals still never propagate.
 
-## Forcing a re-seed manually
+## A deleted instance copy is not reseeded
 
 The boot-time auto-reseed only touches unmodified pages and needs an `addon-source-hash` stamp (see the bootstrap note above).
 
 __Try the admin surface first.__ For an unmodified page, Required Pages Sync at `/admin/required-pages` reseeds on demand with no restart and no config change — see [On-demand reseed](#content-aware-reseed-920) above.
 
-The manual route below is for the case the admin surface deliberately refuses: forcing an __operator-edited__ page back to source. To force any page to re-seed from current source, including one you want to reset:
-
-1. Delete the instance copy — `<data>/pages/{uuid}.md` (or `<data>/pages/private/{creator}/{uuid}.md` for a private page).
-2. Restart the server. `seedAddonPages` re-seeds the current source on the next boot.
-
-This discards any operator edits to that page (that's the point of deleting it). Deleting the source file instead does __not__ remove the instance copy.
+Deleting the instance file and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync, or restore it from the trash. Operator-edited pages are left in place by the boot reseed and by the sync surface. Deleting the source file does __not__ remove the instance copy.
 
 ## Orphans — name-based files in `<data>/pages/`
 
@@ -107,8 +102,8 @@ See [geohazardwatch#139](https://github.com/jwilleke/geohazardwatch/issues/139) 
 
 ## Related
 
-- [`addon-development-guide.md` → Seed Wiki Pages](./addon-development-guide.md#seed-wiki-pages) — the how-to (UUID requirement, auto-set fields, cross-addon UUID conflicts).
+- [`addons-developer-guide.md` → Seed Wiki Pages](../guides/addons-developer-guide.md#seed-wiki-pages) — the how-to (UUID requirement, auto-set fields).
 - [#442](https://github.com/jwilleke/ngdpbase/issues/442) — original first-boot seeding (shipped, closed).
 - [#908](https://github.com/jwilleke/ngdpbase/issues/908) — seed idempotency + orphan investigation.
-- [#920](https://github.com/jwilleke/ngdpbase/issues/920) — content-aware reseed + removal policy + admin endpoint (open).
+- [#920](https://github.com/jwilleke/ngdpbase/issues/920) — content-aware reseed + removal policy (closed).
 - [geohazardwatch#139](https://github.com/jwilleke/geohazardwatch/issues/139) — addon-side orphan handling.

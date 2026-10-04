@@ -1,7 +1,7 @@
 # ngdpbase Platform Guide
 
 > See also: [`platform-core-capabilities.md`](./platform-core-capabilities.md) (what core provides)
-> and [`addon-development-guide.md`](./addon-development-guide.md) (how to build an add-on).
+> and [`addons-developer-guide.md`](../guides/addons-developer-guide.md) (how to build an add-on).
 
 ---
 
@@ -224,7 +224,7 @@ Phases 2 and 3 completed in a different shape than planned: both domains ship as
 | Document | Contents |
 |----------|----------|
 | [`platform-core-capabilities.md`](./platform-core-capabilities.md) | Full inventory of what core provides |
-| [`addon-development-guide.md`](./addon-development-guide.md) | How to build an add-on (code patterns, checklist) |
+| [`addons-developer-guide.md`](../guides/addons-developer-guide.md) | How to build an add-on (code patterns, checklist) |
 | [`addons/calendar/`](../../addons/calendar/) | Event calendar with FullCalendar UI — reference implementation |
 
 | Issue | Description |
