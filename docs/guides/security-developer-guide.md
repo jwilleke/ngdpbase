@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-09-06
+dateModified: 2026-10-04
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -21,8 +21,8 @@ What a developer has to do so that a new route, manager method or addon authoriz
 Nothing else is an allow or a deny:
 
 - `isAuthenticated` classifies a refusal, 401 for an anonymous subject and 403 for an authenticated one, after policy has refused. It never decides.
-- `hasRole` on `UserManager` is a lookup about a named account, the same shape as `userHoldsPermission`. It is never this request's authority: a role name skips the policy evaluator, deny policies and the token ceiling. `ApiContext.requireRole` is gone for that reason.
-- A role name in code, `roles.includes('admin')`, is the same defect. `src/routes/WikiRoutes.ts` holds zero, and a static test keeps it there.
+- `RoleManager.hasRole` is a lookup about a named account, the same shape as `PolicyDecisionPoint.userHoldsPermission`. It is never this request's authority: a role name skips the policy evaluator, deny policies and the token ceiling. `ApiContext.requireRole` is gone for that reason. `UserManager` has no `hasRole`.
+- A role name in code, `roles.includes('admin')`, is the same defect when it is the allow. The static test `src/routes/__tests__/WikiRoutes.permissionGates.test.ts` keeps `hasRole(` out of `src/routes/WikiRoutes.ts`. The one `updates.roles.includes('admin')` there validates submitted form data (an external account cannot be given the admin role); it is not an authorization decision.
 
 ## Every security-relevant call carries a context
 
@@ -30,7 +30,7 @@ A manager method that decides access, writes an audit record, or acts on someone
 
 ## Permissions and policies are configuration
 
-- `ngdpbase.permissions.definitions` is the permission catalog: `{target}-{action}`, target first, hyphen separated. `UserManager.permissions` reads it live; there is no list in code.
+- `ngdpbase.permissions.definitions` is the permission catalog: `{target}-{action}`, target first, hyphen separated. Callers read it live with `ConfigurationManager.getProperty('ngdpbase.permissions.definitions')`; there is no list in code. `UserManager` does not hold the catalog.
 - `ngdpbase.access.policies` grants permissions to subjects. `hasPermission` resolves through `PolicyEvaluator` over these; a permission that appears in a policy is honoured whether or not anything else names it.
 - Roles are lists in `ngdpbase.roles.definitions`, additive, unordered, never gating anything. A role change is a configuration change and is recorded as `config-change`.
 
@@ -72,7 +72,7 @@ The addon's routes then `await ctx.requirePermission('calendar-manage')`, and a 
 - `npm run check:addon-load`
 - `npm test -- src/__tests__/permission-registry.invariant.test.ts src/routes/__tests__/WikiRoutes.permissionGates.test.ts`
 
-These run in `lint`, `lint:ci` and the pre-commit hook.
+The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `npm run check:addon-load` does not; run it after a build when an add-on import changes. The permission tests are `npm test`.
 
 ## See also
 

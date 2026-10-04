@@ -14,7 +14,7 @@
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
 - An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value.
-- Seed pages get a real UUID v4. A placeholder UUID is skipped silently.
+- Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
 - Import host HTTP as `../../dist/src/http/guardedFetch.js`, never `src/http/`.
 
 ---
@@ -55,9 +55,10 @@ Two things the scaffolder gets right that are easy to get wrong by hand:
   mismatch [#927](https://github.com/jwilleke/ngdpbase/issues/927) exists to
   catch. A trailing `-addon` in `--id` is rejected, because `AddonsManager`
   strips it when deriving identity and the config key would not match the folder.
-- __Page UUIDs.__ Seed pages get a real v4 UUID, generated and validated with the
-  same library the page validator uses. A hand-copied or placeholder UUID makes
-  `AddonsManager` skip the page silently.
+- __Page UUIDs.__ Seed pages get a real v4 UUID, generated with the same `uuid`
+  package `ValidationManager` uses. A hand-copied or placeholder UUID makes
+  `AddonsManager` skip the page with a warning and an admin notification. The
+  seeder also requires a title and a slug.
 
 The manual walkthrough below still applies — read it to understand what the
 generated files do, and for anything the scaffolder does not emit (routes,
@@ -80,7 +81,7 @@ prefer the template when you want a whole repository with deployment wiring.
 ## Prerequisites
 
 - ngdpbase instance running locally (`./server.sh start`)
-- Node.js 18+
+- Node.js 24+ (`engines.node` is `>=24.0.0`)
 - A separate Git repository for your add-on (recommended)
 
 ---
@@ -106,7 +107,7 @@ my-addon-repo/
 The `addons/` subdirectory is what gets wired into ngdpbase via config.
 You can host multiple add-ons in one repo under the same `addons/` directory.
 
-Use [`addons/calendar/`](../../addons/calendar/) or [`addons/forms/`](../../addons/forms/) in the ngdpbase repo as reference implementations. Calendar uses TypeScript with its own `tsconfig.json`; forms is plain JS (no compile step) — pick the pattern that fits your addon.
+Use [`addons/calendar/`](../../addons/calendar/) or [`addons/forms/`](../../addons/forms/) in the ngdpbase repo as reference implementations. Both are TypeScript with their own `tsconfig.json`, compiled in place by `npm run build:addons`. `AddonsManager` loads `index.js` when that file is present, and `index.ts` only when it is not.
 
 ---
 
@@ -123,7 +124,7 @@ Add to `$FAST_STORAGE/config/app-custom-config.json`:
 
 Restart the server: `./server.sh restart`
 
-The `AddonsManager` scans the path, finds all subdirectories with `index.js`, and loads the enabled ones in dependency order.
+The `AddonsManager` scans the path, finds all subdirectories with `index.js` or `index.ts`, and loads the enabled ones in dependency order. When both files exist, `index.js` is the one loaded.
 
 ### Multiple Addon Paths
 
@@ -228,7 +229,7 @@ const pages = await pageManager.getAllPages();
 Core manager names: `PageManager`, `UserManager`, `PolicyInformationPoint`, `AttachmentManager`,
 `SearchManager`, `RenderingManager`, `PluginManager`, `ConfigurationManager`,
 `AuditManager`, `CacheManager`, `BackgroundJobManager`, `NotificationManager`,
-`MediaManager` *(may be null if not enabled)*.
+`MediaManager` *(may be undefined when `ngdpbase.media.enabled` is false)*.
 
 ### Mount Express Routes
 
@@ -295,7 +296,7 @@ async register(engine, config) {
 }
 ```
 
-Cards appear between the Add-ons summary and Page Management rows on `/admin`. The card body displays `status().message` automatically.
+Cards render inside the Add-ons section on `/admin`. Page Management is the first row; Add-ons, with its cards, is below that. The card body displays `status().message` automatically.
 
 ### Seed Wiki Pages
 
@@ -326,7 +327,7 @@ Welcome to my add-on.
 
 Generate a UUID: `node -e "console.log(require('crypto').randomUUID())"`
 
-If the `uuid` field is missing or does not match the UUID v4 format, the file is __skipped with a warning__ and not seeded. Pages with invalid UUIDs are never written to disk.
+A `title` and a `slug` are required too. If `uuid` is missing or is not a UUID (the seeder accepts the 8-4-4-4-12 hex form; the scaffolder writes a v4), or if `title` or `slug` is missing, the file is __skipped with a warning__ (an error log when the add-on is `domain`) and an admin notification, and not seeded. Pages that fail those checks are never written to disk.
 
 #### Idempotency — existing pages are never overwritten
 
@@ -334,26 +335,31 @@ If `{uuid}.md` already exists in the instance pages directory, the seed file is 
 
 - User edits to seeded pages survive restarts.
 - Re-running the server never clobbers existing content.
-- To force a re-seed of a page, delete `{uuid}.md` from the instance pages directory and restart.
+- Deleting `{uuid}.md` and restarting does __not__ seed it again: the site's seeded-pages record treats a removed page as removed on purpose. Bring it back from Required Pages Sync (or restore it from the trash).
 
 #### Auto-set frontmatter fields
 
-`AddonsManager` adds two frontmatter fields to every seeded page:
+`AddonsManager` stamps these frontmatter fields on every newly seeded page:
 
 | Field | Value | Notes |
 |-------|-------|-------|
 | `addon` | the addon's name | Always set to the loading addon's name |
-| `system-category` | `addon` | Only set if not already present in the source file |
+| `system-category` | source value, or `addon` | The source value when it has one |
+| `addon-source-category` | the category applied | So a later source change can be told from an operator edit |
+| `access` | the category default | Only when the source does not set `access` |
+| `addon-source-hash` | hash of the body | What the reseed comparison uses |
 
-#### Cross-addon UUID conflicts
+#### A uuid the site already holds
 
-If `{uuid}.md` exists and its `addon` frontmatter field names a __different__ addon, `AddonsManager` logs a warning and skips the incoming page. The existing file is never overwritten. This protects against two addons accidentally shipping pages with the same UUID.
+If a live page already has that uuid, the seed leaves it in place. It does not compare the existing page's `addon` field, and it does not log a cross-addon conflict. Content is refreshed only under the reseed rules below.
+
+A source page whose title or slug belongs to a __different__ uuid is not seeded. That is logged at info:
 
 ```
-[AddonsManager] Page conflict: my-addon/pages/home.md skipped — already seeded by addon 'other-addon' (…/pages/{uuid}.md)
+[AddonsManager] Shipped pages could not be seeded: <title> (<addon>/pages/<file>): <reason>
 ```
 
-Use a freshly generated UUID for every seed page to avoid conflicts.
+Use a freshly generated UUID for every seed page. Two files in the same `pages/` directory must not share one.
 
 #### Updating seeded pages / admin reseed
 
@@ -484,13 +490,13 @@ Guard admin panel EJS sections:
 
 ### Declare a Private Store ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
-An addon that holds a user's own data — health records, finances, anything sensitive or regulated — owns a __store kind__: one private container per user, at `pages/private/{user}/{storeid}/`. Reference: [`docs/private-stores.md`](../private-stores.md).
+An addon that holds a user's own data — health records, finances, anything sensitive or regulated — owns a __store kind__: one private container per user, at `pages/vaults/{user}/{vaultid}/`. Reference: [`docs/private-stores.md`](../private-stores.md).
 
 __You declare the kind. You do not implement encryption, keys, or recovery words.__
 
 #### Declaring the kind
 
-__Being reworked.__ Until [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) an addon declared its kind in `package.json` `ngdpbase.stores`, and core saved it as `ngdpbase.stores.{id}.owner` / `.encrypt`. That mechanism is gone: no addon used it, and a vault kind is now a __system-category entry with a vault__ (`storageLocation.privatestore`), carrying its own `encrypt` and `owner` ([system-category.md](../system-category.md)). An addon will declare its own system-category, owned by its __slug__ ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), in [#1507](https://github.com/jwilleke/ngdpbase/issues/1507); until that lands an addon cannot declare a vault of its own.
+__Being reworked.__ Until [#1505](https://github.com/jwilleke/ngdpbase/issues/1505) an addon declared its kind in `package.json` `ngdpbase.stores`, and core saved it as `ngdpbase.stores.{id}.owner` / `.encrypt`. That mechanism is gone: no addon used it, and a vault kind is now a __system-category entry with a vault__ (`storageLocation.privatestore`), carrying its own `encrypt` and `owner` ([system-category.md](../system-category.md)). An addon will declare its own system-category, owned by its __slug__ ([#927](https://github.com/jwilleke/ngdpbase/issues/927)), in its manifest ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). That declaration is not built. The journal vault is already an entry in core `config/app-default-config.json` (`pages/vaults/{user}/journal/`); `addons/journal` does not ship it.
 
 What does not change:
 
@@ -531,17 +537,17 @@ Your addon __never__ sees a KEK, a DEK or a recovery word, and must never ask fo
 - A user who never enters your store is never asked to keep recovery words.
 - The store is self-contained on disk, so everything about it lives in one directory.
 
-A user can take out their store and import it again ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387), [#1472](https://github.com/jwilleke/ngdpbase/issues/1472)), and a site backup copies it as it is on disk. Per-store sharing is __not built__ ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)).
+A user can take out their store and import it again ([#1387](https://github.com/jwilleke/ngdpbase/issues/1387), [#1472](https://github.com/jwilleke/ngdpbase/issues/1472)), and a site backup copies it as it is on disk. A vault's owner can share it: `ShareManager.issueVaultShare`, read-only, lasting at most the category's `shareMaxDays` ([#1388](https://github.com/jwilleke/ngdpbase/issues/1388)).
 
-#### Where this is going ([#1477](https://github.com/jwilleke/ngdpbase/issues/1477), not built)
+#### Where this is going ([#1477](https://github.com/jwilleke/ngdpbase/issues/1477))
 
-The store kind is becoming part of the addon's __page category__. The addon will declare one category in its manifest, and it will carry everything above:
+The store kind is a system-category entry with a vault. Built:
 
-- `storageLocation.privatestore` (its vault, `pages/vaults/{user}/{slug}/`);
-- `encrypt` and `owner`;
-- `allowPublic` and `defaultPrivate` (whether an entry may be made public, and where new entries start).
+- `storageLocation.privatestore` is `pages/vaults/{user}/{vaultid}/`. The folders moved off `pages/private/` in [#1506](https://github.com/jwilleke/ngdpbase/issues/1506).
+- `encrypt`, `owner` and `defaultPrivate` (`true`, `false` or `choice`) live on that entry. Who may make a page public is the `page-public` policy, not an `allowPublic` field. `encrypt: true` keeps the vault's pages private.
+- The door is still `/stores/{kind}`.
 
-Core will persist that category at first load, as it persists store kinds now. So turning the addon off still loses nothing: the category stays valid, its public pages still show, and the vault shows the closed door. `encrypt: true` will force `allowPublic: false`. Vaults move from `pages/private/` to `pages/vaults/`. The target is defined in [system-category.md](../system-category.md). Retiring an addon for good (moving its pages out, then removing its category) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
+What is not built is the add-on declaring that entry in its manifest and core persisting it at first load ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). Turning the addon off still loses nothing: the category stays valid, its public pages still show, and the vault shows the closed door. The target is defined in [system-category.md](../system-category.md). Retiring an addon for good (moving its pages out, then removing its category) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
 ---
 
@@ -554,6 +560,8 @@ Use the shared helper in `addons/journal/routes/helpers.ts` as a reference, or c
 ```typescript
 // addons/my-addon/routes/helpers.ts
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine';
+import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
+import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type PageManager from '../../../dist/src/managers/PageManager';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager';
 
@@ -568,7 +576,7 @@ export async function getLeftMenu(engine: WikiEngine, userContext: unknown): Pro
   const pm = engine.getManager<PageManager>('PageManager');
   const rm = engine.getManager<RenderingManager>('RenderingManager');
   if (!pm || !rm) return null;
-  const page = await pm.getPage('LeftMenu');
+  const page = await pm.getPage('LeftMenu', (userContext as ActorContext | null) ?? ANONYMOUS_SUBJECT);
   if (!page) {
     engine.logger?.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty.');
     return null;
@@ -605,7 +613,7 @@ module.exports = {
   name: 'MyPlugin',
 
   /**
-   * @param {object} context  - { engine, pageName, wikiContext }
+   * @param {object} context  - { engine, pageName, linkGraph }
    * @param {object} params   - key/value pairs from [{MyPlugin key='value'}]
    * @returns {string}        - HTML fragment
    */
@@ -769,10 +777,11 @@ async register(engine, config) {
     jobManager.registerJob({
       id: 'my-addon-reindex',
       displayName: 'My Addon — Reindex',
-      async run(reportProgress) {
-        reportProgress({ percent: 0, message: 'Starting...' });
-        // ... do work ...
-        reportProgress({ percent: 100, message: 'Done' });
+      async run(reportProgress, ctx) {
+        reportProgress('Starting...');
+        // ... do work; ctx is the JobContext captured at enqueue ...
+        reportProgress('Done');
+        return { success: true, summary: 'Done' };
       }
     });
   }
@@ -803,7 +812,7 @@ declared dependency is not installed or not enabled.
 
 ## 10. Development Workflow
 
-1. Edit files in your add-on repo (plain JS — no compile step needed)
+1. Edit files in your add-on repo. A TypeScript add-on in this repo needs `npm run build:addons` (or `npm run build`) so `index.js` is current; a plain-JS add-on has no compile step
 2. `./server.sh restart` to pick up changes
 3. Check logs: `pm2 logs` or `./server.sh logs`
 4. Visit `/admin` → Add-ons section to verify load status and `status()` output
@@ -826,7 +835,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ## 11. Add-on Checklist
 
-- [ ] `name` in `index.js` matches the folder name and config key
+- [ ] `name` exported from `index.ts` or `index.js` matches `ngdpbase.slug` and the `ngdpbase.addons.<slug>` config key
 - [ ] `"ngdpbase.addons.my-addon.enabled": true` in instance config
 - [ ] `addons-path` in instance config points to the repo's `addons/` directory (string or array of strings)
 - [ ] Static assets mounted via `engine.app.use()` in `register()`
@@ -837,10 +846,10 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
 - [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
 - [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
-- [ ] Seed pages in `pages/` use real UUID v4 filenames and matching `uuid` frontmatter
+- [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
-- [ ] If the addon holds a user's own data: it declares its own system-category with a vault (#1507), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414) — planned)
+- [ ] If the addon holds a user's own data: its vault is a system-category entry (manifest declaration is not built — [#1507](https://github.com/jwilleke/ngdpbase/issues/1507), [#1559](https://github.com/jwilleke/ngdpbase/issues/1559); the journal entry lives in core config today), sensitive or regulated data sets `encrypt: true`, the set-up step links to the core door, and no key material or recovery word is read, stored or logged ([#1414](https://github.com/jwilleke/ngdpbase/issues/1414))
 
 ---
 
@@ -952,7 +961,7 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 | Resource | Contents |
 |----------|----------|
 | [`addons/calendar/`](../../addons/calendar/) | Event calendar with FullCalendar UI — TypeScript reference implementation |
-| [`addons/forms/`](../../addons/forms/) | Schema-driven forms with submission storage — plain JS reference implementation |
+| [`addons/forms/`](../../addons/forms/) | Schema-driven forms with submission storage — TypeScript, same compile step as calendar |
 | [`docs/platform/ngdp-as-platform.md`](../platform/ngdp-as-platform.md) | Platform overview, use-case analysis, roadmap |
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
 | [`docs/private-stores.md`](../private-stores.md) | Private stores: layout, store kinds and the door, keys and recovery words, access, pages, links, search, trash and files |
@@ -976,4 +985,4 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 ---
 
-Last updated: 2026-09-19
+Last updated: 2026-10-04
