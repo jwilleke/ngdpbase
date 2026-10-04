@@ -1,0 +1,59 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * #448 — `public/js/passkey.js` binds each button once, however many times the
+ * page includes it. The step-down banner (header.ejs) and the profile both
+ * load it; with two handlers, one click fetched two sign-in challenges, the
+ * second replaced the first in the session, and the passkey's answer failed
+ * with "Unexpected authentication response challenge" on jimstest.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import path from 'path';
+import vm from 'vm';
+import { JSDOM } from 'jsdom';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CODE = readFileSync(path.resolve(__dirname, '../../public/js/passkey.js'), 'utf8');
+
+function page(markup: string, loads: number): { dom: JSDOM; fetched: string[] } {
+  const dom = new JSDOM(`<!doctype html><body>${markup}</body>`, { runScripts: 'outside-only' });
+  const fetched: string[] = [];
+  const win = dom.window as unknown as Record<string, unknown>;
+  win.PublicKeyCredential = function PublicKeyCredential() {};
+  // Never resolves: the test counts requests, it does not complete a ceremony.
+  win.fetch = (url: string) => {
+    fetched.push(url);
+    return new Promise(() => {});
+  };
+  const context = dom.getInternalVMContext();
+  for (let i = 0; i < loads; i++) vm.runInContext(CODE, context);
+  return { dom, fetched };
+}
+
+describe('passkey.js binds once (#448)', () => {
+  it('one click on a sign-in button fetches one challenge, even when the script is loaded twice', () => {
+    const { dom, fetched } = page('<button data-passkey-signin class="d-none">Sign in</button>', 2);
+    (dom.window.document.querySelector('[data-passkey-signin]') as HTMLButtonElement).click();
+    expect(fetched).toEqual(['/auth/passkey/authenticate/options']);
+  });
+
+  it('one click on the enrol button fetches one challenge, even when the script is loaded twice', () => {
+    const { dom, fetched } = page('<button data-passkey-enrol class="d-none">Add</button>', 2);
+    (dom.window.document.querySelector('[data-passkey-enrol]') as HTMLButtonElement).click();
+    expect(fetched).toEqual(['/auth/passkey/register/options']);
+  });
+
+  it('still shows and binds every button on the page on the first load', () => {
+    const { dom, fetched } = page(
+      '<button id="a" data-passkey-signin class="d-none"></button><button id="b" data-passkey-signin class="d-none"></button>',
+      1
+    );
+    const doc = dom.window.document;
+    expect(doc.getElementById('a')!.classList.contains('d-none')).toBe(false);
+    expect(doc.getElementById('b')!.classList.contains('d-none')).toBe(false);
+    (doc.getElementById('b') as HTMLButtonElement).click();
+    expect(fetched).toHaveLength(1);
+  });
+});
