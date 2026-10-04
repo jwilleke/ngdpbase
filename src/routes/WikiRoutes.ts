@@ -795,6 +795,18 @@ export function mediaSortDateKey(item: Record<string, unknown>): number {
   return typeof year === 'number' ? Date.UTC(year, 0, 1) : 0;
 }
 
+/**
+ * The permissions a view may ask about with `can()` / `lockedUnless()`,
+ * resolved once per render (#1198). A view asking for one not listed here
+ * always reads "not held" — how #1525's config-manage buttons were locked for
+ * an admin. `viewPermissions.test.ts` scans the views and fails on any
+ * permission they use that is missing.
+ */
+export const VIEW_PERMISSIONS = [
+  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage',
+  // #1525: configuration, backup and reveal controls; sign-in-method controls.
+  'config-manage', 'secret-reveal', 'account-security'
+] as const;
 class WikiRoutes {
   private engine: WikiEngine;
   /** Connected admin SSE clients — used to push real-time events to admin pages */
@@ -1072,10 +1084,9 @@ class WikiRoutes {
     // rows — a role name, which skips policy and the token ceiling and shows
     // an affordance the owner's role has but this request's credential may
     // not. `can(permission)` is the same question the route asks.
-    const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage'] as const;
     const grantedPermissions: Record<string, boolean> = {};
     if (permissionContext) {
-      for (const permission of adminPermissions) {
+      for (const permission of VIEW_PERMISSIONS) {
         grantedPermissions[permission] = await permissionContext.hasPermission(permission);
       }
     }
