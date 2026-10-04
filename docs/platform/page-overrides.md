@@ -78,6 +78,6 @@ To add a new override slot (e.g. `sidebar-content` replacing `Sidebar`):
 
 - [Customizing the Left Menu](../../required-pages/ed7d1b78-76c1-435d-8e12-9e0eb3d1ba94.md) — end-user wiki page
 - [Customizing the Footer](../../required-pages/ecd2e0cf-8ffa-4a73-85b4-448614e656e4.md) — end-user wiki page
-- [`docs/platform/addon-development-guide.md`](./addon-development-guide.md)
+- [`docs/guides/addons-developer-guide.md`](../guides/addons-developer-guide.md)
 - `src/managers/AddonsManager.ts` — `seedAddonPages()`
 - `src/routes/WikiRoutes.ts` — `getCommonTemplateData()`

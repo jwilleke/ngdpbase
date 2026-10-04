@@ -1,8 +1,8 @@
 # Addon Identity Contract
 
-> See also: [`addons-developer-guide.md`](../guides/addons-developer-guide.md), [`addon-architecture.md`](./addon-architecture.md).
+> See also: [`addons-developer-guide.md` § Identity](../guides/addons-developer-guide.md#identity) for the rules that decide whether the addon loads, [`addon-architecture.md`](./addon-architecture.md).
 
-An addon picks a single short identifier — a slug — and that slug is wired into more than a dozen places. They all have to agree, because ngdpbase resolves config keys, mount paths, and capability flags by exact-string match. Picking the slug carelessly, or renaming it later, is a coordinated change across runtime, build, config, and content.
+An addon picks a single short identifier — a slug — and that slug is wired into more than a dozen places. The developer guide owns the load-time rule (canonical slug, and what a mismatched `name` does). This page is the inventory of every place that slug is written. They all have to agree, because ngdpbase resolves config keys, mount paths, and capability flags by exact-string match. Picking the slug carelessly, or renaming it later, is a coordinated change across runtime, build, config, and content.
 
 This doc lists every place an addon's slug appears, what it's used for, and what breaks if any of them drift. The rules apply identically whether the addon is __bundled__ (in `addons/`), __drop-in__ (under a configured `addons-path`), or __packaged__ (an npm dependency under `node_modules/`); see [`addon-architecture.md` § Distribution Models](./addon-architecture.md#distribution-models). Examples below show the bundled path because it's the most common, but the slug requirements are the same for the other two models.
 
@@ -38,7 +38,7 @@ The slug is the string that has to match across all of these:
 
 | Field / call | Form | Notes |
 |--------------|------|-------|
-| `module.exports.name` | `'<slug>'` | The canonical identity returned to `AddonsManager` |
+| `module.exports.name` | `'<slug>'` | Display label. Must equal the canonical slug (`package.json` `ngdpbase.slug`, else the folder name). On a mismatch the slug is the identity used, and `ngdpbase.addons.<module.name>.enabled` is ignored |
 | API router mount | `engine.app.use('/api/<slug>', apiRouter)` | Public REST URL surface |
 | Static/admin mount | `engine.app.use('/addons/<slug>', ...)` | Public asset and admin URL surface |
 | Stylesheet registration | `addonsManager.registerStylesheet('/addons/<slug>/css/<slug>.css', '<slug>')` | Both the URL and the registration key carry the slug |
@@ -59,7 +59,7 @@ The platform resolves addon config from flat dot-notation keys scoped to the slu
 }
 ```
 
-`AddonsManager.getAddonConfig()` strips the `ngdpbase.addons.<slug>.` prefix and passes the rest to `register(engine, config)`. The slug in the key __must__ match `module.exports.name`, or the addon receives empty config.
+`AddonsManager.getAddonConfig()` strips the `ngdpbase.addons.<slug>.` prefix and passes the rest to `register(engine, config)`. The slug in the key is the canonical slug. A key written under a differing `module.exports.name` is not read, and the addon receives empty config.
 
 The addon's `addons/<slug>/config/default-config.json` (if it ships defaults) uses the same fully-qualified keys.
 
@@ -90,9 +90,9 @@ Anything client-rendered that calls back into the addon's own routes hardcodes `
 | Location | Slug appears in |
 |----------|-----------------|
 | `pages/<slug>-*.md` filenames | By convention, seed pages are prefixed with the slug |
-| Frontmatter `slug:` field | `<slug>-about`, `<slug>-plugins`, etc. — these become `/wiki/<slug>-about` URLs |
+| Frontmatter `slug:` field | `<slug>-about`, `<slug>-plugins`, etc. — these become `/view/<slug>-about` URLs |
 | Frontmatter `addon:` and `author:` fields | Set to the slug for traceability |
-| Cross-links between seed pages | If About links to Plugins as `/wiki/<slug>-plugins`, the slug is embedded in the prose |
+| Cross-links between seed pages | If About links to Plugins as `/view/<slug>-plugins`, the slug is embedded in the prose |
 
 ### 7. Documentation
 
@@ -121,9 +121,9 @@ Renaming an addon's slug is a __breaking change__. Every place listed above has 
 ### What breaks for the operator
 
 - `app-custom-config.json` keys under `ngdpbase.addons.<old-slug>.*` are no longer read. The operator must rewrite them under the new slug. The platform doesn't auto-migrate.
-- Any URL bookmarks or external links to `/api/<old-slug>/*` or `/wiki/<old-slug>-*` 404.
+- Any URL bookmarks or external links to `/api/<old-slug>/*` or `/view/<old-slug>-*` 404.
 - Cron jobs or scripts that POST to `/addons/<old-slug>/jobs/*` 404.
-- Existing wiki pages seeded under the old slug __stay__ at the old slug. `seedAddonPages` only runs when the slug-derived seed marker is missing — for an existing instance, the old pages remain at the old URLs unless the operator manually moves or recreates them.
+- Pages already seeded under the old slug __stay__. Seeding looks a page up by uuid and the site's seeded-pages record (`seeded-shipped-pages.json`), so a rename does not move them or seed them again.
 
 ### What breaks for downstream addons
 
