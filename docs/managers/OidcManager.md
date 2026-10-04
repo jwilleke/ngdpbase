@@ -82,6 +82,10 @@ Every event the provider reports is recorded in ngdpbase's audit log ([#1575](ht
 - __On failure:__ every event is `continue`. The package reports after the action has happened, so a record cannot be made a condition of it.
 - __Severity:__ a used code or refresh token presented again (`oidctoken-reuse`, the replay signature) and a server error are high. A refused request is medium or low.
 
+## API access
+
+ngdpbase's own API is a resource server at `<base-url>/api`, derived like the issuer ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)). Its scopes are the permissions a delegation may carry. An app's token for it is verified in process by `verifyAccessToken()` and accepted by [OidcBearerAuthProvider](../providers/OidcBearerAuthProvider.md) as a delegation from the person. When no permission is delegable, the API is left out and sign-in still works.
+
 ## Not yet
 
-Accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), and step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)).
+Step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)); friendlier consent lines for permission scopes, which show by name.

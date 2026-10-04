@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 41 | 46 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 42 | 43 | Storage and service providers |
+| [Providers](#providers) | 43 | 44 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -193,6 +193,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |
 | NullAuditProvider | ✅ [doc](providers/NullAuditProvider.md) | Discards all audit events — for tests and minimal-config deployments where auditing is off |
 | NullCacheProvider | ✅ [doc](providers/NullCacheProvider.md) | No-op cache — every get is a miss; every set is discarded |
+| OidcBearerAuthProvider | ✅ [doc](providers/OidcBearerAuthProvider.md) | Accepts access tokens from this instance's own OpenID Connect provider on ngdpbase's API, as a delegation from the person (#1576) |
 | PasskeyAuthProvider | ✅ [doc](providers/PasskeyAuthProvider.md) | Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a person in at AAL2, phishing-resistant, tied to the base-url host (#448) |
 | PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
@@ -340,7 +341,7 @@ __Managers:__ 41/41 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 42/42 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 43/43 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

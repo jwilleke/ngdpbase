@@ -50,6 +50,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
 
     const custom: Record<string, unknown> = {
       'oidc-auth-server.enabled': true,
+      'ngdpbase.permissions.definitions': { 'page-read': {}, 'page-edit': {}, 'admin-users': {}, 'token-mint': {} },
       'oidc-auth-server.clients': [{
         client_id: 'app', client_name: 'Test App', token_endpoint_auth_method: 'none',
         redirect_uris: [REDIRECT], grant_types: ['authorization_code'], response_types: ['code']
@@ -186,6 +187,50 @@ describe('OIDC sign-in bridge (#1572)', () => {
 
     users.jim.passwordChangedAt = new Date(Date.now() + 60_000).toISOString();
     expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(401);
+  });
+
+  test('#1576: an app asks for ngdpbase\'s API and its token verifies as a delegation, stepped to the sign-in level', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const api = `${BASE}/api`;
+    const { res, verifier } = await authorize(agent, { scope: 'openid page-read', resource: api });
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const token = await agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier, resource: api });
+    expect(token.status).toBe(200);
+    const access = (token.body as { access_token: string }).access_token;
+
+    expect(manager.getApiResource()).toBe(api);
+    expect(await manager.verifyAccessToken(access)).toMatchObject({ username: 'jim', clientId: 'app', scopes: ['page-read'], aal: 2 });
+
+    users.jim.passwordChangedAt = new Date(Date.now() + 60_000).toISOString();
+    expect(await manager.verifyAccessToken(access)).toBeNull();
+  });
+
+  test('#1576: a token without the API audience, or a made-up one, does not verify', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const { res, verifier } = await authorize(agent);
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const token = await agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier });
+    expect(await manager.verifyAccessToken((token.body as { access_token: string }).access_token)).toBeNull();
+    expect(await manager.verifyAccessToken('not-a-token')).toBeNull();
+  });
+
+  test('#1576: an app asking for admin-* or token-mint gets a token without them', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const api = `${BASE}/api`;
+    const { res, verifier } = await authorize(agent, { scope: 'openid page-read admin-users token-mint', resource: api });
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const token = await agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier, resource: api });
+    const verified = await manager.verifyAccessToken((token.body as { access_token: string }).access_token);
+    expect(verified?.scopes).toEqual(['page-read']);
   });
 
   test('Deny ends the request with access_denied and no code', async () => {

@@ -54,6 +54,7 @@ import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
+import { bearerProviderIds } from './utils/bearerProviders.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
 // __dirname would resolve to dist/src/ after compilation, so it cannot be used for
@@ -870,11 +871,10 @@ void (async (): Promise<void> => {
   // absent or no bearer provider is enabled.
   //
   // #946: this previously hardcoded 'authentik-bearer', so a second bearer
-  // provider would never be consulted. It now tries each registered
-  // bearer-capable provider in turn and takes the first success, letting the
-  // in-app agent-token provider and Authentik coexist (or run alone, or
-  // neither).
-  const BEARER_PROVIDER_IDS = ['authentik-bearer', 'agent-token'];
+  // provider would never be consulted. It tries each registered provider that
+  // declares `acceptsBearer`, in registration order, and takes the first
+  // success (#1576: selected by the flag, not a hardcoded list, so the OIDC
+  // provider's tokens join without editing this).
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const header = req.headers['authorization'];
@@ -884,11 +884,12 @@ void (async (): Promise<void> => {
           success: boolean;
           username?: string;
           viaToken?: { id: string; name: string; scopes: string[] };
+          aal?: number;
         }>;
-        getProviders?: () => Array<{ id: string }>;
+        getProviders?: () => Array<{ id: string; acceptsBearer?: boolean }>;
+        rolesAtSignIn?: (roles: readonly string[], signInAal: number) => { kept: string[]; steppedDown: string[] };
       } | null;
-      const registered = new Set((authManager?.getProviders?.() ?? []).map(p => p.id));
-      const candidates = BEARER_PROVIDER_IDS.filter(id => registered.has(id));
+      const candidates = bearerProviderIds(authManager?.getProviders?.() ?? []);
       const token = header.slice('Bearer '.length).trim();
 
       // #981: an ngdp_at_ token is unambiguously an agent token. If it cannot
@@ -919,7 +920,7 @@ void (async (): Promise<void> => {
       }
       if (!token) { next(); return; }
 
-      let result: { success: boolean; username?: string; viaToken?: { id: string; name: string; scopes: string[] } } = { success: false };
+      let result: { success: boolean; username?: string; viaToken?: { id: string; name: string; scopes: string[] }; aal?: number } = { success: false };
       let matchedProvider = '';
       for (const providerId of candidates) {
         const attempt = await authManager.authenticate(providerId, { token });
@@ -932,8 +933,14 @@ void (async (): Promise<void> => {
       if (result.success && result.username) {
         const subject = await pip.subjectFor(result.username);
         if (subject) {
+          // #1576: a credential that carries its sign-in level holds only the
+          // roles that level reaches, as a web session does (#1569).
+          const roles = result.aal !== undefined && authManager.rolesAtSignIn
+            ? authManager.rolesAtSignIn(subject.roles, result.aal).kept
+            : subject.roles;
           req.userContext = {
             ...subject,
+            roles,
             ipAddress: req.ip,
             // #946: scopes ride on userContext so they reach both the ACL
             // scope gate and the save path (for via-token provenance) through
