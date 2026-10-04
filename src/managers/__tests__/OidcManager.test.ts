@@ -19,7 +19,7 @@ describe('OidcManager (#1570)', () => {
   let custom: Record<string, unknown>;
   let baseUrl: string;
   let explicit: boolean;
-  let users: Record<string, { username: string; displayName: string; email?: string; isActive: boolean; roles?: string[] }>;
+  let users: Record<string, { username: string; displayName: string; email?: string; isActive: boolean; roles?: string[]; passwordChangedAt?: string }>;
   const saved: Record<string, string | undefined> = {};
 
   const started = async (): Promise<OidcManager> => {
@@ -175,6 +175,18 @@ describe('OidcManager (#1570)', () => {
     expect(claims).not.toHaveProperty('roles');
     expect(await manager.findAccount('gone')).toBeUndefined();
     expect(await manager.findAccount('nobody')).toBeUndefined();
+  });
+
+  test('findAccount refuses a sign-in older than the last password change (#1592)', async () => {
+    const manager = await started();
+    users.molly.passwordChangedAt = new Date(2_000_000 * 1000).toISOString();
+    expect(await manager.findAccount('molly', { acr: 'aal2', amr: ['hwk'], authTime: 1_999_999 })).toBeUndefined();
+    expect(await manager.findAccount('molly', { acr: 'aal2', amr: ['hwk'] })).toBeUndefined();
+    expect(await manager.findAccount('molly', { acr: 'aal2', amr: ['hwk'], authTime: 2_000_001 })).toMatchObject({ preferred_username: 'molly' });
+    // No sign-in on the request: the sign-in itself, not a token from before.
+    expect(await manager.findAccount('molly')).toMatchObject({ preferred_username: 'molly' });
+    delete users.molly.passwordChangedAt;
+    expect(await manager.findAccount('molly', { authTime: 1 })).toMatchObject({ preferred_username: 'molly' });
   });
 
   test('backup carries the grant roster and says it cannot be restored; restore refuses', async () => {

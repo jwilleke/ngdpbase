@@ -198,4 +198,21 @@ describe('#1482 a password change ends the account\'s other sessions', () => {
     await um.updateUser('alice', { password: 'another-pw-1111' }, ADMIN);
     expect(users.get('alice')?.sessionGeneration).toBe(2);
   });
+
+  test('#1592: a change records when, stores a hash and never the plaintext; other edits leave the time', async () => {
+    const { um, users } = makeManager();
+    await um.createUser({ username: 'alice', email: 'a@x', displayName: 'Alice', password: 'pw-1234567', roles: ['reader'] }, ADMIN);
+    expect(users.get('alice')?.passwordChangedAt).toBeUndefined();
+
+    const before = Date.now();
+    await um.updateUser('alice', { password: 'new-pw-7654321' }, ALICE);
+    const record = users.get('alice') as { password?: string; passwordChangedAt?: string };
+    expect(Date.parse(record.passwordChangedAt)).toBeGreaterThanOrEqual(before - 1000);
+    expect(record.password).not.toBe('new-pw-7654321');
+    expect(JSON.stringify(record)).not.toContain('new-pw-7654321');
+
+    const stamped = record.passwordChangedAt;
+    await um.updateUser('alice', { displayName: 'Alice B' }, ALICE);
+    expect(users.get('alice')?.passwordChangedAt).toBe(stamped);
+  });
 });

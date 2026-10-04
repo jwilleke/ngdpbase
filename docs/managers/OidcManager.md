@@ -39,7 +39,16 @@ The server starts in two steps: `initialize()` validates and prepares the store 
 
 ## Accounts
 
-`findAccount` releases `preferred_username`, `name` and, when set, `email`. A missing or disabled account fails the request closed. Roles are never released: a session can hold fewer roles than the account ([#1569](https://github.com/jwilleke/ngdpbase/issues/1569)), and the package asks with an account id only.
+`findAccount(accountId, signIn)` releases `preferred_username`, `name` and, when set, `email`. Roles are never released: a session can hold fewer roles than the account ([#1569](https://github.com/jwilleke/ngdpbase/issues/1569)).
+
+It returns nothing, which fails the request closed, when:
+
+- the account is missing or disabled;
+- the request carries a sign-in older than the account's last password change ([#1592](https://github.com/jwilleke/ngdpbase/issues/1592)). The package passes the sign-in's `authTime` from the code, refresh token or access token. A refresh then answers `invalid_grant` and UserInfo `401`, so an app keeps nothing past a password change, as no web session does ([#1482](https://github.com/jwilleke/ngdpbase/issues/1482)).
+
+The change time is written only by `setPassword()` (`src/utils/passwordChange.ts`), the one definition of a password change. `UserManager.updateUser` and `scripts/reset-admin-password.ts` both use it. An access token already issued, which an outside API checks by itself, stays valid until it expires (1 hour by default).
+
+The session that changed the password stays signed in, as #1482 intends, but its sign-in predates the change. Apps signing in through it are refused until the person signs in again.
 
 ## Storage
 
@@ -75,4 +84,4 @@ Every event the provider reports is recorded in ngdpbase's audit log ([#1575](ht
 
 ## Not yet
 
-Accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)), and ending app access when a password changes ([#1592](https://github.com/jwilleke/ngdpbase/issues/1592)).
+Accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), and step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)).

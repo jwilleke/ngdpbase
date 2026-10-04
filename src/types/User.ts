@@ -141,6 +141,9 @@ export interface User {
    */
   sessionGeneration?: number;
 
+  /** When the password last changed, ISO 8601 (#1592); written only by setPassword(). */
+  passwordChangedAt?: string;
+
   /** Account creation timestamp (ISO 8601) */
   createdAt: string;
 

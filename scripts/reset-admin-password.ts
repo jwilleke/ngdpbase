@@ -27,8 +27,7 @@
 import '../src/bootstrap-env.js';
 
 import path from 'path';
-import { hashPassword } from '../src/utils/passwordHash.js';
-import { bumpSessionGeneration } from '../src/utils/sessionGeneration.js';
+import { setPassword } from '../src/utils/passwordChange.js';
 import { promises as fs } from 'fs';
 
 import ConfigurationManager from '../src/managers/ConfigurationManager.js';
@@ -104,10 +103,10 @@ async function main(): Promise<void> {
   // `sha256(password + configuredSalt)` — a duplicate that would have silently
   // written unverifiable hashes the moment the scheme changed, which is exactly
   // what #1042 did. One implementation, no drift.
-  users[target].password = hashPassword(newPassword);
-  // #1482: the reset ends every session the account had — the reason to run
-  // this is often that someone else may be signed in as it.
-  bumpSessionGeneration(users[target]);
+  // The one definition of a password change (#1592), shared with the running
+  // server: hash, end every session the account had (#1482 — the reason to run
+  // this is often that someone else may be signed in as it), record when.
+  setPassword(users[target], newPassword);
 
   // Write via a temp file so an interrupted run cannot leave users.json
   // truncated — losing every account is a far worse outcome than a failed
