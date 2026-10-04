@@ -1097,6 +1097,21 @@ class UserManager extends BaseManager {
     return userWithoutPassword;
   }
 
+  /**
+   * Whether the account signs in with a password of its own: a local account
+   * whose record carries a hash. Asked here because this is the one door that
+   * sees the hash — `getUser()` strips it, which is why AuthManager's
+   * last-way-in rule, asking through `getUser()`, saw no password on any
+   * account and refused to remove anyone's only passkey (#1524).
+   */
+  async hasPassword(username: string): Promise<boolean> {
+    if (!this.provider) {
+      throw new Error('Provider not initialized');
+    }
+    const user = await this.provider.getUser(username);
+    return Boolean(user && !user.isExternal && user.password);
+  }
+
   async getUserByEmail(email: string): Promise<Omit<User, 'password'> | undefined> {
     if (!this.provider) {
       throw new Error('Provider not initialized');
