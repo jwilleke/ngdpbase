@@ -287,6 +287,14 @@
                                     <% } else { %>
                                     <p class="text-muted small">No sign-in methods are set up for this account here.</p>
                                     <% } %>
+                                    <% if (typeof offerEmailSecondFactor !== 'undefined' && offerEmailSecondFactor) { %>
+                                    <%# #1523: a second factor for password sign-ins — the email approves each one. %>
+                                    <form method="POST" action="/profile/second-factor/email" class="mb-3">
+                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                        <p class="small text-muted mb-1">Make every password sign-in wait for your approval by email. We send a link to confirm the address first.</p>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-envelope"></i> Approve my sign-ins by email</button>
+                                    </form>
+                                    <% } %>
                                     <% if (typeof passkeyHost !== 'undefined' && passkeyHost) { %>
                                     <p class="small text-muted mb-2">
                                         A passkey signs you in with your device's fingerprint, face or PIN, with no password. It works only on <strong><%= passkeyHost %></strong>.

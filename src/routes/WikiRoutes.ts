@@ -12,6 +12,7 @@
  */
 
 import path from 'path';
+import { randomBytes } from 'crypto';
 import type { CorePermission } from '../security/permissions.generated.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
@@ -59,6 +60,7 @@ import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
+import type { PendingSignIn } from '../managers/AuthManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -794,6 +796,9 @@ export function mediaSortDateKey(item: Record<string, unknown>): number {
   const year = item['year'];
   return typeof year === 'number' ? Date.UTC(year, 0, 1) : 0;
 }
+
+/** The cookie binding a pending two-step sign-in to the browser that started it (#1523). */
+const TWO_STEP_COOKIE = 'ngdp_two_step';
 
 /**
  * The permissions a view may ask about with `can()` / `lockedUnless()`,
@@ -7069,6 +7074,177 @@ ${panes}
     res.redirect(`/admin/users/${encodeURIComponent(username)}/edit?${revoked ? 'success=Access+revoked' : 'error=Not+found'}`);
   }
 
+  /**
+   * Unlock a person's private stores with the password they just signed in
+   * with, into a fresh handle; the caller puts the handle on the session (or
+   * holds it with a pending sign-in, #1523). Best-effort: a failure leaves
+   * the stores locked, which the banner reports.
+   */
+  private async unlockStoresWithPassword(username: string, password: string): Promise<string> {
+    const privateStoreHandle = newPrivateStoreHandle();
+    try {
+      const configManager = this.engine.getManager('ConfigurationManager');
+      const pagesDirectory =
+        typeof configManager.getResolvedDataPath === 'function'
+          ? configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages')
+          : undefined;
+      if (pagesDirectory) {
+        await unlockPrivateStoresWithPassword({ handle: privateStoreHandle, username, password, pagesDirectory });
+        await this.adoptSealedPages(username, privateStoreHandle);
+      }
+    } catch {
+      logger.warn('[private-store] could not unlock stores after login');
+    }
+    return privateStoreHandle;
+  }
+
+  // ── Two-step sign-in (#1523) ────────────────────────────────────────────
+
+  /** AuthManager is registered before any route serves; its absence is a wiring fault, not a sign-in outcome. */
+  private authManagerFor2Step(): AuthManager {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    if (!authManager) throw new Error('AuthManager is not available');
+    return authManager;
+  }
+
+  /** The pending sign-in for this browser, or null (expired, finished, another browser). */
+  private pendingFor(req: Request): PendingSignIn | null {
+    const binding = (req.cookies as Record<string, string> | undefined)?.[TWO_STEP_COOKIE];
+    return this.authManagerFor2Step().pendingSignIn(req.session?.pendingSignIn, binding);
+  }
+
+  private expiredSignIn(res: Response): void {
+    res.redirect('/login?error=' + encodeURIComponent('That sign-in expired. Sign in again.'));
+  }
+
+  /** GET /login/second-factor — choose an enrolled second factor, or wait for one already sent. */
+  async secondFactorPage(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    if (!pending) { this.expiredSignIn(res); return; }
+    const authManager = this.authManagerFor2Step();
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('login-second-factor', {
+      ...commonData,
+      title: 'Confirm your sign-in',
+      factors: authManager.secondFactorsFor(pending.username),
+      sent: Boolean(pending.lastSentAt),
+      notice: typeof req.query.notice === 'string' ? req.query.notice : ''
+    });
+  }
+
+  /** POST /login/second-factor/email — send the approval link. */
+  async secondFactorSendEmail(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    if (!pending) { this.expiredSignIn(res); return; }
+    const outcome = await this.authManagerFor2Step().sendEmailApproval(pending.handle, pending.binding);
+    const notice = outcome === 'too-soon' ? 'A link was sent less than a minute ago.' : outcome === 'unavailable' ? 'Email is not available right now.' : '';
+    res.redirect('/login/second-factor' + (notice ? `?notice=${encodeURIComponent(notice)}` : ''));
+  }
+
+  /** GET /login/second-factor/status — the waiting page asks whether the link was approved. */
+  secondFactorStatus(req: Request, res: Response): void {
+    const pending = this.pendingFor(req);
+    res.set('Cache-Control', 'no-store');
+    if (!pending) { res.json({ state: 'expired' }); return; }
+    res.json({ state: pending.denied ? 'denied' : pending.approved ? 'approved' : 'waiting' });
+  }
+
+  /** POST /login/second-factor/complete — the approved sign-in becomes a session, with both factors. */
+  async secondFactorComplete(req: Request, res: Response): Promise<void> {
+    const pending = this.pendingFor(req);
+    const authManager = this.authManagerFor2Step();
+    const done = pending ? authManager.completeTwoStep(pending.handle, pending.binding) : null;
+    if (!done) { res.redirect('/login/second-factor'); return; }
+    const redirect = safeRedirect(req.session.pendingRedirect);
+    await this.regenerateSession(req); // #1043
+    req.session.username = done.result.username;
+    req.session.isAuthenticated = true;
+    this.stampSignIn(req, done.result);
+    await this.stampSessionGeneration(req);
+    if (done.privateStoreHandle) req.session.privateStoreHandle = done.privateStoreHandle;
+    await this.auditAuthentication(req, done.result.username, 'success', 'password and email link');
+    logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
+    res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
+    req.session.save((err) => {
+      if (err) { res.redirect('/login?error=Session save failed'); return; }
+      res.redirect(redirect);
+    });
+  }
+
+  /** POST /login/second-factor/cancel — abandon the waiting sign-in. */
+  secondFactorCancel(req: Request, res: Response): void {
+    const pending = this.pendingFor(req);
+    if (pending) this.authManagerFor2Step().dropPending(pending.handle);
+    delete req.session.pendingSignIn;
+    res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
+    res.redirect('/login');
+  }
+
+  /**
+   * GET /login/approve?t= — the emailed link opens this page, on any device.
+   * Opening it changes nothing (mail scanners open links); the buttons do.
+   */
+  async approvePage(req: Request, res: Response): Promise<void> {
+    const token = typeof req.query.t === 'string' ? req.query.t : '';
+    const details = token ? this.authManagerFor2Step().approvalDetails(token) : null;
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('login-approve', { ...commonData, title: 'Approve a sign-in', token, details, outcome: '' });
+  }
+
+  /** POST /login/approve — Approve, or "This wasn't me". */
+  async approveDecision(req: Request, res: Response): Promise<void> {
+    const body = req.body as { t?: unknown; decision?: unknown };
+    const token = typeof body.t === 'string' ? body.t : '';
+    const authManager = this.authManagerFor2Step();
+    let outcome: 'approved' | 'refused' | 'expired';
+    if (body.decision === 'approve') {
+      const who = authManager.approveByToken(token);
+      outcome = who ? 'approved' : 'expired';
+      if (who) await this.auditAuthentication(req, who, 'success', 'second factor approved by email link');
+    } else {
+      const who = authManager.denyByToken(token);
+      outcome = who ? 'refused' : 'expired';
+      if (who) {
+        // A failed factor is a failed sign-in (#1523): counted, and recorded as one.
+        await this.recordFailedSecret(req, who, 'sign-in refused by the account holder at the email link');
+        logger.warn(`🔒 [two-step] ${who} refused a waiting sign-in — the password may be known to someone else`);
+      }
+    }
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('login-approve', { ...commonData, title: 'Approve a sign-in', token: '', details: null, outcome });
+  }
+
+  /** POST /profile/second-factor/email — enrol the account's email as a second factor (account-security, step-up). */
+  async enrolEmailSecondFactor(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    try {
+      const user = wikiContext.userContext;
+      const outcome = await this.authManagerFor2Step().startEmailFactorEnrolment(user, String(user.username));
+      const message = {
+        sent: 'success=' + encodeURIComponent('Check your email and open the link to finish.'),
+        'no-email': 'error=' + encodeURIComponent('Add an email address to your profile first.'),
+        unavailable: 'error=' + encodeURIComponent('Email is not available on this site.'),
+        already: 'success=' + encodeURIComponent('Your email already approves your sign-ins.')
+      }[outcome];
+      res.redirect(`/profile?${message}`);
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}`);
+    }
+  }
+
+  /** GET /profile/second-factor/email/confirm?t= — the emailed link; signed in as the same person, it finishes enrolment. */
+  async confirmEmailSecondFactor(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const token = typeof req.query.t === 'string' ? req.query.t : '';
+    const ok = await this.authManagerFor2Step().confirmEmailFactorEnrolment(wikiContext.userContext as never, token).catch(() => false);
+    res.redirect(`/profile?${ok ? 'success=' + encodeURIComponent('Your email now approves your sign-ins.') : 'error=' + encodeURIComponent('That link has expired or was for another account.')}`);
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
       const { username, password } = req.body;
@@ -7150,6 +7326,26 @@ ${panes}
       // a legitimate user nothing.
       if (throttle) keys.forEach((k) => throttle.recordSuccess(k));
 
+      // #1523: a person with a second factor enrolled signs in in two steps.
+      // The password has passed; no session yet. The keys it opens are held
+      // with the pending sign-in until the second factor completes it.
+      const signedInAs = result.username || username;
+      if (authManager?.secondFactorsFor?.(signedInAs).length) {
+        const binding = randomBytes(24).toString('base64url');
+        const handle = authManager.beginTwoStep(result, {
+          binding,
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+          privateStoreHandle: typeof password === 'string' && password ? await this.unlockStoresWithPassword(signedInAs, password) : undefined
+        });
+        await this.auditAuthentication(req, signedInAs, 'success', 'password; waiting for a second factor');
+        res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
+        req.session.pendingSignIn = handle;
+        req.session.pendingRedirect = redirect;
+        req.session.save(() => res.redirect('/login/second-factor'));
+        return;
+      }
+
       // #1115: the success half. A trail with only failures cannot answer
       // "did the attacker eventually get in", which is the question that
       // matters after a run of them.
@@ -7168,28 +7364,7 @@ ${panes}
       // the session id, never express-session JSON, never on PageManager. The
       // handle rides on the session and on the request subject (#1382).
       if (typeof password === 'string' && password) {
-        const privateStoreHandle = newPrivateStoreHandle();
-        req.session.privateStoreHandle = privateStoreHandle;
-        try {
-          const pagesDirectory =
-            typeof configManager.getResolvedDataPath === 'function'
-              ? configManager.getResolvedDataPath(
-                'ngdpbase.page.provider.filesystem.storagedir',
-                './data/pages'
-              )
-              : undefined;
-          if (pagesDirectory) {
-            await unlockPrivateStoresWithPassword({
-              handle: privateStoreHandle,
-              username: result.username || username,
-              password,
-              pagesDirectory
-            });
-            await this.adoptSealedPages(result.username || username, privateStoreHandle);
-          }
-        } catch {
-          logger.warn('[private-store] could not unlock stores after login');
-        }
+        req.session.privateStoreHandle = await this.unlockStoresWithPassword(result.username || username, password);
       }
 
       logger.info(`👤 User logged in: ${result.username || username}`);
@@ -8281,6 +8456,10 @@ ${panes}
       const passkeyHost = authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null;
       // #1601: the apps and devices approved through /oidc; null when the provider is off.
       const approvedApps = currentUser?.username ? await this.approvedAppsFor(currentUser.username) : null;
+      // #1523: offer the email second factor where it can work and is not enrolled yet.
+      const offerEmailSecondFactor = Boolean(currentUser?.username
+        && authManagerForProfile?.emailLinksAvailable?.()
+        && !authManagerForProfile.secondFactorsFor?.(currentUser.username).some((f: { id: string }) => f.id === 'email-link'));
       // The password is a sign-in method too; the card lists it beside the credentials.
       const hasPassword = currentUser?.username
         ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
@@ -8292,6 +8471,7 @@ ${panes}
         credentials, // #1524
         passkeyHost, // #448
         approvedApps, // #1601
+        offerEmailSecondFactor, // #1523
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
@@ -15465,6 +15645,16 @@ ${panes}
     app.get('/auth/passkey/register/options', (req: Request, res: Response) => { void this.passkeyRegisterOptions(req, res); });
     app.post('/auth/passkey/register/verify', (req: Request, res: Response) => { void this.passkeyRegisterVerify(req, res); });
     // #1525: step-up's prompt and its two ways to answer.
+    // #1523: two-step sign-in.
+    app.get('/login/second-factor', (req: Request, res: Response) => { void this.secondFactorPage(req, res); });
+    app.post('/login/second-factor/email', (req: Request, res: Response) => { void this.secondFactorSendEmail(req, res); });
+    app.get('/login/second-factor/status', (req: Request, res: Response) => this.secondFactorStatus(req, res));
+    app.post('/login/second-factor/complete', (req: Request, res: Response) => { void this.secondFactorComplete(req, res); });
+    app.post('/login/second-factor/cancel', (req: Request, res: Response) => this.secondFactorCancel(req, res));
+    app.get('/login/approve', (req: Request, res: Response) => { void this.approvePage(req, res); });
+    app.post('/login/approve', (req: Request, res: Response) => { void this.approveDecision(req, res); });
+    app.post('/profile/second-factor/email', (req: Request, res: Response) => { void this.enrolEmailSecondFactor(req, res); });
+    app.get('/profile/second-factor/email/confirm', (req: Request, res: Response) => { void this.confirmEmailSecondFactor(req, res); });
     app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
     app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
     app.get('/auth/passkey/reauth/options', (req: Request, res: Response) => { void this.passkeyReauthOptions(req, res); });

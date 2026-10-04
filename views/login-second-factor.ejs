@@ -1,0 +1,49 @@
+<%- include('header', { pageName: '' }) %>
+<%# #1523 — the second step of a sign-in: the password passed, no session yet. The
+    person picks one of their enrolled second factors; for an email link, this page
+    then waits and checks back until the link is approved on any device. %>
+<div class="container-fluid">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      <div class="card mt-5">
+        <div class="card-header text-center"><h4 class="mb-0">Confirm your sign-in</h4></div>
+        <div class="card-body">
+          <% if (notice) { %><div class="alert alert-info small"><%= notice %></div><% } %>
+
+          <% if (!sent) { %>
+            <p>Your password was right. Confirm it is you with one of your sign-in methods:</p>
+            <% factors.forEach(function (f) { %>
+              <% if (f.id === 'email-link') { %>
+              <form method="POST" action="/login/second-factor/email" class="mb-2">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-envelope"></i> Send a link to <%= f.target %></button>
+              </form>
+              <% } %>
+            <% }) %>
+          <% } else { %>
+            <div data-second-factor-wait>
+              <p><i class="fas fa-envelope-open-text"></i> We sent a link to your email. Open it on any device and press <strong>Approve</strong>. This page continues by itself.</p>
+              <div class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></div>
+              <span class="small text-muted ms-1" data-second-factor-status>Waiting for approval…</span>
+            </div>
+            <form method="POST" action="/login/second-factor/complete" class="d-none" data-second-factor-complete>
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            </form>
+            <form method="POST" action="/login/second-factor/email" class="mt-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn btn-sm btn-link p-0">Send the link again</button>
+            </form>
+            <script src="/js/second-factor.js" defer></script>
+          <% } %>
+
+          <form method="POST" action="/login/second-factor/cancel" class="mt-3">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Cancel</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>

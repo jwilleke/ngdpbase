@@ -1,0 +1,45 @@
+<%- include('header', { pageName: '' }) %>
+<%# #1523 / #1532 — the page the emailed link opens, on any device. Opening it changes
+    nothing (mail scanners open links); the buttons decide. %>
+<div class="container-fluid">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="card mt-5">
+        <div class="card-header text-center"><h4 class="mb-0">Approve a sign-in</h4></div>
+        <div class="card-body">
+          <% if (outcome === 'approved') { %>
+            <div class="alert alert-success mb-0">Approved. Go back to the window where you signed in; it continues by itself.</div>
+          <% } else if (outcome === 'refused') { %>
+            <div class="alert alert-warning mb-0">Refused. That sign-in will not complete. Someone may know your password: change it now.</div>
+          <% } else if (!details) { %>
+            <div class="alert alert-secondary mb-0">This link has expired or was already used.</div>
+          <% } else { %>
+            <p>Someone signed in as <strong><%= details.username %></strong> with the right password and is waiting for you to approve it.</p>
+            <ul class="small text-muted">
+              <li>When: <%= new Date(details.requestedAt).toISOString().slice(0, 16).replace('T', ' ') %> UTC</li>
+              <% if (details.ip) { %><li>From: <%= details.ip %></li><% } %>
+              <% if (details.userAgent) { %><li>Browser: <%= details.userAgent %></li><% } %>
+            </ul>
+            <p>Approve only if this was you, just now.</p>
+            <div class="d-flex gap-2">
+              <form method="POST" action="/login/approve" class="flex-fill">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="t" value="<%= token %>">
+                <input type="hidden" name="decision" value="approve">
+                <button type="submit" class="btn btn-primary w-100">Approve</button>
+              </form>
+              <form method="POST" action="/login/approve" class="flex-fill">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="t" value="<%= token %>">
+                <input type="hidden" name="decision" value="deny">
+                <button type="submit" class="btn btn-outline-danger w-100">This wasn't me</button>
+              </form>
+            </div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>
