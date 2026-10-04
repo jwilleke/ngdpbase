@@ -30,6 +30,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
   let views: string;
   let session: FakeSession;
   let manager: OidcManager;
+  let audited: Array<Record<string, unknown>>;
   let app: express.Express;
   const saved: Record<string, string | undefined> = {};
 
@@ -44,6 +45,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
     for (const v of ['oidc-consent', 'error']) fs.writeFileSync(path.join(views, `${v}.ejs`), '');
     for (const name of ENV_NAMES) { saved[name] = process.env[name]; delete process.env[name]; }
     session = {};
+    audited = [];
 
     const custom: Record<string, unknown> = {
       'oidc-auth-server.enabled': true,
@@ -64,7 +66,8 @@ describe('OIDC sign-in bridge (#1572)', () => {
         getBaseURL: () => BASE,
         getInstanceDataFolder: () => dir
       },
-      UserManager: { getUser: (u: string) => Promise.resolve(users[u]) }
+      UserManager: { getUser: (u: string) => Promise.resolve(users[u]) },
+      AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audited.push(e); return Promise.resolve('evt'); } }
     };
     manager = new OidcManager({ getManager: (n: string) => managers[n] ?? null });
     await manager.initialize();
@@ -158,6 +161,12 @@ describe('OIDC sign-in bridge (#1572)', () => {
     expect(idToken).toMatchObject({ sub: 'jim', acr: 'phr', amr: ['hwk', 'user'], iss: `${BASE}/oidc` });
     expect(idToken).not.toHaveProperty('roles');
 
+    // #1575: the provider's events land in ngdpbase's audit log, as the account, about the app.
+    await new Promise((r) => setImmediate(r));
+    expect(audited).toContainEqual(expect.objectContaining({ eventType: 'oidcauthorize-allow', user: 'jim', resource: 'app', resourceType: 'oidc-client', result: 'success' }));
+    expect(audited).toContainEqual(expect.objectContaining({ eventType: 'oidctoken-issue', resource: 'app', metadata: expect.objectContaining({ grantType: 'authorization_code' }) }));
+    expect(JSON.stringify(audited)).not.toContain(code);
+
     // Asked once per app: the same app again goes straight back with a code.
     const again = await follow(agent, (await authorize(agent)).res);
     expect(codeFrom(again).searchParams.get('code')).toBeTruthy();
@@ -171,6 +180,21 @@ describe('OIDC sign-in bridge (#1572)', () => {
     const back = await follow(agent, await agent.post(`/oidc/interaction/${uid}/deny`));
     expect(codeFrom(back).searchParams.get('error')).toBe('access_denied');
     expect(codeFrom(back).searchParams.get('code')).toBeNull();
+  });
+
+  test('a code presented twice is recorded as oidctoken-reuse, high severity (#1575)', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const { res, verifier } = await authorize(agent);
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const code = codeFrom(back).searchParams.get('code');
+    const exchange = () => agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier });
+    expect((await exchange()).status).toBe(200);
+    expect((await exchange()).status).toBe(400);
+    await new Promise((r) => setImmediate(r));
+    expect(audited).toContainEqual(expect.objectContaining({ eventType: 'oidctoken-reuse', severity: 'high', result: 'failure' }));
   });
 
   test('prompt=login against an older sign-in is refused with login_required, not looped', async () => {

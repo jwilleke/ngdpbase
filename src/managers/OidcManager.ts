@@ -31,6 +31,9 @@ import type UserManager from './UserManager.js';
 import FileOidcAdapterStore from '../providers/FileOidcAdapter.js';
 import { ensureInstanceEnvSecret, nodeInstanceEnvFs } from '../utils/instanceEnvSecret.js';
 import logger from '../utils/logger.js';
+import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
+import type { AuditEvent as OidcAuditEvent } from '@jwilleke/oidc-auth-server';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
 export const OIDC_PREFIX = 'oidc-auth-server.';
@@ -84,6 +87,24 @@ export function operatorOidcConfig(custom: Record<string, unknown>): { config: R
   }
   return { config, problems };
 }
+
+/**
+ * How each provider event is recorded (#1575): its ngdpbase name, whether it
+ * is a success or a failure, and how much it matters. Referenced through
+ * AUDIT_EVENT so lint:audit sees every emitter.
+ */
+const OIDC_AUDIT: Record<OidcAuditEvent['event'], { name: AuditEventName; result: 'success' | 'failure'; severity: 'low' | 'medium' | 'high' }> = {
+  'oidcauthorize-allow': { name: AUDIT_EVENT.OIDCAUTHORIZE_ALLOW, result: 'success', severity: 'low' },
+  'oidcauthorize-deny': { name: AUDIT_EVENT.OIDCAUTHORIZE_DENY, result: 'failure', severity: 'medium' },
+  'oidctoken-issue': { name: AUDIT_EVENT.OIDCTOKEN_ISSUE, result: 'success', severity: 'low' },
+  'oidctoken-error': { name: AUDIT_EVENT.OIDCTOKEN_ERROR, result: 'failure', severity: 'low' },
+  // A used code or refresh token presented again is the replay signature.
+  'oidctoken-reuse': { name: AUDIT_EVENT.OIDCTOKEN_REUSE, result: 'failure', severity: 'high' },
+  'oidctoken-revoke': { name: AUDIT_EVENT.OIDCTOKEN_REVOKE, result: 'success', severity: 'low' },
+  'oidcgrant-revoke': { name: AUDIT_EVENT.OIDCGRANT_REVOKE, result: 'success', severity: 'medium' },
+  'oidcuserinfo-error': { name: AUDIT_EVENT.OIDCUSERINFO_ERROR, result: 'failure', severity: 'low' },
+  'oidcserver-error': { name: AUDIT_EVENT.OIDCSERVER_ERROR, result: 'failure', severity: 'high' }
+};
 
 /** One RSA signing key as a JWKS, the shape OIDC_AUTH_SERVER_JWKS holds. */
 export function generateJwks(): string {
@@ -145,6 +166,7 @@ export class OidcManager extends BaseManager {
         ...this.pkg.optionsFromConfig(loaded, {
           interactionUrl: (uid: string) => `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${uid}`,
           findAccount: (accountId: string) => this.findAccount(accountId),
+          audit: (event: OidcAuditEvent) => this.recordEvent(event),
           adapter: this.store.adapterFactory()
         }),
         issuer: this.issuer,
@@ -233,6 +255,32 @@ export class OidcManager extends BaseManager {
     const claims: Record<string, unknown> = { preferred_username: user.username, name: user.displayName || user.username };
     if (user.email) claims.email = user.email;
     return claims;
+  }
+
+  /**
+   * Record one provider event in ngdpbase's audit log (#1575). The package
+   * never passes a token, code or secret; the person is the account, the
+   * resource is the app. Returns the promise so the package can count a
+   * report the sink failed to take.
+   */
+  async recordEvent(event: OidcAuditEvent): Promise<void> {
+    const how = OIDC_AUDIT[event.event];
+    if (!how) return;
+    const metadata: Record<string, unknown> = {};
+    for (const key of ['grantId', 'grantType', 'scope', 'tokenKind', 'error', 'errorDescription', 'errorDetail', 'userAgent', 'at'] as const) {
+      if (event[key] !== undefined) metadata[key] = event[key];
+    }
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: how.name,
+      user: event.accountId ?? 'anonymous',
+      ipAddress: event.ip,
+      action: event.event,
+      result: how.result,
+      severity: how.severity,
+      resource: event.clientId,
+      resourceType: 'oidc-client',
+      metadata
+    });
   }
 
   async shutdown(): Promise<void> {

@@ -542,6 +542,15 @@ audited.
 | `search-page` | Page search; not recorded, read volume | continue | no |
 | `user-read` | User profile read; not recorded, read volume | continue | no |
 | `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
+| `oidcauthorize-allow` | OpenID Connect: an app's sign-in request was allowed and a code issued (#1575) | continue | yes |
+| `oidcauthorize-deny` | OpenID Connect: an app's sign-in request was refused (denied consent, sign-in required, bad request) | continue | yes |
+| `oidctoken-issue` | OpenID Connect: tokens issued to an app, with the grant type that earned them | continue | yes |
+| `oidctoken-error` | OpenID Connect: the token endpoint refused an app's request | continue | yes |
+| `oidctoken-reuse` | OpenID Connect: a used code or refresh token was presented again; its grant was revoked (possible replay) | continue | yes |
+| `oidctoken-revoke` | OpenID Connect: an access or refresh token was destroyed | continue | yes |
+| `oidcgrant-revoke` | OpenID Connect: an app's grant and every token under it were revoked | continue | yes |
+| `oidcuserinfo-error` | OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account) | continue | yes |
+| `oidcserver-error` | OpenID Connect: the provider failed while handling a request | continue | yes |
 <!-- AUTO:audit-events END -->
 
 #### Retired names
