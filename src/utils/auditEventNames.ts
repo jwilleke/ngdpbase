@@ -81,7 +81,25 @@ export const AUDIT_EVENT = {
   ASSET_READ: 'asset-read',
   SEARCH_PAGE: 'search-page',
   USER_READ: 'user-read',
-  ADMIN_READ: 'admin-read'
+  ADMIN_READ: 'admin-read',
+  /**
+   * #1575: the embedded OpenID Connect provider's events, reported by the
+   * oidc-auth-server package through OidcManager. The names are the package's
+   * own (`oidc` prefix, so none collides with the names above; its #33);
+   * `oidcAuditNames.test.ts` holds this list equal to the package's exported
+   * `AUDIT_EVENT_NAMES`, so a rename there fails here. Every one is
+   * on-failure continue: the package reports after the action has happened,
+   * so a record cannot be made a condition of it.
+   */
+  OIDCAUTHORIZE_ALLOW: 'oidcauthorize-allow',
+  OIDCAUTHORIZE_DENY: 'oidcauthorize-deny',
+  OIDCTOKEN_ISSUE: 'oidctoken-issue',
+  OIDCTOKEN_ERROR: 'oidctoken-error',
+  OIDCTOKEN_REUSE: 'oidctoken-reuse',
+  OIDCTOKEN_REVOKE: 'oidctoken-revoke',
+  OIDCGRANT_REVOKE: 'oidcgrant-revoke',
+  OIDCUSERINFO_ERROR: 'oidcuserinfo-error',
+  OIDCSERVER_ERROR: 'oidcserver-error'
 } as const;
 
 /** A name the code may emit. */

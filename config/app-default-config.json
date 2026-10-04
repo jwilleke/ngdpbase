@@ -590,6 +590,42 @@
       "on-failure": "continue",
       "enabled": false,
       "description": "Admin dashboard read; not recorded, read volume"
+    },
+    "oidcauthorize-allow": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: an app's sign-in request was allowed and a code issued (#1575)"
+    },
+    "oidcauthorize-deny": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: an app's sign-in request was refused (denied consent, sign-in required, bad request)"
+    },
+    "oidctoken-issue": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: tokens issued to an app, with the grant type that earned them"
+    },
+    "oidctoken-error": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: the token endpoint refused an app's request"
+    },
+    "oidctoken-reuse": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: a used code or refresh token was presented again; its grant was revoked (possible replay)"
+    },
+    "oidctoken-revoke": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: an access or refresh token was destroyed"
+    },
+    "oidcgrant-revoke": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: an app's grant and every token under it were revoked"
+    },
+    "oidcuserinfo-error": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account)"
+    },
+    "oidcserver-error": {
+      "on-failure": "continue",
+      "description": "OpenID Connect: the provider failed while handling a request"
     }
   },
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",

@@ -64,6 +64,15 @@ Refused rather than faked, until step-up exists ([#1525](https://github.com/jwil
 - A request for a fresh sign-in (`prompt=login`, or a `max_age` the session's sign-in is older than) gets `login_required`. A sign-in made after the request began counts as fresh, so someone sent to `/login` comes back and continues.
 - Device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)) gets `access_denied`.
 
+## Audit
+
+Every event the provider reports is recorded in ngdpbase's audit log ([#1575](https://github.com/jwilleke/ngdpbase/issues/1575)), under the package's own names. They're declared in `ngdpbase.audit.events` and `AUDIT_EVENT`, and a test holds them equal to the package's `AUDIT_EVENT_NAMES`.
+
+- __Who and what:__ the record's user is the account (or `anonymous` when there is none yet), its resource the app (`resourceType: oidc-client`).
+- __Details kept:__ metadata carries the grant, grant type, scope, token kind and error. The package never passes a token, code or secret.
+- __On failure:__ every event is `continue`. The package reports after the action has happened, so a record cannot be made a condition of it.
+- __Severity:__ a used code or refresh token presented again (`oidctoken-reuse`, the replay signature) and a server error are high. A refused request is medium or low.
+
 ## Not yet
 
-Audit ([#1575](https://github.com/jwilleke/ngdpbase/issues/1575)), accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)), and revoking an account's grants when its password changes.
+Accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)), and ending app access when a password changes ([#1592](https://github.com/jwilleke/ngdpbase/issues/1592)).
