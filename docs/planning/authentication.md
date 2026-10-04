@@ -8,41 +8,64 @@ Mostly an index: where an issue holds a design, this page points at it and says 
 
 ## Where it stands
 
-`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in still uses __one factor__.
+`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in is still __one step__: a password, a passkey, a magic link or an identity provider. Two-step sign-in (a second factor) is not built; roles that need more than the sign-in gave step down instead.
 
-__Implementation status__, checked against the code on 2026-10-03, not against the issues:
+__Implementation status__, checked against the code on 2026-10-04, not against the issues:
 
 | Capability | Issue | Status |
 | --- | --- | --- |
 | Factor configuration: `ngdpbase.auth.factors`; each provider declares `amr` / `aal` / `acr`; config may lower, never raise; `assess()` | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1551](https://github.com/jwilleke/ngdpbase/pull/1551)) |
 | The session records how it signed in (`req.session.signIn`) on every sign-in path | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1566](https://github.com/jwilleke/ngdpbase/pull/1566)) |
-| Per-role `required-aal` (every role AAL1, `anonymous` none); boot refuses a level no available factor reaches | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1568](https://github.com/jwilleke/ngdpbase/pull/1568)) |
-| The second-factor flow (password then a second factor) and its single-use pending handle | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started; `required-aal` is enforced by roles stepping down |
-| Known devices | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started |
-| Credentials store: passkeys, TOTP, email/phone, devices; signed rows; owner-only file; no passwords | [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) | Built ([#1564](https://github.com/jwilleke/ngdpbase/pull/1564)); the profile's "Sign-in methods" list with remove comes with passkeys ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569)) |
-| Session idle timeout: site value, a shorter one per role, the warning before sign-out | [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) | Built ([#1552](https://github.com/jwilleke/ngdpbase/pull/1552), [#1567](https://github.com/jwilleke/ngdpbase/pull/1567)); the posture note at or above `max-age` is not |
-| Passkeys / WebAuthn: enrol from the profile, sign in from the login page, list and remove | [#448](https://github.com/jwilleke/ngdpbase/issues/448) | Built ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569)) |
+| Per-role `required-aal`; boot refuses a level no available factor reaches | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1568](https://github.com/jwilleke/ngdpbase/pull/1568)) |
 | `admin` / `user-admin` at AAL2; roles step down in a weaker session, with a banner; `profile-manage` kept through `vault-owner` | [#448](https://github.com/jwilleke/ngdpbase/issues/448), [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Built ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569)) |
-| TOTP | [#421](https://github.com/jwilleke/ngdpbase/issues/421) | Not started |
-| Email link as an additional factor | [#1527](https://github.com/jwilleke/ngdpbase/issues/1527) | Not started (the magic link exists as a sign-in) |
-| Twilio Verify; Web Push | [#1528](https://github.com/jwilleke/ngdpbase/issues/1528), [#1550](https://github.com/jwilleke/ngdpbase/issues/1550) | Not started |
-| Approval page for a message second factor | [#1532](https://github.com/jwilleke/ngdpbase/issues/1532) | Not started |
-| Step-up re-authentication | [#1525](https://github.com/jwilleke/ngdpbase/issues/1525) | Permissions merged (`account-security`, `config-manage`, `secret-reveal`; `profile-manage` stays for everyday self-service). The gate is on a branch: `ngdpbase.auth.step-up` (5 minutes; account-security, config-manage, secret-reveal, token-mint), `/auth/reauth` with passkey or password, delegated credentials refused, audited |
-| Communication channels as a profile setting | [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) | Not started |
-| Authorization server: the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package | — | Built in its own repo: the provider factory, the host sign-in seam, hashed token storage, UserInfo, RFC 8628 with a host approval page, refresh rotation with reuse detection, client registration with SSRF-guarded client ID metadata, the audit hook, an issuer mounted under a path with cookies scoped to it (its #32), and the issuer's host pinned against a forged Host header. On npmjs, public, published by trusted publishing from its release tags; ngdpbase pins 0.3.1 |
-| RFC 8628 device authorization and OIDC UserInfo in ngdpbase | [#1526](https://github.com/jwilleke/ngdpbase/issues/1526), [#1529](https://github.com/jwilleke/ngdpbase/issues/1529) | Built under epic [#1578](https://github.com/jwilleke/ngdpbase/issues/1578), off by default. `OidcManager` at `<base-url>/oidc` with its store and keys; the sign-in bridge and consent page; audit; a password change ends app access; ngdpbase's API accepts the provider's tokens as a delegation; device approval (when the device flow is enabled) asks `account-security` with step-up (#1577, on a branch). Not built: a profile list of approved apps and devices with revoke |
-| Account recovery | [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) | Recovery words exist ([#1451](https://github.com/jwilleke/ngdpbase/issues/1451)); the epic's own work is not started |
+| Credentials store: signed rows, owner-only file, no passwords; the password counts as a way in; Sign-in methods lists it | [#1524](https://github.com/jwilleke/ngdpbase/issues/1524) | Built ([#1564](https://github.com/jwilleke/ngdpbase/pull/1564), [#1585](https://github.com/jwilleke/ngdpbase/pull/1585)). TOTP, email/phone and device rows wait for their providers |
+| Passkeys / WebAuthn: enrol, sign in, list, remove; a required name pre-filled from the device, rename | [#448](https://github.com/jwilleke/ngdpbase/issues/448), [#1591](https://github.com/jwilleke/ngdpbase/issues/1591) | Built ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569), [#1587](https://github.com/jwilleke/ngdpbase/pull/1587), [#1590](https://github.com/jwilleke/ngdpbase/pull/1590)) |
+| Session idle timeout: site value, a shorter one per role, the warning before sign-out | [#1546](https://github.com/jwilleke/ngdpbase/issues/1546) | Built ([#1552](https://github.com/jwilleke/ngdpbase/pull/1552), [#1567](https://github.com/jwilleke/ngdpbase/pull/1567)); the posture note at or above `max-age` is not |
+| Step-up: `account-security`, `config-manage`, `secret-reveal`, `token-mint` ask for a fresh factor (5 minutes, at the roles' level) at `/auth/reauth`; delegated credentials refused; audited | [#1525](https://github.com/jwilleke/ngdpbase/issues/1525) | Built ([#1598](https://github.com/jwilleke/ngdpbase/pull/1598), [#1599](https://github.com/jwilleke/ngdpbase/pull/1599)); in review |
+| One definition of a password change (`setPassword`): hash, end other sessions, record when; the offline reset script uses it | [#1592](https://github.com/jwilleke/ngdpbase/issues/1592) | Built ([#1596](https://github.com/jwilleke/ngdpbase/pull/1596)) |
+| Authorization server: the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package | — | Built in its own repo and published to npmjs: code flow with PKCE, UserInfo, RFC 8628, refresh rotation with reuse detection, hashed token storage, an issuer under a path with cookies scoped to it, the issuer's host pinned against a forged Host header, the sign-in (`acr`, `amr`, `authTime`) passed to the host's account lookup. ngdpbase pins 0.4.0 |
+| OpenID Connect provider at `<base-url>/oidc` (`OidcManager`): store, generated keys, the sign-in bridge and consent page, audit, a password change ends app access, ngdpbase's API accepts its tokens as a delegation, device approval with step-up, Profile → Apps and devices with Revoke | [#1578](https://github.com/jwilleke/ngdpbase/issues/1578) ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526), [#1529](https://github.com/jwilleke/ngdpbase/issues/1529)) | Built, off by default ([#1584](https://github.com/jwilleke/ngdpbase/pull/1584), [#1589](https://github.com/jwilleke/ngdpbase/pull/1589), [#1595](https://github.com/jwilleke/ngdpbase/pull/1595), [#1596](https://github.com/jwilleke/ngdpbase/pull/1596), [#1597](https://github.com/jwilleke/ngdpbase/pull/1597), [#1600](https://github.com/jwilleke/ngdpbase/pull/1600), [#1602](https://github.com/jwilleke/ngdpbase/pull/1602)); the last slices in review |
+| The second-factor flow (password, then a second factor) and its single-use pending handle | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started; `required-aal` is enforced by roles stepping down |
+| Known devices | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started; needs the second-factor flow |
 
 Providers in the code (`src/providers/`):
 
 - __Password__ (`PasswordAuthProvider`), always registered
+- __Passkey__ (`PasskeyAuthProvider`), [#448](https://github.com/jwilleke/ngdpbase/issues/448); registered when the base-url is explicit and https (or localhost)
 - __Magic link__ (`MagicLinkAuthProvider`), [#396](https://github.com/jwilleke/ngdpbase/issues/396); passwordless registration [#1026](https://github.com/jwilleke/ngdpbase/issues/1026)
 - __Google OIDC__ (`GoogleOIDCProvider`), [#447](https://github.com/jwilleke/ngdpbase/issues/447)
 - __Cloudflare Access JWT__ (`CloudflareAccessAuthProvider`), [#649](https://github.com/jwilleke/ngdpbase/issues/649)
 - __Authentik bearer JWT__ (`AuthentikBearerAuthProvider`), for agent ingest, [#818](https://github.com/jwilleke/ngdpbase/issues/818)
 - __Agent tokens__ (`AgentTokenAuthProvider`), user-delegated scoped bearer credentials, [#946](https://github.com/jwilleke/ngdpbase/issues/946)
+- __OIDC access tokens__ (`OidcBearerAuthProvider`), tokens from this instance's own `/oidc` on its API, [#1576](https://github.com/jwilleke/ngdpbase/issues/1576)
+
+The bearer middleware tries every provider that declares `acceptsBearer`, in registration order.
 
 Every account is made through `UserManager.createUser`, whichever provider signs the person up ([#1538](https://github.com/jwilleke/ngdpbase/issues/1538) removed the one path around it), and is given `ngdpbase.user.account-roles` there ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)).
+
+### Not yet built, with an issue
+
+Authentication work that has an issue but no code yet, as of 2026-10-04. Status of each is on its issue.
+
+- __Second factors and two-step sign-in__
+  - Password then a second factor, with the single-use pending handle; known devices skip the second step ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523))
+  - TOTP, an authenticator app's code ([#421](https://github.com/jwilleke/ngdpbase/issues/421))
+  - The email link as an additional factor, through the approval page ([#1527](https://github.com/jwilleke/ngdpbase/issues/1527))
+  - Link-based approval of a waiting sign-in from any device ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
+  - Web Push approval to an enrolled device ([#1550](https://github.com/jwilleke/ngdpbase/issues/1550))
+  - Twilio Verify codes ([#1528](https://github.com/jwilleke/ngdpbase/issues/1528))
+- __Message transports and preferences__
+  - SMS / RCS transports epic ([#1549](https://github.com/jwilleke/ngdpbase/issues/1549)): Twilio Messaging ([#1547](https://github.com/jwilleke/ngdpbase/issues/1547)), an Android gateway ([#1548](https://github.com/jwilleke/ngdpbase/issues/1548))
+  - Communication channels as a profile setting, with consent ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533))
+- __Recovery__: account recovery for a lost password, passkey, second factor, known device or private-store keys ([#1545](https://github.com/jwilleke/ngdpbase/issues/1545)); the recovery words exist ([#1451](https://github.com/jwilleke/ngdpbase/issues/1451))
+- __Private stores and sign-in__: strong sign-ins unlock private stores, with PRF passkeys and an opt-in server-held key for AAL2 ([#1594](https://github.com/jwilleke/ngdpbase/issues/1594))
+- __OpenID Connect__: an opt-in `groups` scope from `/oidc`, and one group-to-role mapping for incoming providers ([#1588](https://github.com/jwilleke/ngdpbase/issues/1588))
+- __Sessions__: the posture note when the idle timeout is at or above the session `max-age` ([#1546](https://github.com/jwilleke/ngdpbase/issues/1546))
+
+Not filed yet, noted here so it is not lost:
+
+- An app asking `/oidc` for a fresh sign-in (`prompt=login`, an exceeded `max_age`) still gets `login_required`. The bridge could send the person to `/auth/reauth` now that step-up exists.
+- People cannot see or end their own signed-in browsers ("sign out everywhere else"); only administrators can, in the Session Manager.
 
 ### Done, for the record
 
