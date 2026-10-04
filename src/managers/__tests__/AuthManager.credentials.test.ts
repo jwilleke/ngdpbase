@@ -34,7 +34,14 @@ describe('AuthManager credentials (#1524)', () => {
         getBaseURL: () => 'https://wiki.example.com'
       },
       PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve((granted[s.username] ?? []).includes(action)) },
-      UserManager: { getUser: (u: string) => Promise.resolve(users[u] ?? null) },
+      // The real contract: getUser() never returns the password (it is stripped),
+      // and hasPassword() is the door that sees it. The earlier mock returned
+      // the password from getUser(), so the last-way-in rule passed here while
+      // refusing every real account (#1524).
+      UserManager: {
+        getUser: (u: string) => Promise.resolve(users[u] ? { ...users[u], password: undefined } : null),
+        hasPassword: (u: string) => Promise.resolve(Boolean(users[u] && !users[u].isExternal && users[u].password))
+      },
       AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('evt'); } },
       NotificationManager: { addNotification: (n: Record<string, unknown>) => { notices.push(n); return Promise.resolve('n1'); } }
     };

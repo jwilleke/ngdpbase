@@ -138,6 +138,19 @@ describe('UserManager', () => {
       expect(result.password).toBeUndefined();
     });
 
+    test('hasPassword() sees the hash getUser() strips (#1524)', async () => {
+      userManager.provider.getUser = vi.fn(async (u: string) => ({
+        jim: { username: 'jim', password: 'scrypt$hash', isExternal: false },
+        sso: { username: 'sso', password: 'scrypt$hash', isExternal: true },
+        nopw: { username: 'nopw', password: '', isExternal: false }
+      } as Record<string, unknown>)[u] ?? null);
+      expect(await userManager.getUser('jim')).not.toHaveProperty('password');
+      expect(await userManager.hasPassword('jim')).toBe(true);
+      expect(await userManager.hasPassword('sso')).toBe(false);
+      expect(await userManager.hasPassword('nopw')).toBe(false);
+      expect(await userManager.hasPassword('nobody')).toBe(false);
+    });
+
     test('getUser() should return undefined for null result', async () => {
       userManager.provider.getUser = vi.fn().mockResolvedValue(null);
 

@@ -510,11 +510,10 @@ class AuthManager extends BaseManager {
     return removed;
   }
 
-  /** Whether the account signs in with a password — the field stays on the user record (#1524). */
+  /** Whether the account signs in with a password — UserManager is the door that sees the hash (#1524). */
   private async hasPassword(username: string): Promise<boolean> {
     const userManager = this.engine.getManager<UserManager>('UserManager');
-    const user = await userManager?.getUser(username) as { password?: string; isExternal?: boolean } | null | undefined;
-    return Boolean(user && !user.isExternal && user.password);
+    return (await userManager?.hasPassword(username)) ?? false;
   }
 
   private auditCredentialChange(ctx: PermissionSubject, username: string, action: 'credential-add' | 'credential-remove', row: CredentialRecord): void {

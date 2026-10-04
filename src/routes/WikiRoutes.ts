@@ -285,6 +285,8 @@ interface IComparisonResult {
 
 interface IUserManager {
   getUser(username: string): Promise<UserContext | null>;
+  /** Whether the account has a password of its own (#1524); getUser() strips the hash. */
+  hasPassword(username: string): Promise<boolean>;
   getUsers(): Promise<UserContext[]>;
   // #1204: the actor is recorded at the manager door. Optional until #1179
   // makes the context positional and mandatory.
@@ -8036,12 +8038,17 @@ ${panes}
         ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch(() => []) ?? []
         : [];
       const passkeyHost = authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null;
+      // The password is a sign-in method too; the card lists it beside the credentials.
+      const hasPassword = currentUser?.username
+        ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
+        : false;
 
       res.render('profile', {
         ...commonData,
         title: 'Profile',
         credentials, // #1524
         passkeyHost, // #448
+        hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
