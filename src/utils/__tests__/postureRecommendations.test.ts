@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { enabledEntries } from '../configFiles';
 
 /**
  * #1146 — the recommendation page is advice an operator can actually follow.
@@ -33,7 +34,7 @@ describe('#1146 — the security posture recommendations', () => {
   test('it never names a secret key', () => {
     // Telling an operator to set a credential on a page anyone with page-read
     // can open is not advice worth giving.
-    const secrets = new Set(config['ngdpbase.config.secret-keys'] as string[]);
+    const secrets = new Set(enabledEntries(config['ngdpbase.config.secret-keys']));
     expect([...new Set(named)].filter((k) => secrets.has(k))).toEqual([]);
   });
 

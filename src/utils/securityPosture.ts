@@ -20,6 +20,8 @@
  * See docs/security-posture.md.
  */
 
+import { enabledEntries } from './configFiles.js';
+
 /** The shape of `ConfigurationManager.getProperty`. */
 export type ConfigReader = (key: string, fallback?: unknown) => unknown;
 
@@ -66,9 +68,7 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
   if (!isPlainObject(declared)) return [];
 
   const secretKeys = read(SECRET_KEYS_KEY, []);
-  const secrets = new Set(
-    Array.isArray(secretKeys) ? secretKeys.filter((k): k is string => typeof k === 'string') : []
-  );
+  const secrets = new Set(enabledEntries(secretKeys));
 
   const byGroup = new Map<string, PostureItem[]>();
 

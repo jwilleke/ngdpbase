@@ -87,23 +87,57 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 }
 
 /**
+ * The fields that identify an entry in a list of objects: `id`, or
+ * `authproviderid` for `ngdpbase.auth.factors` (#1523, #1612).
+ */
+const IDENTITY_FIELDS = ['id', 'authproviderid'] as const;
+
+function identityField(arr: unknown[]): string | null {
+  if (arr.length === 0) return null;
+  for (const field of IDENTITY_FIELDS) {
+    if (arr.every((e) => isPlainObject(e) && typeof e[field] === 'string')) return field;
+  }
+  return null;
+}
+
+/**
  * Merge two arrays.
  *
- * If both hold objects with an `id`, merge by id (custom overrides default with
- * the same id and adds new ones). Otherwise the custom array replaces the
- * default entirely — which is why a catalog that an operator may extend one
- * entry at a time is a map, never an array.
+ * If both hold objects that share an identity field (`id`, `authproviderid`),
+ * merge by it: a later entry overrides the same one and adds new ones.
+ * Otherwise the custom array replaces the default entirely — which is why a set
+ * an operator or an add-on may extend one entry at a time is a map, never an
+ * array (#1612).
  */
 export function mergeArrays(defaultArray: unknown[], customArray: unknown[]): unknown[] {
-  const hasIds = (arr: unknown[]): boolean =>
-    arr.length > 0 && isPlainObject(arr[0]) && 'id' in arr[0];
-  if (hasIds(defaultArray) && hasIds(customArray)) {
+  const field = identityField(defaultArray);
+  if (field && identityField(customArray) === field) {
     const merged = new Map<string, unknown>();
-    for (const item of defaultArray) merged.set((item as Record<string, unknown>).id as string, item);
-    for (const item of customArray) merged.set((item as Record<string, unknown>).id as string, item);
+    for (const item of defaultArray) merged.set((item as Record<string, string>)[field], item);
+    for (const item of customArray) merged.set((item as Record<string, string>)[field], item);
     return Array.from(merged.values());
   }
   return customArray;
+}
+
+/**
+ * A set kept as a map of entry → `true` (#1612): any layer — an add-on, the
+ * operator — adds an entry without restating the rest, and `false` removes one
+ * on the record. An array merged onto such a map adds its entries rather than
+ * replacing the map, so a layer written as a list (an older custom config, an
+ * add-on) still extends the set.
+ */
+function isEntryMap(value: unknown): value is Record<string, boolean | null> {
+  return isPlainObject(value)
+    && Object.keys(value).length > 0
+    && Object.values(value).every((v) => typeof v === 'boolean' || v === null);
+}
+
+/** The entries of a set: a map's `true` keys, in order; a legacy array's strings. Anything else is empty. */
+export function enabledEntries(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  if (isPlainObject(value)) return Object.entries(value).filter(([, v]) => v === true).map(([k]) => k);
+  return [];
 }
 
 /**
@@ -111,6 +145,7 @@ export function mergeArrays(defaultArray: unknown[], customArray: unknown[]): un
  *
  * - plain objects: recursively, key by key
  * - arrays: {@link mergeArrays}
+ * - an array of names onto a set map: the names are added (#1612)
  * - `null`: an explicit removal — the custom file cannot express a deletion any other way
  * - `undefined`: skipped
  * - anything else: custom wins
@@ -126,6 +161,9 @@ export function deepMergeObjects(
     if (customValue === undefined) continue;
     else if (customValue === null) result[key] = customValue;
     else if (Array.isArray(customValue) && Array.isArray(defaultValue)) result[key] = mergeArrays(defaultValue, customValue);
+    else if (Array.isArray(customValue) && isEntryMap(defaultValue) && customValue.every((e) => typeof e === 'string')) {
+      result[key] = { ...defaultValue, ...Object.fromEntries(customValue.map((e) => [e, true])) };
+    }
     else if (isPlainObject(customValue) && isPlainObject(defaultValue)) result[key] = deepMergeObjects(defaultValue, customValue);
     else result[key] = customValue;
   }

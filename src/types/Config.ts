@@ -285,7 +285,7 @@ export interface WikiConfig {
    * Tags absent from this list are flagged as unknown on page save.
    * 'wiki' is intentionally excluded — it has no special rendering meaning.
    */
-  'ngdpbase.markup.fenced-code-tags': string[];
+  'ngdpbase.markup.fenced-code-tags': string[] | Record<string, boolean>;
 
   /** Active site theme — folder name under themes/ (e.g. "default") */
   'ngdpbase.theme.active': string;

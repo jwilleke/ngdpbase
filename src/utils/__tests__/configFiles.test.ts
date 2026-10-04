@@ -12,7 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ConfigurationManager from '../../managers/ConfigurationManager';
-import { configFilePaths, deepMergeConfigs, readConfigFilesSync } from '../configFiles';
+import { configFilePaths, deepMergeConfigs, enabledEntries, readConfigFilesSync } from '../configFiles';
 import { loadMergedConfigSync } from '../addonConfigLayer';
 
 let dataDir: string;
@@ -71,6 +71,25 @@ describe('#1214 merging', () => {
     expect(merged.ids).toEqual([{ id: 'p', v: 1 }, { id: 'q', v: 20 }, { id: 'r', v: 3 }]);
     expect(merged.list).toEqual([9]);
     expect(merged.s).toBe('custom');
+  });
+
+  test('#1612 auth factors merge by authproviderid, not wholesale', () => {
+    const merged = deepMergeConfigs(
+      { factors: [{ authproviderid: 'password', enabled: true }, { authproviderid: 'passkey', enabled: true }] },
+      { factors: [{ authproviderid: 'passkey', enabled: false }, { authproviderid: 'totp', enabled: true }] }
+    );
+    expect(merged.factors).toEqual([
+      { authproviderid: 'password', enabled: true },
+      { authproviderid: 'passkey', enabled: false },
+      { authproviderid: 'totp', enabled: true }
+    ]);
+  });
+
+  test('#1612 enabledEntries reads a set map or a list, and nothing else', () => {
+    expect(enabledEntries({ a: true, b: false, c: true })).toEqual(['a', 'c']);
+    expect(enabledEntries(['a', 3, 'b'])).toEqual(['a', 'b']);
+    expect(enabledEntries('a,b')).toEqual([]);
+    expect(enabledEntries(null)).toEqual([]);
   });
 });
 

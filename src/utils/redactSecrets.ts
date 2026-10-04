@@ -38,6 +38,7 @@
  */
 import { format } from 'winston';
 import type { Logform } from 'winston';
+import { enabledEntries } from './configFiles.js';
 
 /**
  * Values shorter than this are never redacted.
@@ -125,11 +126,7 @@ export function refreshRedactedSecrets(configManager: SecretConfigReader | null 
     return { active: 0, skipped };
   }
 
-  const keys = configManager.getProperty(SECRET_KEYS_KEY, []);
-  if (!Array.isArray(keys)) {
-    redactions = [];
-    return { active: 0, skipped };
-  }
+  const keys = enabledEntries(configManager.getProperty(SECRET_KEYS_KEY, []));
 
   const seen = new Set<string>();
   const next: Redaction[] = [];

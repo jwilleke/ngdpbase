@@ -29,6 +29,7 @@ import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManag
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
+import { enabledEntries } from '../utils/configFiles.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
@@ -11958,8 +11959,7 @@ ${panes}
    */
   private getSecretConfigKeys(): Set<string> {
     const configManager = this.engine.getManager('ConfigurationManager');
-    const keys = configManager?.getProperty('ngdpbase.config.secret-keys', []);
-    if (!Array.isArray(keys)) return new Set();
+    const keys = enabledEntries(configManager?.getProperty('ngdpbase.config.secret-keys', []));
 
     // Trimmed and de-duplicated, but NOT lowercased: ngdpbase config keys are
     // case-sensitive and include camelCase (`ngdpbase.dawarichCompat.apiKey`),

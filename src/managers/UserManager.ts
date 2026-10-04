@@ -25,6 +25,7 @@ import { UserCreateError } from '../utils/userCreateError.js';
 import { setPassword } from '../utils/passwordChange.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { enabledEntries } from '../utils/configFiles.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
@@ -511,7 +512,7 @@ class UserManager extends BaseManager {
   /** `ngdpbase.user.account-roles`: the roles every account holds (#1539). */
   private accountRoles(): string[] {
     const configured = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.user.account-roles', []);
-    return Array.isArray(configured) ? configured.filter((r): r is string => typeof r === 'string') : [];
+    return enabledEntries(configured);
   }
 
   /**

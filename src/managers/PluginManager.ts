@@ -2,6 +2,7 @@ import BaseManager from './BaseManager.js';
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
+import { enabledEntries } from '../utils/configFiles.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 
@@ -153,10 +154,9 @@ class PluginManager extends BaseManager {
     // MUST come only from config; no fallbacks
     const raw = cfgMgr.getProperty('ngdpbase.managers.plugin-manager.search-paths');
     this.engine.logger?.debug?.(`PluginManager: raw searchPaths type=${typeof raw} value=${JSON.stringify(raw)}`);
-    // Accept array or comma-separated string
-    let configured: string[] = [];
-    if (Array.isArray(raw)) configured = raw as string[];
-    else if (typeof raw === 'string')
+    // Accept a set map, an array, or a comma-separated string
+    let configured: string[] = enabledEntries(raw);
+    if (typeof raw === 'string')
       configured = raw
         .split(',')
         .map((s) => s.trim())
