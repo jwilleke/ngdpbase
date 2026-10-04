@@ -178,6 +178,43 @@ export class OidcManager extends BaseManager {
     return this.auth.handler;
   }
 
+  /** The package's interaction helpers for the sign-in bridge (#1572); null when not serving. */
+  interactions(): AuthServer['interactions'] | null {
+    return this.auth?.interactions ?? null;
+  }
+
+  /**
+   * The pending request's own parameters (`prompt`, `max_age`, …), which the
+   * package's `details()` does not carry, and when it began (epoch seconds).
+   * The bridge reads them to refuse a request for a fresh sign-in it cannot
+   * give yet (#1525), and to accept one made after the request began.
+   */
+  async pendingRequest(req: IncomingMessage, res: ServerResponse): Promise<{ params: Record<string, unknown>; startedAt: number }> {
+    if (!this.auth) return { params: {}, startedAt: 0 };
+    const details = await this.auth.provider.interactionDetails(req, res);
+    return { params: details.params, startedAt: details.iat ?? 0 };
+  }
+
+  /** What to call a client on the consent page: its registered name, else its id. */
+  async clientName(clientId: string): Promise<string> {
+    const client = await this.auth?.provider.Client.find(clientId);
+    const name = client?.metadata().client_name;
+    return typeof name === 'string' && name.trim() ? name : clientId;
+  }
+
+  /**
+   * End every provider session of an account (#1572), so signing out of
+   * ngdpbase also signs out of /oidc: the provider's own session cookie would
+   * otherwise keep finishing sign-ins for someone who left. Grants stay —
+   * consent is remembered — and tokens already issued run to their expiry.
+   */
+  async endSessionsFor(username: string): Promise<number> {
+    if (!this.store || !username) return 0;
+    const ended = await this.store.destroyWhere('Session', (s) => s.accountId === username);
+    if (ended > 0) logger.info(`[OidcManager] ended ${ended} provider session(s) for ${username}`);
+    return ended;
+  }
+
   /** The issuer once configured; empty when off. */
   getIssuer(): string {
     return this.options ? this.issuer : '';

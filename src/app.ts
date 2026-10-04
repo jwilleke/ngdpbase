@@ -53,6 +53,7 @@ import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } fr
 import { lockPrivateStores } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
+import { registerOidcRoutes } from './routes/OidcRoutes.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
 // __dirname would resolve to dist/src/ after compilation, so it cannot be used for
@@ -1136,6 +1137,11 @@ void (async (): Promise<void> => {
   });
 
   const wikiRoutes = new WikiRoutes(engine);
+  // #1572: the OpenID Connect sign-in bridge, ahead of the wiki routes so no
+  // page route claims /oidc/interaction/*. Only when the provider is serving.
+  if (oidcHandler && oidcManager) {
+    registerOidcRoutes(app, { oidc: oidcManager, templateData: (req) => wikiRoutes.getCommonTemplateData(req) });
+  }
   wikiRoutes.registerRoutes(app);
 
   // 8. Mark engine as ready

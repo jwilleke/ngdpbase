@@ -58,6 +58,7 @@ import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
+import type { OidcManager } from '../managers/OidcManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -7286,6 +7287,14 @@ ${panes}
       if (typeof privateStoreHandle === 'string' && privateStoreHandle) {
         lockPrivateStores(privateStoreHandle);
         dropPendingWords(privateStoreHandle);
+      }
+
+      // #1572: signing out here signs out of the OpenID Connect provider too,
+      // or its own session would keep finishing sign-ins for this person.
+      const leaving = req.session?.username;
+      if (typeof leaving === 'string' && leaving) {
+        void this.engine.getManager<OidcManager>('OidcManager')?.endSessionsFor(leaving)
+          .catch((err: unknown) => logger.warn(`[logout] could not end OIDC sessions for ${leaving}: ${(err as Error).message}`));
       }
 
       req.session.destroy((err) => {
