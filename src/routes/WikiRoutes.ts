@@ -42,7 +42,7 @@ import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessio
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
-import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { packZip } from '../utils/zipArchive.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { extractSection, spliceSection } from '../utils/SectionUtils.js';
@@ -2383,9 +2383,78 @@ class WikiRoutes {
     // then asked through the vault check, not the caller's site-wide role.
     pageName?: string
   ): Promise<boolean> {
-    if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) return true;
+    if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) {
+      // #1525: granted — and, for a step-up permission, fresh enough.
+      return this.steppedUp(wikiContext, permission, req, res, mode);
+    }
     await this.refuse(wikiContext, req, res, mode, permission);
     return false;
+  }
+
+  /**
+   * Step-up (#1525): one gate inside the permission check. A permission in
+   * `ngdpbase.auth.step-up` also needs a fresh factor; without one the
+   * person is sent to /auth/reauth (a page) or told where it is (JSON), and
+   * comes back to retry. A delegated credential can never give a fresh
+   * factor, so it is refused outright. Returns true to proceed.
+   *
+   * Called by `permitted()`, and by the few handlers that ask
+   * `hasPermission()` themselves, right after their own check.
+   */
+  private async steppedUp(
+    wikiContext: { userContext: unknown },
+    permission: string,
+    req: Request,
+    res: Response,
+    mode: 'json' | 'page' | 'text'
+  ): Promise<boolean> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const user = (wikiContext.userContext ?? {}) as { roles?: string[]; viaToken?: unknown; viaShare?: unknown };
+    const delegated = Boolean(user.viaToken || user.viaShare);
+    if (!authManager?.stepUpNeeded?.(permission, req.session?.signIn, user.roles ?? [], delegated)) return true;
+
+    await this.auditReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
+    if (delegated) {
+      res.status(403).json({ success: false, error: 'This needs a fresh sign-in by the person; a token cannot give one', stepUp: permission });
+      return false;
+    }
+    const reauth = `/auth/reauth?next=${encodeURIComponent(this.reauthReturnTo(req))}`;
+    if (mode === 'page') res.redirect(reauth);
+    else if (mode === 'text') res.status(403).send('A fresh sign-in is needed: ' + reauth);
+    else res.status(403).json({ success: false, error: 'A fresh sign-in is needed', reauth });
+    return false;
+  }
+
+  /**
+   * Where to return after re-authenticating: this page for a GET, the page
+   * that posted for anything else (the form is filled in again; a POST body
+   * is not replayed). Always a path on this site.
+   */
+  private reauthReturnTo(req: Request): string {
+    if (req.method === 'GET') return safeRedirect(req.originalUrl || '/');
+    const referer = req.get('referer');
+    if (!referer) return '/';
+    try {
+      const url = new URL(referer);
+      return safeRedirect(url.pathname + url.search);
+    } catch {
+      return '/';
+    }
+  }
+
+  /** One step-up audit record (#1525): never a password, never a credential's secret. */
+  private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
+    await recordAuditEvent(this.auditSink(), {
+      eventType,
+      user: typeof req.session?.username === 'string' ? req.session.username : 'anonymous',
+      ipAddress: req.ip,
+      action: eventType,
+      result,
+      severity: eventType === AUDIT_EVENT.REAUTH_FAILURE ? 'medium' : 'low',
+      resource: permission,
+      resourceType: 'permission',
+      metadata: { detail }
+    }, (err) => logger.warn(`[step-up] audit record failed for ${eventType}:`, err));
   }
 
   async renderError(req: Request, res: Response, status: number, title: string, message: string) {
@@ -6736,12 +6805,12 @@ ${panes}
   }
 
   /** Keep a WebAuthn challenge for one later verify, five minutes at most (#448). */
-  private keepPasskeyChallenge(req: Request, value: string, purpose: 'register' | 'authenticate'): void {
+  private keepPasskeyChallenge(req: Request, value: string, purpose: 'register' | 'authenticate' | 'reauth'): void {
     req.session.passkeyChallenge = { value, purpose, expires: Date.now() + 5 * 60_000 };
   }
 
   /** Take the pending challenge for `purpose`, once; null when absent, expired or for the other purpose. */
-  private takePasskeyChallenge(req: Request, purpose: 'register' | 'authenticate'): string | null {
+  private takePasskeyChallenge(req: Request, purpose: 'register' | 'authenticate' | 'reauth'): string | null {
     const pending = req.session?.passkeyChallenge;
     if (req.session) delete req.session.passkeyChallenge;
     if (!pending || pending.purpose !== purpose || Date.now() > pending.expires) return null;
@@ -6787,6 +6856,107 @@ ${panes}
     } catch (err) {
       res.status(400).json({ error: (err as Error).message });
     }
+  }
+
+  /**
+   * GET /auth/reauth — step-up's prompt (#1525). Offers what can reach the
+   * level this person's roles require: a passkey when one is enrolled, the
+   * password when the roles accept a password.
+   */
+  async reauthPage(req: Request, res: Response): Promise<void> {
+    await this.renderReauth(req, res, {});
+  }
+
+  private async renderReauth(req: Request, res: Response, view: { error?: string }): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    // Re-authenticating is self-service: profile-manage, which never steps up.
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    if (typeof user.username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const next = safeRedirect(req.query.next ?? (req.body as { next?: unknown } | undefined)?.next);
+    const needsPasskey = (authManager?.requiredAalFor(user.roles ?? []) ?? 0) >= 2;
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.status(view.error ? 401 : 200).render('reauth', {
+      ...commonData,
+      title: 'Confirm it is you',
+      next,
+      needsPasskey,
+      hasPasskey: Boolean(authManager?.passkeyRelyingParty() && authManager.hasCredential(user.username, 'passkey')),
+      hasPassword: await this.engine.getManager<IUserManager>('UserManager')?.hasPassword(user.username).catch(() => false) ?? false,
+      ...view
+    });
+  }
+
+  /** POST /auth/reauth — re-authenticate with the password (#1525); throttled like every secret check. */
+  async reauthWithPassword(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    const username = wikiContext.userContext.username;
+    if (typeof username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const password = typeof (req.body as { password?: unknown }).password === 'string' ? (req.body as { password: string }).password : '';
+    const next = safeRedirect((req.body as { next?: unknown }).next);
+
+    if (this.secretCheckBlocked(req, username)) {
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'password', 'throttled');
+      await this.renderReauth(req, res, { error: 'Too many attempts. Wait a few minutes and try again.' });
+      return;
+    }
+    const result = password && authManager ? await authManager.authenticate('password', { username, password }) : { success: false };
+    if (!result.success || result.username !== username) {
+      await this.recordFailedSecret(req, username, 'invalid password at step-up');
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'password', 'wrong password');
+      await this.renderReauth(req, res, { error: 'That password is not correct.' });
+      return;
+    }
+    await this.completeReauth(req, res, result, 'password', () => res.redirect(next));
+  }
+
+  /** GET /auth/passkey/reauth/options — a passkey challenge for step-up (#1525), for the signed-in person only. */
+  async passkeyReauthOptions(req: Request, res: Response): Promise<void> {
+    if (!(await this.permitted(this.createWikiContext(req), 'profile-manage', req, res, 'json'))) return;
+    try {
+      const options = await this.engine.getManager('AuthManager').passkeyAuthenticationOptions() as { challenge: string };
+      this.keepPasskeyChallenge(req, options.challenge, 'reauth');
+      res.json(options);
+    } catch (err) {
+      res.status(404).json({ error: (err as Error).message });
+    }
+  }
+
+  /** POST /auth/passkey/reauth/verify — re-authenticate with a passkey (#1525); it must be this person's. */
+  async passkeyReauthVerify(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    const username = wikiContext.userContext.username;
+    if (typeof username !== 'string') return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+    const challenge = this.takePasskeyChallenge(req, 'reauth');
+    if (!challenge) { res.status(400).json({ error: 'The request expired; try again' }); return; }
+    const body = req.body as { response?: unknown; next?: unknown };
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const result = authManager
+      ? await authManager.authenticate('passkey', { webauthn: { response: body.response, expectedChallenge: challenge } })
+      : { success: false, username: undefined };
+    if (!result.success || result.username !== username) {
+      await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'passkey', result.success ? 'another person\'s passkey' : 'passkey did not verify');
+      res.status(401).json({ error: 'That passkey did not confirm this account' });
+      return;
+    }
+    await this.completeReauth(req, res, result, 'passkey', () => res.json({ ok: true, redirect: safeRedirect(body.next) }));
+  }
+
+  /** Record the fresh factor on the session's sign-in, audit it, and answer. */
+  private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, answer: () => void): Promise<void> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const record = authManager?.reauthenticated(req.session.signIn, result) ?? null;
+    if (record) req.session.signIn = record;
+    await this.auditReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', method, `re-authenticated with ${method}; acr ${record?.acr ?? 'unknown'}`);
+    req.session.save((err) => {
+      if (err) { res.status(500).send('Session save failed'); return; }
+      answer();
+    });
   }
 
   /** GET /auth/passkey/authenticate/options — anyone may start a passkey sign-in (#448). */
@@ -10825,6 +10995,7 @@ ${panes}
       ) {
         return res.status(403).send('Access denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       // #1147: the toggle used to mutate `engine.config.features.maintenance`,
       // an in-memory object nothing persisted — so a restart during
@@ -11281,6 +11452,7 @@ ${panes}
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage backups');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
       const backupManager = this.engine.getManager('BackupManager');
       if (!backupManager) {
         return res.redirect('/admin/backup?error=BackupManager+not+available');
@@ -11329,6 +11501,7 @@ ${panes}
           'You do not have permission to create system backups'
         );
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const backupManager = this.engine.getManager('BackupManager');
       if (!backupManager) {
@@ -11501,6 +11674,7 @@ ${panes}
       ) {
         return res.status(403).send('Access denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const body = req.body as { key?: string; group?: string; action?: string };
       const key = typeof body.key === 'string' ? body.key.trim() : '';
@@ -11595,6 +11769,7 @@ ${panes}
         res.status(403).json({ success: false, error: 'Permission denied' });
         return;
       }
+      if (!(await this.steppedUp(wikiContext, 'secret-reveal', req, res, 'json'))) return; // #1525
 
       const key = req.params.key;
       if (!this.getSecretConfigKeys().has(key)) {
@@ -11655,6 +11830,7 @@ ${panes}
           reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { property, value } = req.body;
@@ -11732,6 +11908,7 @@ ${panes}
           reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       await configManager.resetToDefaults(currentUser);
@@ -11804,6 +11981,7 @@ ${panes}
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { siteName, url, description, icon, enabled, openInNewWindow, originalName } = req.body;
@@ -11856,6 +12034,7 @@ ${panes}
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const siteName = decodeURIComponent(req.params.siteName);
@@ -11888,6 +12067,7 @@ ${panes}
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { globalEnabled, openInNewWindow, addIconIndicator, caseSensitive, showTooltips } = req.body;
@@ -12109,6 +12289,7 @@ ${panes}
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.status(403).redirect('/admin/settings?error=Access+denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const { theme } = req.body as { theme: string };
       if (!theme || typeof theme !== 'string') {
@@ -12140,6 +12321,7 @@ ${panes}
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.redirect('/admin/settings?error=Access+denied');
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const body = req.body as { maxFileSizeMB?: string; sessionTimeoutHours?: string; allowRegistration?: string };
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -14698,6 +14880,7 @@ ${panes}
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }
+      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
       const addonName = req.params.name;
       const { enabled } = req.body as { enabled: string };
       const willEnable = enabled === 'true';
@@ -15238,6 +15421,11 @@ ${panes}
     // #448: passkeys. Enrolling needs a signed-in person; signing in does not.
     app.get('/auth/passkey/register/options', (req: Request, res: Response) => { void this.passkeyRegisterOptions(req, res); });
     app.post('/auth/passkey/register/verify', (req: Request, res: Response) => { void this.passkeyRegisterVerify(req, res); });
+    // #1525: step-up's prompt and its two ways to answer.
+    app.get('/auth/reauth', (req: Request, res: Response) => { void this.reauthPage(req, res); });
+    app.post('/auth/reauth', (req: Request, res: Response) => { void this.reauthWithPassword(req, res); });
+    app.get('/auth/passkey/reauth/options', (req: Request, res: Response) => { void this.passkeyReauthOptions(req, res); });
+    app.post('/auth/passkey/reauth/verify', (req: Request, res: Response) => { void this.passkeyReauthVerify(req, res); });
     app.get('/auth/passkey/authenticate/options', (req: Request, res: Response) => { void this.passkeyAuthenticateOptions(req, res); });
     app.post('/auth/passkey/authenticate/verify', (req: Request, res: Response) => { void this.passkeyAuthenticateVerify(req, res); });
     app.post('/profile/credentials/:id/remove', (req: Request, res: Response) => { void this.removeOwnCredential(req, res); });

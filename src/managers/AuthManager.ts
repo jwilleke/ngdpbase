@@ -796,6 +796,50 @@ class AuthManager extends BaseManager {
   }
 
   /**
+   * Step-up (#1525): which permissions ask for a fresh factor, and how fresh.
+   * `ngdpbase.auth.step-up`; a missing or malformed value means no step-up,
+   * logged, rather than a guess.
+   */
+  stepUpPolicy(): { maxAgeMs: number; permissions: ReadonlySet<string> } {
+    const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.auth.step-up', null) as
+      { 'max-age-minutes'?: unknown; permissions?: unknown } | null;
+    const minutes = Number(raw?.['max-age-minutes']);
+    const permissions = Array.isArray(raw?.permissions) ? raw.permissions.filter((p): p is string => typeof p === 'string') : [];
+    if (!Number.isFinite(minutes) || minutes <= 0) return { maxAgeMs: 0, permissions: new Set() };
+    return { maxAgeMs: minutes * 60_000, permissions: new Set(permissions) };
+  }
+
+  /**
+   * Whether `permission` needs a fresher factor than `signIn` holds (#1525).
+   * Fresh: a factor satisfied within the step-up window that reaches the
+   * level the person's roles require (at least 1 — a known device, aal 0,
+   * never counts). A delegated credential has no sign-in of its own, so it
+   * never satisfies step-up.
+   */
+  stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now()): boolean {
+    const policy = this.stepUpPolicy();
+    if (!policy.permissions.has(permission)) return false;
+    if (delegated) return true;
+    const need = Math.max(this.requiredAalFor(roles), 1);
+    const since = now - policy.maxAgeMs;
+    return !(signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
+  }
+
+  /**
+   * A session's sign-in after a re-authentication (#1525): the new factors
+   * join the old, the assessment is redone over all of them, and the sign-in
+   * time moves to now — this is a fresh authentication. The provider stays
+   * the one that started the session. Null when the result is no sign-in.
+   */
+  reauthenticated(signIn: SignInRecord | undefined, result: AuthenticateResult): SignInRecord | null {
+    const fresh = this.signInRecord(result);
+    if (!fresh) return null;
+    if (!signIn) return fresh;
+    const factors = [...signIn.factors, ...fresh.factors];
+    return { provider: signIn.provider, factors, ...this.assess(factors), at: fresh.at };
+  }
+
+  /**
    * Initiate a challenge-based auth flow (magic link email, OAuth redirect).
    */
   async initiate(providerId: string, context: AuthInitiateContext): Promise<void> {

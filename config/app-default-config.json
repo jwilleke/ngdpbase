@@ -225,6 +225,11 @@
   "ngdpbase.auth.credentials.file": "${FAST_STORAGE}/users/credentials.json",
   "_comment_auth_passkey": "#448 — passkeys (WebAuthn): a passkey alone signs a person in, at AAL2, phishing-resistant. Registered only when ngdpbase.application.base-url is set explicitly and is https (or localhost): a passkey is tied to that host, so it works only on that hostname — a site answering on several hostnames should redirect the others to it. Stored in the credentials store. false turns passkeys off.",
   "ngdpbase.auth.passkey.enabled": true,
+  "_comment_auth_step_up": "#1525 — step-up: these permissions ask for a fresh factor even inside a valid session, so a session left open on a shared machine cannot change what protects the account or the instance. Fresh means a factor satisfied within max-age-minutes that reaches the level the person's roles require (an admin re-authenticates with a passkey, others with a passkey or their password); a known device never counts, and a delegated credential (agent token, app token) never satisfies it. The prompt is /auth/reauth, which returns to the page. Every prompt and outcome is audited (reauth-prompt, reauth-success, reauth-failure). Rare by design: account-security, not profile-manage, so everyday self-service never prompts (decided 2026-10-04). An empty permissions list, or a max-age-minutes of 0, turns step-up off.",
+  "ngdpbase.auth.step-up": {
+    "max-age-minutes": 5,
+    "permissions": ["account-security", "config-manage", "secret-reveal", "token-mint"]
+  },
   "_comment_oidc_auth_server_enabled": "#1570 — the OpenID Connect provider at <base-url>/oidc (the oidc-auth-server package, embedded by OidcManager): device authorization (RFC 8628), UserInfo and code flow for apps that sign people in through this instance. Off: the package is not loaded and /oidc does not exist. On: requires ngdpbase.application.base-url set explicitly (https, or http on localhost) — the issuer is that plus /oidc; otherwise the manager reports degraded and mounts nothing. `oidc-auth-server` is a reserved namespace: every other oidc-auth-server.* key is the package's own (see its config/app-default-config.json) and goes in app-custom-config.json; issuer, trust-proxy, development and acr-values are derived by ngdpbase and refused if set. Its signing keys (OIDC_AUTH_SERVER_JWKS) and cookie keys (OIDC_AUTH_SERVER_COOKIE_KEYS) are environment-only and generated into <FAST_STORAGE>/.env on first enable.",
   "oidc-auth-server.enabled": false,
   "ngdpbase.auth.factors": [
@@ -626,6 +631,18 @@
     "oidcserver-error": {
       "on-failure": "continue",
       "description": "OpenID Connect: the provider failed while handling a request"
+    },
+    "reauth-prompt": {
+      "on-failure": "continue",
+      "description": "Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one"
+    },
+    "reauth-success": {
+      "on-failure": "continue",
+      "description": "Step-up: the person re-authenticated, with the factor used"
+    },
+    "reauth-failure": {
+      "on-failure": "continue",
+      "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)"
     }
   },
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",

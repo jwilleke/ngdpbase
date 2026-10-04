@@ -1,0 +1,53 @@
+<%- include('header', { pageName: '' }) %>
+<%# #1525 — step-up: a sensitive action asked for a fresh sign-in. The passkey or
+    password proves the person at the keyboard is the account holder now, and the
+    browser returns to the page that asked. %>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="card mt-4">
+        <div class="card-header">
+          <h4 class="mb-0"><i class="fas fa-user-shield"></i> Confirm it is you</h4>
+        </div>
+        <div class="card-body">
+          <% if (typeof error !== 'undefined' && error) { %>
+            <div class="alert alert-danger" role="alert"><%= error %></div>
+          <% } %>
+          <p>This change protects your account, so it needs a fresh sign-in. You are then sent back to finish it.</p>
+          <% if (needsPasskey) { %>
+            <p class="small text-muted">Your role needs a passkey for this; a password is not enough.</p>
+          <% } %>
+
+          <% if (hasPasskey) { %>
+            <button type="button" class="btn btn-primary w-100 mb-3 d-none" data-passkey-reauth
+                    data-next="<%= next %>" data-error-target="reauth-passkey-error">
+              <i class="fas fa-key"></i> Confirm with a passkey
+            </button>
+            <div id="reauth-passkey-error" class="alert alert-danger small d-none" role="alert"></div>
+            <script src="/js/passkey.js" defer></script>
+          <% } %>
+
+          <% if (hasPassword && !needsPasskey) { %>
+            <form method="POST" action="/auth/reauth" autocomplete="off">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="next" value="<%= next %>">
+              <div class="mb-3">
+                <label class="form-label" for="reauthPassword">Password</label>
+                <input type="password" class="form-control" id="reauthPassword" name="password" autocomplete="current-password" required autofocus>
+              </div>
+              <button type="submit" class="btn btn-outline-primary w-100">Confirm with your password</button>
+            </form>
+          <% } %>
+
+          <% if (!hasPasskey && (needsPasskey || !hasPassword)) { %>
+            <p class="mb-0">This account has no way to confirm here<%= needsPasskey ? ' that reaches the level your role needs' : '' %>. Add a passkey on your <a href="/profile">profile</a>, or ask an administrator.</p>
+          <% } %>
+
+          <p class="small mt-3 mb-0"><a href="<%= next %>">Cancel</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('footer') %>

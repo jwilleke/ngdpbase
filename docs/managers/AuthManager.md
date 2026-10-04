@@ -40,6 +40,21 @@ Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the 
 - __Shipped default vs operator's level:__ a shipped level that no available factor reaches (no explicit https `base-url`, so no passkeys) acts at what is reachable, and AuthManager is `degraded` saying how to fix it. A level set in `app-custom-config.json` that no factor reaches refuses the boot (`checkRequiredAal()`, run by `app.ts` once add-ons have registered their providers). An operator's level is never lowered.
 - `requiredAalFor(roles)` is the highest effective level among the roles; `reachableAal()` what the available factors reach together; `unreachableRequiredAal()` describes every role above it.
 
+## Step-up (#1525)
+
+A few permissions ask for a __fresh__ sign-in even inside a valid session, so a session left open on a shared machine can't change what protects the account or the instance. `ngdpbase.auth.step-up` lists them, with the window:
+
+```json
+"ngdpbase.auth.step-up": { "max-age-minutes": 5, "permissions": ["account-security", "config-manage", "secret-reveal", "token-mint"] }
+```
+
+- __Fresh__ (`stepUpNeeded`) means a factor satisfied within the window that reaches the level the person's roles require. An admin (AAL2) re-authenticates with a passkey; others with a passkey or their password. A known device never counts.
+- __Delegated credentials__ (agent tokens, app tokens, shares) never satisfy step-up. They're refused outright, not sent to a prompt.
+- __Everyday self-service__ (`profile-manage`) is never on the list, so viewing your pages or changing the theme never prompts (decided 2026-10-04).
+- __Where it's checked__: inside the route's permission check (`permitted()` in WikiRoutes, and the few handlers that ask `hasPermission()` themselves). A page action goes to `/auth/reauth?next=…`; a JSON action answers 403 with `reauth`, which `passkey.js` follows.
+- __The prompt__ (`/auth/reauth`) offers a passkey when one is enrolled, and the password when the roles accept one. Success adds the factor to the session's sign-in (`reauthenticated`: factors joined, assessment redone, sign-in time moved to now) and returns to the page. A POST is not replayed; the form is filled in again.
+- __Audit and throttle__: `reauth-prompt`, `reauth-success` and `reauth-failure` are recorded. Wrong passwords count toward the sign-in throttle like every other secret check.
+
 ## Passkeys (#448)
 
 [PasskeyAuthProvider](../providers/PasskeyAuthProvider.md) is registered once the credentials store is open, when `ngdpbase.application.base-url` is set explicitly and is https (or localhost), and `ngdpbase.auth.passkey.enabled` is not `false`. AuthManager owns the store and hands the provider only "find this passkey" and "record its use". The routes talk to `passkeyRegistrationOptions()`, `passkeyRegister()` and `passkeyAuthenticationOptions()`, and sign in through `authenticate('passkey', { webauthn })`. `passkeyRelyingParty()` names the host passkeys are tied to.

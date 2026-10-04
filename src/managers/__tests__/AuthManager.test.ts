@@ -223,6 +223,55 @@ describe('AuthManager', () => {
         expect(manager.requiredAalFor(['anonymous'])).toBe(0);
       });
 
+      describe('step-up (#1525)', () => {
+        const STEP_UP = { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: ['account-security', 'config-manage'] } };
+        const NOW = Date.parse('2026-10-04T12:00:00Z');
+        const factor = (aal: number, minutesAgo: number) => ({ provider: aal >= 2 ? 'passkey' : 'password', amr: aal >= 2 ? ['hwk', 'user'] : ['pwd'], aal, at: new Date(NOW - minutesAgo * 60_000).toISOString() });
+        const signIn = (...factors: ReturnType<typeof factor>[]) => ({ provider: 'password', factors, amr: [], aal: 1, acr: 'aal1', mfa: false, at: '' });
+
+        test('a permission not on the list never asks', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          expect(m.stepUpNeeded('page-edit', signIn(factor(1, 60)), ['reader'], false, NOW)).toBe(false);
+        });
+
+        test('a factor within the window that reaches the roles\' level is fresh; an older one is not', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          expect(m.stepUpNeeded('account-security', signIn(factor(1, 2)), ['reader'], false, NOW)).toBe(false);
+          expect(m.stepUpNeeded('account-security', signIn(factor(1, 6)), ['reader'], false, NOW)).toBe(true);
+          expect(m.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(true);
+        });
+
+        test('an admin needs a fresh factor at their level: a fresh password is not enough, a fresh passkey is', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          expect(m.stepUpNeeded('config-manage', signIn(factor(1, 1)), ['admin'], false, NOW)).toBe(true);
+          expect(m.stepUpNeeded('config-manage', signIn(factor(1, 1), factor(2, 3)), ['admin'], false, NOW)).toBe(false);
+        });
+
+        test('a known device (aal 0) never counts, and a delegated credential never satisfies it', async () => {
+          const m = await withRoles({ admin: 2, reader: 1 }, STEP_UP);
+          expect(m.stepUpNeeded('account-security', signIn(factor(0, 0)), ['reader'], false, NOW)).toBe(true);
+          expect(m.stepUpNeeded('account-security', signIn(factor(2, 0)), ['reader'], true, NOW)).toBe(true);
+        });
+
+        test('no policy, or a zero window, turns step-up off', async () => {
+          const off = await withRoles({ reader: 1 }, {});
+          expect(off.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(false);
+          const zero = await withRoles({ reader: 1 }, { 'ngdpbase.auth.step-up': { 'max-age-minutes': 0, permissions: ['account-security'] } });
+          expect(zero.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(false);
+        });
+
+        test('re-authenticating adds the factor, redoes the assessment and moves the sign-in time', async () => {
+          const m = await withRoles({ reader: 1 }, STEP_UP);
+          const before = signIn(factor(1, 30));
+          const after = m.reauthenticated(before, { success: true, username: 'molly', provider: 'passkey', factors: [factor(2, 0)] });
+          expect(after?.provider).toBe('password');
+          expect(after?.factors).toHaveLength(2);
+          expect(after?.aal).toBe(2);
+          expect(Date.parse(after!.at)).toBeGreaterThan(Date.parse(before.factors[0].at));
+          expect(m.reauthenticated(before as never, { success: false })).toBeNull();
+        });
+      });
+
       test('every role at AAL1 with a password available: nothing unreachable', async () => {
         const manager = await withRoles({ admin: 1, reader: 1 });
         expect(manager.unreachableRequiredAal()).toEqual([]);

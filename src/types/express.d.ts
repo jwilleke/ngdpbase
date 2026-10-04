@@ -53,7 +53,7 @@ declare module 'express-session' {
     /** How this session signed in: provider, factors with their times, amr / aal / acr (#1523). */
     signIn?: SessionSignIn;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */
-    passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate'; expires: number };
+    passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate' | 'reauth'; expires: number };
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     [key: string]: unknown;
