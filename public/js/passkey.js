@@ -102,12 +102,44 @@
     });
   });
 
+  // A starting name for a new passkey: the browser and the kind of device.
+  // Browsers never reveal a device's own name ("Jim's Pixel"); Chromium can
+  // report the phone model when asked, and that replaces the generic word.
+  function suggestedName() {
+    var ua = navigator.userAgent || '';
+    var browser = /Edg(e|A|iOS)?\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS\//.test(ua) ? 'Firefox' : /Chrome\/|CriOS\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    var device = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android phone'
+      : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'this device';
+    return { browser: browser, device: device };
+  }
+
+  function prefillName(input) {
+    if (!input || input.value) return;
+    var s = suggestedName();
+    input.value = s.browser + ' on ' + s.device;
+    var guess = input.value;
+    var data = navigator.userAgentData;
+    if (data && data.getHighEntropyValues) {
+      data.getHighEntropyValues(['model']).then(function (v) {
+        // Only while the field still holds our guess: never overwrite a typed name.
+        if (v && v.model && input.value === guess) input.value = s.browser + ' on ' + v.model;
+      }).catch(function () {});
+    }
+  }
+
   // Enrol: any button with data-passkey-enrol (profile)
   document.querySelectorAll('[data-passkey-enrol]').forEach(function (button) {
     button.classList.remove('d-none');
+    var labelInput = document.getElementById(button.dataset.labelInput || '');
+    prefillName(labelInput);
     button.addEventListener('click', function () {
       var errorEl = document.getElementById(button.dataset.errorTarget || '');
       var labelEl = document.getElementById(button.dataset.labelInput || '');
+      if (labelEl && !labelEl.value.trim()) {
+        showError(errorEl, 'Give this passkey a name, so you can tell it apart from your others.');
+        labelEl.focus();
+        return;
+      }
       button.disabled = true;
       getJSON('/auth/passkey/register/options')
         .then(function (options) {

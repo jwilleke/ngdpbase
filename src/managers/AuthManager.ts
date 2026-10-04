@@ -131,6 +131,20 @@ export interface CredentialInput {
   label: string;
 }
 
+/** The longest name a credential may carry. */
+export const CREDENTIAL_LABEL_MAX = 60;
+
+/**
+ * A credential's name, tidied: whitespace collapsed, at most 60 characters.
+ * Empty is refused — two passkeys both called "Passkey" cannot be told apart
+ * when one has to be removed (operator, 2026-10-04).
+ */
+export function credentialLabel(label: unknown): string {
+  const tidy = typeof label === 'string' ? label.replace(/\s+/g, ' ').trim().slice(0, CREDENTIAL_LABEL_MAX).trim() : '';
+  if (!tidy) throw new Error('Give it a name, so you can tell it apart from your others');
+  return tidy;
+}
+
 /** Kinds that can start a sign-in on their own — what "a way in" counts (#1524). */
 const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email']);
 
@@ -402,11 +416,12 @@ class AuthManager extends BaseManager {
    */
   async passkeyRegister(ctx: PermissionSubject, username: string, response: unknown, expectedChallenge: string, label: string): Promise<string | null> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    credentialLabel(label); // refuse before the challenge is spent on a verification
     const provider = this.passkeyProvider();
     if (!provider) throw new Error('Passkeys are not available on this site');
     const verified = await provider.verifyRegistration(response as never, expectedChallenge);
     if (!verified) return null;
-    return this.addCredential(ctx, username, { kind: 'passkey', subject: verified.subject, secret: verified.secret, label: label.trim().slice(0, 60) || 'Passkey' });
+    return this.addCredential(ctx, username, { kind: 'passkey', subject: verified.subject, secret: verified.secret, label: credentialLabel(label) });
   }
 
   /** Options for signing in with a passkey (#448); anyone may ask. */
@@ -510,13 +525,25 @@ class AuthManager extends BaseManager {
     return removed;
   }
 
+  /** Rename one of `username`'s credentials. The name is required, as at enrolment. */
+  async renameCredential(ctx: PermissionSubject, username: string, id: string, label: unknown): Promise<boolean> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const name = credentialLabel(label);
+    const store = this.requireCredentialsStore();
+    const row = store.get(id);
+    if (!row || row.username !== username) return false;
+    const renamed = await store.relabel(id, name);
+    if (renamed) this.auditCredentialChange(ctx, username, 'credential-rename', { ...row, label: name });
+    return renamed;
+  }
+
   /** Whether the account signs in with a password — UserManager is the door that sees the hash (#1524). */
   private async hasPassword(username: string): Promise<boolean> {
     const userManager = this.engine.getManager<UserManager>('UserManager');
     return (await userManager?.hasPassword(username)) ?? false;
   }
 
-  private auditCredentialChange(ctx: PermissionSubject, username: string, action: 'credential-add' | 'credential-remove', row: CredentialRecord): void {
+  private auditCredentialChange(ctx: PermissionSubject, username: string, action: 'credential-add' | 'credential-remove' | 'credential-rename', row: CredentialRecord): void {
     void recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.USER_EDIT,
       user: ctx.username,

@@ -128,6 +128,14 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
     await this.save();
   }
 
+  async relabel(id: string, label: string): Promise<boolean> {
+    const r = this.rows.get(id);
+    if (!r) return false;
+    r.label = label;
+    await this.save();
+    return true;
+  }
+
   location(): string {
     return this.file;
   }

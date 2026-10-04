@@ -93,6 +93,26 @@ describe('AuthManager credentials (#1524)', () => {
     expect(audit).toContainEqual(expect.objectContaining({ action: 'credential-remove' }));
   });
 
+  test('a credential can be renamed by its owner; the name is required and audited', async () => {
+    const am = await started();
+    const id = await am.addCredential(subject('molly'), 'molly', PASSKEY);
+    expect(await am.renameCredential(subject('molly'), 'molly', id, '  Chrome   on Mac ')).toBe(true);
+    expect((await am.listCredentials(subject('molly'), 'molly'))[0].label).toBe('Chrome on Mac');
+    expect(audit).toContainEqual(expect.objectContaining({ action: 'credential-rename', resource: 'molly' }));
+    await expect(am.renameCredential(subject('molly'), 'molly', id, '   ')).rejects.toThrow(/Give it a name/);
+    await expect(am.renameCredential(subject('sam'), 'molly', id, 'Mine now')).rejects.toThrow(/Permission denied/);
+    expect(await am.renameCredential(subject('molly'), 'molly', 'no-such-id', 'X')).toBe(false);
+  });
+
+  test('a renamed row is re-signed: reopening the store accepts it, with no security alert', async () => {
+    const am = await started();
+    const id = await am.addCredential(subject('molly'), 'molly', PASSKEY);
+    await am.renameCredential(subject('molly'), 'molly', id, 'Android phone');
+    const reopened = await started();
+    expect((await reopened.listCredentials(subject('molly'), 'molly')).map((c) => c.label)).toEqual(['Android phone']);
+    expect(audit.filter((e) => e.eventType === 'security-event')).toEqual([]);
+  });
+
   test('the last way in cannot be removed: no password and no other passkey or email', async () => {
     const am = await started({ sam: ['profile-manage'] });
     const only = await am.addCredential(subject('sam'), 'sam', { ...PASSKEY, subject: 'sam-key' });
@@ -129,5 +149,15 @@ describe('AuthManager credentials (#1524)', () => {
     const am = await started();
     expect(am.getManagerStatus()).toEqual(expect.objectContaining({ state: 'degraded', configKey: CREDENTIALS_KEY_ENV }));
     await expect(am.listCredentials(subject('molly'), 'molly')).rejects.toThrow(/not available/);
+  });
+});
+
+describe('credentialLabel (operator, 2026-10-04)', () => {
+  test('tidies whitespace, caps the length, refuses empty', async () => {
+    const { credentialLabel, CREDENTIAL_LABEL_MAX } = await import('../AuthManager');
+    expect(credentialLabel('  Chrome \n on   Mac ')).toBe('Chrome on Mac');
+    expect(credentialLabel('x'.repeat(80))).toHaveLength(CREDENTIAL_LABEL_MAX);
+    expect(() => credentialLabel('   ')).toThrow(/Give it a name/);
+    expect(() => credentialLabel(undefined)).toThrow(/Give it a name/);
   });
 });

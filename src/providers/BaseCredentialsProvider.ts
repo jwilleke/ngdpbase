@@ -64,6 +64,9 @@ abstract class BaseCredentialsProvider extends BaseProvider {
   /** Record that a credential was just used, and its new secret when that changes (a passkey's counter). */
   abstract touch(id: string, at: string, secret?: string): Promise<void>;
 
+  /** Change a row's display name; the row is re-signed. False when there is no such row. */
+  abstract relabel(id: string, label: string): Promise<boolean>;
+
   /** Where it is kept, for the admin view. */
   abstract location(): string;
 }
