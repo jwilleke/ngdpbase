@@ -94,6 +94,20 @@ export class FileOidcAdapterStore {
     return [...rows.keys()].map((id) => this.live(rows, id)).filter((p): p is OidcAdapterPayload => p !== undefined);
   }
 
+  /** Delete every row of one model whose payload matches; returns how many went. For sign-out (#1572). */
+  async destroyWhere(name: string, match: (payload: OidcAdapterPayload) => boolean): Promise<number> {
+    const rows = await this.rows(name);
+    let removed = 0;
+    for (const [id, row] of rows) {
+      if (match(row.payload)) {
+        rows.delete(id);
+        removed++;
+      }
+    }
+    if (removed > 0) await this.persist(name);
+    return removed;
+  }
+
   /** Wait for every pending write; used at shutdown. */
   async flush(): Promise<void> {
     await Promise.all([...this.queues.values()].map((q) => q.catch(() => {})));

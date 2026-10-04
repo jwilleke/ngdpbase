@@ -49,6 +49,21 @@ The server starts in two steps: `initialize()` validates and prepares the store 
 
 `backup()` carries the roster of live grants (account, client, issued, expires) for incident response, marked `restorable: false`. `restore()` refuses: sessions and grants are not restored, so people sign in again and clients re-consent. A restored grant could revive access somebody had ended.
 
+## Sign-in bridge
+
+`/oidc/interaction/:uid` is ngdpbase's route for the provider's pending requests ([#1572](https://github.com/jwilleke/ngdpbase/issues/1572); `src/routes/OidcRoutes.ts`, registered only while the provider is serving):
+
+- Signed out: to `/login?redirect=/oidc/interaction/<uid>`, and back.
+- Signed in: `finishLogin` with the username and the session's sign-in record (`amr`, `acr`, `at`). A session without a record gets `login_required`.
+- Consent: `views/oidc-consent.ejs`, under the session and CSRF. Allow is `finishConsent`, Deny is `access_denied`. Everyone sees consent once per app; the grant is remembered.
+- Consent belongs to the account the request was signed in as. Anyone else signed in on that browser gets `login_required`.
+- Sign-out (`/logout`) ends the account's provider sessions (`endSessionsFor`). Grants stay, and tokens already issued run to their expiry. A disabled or deleted account fails closed at the next refresh or UserInfo, because `findAccount` returns nothing for it.
+
+Refused rather than faked, until step-up exists ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)):
+
+- A request for a fresh sign-in (`prompt=login`, or a `max_age` the session's sign-in is older than) gets `login_required`. A sign-in made after the request began counts as fresh, so someone sent to `/login` comes back and continues.
+- Device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)) gets `access_denied`.
+
 ## Not yet
 
-Sign-in bridge ([#1572](https://github.com/jwilleke/ngdpbase/issues/1572)), audit ([#1575](https://github.com/jwilleke/ngdpbase/issues/1575)), accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)). Until the bridge lands, an authorization request reaches `/oidc/interaction/<uid>` and finds nothing there.
+Audit ([#1575](https://github.com/jwilleke/ngdpbase/issues/1575)), accepting its access tokens on ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)), and revoking an account's grants when its password changes.

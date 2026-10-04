@@ -1,0 +1,35 @@
+<%- include('header', { pageName: '' }) %>
+<%# #1572: consent for an app signing in through this site's OpenID Connect provider. Asked once per app; the answer is remembered. %>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Allow <%= clientName %>?</h4>
+                </div>
+                <div class="card-body">
+                    <p><strong><%= clientName %></strong> wants to sign you in with your <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %> account and see:</p>
+                    <ul>
+                        <% lines.forEach(function (line) { %>
+                        <li><%= line.text %></li>
+                        <% }) %>
+                    </ul>
+                    <p class="small text-muted">It never sees your password. You are asked once; to take access back later, sign out of the app or ask an administrator.</p>
+                    <div class="d-flex gap-2">
+                        <form action="/oidc/interaction/<%= encodeURIComponent(uid) %>/allow" method="POST" class="flex-fill">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <button type="submit" class="btn btn-primary w-100">Allow</button>
+                        </form>
+                        <form action="/oidc/interaction/<%= encodeURIComponent(uid) %>/deny" method="POST" class="flex-fill">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <button type="submit" class="btn btn-outline-secondary w-100">Deny</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>
