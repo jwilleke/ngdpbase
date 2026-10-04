@@ -11,8 +11,8 @@ Each add-on lives in its own subdirectory with an `index.js` or `index.ts` entry
 ```
 addons/
 ├── your-addon/
-│   ├── index.js          # Required: Entry point
-│   ├── package.json      # Optional: Add-on dependencies
+│   ├── index.js          # Entry point (index.ts is accepted; index.js wins if both exist)
+│   ├── package.json      # Optional: Add-on dependencies and ngdpbase.slug
 │   ├── routes.js         # Optional: Express routes
 │   ├── models/           # Optional: Data models
 │   └── README.md         # Recommended: Documentation
@@ -21,7 +21,7 @@ addons/
 
 ### Add-on Interface
 
-Your `index.js` must export an object implementing the `AddonModule` interface:
+Your `index.js` (or `index.ts`) must export an object implementing the `AddonModule` interface:
 
 ```javascript
 module.exports = {
@@ -82,7 +82,7 @@ An add-on may ship `config/default-config.json`. When the add-on is enabled, tha
 - the add-on's own settings (`ngdpbase.addons.your-addon.*`) get sensible defaults the operator can override;
 - the add-on can __declare a permission__ in `ngdpbase.permissions.definitions` and __grant it__ with its own policy in `ngdpbase.access.policies` (give the policy its own `id`; arrays of `id` objects merge by id, plain arrays replace wholesale). Routes then ask `await ctx.requirePermission('your-addon-manage')`. Never name a role in add-on code — a deployment grants your permission to its own roles in its own custom file.
 
-The calendar add-on is the worked example: `addons/calendar/config/default-config.json` declares `calendar-manage`. Details: [docs/security-developer-guide.md](../docs/security-developer-guide.md#addons).
+The calendar add-on is the worked example: `addons/calendar/config/default-config.json` declares `calendar-manage`. Details: [docs/guides/security-developer-guide.md](../docs/guides/security-developer-guide.md#addons).
 
 ## Accessing Configuration
 
@@ -148,6 +148,21 @@ These run in `npm run lint` (and `lint:ci`) over the host and every bundled add-
 The one deliberate exemption is `lint:docs` (`check-docs-coverage`): it measures this project's obligation to document its own managers, plugins and providers. An add-on documents itself in its own README. That exemption is about documentation, not a runtime property, which is why it does not contradict the invariant.
 
 If you add a check that enforces a runtime property and it scans only `src/`, extend it to `addons/` in the same change. See [`docs/security-posture.md`](../docs/security-posture.md) for the posture these checks defend and [`docs/planning/Security-auditing.md`](../docs/planning/Security-auditing.md) for the audit side.
+
+## Bundled in this repository
+
+These are the add-ons under `addons/`. Each is off until `ngdpbase.addons.<name>.enabled` is true. Descriptions are the `description` each module exports.
+
+| Add-on | Description |
+| --- | --- |
+| `calendar` | Event calendar with FullCalendar UI and RFC 5545 support. Depends on `forms` |
+| `demo` | Public demo instance content and the read-only demo-admin role |
+| `elasticsearch` | Elasticsearch external asset provider (sist2/S3/NAS) |
+| `feeds` | Data-ingestion framework — external feeds as CatalogSources |
+| `forms` | Generic schema-driven forms — define JSON forms, render on wiki pages, store submissions, trigger hooks |
+| `journal` | Personal journal — entries are pages with timeline rendering |
+
+`calendar` and `journal` declare their permissions in `config/default-config.json`. All six are TypeScript (`index.ts`) and are compiled by `npm run build:addons`. `AddonsManager` loads `index.js` when that file is present, otherwise `index.ts`.
 
 ## Example Add-ons
 
