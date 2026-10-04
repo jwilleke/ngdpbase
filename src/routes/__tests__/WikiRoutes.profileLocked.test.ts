@@ -51,7 +51,7 @@ const createMockRes = () => ({
   send: vi.fn().mockReturnThis()
 });
 
-function makeRoutes(account: Record<string, unknown>) {
+function makeRoutes(account: Record<string, unknown>, held: (action: string) => boolean = () => true) {
   const userManager = {
     getUser: vi.fn(() => Promise.resolve(account)),
     updateUser: vi.fn(() => Promise.resolve(account)),
@@ -59,7 +59,7 @@ function makeRoutes(account: Record<string, unknown>) {
   };
   // #1431 step 14: decisions are the PDP's.
   // #1198: the profile routes ask profile-manage of policy; a reader holds it.
-  const policyDecisionPoint = { permits: vi.fn(() => Promise.resolve(true)) };
+  const policyDecisionPoint = { permits: vi.fn((_subject: unknown, action: string) => Promise.resolve(held(action))) };
   const managers: Record<string, unknown> = { UserManager: userManager, PolicyDecisionPoint: policyDecisionPoint };
   const engine = {
     getManager: vi.fn((name: string) => managers[name] ?? null)
@@ -145,3 +145,25 @@ describe('an ordinary account is unaffected (#1029)', () => {
     expect(decodeURIComponent(redirectTarget(res))).not.toContain('shared account');
   });
 });
+
+describe('#1525 — a password or email change needs account-security; the rest of the profile does not', () => {
+  const withoutAccountSecurity = (action: string): boolean => action !== 'account-security';
+
+  test.each([
+    ['email', { email: 'jim@newhost.example' }],
+    ['password', { newPassword: 'a-new-password-123', confirmPassword: 'a-new-password-123', currentPassword: 'old' }]
+  ])('a %s change is refused without account-security, and writes nothing', async (_label, body) => {
+    const res = createMockRes();
+    const { routes, userManager } = makeRoutes(UNLOCKED, withoutAccountSecurity);
+    await routes.updateProfile(createMockReq('jim', body), res);
+    expect(userManager.updateUser).not.toHaveBeenCalled();
+  });
+
+  test('a display-name change needs only profile-manage', async () => {
+    const res = createMockRes();
+    const { routes, userManager } = makeRoutes(UNLOCKED, withoutAccountSecurity);
+    await routes.updateProfile(createMockReq('jim', { displayName: 'Jim W', email: UNLOCKED.email }), res);
+    expect(userManager.updateUser).toHaveBeenCalled();
+  });
+});
+

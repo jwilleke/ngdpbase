@@ -186,12 +186,20 @@ describe('secrets stay masked for a read-only admin (#1029)', () => {
     expect(JSON.stringify(res.json.mock.calls)).not.toContain('top-secret');
   });
 
-  test('a full admin still can reveal', async () => {
+  test('a full admin still can reveal (secret-reveal, #1525)', async () => {
+    const res = createMockRes();
+    await makeRoutes(['admin-read', 'admin-system', 'secret-reveal']).adminConfiguration(createMockReq(fullAdmin), res);
+
+    const data = res.render.mock.calls[0][1] as Record<string, unknown>;
+    expect(data.canRevealSecrets).toBe(true);
+  });
+
+  test('admin-system alone no longer reveals: revealing is its own permission (#1525)', async () => {
     const res = createMockRes();
     await makeRoutes(['admin-read', 'admin-system']).adminConfiguration(createMockReq(fullAdmin), res);
 
     const data = res.render.mock.calls[0][1] as Record<string, unknown>;
-    expect(data.canRevealSecrets).toBe(true);
+    expect(data.canRevealSecrets).toBe(false);
   });
 });
 
@@ -202,5 +210,38 @@ describe('the admin role is unchanged (#1029)', () => {
     await makeRoutes(['admin-system']).adminTrash(createMockReq(fullAdmin), res);
 
     expect(rendered(res, 'admin-trash')).toBe(true);
+  });
+});
+
+describe('#1525 — configuration changes, backups and secret reveals have their own permissions', () => {
+  const refused = (res: ReturnType<typeof createMockRes>): boolean =>
+    res.status.mock.calls.some((c) => c[0] === 401 || c[0] === 403 || c[0] === 404)
+    || res.redirect.mock.calls.length > 0
+    || res.render.mock.calls.some((c) => String(c[0]).includes('error'));
+
+  test('admin-system without config-manage cannot change configuration or take a backup', async () => {
+    for (const handler of ['adminUpdateConfiguration', 'adminResetConfiguration', 'adminBackup'] as const) {
+      const res = createMockRes();
+      await (makeRoutes(['admin-read', 'admin-system']) as unknown as Record<string, (req: unknown, res: unknown) => Promise<void>>)[handler](
+        { ...createMockReq(fullAdmin), body: { key: 'ngdpbase.application.name', value: 'x' } }, res
+      );
+      expect(refused(res), handler).toBe(true);
+    }
+  });
+
+  test('admin-system without secret-reveal cannot unmask a secret', async () => {
+    const res = createMockRes();
+    await makeRoutes(['admin-read', 'admin-system']).adminRevealSecret(
+      { ...createMockReq(fullAdmin), params: { key: 'ngdpbase.session.secret' } }, res
+    );
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('control: secret-reveal gets past the gate', async () => {
+    const res = createMockRes();
+    await makeRoutes(['admin-read', 'secret-reveal']).adminRevealSecret(
+      { ...createMockReq(fullAdmin), params: { key: 'ngdpbase.session.secret' } }, res
+    );
+    expect(res.status.mock.calls.map((c) => c[0])).not.toContain(403);
   });
 });

@@ -795,6 +795,18 @@ export function mediaSortDateKey(item: Record<string, unknown>): number {
   return typeof year === 'number' ? Date.UTC(year, 0, 1) : 0;
 }
 
+/**
+ * The permissions a view may ask about with `can()` / `lockedUnless()`,
+ * resolved once per render (#1198). A view asking for one not listed here
+ * always reads "not held" — how #1525's config-manage buttons were locked for
+ * an admin. `viewPermissions.test.ts` scans the views and fails on any
+ * permission they use that is missing.
+ */
+export const VIEW_PERMISSIONS = [
+  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage',
+  // #1525: configuration, backup and reveal controls; sign-in-method controls.
+  'config-manage', 'secret-reveal', 'account-security'
+] as const;
 class WikiRoutes {
   private engine: WikiEngine;
   /** Connected admin SSE clients — used to push real-time events to admin pages */
@@ -1072,10 +1084,9 @@ class WikiRoutes {
     // rows — a role name, which skips policy and the token ceiling and shows
     // an affordance the owner's role has but this request's credential may
     // not. `can(permission)` is the same question the route asks.
-    const adminPermissions = ['admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage'] as const;
     const grantedPermissions: Record<string, boolean> = {};
     if (permissionContext) {
-      for (const permission of adminPermissions) {
+      for (const permission of VIEW_PERMISSIONS) {
         grantedPermissions[permission] = await permissionContext.hasPermission(permission);
       }
     }
@@ -6740,7 +6751,7 @@ ${panes}
   /** GET /auth/passkey/register/options — enrol a passkey for the signed-in person (#448). */
   async passkeyRegisterOptions(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'json'))) return;
     try {
       const user = wikiContext.userContext;
       const options = await this.engine.getManager('AuthManager').passkeyRegistrationOptions(
@@ -6756,7 +6767,7 @@ ${panes}
   /** POST /auth/passkey/register/verify — store the passkey if it answers the kept challenge (#448). */
   async passkeyRegisterVerify(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'json'))) return;
     const challenge = this.takePasskeyChallenge(req, 'register');
     if (!challenge) {
       res.status(400).json({ error: 'The enrolment request expired; try again' });
@@ -6827,7 +6838,7 @@ ${panes}
   /** POST /profile/credentials/:id/remove — remove one of your own credentials (#1524). */
   async removeOwnCredential(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
     try {
       const user = wikiContext.userContext;
       const removed = await this.engine.getManager('AuthManager').removeCredential(user, user.username, req.params.id);
@@ -6840,7 +6851,7 @@ ${panes}
   /** POST /profile/credentials/:id/rename — rename one of your own credentials. */
   async renameOwnCredential(req: Request, res: Response): Promise<void> {
     const wikiContext = this.createWikiContext(req);
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
     try {
       const user = wikiContext.userContext;
       const renamed = await this.engine.getManager('AuthManager').renameCredential(user, user.username, req.params.id, (req.body as { label?: unknown }).label);
@@ -9156,8 +9167,8 @@ ${panes}
   async myTakeoutDownload(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'page'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'page', 'account-security');
 
     const store = typeof req.body?.store === 'string' ? req.body.store : '';
     const pagesOnly = req.body?.pagesOnly === 'true' || req.body?.pagesOnly === 'on';
@@ -9221,8 +9232,8 @@ ${panes}
   async myTakeoutImport(req: Request, res: Response) {
     const wikiContext = this.createWikiContext(req);
     const currentUser = wikiContext.userContext;
-    if (!(await this.permitted(wikiContext, 'profile-manage', req, res, 'json'))) return;
-    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'profile-manage');
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'json'))) return;
+    if (!currentUser?.username) return this.refuse(wikiContext, req, res, 'json', 'account-security');
 
     const configManager = this.engine.getManager('ConfigurationManager');
     const maxBytes = Number(configManager?.getProperty('ngdpbase.stores.import.maxsize', 268435456)) || 268435456;
@@ -9530,6 +9541,14 @@ ${panes}
             )
           );
         }
+      }
+
+      // #1525: changing what protects the account — the password or the email
+      // a magic link resolves — is account-security, the permission step-up
+      // guards; the rest of the profile stays profile-manage. The form posts
+      // email prefilled, so only a different value counts as a change.
+      if (newPassword || (email && email !== account?.email)) {
+        if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
       }
 
       if (displayName) updates.displayName = displayName;
@@ -10802,7 +10821,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).send('Access denied');
       }
@@ -11259,7 +11278,7 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage backups');
       }
       const backupManager = this.engine.getManager('BackupManager');
@@ -11300,7 +11319,7 @@ ${panes}
       // Check admin permission for system operations
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return await this.renderError(
           req,
@@ -11435,7 +11454,7 @@ ${panes}
         // not part of viewing the screen. A read-only admin (#1029) sees every
         // value masked with no reveal control, and adminRevealSecret refuses
         // them server-side even if they forge the request.
-        canRevealSecrets: await wikiContext.hasPermission('admin-system'),
+        canRevealSecrets: await wikiContext.hasPermission('secret-reveal'),
 
         // #1162 moved the Security Posture here from the dashboard, where an
         // operator deciding what to change is already looking.
@@ -11478,7 +11497,7 @@ ${panes}
       // gate, which admits admin-read.
       if (
         !currentUser?.isAuthenticated ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).send('Access denied');
       }
@@ -11572,7 +11591,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await wikiContext.hasPermission('secret-reveal'))) {
         res.status(403).json({ success: false, error: 'Permission denied' });
         return;
       }
@@ -11629,11 +11648,11 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
-          reason: "Read-only access — requires the 'admin-system' permission"
+          reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
 
@@ -11706,11 +11725,11 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).json({
           error: 'This account cannot make that change',
-          reason: "Read-only access — requires the 'admin-system' permission"
+          reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
 
@@ -11781,7 +11800,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
@@ -11833,7 +11852,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
@@ -11865,7 +11884,7 @@ ${panes}
 
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
@@ -12087,7 +12106,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.status(403).redirect('/admin/settings?error=Access+denied');
       }
 
@@ -12118,7 +12137,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.redirect('/admin/settings?error=Access+denied');
       }
 
@@ -14675,7 +14694,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (
         !currentUser ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }

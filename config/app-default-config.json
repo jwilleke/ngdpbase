@@ -1749,6 +1749,21 @@
       "icon": "user-cog",
       "color": "#6f42c1"
     },
+    "account-security": {
+      "description": "Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "icon": "user-shield",
+      "color": "#6f42c1"
+    },
+    "config-manage": {
+      "description": "Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "icon": "sliders-h",
+      "color": "#dc3545"
+    },
+    "secret-reveal": {
+      "description": "Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed",
+      "icon": "eye-slash",
+      "color": "#dc3545"
+    },
     "comment-create": {
       "description": "Add a comment, and delete your own; deleting anyone's is admin-system (#1198)",
       "icon": "comment",
@@ -1946,7 +1961,10 @@
         "admin-roles",
         "admin-read",
         "admin-system",
+        "config-manage",
+        "secret-reveal",
         "profile-manage",
+        "account-security",
         "comment-create",
         "store-create"
       ]
@@ -1980,6 +1998,7 @@
         "search-page",
         "admin-read",
         "profile-manage",
+        "account-security",
         "comment-create",
         "search-user",
         "store-create"
@@ -2011,6 +2030,7 @@
         "search-user",
         "page-read",
         "profile-manage",
+        "account-security",
         "comment-create",
         "store-create"
       ]
@@ -2048,6 +2068,7 @@
         "token-mint",
         "search-page",
         "profile-manage",
+        "account-security",
         "comment-create",
         "search-user",
         "store-create"
@@ -2081,6 +2102,7 @@
         "asset-upload",
         "search-page",
         "profile-manage",
+        "account-security",
         "comment-create",
         "search-user",
         "store-create"
@@ -2111,6 +2133,7 @@
         "media-read",
         "search-page",
         "profile-manage",
+        "account-security",
         "comment-create",
         "search-user",
         "store-create"
@@ -2119,7 +2142,7 @@
     {
       "id": "signed-in-self-service",
       "name": "Signed-in Self-Service",
-      "description": "Every account manages its own profile and sign-in methods (#448). Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles), so a session whose site role has stepped down for its required-aal can still reach its profile to enrol a passkey. profile-manage only.",
+      "description": "Every account manages its own profile and sign-in methods (#448). Granted to vault-owner, the role every account is given (ngdpbase.user.account-roles), so a session whose site role has stepped down for its required-aal can still reach its profile to enrol a passkey. profile-manage and account-security (#1525) only.",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -2135,7 +2158,8 @@
         }
       ],
       "actions": [
-        "profile-manage"
+        "profile-manage",
+        "account-security"
       ]
     },
     {

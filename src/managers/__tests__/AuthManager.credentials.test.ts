@@ -24,7 +24,7 @@ describe('AuthManager credentials (#1524)', () => {
   let notices: Array<Record<string, unknown>>;
   let users: Record<string, { password?: string; isExternal?: boolean }>;
 
-  const started = async (granted: Record<string, string[]> = { molly: ['profile-manage'], admin: ['profile-manage', 'user-edit'] }) => {
+  const started = async (granted: Record<string, string[]> = { molly: ['account-security'], admin: ['account-security', 'user-edit'] }) => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
@@ -82,7 +82,7 @@ describe('AuthManager credentials (#1524)', () => {
   });
 
   test('a signed-out caller is refused, whatever the PDP would say', async () => {
-    const am = await started({ anonymous: ['profile-manage'] });
+    const am = await started({ anonymous: ['account-security'] });
     await expect(am.listCredentials(subject('anonymous', false), 'anonymous')).rejects.toThrow(/Permission denied/);
   });
 
@@ -114,7 +114,7 @@ describe('AuthManager credentials (#1524)', () => {
   });
 
   test('the last way in cannot be removed: no password and no other passkey or email', async () => {
-    const am = await started({ sam: ['profile-manage'] });
+    const am = await started({ sam: ['account-security'] });
     const only = await am.addCredential(subject('sam'), 'sam', { ...PASSKEY, subject: 'sam-key' });
     await expect(am.removeCredential(subject('sam'), 'sam', only)).rejects.toThrow(/last way into the account/);
     const second = await am.addCredential(subject('sam'), 'sam', { kind: 'email', subject: 'sam@example.com', secret: '', label: 'Email' });
@@ -123,7 +123,7 @@ describe('AuthManager credentials (#1524)', () => {
   });
 
   test('a TOTP seed is not a way in, so it never counts for the last-way-in rule', async () => {
-    const am = await started({ sam: ['profile-manage'] });
+    const am = await started({ sam: ['account-security'] });
     await am.addCredential(subject('sam'), 'sam', { kind: 'totp', subject: 'sam-totp', secret: 'enc', label: 'App' });
     const key = await am.addCredential(subject('sam'), 'sam', { ...PASSKEY, subject: 'sam-key' });
     await expect(am.removeCredential(subject('sam'), 'sam', key)).rejects.toThrow(/last way into the account/);
