@@ -54,6 +54,9 @@ declare module 'express-session' {
     signIn?: SessionSignIn;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */
     passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate' | 'reauth'; expires: number };
+    /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
+    pendingSignIn?: string;
+    pendingRedirect?: string;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     [key: string]: unknown;

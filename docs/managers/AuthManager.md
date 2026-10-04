@@ -40,6 +40,15 @@ Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3): the 
 - __Shipped default vs operator's level:__ a shipped level that no available factor reaches (no explicit https `base-url`, so no passkeys) acts at what is reachable, and AuthManager is `degraded` saying how to fix it. A level set in `app-custom-config.json` that no factor reaches refuses the boot (`checkRequiredAal()`, run by `app.ts` once add-ons have registered their providers). An operator's level is never lowered.
 - `requiredAalFor(roles)` is the highest effective level among the roles; `reachableAal()` what the available factors reach together; `unreachableRequiredAal()` describes every role above it.
 
+## Two-step sign-in (#1523)
+
+A person who has enrolled a second factor signs in with their password __and__ one of their second factors. Everyone else signs in in one step, as before. Any enrolled second factor works; the first built is the email link (operator, 2026-10-04).
+
+- __After the password__ (`processLogin`): if `secondFactorsFor(username)` offers anything, no session identity is set. `beginTwoStep()` holds a pending sign-in in AuthManager: never a provider, single-use, 10 minutes, bound to the browser by an HTTP-only `ngdp_two_step` cookie on `/login`. Private-store keys the password opened are held with it, and locked if it expires or is refused.
+- __The email link__ (`sendEmailApproval`, one per minute): the link opens `/login/approve` on any device. Opening it changes nothing, because mail scanners open links; __Approve__ completes the factor, and __This wasn't me__ refuses the sign-in and counts as a failed one. The waiting page checks back (`/login/second-factor/status`) and finishes with `completeTwoStep()`. The session's sign-in then carries both factors (`amr: ["pwd","email"]`, still AAL1: email never raises it).
+- __Enrolment__ (Profile → Sign-in methods, `account-security`, so step-up): `startEmailFactorEnrolment()` mails a link to the account's address, and the same signed-in person must open it, so a factor that cannot be satisfied never locks its owner out. The row is a credentials-store `email` row, removable like any other.
+- __Availability__: an email link is offered only with mail configured and an explicit base-url. A factor that cannot work is never offered.
+
 ## Step-up (#1525)
 
 A few permissions ask for a __fresh__ sign-in even inside a valid session, so a session left open on a shared machine can't change what protects the account or the instance. `ngdpbase.auth.step-up` lists them, with the window:

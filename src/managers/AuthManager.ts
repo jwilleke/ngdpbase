@@ -46,7 +46,8 @@ import type {
   ViaToken
 } from '../providers/BaseAuthProvider.js';
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
-import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
+import { MagicLinkAuthProvider, EMAIL_FACTOR } from '../providers/MagicLinkAuthProvider.js';
+import { lockPrivateStores } from '../utils/privateStoreUnlock.js';
 import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
@@ -54,7 +55,7 @@ import { OidcBearerAuthProvider } from '../providers/OidcBearerAuthProvider.js';
 import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
 import {
@@ -144,6 +145,50 @@ export function credentialLabel(label: unknown): string {
   const tidy = typeof label === 'string' ? label.replace(/\s+/g, ' ').trim().slice(0, CREDENTIAL_LABEL_MAX).trim() : '';
   if (!tidy) throw new Error('Give it a name, so you can tell it apart from your others');
   return tidy;
+}
+
+/**
+ * A sign-in waiting for its second factor (#1523): the first factor passed,
+ * no session exists yet. Held by AuthManager only — never a provider —
+ * bound to the requesting browser, single-use, and short-lived.
+ */
+export interface PendingSignIn {
+  handle: string;
+  username: string;
+  first: AuthenticateResult;
+  /** The requesting browser's binding value (an HTTP-only cookie); every step must present it. */
+  binding: string;
+  requestedAt: number;
+  expiresAt: number;
+  requestIp?: string;
+  requestUserAgent?: string;
+  /** Private-store keys unlocked by the password, held until the sign-in completes or is dropped. */
+  privateStoreHandle?: string;
+  /** The second factor, once satisfied. */
+  approved?: SatisfiedFactor;
+  /** Refused by the person ("this wasn't me"). */
+  denied?: boolean;
+  /** When the last approval message went out, for the resend limit. */
+  lastSentAt?: number;
+}
+
+/** A second factor a person has enrolled and can use now. */
+export interface AvailableSecondFactor {
+  id: 'email-link';
+  label: string;
+  /** Where it goes, masked for display (j***@example.com). */
+  target: string;
+}
+
+const PENDING_SIGN_IN_TTL_MS = 10 * 60_000;
+const APPROVAL_RESEND_MS = 60_000;
+const ENROL_TTL_MS = 30 * 60_000;
+
+/** j***@example.com — enough to recognise, not enough to harvest. */
+export function maskEmail(address: string): string {
+  const [local, domain] = address.split('@');
+  if (!domain) return '***';
+  return `${local.slice(0, 1)}***@${domain}`;
 }
 
 /** Kinds that can start a sign-in on their own — what "a way in" counts (#1524). */
@@ -837,6 +882,205 @@ class AuthManager extends BaseManager {
     if (!signIn) return fresh;
     const factors = [...signIn.factors, ...fresh.factors];
     return { provider: signIn.provider, factors, ...this.assess(factors), at: fresh.at };
+  }
+
+  // ── Two-step sign-in (#1523) ──────────────────────────────────────────
+
+  private pendingSignIns = new Map<string, PendingSignIn>();
+  private approvalTokens = new Map<string, { handle: string; expiresAt: number }>();
+  private enrolTokens = new Map<string, { username: string; address: string; expiresAt: number }>();
+
+  /** Mail can carry an email-link factor: a mail transport and an explicit base-url for the link. */
+  private mailForLinks(): EmailManager | null {
+    const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const mail = this.engine.getManager<EmailManager>('EmailManager');
+    return mail && configManager?.isBaseUrlExplicit() ? mail : null;
+  }
+
+  private linkBase(): string {
+    return (this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getBaseURL() ?? '').replace(/\/$/, '');
+  }
+
+  /** Whether an email link can be a second factor on this site now (#1523): mail and an explicit base-url. */
+  emailLinksAvailable(): boolean {
+    return this.mailForLinks() !== null;
+  }
+
+  /**
+   * The second factors `username` has enrolled and can use now (#1523). Any
+   * enrolled factor works; one that is not truly available (no mail transport)
+   * is not offered. Empty means the sign-in is one step, as before.
+   */
+  secondFactorsFor(username: string): AvailableSecondFactor[] {
+    const rows = this.credentials?.list(username) ?? [];
+    const out: AvailableSecondFactor[] = [];
+    if (this.mailForLinks()) {
+      for (const r of rows.filter((c) => c.kind === 'email')) {
+        out.push({ id: 'email-link', label: 'Email link', target: maskEmail(r.subject) });
+      }
+    }
+    return out;
+  }
+
+  /** Hold a sign-in whose first factor passed, until a second factor completes it. Returns its handle. */
+  beginTwoStep(first: AuthenticateResult, ctx: { binding: string; ip?: string; userAgent?: string; privateStoreHandle?: string }): string {
+    if (!first.success || !first.username) throw new Error('No first factor to continue from');
+    this.sweepPending();
+    const handle = randomBytes(24).toString('base64url');
+    const now = Date.now();
+    this.pendingSignIns.set(handle, {
+      handle,
+      username: first.username,
+      first,
+      binding: ctx.binding,
+      requestedAt: now,
+      expiresAt: now + PENDING_SIGN_IN_TTL_MS,
+      requestIp: ctx.ip,
+      requestUserAgent: ctx.userAgent,
+      privateStoreHandle: ctx.privateStoreHandle
+    });
+    return handle;
+  }
+
+  /** The pending sign-in, for the browser that started it; null when gone, expired, or another browser. */
+  pendingSignIn(handle: string | undefined, binding: string | undefined): PendingSignIn | null {
+    if (!handle) return null;
+    const p = this.pendingSignIns.get(handle);
+    if (!p) return null;
+    if (Date.now() > p.expiresAt) { this.dropPending(handle); return null; }
+    return binding && p.binding === binding ? p : null;
+  }
+
+  /**
+   * Email a one-time approval link for the pending sign-in (#1523, #1532).
+   * The link only opens the approval page; the button there approves, so a
+   * mail scanner opening links approves nothing. Limited to one per minute.
+   */
+  async sendEmailApproval(handle: string, binding: string): Promise<'sent' | 'too-soon' | 'unavailable'> {
+    const p = this.pendingSignIn(handle, binding);
+    const mail = this.mailForLinks();
+    const row = p ? (this.credentials?.list(p.username) ?? []).find((c) => c.kind === 'email') : undefined;
+    if (!p || !mail || !row) return 'unavailable';
+    if (p.lastSentAt && Date.now() - p.lastSentAt < APPROVAL_RESEND_MS) return 'too-soon';
+    const token = randomBytes(32).toString('base64url');
+    this.approvalTokens.set(token, { handle, expiresAt: p.expiresAt });
+    p.lastSentAt = Date.now();
+    const url = `${this.linkBase()}/login/approve?t=${token}`;
+    await mail.send({
+      to: row.subject,
+      subject: 'Approve your sign-in',
+      text: [
+        `Someone signed in as ${p.username} with your password and is waiting for approval.`,
+        '',
+        'Open this link to see the details and approve or refuse it:',
+        url,
+        '',
+        'It works once, for the next 10 minutes. If this was not you, refuse it and change your password.'
+      ].join('\n'),
+      html: [
+        `<p>Someone signed in as <strong>${p.username.replace(/[<>&"]/g, '')}</strong> with your password and is waiting for approval.</p>`,
+        `<p><a href="${url}">See the details and approve or refuse it</a></p>`,
+        '<p>It works once, for the next 10 minutes. If this was not you, refuse it and change your password.</p>'
+      ].join('\n')
+    });
+    return 'sent';
+  }
+
+  /** What the approval page shows about the waiting sign-in; null for an unknown or used link. */
+  approvalDetails(token: string): { username: string; requestedAt: number; ip?: string; userAgent?: string } | null {
+    const entry = this.approvalTokens.get(token);
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    const p = this.pendingSignIns.get(entry.handle);
+    if (!p || p.approved || p.denied) return null;
+    return { username: p.username, requestedAt: p.requestedAt, ip: p.requestIp, userAgent: p.requestUserAgent };
+  }
+
+  /** Approve the waiting sign-in from its link (the button press). Single use; returns the username, or null. */
+  approveByToken(token: string): string | null {
+    const entry = this.approvalTokens.get(token);
+    this.approvalTokens.delete(token);
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    const p = this.pendingSignIns.get(entry.handle);
+    if (!p || p.approved || p.denied || Date.now() > p.expiresAt) return null;
+    p.approved = { provider: 'email-link', ...EMAIL_FACTOR, at: new Date().toISOString() };
+    return p.username;
+  }
+
+  /** Refuse the waiting sign-in from its link ("this wasn't me"). Returns the username, or null. */
+  denyByToken(token: string): string | null {
+    const entry = this.approvalTokens.get(token);
+    this.approvalTokens.delete(token);
+    if (!entry) return null;
+    const p = this.pendingSignIns.get(entry.handle);
+    if (!p || p.approved) return null;
+    p.denied = true;
+    if (p.privateStoreHandle) lockPrivateStores(p.privateStoreHandle);
+    return p.username;
+  }
+
+  /**
+   * The finished sign-in, once its second factor is satisfied — both factors,
+   * assessed together. Single use: the pending entry is gone after this.
+   */
+  completeTwoStep(handle: string, binding: string): { result: AuthenticateResult; privateStoreHandle?: string } | null {
+    const p = this.pendingSignIn(handle, binding);
+    if (!p?.approved || p.denied) return null;
+    this.pendingSignIns.delete(handle);
+    for (const [token, entry] of this.approvalTokens) if (entry.handle === handle) this.approvalTokens.delete(token);
+    return {
+      result: { ...p.first, factors: [...(p.first.factors ?? []), p.approved] },
+      privateStoreHandle: p.privateStoreHandle
+    };
+  }
+
+  /** Drop a pending sign-in and lock any keys it held. */
+  dropPending(handle: string): void {
+    const p = this.pendingSignIns.get(handle);
+    if (!p) return;
+    if (p.privateStoreHandle) lockPrivateStores(p.privateStoreHandle);
+    this.pendingSignIns.delete(handle);
+  }
+
+  private sweepPending(): void {
+    const now = Date.now();
+    for (const [handle, p] of this.pendingSignIns) if (now > p.expiresAt) this.dropPending(handle);
+    for (const [token, e] of this.approvalTokens) if (now > e.expiresAt) this.approvalTokens.delete(token);
+    for (const [token, e] of this.enrolTokens) if (now > e.expiresAt) this.enrolTokens.delete(token);
+  }
+
+  /**
+   * Start enrolling the account's email address as a second factor (#1523).
+   * The address must prove it receives mail first: a factor that cannot be
+   * satisfied would lock its owner out.
+   */
+  async startEmailFactorEnrolment(ctx: PermissionSubject, username: string): Promise<'sent' | 'no-email' | 'unavailable' | 'already'> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const mail = this.mailForLinks();
+    if (!mail) return 'unavailable';
+    const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
+    const address = typeof user?.email === 'string' ? user.email.trim() : '';
+    if (!address) return 'no-email';
+    if ((this.credentials?.list(username) ?? []).some((c) => c.kind === 'email' && c.subject === address)) return 'already';
+    this.sweepPending();
+    const token = randomBytes(32).toString('base64url');
+    this.enrolTokens.set(token, { username, address, expiresAt: Date.now() + ENROL_TTL_MS });
+    const url = `${this.linkBase()}/profile/second-factor/email/confirm?t=${token}`;
+    await mail.send({
+      to: address,
+      subject: 'Confirm your email as a second factor',
+      text: ['Open this link to use this address to approve your sign-ins:', '', url, '', 'It works once, for 30 minutes. If you did not ask for this, ignore it.'].join('\n'),
+      html: `<p><a href="${url}">Use this address to approve your sign-ins</a></p><p>It works once, for 30 minutes. If you did not ask for this, ignore it.</p>`
+    });
+    return 'sent';
+  }
+
+  /** Finish enrolling from the emailed link, by the same signed-in person. Single use. */
+  async confirmEmailFactorEnrolment(ctx: PermissionSubject, token: string): Promise<boolean> {
+    const entry = this.enrolTokens.get(token);
+    this.enrolTokens.delete(token);
+    if (!entry || Date.now() > entry.expiresAt || entry.username !== ctx.username) return false;
+    await this.addCredential(ctx, entry.username, { kind: 'email', subject: entry.address, secret: '', label: 'Email: approve sign-ins' });
+    return true;
   }
 
   /**

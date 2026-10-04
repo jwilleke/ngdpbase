@@ -8,7 +8,7 @@ Mostly an index: where an issue holds a design, this page points at it and says 
 
 ## Where it stands
 
-`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in is still __one step__: a password, a passkey, a magic link or an identity provider. Two-step sign-in (a second factor) is not built; roles that need more than the sign-in gave step down instead.
+`AuthManager` runs a chain of registered `AuthProvider`s, and routes talk only to the manager. Signing in is one step (a password, a passkey, a magic link or an identity provider) unless the person enrolled a second factor; then a password sign-in also needs that factor (#1523). Roles that need more than the sign-in gave step down.
 
 __Implementation status__, checked against the code on 2026-10-04, not against the issues:
 
@@ -25,7 +25,7 @@ __Implementation status__, checked against the code on 2026-10-04, not against t
 | One definition of a password change (`setPassword`): hash, end other sessions, record when; the offline reset script uses it | [#1592](https://github.com/jwilleke/ngdpbase/issues/1592) | Built ([#1596](https://github.com/jwilleke/ngdpbase/pull/1596)) |
 | Authorization server: the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package | — | Built in its own repo and published to npmjs: code flow with PKCE, UserInfo, RFC 8628, refresh rotation with reuse detection, hashed token storage, an issuer under a path with cookies scoped to it, the issuer's host pinned against a forged Host header, the sign-in (`acr`, `amr`, `authTime`) passed to the host's account lookup. ngdpbase pins 0.4.0 |
 | OpenID Connect provider at `<base-url>/oidc` (`OidcManager`): store, generated keys, the sign-in bridge and consent page, audit, a password change ends app access, ngdpbase's API accepts its tokens as a delegation, device approval with step-up, Profile → Apps and devices with Revoke | [#1578](https://github.com/jwilleke/ngdpbase/issues/1578) ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526), [#1529](https://github.com/jwilleke/ngdpbase/issues/1529)) | Built, off by default ([#1584](https://github.com/jwilleke/ngdpbase/pull/1584), [#1589](https://github.com/jwilleke/ngdpbase/pull/1589), [#1595](https://github.com/jwilleke/ngdpbase/pull/1595), [#1596](https://github.com/jwilleke/ngdpbase/pull/1596), [#1597](https://github.com/jwilleke/ngdpbase/pull/1597), [#1600](https://github.com/jwilleke/ngdpbase/pull/1600), [#1602](https://github.com/jwilleke/ngdpbase/pull/1602)) |
-| The second-factor flow (password, then a second factor) and its single-use pending handle | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started; `required-aal` is enforced by roles stepping down |
+| Two-step sign-in: the password, then any enrolled second factor; the single-use pending sign-in; the email link as the first second factor, approved from any device; enrolment verified by a link | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | On a branch (operator chose the email link first, 2026-10-04) |
 | Known devices | [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) | Not started; needs the second-factor flow |
 
 Providers in the code (`src/providers/`):

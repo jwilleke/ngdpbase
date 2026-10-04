@@ -57,6 +57,13 @@ interface TokenEntry {
   deviceState?: string;
 }
 
+/**
+ * What an email link gives, in either role — starting a sign-in or confirming
+ * one as a second factor (#1523: one email-link factor). Email is never
+ * phishing-resistant and never above AAL1 (SP 800-63B §5.1.3.1).
+ */
+export const EMAIL_FACTOR = { amr: ['email'], aal: 1 as const };
+
 export interface MagicLinkConfig {
   ttlMs: number;
   mailProvider: MailProvider;
@@ -66,7 +73,7 @@ export class MagicLinkAuthProvider implements AuthProvider {
   readonly id = 'magic-link';
   readonly displayName = 'Magic Link';
   /** Email is never phishing-resistant and never above AAL1: SP 800-63B §5.1.3.1 bars it as out-of-band (#1523). */
-  readonly factor: FactorDescription = { amr: ['email'], aal: 1, primary: true };
+  readonly factor: FactorDescription = { ...EMAIL_FACTOR, primary: true };
 
   /** token → entry */
   private tokens: Map<string, TokenEntry>;
