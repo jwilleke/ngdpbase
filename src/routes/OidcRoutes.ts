@@ -13,9 +13,14 @@
  *   grant, Deny ends the request. Everyone sees consent once per app; the
  *   grant is remembered (operator, 2026-10-04).
  *
- * Not yet, and refused rather than faked: a fresh sign-in on demand
- * (`prompt=login`, an expired `max_age`) needs re-authentication inside a live
- * session, which is step-up (#1525); device approval needs the same (#1577).
+ * Approving a device (RFC 8628) grants long-lived access, so it asks
+ * account-security through ngdpbase's own permission check — policy, then
+ * step-up (#1525) — at every step of the approval (#1577). A stale session
+ * goes to /auth/reauth and comes back to the same pending request.
+ *
+ * Not yet, and refused rather than faked: a fresh sign-in on demand from an
+ * app (`prompt=login`, an expired `max_age`) for a session older than the
+ * request.
  */
 import type { Express, NextFunction, Request, Response } from 'express';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from '../managers/OidcManager.js';
@@ -33,13 +38,20 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   offline_access: 'Stay connected while you are not using it, until you revoke it'
 };
 
-export const DEVICE_NOT_YET = 'Approving a device needs a fresh sign-in (step-up), which this site does not offer yet';
 
 export interface OidcRoutesDeps {
   oidc: OidcManager;
   /** The data every ngdpbase view gets (header, CSRF token, …). */
   templateData: (req: Request) => Promise<Record<string, unknown>>;
+  /**
+   * ngdpbase's route door (WikiRoutes.permitRequest): policy, then step-up.
+   * Answers the refusal or the re-authentication redirect itself; true to proceed.
+   */
+  permit: (req: Request, res: Response, permission: 'account-security', mode: 'page') => Promise<boolean>;
 }
+
+/** What approving a device asks: the permission step-up guards (decided 2026-10-02, renamed 2026-10-04). */
+export const DEVICE_APPROVAL_PERMISSION = 'account-security';
 
 /**
  * Why the pending request needs a sign-in fresher than this session's, or null.
@@ -101,13 +113,13 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
     }
 
     try {
-      if (pending.deviceFlow) {
-        await helpers.fail(req, res, 'access_denied', DEVICE_NOT_YET);
-        return;
-      }
-
       const username = signedInAs(req);
       if (!username) { toLogin(req, res); return; }
+
+      // #1577: a device gets long-lived access; approving it needs a fresh
+      // factor. The door answers a stale session with /auth/reauth, which
+      // returns here to the same pending request.
+      if (pending.deviceFlow && !(await deps.permit(req, res, DEVICE_APPROVAL_PERMISSION, 'page'))) return;
 
       if (pending.prompt === 'login') {
         const signIn = req.session.signIn;
@@ -136,7 +148,8 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
         title: 'Allow access',
         uid: req.params.uid,
         clientName: await oidc.clientName(pending.clientId),
-        lines: consentLines(pending.scope)
+        lines: consentLines(pending.scope),
+        deviceFlow: pending.deviceFlow
       });
     } catch (err) {
       logger.error(`[OidcRoutes] interaction ${req.params.uid} failed: ${(err as Error).message}`);
@@ -160,6 +173,8 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
       await expired(req, res);
       return;
     }
+    // The approval itself is the moment that matters for a device: asked again here.
+    if (pending.deviceFlow && !(await deps.permit(req, res, DEVICE_APPROVAL_PERMISSION, 'page'))) return;
     try {
       if (allow) await helpers.finishConsent(req, res);
       else await helpers.fail(req, res, 'access_denied', 'The person declined');
