@@ -1,4 +1,5 @@
 import { resolvePosture, POSTURE_KEY } from '../securityPosture';
+import { enabledEntries } from '../configFiles';
 
 /**
  * #1145 — the security posture is a VIEW over existing settings (D3).
@@ -108,7 +109,7 @@ describe('#1145 — the shipped posture is coherent', () => {
   test('no ingredient is a declared secret', () => {
     // Shipping one would render it in the admin section by default, which is
     // the disclosure ngdpbase.config.secret-keys exists to prevent.
-    const secrets = new Set(config['ngdpbase.config.secret-keys'] as string[]);
+    const secrets = new Set(enabledEntries(config['ngdpbase.config.secret-keys']));
     expect(Object.keys(posture).filter((k) => secrets.has(k))).toEqual([]);
   });
 

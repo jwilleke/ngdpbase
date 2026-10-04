@@ -13,6 +13,7 @@ import logger from '../utils/logger.js';
 export const AUDIT_WRITE_FAILED = 'EAUDITWRITE';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { enabledEntries } from '../utils/configFiles.js';
 import { buildAttachmentAuditEvent } from '../utils/auditEvents.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -529,7 +530,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   ): Promise<{ content: string; warnings: string[] }> {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const maxBytes = (cm?.getProperty('ngdpbase.attachment.maxsize', 10485760) as number) || 10485760;
-    const adDenyList = (cm?.getProperty('ngdpbase.markdown.ncm.image.ad-deny-list', []) as string[]) || [];
+    const adDenyList = enabledEntries(cm?.getProperty('ngdpbase.markdown.ncm.image.ad-deny-list', []));
     const fetchTimeoutMs = (cm?.getProperty('ngdpbase.fetch-timeout-ms', 30000) as number) || 30000;
     const egress = resolveEgressPolicy((key, fallback) => cm?.getProperty(key, fallback));
 

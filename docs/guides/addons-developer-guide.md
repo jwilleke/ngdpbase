@@ -12,7 +12,7 @@
   - __A `general` page it helps a person create__ is that person's page, with no addon rules afterwards.
   - __Data it keeps in its own files__ (its `dataPath`) is the system's, not a user's, and never goes in a vault. Admins read it, or it is handed to another addon through a hook, as forms does with `registerHandler`.
   - __Pages it seeds__ are documentation about the addon (`system-category: addon`), public.
-- An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id. Do not append to a role's `permissions` array.
+- An addon's `config/default-config.json` is a merge layer. Maps merge per entry; `id` arrays merge by id; a list of names given for a set map (`ngdpbase.config.secret-keys`, `ngdpbase.auth.step-up.permissions`) is added to it. Do not append to a role's `permissions` array.
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value.
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
 - Import host HTTP as `../../dist/src/http/guardedFetch.js`, never `src/http/`.

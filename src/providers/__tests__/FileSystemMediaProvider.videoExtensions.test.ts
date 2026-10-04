@@ -16,6 +16,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DEFAULT_MEDIA_EXTENSIONS } from '../FileSystemMediaProvider.js';
+import { enabledEntries } from '../../utils/configFiles';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const providerSource = fs.readFileSync(
@@ -59,6 +60,6 @@ describe('media extensions and MIME types (#1097)', () => {
     const configPath = path.join(__dirname, '../../../config/app-default-config.json');
     const config = await fs.readJson(configPath);
     // Config keys are FLAT dotted strings, not a nested object.
-    expect(config['ngdpbase.media.extensions']).toEqual(DEFAULT_MEDIA_EXTENSIONS);
+    expect(enabledEntries(config['ngdpbase.media.extensions'])).toEqual(DEFAULT_MEDIA_EXTENSIONS);
   });
 });

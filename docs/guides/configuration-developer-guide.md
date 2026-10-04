@@ -15,7 +15,8 @@ How to add or change a configuration key. Config selects and parameterises; it n
 - Read configuration only through `ConfigurationManager.getProperty`. Do not open `app-default-config.json` from application code.
 - Keys are `ngdpbase.{category}.{property}`. Declare every key in `config/app-default-config.json` with a `_comment_*` when the default is not obvious.
 - Merge is three layers, lowest first: shipped defaults; each enabled addon's `config/default-config.json`; the operator's `app-custom-config.json`.
-- Maps merge per entry. `id` arrays merge by id. A plain array replaces wholesale — do not use a plain array for a catalog an addon or operator must extend.
+- Maps merge per entry. Arrays of objects merge by `id` (or `authproviderid`). A plain array replaces wholesale — do not use a plain array for a catalog an addon or operator must extend.
+- A set of names is a map of `"name": true` ([#1612](https://github.com/jwilleke/ngdpbase/issues/1612)). A later layer adds a name with `true`, removes one with `false`, or adds several with a plain list of names. Read it with `enabledEntries()` from `src/utils/configFiles.ts`, which accepts either form.
 - Environment-owned keys are declared in `ngdpbase.config.env-keys`. The admin screen must not persist edits that cannot take effect.
 - Secrets are named in `ngdpbase.config.secret-keys`. They are reported as set, never rendered.
 

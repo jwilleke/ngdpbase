@@ -15,6 +15,7 @@
 import type { AuditEvent } from './auditEvents.js';
 import type { ActorAttribution } from '../context/ActorContext.js';
 import { AUDIT_EVENT } from './auditEventNames.js';
+import { enabledEntries } from './configFiles.js';
 
 /**
  * Longest JSON representation of a value kept in a record.
@@ -36,8 +37,7 @@ const MAX_VALUE_CHARS = 512;
  * from being recorded.
  */
 export function isSecretKey(key: string, secretKeys: unknown): boolean {
-  if (!Array.isArray(secretKeys)) return false;
-  return secretKeys.some((entry) => typeof entry === 'string' && entry === key);
+  return enabledEntries(secretKeys).includes(key);
 }
 
 /**

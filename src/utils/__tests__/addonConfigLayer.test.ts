@@ -10,6 +10,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { discoverAddonDefaults, loadMergedConfigSync, mergeConfigWithAddons, mergeWithAddonLayer } from '../addonConfigLayer';
+import { enabledEntries } from '../configFiles';
 
 let root: string;
 
@@ -128,5 +129,42 @@ describe('#1220 the pre-engine reader carries the layer too', () => {
     } finally {
       fs.rmSync(data, { recursive: true, force: true });
     }
+  });
+});
+
+describe('#1612 a set map is extended by every layer, never replaced', () => {
+  const SET = 'ngdpbase.config.secret-keys';
+  const base = { [SET]: { 'ngdpbase.session.secret': true, 'ngdpbase.mail.password': true } };
+  const layer = (slug: string, defaults: Record<string, unknown>) => ({ slug, dir: '', source: 'directory' as const, defaults });
+
+  test('an addon list adds to the shipped set', () => {
+    const merged = mergeWithAddonLayer(base, [layer('a', { [SET]: ['ngdpbase.addons.a.api-key'] })], {});
+    expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'ngdpbase.addons.a.api-key']);
+  });
+
+  test('two addon lists both add', () => {
+    const merged = mergeWithAddonLayer(base, [layer('a', { [SET]: ['a.key'] }), layer('b', { [SET]: ['b.key'] })], {});
+    expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'a.key', 'b.key']);
+  });
+
+  test('an operator list adds; an operator false removes', () => {
+    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: ['my.secret'] })[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'my.secret']);
+    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: { 'ngdpbase.mail.password': false, 'my.secret': true } })[SET])).toEqual(['ngdpbase.session.secret', 'my.secret']);
+  });
+
+  test('an addon extends step-up permissions inside the step-up object', () => {
+    const shippedStepUp = { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: { 'account-security': true } } };
+    const merged = mergeWithAddonLayer(shippedStepUp, [layer('acct', { 'ngdpbase.auth.step-up': { permissions: ['ledger-close'] } })], {});
+    const stepUp = merged['ngdpbase.auth.step-up'] as { 'max-age-minutes': number; permissions: unknown };
+    expect(stepUp['max-age-minutes']).toBe(5);
+    expect(enabledEntries(stepUp.permissions)).toEqual(['account-security', 'ledger-close']);
+  });
+
+  test('the shipped secret-keys survive an addon and an operator layer', () => {
+    const shippedFile = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
+    const core = enabledEntries(shippedFile[SET]);
+    expect(core).toContain('ngdpbase.session.secret');
+    const merged = mergeWithAddonLayer(shippedFile, [layer('a', { [SET]: ['a.key'] })], { [SET]: ['my.secret'] });
+    expect(enabledEntries(merged[SET])).toEqual([...core, 'a.key', 'my.secret']);
   });
 });

@@ -28,6 +28,7 @@ import WikiContext from '../context/WikiContext.js';
 import BaseMediaProvider, { MediaItem, ScanResult } from '../providers/BaseMediaProvider.js';
 import FileSystemMediaProvider, { DEFAULT_MEDIA_EXTENSIONS } from '../providers/FileSystemMediaProvider.js';
 import { transformImage } from '../utils/imageTransform.js';
+import { enabledEntries } from '../utils/configFiles.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
@@ -123,7 +124,7 @@ class MediaManager extends BaseManager implements CatalogSource {
     const maxDepth = configManager.getProperty('ngdpbase.media.maxdepth', 5) as number;
     const thumbnailSizes = configManager.getProperty('ngdpbase.media.thumbnail.sizes', '300x300,150x150') as string;
     const metadataPriority = configManager.getProperty('ngdpbase.media.metadata.priority', ['EXIF', 'IPTC', 'XMP']) as string[];
-    const extensionList = configManager.getProperty('ngdpbase.media.extensions', DEFAULT_MEDIA_EXTENSIONS) as string[];
+    const extensionList = enabledEntries(configManager.getProperty('ngdpbase.media.extensions', DEFAULT_MEDIA_EXTENSIONS));
     const extensions = new Set(extensionList.map(e => e.toLowerCase().replace(/^\./, '')));
 
     this.mediaFolders = folders;

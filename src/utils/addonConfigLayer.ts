@@ -97,14 +97,21 @@ export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string
   return out;
 }
 
-/** shipped ⊕ addons ⊕ custom, in that order of precedence (custom wins). */
+/**
+ * shipped ⊕ addons ⊕ custom, in that order of precedence (custom wins).
+ *
+ * Each addon folds onto the shipped defaults in turn, not onto the other
+ * addons alone: an addon's list of names for a set map (`secret-keys`,
+ * `auth.step-up.permissions`) then adds to the shipped set, and a second
+ * addon's list adds again rather than replacing the first (#1612).
+ */
 export function mergeWithAddonLayer<T extends Record<string, unknown>>(
   shipped: T,
   addons: readonly AddonDefaults[],
   custom: Partial<T>
 ): T {
-  const layer = addons.reduce<Record<string, unknown>>((acc, a) => deepMergeObjects(acc, a.defaults), {});
-  return deepMergeConfigs(deepMergeConfigs(shipped, layer as Partial<T>), custom);
+  const withAddons = addons.reduce<Record<string, unknown>>((acc, a) => deepMergeObjects(acc, a.defaults), shipped);
+  return deepMergeConfigs(withAddons as T, custom);
 }
 
 /**

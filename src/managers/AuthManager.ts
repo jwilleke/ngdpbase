@@ -67,6 +67,7 @@ import {
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { enabledEntries } from '../utils/configFiles.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -849,7 +850,7 @@ class AuthManager extends BaseManager {
     const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.auth.step-up', null) as
       { 'max-age-minutes'?: unknown; permissions?: unknown } | null;
     const minutes = Number(raw?.['max-age-minutes']);
-    const permissions = Array.isArray(raw?.permissions) ? raw.permissions.filter((p): p is string => typeof p === 'string') : [];
+    const permissions = enabledEntries(raw?.permissions);
     if (!Number.isFinite(minutes) || minutes <= 0) return { maxAgeMs: 0, permissions: new Set() };
     return { maxAgeMs: minutes * 60_000, permissions: new Set(permissions) };
   }

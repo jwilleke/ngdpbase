@@ -11,7 +11,7 @@ import {
 import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
-import { configFilePaths, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
+import { configFilePaths, enabledEntries, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
 import { mergeConfigWithAddons } from '../utils/addonConfigLayer.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
@@ -942,8 +942,7 @@ class ConfigurationManager extends BaseManager {
    * @returns {Set<string>} Lower-cased tag names
    */
   getFencedCodeTags(): Set<string> {
-    const tags = this.getProperty('ngdpbase.markup.fenced-code-tags', []) as string[];
-    return new Set(Array.isArray(tags) ? tags.map(t => t.toLowerCase()) : []);
+    return new Set(enabledEntries(this.getProperty('ngdpbase.markup.fenced-code-tags', [])).map(t => t.toLowerCase()));
   }
 
   /**
