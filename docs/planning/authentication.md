@@ -60,6 +60,7 @@ Authentication work that has an issue but no code yet, as of 2026-10-04. Status 
 - __Recovery__: account recovery for a lost password, passkey, second factor, known device or private-store keys ([#1545](https://github.com/jwilleke/ngdpbase/issues/1545)); the recovery words exist ([#1451](https://github.com/jwilleke/ngdpbase/issues/1451))
 - __Private stores and sign-in__: strong sign-ins unlock private stores, with PRF passkeys and an opt-in server-held key for AAL2 ([#1594](https://github.com/jwilleke/ngdpbase/issues/1594))
 - __OpenID Connect__: an opt-in `groups` scope from `/oidc`, and one group-to-role mapping for incoming providers ([#1588](https://github.com/jwilleke/ngdpbase/issues/1588))
+- __Consent__: consent for everything gathered, at three levels — `terms` (accepted per version at sign-up: the account, the session, sign-in security records), `explicit` (opt-in per purpose, withdrawable: known devices, communication channels), `per-use` (each app or share) — recorded like FHIR `Consent` / ISO/IEC TS 27560 ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Known devices wait for it
 - __Sessions__: the posture note when the idle timeout is at or above the session `max-age` ([#1546](https://github.com/jwilleke/ngdpbase/issues/1546))
 
 Not filed yet, noted here so it is not lost:
