@@ -484,7 +484,7 @@ class AuthManager extends BaseManager {
     const pdp = this.engine.getManager('PolicyDecisionPoint') as
       { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
     if (!pdp || !ctx.isAuthenticated) return false;
-    return pdp.permits(ctx, ctx.username === username ? 'profile-manage' : 'user-edit');
+    return pdp.permits(ctx, ctx.username === username ? 'account-security' : 'user-edit');
   }
 
   private requireCredentialsStore(): BaseCredentialsProvider {

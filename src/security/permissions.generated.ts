@@ -7,6 +7,8 @@
 
 /** Every permission core declares. Addons generate their own union. */
 export type CorePermission =
+  /** Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
+  | 'account-security'
   /** View administration screens (read-only, no changes) */
   | 'admin-read'
   /** Role management */
@@ -23,6 +25,8 @@ export type CorePermission =
   | 'asset-upload'
   /** Add a comment, and delete your own; deleting anyone's is admin-system (#1198) */
   | 'comment-create'
+  /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
+  | 'config-manage'
   /** Browse and view the media library (not delegated to anonymous visitors) */
   | 'media-read'
   /** Create new pages */
@@ -45,6 +49,8 @@ export type CorePermission =
   | 'search-page'
   /** Search users */
   | 'search-user'
+  /** Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed */
+  | 'secret-reveal'
   /** Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224) */
   | 'share-manage'
   /** Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it */
@@ -62,6 +68,7 @@ export type CorePermission =
 
 /** The same list at runtime, for a check that has to iterate. */
 export const CORE_PERMISSIONS: readonly CorePermission[] = [
+  'account-security',
   'admin-read',
   'admin-roles',
   'admin-system',
@@ -70,6 +77,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'asset-read',
   'asset-upload',
   'comment-create',
+  'config-manage',
   'media-read',
   'page-create',
   'page-delete',
@@ -81,6 +89,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'profile-manage',
   'search-page',
   'search-user',
+  'secret-reveal',
   'share-manage',
   'store-create',
   'token-mint',

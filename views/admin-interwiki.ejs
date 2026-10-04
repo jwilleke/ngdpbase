@@ -117,7 +117,7 @@
                                                         data-confirm="Delete site '<%= name %>'? This cannot be undone."
                                                         onsubmit="return confirm(this.dataset.confirm);">
                                                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"<%- lockedUnless('admin-system') %>>
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"<%- lockedUnless('config-manage') %>>
                                                             <i class="fas fa-trash"></i>
                                                         </button>
                                                     </form>
@@ -162,7 +162,7 @@
                                                                 </div>
                                                             </div>
                                                             <div class="col-md-1 d-flex gap-1">
-                                                                <button type="submit" class="btn btn-sm btn-primary" title="Save"<%- lockedUnless('admin-system') %>>
+                                                                <button type="submit" class="btn btn-sm btn-primary" title="Save"<%- lockedUnless('config-manage') %>>
                                                                     <i class="fas fa-save"></i>
                                                                 </button>
                                                                 <button type="button" class="btn btn-sm btn-secondary"
@@ -233,7 +233,7 @@
                                 </div>
 
                                 <div class="mt-3">
-                                    <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-system') %>>
+                                    <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
                                         <i class="fas fa-plus"></i> Add Site
                                     </button>
                                 </div>
@@ -319,7 +319,7 @@
                                     <strong>Note:</strong> A server restart is required for these changes to take effect in the link parser.
                                 </div>
 
-                                <button type="submit" class="btn btn-primary"<%- lockedUnless('admin-system') %>>
+                                <button type="submit" class="btn btn-primary"<%- lockedUnless('config-manage') %>>
                                     <i class="fas fa-save"></i> Save Options
                                 </button>
                             </form>

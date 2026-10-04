@@ -329,11 +329,11 @@
                             <form method="POST" action="/admin/maintenance/toggle" class="d-inline">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                                 <% if (maintenanceMode) { %>
-                                    <button type="submit" class="btn btn-danger btn-sm"<%- lockedUnless('admin-system') %> onclick="return confirm('Disable maintenance mode? Users will be able to access the system again.')">
+                                    <button type="submit" class="btn btn-danger btn-sm"<%- lockedUnless('config-manage') %> onclick="return confirm('Disable maintenance mode? Users will be able to access the system again.')">
                                         <i class="fas fa-play"></i> Disable Maintenance
                                     </button>
                                 <% } else { %>
-                                    <button type="submit" class="btn btn-warning btn-sm"<%- lockedUnless('admin-system') %> onclick="return confirm('Enable maintenance mode? This will restrict access for regular users.')">
+                                    <button type="submit" class="btn btn-warning btn-sm"<%- lockedUnless('config-manage') %> onclick="return confirm('Enable maintenance mode? This will restrict access for regular users.')">
                                         <i class="fas fa-pause"></i> Enable Maintenance
                                     </button>
                                 <% } %>
