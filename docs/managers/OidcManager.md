@@ -68,10 +68,9 @@ The session that changed the password stays signed in, as #1482 intends, but its
 - Consent belongs to the account the request was signed in as. Anyone else signed in on that browser gets `login_required`.
 - Sign-out (`/logout`) ends the account's provider sessions (`endSessionsFor`). Grants stay, and tokens already issued run to their expiry. A disabled or deleted account fails closed at the next refresh or UserInfo, because `findAccount` returns nothing for it.
 
-Refused rather than faked, until step-up exists ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)):
+__Approving a device__ (RFC 8628, when `oidc-auth-server.device-flow.enabled` is true) gives long-lived access, so at every step it asks `account-security` through ngdpbase's own permission check: policy, then step-up ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525), [#1577](https://github.com/jwilleke/ngdpbase/issues/1577)). A session without a fresh factor goes to `/auth/reauth` and comes back to the same pending request. The consent page says it is a device, and that it stays connected until its access is revoked. The bridge gets this check as `permit` (`WikiRoutes.permitRequest`), not a copy.
 
-- A request for a fresh sign-in (`prompt=login`, or a `max_age` the session's sign-in is older than) gets `login_required`. A sign-in made after the request began counts as fresh, so someone sent to `/login` comes back and continues.
-- Device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)) gets `access_denied`.
+Refused rather than faked: a request for a fresh sign-in from an app (`prompt=login`, or a `max_age` the session's sign-in is older than) gets `login_required`. A sign-in made after the request began counts as fresh, so someone sent to `/login` comes back and continues.
 
 ## Audit
 
@@ -88,4 +87,4 @@ ngdpbase's own API is a resource server at `<base-url>/api`, derived like the is
 
 ## Not yet
 
-Step-up on device approval ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577)); friendlier consent lines for permission scopes, which show by name.
+A profile list of the apps and devices a person approved, with revoke; friendlier consent lines for permission scopes, which show by name.

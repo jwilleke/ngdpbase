@@ -1147,7 +1147,11 @@ void (async (): Promise<void> => {
   // #1572: the OpenID Connect sign-in bridge, ahead of the wiki routes so no
   // page route claims /oidc/interaction/*. Only when the provider is serving.
   if (oidcHandler && oidcManager) {
-    registerOidcRoutes(app, { oidc: oidcManager, templateData: (req) => wikiRoutes.getCommonTemplateData(req) });
+    registerOidcRoutes(app, {
+      oidc: oidcManager,
+      templateData: (req) => wikiRoutes.getCommonTemplateData(req),
+      permit: (req, res, permission, mode) => wikiRoutes.permitRequest(req, res, permission, mode)
+    });
   }
   wikiRoutes.registerRoutes(app);
 

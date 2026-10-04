@@ -6,10 +6,15 @@
         <div class="col-md-6 col-lg-4">
             <div class="card mt-5">
                 <div class="card-header text-center">
-                    <h4>Allow <%= clientName %>?</h4>
+                    <% const isDevice = typeof deviceFlow !== 'undefined' && deviceFlow; %>
+                    <h4><%= isDevice ? 'Approve a device?' : 'Allow ' + clientName + '?' %></h4>
                 </div>
                 <div class="card-body">
+                    <% if (isDevice) { %>
+                    <p><strong><%= clientName %></strong> on another device wants to connect to your <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %> account. Approve only if you started this on that device and the code matched. It stays connected until its access is revoked, and can see:</p>
+                    <% } else { %>
                     <p><strong><%= clientName %></strong> wants to sign you in with your <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %> account and see:</p>
+                    <% } %>
                     <ul>
                         <% lines.forEach(function (line) { %>
                         <li><%= line.text %></li>
@@ -19,7 +24,7 @@
                     <div class="d-flex gap-2">
                         <form action="/oidc/interaction/<%= encodeURIComponent(uid) %>/allow" method="POST" class="flex-fill">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                            <button type="submit" class="btn btn-primary w-100">Allow</button>
+                            <button type="submit" class="btn btn-primary w-100"><%= isDevice ? 'Approve' : 'Allow' %></button>
                         </form>
                         <form action="/oidc/interaction/<%= encodeURIComponent(uid) %>/deny" method="POST" class="flex-fill">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

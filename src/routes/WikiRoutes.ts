@@ -2392,6 +2392,15 @@ class WikiRoutes {
   }
 
   /**
+   * The route door for code outside this class (#1577): the OIDC sign-in
+   * bridge asks the same permission check — policy, then step-up — rather
+   * than a copy of it. Answers the refusal itself; true to proceed.
+   */
+  async permitRequest(req: Request, res: Response, permission: CorePermission, mode: 'json' | 'page' | 'text'): Promise<boolean> {
+    return this.permitted(this.createWikiContext(req), permission, req, res, mode);
+  }
+
+  /**
    * Step-up (#1525): one gate inside the permission check. A permission in
    * `ngdpbase.auth.step-up` also needs a fresh factor; without one the
    * person is sent to /auth/reauth (a page) or told where it is (JSON), and

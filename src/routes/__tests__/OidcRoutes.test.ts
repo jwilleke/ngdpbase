@@ -32,6 +32,8 @@ describe('OIDC sign-in bridge (#1572)', () => {
   let manager: OidcManager;
   let audited: Array<Record<string, unknown>>;
   let users: Record<string, { username: string; displayName: string; isActive: boolean; passwordChangedAt?: string }>;
+  let permitAnswer: boolean;
+  let permitted: string[];
   let app: express.Express;
   const saved: Record<string, string | undefined> = {};
 
@@ -47,6 +49,8 @@ describe('OIDC sign-in bridge (#1572)', () => {
     for (const name of ENV_NAMES) { saved[name] = process.env[name]; delete process.env[name]; }
     session = {};
     audited = [];
+    permitAnswer = true;
+    permitted = [];
 
     const custom: Record<string, unknown> = {
       'oidc-auth-server.enabled': true,
@@ -54,7 +58,11 @@ describe('OIDC sign-in bridge (#1572)', () => {
       'oidc-auth-server.clients': [{
         client_id: 'app', client_name: 'Test App', token_endpoint_auth_method: 'none',
         redirect_uris: [REDIRECT], grant_types: ['authorization_code'], response_types: ['code']
-      }]
+      }, {
+        client_id: 'tv', client_name: 'Living Room TV', token_endpoint_auth_method: 'none',
+        grant_types: ['urn:ietf:params:oauth:grant-type:device_code'], response_types: [], redirect_uris: []
+      }],
+      'oidc-auth-server.device-flow.enabled': true
     };
     users = {
       jim: { username: 'jim', displayName: 'Jim', isActive: true },
@@ -90,10 +98,19 @@ describe('OIDC sign-in bridge (#1572)', () => {
     });
     // Views render their locals as JSON, so the test reads what the page was given.
     app.engine('ejs', (file: string, locals: Record<string, unknown>, cb: (e: unknown, s?: string) => void) =>
-      cb(null, JSON.stringify({ view: path.basename(file, '.ejs'), clientName: locals.clientName, lines: locals.lines, uid: locals.uid, message: locals.message })));
+      cb(null, JSON.stringify({ view: path.basename(file, '.ejs'), clientName: locals.clientName, lines: locals.lines, uid: locals.uid, message: locals.message, deviceFlow: locals.deviceFlow })));
     app.set('view engine', 'ejs');
     app.set('views', views);
-    registerOidcRoutes(app, { oidc: manager, templateData: () => Promise.resolve({ csrfToken: 't' }) });
+    // Stand-in for WikiRoutes.permitRequest: records what was asked; a refusal answers like a stale session (#1577).
+    registerOidcRoutes(app, {
+      oidc: manager,
+      templateData: () => Promise.resolve({ csrfToken: 't' }),
+      permit: (req, res, permission) => {
+        permitted.push(permission);
+        if (!permitAnswer) res.redirect(`/auth/reauth?next=${encodeURIComponent(req.originalUrl)}`);
+        return Promise.resolve(permitAnswer);
+      }
+    });
   });
 
   afterEach(() => {
@@ -231,6 +248,63 @@ describe('OIDC sign-in bridge (#1572)', () => {
       .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier, resource: api });
     const verified = await manager.verifyAccessToken((token.body as { access_token: string }).access_token);
     expect(verified?.scopes).toEqual(['page-read']);
+  });
+
+  /** The person's side of RFC 8628: open the device page, enter the code, confirm; returns the agent and where it was sent. */
+  const enterDeviceCode = async (agent: ReturnType<typeof request.agent>, userCode: string) => {
+    const xsrfOf = (html: string): string => /name="xsrf" value="([^"]+)"/.exec(html)?.[1] ?? '';
+    const page = await agent.get('/oidc/device');
+    const entered = await agent.post('/oidc/device').type('form').send({ xsrf: xsrfOf(page.text), user_code: userCode });
+    return agent.post('/oidc/device').type('form').send({ xsrf: xsrfOf(entered.text), user_code: userCode, confirm: 'yes' });
+  };
+
+  const startDevice = async () => {
+    const start = await request(app).post('/oidc/device/auth').type('form').send({ client_id: 'tv', scope: 'openid' });
+    expect(start.status).toBe(200);
+    return start.body as { device_code: string; user_code: string };
+  };
+
+  const poll = (deviceCode: string) => request(app).post('/oidc/token').type('form')
+    .send({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: deviceCode, client_id: 'tv' });
+
+  test('#1577: approving a device asks account-security (step-up) at sign-in and at the approval, then the device gets its tokens', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const device = await startDevice();
+    const consent = await follow(agent, await enterDeviceCode(agent, device.user_code));
+    const page = JSON.parse(consent.text) as { view: string; clientName: string; deviceFlow: boolean; uid: string };
+    expect(page).toMatchObject({ view: 'oidc-consent', clientName: 'Living Room TV', deviceFlow: true });
+
+    await follow(agent, await agent.post(`/oidc/interaction/${page.uid}/allow`));
+    expect(permitted.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(permitted)).toEqual(new Set(['account-security']));
+
+    const tokens = await poll(device.device_code);
+    expect(tokens.status).toBe(200);
+    expect((tokens.body as { access_token?: string }).access_token).toBeTruthy();
+  });
+
+  test('#1577: a stale session is sent to re-authenticate and the device is not approved', async () => {
+    signIn();
+    permitAnswer = false;
+    const agent = request.agent(app);
+    const device = await startDevice();
+    // Follow the provider's redirects until the bridge answers with the re-authentication prompt.
+    let step = await enterDeviceCode(agent, device.user_code);
+    for (let i = 0; i < 10 && step.status >= 300 && step.status < 400 && !String(step.headers.location).startsWith('/auth/reauth'); i++) {
+      const next = new URL(step.headers.location as string, BASE);
+      step = await agent.get(next.pathname + next.search);
+    }
+    expect(step.headers.location).toMatch(/^\/auth\/reauth\?next=%2Foidc%2Finteraction%2F/);
+    expect((await poll(device.device_code)).body).toMatchObject({ error: 'authorization_pending' });
+  });
+
+  test('an ordinary app sign-in does not ask account-security', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const consent = await follow(agent, (await authorize(agent)).res);
+    await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    expect(permitted).toEqual([]);
   });
 
   test('Deny ends the request with access_denied and no code', async () => {
