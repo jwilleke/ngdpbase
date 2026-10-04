@@ -99,7 +99,11 @@ export const AUDIT_EVENT = {
   OIDCTOKEN_REVOKE: 'oidctoken-revoke',
   OIDCGRANT_REVOKE: 'oidcgrant-revoke',
   OIDCUSERINFO_ERROR: 'oidcuserinfo-error',
-  OIDCSERVER_ERROR: 'oidcserver-error'
+  OIDCSERVER_ERROR: 'oidcserver-error',
+  /** #1525: step-up — a fresh sign-in asked for, given, or failed. */
+  REAUTH_PROMPT: 'reauth-prompt',
+  REAUTH_SUCCESS: 'reauth-success',
+  REAUTH_FAILURE: 'reauth-failure'
 } as const;
 
 /** A name the code may emit. */

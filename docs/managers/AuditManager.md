@@ -551,6 +551,9 @@ audited.
 | `oidcgrant-revoke` | OpenID Connect: an app's grant and every token under it were revoked | continue | yes |
 | `oidcuserinfo-error` | OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account) | continue | yes |
 | `oidcserver-error` | OpenID Connect: the provider failed while handling a request | continue | yes |
+| `reauth-prompt` | Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one | continue | yes |
+| `reauth-success` | Step-up: the person re-authenticated, with the factor used | continue | yes |
+| `reauth-failure` | Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) | continue | yes |
 <!-- AUTO:audit-events END -->
 
 #### Retired names

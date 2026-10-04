@@ -51,6 +51,17 @@ async function seedTestData() {
       console.log(`✅ Copied ${mdFiles.length} startup pages`);
     }
 
+    // #1525: step-up asks for a fresh sign-in after 5 minutes on sensitive
+    // actions. The E2E admin signs in once, at setup, and the configuration and
+    // token tests run minutes later, so the run would hit the prompt — correct
+    // behaviour, but not what those tests are about. A longer window for the
+    // E2E instance only; step-up itself is covered by unit tests.
+    const customConfigPath = path.join(instanceDataFolder, 'config', 'app-custom-config.json');
+    const customConfig = (await fs.pathExists(customConfigPath)) ? await fs.readJson(customConfigPath) as Record<string, unknown> : {};
+    customConfig['ngdpbase.auth.step-up'] = { ...(customConfig['ngdpbase.auth.step-up'] as Record<string, unknown> | undefined), 'max-age-minutes': 120 };
+    await fs.writeJson(customConfigPath, customConfig, { spaces: 2 });
+    console.log('✅ E2E step-up window set to 120 minutes');
+
     // Create .install-complete marker
     await fs.writeFile(
       path.join(instanceDataFolder, '.install-complete'),

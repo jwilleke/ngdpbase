@@ -52,10 +52,17 @@
     };
   }
 
+  // #1525: an action that needs a fresh sign-in answers with where to give
+  // one; go there, and come back to this page after.
+  function failed(body) {
+    if (body && body.reauth) window.location.href = body.reauth;
+    return new Error((body && body.error) || 'Request failed');
+  }
+
   function getJSON(url) {
     return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (r) {
       return r.json().then(function (body) {
-        if (!r.ok) throw new Error(body.error || 'Request failed');
+        if (!r.ok) throw failed(body);
         return body;
       });
     });
@@ -69,7 +76,7 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       return r.json().then(function (out) {
-        if (!r.ok) throw new Error(out.error || 'Request failed');
+        if (!r.ok) throw failed(out);
         return out;
       });
     });
@@ -98,6 +105,29 @@
         .catch(function (err) {
           button.disabled = false;
           showError(errorEl, err && err.name === 'NotAllowedError' ? 'Passkey sign-in was cancelled.' : (err.message || 'Passkey sign-in failed.'));
+        });
+    });
+  });
+
+  // Step-up (#1525): confirm it is you with a passkey, then return to the page that asked.
+  document.querySelectorAll('[data-passkey-reauth]').forEach(function (button) {
+    button.classList.remove('d-none');
+    button.addEventListener('click', function () {
+      var errorEl = document.getElementById(button.dataset.errorTarget || '');
+      button.disabled = true;
+      getJSON('/auth/passkey/reauth/options')
+        .then(function (options) {
+          options.challenge = toBuffer(options.challenge);
+          (options.allowCredentials || []).forEach(function (c) { c.id = toBuffer(c.id); });
+          return navigator.credentials.get({ publicKey: options });
+        })
+        .then(function (cred) {
+          return postJSON('/auth/passkey/reauth/verify', { response: credentialJSON(cred), next: button.dataset.next || '/' });
+        })
+        .then(function (out) { window.location.href = out.redirect || '/'; })
+        .catch(function (err) {
+          button.disabled = false;
+          showError(errorEl, err && err.name === 'NotAllowedError' ? 'Cancelled.' : (err.message || 'That did not work.'));
         });
     });
   });
