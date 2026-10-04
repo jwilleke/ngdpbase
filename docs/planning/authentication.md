@@ -309,6 +309,17 @@ The page that joins the provider to ngdpbase's own sign-in ([#1572](https://gith
 
 Device approval waits for step-up ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577), after [#1525](https://github.com/jwilleke/ngdpbase/issues/1525)); audit is [#1575](https://github.com/jwilleke/ngdpbase/issues/1575).
 
+### Who assigns roles to someone signed in through `/oidc`? (decided 2026-10-04)
+
+__The app does.__ The provider says who the person is and how they signed in (`sub`, `amr`, `acr`, profile claims); each app maps that identity onto its own roles. `/oidc` releases no roles: ngdpbase's `admin` is admin of this instance, and is no grant in another app. An app can still require a strong sign-in for its own sensitive actions by checking `acr`.
+
+The exception is an organisation's own provider ("captured": an association or company running one sign-in for its apps), where managing membership once is the point:
+
+- __A `groups` scope, off by default.__ Released only when the operator enables it, the app requests it, and the person consents. It carries only the groups the sign-in's level reaches, so a password-only session never reports a role that needs AAL2. What the groups mean is up to each receiving app.
+- __Receiving apps map groups to their own roles.__ ngdpbase does the same as a receiving app: one group-to-role mapping rule for every incoming provider (Authentik and Cloudflare Access each carry their own copy today). Unmapped groups grant nothing, and mapped roles are still subject to `required-aal` on the `acr` the provider reports.
+
+Releasing only what the sign-in reached needs oidc-auth-server to pass the sign-in's `acr` to the host's account lookup, which today receives an account id only. Work: [#1588](https://github.com/jwilleke/ngdpbase/issues/1588), not needed until an organisation uses an instance as its provider.
+
 ---
 
 ## Open questions and conflicts
