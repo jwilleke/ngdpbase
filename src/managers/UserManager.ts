@@ -22,7 +22,7 @@ import type { Person, PersonUpdate } from '../types/Person.js';
 import type { ShareGrant } from '../types/Share.js';
 import { assertHeadlessBootstrapPassword } from '../utils/headlessAdminPassword.js';
 import { UserCreateError } from '../utils/userCreateError.js';
-import { bumpSessionGeneration } from '../utils/sessionGeneration.js';
+import { setPassword } from '../utils/passwordChange.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
@@ -953,6 +953,7 @@ class UserManager extends BaseManager {
       typeof updates.currentPassword === 'string' ? updates.currentPassword : undefined;
     delete updates.currentPassword;
 
+    let passwordChange: string | undefined;
     if (updates.password) {
       // Use the incoming isExternal value if being changed in the same request
       const willBeExternal = updates.isExternal !== undefined ? updates.isExternal : user.isExternal;
@@ -975,19 +976,20 @@ class UserManager extends BaseManager {
           });
         }
       }
-      updates.password = this.hashPassword(newPasswordPlain);
+      passwordChange = newPasswordPlain;
     }
 
     // #617 iteration 3b: the `roles` field on User is deprecated; role
     // membership is owned by RoleManager. Strip it from the update before
     // it lands on the User record, diff against the current RoleManager
     // state, and apply the changes through the canonical write path.
-    const { roles: incomingRoles, ...userFieldUpdates } = updates;
+    // The password is not copied: setPassword() is the one definition of a
+    // change (#1592) — hash, end every other session (#1482; the session that
+    // made the change is re-stamped by its route), and record when.
+    const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
-    // #1482: a new password ends every other session of the account. The
-    // session that made the change is re-stamped by its route.
-    if (updates.password) bumpSessionGeneration(user);
+    if (passwordChange !== undefined) setPassword(user, passwordChange);
     await this.provider.updateUser(username, user);
 
     await this.syncPersonOnUpdate(username, updates);

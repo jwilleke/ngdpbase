@@ -33,7 +33,8 @@ import { ensureInstanceEnvSecret, nodeInstanceEnvFs } from '../utils/instanceEnv
 import logger from '../utils/logger.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
-import type { AuditEvent as OidcAuditEvent } from '@jwilleke/oidc-auth-server';
+import type { AuditEvent as OidcAuditEvent, SignInContext } from '@jwilleke/oidc-auth-server';
+import { passwordChangedAtSeconds } from '../utils/passwordChange.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
 export const OIDC_PREFIX = 'oidc-auth-server.';
@@ -165,7 +166,7 @@ export class OidcManager extends BaseManager {
       this.options = {
         ...this.pkg.optionsFromConfig(loaded, {
           interactionUrl: (uid: string) => `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${uid}`,
-          findAccount: (accountId: string) => this.findAccount(accountId),
+          findAccount: (accountId: string, signIn?: SignInContext) => this.findAccount(accountId, signIn),
           audit: (event: OidcAuditEvent) => this.recordEvent(event),
           adapter: this.store.adapterFactory()
         }),
@@ -244,14 +245,19 @@ export class OidcManager extends BaseManager {
 
   /**
    * The person's claims for the package, or undefined — which fails the
-   * request closed — when the account is gone or disabled. Never roles: a
-   * session can hold fewer roles than the account (#1569), and the package
-   * asks with an account id only (decided on #1578).
+   * request closed — when the account is gone or disabled, or when this
+   * sign-in is older than the account's last password change (#1592): an app
+   * keeps nothing past a password change, as no web session does (#1482).
+   * Never roles: a session can hold fewer roles than the account (#1569).
    */
-  async findAccount(accountId: string): Promise<Record<string, unknown> | undefined> {
+  async findAccount(accountId: string, signIn?: SignInContext): Promise<Record<string, unknown> | undefined> {
     const userManager = this.engine.getManager<UserManager>('UserManager');
     const user = await userManager?.getUser(accountId);
     if (!user || !user.isActive) return undefined;
+    const changedAt = passwordChangedAtSeconds(user);
+    // A request that carries a sign-in must prove it came after the change;
+    // one that carries none (no token yet) is the sign-in itself.
+    if (changedAt !== null && signIn && (signIn.authTime === undefined || signIn.authTime < changedAt)) return undefined;
     const claims: Record<string, unknown> = { preferred_username: user.username, name: user.displayName || user.username };
     if (user.email) claims.email = user.email;
     return claims;

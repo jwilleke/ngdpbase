@@ -31,6 +31,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
   let session: FakeSession;
   let manager: OidcManager;
   let audited: Array<Record<string, unknown>>;
+  let users: Record<string, { username: string; displayName: string; isActive: boolean; passwordChangedAt?: string }>;
   let app: express.Express;
   const saved: Record<string, string | undefined> = {};
 
@@ -54,7 +55,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
         redirect_uris: [REDIRECT], grant_types: ['authorization_code'], response_types: ['code']
       }]
     };
-    const users: Record<string, { username: string; displayName: string; isActive: boolean }> = {
+    users = {
       jim: { username: 'jim', displayName: 'Jim', isActive: true },
       sam: { username: 'sam', displayName: 'Sam', isActive: true }
     };
@@ -170,6 +171,21 @@ describe('OIDC sign-in bridge (#1572)', () => {
     // Asked once per app: the same app again goes straight back with a code.
     const again = await follow(agent, (await authorize(agent)).res);
     expect(codeFrom(again).searchParams.get('code')).toBeTruthy();
+  });
+
+  test('after a password change the app\'s access token is refused at UserInfo (#1592)', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const { res, verifier } = await authorize(agent);
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const token = await agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier });
+    const access = (token.body as { access_token: string }).access_token;
+    expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(200);
+
+    users.jim.passwordChangedAt = new Date(Date.now() + 60_000).toISOString();
+    expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(401);
   });
 
   test('Deny ends the request with access_denied and no code', async () => {
