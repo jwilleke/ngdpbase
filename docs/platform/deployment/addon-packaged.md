@@ -12,19 +12,9 @@ It uses the __identical__ slug / module / `register()` contract as `bundled` and
 
 ## When to use which model
 
-| Model | Use it for | Trade-off |
-|---|---|---|
-| __bundled__ (`addons/<slug>/` in this repo) | First-party addons that ship *with* ngdpbase and release on its cadence (feeds, calendar, journal, forms, elasticsearch) | Coupled to ngdpbase releases; not for third parties |
-| __drop-in__ (a directory in `addons-path`) | Local development, quick iteration, or a simple/private addon copied into the image / mounted as a volume | No version pinning — "whatever is in the directory at boot" (the drift that caused #672) |
-| __packaged__ (`npm install`) | __Production distribution of an independent addon__ — versioned, lockfile-pinned, Renovate-tracked; installable into a *generic* ngdpbase image with no bespoke Dockerfile. __The recommended model for `type: 'domain'` addons in production__ (see below) | Requires an npm registry + a publish step |
+The choice, and the minimum that loads each model, is [Where it is loaded](../../guides/addons-developer-guide.md#where-it-is-loaded). This page is the packaged path: discovery, `package.json`, publishing, and the two-stage image.
 
-### Policy
-
-- __`type: 'domain'` addons → `packaged` for production, `drop-in` for development.__ A domain addon is a whole downstream product built on ngdpbase (e.g. `geohazardwatch`) — the most independent kind, deployed to production, versioned on its own cadence. That is precisely the case `packaged` exists for, and precisely the case that hit the #672 version-drift outage under `drop-in`. Develop it as a `drop-in` (edit-in-place, no publish cycle); ship it to production as a `packaged` npm dependency.
-- __`bundled`__ stays the model for first-party addons that are part of ngdpbase's release surface.
-- __`drop-in`__ remains supported and is the right choice for local development and truly private one-offs where standing up a registry isn't worth it.
-
-All three remain first-class — the platform makes no trust distinction between them. The recommendation is about *how to ship*, not what an addon may do.
+A `type: 'domain'` addon developed as a drop-in and shipped as packaged is the case this page is for. The #672 outage was a drop-in image whose addon version drifted from the base image. The migration is the table below. The platform makes no trust distinction between the three models.
 
 ### Migrating a domain addon from drop-in to packaged
 

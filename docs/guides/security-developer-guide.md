@@ -38,22 +38,7 @@ __Adding a permission for a new action:__ declare it in the catalog with descrip
 
 ## Addons
 
-An addon's `config/default-config.json` is a layer of the configuration merge, between the shipped defaults and the operator's custom file, folded in when `ngdpbase.addons.<slug>.enabled` is true. The merge is per entry for maps and by `id` for policy arrays, so an addon declares its own permission and its own policy additively:
-
-```json
-{
-  "ngdpbase.permissions.definitions": {
-    "calendar-manage": { "description": "Create, edit and delete calendar events", "icon": "calendar-check", "color": "#0d6efd" }
-  },
-  "ngdpbase.access.policies": [
-    { "id": "calendar-manage-access", "name": "Calendar management", "priority": 90, "effect": "allow",
-      "subjects": [{ "type": "role", "value": "admin" }], "resources": [{ "type": "page", "pattern": "*" }],
-      "actions": ["calendar-manage"] }
-  ]
-}
-```
-
-The addon's routes then `await ctx.requirePermission('calendar-manage')`, and a deployment grants the permission to its own roles in its own custom file. An addon never names a role. Do not append to a role's `permissions` array from an addon: a plain array replaces wholesale on merge; a policy with its own `id` merges by id. Bundled and external addons are treated alike; discovery follows `ngdpbase.managers.addons-manager.addons-path`.
+An addon's `config/default-config.json` is a layer of the configuration merge, between the shipped defaults and the operator's custom file, folded in when `ngdpbase.addons.<slug>.enabled` is true. The author's copy of the recipe — declare a permission, grant it in a policy with its own `id`, check it with `hasPermission` / `canAccess` — is [Permissions](addons-developer-guide.md#permissions). The file, the merge, and where the operator overrides it are [Configuration](addons-developer-guide.md#configuration). Do not append to a role's `permissions` array from an addon: a plain array replaces wholesale on merge; a policy with its own `id` merges by id. An addon never names a role. Bundled and external addons are treated alike; discovery follows `ngdpbase.managers.addons-manager.addons-path`.
 
 ## Checklist for a new route or manager method
 
