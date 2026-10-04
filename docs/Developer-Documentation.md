@@ -30,9 +30,9 @@ Workflow:
 <!-- AUTO:quick-nav BEGIN -->
 | Category | Count (src/) | Documented | Description |
 | ---------- | --- | --- | ------------- |
-| [Managers](#managers) | 40 | 45 | Core system managers |
+| [Managers](#managers) | 41 | 46 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 41 | 42 | Storage and service providers |
+| [Providers](#providers) | 42 | 43 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -75,6 +75,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | MediaManager | 📘 [doc](managers/MediaManager.md) + [guide](managers/MediaManager-Complete-Guide.md) | Read-only external photo/video library (filesystem-backed) with EXIF indexing and keyword facets |
 | MetricsManager | 📘 [doc](managers/MetricsManager.md) + [guide](managers/MetricsManager-Complete-Guide.md) | OpenTelemetry-backed metrics: route latency histograms, engine init timing, cache hit ratios |
 | NotificationManager | 📘 [doc](managers/NotificationManager.md) + [guide](managers/NotificationManager-Complete-Guide.md) | System and per-user notifications — toast popups, persistent inbox, scheduled expiry |
+| OidcManager | ✅ [doc](managers/OidcManager.md) | The embedded OpenID Connect provider at the base URL's /oidc — off unless enabled, never loaded when off (#1570) |
 | OrganizationManager | ✅ [doc](managers/OrganizationManager.md) | Canonical Organization records (#617) — one file per organization, pluggable via OrganizationProvider |
 | PageManager | 📘 [doc](managers/PageManager.md) + [guide](managers/PageManager-Complete-Guide.md) | Page CRUD and storage facade over the PageProvider registry |
 | PersonManager | ✅ [doc](managers/PersonManager.md) | Canonical Person records (#617) — decoupled from User authentication identity, shared across addons |
@@ -179,6 +180,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileBackupProvider | ✅ [doc](providers/FileBackupProvider.md) | Default backup storage provider — local filesystem against ngdpbase.backup.directory (#170) |
 | FileCredentialsProvider | ✅ [doc](providers/FileCredentialsProvider.md) | The credentials store as one signed JSON file beside the user store, written owner-only (#1524) |
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
+| FileOidcAdapter | ✅ [doc](providers/FileOidcAdapter.md) | The embedded OpenID Connect provider's storage — node-oidc-provider's adapter on owner-only JSON files under FAST_STORAGE (#1571) |
 | FileOrganizationProvider | ✅ [doc](providers/FileOrganizationProvider.md) | File-backed Organization storage — one JSON file per organization under data/organizations/ |
 | FilePersonProvider | ✅ [doc](providers/FilePersonProvider.md) | File-backed Person storage — one JSON file per Person record under data/persons/ |
 | FileRoleProvider | ✅ [doc](providers/FileRoleProvider.md) | File-backed Role storage — one JSON file per (organization, namedPosition) pair under data/roles/ |
@@ -334,11 +336,11 @@ Before contributing, please review:
 Honest accounting of doc coverage. Targets are pragmatic — abstract base classes and trivial null/no-op providers don't need long-form docs, but every module should at least have a stub or appear in this index.
 
 <!-- AUTO:doc-status BEGIN -->
-__Managers:__ 40/40 with quick-reference docs (100%); 17 with Complete Guides.
+__Managers:__ 41/41 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 41/41 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 42/42 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.
