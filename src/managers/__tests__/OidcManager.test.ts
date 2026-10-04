@@ -140,10 +140,9 @@ describe('OidcManager (#1570)', () => {
     expect(res.body.acr_values_supported).toEqual(expect.arrayContaining(['aal1', 'aal2', 'phr']));
   });
 
-  // Known gap while pinned to oidc-auth-server 0.2.0: it advertises the request's Host. Fixed in
-  // the package (7c9bf52, pins the issuer's host); this flips to a failure — remove `.fails` —
-  // when the dependency moves past 0.3.0.
-  test.fails('a forged Host does not change what discovery advertises', async () => {
+  // The package pins the issuer's host (oidc-auth-server 0.3.1): a forged Host must not reach
+  // discovery, or a shared cache could hand clients someone else's endpoints.
+  test('a forged Host does not change what discovery advertises', async () => {
     const manager = await started();
     const res = await request(served(manager.start({ trustProxy: true })))
       .get('/oidc/.well-known/openid-configuration')
