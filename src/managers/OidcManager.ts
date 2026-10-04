@@ -140,6 +140,24 @@ const OIDC_AUDIT: Record<OidcAuditEvent['event'], { name: AuditEventName; result
   'oidcserver-error': { name: AUDIT_EVENT.OIDCSERVER_ERROR, result: 'failure', severity: 'high' }
 };
 
+/** One app or device a person approved, as their profile lists it (#1601). */
+export interface ApprovedApp {
+  grantId: string;
+  clientId: string;
+  name: string;
+  /** Approved through the device flow (RFC 8628): the client may use the device grant. */
+  device: boolean;
+  /** Everything the grant allows: OIDC scopes and API scopes, de-duplicated. */
+  scopes: string[];
+  /** ISO 8601. */
+  approvedAt: string | null;
+  expiresAt: string | null;
+}
+
+const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
+/** Every model that carries a grantId: revoking a grant removes its rows from all of them. */
+const GRANT_BOUND_MODELS = ['AccessToken', 'RefreshToken', 'AuthorizationCode', 'DeviceCode', 'BackchannelAuthenticationRequest'];
+
 /** One RSA signing key as a JWKS, the shape OIDC_AUTH_SERVER_JWKS holds. */
 export function generateJwks(): string {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -290,6 +308,56 @@ export class OidcManager extends BaseManager {
       scopes: (found.scope ?? '').split(' ').filter((s) => s && refusedDelegatedScope(s) === null),
       aal: aalOfAcr(extra.acr)
     };
+  }
+
+  /**
+   * The apps and devices `username` approved (#1601): one per live grant,
+   * newest first. Empty when the provider is off.
+   */
+  async listGrants(username: string): Promise<ApprovedApp[]> {
+    if (!this.store || !this.auth || !username) return [];
+    const grants = (await this.store.listLive('Grant')).filter((g) => g.accountId === username);
+    const out: ApprovedApp[] = [];
+    for (const g of grants) {
+      const clientId = typeof g.clientId === 'string' ? g.clientId : '';
+      const client = clientId ? await this.auth.provider.Client.find(clientId) : undefined;
+      const meta = client?.metadata();
+      const openid = (g.openid ?? {}) as { scope?: string };
+      const resources = (g.resources ?? {}) as Record<string, string>;
+      const scopes = [...new Set([openid.scope ?? '', ...Object.values(resources)].join(' ').split(' ').filter(Boolean))];
+      out.push({
+        grantId: String(g.jti ?? ''),
+        clientId,
+        name: typeof meta?.client_name === 'string' && meta.client_name.trim() ? meta.client_name : clientId,
+        device: Array.isArray(meta?.grant_types) && meta.grant_types.includes(DEVICE_GRANT_TYPE),
+        scopes,
+        approvedAt: typeof g.iat === 'number' ? new Date(g.iat * 1000).toISOString() : null,
+        expiresAt: typeof g.exp === 'number' ? new Date(g.exp * 1000).toISOString() : null
+      });
+    }
+    return out.filter((a) => a.grantId).sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''));
+  }
+
+  /**
+   * End one of `username`'s grants and every code and token under it (#1601).
+   * False when no such grant is theirs — never revokes another person's.
+   * Recorded as oidcgrant-revoke, by the account it belonged to.
+   */
+  async revokeGrant(username: string, grantId: string): Promise<boolean> {
+    if (!this.store || !username || !grantId) return false;
+    const grant = (await this.store.listLive('Grant')).find((g) => g.jti === grantId && g.accountId === username);
+    if (!grant) return false;
+    for (const model of GRANT_BOUND_MODELS) await this.store.destroyWhere(model, (p) => p.grantId === grantId);
+    await this.store.destroyWhere('Grant', (p) => p.jti === grantId);
+    await this.recordEvent({
+      event: 'oidcgrant-revoke',
+      at: new Date().toISOString(),
+      accountId: username,
+      clientId: typeof grant.clientId === 'string' ? grant.clientId : undefined,
+      grantId
+    });
+    logger.info(`[OidcManager] revoked grant ${grantId} of ${username}`);
+    return true;
   }
 
   /** What to call a client on the consent page: its registered name, else its id. */

@@ -222,6 +222,23 @@
                     </div>
                     <% } %>
 
+                    <!-- #1601: apps and devices approved through this site's OpenID Connect provider -->
+                    <% if (typeof approvedApps !== 'undefined' && approvedApps !== null) { %>
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-plug"></i> Apps and devices</h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="small text-muted">Apps and devices you allowed to sign in with your account. Each keeps access until you revoke it.</p>
+                                    <%- include('_approved-apps', { apps: approvedApps, revokeBase: '/profile/apps/', csrfToken: csrfToken }) %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <% } %>
+
                     <!-- #448 / #1524: Sign-in methods — the password and every credential -->
                     <% const signInWithPassword = typeof hasPassword !== 'undefined' && hasPassword; %>
                     <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>

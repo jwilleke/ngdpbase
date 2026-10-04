@@ -1,0 +1,28 @@
+<%# #1601 — the apps and devices a person approved through this site's OpenID Connect
+    provider, with Revoke. Shared by the profile (your own) and the admin user page.
+    Locals: apps (ApprovedApp[]), revokeBase (path; the grant id is appended), csrfToken. %>
+<% if (apps.length === 0) { %>
+  <p class="text-muted small mb-0">No apps or devices are approved.</p>
+<% } else { %>
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>App or device</th><th>Can see</th><th>Approved</th><th></th></tr></thead>
+    <tbody>
+      <% apps.forEach(function (a) { %>
+      <tr>
+        <td><%= a.name %><% if (a.device) { %> <span class="badge bg-secondary ms-1">device</span><% } %></td>
+        <td class="small"><%= a.scopes.join(', ') %></td>
+        <td class="small text-muted"><%= a.approvedAt ? a.approvedAt.slice(0, 16).replace('T', ' ') + ' UTC' : '' %></td>
+        <td class="text-end">
+          <%# The name rides in a data attribute, HTML-escaped — never built into a script string. %>
+          <form action="<%= revokeBase %><%= encodeURIComponent(a.grantId) %>/revoke" method="POST" class="d-inline"
+                data-confirm="Revoke access for <%= a.name %>? It will need approving again."
+                onsubmit="return confirm(this.dataset.confirm)">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Revoke</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>

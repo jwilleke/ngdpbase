@@ -85,6 +85,16 @@ Every event the provider reports is recorded in ngdpbase's audit log ([#1575](ht
 
 ngdpbase's own API is a resource server at `<base-url>/api`, derived like the issuer ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)). Its scopes are the permissions a delegation may carry. An app's token for it is verified in process by `verifyAccessToken()` and accepted by [OidcBearerAuthProvider](../providers/OidcBearerAuthProvider.md) as a delegation from the person. When no permission is delegable, the API is left out and sign-in still works.
 
+## Approved apps and devices
+
+Each app or device a person approved through `/oidc` is a grant. It lasts until revoked ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)).
+
+- `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed and when it was approved. Profile → __Apps and devices__ lists your own; the admin user page lists that person's (`user-read`). The card is shown only while the provider is on.
+- `revokeGrant(username, grantId)`: removes the grant and every code and token under it from the store, recorded as `oidcgrant-revoke`. It never touches another person's grant.
+  - From the profile, revoking asks `account-security`, so it needs step-up ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)).
+  - From the admin page it asks `user-edit`.
+  - A token can never revoke anything.
+
 ## Not yet
 
-A profile list of the apps and devices a person approved, with revoke; friendlier consent lines for permission scopes, which show by name.
+Friendlier consent lines for permission scopes, which show by name.
