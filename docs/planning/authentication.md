@@ -268,13 +268,56 @@ Not covered, by decision (operator, 2026-10-02): __identity proofing (IAL2)__ �
 
 ---
 
+## Questions and answers
+
+Questions the operator asked while the OpenID Connect provider ([#1578](https://github.com/jwilleke/ngdpbase/issues/1578)) was being built, with the answers given at the time.
+
+### Could Authentik (`auth.example.com`) be the OpenID Connect provider instead? (2026-10-04)
+
+Technically yes. Authentik is a full OpenID Connect provider and could issue tokens to apps. But then identity lives in Authentik, not ngdpbase: people, passwords, passkeys and consent would be Authentik's, and ngdpbase would be one more client of it rather than a provider. Per-role `required-aal`, step-down, the credentials store and ngdpbase's audit trail would not apply to app sign-ins, because Authentik has its own versions of each.
+
+The embedded provider stays the default because:
+
+- __Every instance gets one.__ Satellites, Docker installs and test builds do not run Authentik; any instance with an explicit https base-url can serve `/oidc` with no extra service.
+- __ngdpbase's sign-in decides.__ Tokens carry what ngdpbase established (`amr`, `acr`: a passkey, AAL2, phishing-resistant), under the same rules as the web sign-in.
+- __YourPHR's scopes fit.__ SMART on FHIR scopes and per-person health consent are host-supplied in oidc-auth-server; in Authentik they would be custom scope mappings.
+
+Authentik remains an optional, config-gated choice (the `authentik-bearer` provider accepts its tokens), suited to an organisation wanting one sign-in across many unrelated apps. Both can coexist. Making Authentik the provider for an instance's apps would reverse the #1578 decision and the rule that identity is in-app.
+
+### Can `/oidc` be used by other sites? (2026-10-04)
+
+Yes; that is its purpose. Any website or app can use `https://<base-url>/oidc` as its "Sign in with …" provider, when:
+
+- __the provider is on__ (`oidc-auth-server.enabled`) and the sign-in bridge ([#1572](https://github.com/jwilleke/ngdpbase/issues/1572)) exists;
+- __it can be reached__: the user's browser (and, for code exchange, the site's server) must reach the address — a network matter, not an ngdpbase one;
+- __the site is registered__ in `oidc-auth-server.clients` with a client ID, its exact return URLs and, for a server-side site, a secret. Unregistered sites are refused; client ID metadata documents (unknown apps identifying by URL) are off by default.
+
+The site reads `/oidc/.well-known/openid-configuration` and any standard OIDC library does the rest. The person signs in on the instance (if not already), sees consent once, and returns signed in. The site learns username, name, email and how strongly they signed in — never roles. Each instance is its own provider with its own users; a site chooses which one it trusts.
+
+### Should apps the operator registers skip the consent screen? (decided 2026-10-04)
+
+No. __Everyone sees consent once per app__, including clients registered in `oidc-auth-server.clients`; the grant is remembered, so a person is asked again only when the app wants more. One click per person per app is little friction, and consent stays the visible check against a misregistered return address, long-lived `offline_access` and health (SMART) scopes. A per-client skip (basic scopes only; never `offline_access`, health scopes or device approval; still recorded and audited) can be added if the friction proves real. Recorded on [#1572](https://github.com/jwilleke/ngdpbase/issues/1572).
+
+### What is the sign-in bridge? (2026-10-04)
+
+The page that joins the provider to ngdpbase's own sign-in ([#1572](https://github.com/jwilleke/ngdpbase/issues/1572)). The provider never signs anyone in; for each pending request it sends the browser to `/oidc/interaction/<uid>`, where ngdpbase:
+
+- sends a signed-out person to `/login` and back;
+- reports who signed in and how (`amr`, `acr`) from the session's sign-in record — never more than the session established; a session without a record signs in again;
+- shows the consent page under the session and CSRF, Allow or Deny;
+- ends the provider's sessions and revokes the account's grants on sign-out, password change or disabling the account.
+
+Device approval waits for step-up ([#1577](https://github.com/jwilleke/ngdpbase/issues/1577), after [#1525](https://github.com/jwilleke/ngdpbase/issues/1525)); audit is [#1575](https://github.com/jwilleke/ngdpbase/issues/1575).
+
+---
+
 ## Open questions and conflicts
 
 Points where an issue disagrees with a later decision, or where nothing is decided yet. Each is settled on its own issue, not here.
 
 - __Passkey storage.__ [#448](https://github.com/jwilleke/ngdpbase/issues/448)'s body still stores passkey fields on the user record. The credentials store ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)) is built and is where they go; the body needs updating before #448 starts.
 - __Admin AAL2 timing — decided 2026-10-03:__ every role ships at AAL1; `admin` and `user-admin` move to AAL2 in the change that ships the first AAL2-capable factor (#448 or #421), with an enrol-now step.
-- __Roles a token or UserInfo reports.__ Roles step down in a session signed in below their `required-aal` ([#1569](https://github.com/jwilleke/ngdpbase/pull/1569)). The `OidcManager`'s account claims and UserInfo ([#1572](https://github.com/jwilleke/ngdpbase/issues/1572), [#1576](https://github.com/jwilleke/ngdpbase/issues/1576)) must report the roles the session holds, not the stored ones, or an AAL1 session would claim `admin` through OIDC.
+- __Roles a token or UserInfo reports — decided 2026-10-03 ([#1578](https://github.com/jwilleke/ngdpbase/issues/1578)):__ no `roles` claim in ID tokens or UserInfo; `findAccount` sees only an account id, so it cannot know a session's stepped-down roles. When an OIDC access token calls ngdpbase's API ([#1576](https://github.com/jwilleke/ngdpbase/issues/1576)), roles are resolved live and those whose `required-aal` exceeds the token's `acr` are dropped.
 - __Communication channels__ — [#1533](https://github.com/jwilleke/ngdpbase/issues/1533) is marked "to be detailed later" for verification, consent records and per-purpose consent.
 
 Settled since the last revision: SMS is Twilio Verify, an auth provider, and our own messages carry a link by the person's channel choice ([#1528](https://github.com/jwilleke/ngdpbase/issues/1528), [#1533](https://github.com/jwilleke/ngdpbase/issues/1533)); YourPHR's plan now points here and no longer uses per-provider factor counts (yourphr 9e41c1a6b); every credential row is signed, not only known devices ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)).
