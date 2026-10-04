@@ -58,7 +58,7 @@ import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
-import type { OidcManager } from '../managers/OidcManager.js';
+import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -7040,6 +7040,35 @@ ${panes}
     }
   }
 
+  /**
+   * POST /profile/apps/:grantId/revoke — end an app's or device's access to
+   * your account (#1601). account-security, so it asks for step-up (#1525),
+   * and a token can never do it.
+   */
+  async revokeOwnApp(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const username = wikiContext.userContext.username;
+    const revoked = typeof username === 'string'
+      && await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, req.params.grantId);
+    res.redirect(`/profile?${revoked ? 'success=Access+revoked' : 'error=Not+found'}`);
+  }
+
+  /** What `username` approved through /oidc, for a page; null when the provider is off (#1601). */
+  private async approvedAppsFor(username: string): Promise<ApprovedApp[] | null> {
+    const oidc = this.engine.getManager<OidcManager>('OidcManager');
+    return oidc?.getIssuer?.() ? oidc.listGrants(username).catch(() => []) : null;
+  }
+
+  /** POST /admin/users/:username/apps/:grantId/revoke — an administrator ends one of a person's grants (#1601). */
+  async adminRevokeUserApp(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
+    const username = req.params.username;
+    const revoked = await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, req.params.grantId);
+    res.redirect(`/admin/users/${encodeURIComponent(username)}/edit?${revoked ? 'success=Access+revoked' : 'error=Not+found'}`);
+  }
+
   async processLogin(req: Request, res: Response) {
     try {
       const { username, password } = req.body;
@@ -8250,6 +8279,8 @@ ${panes}
         ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch(() => []) ?? []
         : [];
       const passkeyHost = authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null;
+      // #1601: the apps and devices approved through /oidc; null when the provider is off.
+      const approvedApps = currentUser?.username ? await this.approvedAppsFor(currentUser.username) : null;
       // The password is a sign-in method too; the card lists it beside the credentials.
       const hasPassword = currentUser?.username
         ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
@@ -8260,6 +8291,7 @@ ${panes}
         title: 'Profile',
         credentials, // #1524
         passkeyHost, // #448
+        approvedApps, // #1601
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
@@ -11227,6 +11259,8 @@ ${panes}
         // #1521: what each role is granted, from the merged policies.
         roleGrants: this.currentRoleGrants(),
         extendedFields,
+        // #1601: what this person approved through /oidc; null when the provider is off.
+        approvedApps: await this.approvedAppsFor(username),
         csrfToken: req.session.csrfToken
       });
     } catch (err: unknown) {
@@ -15439,6 +15473,9 @@ ${panes}
     app.post('/auth/passkey/authenticate/verify', (req: Request, res: Response) => { void this.passkeyAuthenticateVerify(req, res); });
     app.post('/profile/credentials/:id/remove', (req: Request, res: Response) => { void this.removeOwnCredential(req, res); });
     app.post('/profile/credentials/:id/rename', (req: Request, res: Response) => { void this.renameOwnCredential(req, res); });
+    // #1601: approved apps and devices.
+    app.post('/profile/apps/:grantId/revoke', (req: Request, res: Response) => { void this.revokeOwnApp(req, res); });
+    app.post('/admin/users/:username/apps/:grantId/revoke', (req: Request, res: Response) => { void this.adminRevokeUserApp(req, res); });
     // #1019: GET renders a confirmation interstitial and consumes nothing;
     // POST is where the token is spent. Splitting them is what stops an email
     // scanner's pre-fetch from burning the link.

@@ -307,6 +307,38 @@ describe('OIDC sign-in bridge (#1572)', () => {
     expect(permitted).toEqual([]);
   });
 
+  test('#1601: a consented app is listed; only its owner can revoke it; revoking ends its tokens and is audited', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const { res, verifier } = await authorize(agent);
+    const consent = await follow(agent, res);
+    const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const token = await agent.post('/oidc/token').type('form')
+      .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier });
+    const access = (token.body as { access_token: string }).access_token;
+
+    const listed = await manager.listGrants('jim');
+    expect(listed).toEqual([expect.objectContaining({ clientId: 'app', name: 'Test App', device: false, scopes: ['openid', 'profile'] })]);
+    expect(await manager.listGrants('sam')).toEqual([]);
+
+    expect(await manager.revokeGrant('sam', listed[0].grantId)).toBe(false);
+    expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(200);
+
+    expect(await manager.revokeGrant('jim', listed[0].grantId)).toBe(true);
+    expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(401);
+    expect(await manager.listGrants('jim')).toEqual([]);
+    expect(audited).toContainEqual(expect.objectContaining({ eventType: 'oidcgrant-revoke', user: 'jim', resource: 'app' }));
+  });
+
+  test('#1601: an approved device is listed as a device', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const device = await startDevice();
+    const consent = await follow(agent, await enterDeviceCode(agent, device.user_code));
+    await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    expect(await manager.listGrants('jim')).toEqual([expect.objectContaining({ clientId: 'tv', name: 'Living Room TV', device: true })]);
+  });
+
   test('Deny ends the request with access_denied and no code', async () => {
     signIn();
     const agent = request.agent(app);

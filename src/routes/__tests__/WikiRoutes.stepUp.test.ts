@@ -26,7 +26,9 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     passkeyRelyingParty: vi.fn(() => null),
     hasCredential: vi.fn(() => false)
   };
+  const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
   const managers: Record<string, unknown> = {
+    OidcManager: oidc,
     AuthManager: authManager,
     PolicyDecisionPoint: { permits: vi.fn(() => Promise.resolve(true)) },
     AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('a'); }, logAuthentication: vi.fn().mockResolvedValue('a') },
@@ -36,7 +38,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   const engine = { getManager: vi.fn((n: string) => managers[n] ?? null) };
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>> & { getCommonTemplateData: unknown };
   (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({ csrfToken: 't' });
-  return { r, authManager, audit };
+  return { r, authManager, audit, oidc };
 }
 
 const req = (s: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -118,3 +120,22 @@ describe('re-authentication with the password (#1525)', () => {
     expect(out.redirect).toHaveBeenCalledWith('/');
   });
 });
+
+describe('revoking an approved app (#1601)', () => {
+  test('asks account-security, so a stale session is sent to re-authenticate first', async () => {
+    const { r, oidc } = routes(true);
+    const out = res();
+    await r.revokeOwnApp(req(session(), { params: { grantId: 'g1' }, originalUrl: '/profile/apps/g1/revoke' }), out);
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fprofile');
+    expect(oidc.revokeGrant).not.toHaveBeenCalled();
+  });
+
+  test('a fresh session revokes its own grant, by its own username', async () => {
+    const { r, oidc } = routes(false);
+    const out = res();
+    await r.revokeOwnApp(req(session(), { params: { grantId: 'g1' } }), out);
+    expect(oidc.revokeGrant).toHaveBeenCalledWith('molly', 'g1');
+    expect(out.redirect).toHaveBeenCalledWith('/profile?success=Access+revoked');
+  });
+});
+

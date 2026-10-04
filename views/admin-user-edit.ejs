@@ -107,6 +107,16 @@
         </div>
       </div>
 
+      <!-- #1601: apps and devices this person approved through /oidc -->
+      <% if (typeof approvedApps !== 'undefined' && approvedApps !== null) { %>
+      <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-plug me-2"></i><strong>Apps and devices</strong></div>
+        <div class="card-body">
+          <%- include('_approved-apps', { apps: approvedApps, revokeBase: '/admin/users/' + encodeURIComponent(editUser.username) + '/apps/', csrfToken: csrfToken }) %>
+        </div>
+      </div>
+      <% } %>
+
       <!-- ── Section 2: Extended Fields (read-only, addon-owned) ── -->
       <% const extKeys = Object.keys(extendedFields); %>
       <% if (extKeys.length > 0) { %>
