@@ -50,6 +50,7 @@ import { MagicLinkAuthProvider } from '../providers/MagicLinkAuthProvider.js';
 import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
+import { OidcBearerAuthProvider } from '../providers/OidcBearerAuthProvider.js';
 import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
@@ -178,6 +179,8 @@ export interface AuthenticateResult {
    * cast between them.
    */
   viaToken?: ViaToken;
+  /** #1576: the sign-in level a bearer credential carries; roles above it step down. */
+  aal?: Aal;
 }
 
 class AuthManager extends BaseManager {
@@ -299,6 +302,14 @@ class AuthManager extends BaseManager {
     // bearer providers may be active at once; the middleware tries each.
     if (configManager?.getProperty('ngdpbase.auth.agent-token.enabled', false)) {
       this.registerProvider(new AgentTokenAuthProvider(this.engine));
+    }
+
+    // #1576: access tokens from this instance's own OpenID Connect provider,
+    // for apps a person allowed. Verified by OidcManager when a request
+    // arrives, so registering ahead of it is safe; with the provider off,
+    // every token simply fails to verify.
+    if (configManager?.getProperty('oidc-auth-server.enabled', false) === true) {
+      this.registerProvider(new OidcBearerAuthProvider(this.engine));
     }
 
     this.factorEntries = this.readFactorEntries(configManager);
@@ -671,9 +682,15 @@ class AuthManager extends BaseManager {
       // #946: pass through a token provider's viaToken detail, if any.
       // #1048: read directly — `AuthResult` now declares the field, so the
       // compiler checks both ends instead of a cast asserting one of them.
-      return result.viaToken
-        ? { success: true, username: result.username, provider: providerId, factors, viaToken: result.viaToken }
-        : { success: true, username: result.username, provider: providerId, factors };
+      // #1576: and a bearer credential's sign-in level, when it carries one.
+      return {
+        success: true,
+        username: result.username,
+        provider: providerId,
+        factors,
+        ...(result.viaToken ? { viaToken: result.viaToken } : {}),
+        ...(result.aal !== undefined ? { aal: result.aal } : {})
+      };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
       return { success: false };

@@ -79,6 +79,13 @@ export interface AuthResult {
    * and silently delivered nothing.
    */
   viaToken?: ViaToken;
+
+  /**
+   * The assurance level a bearer credential's sign-in reached (#1576), when
+   * it says. Roles above it step down for the request, as in a web session.
+   * Absent on credentials that carry no sign-in (agent tokens).
+   */
+  aal?: Aal;
 }
 
 /**
@@ -124,6 +131,9 @@ export interface AuthProvider {
    * sign-in.
    */
   readonly factor?: FactorDescription;
+
+  /** Whether the bearer middleware tries this provider for `Authorization: Bearer` (#946, #1576). */
+  readonly acceptsBearer?: boolean;
 
   /**
    * Initiate a challenge-based auth flow.

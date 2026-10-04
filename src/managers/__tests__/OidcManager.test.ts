@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_JWKS_ENV, OIDC_MOUNT, issuerFor, operatorOidcConfig } from '../OidcManager';
+import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_JWKS_ENV, OIDC_MOUNT, aalOfAcr, apiResourceFor, delegablePermissions, issuerFor, operatorOidcConfig } from '../OidcManager';
 
 const ENV_NAMES = [OIDC_JWKS_ENV, OIDC_COOKIE_KEYS_ENV];
 
@@ -214,3 +214,16 @@ describe('issuer and operator config (#1574)', () => {
     expect(problems).toEqual([expect.stringMatching(/^oidc-auth-server\.issuer is set by ngdpbase/)]);
   });
 });
+
+describe('API delegation helpers (#1576)', () => {
+  test('aalOfAcr: phishing-resistant reads as 2, unknown as 1', () => {
+    expect([aalOfAcr('aal1'), aalOfAcr('aal2'), aalOfAcr('aal3'), aalOfAcr('phr'), aalOfAcr('phrh'), aalOfAcr(undefined)]).toEqual([1, 2, 3, 2, 2, 1]);
+  });
+
+  test('apiResourceFor and delegablePermissions', () => {
+    expect(apiResourceFor('https://wiki.example.com/')).toBe('https://wiki.example.com/api');
+    expect(delegablePermissions({ 'page-read': {}, 'admin-users': {}, 'token-mint': {}, 'page-edit': {} })).toEqual(['page-edit', 'page-read']);
+    expect(delegablePermissions(undefined)).toEqual([]);
+  });
+});
+

@@ -65,6 +65,7 @@ import type { BackupData } from './BaseManager.js';
 import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
+import { FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -79,10 +80,8 @@ const CONFIG_PREFIX = 'ngdpbase.auth.agent-token';
 const TOKEN_PREFIX = 'ngdp_at_';
 const TOKEN_BYTES = 32;
 
-/** Actions a token may never carry, however privileged its owner (#946 decision 3). */
-const FORBIDDEN_SCOPE_PREFIX = 'admin-';
-/** The permission to mint a token — and therefore the one scope a token may never carry (#1198). */
-export const MINT_PERMISSION = 'token-mint';
+// What a delegation may never carry is shared with the OIDC provider (#1576).
+export { MINT_PERMISSION } from '../utils/delegation.js';
 
 /**
  * Convenience aliases expanded at mint time.
@@ -449,7 +448,7 @@ class AgentTokenManager extends BaseManager {
 
     // admin-* is refused outright rather than warned (#946 decision 3).
     // Checked after expansion so an alias can never smuggle one in.
-    const forbidden = effectiveScopes.filter(s => s.startsWith(FORBIDDEN_SCOPE_PREFIX));
+    const forbidden = effectiveScopes.filter(s => s.startsWith(FORBIDDEN_DELEGATED_PREFIX));
     if (forbidden.length > 0) {
       throw new Error(`Tokens cannot carry admin scopes: ${forbidden.join(', ')}`);
     }

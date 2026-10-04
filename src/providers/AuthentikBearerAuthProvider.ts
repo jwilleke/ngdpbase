@@ -69,6 +69,8 @@ export interface AuthentikBearerConfig {
 export class AuthentikBearerAuthProvider implements AuthProvider {
   readonly id = 'authentik-bearer';
   readonly displayName = 'Authentik (Bearer)';
+  /** Marks this provider as usable by the bearer middleware. */
+  readonly acceptsBearer = true;
 
   private readonly engine: WikiEngine;
   private readonly config: AuthentikBearerConfig;

@@ -35,6 +35,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import type { AuditEvent as OidcAuditEvent, SignInContext } from '@jwilleke/oidc-auth-server';
 import { passwordChangedAtSeconds } from '../utils/passwordChange.js';
+import { refusedDelegatedScope } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 
 export const OIDC_PREFIX = 'oidc-auth-server.';
@@ -62,6 +63,38 @@ type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 type OidcPackage = typeof import('@jwilleke/oidc-auth-server');
 type AuthServer = ReturnType<OidcPackage['createAuthServer']>;
 type AuthServerOptions = Parameters<OidcPackage['createAuthServer']>[0];
+
+/** ngdpbase's own API as a resource server: tokens for it name this audience (#1576). */
+export function apiResourceFor(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/api`;
+}
+
+/**
+ * The AAL a token's `acr` stands for (#1576). `acr` names the strongest
+ * phishing resistance when there is one, hiding the level behind it, so
+ * `phr` and `phrh` read conservatively as 2: `phrh` reaches AAL3 only with
+ * more than a token says, and no shipped role needs AAL3. Unknown reads as 1.
+ */
+export function aalOfAcr(acr: unknown): 1 | 2 | 3 {
+  if (acr === 'aal3') return 3;
+  if (acr === 'aal2' || acr === 'phr' || acr === 'phrh') return 2;
+  return 1;
+}
+
+/** The permissions an app may be delegated: every defined one a delegation may carry. */
+export function delegablePermissions(definitions: unknown): string[] {
+  const names = definitions && typeof definitions === 'object' && !Array.isArray(definitions) ? Object.keys(definitions) : [];
+  return names.filter((n) => refusedDelegatedScope(n) === null).sort();
+}
+
+/** What a verified access token for ngdpbase's API stands for. */
+export interface VerifiedAccessToken {
+  username: string;
+  clientId: string;
+  grantId: string;
+  scopes: string[];
+  aal: 1 | 2 | 3;
+}
 
 /** The issuer for a base-url: no trailing slash, the mount appended. */
 export function issuerFor(baseUrl: string): string {
@@ -120,6 +153,7 @@ export class OidcManager extends BaseManager {
   private pkg: OidcPackage | null = null;
   private auth: AuthServer | null = null;
   private issuer = '';
+  private apiResource = '';
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -141,6 +175,7 @@ export class OidcManager extends BaseManager {
       return;
     }
     this.issuer = issuerFor(configManager.getBaseURL());
+    this.apiResource = apiResourceFor(configManager.getBaseURL());
 
     const { config: operatorConfig, problems } = operatorOidcConfig(configManager.getCustomProperties());
     if (problems.length > 0) {
@@ -163,15 +198,24 @@ export class OidcManager extends BaseManager {
     try {
       this.pkg = await import('@jwilleke/oidc-auth-server');
       const loaded = this.pkg.loadConfig({ customConfig: operatorConfig, env: process.env });
+      const apiScopes = delegablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}));
+      const base = this.pkg.optionsFromConfig(loaded, {
+        interactionUrl: (uid: string) => `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${uid}`,
+        findAccount: (accountId: string, signIn?: SignInContext) => this.findAccount(accountId, signIn),
+        audit: (event: OidcAuditEvent) => this.recordEvent(event),
+        adapter: this.store.adapterFactory()
+      });
       this.options = {
-        ...this.pkg.optionsFromConfig(loaded, {
-          interactionUrl: (uid: string) => `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${uid}`,
-          findAccount: (accountId: string, signIn?: SignInContext) => this.findAccount(accountId, signIn),
-          audit: (event: OidcAuditEvent) => this.recordEvent(event),
-          adapter: this.store.adapterFactory()
-        }),
+        ...base,
         issuer: this.issuer,
         acrValues: NGDPBASE_ACR_VALUES,
+        // #1576: ngdpbase's API is always a resource server, derived like the
+        // issuer; its scopes are the permissions a delegation may carry.
+        // With nothing delegable there is no API to offer, and the provider still serves sign-in.
+        resourceServers: {
+          ...base.resourceServers,
+          ...(apiScopes.length > 0 ? { [this.apiResource]: { scope: apiScopes.join(' '), accessTokenFormat: 'opaque' as const } } : {})
+        },
         development: isLoopbackHttp(this.issuer)
       };
       // Throws on unsafe options now, at boot, rather than at the first request.
@@ -216,6 +260,36 @@ export class OidcManager extends BaseManager {
     if (!this.auth) return { params: {}, startedAt: 0 };
     const details = await this.auth.provider.interactionDetails(req, res);
     return { params: details.params, startedAt: details.iat ?? 0 };
+  }
+
+  /** The audience a token for ngdpbase's API names; empty when off. */
+  getApiResource(): string {
+    return this.options ? this.apiResource : '';
+  }
+
+  /**
+   * Verify an access token presented to ngdpbase's API (#1576), in process:
+   * it must exist, be unexpired, name this API as its audience, not be bound
+   * to a key we do not check, and belong to an account that still passes
+   * findAccount (active; no password change since the sign-in, #1592).
+   * Null otherwise — never a reason, since the caller is unauthenticated.
+   */
+  async verifyAccessToken(token: string): Promise<VerifiedAccessToken | null> {
+    if (!this.auth || !token) return null;
+    const found = await this.auth.provider.AccessToken.find(token);
+    if (!found || found.isExpired || found.isSenderConstrained()) return null;
+    const audiences = Array.isArray(found.aud) ? found.aud : found.aud ? [found.aud] : [];
+    if (!audiences.includes(this.apiResource)) return null;
+    const extra = (found.extra ?? {}) as { acr?: string; amr?: string[]; auth_time?: number };
+    const account = await this.findAccount(found.accountId, { acr: extra.acr, amr: extra.amr, authTime: extra.auth_time });
+    if (!account) return null;
+    return {
+      username: found.accountId,
+      clientId: found.clientId ?? '',
+      grantId: found.grantId,
+      scopes: (found.scope ?? '').split(' ').filter((s) => s && refusedDelegatedScope(s) === null),
+      aal: aalOfAcr(extra.acr)
+    };
   }
 
   /** What to call a client on the consent page: its registered name, else its id. */
