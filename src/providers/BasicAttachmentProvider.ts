@@ -10,6 +10,8 @@ import fs from 'fs-extra';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import logger from '../utils/logger.js';
+import type { ActorContext } from '../context/ActorContext.js';
+import type AttachmentManager from '../managers/AttachmentManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { migrateLegacyPrivateAttachments } from '../utils/migrateLegacyPrivateAttachments.js';
@@ -184,6 +186,27 @@ export function safeStoredExtension(originalName: string, mimeType?: string): st
   const declared = String(mimeType ?? '').toLowerCase().split(';')[0].trim();
   const known = Object.entries(EXTENSION_MIME_MAP).find(([, mime]) => mime === declared);
   return known ? known[0] : '';
+}
+
+/**
+ * Basic image details via sharp: dimensions, colour space, orientation, DPI
+ * (#405). Non-critical — a failure never blocks the upload.
+ */
+async function extractImageMetadata(buffer: Buffer): Promise<AssetMetadata | null> {
+  try {
+    const sm = await sharp(buffer).metadata();
+    const assetMeta: AssetMetadata = {};
+    if (sm.orientation) assetMeta.orientation = sm.orientation;
+    if (sm.space) assetMeta.colorSpace = sm.space;
+    if (sm.width || sm.height) {
+      assetMeta['imageWidth'] = sm.width;
+      assetMeta['imageHeight'] = sm.height;
+    }
+    if (sm.density) assetMeta['dpi'] = sm.density;
+    return Object.keys(assetMeta).length > 0 ? assetMeta : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -706,6 +729,12 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     metadata: Partial<AttachmentMetadata> = {},
     user: User | null = null
   ): Promise<AttachmentMetadata> {
+    // Image details for every upload through the door, not only store() (#1629).
+    if (fileInfo.mimeType.startsWith('image/') && !metadata['assetMetadata']) {
+      const assetMetadata = await extractImageMetadata(fileBuffer);
+      if (assetMetadata) metadata = { ...metadata, assetMetadata };
+    }
+
     // Extract privacy options from metadata (passed by AttachmentManager)
     const storeOptions: StoreAttachmentOptions = {
       isPrivatePage: metadata.isPrivatePage as boolean | undefined,
@@ -2079,46 +2108,22 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
-   * AssetProvider.store() — delegates to storeAttachment().
-   * For images, extracts basic metadata via sharp (dimensions, color space,
-   * orientation, DPI) and persists it on the schema entry. Phase 5 #405.
+   * AssetProvider.store() — routed through the asset-upload door,
+   * AttachmentManager.uploadAttachment (#1629), so it gets the same
+   * permission check, destination rules and audit record as every upload.
    */
-  async store(buffer: Buffer, info: AssetInput): Promise<AssetRecord> {
-    const fileInfo: FileInfo = {
-      originalName: info.originalName,
-      mimeType: info.mimeType,
-      size: info.size
-    };
-    const user: User = info.uploadedBy ? { username: info.uploadedBy } : {};
-    const partialMeta: Partial<AttachmentMetadata> = {};
-    if (info.pageName) {
-      partialMeta['mentions'] = [{ '@type': 'Thing', name: info.pageName, url: `/view/${info.pageName}` }];
-    }
-    if (info.description) partialMeta['description'] = info.description;
-
-    // Extract image metadata via sharp (non-critical — failures never block upload)
-    if (info.mimeType.startsWith('image/')) {
-      try {
-        const sm = await sharp(buffer).metadata();
-        const assetMeta: AssetMetadata = {};
-        if (sm.orientation) assetMeta.orientation = sm.orientation;
-        if (sm.space) assetMeta.colorSpace = sm.space;
-        if (sm.width || sm.height) {
-          assetMeta['imageWidth'] = sm.width;
-          assetMeta['imageHeight'] = sm.height;
-        }
-        if (sm.density) assetMeta['dpi'] = sm.density;
-        if (Object.keys(assetMeta).length > 0) {
-          (partialMeta as Record<string, unknown>)['assetMetadata'] = assetMeta;
-        }
-      } catch {
-        // Non-critical — proceed without extracted metadata
-      }
-    }
-
-    const meta = await this.storeAttachment(buffer, fileInfo, partialMeta, user);
-    const id = meta.id ?? (meta as Record<string, unknown>)['identifier'] as string;
-    const schema = this.attachmentMetadata.get(id);
+  async store(buffer: Buffer, info: AssetInput, ctx: ActorContext): Promise<AssetRecord> {
+    const attachmentManager = this.engine.getManager<AttachmentManager>('AttachmentManager');
+    if (!attachmentManager) throw new Error('[BasicAttachmentProvider] AttachmentManager is not available');
+    const meta = await attachmentManager.uploadAttachment(
+      buffer,
+      { originalName: info.originalName, mimeType: info.mimeType, size: info.size },
+      ctx,
+      { pageName: info.pageName, description: info.description }
+    );
+    const rawId: unknown = meta.id ?? meta.identifier;
+    const id = typeof rawId === 'string' ? rawId : '';
+    const schema = id ? this.attachmentMetadata.get(id) : undefined;
     if (!schema) throw new Error(`[BasicAttachmentProvider] Failed to locate stored attachment ${id}`);
     return this.schemaToAssetRecord(schema);
   }
