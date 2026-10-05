@@ -16,7 +16,7 @@ import { randomBytes } from 'crypto';
 import type { CorePermission } from '../security/permissions.generated.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
-import multer, { StorageEngine, Multer } from 'multer';
+import multer, { Multer } from 'multer';
 import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -640,43 +640,10 @@ export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowM
  */
 export const signupRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
-const imageStorage: StorageEngine = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
-    const uploadDir = path.join(__dirname, '../../public/images');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'upload-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
 // Configure multer for general attachments (memory storage)
 const attachmentUpload: Multer = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit (can be overridden by config)
-});
-
-const imageUpload: Multer = multer({
-  storage: imageStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp|svg/;
-    const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
-    );
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(
-      new Error('Only image files (jpeg, jpg, png|gif|webp|svg) are allowed')
-    );
-  }
 });
 
 /**
@@ -6035,35 +6002,6 @@ ${panes}
     } catch (err: unknown) {
       logger.error('Error rendering bookmarklet install page:', err);
       return res.status(500).send('Error rendering bookmarklet install page');
-    }
-  }
-
-  /**
-   * Upload image file
-   */
-  uploadImage(req: Request, res: Response) {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No image file uploaded' });
-      }
-
-      // Return the image path that can be used in the Image plugin
-      const imagePath = `/images/${req.file.filename}`;
-
-      return res.json({
-        success: true,
-        imagePath: imagePath,
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        size: req.file.size,
-        message: 'Image uploaded successfully'
-      });
-    } catch (err: unknown) {
-      logger.error('Error uploading image:', err);
-      return res.status(500).json({
-        success: false,
-        error: getErrorMessage(err) || 'Error uploading image'
-      });
     }
   }
 
@@ -15842,34 +15780,6 @@ ${panes}
     app.get('/admin/convert', (req: Request, res: Response) => void this.adminConvert(req, res));
     app.post('/admin/convert/preview', (req: Request, res: Response) => void this.adminConvertPreview(req, res));
     app.post('/admin/convert/execute', (req: Request, res: Response) => void this.adminConvertExecute(req, res));
-
-    // Image upload route with error handling
-    app.post('/images/upload', (req: Request, res: Response) => {
-      imageUpload.single('image')(req, res, (err: unknown) => {
-        if (err) {
-          // Multer error handling
-          if (err instanceof multer.MulterError) {
-            if (err.code === 'LIMIT_FILE_SIZE') {
-              return res.status(400).json({
-                success: false,
-                error: 'File size exceeds 10MB limit'
-              });
-            }
-            return res.status(400).json({
-              success: false,
-              error: getErrorMessage(err)
-            });
-          }
-          // Other errors (e.g., file type validation)
-          return res.status(400).json({
-            success: false,
-            error: getErrorMessage(err)
-          });
-        }
-        // No error, proceed to handler
-        return void this.uploadImage(req, res);
-      });
-    });
 
     // Non-admin attachment browser (editor/contributor access)
     // #696: /attachments/browse is now an alias for /search (asset-picker UI
