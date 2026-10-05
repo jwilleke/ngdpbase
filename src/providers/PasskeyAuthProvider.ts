@@ -25,7 +25,6 @@ import {
 } from '@simplewebauthn/server';
 import type {
   AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON
@@ -38,7 +37,8 @@ import logger from '../utils/logger.js';
 export interface PasskeySecret {
   publicKey: string;
   counter: number;
-  transports?: AuthenticatorTransportFuture[];
+  /** As the authenticator reported them; v14 types transports as plain strings. */
+  transports?: string[];
   deviceType: 'singleDevice' | 'multiDevice';
   backedUp: boolean;
 }
