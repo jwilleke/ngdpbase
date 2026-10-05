@@ -187,6 +187,7 @@ import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
+import { untrustedFileHeaders } from '../utils/securityHeaders.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -6088,7 +6089,9 @@ ${panes}
       const own = await attachmentManager.getPrivateStoreAttachment(attachmentId, wikiContext.userContext);
       if (own) {
         const ownName = String(own.metadata.name ?? 'attachment');
-        res.setHeader('Content-Type', String(own.metadata.encodingFormat ?? 'application/octet-stream'));
+        const ownType = String(own.metadata.encodingFormat ?? 'application/octet-stream');
+        res.setHeader('Content-Type', ownType);
+        for (const [name, value] of Object.entries(untrustedFileHeaders(ownType))) res.setHeader(name, value);
         res.setHeader('Content-Disposition', `inline; filename="${ownName}"`);
         res.setHeader('Content-Length', String(own.buffer.length));
         res.setHeader('Cache-Control', 'private, no-store');
@@ -6163,6 +6166,7 @@ ${panes}
         ? 'video/mp4'
         : rawMime;
       res.setHeader('Content-Type', contentType);
+      for (const [name, value] of Object.entries(untrustedFileHeaders(contentType))) res.setHeader(name, value);
       res.setHeader(
         'Content-Disposition',
         `inline; filename="${fileName}"`
@@ -19255,7 +19259,8 @@ ${description}
         'Accept-Ranges': 'bytes',
         'Content-Length': end - start + 1,
         'Content-Type': mimeType,
-        'Content-Disposition': 'inline'
+        'Content-Disposition': 'inline',
+        ...untrustedFileHeaders(mimeType)
       });
       this.pipeFileToResponse(fs.createReadStream(filePath, { start, end }), res, filePath);
       return;
@@ -19265,7 +19270,8 @@ ${description}
       'Accept-Ranges': 'bytes',
       'Content-Disposition': 'inline',
       'Content-Length': fileSize,
-      'Content-Type': mimeType
+      'Content-Type': mimeType,
+      ...untrustedFileHeaders(mimeType)
     });
     this.pipeFileToResponse(fs.createReadStream(filePath), res, filePath);
     return;
@@ -19523,7 +19529,9 @@ ${description}
       if (!found) return res.status(404).send('Not Found');
       await this.engine.getManager('ShareManager')?.recordVaultVisit(req.params.token, { file: req.params.id }, req.ip);
       const name = String(found.metadata.name ?? req.params.id);
-      res.setHeader('Content-Type', String(found.metadata.encodingFormat ?? 'application/octet-stream'));
+      const foundType = String(found.metadata.encodingFormat ?? 'application/octet-stream');
+      res.setHeader('Content-Type', foundType);
+      for (const [name, value] of Object.entries(untrustedFileHeaders(foundType))) res.setHeader(name, value);
       // The URL carries the capability token: no shared cache may keep it.
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Content-Disposition', `inline; filename="${name.replace(/["\\\r\n]/g, '_')}"`);
