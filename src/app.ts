@@ -11,8 +11,8 @@
 // ES imports are hoisted, so this is the only reliable way to populate the
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
-import { ANONYMOUS_SUBJECT } from './managers/UserManager.js';
 import { sessionSecretOrigin } from './bootstrap-env.js';
+import { ANONYMOUS_SUBJECT } from './managers/UserManager.js';
 import { AUDIT_EVENT } from './utils/auditEventNames.js';
 import { recordSystemAction, systemContext } from './context/bootActions.js';
 import { subjectMayDo } from './utils/subjectMayDo.js';
