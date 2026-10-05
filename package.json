@@ -3,7 +3,7 @@
   "version": "4.21.2",
   "description": "JSPWiki-style wiki with advanced search capabilities",
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "scripts": {
     "start": "NODE_ENV=production node dist/src/app.js",
     "start:dev": "NODE_ENV=development node dist/src/app.js",
