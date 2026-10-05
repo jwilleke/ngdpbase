@@ -95,21 +95,6 @@ abstract class BaseAttachmentProvider extends BaseProvider implements Attachment
   abstract initialize(): Promise<void>;
 
   /**
-   * Save attachment
-   * @param {string} pageUuid - Page UUID
-   * @param {string} filename - Filename
-   * @param {Buffer} buffer - File buffer
-   * @param {Record<string, any>} metadata - Additional metadata
-   * @returns {Promise<AttachmentMetadata>} Attachment metadata
-   */
-  abstract saveAttachment(
-    pageUuid: string,
-    filename: string,
-    buffer: Buffer,
-    metadata?: Record<string, unknown>
-  ): Promise<AttachmentMetadata>;
-
-  /**
    * Upload/store an attachment with metadata (legacy method for backward compatibility)
    * @param {Buffer} fileBuffer - File data
    * @param {FileInfo} fileInfo - File information (originalName, mimeType, size)

@@ -788,67 +788,6 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
   }
 
   /**
-   * Save attachment (AttachmentProvider interface method - alternative signature)
-   * @param pageUuid - Page UUID
-   * @param filename - Filename
-   * @param buffer - File buffer
-   * @param metadata - Additional metadata
-   * @returns Attachment metadata
-   */
-  async saveAttachment(
-    pageUuid: string,
-    filename: string,
-    buffer: Buffer,
-    metadata: Record<string, unknown> = {}
-  ): Promise<AttachmentMetadata> {
-    const fileInfo: FileInfo = {
-      originalName: filename,
-      mimeType: (metadata.mimeType as string) || 'application/octet-stream',
-      size: buffer.length
-    };
-
-    const user: User | null = metadata.uploadedBy ? {
-      id: metadata.uploadedBy as string,
-      username: metadata.uploadedBy as string,
-      email: metadata.email as string
-    } : null;
-
-    const schemaMetadata = await this.storeAttachmentInternal(buffer, fileInfo, metadata, user);
-
-    // Convert Schema.org format to AttachmentMetadata
-    const attachmentMetadata: AttachmentMetadata = {
-      identifier: schemaMetadata.identifier,
-      id: schemaMetadata.identifier,
-      name: schemaMetadata.name,
-      filename: schemaMetadata.name,
-      pageUuid: pageUuid,
-      encodingFormat: schemaMetadata.encodingFormat,
-      mimeType: schemaMetadata.encodingFormat,
-      contentSize: schemaMetadata.contentSize,
-      size: schemaMetadata.contentSize,
-      url: `/attachments/${schemaMetadata.identifier}`,
-      uploadedAt: schemaMetadata.dateCreated,
-      uploadedBy: schemaMetadata.author?.name || 'Unknown',
-      filePath: schemaMetadata.storageLocation,
-      description: schemaMetadata.description
-    };
-
-    // Add page mention
-    const pageMention: SchemaMention = {
-      '@type': 'Thing',
-      name: pageUuid,
-      url: `/pages/${pageUuid}`
-    };
-
-    if (!schemaMetadata.mentions.some(m => m.name === pageUuid)) {
-      schemaMetadata.mentions.push(pageMention);
-      await this.saveMetadata();
-    }
-
-    return attachmentMetadata;
-  }
-
-  /**
    * Get attachment file and metadata
    *
    * Falls back to a disk scan when metadata is missing but a file matching

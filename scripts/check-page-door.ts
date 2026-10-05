@@ -33,6 +33,11 @@
  *    declared in `utils/pageTitleRule.ts` and applied at the door (#1455). It
  *    was written out three times in `WikiRoutes`, which is how the paths that
  *    pass no route could write a title the editor refuses.
+ * 5. __No asset write outside its door__ (#1629) — `asset-upload` has one
+ *    door, `AttachmentManager.uploadAttachment`. The attachment provider's
+ *    writes (`storeAttachment`, `storeFileInStore`) are AttachmentManager's
+ *    to call; a caller that reaches past it skips the permission check, the
+ *    destination rules and the audit record. `/images/upload` was that path.
  *
  * A site that is genuinely none of these says so at the line, or in the few
  * lines just above it, with `page-door-ignore: <why>` — the
@@ -63,6 +68,10 @@ const PROVIDERS = /^src\/providers\//;
 /** A write that belongs to the page door. */
 const PROVIDER_WRITE = /\b(?:provider|this\.provider|pageProvider)\s*(?:\??\.)\s*(savePage|deletePage|restoreDeletedPage|restoreStorePage|purgeStorePage|purgeExpiredStoreTrash)\s*\(/;
 
+/** The asset-upload door, and the write it guards. */
+const ASSET_DOOR = 'src/managers/AttachmentManager.ts';
+const ASSET_WRITE = /\b(?:provider|this\.provider|attachmentProvider|this\.attachmentProvider)\s*(?:\??\.)\s*(storeAttachment|storeFileInStore)\s*\(/;
+
 /** A shared index the door keeps in step after a page changes. */
 const INDEX_WRITE = /\.(addPageToCache|updatePageInLinkGraph|removePageFromLinkGraph|updatePageInIndex|removePageFromIndex|syncPageMentions|syncPageAssets)\s*\(/;
 
@@ -84,7 +93,7 @@ const INDEX_ALLOWED: Record<string, string> = {
 interface Violation {
   file: string;
   line: number;
-  rule: 'page-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'title-rule-copy' | 'stale-allowlist';
+  rule: 'page-write-outside-door' | 'asset-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'title-rule-copy' | 'stale-allowlist';
   detail: string;
 }
 
@@ -178,7 +187,7 @@ export function scan(): Violation[] {
       // This guard names the patterns it bans, so it would flag itself.
       if (rel === 'scripts/check-page-door.ts') continue;
       // The door does both of these; that is what it is for.
-      if (rel === DOOR) continue;
+      const isPageDoor = rel === DOOR;
       const lines = strippedLines(readFileSync(file, 'utf8'));
 
       // The marker sits on the line or the one above it, as it reads best.
@@ -189,14 +198,20 @@ export function scan(): Violation[] {
       lines.forEach((line, index) => {
         const at = index + 1;
         // A provider implements these writes; it does not reach past the door.
-        if (!PROVIDERS.test(rel) && PROVIDER_WRITE.test(line) && !excused(at)) {
+        if (!isPageDoor && !PROVIDERS.test(rel) && PROVIDER_WRITE.test(line) && !excused(at)) {
           violations.push({
             file: rel, line: at, rule: 'page-write-outside-door',
             detail: `a page write past the door (${line.trim()}) — call PageManager.savePage / deletePage`
           });
         }
+        if (rel !== ASSET_DOOR && !PROVIDERS.test(rel) && ASSET_WRITE.test(line) && !excused(at)) {
+          violations.push({
+            file: rel, line: at, rule: 'asset-write-outside-door',
+            detail: `an asset write past the door (${line.trim()}) — call AttachmentManager.uploadAttachment`
+          });
+        }
         // A provider's own page index is its data, not a shared index.
-        if (!PROVIDERS.test(rel) && INDEX_WRITE.test(line)) {
+        if (!isPageDoor && !PROVIDERS.test(rel) && INDEX_WRITE.test(line)) {
           indexHit.add(rel);
           if (!INDEX_ALLOWED[rel] && !excused(at)) {
             violations.push({
@@ -205,7 +220,7 @@ export function scan(): Violation[] {
             });
           }
         }
-        if (rel !== 'src/utils/pageTitleRule.ts' && TITLE_RULE_COPY.test(line) && !excused(at)) {
+        if (!isPageDoor && rel !== 'src/utils/pageTitleRule.ts' && TITLE_RULE_COPY.test(line) && !excused(at)) {
           violations.push({
             file: rel, line: at, rule: 'title-rule-copy',
             detail: `a second copy of the title rule (${line.trim()}) — import it from utils/pageTitleRule`
@@ -238,7 +253,7 @@ function run(): void {
   console.log('=================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('Every page write goes through PageManager, the shared indexes are written by their owners, and the save conditions are declared once.');
+    console.log('Every page write goes through PageManager, every asset write through AttachmentManager, the shared indexes are written by their owners, and the save conditions are declared once.');
     return;
   }
   for (const v of violations) {
