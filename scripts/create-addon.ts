@@ -1,26 +1,32 @@
 /**
- * create-addon.ts — scaffold a new ngdpbase addon (#675 Phases B + C).
+ * create-addon.ts — scaffold a new ngdpbase addon (#675, #1636).
  *
- * Generates a working, enable-able addon from templates held in this file.
- * It does NOT clone a template repo: the repo #675 Phase A proposes does not
- * exist yet, and generating in place keeps the scaffolder testable here and
- * free of a network dependency at the moment someone is trying to start work.
+ * The one source for a new addon. Generates a working, enable-able addon from
+ * templates held in this file and, with --repo, the standalone repository
+ * around it (wrapper Dockerfile, Renovate, CI, licence). There is no template
+ * repository to copy: a second hand-kept copy of this output drifted from it
+ * (#1636), and generating in place keeps the scaffolder testable here and free
+ * of a network dependency at the moment someone is trying to start work.
  *
  * What "working" means: the generated addon registers, its plugin renders, and
  * its seed page passes the page validator — verified by the scaffolder's own
  * tests, which generate into a temp dir and assert the contract below.
  *
  * Usage:
- *   npx tsx scripts/create-addon.ts --id volcano-watch
- *   npx tsx scripts/create-addon.ts --id volcano-watch --type domain \
+ *   npm run create:addon -- --id volcano-watch
+ *   npm run create:addon -- --id volcano-watch --type domain \
  *     --plugins VolcanoMap,VolcanoList --managers VolcanoData --target ../volcano-watch
+ *   npm run create:addon -- --id volcano-watch --repo --target ../volcano-watch
  *
  * Flags:
  *   --id        (required) canonical addon slug — lowercase, digits, dashes
  *   --type      additive (default) | domain
  *   --plugins   comma-separated plugin names (default: one named from the id)
  *   --managers  comma-separated manager names (default: one named from the id)
- *   --target    output directory (default: addons/<id>)
+ *   --repo      write a whole repository: the addon at <target>/addons/<id>/,
+ *               plus Dockerfile, renovate.json, .github/workflows/ci.yml,
+ *               .gitignore, LICENSE and README.md at <target>
+ *   --target    output directory (default: addons/<id>; with --repo, ../<id>)
  *   --force     write into a non-empty target directory
  *
  * Exit codes:
@@ -35,7 +41,14 @@
 import '../src/bootstrap-env.js';
 import fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+
+/** The page an addon author starts from; generated READMEs link it. */
+const GUIDE_URL = 'https://github.com/jwilleke/ngdpbase/blob/master/docs/guides/addons-developer-guide.md';
+
+/** This checkout's root: the LICENSE and version a --repo carries come from here. */
+const NGDPBASE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // ---------------------------------------------------------------------------
 // Identity rules — these mirror AddonsManager, and drift here is a real bug
@@ -76,7 +89,10 @@ export interface ScaffoldOptions {
   type: 'additive' | 'domain';
   plugins: string[];
   managers: string[];
+  /** The addon directory, or with `repo` the repository root. */
   target: string;
+  /** Write a whole standalone repository with the addon at addons/<id>/. */
+  repo?: boolean;
   /** Injected by tests so generated output is deterministic. */
   uuid?: () => string;
 }
@@ -116,19 +132,25 @@ function managerSource(name: string, o: ScaffoldOptions): string {
  *
  * Registered on the engine as '${name}Manager' during register(), so other
  * addons and plugins reach it with engine.getManager('${name}Manager').
+ *
+ * Note what the constructor does NOT take: a way to reach the network of its
+ * own. \`fetchJson\` is injected by register(), built there on the host's guarded
+ * fetch under the instance's egress policy. An addon that calls bare \`fetch\`
+ * bypasses that policy completely, so the manager is handed the one door it is
+ * allowed to use rather than being trusted to pick the right one (#1133, #1244).
  */
 
-/**
- * Fetch JSON from a URL through the host's egress boundary. The addon's
- * register() builds this from src/http/guardedFetch and hands it in — a
- * manager never calls fetch itself (#1133, #1244).
- */
+/** Injected by register(); index.ts shows how it is built. */
 export type FetchJson = (url: string) => Promise<unknown>;
 
 export default class ${name}Manager {
   private records: unknown[] = [];
 
-  constructor(protected readonly engine: unknown, protected readonly dataPath: string, private readonly fetchJson: FetchJson) {}
+  constructor(
+    protected readonly engine: unknown,
+    protected readonly dataPath: string,
+    private readonly fetchJson: FetchJson
+  ) {}
 
   /** Called once during register(). Load persisted state here. */
   async load(): Promise<void> {
@@ -138,21 +160,22 @@ export default class ${name}Manager {
     this.records = [];
   }
 
+  list(): unknown[] {
+    return this.records;
+  }
+
   /**
-   * Pull records from an operator-configured source. Every outbound request
-   * goes through the injected fetchJson, so the instance's egress policy
-   * (ngdpbase.security.egress.*) applies and a redirect is re-checked on
-   * every hop. Loopback and link-local are never reachable; a LAN source
-   * needs its prefix in allowed-ranges.
+   * Pull records from an operator-supplied URL.
+   *
+   * The call goes through the injected fetchJson, so the egress policy decides
+   * whether the address may be reached — a loopback or LAN URL is refused there,
+   * not here, and a redirect is re-checked on every hop. Nothing in this file
+   * needs to know the policy exists.
    */
   async refresh(sourceUrl: string): Promise<number> {
     const body = await this.fetchJson(sourceUrl);
     this.records = Array.isArray(body) ? body : [];
     return this.records.length;
-  }
-
-  list(): unknown[] {
-    return this.records;
   }
 
   /** Surfaced in the admin addon dashboard. */
@@ -165,7 +188,7 @@ export default class ${name}Manager {
 
 function pluginSource(name: string, o: ScaffoldOptions): string {
   return `/**
- * ${name}Plugin — renders [{${name}}] on any wiki page.
+ * ${name}Plugin — renders [{${name}}] on any page.
  */
 
 interface PluginContext {
@@ -210,6 +233,13 @@ function indexSource(o: ScaffoldOptions): string {
     await ${m.toLowerCase()}.load();
     engine.registerManager('${m}Manager', ${m.toLowerCase()});`).join('\n\n');
 
+  // The comment beside fetchJson points at whoever receives it.
+  const managerDoor = o.managers.length === 1
+    ? `The manager is handed this
+    // and has no other door — see ${o.managers[0]}Manager's constructor.`
+    : `Each manager is handed this
+    // and has no other door — see their constructors.`;
+
   const pluginWiring = o.plugins.map(p =>
     `      await pluginManager.registerPlugin('${p}', ${p}Plugin);`).join('\n');
 
@@ -217,7 +247,7 @@ function indexSource(o: ScaffoldOptions): string {
  * ${toTitleCase(o.id)} addon for ngdpbase.
  *
  * Addon code runs in the ngdpbase process. Every check that enforces a
- * runtime property of src/ applies here identically (addons/README.md,
+ * runtime property of src/ applies here identically (this addon's README.md,
  * "Rules an addon lives under"): outbound HTTP goes through the host's
  * guardedFetch (built once below and injected), a permission decision is
  * ctx.requirePermission on a forwarded subject, and a mutating browser
@@ -248,7 +278,11 @@ interface Engine {
   getManager<T = unknown>(name: string): T | null;
   registerManager(name: string, manager: unknown): void;
   /** The Express app, present once the host has built it; routes and views mount here. */
-  app?: { use(mountPath: string, handler: unknown): void; get(name: string): unknown; set(name: string, value: unknown): void };
+  app?: {
+    use(route: string, handler: unknown): void;
+    get(setting: string): unknown;
+    set(setting: string, value: unknown): void;
+  };
 }
 
 const ${toPascalCase(o.id)}Addon = {
@@ -259,11 +293,14 @@ const ${toPascalCase(o.id)}Addon = {
   dependencies: [] as string[],
 
   async register(engine: Engine, config: Record<string, unknown>): Promise<void> {
-    const cm = engine.getManager<{ resolveDataPath(n: string): string; getProperty?(k: string, f?: unknown): unknown }>('ConfigurationManager');
+    const cm = engine.getManager<{
+      resolveDataPath(n: string): string;
+      getProperty?(k: string, f?: unknown): unknown;
+    }>('ConfigurationManager');
 
     // The ONE way this addon reaches the network (#1133): the host's guarded
     // fetch under the instance's egress policy, read per call so an operator
-    // tightening it is honoured without a restart.
+    // tightening it is honoured without a restart. ${managerDoor}
     const readConfig = (key: string, fallback?: unknown): unknown => cm?.getProperty?.(key, fallback) ?? fallback;
     const fetchJson = async (url: string): Promise<unknown> => {
       const { policy } = resolveEgressPolicy(readConfig);
@@ -271,6 +308,7 @@ const ${toPascalCase(o.id)}Addon = {
       if (res.status < 200 || res.status >= 300) throw new Error(\`\${url}: HTTP \${res.status}\`);
       return JSON.parse(res.body.toString('utf8')) as unknown;
     };
+
     const dataPath = typeof config['dataPath'] === 'string' && config['dataPath'] !== ''
       ? config['dataPath'] as string
       : (cm?.resolveDataPath('${o.id}') ?? './data/${o.id}');
@@ -284,7 +322,9 @@ ${managerWiring}
 ${pluginWiring}
     }
 
-    // Views render with the host's layout; routes mount under the addon's own prefix.
+    // Views render with the host's layout; routes mount under the addon's own
+    // prefix. Appending to \`views\` rather than replacing it keeps the host's
+    // own templates — header and footer included — resolvable.
     const views = (engine.app?.get('views') as string | string[] | undefined) ?? [];
     engine.app?.set('views', [...[views].flat(), path.join(__dirname, 'views')]);
     engine.app?.use('/api/${o.id}', apiRoutes(engine));
@@ -328,8 +368,8 @@ lastModified: '${new Date().toISOString().slice(0, 10)}T00:00:00.000Z'
 ---
 # Using ${toTitleCase(o.id)}
 
-This page ships with the **${o.id}** addon and is seeded into the wiki when the
-addon is enabled.
+This page ships with the __${o.id}__ addon and is seeded into [{$applicationname}]
+when the addon is enabled.
 
 ## Enable the addon
 
@@ -347,8 +387,8 @@ ${o.plugins.map(p => `- \`[{${p}}]\` — renders the ${p} plugin.`).join('\n')}
 
 ## Editing this page
 
-Once seeded, this page belongs to the instance. Edits made in the wiki are
-preserved: the addon will not overwrite a page you have changed.
+Once seeded, this page belongs to the instance. Edits made here are preserved:
+the addon will not overwrite a page you have changed.
 `;
 }
 
@@ -382,10 +422,16 @@ function routesSource(o: ScaffoldOptions): string {
   return `/**
  * ${toTitleCase(o.id)} API — mounted at /api/${o.id} by index.ts.
  *
- * Every decision here is ctx.requirePermission('${perm}') on the request's
- * own subject (ApiContext forwards it, token and share ceilings included).
- * Never a role name, never isAuthenticated: allow and deny come from policy
- * (#1198), and the addon's default-config.json declares the permission.
+ * Every decision here is ctx.requirePermission('${perm}') on the
+ * request's own subject (ApiContext forwards it, token and share ceilings
+ * included). Never a role name, never isAuthenticated: allow and deny come from
+ * policy (#1198), and this addon's config/default-config.json is where the
+ * permission and the policy that grants it are declared.
+ *
+ * The host is imported through \`dist/\`, never \`src/\`. A value import of host
+ * source pulls it into this addon's compilation and emits a \`.js\` beside it —
+ * which exists on a developer's machine and does not exist in the container,
+ * where the image carries \`dist/\` and \`addons/\` but no \`src/\` (#1192).
  */
 import { Router, type Request, type Response } from 'express';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
@@ -474,11 +520,11 @@ function readme(o: ScaffoldOptions): string {
 
 ${toTitleCase(o.id)} addon for [ngdpbase](https://github.com/jwilleke/ngdpbase).
 
-- **Slug:** \`${o.id}\` — the canonical identity. It is the registry key and the
+- __Slug:__ \`${o.id}\` — the canonical identity. It is the registry key and the
   config key, and it must equal the \`name\` exported from \`index.ts\`.
-- **Type:** \`${o.type}\`${o.type === 'domain'
-  ? ' — this addon IS the site identity, not an augmentation of an existing wiki.'
-  : ' — augments an existing wiki.'}
+- __Type:__ \`${o.type}\`${o.type === 'domain'
+  ? ' — this addon IS the site identity, not an augmentation of an existing instance.'
+  : ' — augments an existing instance.'}
 
 ## Enable
 
@@ -494,41 +540,259 @@ ${toTitleCase(o.id)} addon for [ngdpbase](https://github.com/jwilleke/ngdpbase).
 |---|---|
 ${o.managers.map(m => `| \`managers/${m}Manager.ts\` | Data layer, registered as \`${m}Manager\` |`).join('\n')}
 ${o.plugins.map(p => `| \`plugins/${p}Plugin.ts\` | Renders \`[{${p}}]\` on a page |`).join('\n')}
-| \`routes/api.ts\` | \`/api/${o.id}/status\` and \`/refresh\`, gated by \`${o.id}-manage\` |
+| \`routes/api.ts\` | Status and refresh, gated by \`${o.id}-manage\` |
 | \`views/${o.id}-status.ejs\` | Admin view; its POST carries the CSRF token |
-| \`pages/\` | Seed pages copied into the wiki on first enable |
-| \`config/default-config.json\` | Config keys, the \`${o.id}-manage\` permission and its policy |
+| \`pages/\` | Seed pages copied into the platform on first enable |
+| \`config/default-config.json\` | Config keys, the permission and its policy |
 
 ## Rules an addon lives under
 
 Addon code runs in the ngdpbase process. Every check that enforces a runtime
 property of \`src/\` applies to this directory identically — a check that scans
-only \`src/\` is a bug in the check, not a licence. The generated code already
-follows the four that bite:
+only \`src/\` is a bug in the check, not a licence. This addon already follows the
+four that bite:
 
-- **Outbound HTTP goes through the host's \`guardedFetch\`.** \`index.ts\` builds
+- __Outbound HTTP goes through the host's \`guardedFetch\`.__ \`index.ts\` builds
   one under the instance's egress policy and injects it; a manager never calls
   \`fetch\` or an HTTP client library itself. Loopback and link-local are never
   reachable; a LAN source needs its prefix in
   \`ngdpbase.security.egress.allowed-ranges\`.
-- **A permission decision is \`ctx.requirePermission('${o.id}-manage')\`** on the
-  request's own subject, forwarded — never a role name, never
-  \`isAuthenticated\`, never a subject rebuilt from fields. The permission and
-  its policy are declared in \`config/default-config.json\`.
-- **A mutating browser request carries the CSRF token** — the view uses
+- __A permission decision is \`ctx.requirePermission('${o.id}-manage')\`__ on
+  the request's own subject, forwarded — never a role name, never
+  \`isAuthenticated\`, never a subject rebuilt from fields. The permission and its
+  policy are declared in \`config/default-config.json\`.
+- __A mutating browser request carries the CSRF token__ — the view uses
   \`(window.csrfFetch || fetch)\`; a bare \`fetch\` is refused by the host.
-- **An acting call takes a context**, never a bare username.
+- __An acting call takes a context__, never a bare username.
+
+The host is imported through \`dist/\`, never \`src/\`: a value import of host
+source compiles it into this addon and emits a \`.js\` beside it, which exists on
+a developer's machine and does not exist in the container.
 
 The host's guards run over this directory: \`lint:code\`, \`lint:csrf\`,
 \`lint:http\`, \`lint:permission-subject\`, \`lint:gates\`, \`lint:addons\`,
-\`lint:audit-deps\` and the addon's own \`tsc\`. See ngdpbase's
-\`addons/README.md\` for the statement of the rule and its one exemption.
+\`lint:audit-deps\` and the addon's own \`tsc\`. The rules in full are the
+standing rules of ngdpbase's [addons developer guide](${GUIDE_URL}#standing-rules).
 
 ## Develop
 
 Drop this directory into an ngdpbase instance's \`addons/\` (or point
 \`ngdpbase.managers.addons-manager.addons-path\` at its parent), enable it, and
 restart. For production, see the platform's \`packaged\` distribution model.
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Repository templates (--repo)
+// ---------------------------------------------------------------------------
+
+/** The ngdpbase release this checkout is — the base image a new repo starts on. */
+export function ngdpbaseVersion(): string {
+  return (fs.readJsonSync(path.join(NGDPBASE_ROOT, 'package.json')) as { version: string }).version;
+}
+
+function dockerfile(o: ScaffoldOptions): string {
+  return `# Wrapper image: ngdpbase + this addon, layered in as a drop-in.
+#
+# This is the simplest of the deployment shapes: the addon is COPY'd into the
+# image's default \`addons/\` directory, so no addons-path configuration is
+# needed — only the enable key.
+#
+# NOTE: ngdpbase's runtime image ships no npm (removed to close a bundled-npm
+# CVE). This addon declares no dependencies of its own — it takes express and
+# the guarded host helpers from the instance it runs inside — so no install
+# stage is required. The moment you add one, switch to the two-stage build in
+# ngdpbase's docs/platform/deployment/addon-packaged.md: install in a stage that
+# still has npm, then copy node_modules into the runtime image.
+#
+# For production, prefer the \`packaged\` (npm) model over this drop-in: it
+# version-pins the addon independently of the base image.
+#
+# The version floor is not cosmetic. The addon imports ApiContext, guardedFetch
+# and resolveEgressPolicy from the host's dist/, so an older base image fails to
+# load it. CI reads this ARG as the single source of the base version, so
+# bumping it here moves the typecheck with it; Renovate bumps it for you.
+
+ARG NGDPBASE_VERSION=${ngdpbaseVersion()}
+
+FROM ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}
+WORKDIR /app
+
+# Lands in the DEFAULT addons directory, so AddonsManager discovers it with no
+# config change. Enabling is still explicit — discovery never implies consent.
+COPY addons/${o.id}/ ./addons/${o.id}/
+
+# Enable the addon in your instance config (app-custom-config.json):
+#   { "ngdpbase.addons.${o.id}.enabled": true }
+`;
+}
+
+function renovateJson(): string {
+  return JSON.stringify({
+    $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+    extends: ['config:recommended'],
+    packageRules: [
+      {
+        description: 'Track the ngdpbase base image. Minor/patch may auto-merge; a major is a platform contract change and gets human review.',
+        matchDatasources: ['docker'],
+        matchPackageNames: ['ghcr.io/jwilleke/ngdpbase'],
+        matchUpdateTypes: ['minor', 'patch'],
+        automerge: true
+      },
+      {
+        matchDatasources: ['docker'],
+        matchPackageNames: ['ghcr.io/jwilleke/ngdpbase'],
+        matchUpdateTypes: ['major'],
+        automerge: false
+      }
+    ],
+    regexManagers: [
+      {
+        description: 'Bump the NGDPBASE_VERSION build arg in the Dockerfile',
+        fileMatch: ['(^|/)Dockerfile$'],
+        matchStrings: ['ARG NGDPBASE_VERSION=(?<currentValue>[0-9.]+)'],
+        depNameTemplate: 'ghcr.io/jwilleke/ngdpbase',
+        datasourceTemplate: 'docker'
+      }
+    ]
+  }, null, 2) + '\n';
+}
+
+function ciWorkflow(o: ScaffoldOptions): string {
+  const dir = `addons/${o.id}`;
+  return `name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  addon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Typechecked INSIDE the ngdpbase image rather than standalone.
+      #
+      # A guarded addon imports the host — ApiContext, guardedFetch,
+      # resolveEgressPolicy — through \`dist/\`, and takes express from the
+      # instance. None of that exists in a bare checkout, so a standalone
+      # \`npm install typescript @types/node && tsc\` could only ever check an
+      # addon that reached for nothing.
+      #
+      # The \`-devtools\` tag is the runtime image with npm retained, so the
+      # toolchain installs into a scratch directory and the @types are copied
+      # where module resolution will find them.
+      - name: Typecheck the addon against a real ngdpbase
+        run: |
+          # The Dockerfile's ARG is the single source of the base version, so
+          # the check and the image it documents cannot drift apart.
+          NGDPBASE_VERSION=$(sed -n 's/^ARG NGDPBASE_VERSION=//p' Dockerfile)
+          echo "Checking against ngdpbase \${NGDPBASE_VERSION}"
+          docker run --rm -v "$PWD/${dir}:/app/${dir}:ro" \\
+            --entrypoint sh "ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}-devtools" -c '
+              set -e
+              cd /tmp && npm init -y >/dev/null
+              npm install --no-save typescript@^5 @types/node@^24 @types/express@^5 >/dev/null
+              mkdir -p /app/node_modules/@types && cp -r /tmp/node_modules/@types/. /app/node_modules/@types/
+              cd /app
+              /tmp/node_modules/.bin/tsc --noEmit --strict --skipLibCheck \\
+                --module nodenext --target es2022 --moduleResolution nodenext \\
+                ${dir}/index.ts ${dir}/managers/*.ts \\
+                ${dir}/plugins/*.ts ${dir}/routes/*.ts
+            '
+
+      # The manifest slug and the name exported from index.ts must agree, or
+      # the addon loads under one name and is configured under another.
+      - name: Manifest slug matches exported name
+        run: |
+          for dir in addons/*/; do
+            slug=$(node -p "require('./\${dir}package.json').ngdpbase.slug")
+            if ! grep -q "name: '\${slug}'" "\${dir}index.ts"; then
+              echo "::error::\${dir}: index.ts name does not match manifest slug '\${slug}'"
+              exit 1
+            fi
+            case "$slug" in
+              *-addon)
+                echo "::error::\${dir}: slug '\${slug}' ends in -addon; ngdpbase strips that suffix"
+                exit 1 ;;
+            esac
+          done
+
+      # A page whose filename and frontmatter uuid disagree, or whose uuid is
+      # not a real v4, is skipped by ngdpbase at seed time.
+      - name: Seed page UUIDs are valid and match their filenames
+        run: |
+          fail=0
+          for page in addons/*/pages/*.md; do
+            [ -e "$page" ] || continue
+            base=$(basename "$page" .md)
+            fm=$(sed -n 's/^uuid: *//p' "$page" | head -1 | tr -d "'\\"")
+            if [ "$base" != "$fm" ]; then
+              echo "::error::$page: filename '$base' != frontmatter uuid '$fm'"; fail=1
+            fi
+            if ! echo "$fm" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+              echo "::error::$page: '$fm' is not a v4 UUID"; fail=1
+            fi
+          done
+          exit $fail
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the wrapper image
+        run: docker build -t ${o.id}:ci .
+`;
+}
+
+function gitignore(): string {
+  return ['node_modules/', 'dist/', '*.tsbuildinfo', '.env', '.DS_Store', 'data/', ''].join('\n');
+}
+
+function repoReadme(o: ScaffoldOptions): string {
+  return `# ${o.id}
+
+${toTitleCase(o.id)}: an addon for [ngdpbase](https://github.com/jwilleke/ngdpbase).
+The addon itself is [\`addons/${o.id}/\`](addons/${o.id}/); its README lists what
+each file does and the rules it lives under.
+
+## Run it
+
+Against a local ngdpbase checkout, point the instance at this repository's
+\`addons/\` directory and enable the addon in \`app-custom-config.json\`:
+
+\`\`\`json
+{
+  "ngdpbase.managers.addons-manager.addons-path": ["/path/to/${o.id}/addons"],
+  "ngdpbase.addons.${o.id}.enabled": true
+}
+\`\`\`
+
+Restart the instance. The addon registers, its seed page appears, and
+\`[{${o.plugins[0] ?? toPascalCase(o.id)}}]\` renders on any page.
+
+As a container, build the wrapper image — ngdpbase with this addon layered in —
+and run it as you would ngdpbase itself, with the enable key set:
+
+\`\`\`bash
+docker build -t ${o.id} .
+\`\`\`
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| \`addons/${o.id}/\` | The addon |
+| \`Dockerfile\` | Wrapper image; \`ARG NGDPBASE_VERSION\` is the base release |
+| \`renovate.json\` | Keeps \`NGDPBASE_VERSION\` current |
+| \`.github/workflows/ci.yml\` | Typechecks the addon inside the matching ngdpbase image |
+
+## Further reading
+
+Everything else — identity, configuration, permissions, seed pages, testing and
+deployment — starts at ngdpbase's [addons developer guide](${GUIDE_URL}).
 `;
 }
 
@@ -542,6 +806,11 @@ export interface ScaffoldResult {
   pageUuid: string;
 }
 
+/**
+ * Write the addon at `target`, or with `repo` a whole repository at `target`
+ * holding the addon at addons/<id>/. The addon files are the same either way —
+ * the repository only adds files around them. `files` is relative to `target`.
+ */
 export async function scaffoldAddon(o: ScaffoldOptions): Promise<ScaffoldResult> {
   const gen = o.uuid ?? uuidv4;
   const pageUuid = gen();
@@ -557,6 +826,19 @@ export async function scaffoldAddon(o: ScaffoldOptions): Promise<ScaffoldResult>
 
   for (const m of o.managers) files.push([`managers/${m}Manager.ts`, managerSource(m, o)]);
   for (const p of o.plugins) files.push([`plugins/${p}Plugin.ts`, pluginSource(p, o)]);
+
+  if (o.repo) {
+    for (const f of files) f[0] = path.join('addons', o.id, f[0]);
+    files.push(
+      ['Dockerfile', dockerfile(o)],
+      ['renovate.json', renovateJson()],
+      ['.github/workflows/ci.yml', ciWorkflow(o)],
+      ['.gitignore', gitignore()],
+      // The licence ngdpbase itself carries (Apache-2.0), copied verbatim.
+      ['LICENSE', await fs.readFile(path.join(NGDPBASE_ROOT, 'LICENSE'), 'utf8')],
+      ['README.md', repoReadme(o)]
+    );
+  }
 
   for (const [rel, content] of files) {
     const dest = path.join(o.target, rel);
@@ -598,13 +880,16 @@ export function parseArgs(argv: string[]): { options?: ScaffoldOptions; error?: 
   const bad = [...plugins, ...managers].find(n => !/^[A-Za-z][A-Za-z0-9]*$/.test(n));
   if (bad) return { error: `'${bad}' is not a valid identifier — plugin and manager names must be alphanumeric, starting with a letter` };
 
+  // A repository is a sibling of this checkout, never a directory inside its addons/.
+  const repo = argv.includes('--repo');
   return {
     options: {
       id,
       type: typeRaw,
       plugins,
       managers,
-      target: get('--target') ?? path.join('addons', id)
+      target: get('--target') ?? (repo ? path.join('..', id) : path.join('addons', id)),
+      repo
     }
   };
 }
@@ -616,7 +901,7 @@ async function main(): Promise<void> {
   if (error) {
     console.error(`✗ ${error}`);
     console.error('\nUsage: npx tsx scripts/create-addon.ts --id <slug> [--type additive|domain]');
-    console.error('       [--plugins A,B] [--managers C] [--target dir] [--force]');
+    console.error('       [--plugins A,B] [--managers C] [--repo] [--target dir] [--force]');
     process.exit(1);
   }
 
@@ -632,12 +917,20 @@ async function main(): Promise<void> {
 
   const result = await scaffoldAddon(o);
 
-  console.log(`✓ Scaffolded '${o.id}' (${o.type}) into ${result.target}`);
+  console.log(`✓ Scaffolded '${o.id}' (${o.type}) ${o.repo ? 'repository ' : ''}into ${result.target}`);
   for (const f of result.files) console.log(`    ${f}`);
   console.log('\nNext steps:');
-  console.log(`  1. Enable it:  "ngdpbase.addons.${o.id}.enabled": true`);
-  console.log('  2. Restart the server — the addon registers and its page seeds.');
-  console.log(`  3. Put [{${o.plugins[0]}}] on a page to see the plugin render.`);
+  if (o.repo) {
+    console.log(`  1. git init ${result.target}, commit, and push it to a new repository.`);
+    console.log(`  2. Point an instance at it:  "ngdpbase.managers.addons-manager.addons-path": ["${path.resolve(result.target, 'addons')}"]`);
+    console.log(`  3. Enable it:  "ngdpbase.addons.${o.id}.enabled": true`);
+    console.log('  4. Restart the server — the addon registers and its page seeds.');
+    console.log(`  5. Put [{${o.plugins[0]}}] on a page to see the plugin render.`);
+  } else {
+    console.log(`  1. Enable it:  "ngdpbase.addons.${o.id}.enabled": true`);
+    console.log('  2. Restart the server — the addon registers and its page seeds.');
+    console.log(`  3. Put [{${o.plugins[0]}}] on a page to see the plugin render.`);
+  }
 }
 
 // Only run the CLI when invoked directly, so the exports above stay importable

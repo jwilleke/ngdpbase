@@ -13,7 +13,7 @@ The useful distinction is not "which repo" but __what each one consumes, and how
 | [ngdpbase-demo.example.com](https://ngdpbase-demo.example.com) | the published image, unmodified | pulled by tag, deployed by Flux |
 | [geohazardwatch](https://github.com/jwilleke/geohazardwatch) | the published image, as a base | derived image built `FROM` it |
 | [fairways-gen2-website](https://github.com/jwilleke/fairways-gen2-website) | the source, cloned and run | direct install on a host |
-| [ngdpbase-addon-template](https://github.com/jwilleke/ngdpbase-addon-template) | nothing at runtime | reference shape for new addons |
+| [ngdpbase-addon-template](https://github.com/jwilleke/ngdpbase-addon-template) (retired) | nothing at runtime | replaced by `npm run create:addon -- --repo` |
 | jimstest | this working tree | run in place from the checkout |
 
 ## ngdpbase-demo.example.com — stock ngdpbase, nothing added
@@ -54,13 +54,13 @@ The practical consequence is that this consumer has __no automatic upgrade path_
 
 The sharpest form of that difference is environment: a value baked into `docker/Dockerfile` reaches geohazardwatch on its next base bump and never reaches The Fairways at all, because a direct install inherits nothing from the image. That is the single row worth remembering from Implementation.md's inheritance table.
 
-## ngdpbase-addon-template — the shape, not a deployment
+## ngdpbase-addon-template — retired
 
 <https://github.com/jwilleke/ngdpbase-addon-template>
 
-A working reference addon (`addons/hello-ngdp`) that is copied rather than depended on. It is the counterpart to `npm run create:addon` in this repository: the scaffold generates the same shape, and the template repository is where that shape can be read as a finished, working example.
+A working reference addon (`addons/hello-ngdp`) in a repository, copied rather than depended on. It was a hand-kept second copy of what `npm run create:addon` generates, and the two drifted ([#1636](https://github.com/jwilleke/ngdpbase/issues/1636)). It is retired: `npm run create:addon -- --id <slug> --repo` now writes the whole repository — the addon at `addons/<slug>/`, the wrapper `Dockerfile`, Renovate, CI and the licence — from the one generator in this repository. The [addons developer guide](guides/addons-developer-guide.md#a-whole-repository---repo) describes it.
 
-It is worth keeping the two honest with each other, because between them they define what every future addon looks like. In particular the template declares no runtime dependencies at all — an addon receives what it needs from the host, and the generated route imports Express without claiming to own it. An addon that declares its own copy of something the host already provides is drifting from the pattern both of these teach.
+The pattern it taught still holds: a generated addon declares no runtime dependencies at all — an addon receives what it needs from the host, and the generated route imports Express without claiming to own it. An addon that declares its own copy of something the host already provides is drifting from that pattern.
 
 ## jimstest — the development instance
 

@@ -18,7 +18,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 ### Choose a starting point
 
 - __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
-- __A whole repository__ (wrapper `Dockerfile`, Renovate, rename checklist): [`jwilleke/ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template), a GitHub template repository.
+- __A whole repository__ (the addon at `addons/<slug>/`, plus a wrapper `Dockerfile`, Renovate, CI and a licence): `npm run create:addon -- --id <slug> --repo`. See [A whole repository](#a-whole-repository---repo).
 
 Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
 
@@ -98,7 +98,7 @@ Keys for this addon are `ngdpbase.addons.<slug>.*`. `<slug>` is the canonical id
 
 ### Defaults the addon ships
 
-`addons/<slug>/config/default-config.json` holds fully qualified keys. `npm run create:addon` writes it. The [template repository](https://github.com/jwilleke/ngdpbase-addon-template) ships one. Writing the file by hand is the same shape. A key whose name starts with `_` is a comment and is dropped.
+`addons/<slug>/config/default-config.json` holds fully qualified keys. `npm run create:addon` writes it, with or without `--repo`. Writing the file by hand is the same shape. A key whose name starts with `_` is a comment and is dropped.
 
 The file is a merge layer, and only once the addon is enabled. Maps merge per entry. An array of objects that each have an `id` merges by that id, so the file can add `ngdpbase.permissions.definitions` and `ngdpbase.access.policies` without replacing the catalogs. A plain array replaces wholesale. The operator file still wins over the addon file. The permission recipe is [Permissions](#permissions).
 
@@ -219,10 +219,11 @@ npm run create:addon -- --id volcano-watch --type domain \
 | Flag | Default | Meaning |
 |---|---|---|
 | `--id` | *(required)* | Canonical slug — lowercase, digits, single dashes |
-| `--type` | `additive` | `additive` augments a wiki; `domain` means the addon __is__ the site |
+| `--type` | `additive` | `additive` augments an instance; `domain` means the addon __is__ the site |
 | `--plugins` | one, named from the id | Comma-separated plugin names |
 | `--managers` | one, named from the id | Comma-separated manager names |
-| `--target` | `addons/<id>` | Output directory |
+| `--repo` | off | Write a whole repository, with the addon at `addons/<id>/` |
+| `--target` | `addons/<id>`; with `--repo`, `../<id>` | Output directory |
 | `--force` | off | Write into a non-empty directory |
 
 Two things the scaffolder gets right that are easy to get wrong by hand:
@@ -241,17 +242,26 @@ The manual walkthrough below still applies — read it to understand what the
 generated files do, and for anything the scaffolder does not emit (routes,
 views, themes, static assets).
 
-### Or start from the template repository
+### A whole repository: `--repo`
 
-[`jwilleke/ngdpbase-addon-template`](https://github.com/jwilleke/ngdpbase-addon-template)
-is a working addon in a repo — a `[{Greet}]` plugin, a `GreeterDataManager` and
-a seeded page — plus the things an addon repo needs that the scaffolder does not
-emit: a wrapper `Dockerfile`, Renovate config tracking the base image, and a
-`CONTRIBUTING.md` carrying the addon-rename checklist.
+An addon you own lives in its own repository. `--repo` writes that repository in one step:
 
-It is a GitHub template repository, so *Use this template* gives you a clean
-history. Prefer `npm run create:addon` when you just want an addon directory;
-prefer the template when you want a whole repository with deployment wiring.
+```bash
+npm run create:addon -- --id volcano-watch --repo --target ../volcano-watch
+```
+
+The addon lands at `addons/volcano-watch/`, byte-for-byte what the command writes without `--repo`. Around it:
+
+| File | What it does |
+|---|---|
+| `Dockerfile` | Wrapper image: the published ngdpbase image with the addon copied into its default `addons/`. `ARG NGDPBASE_VERSION` starts at the ngdpbase release you generated from |
+| `renovate.json` | Bumps `NGDPBASE_VERSION` on each ngdpbase release; minor and patch auto-merge, a major waits for review |
+| `.github/workflows/ci.yml` | Typechecks the addon inside the matching `-devtools` image (the version comes from the Dockerfile ARG), checks the slug against the exported `name`, checks seed page UUIDs, and builds the image |
+| `LICENSE` | Apache-2.0, as ngdpbase |
+| `.gitignore` | `node_modules/`, `dist/`, `data/`, `.env` and the like |
+| `README.md` | How to run it, and a link back to this guide |
+
+There is no rename step: every name comes from `--id`, `--plugins` and `--managers`. The repository replaces the retired `ngdpbase-addon-template`. Shipping the image is [Shipping Your Addon as a Container Image](#12-shipping-your-addon-as-a-container-image); for production prefer the packaged model in [addon-packaged.md](../platform/deployment/addon-packaged.md).
 
 ---
 
@@ -1133,10 +1143,22 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 | [`docs/platform/platform-core-capabilities.md`](../platform/platform-core-capabilities.md) | All built-in managers and APIs |
 | [`docs/private-stores.md`](../private-stores.md) | Private stores: layout, store kinds and the door, keys and recovery words, access, pages, links, search, trash and files |
 | [AddonsManager source](../../src/managers/AddonsManager.ts) | Discovery, loading, lifecycle implementation |
-| [security-developer-guide.md](security-developer-guide.md) | Authorization and context — mandatory |
+| [security-developer-guide.md](security-developer-guide.md) | Authorization and context — mandatory; its [Addons](security-developer-guide.md#addons) section covers the config merge |
 | [audit-developer-guide.md](audit-developer-guide.md) | Audit events — mandatory |
 | [security-posture.md](../security-posture.md), [audit-posture.md](../audit-posture.md) | The standing law those guides apply |
 | [configuration-developer-guide.md](configuration-developer-guide.md) | Merge layers |
+| [`addons/README.md`](../../addons/README.md) | The addons that ship in this repository |
+| [`docs/managers/AddonsManager.md`](../managers/AddonsManager.md) | AddonsManager: discovery, registration, lifecycle, dependencies |
+| [`docs/system-category.md`](../system-category.md#system-categories-that-add-ons-bring) | System categories an addon brings |
+| [`docs/platform/page-overrides.md`](../platform/page-overrides.md#how-add-ons-ship-default-overrides) | How an addon ships default overrides of special pages |
+| [`docs/theming.md`](../theming.md#add-on-stylesheet-registration) | Registering an addon stylesheet |
+| [`docs/platform/deployment/how-to-deploy.md`](../platform/deployment/how-to-deploy.md#3-deliver-addons) | Delivering addons to a deployment: bundled, drop-in, packaged |
+| [`docs/platform/deployment/docker-compose.md`](../platform/deployment/docker-compose.md#adding-addons) | Addons under Docker Compose: derivative image or volume |
+| [`docs/platform/deployment/kubernetes.md`](../platform/deployment/kubernetes.md#wrapper-image-vs-runtime-mounted-addons) | Addons under Kubernetes: wrapper image or runtime mount |
+| [`docs/platform/deployment/direct-install.md`](../platform/deployment/direct-install.md#addon-discovery-failures) | Addon discovery failures on a direct install |
+| [`docs/related-repositories.md`](../related-repositories.md) | Repositories and deployments that ship addons |
+| [`docs/Forms-to-Calendar.md`](../Forms-to-Calendar.md) | One addon feeding another: forms to calendar |
+| [`docs/planning/addons.md`](../planning/addons.md) | Domain addons: planning notes and open questions |
 
 ## How you know you are done
 
@@ -1151,4 +1173,4 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 ---
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
