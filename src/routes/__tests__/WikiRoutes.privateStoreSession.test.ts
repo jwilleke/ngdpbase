@@ -205,7 +205,8 @@ describe('private store session bag (#1391, #1392)', () => {
     unlockPrivateStores('other-sid', 'bob', other.kek);
 
     const session = createMockSession();
-    const routes = makeRoutes({ pagesDir });
+    const audit: { payload?: { context: Record<string, unknown>; result: string; reason: string } } = {};
+    const routes = makeRoutes({ pagesDir, audit });
     await routes.processLogin(
       createMockReq({ username: 'molly', password: 'correct-horse' }, session),
       createMockRes()
@@ -233,5 +234,7 @@ describe('private store session bag (#1391, #1392)', () => {
     expect(combined).not.toContain(created.kek.toString('hex'));
     expect(combined).not.toContain(created.mnemonic);
     expect(session.destroy).toHaveBeenCalled();
+    // #1670: the sign-out is recorded, not only the keys dropped.
+    expect(audit.payload).toMatchObject({ result: 'logout', reason: 'logout', context: { username: 'molly', loginMethod: 'session' } });
   });
 });

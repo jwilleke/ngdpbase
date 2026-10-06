@@ -114,6 +114,7 @@ import {
   unlockPrivateStoresWithMnemonic,
   unlockPrivateStoresWithPassword
 } from '../utils/privateStoreUnlock.js';
+import { endSession } from '../utils/sessionEnd.js';
 import {
   commitStoreCopy,
   confirmAttempts,
@@ -6656,9 +6657,10 @@ ${panes}
   }
 
   private regenerateSession(req: Request): Promise<void> {
-    // #1626: signing in again on a session that holds keys ends that session's
-    // keys; a pending sign-in's handle is never on the session, so is untouched.
-    endSessionKeys(req.session?.privateStoreHandle);
+    // #1626, #1670: signing in again on a session that was signed in ends that
+    // session (its keys, and a record that it ended); a pending sign-in's
+    // handle is never on the session, so is untouched.
+    endSession(this.engine, req.session, 'superseded', { ipAddress: req.ip, userAgent: req.get?.('user-agent') });
     return new Promise((resolve) => {
       if (typeof req.session?.regenerate !== 'function') {
         resolve();
@@ -7607,9 +7609,9 @@ ${panes}
    */
   processLogout(req: Request, res: Response) {
     try {
-      // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
-      // keyed by the session's private-store handle, never the session id.
-      endSessionKeys(req.session?.privateStoreHandle);
+      // #1392, #1670: drop KEK/DEK before express-session JSON is gone — the
+      // bag is keyed by the session's private-store handle — and record it.
+      endSession(this.engine, req.session, 'logout', { ipAddress: req.ip, userAgent: req.get('user-agent') });
 
       // #1572: signing out here signs out of the OpenID Connect provider too,
       // or its own session would keep finishing sign-ins for this person.

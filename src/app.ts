@@ -50,7 +50,8 @@ import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
-import { endSessionKeys, sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
+import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
+import { endSession, type SessionEndReason } from './utils/sessionEnd.js';
 import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
@@ -792,9 +793,10 @@ void (async (): Promise<void> => {
     }
 
     void (async (): Promise<void> => {
-      // Ends the signed-in session in place; its private-store keys are dropped with it.
-      const signOut = (why: string): void => {
-        endSessionKeys(req.session.privateStoreHandle);
+      // Ends the signed-in session in place, through the one session-end door
+      // (#1670): its private-store keys are dropped and the end is audited.
+      const signOut = (reason: SessionEndReason, why: string): void => {
+        endSession(engine, req.session, reason, { ipAddress: req.ip, userAgent: req.get('user-agent') });
         logger.info(`[SESSION] Signed out ${req.session.username}: ${why}`);
         delete req.session.username;
         delete req.session.privateStoreHandle;
@@ -809,7 +811,7 @@ void (async (): Promise<void> => {
       if (req.session?.username && req.session.isAuthenticated) {
         const account = await userManager.getUser(req.session.username);
         if (account && !sessionIsCurrent(req.session.sessionGeneration, account)) {
-          signOut('the password changed after this session signed in (#1482)');
+          signOut('password-changed', 'the password changed after this session signed in (#1482)');
         }
       }
 
@@ -827,15 +829,7 @@ void (async (): Promise<void> => {
         res.locals.idleTimeoutMs = timeoutMs;
         const now = Date.now();
         if (idleExpired(req.session.lastActivity, now, timeoutMs)) {
-          const username = req.session.username;
-          signOut('idle past ngdpbase.session.idle-timeout-minutes (#1546)');
-          const audit = engine.getManager('AuditManager') as {
-            logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<unknown>;
-          } | null;
-          void audit?.logAuthentication?.(
-            { username, ipAddress: req.ip, userAgent: req.get('user-agent'), loginMethod: 'session' },
-            'logout', 'idle-timeout'
-          ).catch((err: unknown) => logger.warn('[SESSION] Audit of an idle sign-out failed:', err));
+          signOut('idle-timeout', 'idle past ngdpbase.session.idle-timeout-minutes (#1546)');
         } else if (req.path !== IDLE_STATUS_PATH && shouldTouch(req.session.lastActivity, now, timeoutMs)) {
           req.session.lastActivity = now;
         }
