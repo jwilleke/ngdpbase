@@ -95,7 +95,8 @@ describe('store door routes (#1414)', () => {
     const admin = { ...subject, roles: ['admin', 'Authenticated'] };
     vi.mocked(routes.createWikiContext).mockImplementation(() => ({
       userContext: admin,
-      hasPermission: async (permission: string) => { asked.push(permission); return false; }
+      hasPermission: async (permission: string) => { asked.push(permission); return false; },
+      holdsPermission: async () => false // #1635: not held, so a plain refusal
     }) as never);
 
     for (const route of ['storeDoorPage', 'storeDoorEnter', 'storeDoorConfirmPage', 'storeDoorConfirm'] as const) {
@@ -113,7 +114,8 @@ describe('store door routes (#1414)', () => {
     const anonymous = { username: 'Anonymous', roles: ['Anonymous', 'All'], isAuthenticated: false };
     vi.mocked(routes.createWikiContext).mockImplementation(() => ({
       userContext: anonymous,
-      hasPermission: async () => false
+      hasPermission: async () => false,
+      holdsPermission: async () => false // #1635
     }) as never);
     const res = newRes();
     await routes.storeDoorEnter({ ...(req('default', {}, anonymous) as object), originalUrl: '/stores/default' }, res);

@@ -16,7 +16,8 @@ const res = (idleTimeoutMs: number) => ({
 const routes = (granted: string[]) => {
   const r = new WikiRoutes({ getManager: vi.fn(() => null) });
   vi.spyOn(r as never, 'createWikiContext').mockReturnValue({
-    hasPermission: (p: string) => Promise.resolve(granted.includes(p))
+    hasPermission: (p: string) => Promise.resolve(granted.includes(p)),
+    holdsPermission: (p: string) => Promise.resolve(granted.includes(p)) // #1635
   });
   vi.spyOn(r as never, 'renderError').mockImplementation((async () => undefined) as never);
   return r as unknown as { idleStatus(q: unknown, s: unknown): void; keepAlive(q: unknown, s: unknown): Promise<void> };

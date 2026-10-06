@@ -1071,7 +1071,10 @@ class WikiRoutes {
     const grantedPermissions: Record<string, boolean> = {};
     if (permissionContext) {
       for (const permission of VIEW_PERMISSIONS) {
-        grantedPermissions[permission] = await permissionContext.hasPermission(permission);
+        // #1635: an affordance asks whether the person HOLDS the permission —
+        // a sign-in that is not fresh still shows the control, and acting on
+        // it brings the step-up prompt.
+        grantedPermissions[permission] = await permissionContext.holdsPermission(permission);
       }
     }
     grantedPermissions['admin-read'] = canViewAdmin;
@@ -2369,11 +2372,34 @@ class WikiRoutes {
     // then asked through the vault check, not the caller's site-wide role.
     pageName?: string
   ): Promise<boolean> {
-    if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) {
-      // #1525: granted — and, for a step-up permission, fresh enough.
-      return this.steppedUp(wikiContext, permission, req, res, mode);
+    // #1635: the PDP decides step-up itself, so a granted permission here is
+    // already fresh enough. A refusal for someone who HOLDS the permission is
+    // the step-up one: answered with the way to the prompt, not a plain refusal.
+    if (await (pageName === undefined ? wikiContext.hasPermission(permission) : wikiContext.hasPermissionOn(permission, pageName))) return true;
+    if (await wikiContext.holdsPermission(permission)) {
+      await this.askForFreshSignIn(wikiContext, permission, req, res, mode);
+      return false;
     }
     await this.refuse(wikiContext, req, res, mode, permission);
+    return false;
+  }
+
+  /**
+   * #1635: answers the step-up case and returns false when the person HOLDS
+   * the permission but the PDP refused it for freshness; true otherwise. Asked
+   * before a handler's own refusal, so that refusal is only ever for someone
+   * who does not hold the permission.
+   */
+  private async freshEnough(
+    wikiContext: WikiContext,
+    permission: CorePermission,
+    req: Request,
+    res: Response,
+    mode: 'json' | 'page' | 'text'
+  ): Promise<boolean> {
+    if (await wikiContext.hasPermission(permission)) return true;
+    if (!(await wikiContext.holdsPermission(permission))) return true;
+    await this.askForFreshSignIn(wikiContext, permission, req, res, mode);
     return false;
   }
 
@@ -2387,37 +2413,29 @@ class WikiRoutes {
   }
 
   /**
-   * Step-up (#1525): one gate inside the permission check. A permission in
-   * `ngdpbase.auth.step-up` also needs a fresh factor; without one the
-   * person is sent to /auth/reauth (a page) or told where it is (JSON), and
-   * comes back to retry. A delegated credential can never give a fresh
-   * factor, so it is refused outright. Returns true to proceed.
-   *
-   * Called by `permitted()`, and by the few handlers that ask
-   * `hasPermission()` themselves, right after their own check.
+   * The step-up answer (#1525, #1635): the PDP refused a permission the
+   * person holds because their sign-in is not fresh enough. A page goes to
+   * /auth/reauth and comes back; JSON is told where it is. A delegated
+   * credential can never give a fresh factor, so it is refused outright.
    */
-  private async steppedUp(
+  private async askForFreshSignIn(
     wikiContext: { userContext: unknown },
     permission: string,
     req: Request,
     res: Response,
     mode: 'json' | 'page' | 'text'
-  ): Promise<boolean> {
-    const authManager = this.engine.getManager<AuthManager>('AuthManager');
-    const user = (wikiContext.userContext ?? {}) as { roles?: string[]; viaToken?: unknown; viaShare?: unknown };
+  ): Promise<void> {
+    const user = (wikiContext.userContext ?? {}) as { viaToken?: unknown; viaShare?: unknown };
     const delegated = Boolean(user.viaToken || user.viaShare);
-    if (!authManager?.stepUpNeeded?.(permission, req.session?.signIn, user.roles ?? [], delegated)) return true;
-
     await this.auditReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
     if (delegated) {
       res.status(403).json({ success: false, error: 'This needs a fresh sign-in by the person; a token cannot give one', stepUp: permission });
-      return false;
+      return;
     }
     const reauth = `/auth/reauth?next=${encodeURIComponent(this.reauthReturnTo(req))}`;
     if (mode === 'page') res.redirect(reauth);
     else if (mode === 'text') res.status(403).send('A fresh sign-in is needed: ' + reauth);
     else res.status(403).json({ success: false, error: 'A fresh sign-in is needed', reauth });
-    return false;
   }
 
   /**
@@ -11115,13 +11133,13 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).send('Access denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       // #1147: the toggle used to mutate `engine.config.features.maintenance`,
       // an in-memory object nothing persisted — so a restart during
@@ -11577,10 +11595,10 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage backups');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
       const backupManager = this.engine.getManager('BackupManager');
       if (!backupManager) {
         return res.redirect('/admin/backup?error=BackupManager+not+available');
@@ -11617,6 +11635,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
 
       // Check admin permission for system operations
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
@@ -11629,7 +11648,6 @@ ${panes}
           'You do not have permission to create system backups'
         );
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const backupManager = this.engine.getManager('BackupManager');
       if (!backupManager) {
@@ -11755,7 +11773,7 @@ ${panes}
         // not part of viewing the screen. A read-only admin (#1029) sees every
         // value masked with no reveal control, and adminRevealSecret refuses
         // them server-side even if they forge the request.
-        canRevealSecrets: await wikiContext.hasPermission('secret-reveal'),
+        canRevealSecrets: await wikiContext.holdsPermission('secret-reveal'), // #1635: an affordance
 
         // #1162 moved the Security Posture here from the dashboard, where an
         // operator deciding what to change is already looking.
@@ -11796,13 +11814,13 @@ ${panes}
 
       // #1159: admin-system, matching the section itself (D18). Not the page's
       // gate, which admits admin-read.
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser?.isAuthenticated ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).send('Access denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const body = req.body as { key?: string; group?: string; action?: string };
       const key = typeof body.key === 'string' ? body.key.trim() : '';
@@ -11892,11 +11910,11 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'secret-reveal', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (!currentUser || !(await wikiContext.hasPermission('secret-reveal'))) {
         res.status(403).json({ success: false, error: 'Permission denied' });
         return;
       }
-      if (!(await this.steppedUp(wikiContext, 'secret-reveal', req, res, 'json'))) return; // #1525
 
       const key = req.params.key;
       if (!this.getSecretConfigKeys().has(key)) {
@@ -11948,6 +11966,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
@@ -11957,7 +11976,6 @@ ${panes}
           reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { property, value } = req.body;
@@ -12026,6 +12044,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
@@ -12035,7 +12054,6 @@ ${panes}
           reason: "Read-only access — requires the 'config-manage' permission"
         });
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       await configManager.resetToDefaults(currentUser);
@@ -12102,13 +12120,13 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { siteName, url, description, icon, enabled, openInNewWindow, originalName } = req.body;
@@ -12155,13 +12173,13 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const siteName = decodeURIComponent(req.params.siteName);
@@ -12188,13 +12206,13 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.redirect('/admin/interwiki?error=Access denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const configManager = this.engine.getManager('ConfigurationManager');
       const { globalEnabled, openInNewWindow, addIconIndicator, caseSensitive, showTooltips } = req.body;
@@ -12413,10 +12431,10 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.status(403).redirect('/admin/settings?error=Access+denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const { theme } = req.body as { theme: string };
       if (!theme || typeof theme !== 'string') {
@@ -12445,10 +12463,10 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
 
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (!currentUser || !(await wikiContext.hasPermission('config-manage'))) {
         return res.redirect('/admin/settings?error=Access+denied');
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'page'))) return; // #1525
 
       const body = req.body as { maxFileSizeMB?: string; sessionTimeoutHours?: string; allowRegistration?: string };
       const configManager = this.engine.getManager('ConfigurationManager');
@@ -15007,13 +15025,13 @@ ${panes}
     try {
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
+      if (!(await this.freshEnough(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525, #1635: the prompt, not this handler's refusal
       if (
         !currentUser ||
         !(await wikiContext.hasPermission('config-manage'))
       ) {
         return res.status(403).json({ error: 'Access denied' });
       }
-      if (!(await this.steppedUp(wikiContext, 'config-manage', req, res, 'json'))) return; // #1525
       const addonName = req.params.name;
       const { enabled } = req.body as { enabled: string };
       const willEnable = enabled === 'true';

@@ -121,6 +121,20 @@ export abstract class BaseContext {
       : pdp.permits(this.getActor(), action)));
   }
 
+  /**
+   * Does this request's subject HOLD the permission (#1635)? Policy alone,
+   * without the step-up freshness rule — for affordances only (show this
+   * button, show this section), so a person whose sign-in is not fresh still
+   * sees the way to the prompt. A door or action asks {@link hasPermission}.
+   */
+  async holdsPermission(action: string): Promise<boolean> {
+    const pdp = this.engineRef.getManager<PolicyDecisionPoint>('PolicyDecisionPoint');
+    if (!pdp) return false;
+    // A stand-in decider with no `holds` (test doubles) answers with `permits`,
+    // which applies no step-up rule there either.
+    return this.cached(`holds\u0000${action}`, () => (typeof pdp.holds === 'function' ? pdp.holds(this.getActor(), action) : pdp.permits(this.getActor(), action)));
+  }
+
   /** One answer per question for this request — `hasPermission` and `hasPermissionOn` share it. */
   private cached(key: string, decide: () => Promise<boolean>): Promise<boolean> {
     const hit = this._permissionCache.get(key);
