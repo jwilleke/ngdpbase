@@ -26,6 +26,7 @@ import {
   type UserKeyEnvelope
 } from './privateStoreCrypto.js';
 import { readStoreMeta } from './privateStoreMeta.js';
+import { dropPendingWords } from './privateStoreDoor.js';
 import {
   PRIVATE_USER_CATALOG_FILES,
   isValidStoreId,
@@ -315,6 +316,36 @@ export function hasUnlockedKey(ctx: ActorContext | undefined): boolean {
 export function kekFor(ctx: ActorContext | undefined): Buffer | undefined {
   const handle = handleOf(ctx);
   return handle ? getUnlockedKek(handle) : undefined;
+}
+
+/**
+ * The one door for a session ending (#1626): whatever ends it — logout, idle
+ * timeout, a password change, an admin revoke, a new sign-in on the same
+ * browser — calls this with the session's private-store handle before the
+ * session is gone, so its keys are zeroed and dropped and no recovery words
+ * stay pending. Takes the raw session value, so a caller never re-implements
+ * the "is there a handle" check.
+ */
+export function endSessionKeys(handle: unknown): void {
+  if (typeof handle !== 'string' || !handle) return;
+  lockPrivateStores(handle);
+  dropPendingWords(handle);
+}
+
+/**
+ * Drop every unlocked bag whose handle no live session holds (#1626): a
+ * session that expired in the store, or one destroyed by a path that could
+ * not reach endSessionKeys, leaves its keys with no owner. Returns how many
+ * bags were dropped.
+ */
+export function sweepOrphanedKeys(liveHandles: ReadonlySet<string>): number {
+  let dropped = 0;
+  for (const handle of [...bags.keys()]) {
+    if (liveHandles.has(handle)) continue;
+    endSessionKeys(handle);
+    dropped++;
+  }
+  return dropped;
 }
 
 /** Test teardown only. */

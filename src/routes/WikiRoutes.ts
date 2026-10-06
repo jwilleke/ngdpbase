@@ -106,7 +106,7 @@ import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSugges
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, keywordsCollide, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
   kekFor,
-  lockPrivateStores,
+  endSessionKeys,
   newPrivateStoreHandle,
   setUnlockedDek,
   unlockPrivateStores,
@@ -117,7 +117,6 @@ import {
   commitStoreCopy,
   confirmAttempts,
   confirmWords,
-  dropPendingWords,
   hasPendingWords,
   holdWordsForConfirmation,
   storeCopyExists,
@@ -1577,6 +1576,8 @@ class WikiRoutes {
           return;
         }
         const s = raw as Record<string, unknown>;
+        // #1626: the revoked session's keys end with it.
+        endSessionKeys(s.privateStoreHandle);
         targetMeta = {
           username: typeof s.username === 'string' && s.username ? s.username : null,
           ip: typeof s.ip === 'string' ? s.ip : undefined
@@ -6699,6 +6700,9 @@ ${panes}
   }
 
   private regenerateSession(req: Request): Promise<void> {
+    // #1626: signing in again on a session that holds keys ends that session's
+    // keys; a pending sign-in's handle is never on the session, so is untouched.
+    endSessionKeys(req.session?.privateStoreHandle);
     return new Promise((resolve) => {
       if (typeof req.session?.regenerate !== 'function') {
         resolve();
@@ -7633,11 +7637,7 @@ ${panes}
     try {
       // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
       // keyed by the session's private-store handle, never the session id.
-      const privateStoreHandle = req.session?.privateStoreHandle;
-      if (typeof privateStoreHandle === 'string' && privateStoreHandle) {
-        lockPrivateStores(privateStoreHandle);
-        dropPendingWords(privateStoreHandle);
-      }
+      endSessionKeys(req.session?.privateStoreHandle);
 
       // #1572: signing out here signs out of the OpenID Connect provider too,
       // or its own session would keep finishing sign-ins for this person.

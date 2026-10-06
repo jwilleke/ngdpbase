@@ -50,7 +50,7 @@ import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
-import { lockPrivateStores } from './utils/privateStoreUnlock.js';
+import { endSessionKeys, sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
@@ -70,6 +70,8 @@ const projectRoot = process.cwd();
 
 // --- PID File Lock to Prevent Multiple Instances ---
 const PID_FILE = path.join(projectRoot, '.ngdpbase.pid');
+/** How often unlocked keys of ended sessions are swept (#1626). */
+const ORPHANED_KEY_SWEEP_MS = 10 * 60 * 1000;
 
 // Mutable reference populated once the engine is ready — used by the SIGTERM handler
 let engineRef: IWikiEngine | null = null;
@@ -665,6 +667,21 @@ void (async (): Promise<void> => {
   // this server's own URL.
   (engine.getManager('SessionStatsManager') as { attachStore(store: unknown): void } | null)?.attachStore(sessionStore);
 
+  // #1626: a session that expires in the store, or is destroyed by a path that
+  // could not reach endSessionKeys, leaves its unlocked keys with no owner.
+  // Sweep them: any bag whose handle no live session holds is dropped.
+  const sessionStats = engine.getManager('SessionStatsManager') as { liveHandles(): Promise<Set<string>> } | null;
+  if (sessionStats) {
+    setInterval(() => {
+      void sessionStats.liveHandles()
+        .then((live) => {
+          const dropped = sweepOrphanedKeys(live);
+          if (dropped > 0) logger.info(`[SESSION] Dropped the unlocked keys of ${dropped} ended session(s) (#1626)`);
+        })
+        .catch((err: unknown) => logger.warn(`[SESSION] Could not sweep unlocked keys (#1626): ${(err as Error).message}`));
+    }, ORPHANED_KEY_SWEEP_MS).unref();
+  }
+
   app.use(session({
     store: sessionStore,
     // #1194: the ONLY reader of the session secret. bootstrap-env.ts made
@@ -777,8 +794,7 @@ void (async (): Promise<void> => {
     void (async (): Promise<void> => {
       // Ends the signed-in session in place; its private-store keys are dropped with it.
       const signOut = (why: string): void => {
-        const handle = req.session.privateStoreHandle;
-        if (typeof handle === 'string' && handle) lockPrivateStores(handle);
+        endSessionKeys(req.session.privateStoreHandle);
         logger.info(`[SESSION] Signed out ${req.session.username}: ${why}`);
         delete req.session.username;
         delete req.session.privateStoreHandle;
