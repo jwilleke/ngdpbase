@@ -468,4 +468,19 @@ describe('#1638 an addon records its own audit events', () => {
   it('a name outside {target}-{action} cannot even be made', () => {
     expect(() => addonAuditEventName('LedgerPost')).toThrow(/target}-{action/);
   });
+
+  it('an addon event declared on-failure: refuse gets the core refuse guarantee: flushed before the action, throws on failure', async () => {
+    const refuse = { 'on-failure': 'refuse', description: 'money moved' };
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': refuse } : d));
+
+    const durable = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => undefined) };
+    await expect(recordAuditEvent(durable, event('ledger-post'))).resolves.toBe('recorded');
+    expect(durable.flushAuditQueue).toHaveBeenCalledOnce();
+
+    const failing = { logAuditEvent: vi.fn(async () => { throw new Error('disk full'); }), flushAuditQueue: vi.fn(async () => undefined) };
+    await expect(recordAuditEvent(failing, event('ledger-post'))).rejects.toThrow(/on-failure: refuse: disk full/);
+
+    const noFlush = { logAuditEvent: vi.fn(async () => 'id') };
+    await expect(recordAuditEvent(noFlush, event('ledger-post'))).rejects.toThrow(/cannot guarantee durability/);
+  });
 });
