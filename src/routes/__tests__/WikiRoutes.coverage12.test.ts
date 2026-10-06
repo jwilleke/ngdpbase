@@ -8,6 +8,7 @@ import { policyShaped } from './__fixtures__/policyShaped';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -196,6 +197,9 @@ const mockConfigManager = {
   setProperty: vi.fn().mockResolvedValue(undefined),
   resetToDefaults: vi.fn().mockResolvedValue(undefined)
 };
+
+// #1622: the page-read door, answering from the mocks above.
+Object.assign(mockPageManager, readDoor(mockPageManager, { getManager: (n: string) => (n === 'PolicyInformationPoint' ? mockPolicyInformationPoint : null) }));
 
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {

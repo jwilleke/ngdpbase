@@ -188,12 +188,14 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           return;
         }
 
+        // #1622: the page door's read — page-read is decided there.
         const pm = engine.getManager<PageManager>('PageManager');
-        const page = pm ? await pm.getPage(entry.name, req.userContext) : null;
-        if (!page) {
+        const read = pm ? await pm.readPage(entry.name, req.userContext) : null;
+        if (!read?.ok) {
           res.status(404).send('Journal entry page not found.');
           return;
         }
+        const page = read.value;
 
         // Render markdown content
         const rm = engine.getManager<RenderingManager>('RenderingManager');

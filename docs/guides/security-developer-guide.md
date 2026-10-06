@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-04
+dateModified: 2026-10-06
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -16,6 +16,7 @@ What a developer has to do so that a new route, manager method or addon authoriz
 | --- | --- | --- |
 | May this subject perform this kind of action at all? | `wikiContext.hasPermission('page-delete')` / `ctx.requirePermission('admin-system')` | The subject, the action, the policies, deny policies, an inactive account, the agent-token scope ceiling |
 | May they do it on this page? | `wikiContext.canAccess('edit', pageName)` | All of the above plus the page's own access markup, audience and private flags, and ACL frontmatter. Resource attributes beat global policy |
+| May they read this page — its content, its history? | Nothing: read it through the page door, `pageManager.readPage(id, ctx)` or `readVersionHistory` / `readVersion` / `readVersionDiff` | The door decides `page-read` itself before it reads anything, and answers a refusal instead of the page. A route answers a refusal with 404. `npm run lint:page-door` fails a route that reads past it ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)); the methods are in [PageManager.md](../managers/PageManager.md) |
 | May they do this kind of action to this page — create it, write it? | `wikiContext.hasPermissionOn('page-create', pageName)` | The capability, asked about the page itself. For a vault page: the owner only (the container rule), then the capability with the page's `vault`, so `vault-owner` decides and a site-wide role does not reach in ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)). A route that writes an existing page also asks the page door (`WikiRoutes.writeRefusal`), as the editor does ([#1542](https://github.com/jwilleke/ngdpbase/issues/1542)) |
 
 Nothing else is an allow or a deny:
@@ -51,6 +52,7 @@ An addon's `config/default-config.json` is a layer of the configuration merge, b
 ## How you know you are done
 
 - `npm run lint:permission-subject`
+- `npm run lint:page-door`
 - `npm run lint:http`
 - `npm run lint:csrf`
 - `npm run lint:addons`

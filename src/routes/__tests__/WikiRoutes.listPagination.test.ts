@@ -14,6 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 const admin = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
 
@@ -44,21 +45,22 @@ function makeRoutes(history: unknown[]) {
   const provider = {
     getVersionHistory: vi.fn().mockResolvedValue(history)
   };
+  const pageManager = {
+    provider,
+    pageExists: () => true,
+    getPageMetadata: async () => ({ uuid: 'u1', title: 'TestPage' }),
+    getPage: async () => ({ content: '', metadata: {} })
+  };
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'PageManager') {
-        return {
-          provider,
-          pageExists: () => true,
-          getPageMetadata: async () => ({ uuid: 'u1', title: 'TestPage' }),
-          getPage: async () => ({ content: '', metadata: {} })
-        };
-      }
+      if (name === 'PageManager') return pageManager;
       if (name === 'UserManager') return { hasPermission: async () => true };
       if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d };
       return null;
     })
   };
+  // #1622: the page-read door; no PIP here, so the page is readable.
+  Object.assign(pageManager, readDoor(pageManager, engine));
   const routes = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, r: unknown) => Promise<void>>;
   (routes as unknown as { createWikiContext: () => unknown }).createWikiContext = () => ({
     hasPermission: vi.fn().mockResolvedValue(true),

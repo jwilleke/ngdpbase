@@ -241,6 +241,20 @@ export function parsePrivatePageName(name: unknown): PrivatePageName | null {
 }
 
 /**
+ * The name a page an identifier opened is known by: its title — the
+ * identifier may be a uuid or slug, and every downstream index is keyed by
+ * title — or, for a vault page, its vault name (#1539). A vault page's bare
+ * title is a PUBLIC page's name, so the door would judge, and a write would
+ * hit, a different page.
+ */
+export function canonicalPageName(identifier: string, metadata: { title?: string } | null | undefined): string {
+  const privateName = parsePrivatePageName(identifier);
+  return privateName
+    ? formatPrivatePageName(privateName.owner, privateName.store, metadata?.title || privateName.title)
+    : metadata?.title || identifier;
+}
+
+/**
  * A private page's LINK target, written inside brackets as `{store}/{Title}`
  * (#1457). The store belongs to the owner of the page the link sits in, so the
  * target names no user — {@link formatPrivatePageName} supplies the owner.

@@ -4,6 +4,7 @@ import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
+import { readDoor } from './__fixtures__/pageReadDoor';
 import { type MockInstance } from 'vitest';
 
 // Mock LocaleUtils
@@ -463,6 +464,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     mockPolicyDecisionPoint = mockEngine.getManager('PolicyDecisionPoint');
     mockHolder.policyDecisionPoint = mockPolicyDecisionPoint as never;
     mockPageManager = mockEngine.getManager('PageManager');
+    // #1622: the page-read door, answering from the engine's mocks.
+    Object.assign(mockPageManager, readDoor(mockPageManager, mockEngine));
     mockPolicyInformationPoint = mockEngine.getManager('PolicyInformationPoint');
     mockNotificationManager = mockEngine.getManager('NotificationManager');
     mockSchemaManager = mockEngine.getManager('SchemaManager');

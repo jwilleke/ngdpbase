@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 const src = fs.readFileSync(path.join(process.cwd(), 'src', 'routes', 'WikiRoutes.ts'), 'utf8');
 
@@ -57,20 +58,19 @@ describe('#1219 the kiosk renders only what the read gate allows', () => {
   });
 
   function makeRoutes(readable: string[]) {
-    const pages: Record<string, { title: string; rawContent: string }> = {
-      Public: { title: 'Public', rawContent: 'public words' },
-      Secret: { title: 'Secret', rawContent: 'secret words' }
+    const pages: Record<string, { title: string; content: string }> = {
+      Public: { title: 'Public', content: 'public words' },
+      Secret: { title: 'Secret', content: 'secret words' }
+    };
+    const pageManager = {
+      listPagesFor: vi.fn(async () => readable),
+      getAllPages: vi.fn(async () => Object.keys(pages)),
+      getPage: vi.fn(async (n: string) => pages[n] ?? null),
+      getPageMetadata: vi.fn(async (n: string) => (pages[n] ? { title: n } : null))
     };
     const engine = {
       getManager: vi.fn((name: string) => {
-        if (name === 'PageManager') {
-          return {
-            listPagesFor: vi.fn(async () => readable),
-            getAllPages: vi.fn(async () => Object.keys(pages)),
-            getPage: vi.fn(async (n: string) => pages[n] ?? null),
-            getPageMetadata: vi.fn(async (n: string) => (pages[n] ? { title: n } : null))
-          };
-        }
+        if (name === 'PageManager') return pageManager;
         if (name === 'PolicyInformationPoint') {
           return { checkPagePermissionWithContext: vi.fn(async (ctx: { pageName?: string }) => readable.includes(ctx.pageName ?? '')) };
         }
@@ -79,9 +79,10 @@ describe('#1219 the kiosk renders only what the read gate allows', () => {
         return null;
       })
     };
+    // #1622: the page-read door, deciding through the PIP mock above.
+    Object.assign(pageManager, readDoor(pageManager, engine));
     const routes = new WikiRoutes(engine);
     vi.spyOn(routes as never, 'getCommonTemplateData').mockResolvedValue({});
-    vi.spyOn(routes as never, 'loadPageMetadataForAcl').mockImplementation(async (n: string) => ({ title: n }));
     return routes as unknown as { kiosk(req: unknown, res: unknown): Promise<unknown> };
   }
 

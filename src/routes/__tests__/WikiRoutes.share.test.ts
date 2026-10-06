@@ -18,6 +18,7 @@ import os from 'os';
 import WikiRoutes, { shareRateLimiter } from '../WikiRoutes';
 import { buildTestApp } from './__fixtures__/buildTestApp';
 import { csrfTestBodyField } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -127,8 +128,9 @@ const mockMediaManager = {
 
 const mockPageManager = {
   getPageContent: vi.fn(async () => '# Shared page'),
-  getPageMetadata: vi.fn(async () => null),
-  getPage: vi.fn().mockResolvedValue(null),
+  // #1622: the read door decides on a page's metadata; every page here has some.
+  getPageMetadata: vi.fn(async (name: string) => ({ title: name })),
+  getPage: vi.fn().mockResolvedValue(undefined),
   getAllPages: vi.fn().mockResolvedValue([]),
   pageExists: vi.fn().mockReturnValue(false),
   getCurrentPageProvider: vi.fn().mockReturnValue(null)
@@ -286,6 +288,8 @@ describe('WikiRoutes — share routes (#853/#854)', () => {
     });
     const { default: WikiEngine } = await import('../../WikiEngine');
     const engine = new WikiEngine();
+    // #1622: the page-read door, answering from the mocks above.
+    Object.assign(mockPageManager, readDoor(mockPageManager, engine));
     const routes = new WikiRoutes(engine);
     routes.registerRoutes(app);
   });

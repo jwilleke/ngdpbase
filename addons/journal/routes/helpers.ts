@@ -67,6 +67,8 @@ export async function findJournalEntryName(
   if (!pm) return null;
   const title = journalPageName(date, username);
   const privateNames = privateJournalNames(engine, username, title);
+  // Existence probes for the caller's own entry: only the name leaves here.
+  // page-door-ignore: existence probes, nothing read is returned.
   if (await pm.getPage(privateNames.journal, ctx)) return privateNames.journal;
   if (privateNames.fallback !== privateNames.journal && await pm.getPage(privateNames.fallback, ctx)) return privateNames.fallback;
   if (await pm.getPage(title, ctx)) return title;
@@ -193,6 +195,8 @@ export async function getLeftMenu(
     if (!pm || !rm) return null;
 
     // The left menu is public furniture; read it as the viewer, or anonymously.
+    // page-door-ignore: site chrome around every page, not a page view; the
+    // rendering-path readers move to the door in #1622 slice 2.
     const page = await pm.getPage('LeftMenu', userContext ?? ANONYMOUS_SUBJECT);
     if (!page) {
       engine.logger?.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty.');
