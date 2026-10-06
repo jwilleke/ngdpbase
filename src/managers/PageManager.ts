@@ -1400,7 +1400,7 @@ class PageManager extends BaseManager implements CatalogSource {
 
     // Name the rules and the author. A count alone cannot distinguish
     // `no-raw-br` — routine, and expected on ~205 existing pages — from
-    // `no-script-tag`, which is someone trying to inject a script. The noisy
+    // `html-policy`, which may be someone trying to inject a script. The noisy
     // rule will vastly outnumber the interesting one, so the interesting one
     // has to be greppable.
     const rules = [...new Set(errors.map((e) => e.rule))].join(', ');

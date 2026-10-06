@@ -12,6 +12,7 @@ import { BaseContext } from './BaseContext.js';
 import { fileURLToPath } from 'url';
 import type { Request, Response } from 'express';
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
+import { HTML_POLICY_KEY } from '../rendering/htmlPolicy.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type PageManager from '../managers/PageManager.js';
@@ -366,7 +367,8 @@ class WikiContext extends BaseContext {
     this.policyInformationPoint = engine.getManager<PolicyInformationPoint>('PolicyInformationPoint')!;
 
     // Degraded path, when RenderingManager has no parser (#1273).
-    this._fallbackConverter = createMarkdownConverter('fallback');
+    this._fallbackConverter = createMarkdownConverter('fallback', () =>
+      engine.getManager<{ getProperty(k: string, d?: unknown): unknown }>('ConfigurationManager')?.getProperty(HTML_POLICY_KEY, null));
   }
 
   /**

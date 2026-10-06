@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { createMarkdownConverter, renderInlineMarkdown } from '../rendering/markdownConverter.js';
+import { HTML_POLICY_KEY, asHtmlPolicy, filterAuthorHtml } from '../rendering/htmlPolicy.js';
 import BaseManager from '../managers/BaseManager.js';
 import { HandlerRegistry } from './handlers/HandlerRegistry.js';
 import BaseSyntaxHandler from './handlers/BaseSyntaxHandler.js';
@@ -839,6 +840,12 @@ class MarkupParser extends BaseManager {
     return variableManager.expandVariables(`\${${varName}}`, minimalContext);
   }
 
+  /** The configured `ngdpbase.markup.html-policy`, read when it is needed (#1623). */
+  private configuredHtmlPolicy(): unknown {
+    return this.engine.getManager<{ getProperty(k: string, d?: unknown): unknown }>('ConfigurationManager')
+      ?.getProperty(HTML_POLICY_KEY, null);
+  }
+
   /**
    * Main parsing method - uses WikiDocument DOM extraction pipeline
    * @param content - Raw content to parse
@@ -858,7 +865,7 @@ class MarkupParser extends BaseManager {
       if (renderingManager && renderingManager.converter) {
         return renderingManager.converter.makeHtml(content);
       }
-      return content;
+      return filterAuthorHtml(content, asHtmlPolicy(this.configuredHtmlPolicy()));
     }
 
     const startTime = Date.now();
@@ -956,8 +963,9 @@ class MarkupParser extends BaseManager {
       logger.error('❌ Extraction pipeline error:', error);
       this.metrics.errorCount++;
 
-      // Return original content on critical failure
-      return content;
+      // Return original content on critical failure — held to the HTML policy,
+      // because this is author source reaching the page without markdown-it (#1623).
+      return filterAuthorHtml(content, asHtmlPolicy(this.configuredHtmlPolicy()));
     }
   }
 
@@ -2000,8 +2008,10 @@ class MarkupParser extends BaseManager {
     // Use innerHTML for content with placeholders (nested style block nodes — resolved by mergeDOMNodes)
     // For all other content, scan for all wiki syntax and resolve directly to DOM nodes.
     if (MarkupParser.isRawCodeBlock(classes, content)) {
-      // Raw code/CSS dump — no markdown pass. Keeps its existing path exactly.
-      if (hasPlaceholder) node.innerHTML = content;
+      // Raw code/CSS dump — no markdown pass. The innerHTML write is the one
+      // place author text becomes markup without passing markdown-it, so it
+      // meets the HTML policy here (#1623); the nested placeholders survive.
+      if (hasPlaceholder) node.innerHTML = filterAuthorHtml(content, asHtmlPolicy(this.configuredHtmlPolicy()));
       else await this.appendWikiNodes(content, node, context, wikiDocument, element.id * 1000);
     } else if (hasPlaceholder) {
       // Nested blocks. This path has always written content through innerHTML,
@@ -2715,32 +2725,41 @@ class MarkupParser extends BaseManager {
       // Strip internal routing attribute — never expose it in final HTML
       rendered = rendered.replace(/ data-jspwiki-id="[^"]*"/g, '');
 
-      const ph = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-      // #1368: a block element cannot sit inside a <p>. A placeholder alone on
-      // its line comes out of markdown-it as a paragraph — or as a line of one,
-      // joined to its neighbours by <br> — so dropping the block in there gave
-      // <p><div>…</div></p>, which browsers split into stray empty paragraphs.
-      // Where the placeholder starts or ends its paragraph, the block goes
-      // outside it. A placeholder mid-sentence, or in a list item or table
-      // cell, is left where it is.
-      if (MarkupParser.BLOCK_START.test(rendered)) {
-        result = result
-          .replace(new RegExp(`<p>\\s*${ph}\\s*</p>`, 'g'), () => rendered)
-          .replace(new RegExp(`<p>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), () => `${rendered}<p>`)
-          .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*</p>`, 'g'), () => `</p>${rendered}`)
-          // Between two lines of one paragraph: split the paragraph around it —
-          // only when the placeholder really is in a <p>, never a list item or cell.
-          .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), (m: string, offset: number, whole: string) =>
-            (MarkupParser.insideParagraph(whole, offset) ? `</p>${rendered}<p>` : m));
-      }
-
-      // Replace placeholder with rendered HTML. A function replacer, so a `$&`
-      // or `$1` in the page's own text is not read as a replacement pattern.
-      result = result.replace(new RegExp(ph, 'g'), () => rendered);
+      result = MarkupParser.placeRendered(result, placeholder, rendered);
     }
 
     return result;
+  }
+
+  /**
+   * Put rendered HTML where its placeholder sits in markdown-it's output.
+   * Shared by DOM nodes and by trusted handler output (#1623).
+   */
+  private static placeRendered(html: string, placeholder: string, rendered: string): string {
+    let result = html;
+    const ph = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // #1368: a block element cannot sit inside a <p>. A placeholder alone on
+    // its line comes out of markdown-it as a paragraph — or as a line of one,
+    // joined to its neighbours by <br> — so dropping the block in there gave
+    // <p><div>…</div></p>, which browsers split into stray empty paragraphs.
+    // Where the placeholder starts or ends its paragraph, the block goes
+    // outside it. A placeholder mid-sentence, or in a list item or table
+    // cell, is left where it is.
+    if (MarkupParser.BLOCK_START.test(rendered)) {
+      result = result
+        .replace(new RegExp(`<p>\\s*${ph}\\s*</p>`, 'g'), () => rendered)
+        .replace(new RegExp(`<p>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), () => `${rendered}<p>`)
+        .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*</p>`, 'g'), () => `</p>${rendered}`)
+        // Between two lines of one paragraph: split the paragraph around it —
+        // only when the placeholder really is in a <p>, never a list item or cell.
+        .replace(new RegExp(`\\s*<br\\s*/?>\\s*${ph}\\s*<br\\s*/?>\\s*`, 'g'), (m: string, offset: number, whole: string) =>
+          (MarkupParser.insideParagraph(whole, offset) ? `</p>${rendered}<p>` : m));
+    }
+
+    // Replace placeholder with rendered HTML. A function replacer, so a `$&`
+    // or `$1` in the page's own text is not read as a replacement pattern.
+    return result.replace(new RegExp(ph, 'g'), () => rendered);
   }
 
   /**
@@ -2755,8 +2774,12 @@ class MarkupParser extends BaseManager {
     return !/<\/p>|<(?:li|td|th|blockquote|div)\b|<\/(?:li|td|th|blockquote|div)>/i.test(before.slice(openP));
   }
 
-  /** #1368: rendered HTML that starts with a block element. */
-  private static readonly BLOCK_START = /^\s*<(?:div|table|pre|ul|ol|dl|blockquote|h[1-6]|hr|figure|section|details|nav|form)\b/i;
+  /**
+   * #1368: rendered HTML that starts with a block element. `p` since #1623:
+   * trusted handler output (a `<wiki:Include>`) is a rendered page, and a
+   * paragraph cannot sit in a paragraph either.
+   */
+  private static readonly BLOCK_START = /^\s*<(?:p|div|table|pre|ul|ol|dl|blockquote|h[1-6]|hr|figure|section|details|nav|form)\b/i;
 
   /**
    * Parses wiki markup using DOM extraction strategy (Phase 1-3)
@@ -2809,6 +2832,15 @@ class MarkupParser extends BaseManager {
       }
     }
     logger.debug(`🔨 Created ${nodes.length} DOM nodes`);
+
+    // #1623: a handler below that emits finished HTML hands it over here
+    // rather than writing it into the markdown. Written in, it would reach
+    // markdown-it's html tokens and be held to the author HTML policy like
+    // something the author typed; handed over, it is merged after markdown-it,
+    // as plugin output is.
+    const trustedHtml: string[] = [];
+    const trustedPlaceholder = (i: number): string => `<span data-jspwiki-placeholder="${uuid}-t${i}"></span>`;
+    parseContext.protectHtml = (html: string): string => trustedPlaceholder(trustedHtml.push(html) - 1);
 
     // Phase 2.5: Run JSPWikiPreprocessor on sanitized content to convert
     // bare JSPWiki table syntax (||/|) to HTML before markdown-it runs.
@@ -2865,11 +2897,16 @@ class MarkupParser extends BaseManager {
       markdownHtml = renderingManager.converter.makeHtml(preprocessed);
     } else {
       // No RenderingManager (tests): the degraded-path profile (#1273).
-      markdownHtml = createMarkdownConverter('fallback').makeHtml(preprocessed);
+      markdownHtml = createMarkdownConverter('fallback', () => this.configuredHtmlPolicy()).makeHtml(preprocessed);
     }
     logger.debug('📝 Markdown converted');
 
-    // Phase 4: Merge DOM nodes back into the HTML
+    // Phase 4: Merge trusted handler output, then DOM nodes, back into the
+    // HTML. Trusted output first: it can carry DOM-node placeholders (content
+    // inside a <wiki:If> was extracted in Phase 1), which the node merge fills.
+    for (let i = trustedHtml.length - 1; i >= 0; i--) {
+      markdownHtml = MarkupParser.placeRendered(markdownHtml, trustedPlaceholder(i), trustedHtml[i]);
+    }
     const finalHtml = this.mergeDOMNodes(markdownHtml, nodes, uuid);
     logger.debug('✅ Merge complete');
 

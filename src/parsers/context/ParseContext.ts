@@ -281,6 +281,14 @@ class ParseContext {
    */
   privateLinkTitles: Map<string, Set<string>> | null;
 
+  /**
+   * Hand finished HTML from a syntax handler to MarkupParser; write the
+   * returned placeholder into the content instead (#1623). The HTML is merged
+   * after markdown-it, so it is not mistaken for HTML the author typed and
+   * held to the author HTML policy. `null` outside a MarkupParser parse.
+   */
+  protectHtml: ((html: string) => string) | null;
+
   // Mutable processing state
   protectedBlocks: unknown[];
   syntaxTokens: unknown[];
@@ -318,6 +326,7 @@ class ParseContext {
 
     // Processing state
     this.privateLinkTitles = null;
+    this.protectHtml = null;
     this.protectedBlocks = [];
     this.syntaxTokens = [];
     this.variables = new Map();

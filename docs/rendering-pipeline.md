@@ -179,6 +179,8 @@ __Processing__:
 | `untrusted` | Comments (`src/utils/renderUntrustedInline.ts`) | Line breaks, tables, fenced code, `<del>` and the ellipsis rule; no heading ids, task lists or sub/superscript. SecurityFilter is always on for this profile, whatever the site configuration says. |
 | `fallback` | Degraded paths: `MarkupParser` with no RenderingManager, and `WikiContext.renderMarkdown()` when there is no parser | Plain CommonMark with `html: true`; no single-newline breaks, no heading ids |
 
+In the `page` and `fallback` profiles the HTML an author wrote — markdown-it's `html_block` and `html_inline` tokens — is held to the [HTML policy](./html-policy.md) as it renders; plugin output is merged after markdown-it and never meets it.
+
 Footnotes (`[^id]`) are not a markdown-it plugin: `MarkupParser` extracts `[^id]` references and `[^id]: text` definitions into DOM nodes before conversion, and FootnoteManager stores the per-page footnotes that FootnotesPlugin lists.
 
 markdown-it replaced the `showdown` library in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273); showdown, its extensions and the `guardShowdownInput` ReDoS guard were removed in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274). Each deliberate rendering difference from showdown is recorded as a decision (R1–R17) in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).

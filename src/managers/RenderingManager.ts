@@ -19,6 +19,7 @@ function getErrorMessage(error: unknown): string {
 import logger from '../utils/logger.js';
 // Footnotes are handled in the WikiDocument DOM pipeline (MarkupParser Steps 3.5/3.6/4)
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
+import { HTML_POLICY_KEY } from '../rendering/htmlPolicy.js';
 import { LinkParser } from '../parsers/LinkParser.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
@@ -158,8 +159,10 @@ class RenderingManager extends BaseManager {
 
     // The page converter (#1273): markdown-it, configured once in
     // src/rendering/markdownConverter.ts — breaks on, heading ids from
-    // SectionUtils.headingSlug (#500), sub/sup, task lists.
-    this.converter = createMarkdownConverter('page');
+    // SectionUtils.headingSlug (#500), sub/sup, task lists. Author HTML is held
+    // to the HTML policy, read from configuration on every render (#1623).
+    this.converter = createMarkdownConverter('page', () =>
+      this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(HTML_POLICY_KEY, null));
 
     // Build initial link graph
     await this.buildLinkGraph();

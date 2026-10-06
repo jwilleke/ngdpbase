@@ -18,20 +18,39 @@
  */
 
 import SecurityFilter from '../SecurityFilter';
+import { HTML_POLICY_KEY } from '../../../rendering/htmlPolicy';
+import { shippedHtmlPolicy } from '../../../rendering/__tests__/__fixtures__/shippedHtmlPolicy';
 
-const filter = () => new SecurityFilter();
+// #1623: what HTML an author may write is the HTML policy, read from
+// configuration — so the filter is initialized with an engine carrying the
+// shipped one.
+const engine = {
+  getManager: (name: string) => (name === 'ConfigurationManager'
+    ? { getProperty: (key: string, fallback: unknown) => (key === HTML_POLICY_KEY ? shippedHtmlPolicy : fallback) }
+    : null)
+};
 
-describe('SecurityFilter.collectErrors — dangerous constructs (#1037)', () => {
+class PolicyFilter extends SecurityFilter {
+  constructor() {
+    super();
+    void this.onInitialize({ engine });
+  }
+}
+
+const filter = () => new PolicyFilter();
+
+describe('SecurityFilter.collectErrors — dangerous constructs (#1037, #1623)', () => {
   test.each([
-    ['<script>alert(1)</script>',                    'no-script-tag'],
-    ['<div onclick="steal()">x</div>',               'no-event-handler'],
-    ['<a href="javascript:evil()">x</a>',            'no-javascript-url'],
-    ['<iframe src="//evil"></iframe>',               'no-embedded-frame'],
-    ['<svg onload=alert(1)>',                        'no-inline-svg']
-  ])('refuses %s', async (content, rule) => {
+    ['<script>alert(1)</script>',                    'The <script> tag is not allowed in page content'],
+    ['<div onclick="steal()">x</div>',               'The onclick attribute on <div> is not allowed'],
+    ['<a href="javascript:evil()">x</a>',            'The URL "javascript:evil()" in href on <a> uses a scheme that is not allowed'],
+    ['<iframe src="//evil"></iframe>',               'The <iframe> tag is not allowed in page content'],
+    ['<svg onload=alert(1)>',                        'The <svg> tag is not allowed in page content']
+  ])('refuses %s, naming what is not allowed', async (content, message) => {
     const errors = await filter().collectErrors(content, {});
 
-    expect(errors.map(e => e.rule)).toContain(rule);
+    expect(errors.map(e => e.rule)).toEqual(['html-policy']);
+    expect(errors.map(e => e.message)).toEqual([message]);
     expect(errors.every(e => e.severity === 'error')).toBe(true);
   });
 
@@ -59,8 +78,8 @@ describe('SecurityFilter.collectErrors — what it must NOT block (#1037)', () =
     ['a normal link',         '<a href="https://example.org">safe</a>'],
     ['the word script',       'This page describes a shell script for backups.']
   ])('allows %s', async (_label, content) => {
-    // Blocking legitimate content costs an author their work, so the rule set
-    // is deliberately narrow: only constructs that execute or frame content.
+    // Blocking legitimate content costs an author their work, so the shipped
+    // policy keeps ordinary formatting HTML.
     expect(await filter().collectErrors(content, {})).toEqual([]);
   });
 
@@ -82,10 +101,16 @@ describe('it reads SOURCE, not rendered HTML (#1037)', () => {
 
   test('does not require the filter to be initialized', async () => {
     // The save path calls this on a filter instance that may never have had
-    // onInitialize() run against a real engine; it must not depend on config.
-    const errors = await new SecurityFilter().collectErrors('<script>x</script>', {});
+    // onInitialize() run; the engine in the call's context is enough.
+    const errors = await new SecurityFilter().collectErrors('<script>x</script>', { engine });
 
     expect(errors).toHaveLength(1);
+  });
+
+  test('without a policy no author HTML is allowed — the failure is closed (#1623)', async () => {
+    const errors = await new SecurityFilter().collectErrors('<div class="note">fine</div>', {});
+
+    expect(errors.map(e => e.message)).toEqual(['The <div> tag is not allowed in page content']);
   });
 });
 

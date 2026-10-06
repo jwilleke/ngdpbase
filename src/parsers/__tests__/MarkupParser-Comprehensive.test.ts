@@ -564,8 +564,10 @@ You are on: [{$pagename}]`;
       const content = 'Debug: <!--JSPWIKI-12345678-0-->';
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      // Should be preserved (different UUID)
-      expect(result).toContain('<!--JSPWIKI-12345678-0-->');
+      // Not mistaken for a placeholder (different UUID). It is an HTML comment
+      // the author wrote, which the HTML policy drops (#1623).
+      expect(result).toContain('Debug:');
+      expect(result).not.toContain('<!--');
     });
 
     test('malformed JSPWiki syntax ignored', async () => {
@@ -783,9 +785,10 @@ Text content with [HomePage] link.
       // Extract with a new UUID
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      // Old placeholders preserved (different UUIDs)
-      expect(result).toContain(`<!--JSPWIKI-${uuid1}-0-->`);
-      expect(result).toContain(`<!--JSPWIKI-${uuid2}-0-->`);
+      // Old placeholders are not filled (different UUIDs). They are HTML
+      // comments the author wrote, which the HTML policy drops (#1623).
+      expect(result).toContain('User:');
+      expect(result).not.toContain('<!--');
     });
   });
 

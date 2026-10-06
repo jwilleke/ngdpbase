@@ -1,6 +1,8 @@
 import BaseFilter from './BaseFilter.js';
 import logger from '../../utils/logger.js';
 import type { FilterValidationError } from './FilterChain.js';
+import { HTML_POLICY_KEY, asHtmlPolicy, htmlPolicyViolations } from '../../rendering/htmlPolicy.js';
+import { authorHtmlIn } from '../../rendering/markdownConverter.js';
 
 /**
  * Security configuration interface
@@ -16,7 +18,10 @@ interface SecurityConfig {
   allowDataURIs: boolean;
   maxContentLength: number;
   logSecurityViolations: boolean;
-  /** Filter RENDERED output. Separate from save-time blocking (#1037). */
+  /**
+   * Filter RENDERED output. Off for pages, whose author HTML meets the HTML
+   * policy inside markdown-it (#1623); the comment profile turns it on.
+   */
   renderFiltering: boolean;
 }
 
@@ -100,6 +105,7 @@ class SecurityFilter extends BaseFilter {
   allowedTags: Set<string>;
   allowedAttributes: Set<string>;
   dangerousPatterns: RegExp[];
+  private engine: InitContext['engine'] | null = null;
 
   constructor() {
     super(
@@ -127,6 +133,9 @@ class SecurityFilter extends BaseFilter {
    * @param context - Initialization context
    */
   async onInitialize(context: InitContext): Promise<void> {
+    // collectErrors reads the HTML policy when it runs, through this engine
+    // when its caller passes none.
+    this.engine = context.engine ?? null;
     // Load modular security configuration from app-default/custom-config.json
     this.loadModularSecurityConfiguration(context);
 
@@ -173,8 +182,9 @@ class SecurityFilter extends BaseFilter {
     // Load from app-default-config.json and allow app-custom-config.json overrides
     if (configManager) {
       try {
-        // Security feature configuration (modular)
-        this.securityConfig.renderFiltering = configManager.getProperty('ngdpbase.filters.security.enabled', false) as boolean;
+        // Security feature configuration (modular). There is no switch for
+        // renderFiltering: pages are filtered by the HTML policy (#1623), and
+        // only the comment profile turns this pass on.
         this.securityConfig.preventXSS = configManager.getProperty('ngdpbase.filters.security.prevent-xss', this.securityConfig.preventXSS) as boolean;
         this.securityConfig.preventCSRF = configManager.getProperty('ngdpbase.filters.security.prevent-csrf', this.securityConfig.preventCSRF) as boolean;
         this.securityConfig.sanitizeHTML = configManager.getProperty('ngdpbase.filters.security.sanitize-html', this.securityConfig.sanitizeHTML) as boolean;
@@ -324,53 +334,21 @@ class SecurityFilter extends BaseFilter {
    */
 
   /**
-   * Constructs that must never reach a stored page (#1037).
+   * Line rules scanned against the page SOURCE at save time (#1037).
    *
-   * Scanned against the page SOURCE at save time, which is a different input
-   * from what `process()` sees. `process()` is `phase: 'html'` and operates on
-   * markdown-it's rendered output; this runs before any rendering, on exactly the
-   * markdown the author typed. Reusing the render-time logic here is the
-   * mistake that made `preventXSS()` entity-encode whole documents.
-   *
-   * Scanning source is also what makes line numbers meaningful — the author
-   * can be pointed at the line they need to change.
-   *
-   * Deliberately narrow. Everything here executes script or frames third-party
-   * content; none of it has a legitimate use in a wiki page, so a false
-   * positive is unlikely and the message can be specific. Ordinary raw HTML —
-   * `<div>`, `<span>`, tables — is untouched: on a trusted-author wiki that is
-   * a feature, and the render-time allow-list is where that judgement belongs.
+   * What raw HTML an author may write is NOT decided here: that is the one
+   * HTML policy (src/rendering/htmlPolicy.ts, #1623), which collectErrors
+   * applies below to exactly the HTML the renderer applies it to. The five
+   * line regexes that used to stand in for it (script, event handler,
+   * javascript: URL, frame, svg) are gone — a tag split over two lines, an
+   * entity-encoded scheme or an indented line inside a block of HTML walked
+   * past them and executed. What is left is a markup rule.
    */
   private static readonly BLOCKED_PATTERNS: Array<{
     rule: string;
     pattern: RegExp;
     message: string;
   }> = [
-      {
-        rule: 'no-script-tag',
-        pattern: /<script\b/i,
-        message: 'A <script> tag is not allowed in page content'
-      },
-      {
-        rule: 'no-event-handler',
-        pattern: /<[^>]*\son[a-z]+\s*=/i,
-        message: 'Inline event handlers (onclick, onload, onerror, …) are not allowed'
-      },
-      {
-        rule: 'no-javascript-url',
-        pattern: /(?:href|src|action)\s*=\s*["']?\s*javascript:/i,
-        message: 'javascript: URLs are not allowed'
-      },
-      {
-        rule: 'no-embedded-frame',
-        pattern: /<(?:iframe|object|embed|applet)\b/i,
-        message: 'Embedding external content (<iframe>, <object>, <embed>) is not allowed'
-      },
-      {
-        rule: 'no-inline-svg',
-        pattern: /<svg\b/i,
-        message: 'Inline <svg> is not allowed — it can carry scripted content'
-      },
       {
         // Not a security rule — a markup one. <br> is embedded HTML and NCM
         // has its own line break, so this keeps page source in one language.
@@ -409,11 +387,30 @@ class SecurityFilter extends BaseFilter {
    */
   async collectErrors(
     content: string,
-    _context: ParseContext = {}
+    context: ParseContext = {}
   ): Promise<FilterValidationError[]> {
     if (!content) return [];
 
     const errors: FilterValidationError[] = [];
+
+    // The HTML policy (#1623): the author HTML markdown-it finds in the source
+    // — what the renderer will hold to the policy — is held to it here, and
+    // each thing the renderer would drop is named. Code is not author HTML to
+    // markdown-it, so a page that documents HTML in backticks or a fence passes.
+    const configManager = (context.engine ?? this.engine)?.getManager('ConfigurationManager') as ConfigManager | undefined;
+    const policy = asHtmlPolicy(configManager?.getProperty(HTML_POLICY_KEY, null));
+    for (const { html, line } of authorHtmlIn(content)) {
+      for (const { message, offset } of htmlPolicyViolations(html, policy)) {
+        errors.push({
+          filterId: this.filterId,
+          rule: 'html-policy',
+          severity: 'error',
+          message,
+          line: line + 1 + (html.slice(0, offset).match(/\n/g) ?? []).length
+        });
+      }
+    }
+
     // Blank out code, keeping line numbering intact, so a page that DOCUMENTS
     // HTML is not refused (#1037). Content in a fence or in backticks renders
     // as escaped text and cannot execute — that is precisely the convention
@@ -437,7 +434,7 @@ class SecurityFilter extends BaseFilter {
       });
     }
 
-    return Promise.resolve(errors);
+    return errors;
   }
 
   async process(content: string, context: ParseContext): Promise<string> {
@@ -445,12 +442,12 @@ class SecurityFilter extends BaseFilter {
       return content;
     }
 
-    // Save-time blocking and render filtering are separate switches (#1037).
-    // When only the former is on, this filter is registered purely so
-    // FilterChain.collectErrors() can reach it — it must not touch rendered
-    // output, which is largely our own HTML: plugins emit inline onclick,
-    // style, and an <iframe> for embedded maps, none of which can be told
-    // apart from author content once rendered.
+    // Pages never reach this: their author HTML is held to the HTML policy
+    // inside markdown-it (#1623), where it can still be told apart from our
+    // own plugin output — which emits inline onclick, style and an <iframe>
+    // for embedded maps, and which this whole-document pass cannot recognise.
+    // In the page chain this filter is registered for collectErrors() alone.
+    // The comment profile (renderUntrustedInline) turns renderFiltering on.
     if (this.securityConfig && !this.securityConfig.renderFiltering) {
       return content;
     }

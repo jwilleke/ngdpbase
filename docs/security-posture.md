@@ -329,7 +329,7 @@ What remains, grouped as the admin section would group them:
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
 | Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
-| Content sanitisation | `filters.security.enabled`, `.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.block-on-save`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
+| Content sanitisation | `markup.html-policy`, `filters.security.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
 | Browser security headers | `security.headers.csp-mode` — `report-only` (default), `enforce` or `off`. The policy (`object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'`, plus `nosniff` and `Referrer-Policy`) is fixed in `src/utils/securityHeaders.ts` and has no `script-src` yet ([#1488](https://github.com/jwilleke/ngdpbase/issues/1488); the nonce-based script policy is [#1489](https://github.com/jwilleke/ngdpbase/issues/1489)) |
 
@@ -337,7 +337,7 @@ What remains, grouped as the admin section would group them:
 
 Two things this survey turned up that the view will make visible, and both are the point of having it:
 
-- __`ngdpbase.filters.security.enabled` ships `false`__ (`SecurityFilter.ts:177`, where it sets `renderFiltering`), while every sub-flag beneath it — `prevent-xss`, `sanitize-html`, `strip-dangerous-content` — ships `true`. Rendered as a list, that reads as a row of controls switched on underneath a master switch that is off.
+- __`ngdpbase.filters.security.enabled` shipped `false`__, while every sub-flag beneath it — `prevent-xss`, `sanitize-html`, `strip-dangerous-content` — shipped `true`: a row of controls switched on underneath a master switch that was off. Resolved by [#1623](https://github.com/jwilleke/ngdpbase/issues/1623): the switch is gone, and page HTML is always held to the [HTML policy](./html-policy.md); the remaining `filters.security.*` keys shape the comment profile only.
 - __`auth.factors` offers only single factors__ (password, email link, identity providers), which is where the absence of MFA ([#421](https://github.com/jwilleke/ngdpbase/issues/421), [#448](https://github.com/jwilleke/ngdpbase/issues/448)) becomes a visible fact rather than a gap somebody has to know about.
 
 __Issues:__ Tracked by [#1145](https://github.com/jwilleke/ngdpbase/issues/1145) — __landed 2026-09-01__. Two of the ingredients it surveys have their own issues: MFA's absence is [#421](https://github.com/jwilleke/ngdpbase/issues/421) and [#448](https://github.com/jwilleke/ngdpbase/issues/448).
@@ -393,7 +393,7 @@ Both halves take `admin-system`. Nothing less renders the section.
 
 This departs from the usual admin-screen pattern deliberately. Most screens gate viewing on `hasAdminViewAccess()` — `admin-read` OR `admin-system` (`WikiRoutes.ts:7624`) — and reserve `admin-system` for changes. The posture view is treated instead like the carve-outs at `getActiveSessionDetails()` and the admin user list, which require `user-read` rather than `admin-read` because of what they disclose.
 
-__What it discloses is the reason.__ The section is a map of the instance's defences: egress ranges, throttle thresholds, session flags, whether sanitisation is on, audit retention. A reader who can see `auth.throttle.max-attempts` and `lock-minutes` knows how to pace a password-guessing attempt without tripping the lock, and `filters.security.enabled` tells them whether render-time sanitisation is running at all. That is not a read-only view of administration; it is operational intelligence about the instance.
+__What it discloses is the reason.__ The section is a map of the instance's defences: egress ranges, throttle thresholds, session flags, whether sanitisation is on, audit retention. A reader who can see `auth.throttle.max-attempts` and `lock-minutes` knows how to pace a password-guessing attempt without tripping the lock, and `markup.html-policy` tells them exactly which HTML an author can put in front of a reader. That is not a read-only view of administration; it is operational intelligence about the instance.
 
 The concrete case this closes: the `demo-admin` role holds `admin-read` and exists so a public demo instance can expose every admin screen to visitors. Under the usual pattern it would publish the instance's security configuration to anonymous users. Under D18 it does not see the section at all.
 

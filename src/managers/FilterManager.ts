@@ -74,15 +74,11 @@ class FilterManager extends BaseManager {
     // Built-ins go through the contributed path — registerFilter — so the
     // path adopters depend on is the path the built-ins test (#1117).
     //
-    // SecurityFilter registers when EITHER render filtering or save-time
-    // blocking is on: FilterChain.collectErrors() only iterates registered
-    // filters, so an unregistered filter contributes no save-time rules —
-    // which is why blocking used to require render filtering as well (#1037).
-    const securityEnabled = prop('ngdpbase.filters.security.enabled', false) === true;
-    const blockOnSave = prop('ngdpbase.filters.security.block-on-save', true) !== false;
-    if (securityEnabled || blockOnSave) {
-      await this.registerFilter(new SecurityFilter());
-    }
+    // SecurityFilter always registers: it is how a save meets the HTML policy
+    // the renderer applies (#1623), and that policy has no off switch — a site
+    // widens `ngdpbase.markup.html-policy` instead. The former
+    // `filters.security.enabled` / `.block-on-save` switches are gone.
+    await this.registerFilter(new SecurityFilter());
     if (prop('ngdpbase.filters.spam.enabled', false) === true) {
       await this.registerFilter(new SpamFilter());
     }

@@ -176,9 +176,16 @@ class WikiTagHandler extends BaseSyntaxHandler {
       try {
         const replacement = await this.handleTag(matchInfo, context);
 
+        // The output is finished HTML — an included or conditional block already
+        // rendered by MarkupParser, author HTML held to the policy there, plugin
+        // output merged in. Handed back through protectHtml it is merged after
+        // markdown-it instead of being re-read as author HTML, which would strip
+        // that plugin output (#1623). Without a MarkupParser the tag returns its
+        // content unrendered — author source — and that is not handed back.
+        const rendered = !!this.engine?.getManager('MarkupParser');
         processedContent =
           processedContent.slice(0, matchInfo.index) +
-          replacement +
+          (rendered && context.protectHtml ? context.protectHtml(replacement) : replacement) +
           processedContent.slice(matchInfo.index + matchInfo.length);
 
       } catch (error) {

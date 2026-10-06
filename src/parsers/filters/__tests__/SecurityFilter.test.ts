@@ -23,21 +23,21 @@ import SecurityFilter from '../SecurityFilter';
 const ctx = { pageName: 'TestPage', engine: { getManager: vi.fn(() => null) } };
 
 /**
- * A filter with RENDER filtering on. That is not the shipped default (#1037):
- * `security.enabled` is false, and the filter is registered only so
- * FilterChain.collectErrors() can reach it for save-time blocking. These tests
- * exercise process(), so they must opt in explicitly.
+ * A filter with RENDER filtering on, as the comment profile
+ * (renderUntrustedInline) sets it. Pages never turn it on: their author HTML
+ * meets the HTML policy inside markdown-it (#1623), and in the page chain the
+ * filter is registered only so FilterChain.collectErrors() can reach it.
+ * These tests exercise process(), so they opt in the way the comment profile
+ * does.
  */
 function makeFilter(): SecurityFilter {
   const f = new SecurityFilter();
   f.loadModularSecurityConfiguration({
     engine: {
-      getManager: vi.fn(() => ({
-        getProperty: (key: string, dflt: unknown) =>
-          key === 'ngdpbase.filters.security.enabled' ? true : dflt
-      }))
+      getManager: vi.fn(() => ({ getProperty: (_key: string, dflt: unknown) => dflt }))
     }
   });
+  f.securityConfig!.renderFiltering = true;
   return f;
 }
 
@@ -249,10 +249,8 @@ describe('SecurityFilter', () => {
     });
   });
 
-  // Enabling `markup.filters.security.enabled` on a live instance is a config
-  // change with no code review attached, so the render path itself is pinned
-  // here — not just the tag list. A real page's table and code block must
-  // survive process() with render filtering ON.
+  // The render path itself is pinned here — not just the tag list. A table and
+  // code block must survive process() with render filtering ON.
   describe('render filtering preserves ordinary page markup', () => {
     test('a table survives intact', async () => {
       const f = makeFilter();
