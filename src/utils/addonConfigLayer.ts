@@ -101,8 +101,8 @@ export function discoverAddonDefaults(base: Record<string, unknown>, cwd: string
  * shipped ⊕ addons ⊕ custom, in that order of precedence (custom wins).
  *
  * Each addon folds onto the shipped defaults in turn, not onto the other
- * addons alone: an addon's list of names for a set map (`secret-keys`,
- * `auth.step-up.permissions`) then adds to the shipped set, and a second
+ * addons alone: an addon's list of names for a set map (`secret-keys`)
+ * then adds to the shipped set, and a second
  * addon's list adds again rather than replacing the first (#1612).
  */
 export function mergeWithAddonLayer<T extends Record<string, unknown>>(

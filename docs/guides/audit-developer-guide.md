@@ -14,7 +14,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 
 | Part | Where | Owns |
 | --- | --- | --- |
-| The declaration | `ngdpbase.audit.events` in `config/app-default-config.json` | The name, `on-failure` (`refuse` or `continue`), `enabled`, `description`. Configuration is authoritative; an operator may change any of it and the change is itself recorded. |
+| The declaration | the permission's entry in `ngdpbase.permissions.definitions` (its `audit` field) when the event records that permission's action; otherwise `ngdpbase.audit.events` (#1638) | The name, `on-failure` (`refuse` or `continue`), `enabled`, `description`. Configuration is authoritative; an operator may change any of it and the change is itself recorded. |
 | The name in code | `src/utils/auditEventNames.generated.ts`, generated from the map (#1638) | Never written by hand: `npm run generate:permissions` writes it and `npm run lint:permissions` fails when it is stale. `AuditEvent.eventType` is typed, so a core typo or an undeclared name does not compile. |
 | The emitter | The manager door for the action, or the route only where no manager can tell the action apart (`page-read`, `page-export`, `secret-reveal`) | Building the record and calling `recordAuditEvent`. |
 
@@ -23,7 +23,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 ## Adding an event
 
 1. __Name it__ `{target}-{action}`, hyphens only. Where the action is the one a permission authorizes, use the permission's slug: `page-read` authorizes, `page-read` records. Never a dot, never an underscore, never a role name.
-2. __Declare it__ in `ngdpbase.audit.events`: `on-failure`, `enabled` if it should ship switched off, `description` (one line, shown in the admin filter). Same change as the emitter, never a later one.
+2. __Declare it__ in one place, in the same change as the emitter, never a later one. If it records a permission's action (`page-edit`, `token-mint`), declare it on that permission's entry: `ngdpbase.permissions.definitions.<name>.audit = { on-failure, enabled, description }` (#1638; `description` defaults to the permission's). Otherwise, in `ngdpbase.audit.events`: `on-failure`, `enabled` if it should ship switched off, `description` (one line, shown in the admin filter). `npm run lint:audit` fails on a name declared in both.
 3. __Regenerate__ with `npm run generate:permissions`: `AUDIT_EVENT.<NAME>` (the name upper-cased with underscores) now exists. An add-on instead declares the event in its own `config/default-config.json` and emits it as `addonAuditEventName('ledger-post')` — see [Addons](#addons) below.
 4. __Emit it__ through `recordAuditEvent(sink, event, onError)`, where the sink is `engine.getManager('AuditManager')`. Never call `logAuditEvent` directly: that skips the `enabled` switch, the on-failure rule and the outcome.
 5. __Decide `on-failure`.__ `refuse` means the action must not complete unless the record does: record first, then act, so a failed record refuses the action rather than leaving it done and unrecorded (`AgentTokenManager.mint`, `ShareManager.issue`, `UserManager.deleteUser` are the pattern). `continue` means the action proceeds and the loss is counted. This is failure handling, not importance; importance is `severity` on the record.
@@ -36,7 +36,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 
 An add-on audits its own actions without any core change (#1638):
 
-- Declare the event in the add-on's `config/default-config.json` under `ngdpbase.audit.events`, exactly as core does. It reaches the registry through the configuration merge while the add-on is enabled.
+- Declare the event in the add-on's `config/default-config.json` exactly as core does: on the add-on's permission entry (`audit`) when it records that permission's action, otherwise under `ngdpbase.audit.events`. It reaches the registry through the configuration merge while the add-on is enabled.
 - Emit it as `recordAuditEvent(sink, { eventType: addonAuditEventName('ledger-post'), … })`, passing a string literal. The core union cannot name an add-on's events, so `addonAuditEventName` checks the `{target}-{action}` form, and `recordAuditEvent` refuses (throws) a name the merged registry does not declare.
 - At boot, an enabled name that neither the shipped map nor an enabled add-on declares is a fatal configuration entry, as before.
 - `npm run lint:audit` reads every bundled add-on's map and treats each `addonAuditEventName('…')` literal as an emitter, so a declared, enabled add-on event with no emitter is red. An external add-on's CI has to hold that itself.

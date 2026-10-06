@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { AUDIT_EVENTS_KEY, bindAuditEvents } from '../../utils/auditRegistry';
+import { PERMISSIONS_KEY, shippedPermissions } from '../../__tests__/__fixtures__/shippedPermissions';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
 const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, Record<string, unknown>>;
@@ -19,10 +20,10 @@ const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, Record<string,
 /** Bind the shipped map with `page-read` switched as the test asks. */
 function bindPageRead(enabled: boolean): void {
   const events = { ...shippedEvents, 'page-read': { ...shippedEvents['page-read'], enabled } };
-  bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? events : d));
+  bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? events : key === PERMISSIONS_KEY ? shippedPermissions : d));
 }
 
-afterEach(() => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d)));
+afterEach(() => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : key === PERMISSIONS_KEY ? shippedPermissions : d)));
 
 const user = { username: 'jim', isAuthenticated: true, roles: ['reader'] };
 
@@ -57,7 +58,8 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('#1129 page-read emission follows the enabled switch (#1203)', () => {
   test('shipped default: page-read is switched off', () => {
-    expect(shippedEvents['page-read'].enabled).toBe(false);
+    // #1638: page-read is declared on its permission entry.
+    expect((shippedPermissions as Record<string, { audit?: { enabled?: boolean } }>)['page-read'].audit?.enabled).toBe(false);
   });
 
   test('off: the switch closed means no record, and the route asks no other key', async () => {

@@ -1,5 +1,5 @@
 // GENERATED FILE — do not edit.
-// Source: config/app-default-config.json → ngdpbase.audit.events
+// Source: config/app-default-config.json → ngdpbase.audit.events and ngdpbase.permissions.definitions.*.audit
 // Regenerate: npm run generate:permissions
 //
 // Every audit event core declares, as code (#1201, #1638). An emitter names

@@ -207,11 +207,13 @@ import * as auditRegistry from './src/utils/auditRegistry';
 // This file sits outside the TypeScript project eslint resolves, so the import
 // is typed here by hand rather than left as `any`.
 type AuditEventsSource = (key: string, defaultValue?: unknown) => unknown;
-const { bindAuditEvents, AUDIT_EVENTS_KEY } = auditRegistry as {
+const { bindAuditEvents, AUDIT_EVENTS_KEY, PERMISSION_DEFINITIONS_KEY } = auditRegistry as {
   bindAuditEvents: (source: AuditEventsSource | null) => void;
   AUDIT_EVENTS_KEY: string;
+  PERMISSION_DEFINITIONS_KEY: string;
 };
 const shippedConfig = JSON.parse(readFileSync('./config/app-default-config.json', 'utf8')) as Record<string, unknown>;
+// #1638: the registry reads the events map AND the permission entries.
 bindAuditEvents((key: string, defaultValue?: unknown): unknown =>
-  key === AUDIT_EVENTS_KEY ? shippedConfig[key] : defaultValue
+  key === AUDIT_EVENTS_KEY || key === PERMISSION_DEFINITIONS_KEY ? shippedConfig[key] : defaultValue
 );

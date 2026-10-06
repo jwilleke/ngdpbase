@@ -42,7 +42,7 @@ import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
-import { AUDIT_EVENTS_KEY, auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
+import { auditDeclarationsFrom, auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
 import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -260,11 +260,8 @@ class AuditManager extends BaseManager {
     // nothing can write. Never silent, and not survivable: the instance boots
     // into maintenance mode (security-posture.md D9, D10) with the name in the
     // reason.
-    const declared = configManager.getDeclaredProperty(AUDIT_EVENTS_KEY, {});
-    const known = new Set<string>([
-      ...auditEventNames(),
-      ...(declared && typeof declared === 'object' ? Object.keys(declared) : [])
-    ]);
+    const declared = auditDeclarationsFrom((key, fallback) => configManager.getDeclaredProperty(key, fallback));
+    const known = new Set<string>([...auditEventNames(), ...Object.keys(declared)]);
     for (const [name, d] of Object.entries(auditEventDeclarations())) {
       // #1218: `tier` was renamed to `on-failure`. A custom configuration still
       // carrying the old field would be silently ignored otherwise — and a

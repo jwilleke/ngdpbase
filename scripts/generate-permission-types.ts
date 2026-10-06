@@ -33,6 +33,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = path.join(REPO, 'config', 'app-default-config.json');
@@ -90,7 +91,9 @@ ${names.map((n) => `  '${n}'`).join(',\n')}
 }
 
 export function renderAuditEventNames(): string {
-  const events = readMap('ngdpbase.audit.events');
+  // #1638: the one reader — ngdpbase.audit.events plus every permission carrying `audit`.
+  const config = JSON.parse(readFileSync(CONFIG, 'utf8')) as Record<string, unknown>;
+  const events = auditDeclarationsFrom((key, fallback) => config[key] ?? fallback) as Record<string, Described>;
   const names = Object.keys(events).sort();
 
   const offConvention = names.filter((n) => !AUDIT_EVENT_NAME_PATTERN.test(n));
@@ -103,7 +106,7 @@ export function renderAuditEventNames(): string {
     .join(',\n');
 
   return `// GENERATED FILE — do not edit.
-// Source: config/app-default-config.json → ngdpbase.audit.events
+// Source: config/app-default-config.json → ngdpbase.audit.events and ngdpbase.permissions.definitions.*.audit
 // Regenerate: npm run generate:permissions
 //
 // Every audit event core declares, as code (#1201, #1638). An emitter names

@@ -12,6 +12,7 @@ import {
   resetAuditDropStats,
   type AuditEventSink
 } from '../auditEvents.js';
+import { PERMISSIONS_KEY, shippedPermissions } from '../../__tests__/__fixtures__/shippedPermissions';
 
 /**
  * #1080 — page create/edit/rename and attachment upload/delete produced no
@@ -425,7 +426,7 @@ describe('#1203 recordAuditEvent honours the enabled switch', () => {
 
   afterEach(() => {
     sink.logAuditEvent.mockClear();
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : key === PERMISSIONS_KEY ? shippedPermissions : d));
   });
 
   it('a recorded event says so (#1205)', async () => {
@@ -433,7 +434,7 @@ describe('#1203 recordAuditEvent honours the enabled switch', () => {
   });
 
   it('an event switched off never reaches the sink, and says not-enabled (#1205)', async () => {
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { 'on-failure': 'continue', enabled: false, description: 'off' } } : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'page-edit': { 'on-failure': 'continue', enabled: false, description: 'off' } } : key === PERMISSIONS_KEY ? shippedPermissions : d));
     await expect(recordAuditEvent(sink, event)).resolves.toBe('not-enabled');
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
   });
@@ -451,11 +452,11 @@ describe('#1638 an addon records its own audit events', () => {
 
   afterEach(() => {
     sink.logAuditEvent.mockClear();
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : key === PERMISSIONS_KEY ? shippedPermissions : d));
   });
 
   it('a name the merged registry declares is recorded', async () => {
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': ledgerPost } : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': ledgerPost } : key === PERMISSIONS_KEY ? shippedPermissions : d));
     await expect(recordAuditEvent(sink, event('ledger-post'))).resolves.toBe('recorded');
     expect(sink.logAuditEvent).toHaveBeenCalledOnce();
   });
@@ -471,7 +472,7 @@ describe('#1638 an addon records its own audit events', () => {
 
   it('an addon event declared on-failure: refuse gets the core refuse guarantee: flushed before the action, throws on failure', async () => {
     const refuse = { 'on-failure': 'refuse', description: 'money moved' };
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': refuse } : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': refuse } : key === PERMISSIONS_KEY ? shippedPermissions : d));
 
     const durable = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => undefined) };
     await expect(recordAuditEvent(durable, event('ledger-post'))).resolves.toBe('recorded');

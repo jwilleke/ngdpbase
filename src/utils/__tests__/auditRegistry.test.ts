@@ -19,15 +19,16 @@ import {
   disabledEventTypes,
   isAuditEventEnabled,
   refusesOnFailure,
-  requiredEventTypes
-} from '../auditRegistry';
+  requiredEventTypes, auditDeclarationsFrom } from '../auditRegistry';
 import logger from '../logger';
+import { PERMISSIONS_KEY, shippedPermissions } from '../../__tests__/__fixtures__/shippedPermissions';
 
 const SRC = path.join(process.cwd(), 'src');
 const shipped = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')
 ) as Record<string, unknown>;
-const shippedEvents = shipped[AUDIT_EVENTS_KEY] as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
+// #1638: every shipped event — the events map plus each permission's `audit`, through the one reader.
+const shippedEvents = auditDeclarationsFrom((key, d) => shipped[key] ?? d) as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
 
 /** Every .ts file under src/, excluding tests — the places an event could be emitted. */
 function sourceFiles(dir = SRC, acc: string[] = []): string[] {
@@ -51,7 +52,7 @@ function isEmitted(eventType: string): boolean {
   return new RegExp('AUDIT_EVENT\\.' + key + '\\b').test(allSource);
 }
 
-const bindShipped = () => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : d));
+const bindShipped = () => bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : key === PERMISSIONS_KEY ? shippedPermissions : d));
 
 beforeEach(bindShipped);
 afterEach(bindShipped);
@@ -96,14 +97,14 @@ describe('#1200 configuration is authoritative', () => {
     // The operator may narrow what the system claims to audit; that is the
     // point, not the objection. The narrowing is itself audited elsewhere.
     const custom = { ...shippedEvents, 'page-delete': { ...shippedEvents['page-delete'], 'on-failure': 'continue' } };
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : key === PERMISSIONS_KEY ? shippedPermissions : d));
     expect(refusesOnFailure('page-delete')).toBe(false);
     expect(refusesOnFailure('token-mint')).toBe(true);
   });
 
   it('a custom configuration removing an entry with null removes it', () => {
     const custom = { ...shippedEvents, 'share-access': null };
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : d));
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : key === PERMISSIONS_KEY ? shippedPermissions : d));
     expect(auditEventTypes()).not.toContain('share-access');
   });
 });
@@ -144,5 +145,38 @@ describe('#1203 the read switch lives on the event, and the map is a posture ing
     const posture = shipped['ngdpbase.security.posture'] as Record<string, { group?: string; restart?: boolean }>;
     expect(posture[AUDIT_EVENTS_KEY]).toEqual({ group: 'Audit', restart: false });
     expect('ngdpbase.audit.read-events' in posture).toBe(false);
+  });
+});
+
+describe('#1638 a permission entry declares its own audit event', () => {
+  const config = (over: Record<string, unknown>) => (key: string, d?: unknown) => (key in over ? over[key] : d);
+
+  it('reads the events map and every permission carrying audit, under the permission name', () => {
+    const decls = auditDeclarationsFrom(config({
+      'ngdpbase.audit.events': { 'share-create': { 'on-failure': 'refuse', description: 'link issued' } },
+      'ngdpbase.permissions.definitions': {
+        'ledger-post': { description: 'Post to the ledger', audit: { 'on-failure': 'refuse' } },
+        'page-read': { description: 'View pages', audit: { 'on-failure': 'continue', enabled: false, description: 'Page read' } },
+        'page-edit': { description: 'Edit pages' }
+      }
+    }));
+    expect(Object.keys(decls).sort()).toEqual(['ledger-post', 'page-read', 'share-create']);
+    expect(decls['ledger-post']).toEqual({ description: 'Post to the ledger', 'on-failure': 'refuse' });
+    expect(decls['page-read'].enabled).toBe(false);
+    expect(decls['page-read'].description).toBe('Page read');
+  });
+
+  it('an old custom override under ngdpbase.audit.events still wins over the permission entry', () => {
+    const decls = auditDeclarationsFrom(config({
+      'ngdpbase.audit.events': { 'page-delete': { 'on-failure': 'continue', description: 'lowered' } },
+      'ngdpbase.permissions.definitions': { 'page-delete': { description: 'Delete pages', audit: { 'on-failure': 'refuse', description: 'Page deleted' } } }
+    }));
+    expect(decls['page-delete']['on-failure']).toBe('continue');
+  });
+
+  it('the shipped file declares no event twice', () => {
+    const events = shipped[AUDIT_EVENTS_KEY] as Record<string, unknown>;
+    const perms = shipped['ngdpbase.permissions.definitions'] as Record<string, { audit?: unknown }>;
+    expect(Object.keys(events).filter((n) => perms[n]?.audit)).toEqual([]);
   });
 });

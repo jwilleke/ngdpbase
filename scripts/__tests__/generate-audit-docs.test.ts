@@ -5,8 +5,11 @@
 import fs from 'fs';
 import path from 'path';
 import { eventsTable, coverageSection, generate } from '../generate-audit-docs';
+import { auditDeclarationsFrom } from '../../src/utils/auditRegistry';
 
-const events = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8'))['ngdpbase.audit.events'] as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
+// #1638: every shipped event — the events map plus each permission's `audit`, through the one reader.
+const shippedConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
+const events = auditDeclarationsFrom((key, d) => shippedConfig[key] ?? d) as Record<string, { 'on-failure': string; enabled?: boolean; description: string }>;
 
 describe('#1207 audit docs come from configuration', () => {
   test('the event table lists every configured event with its on-failure rule and switch', () => {
