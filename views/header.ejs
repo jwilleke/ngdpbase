@@ -97,7 +97,8 @@
                         <li><a class="dropdown-item" href="/admin"><i class="fas fa-cogs me-2"></i>Admin</a></li>
                         <% } %>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                        <%# #1631: sign-out is a POST with the CSRF token, so another site cannot sign you out by linking here %>
+                        <li><form action="/logout" method="POST" class="m-0"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>"><button type="submit" class="dropdown-item"><i class="fas fa-sign-out-alt me-2"></i>Logout</button></form></li>
                     </ul>
                 </div>
                 <% } else { %>
@@ -147,7 +148,7 @@
                                 <% } %>
                             <% } %>
                             <div class="dropdown-divider"></div>
-                            <a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                            <form action="/logout" method="POST" class="m-0"><input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>"><button type="submit" class="dropdown-item"><i class="fas fa-sign-out-alt"></i> Logout</button></form>
                         </div>
                     </div>
                 <% } else { %>

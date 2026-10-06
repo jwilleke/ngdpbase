@@ -1,0 +1,34 @@
+<%- include('header', { pageName: '' }) %>
+
+<%
+// #1631 — reached by GET /logout (a typed URL, an old bookmark, or a link from
+// another site). Signing out only happens on the POST below, which carries the
+// session's CSRF token, so a cross-site link cannot sign anyone out. The model
+// is OpenID Connect RP-Initiated Logout: ask, unless the request proves itself.
+%>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-4">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Sign out?</h4>
+                </div>
+                <div class="card-body">
+                    <form action="/logout" method="POST">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sign-out-alt"></i> Sign out
+                        </button>
+                    </form>
+                    <hr>
+                    <div class="text-center">
+                        <p class="mb-0"><a href="/">Stay signed in</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

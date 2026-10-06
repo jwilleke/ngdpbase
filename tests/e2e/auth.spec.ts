@@ -107,15 +107,18 @@ test.describe('Authentication - Unauthenticated', () => {
         await page.waitForTimeout(300); // Wait for dropdown animation
 
         // Scope logout to the desktop dropdown menu to avoid matching the hidden mobile logout link
-        const logoutLink = page.locator('#userDropdown').locator('..').locator('a[href="/logout"]');
-        if (await logoutLink.count() > 0) {
-          await logoutLink.first().click();
+        // #1631: sign-out is a POST form in the menu, not a link
+        const logoutButton = page.locator('#userDropdown').locator('..').locator('form[action="/logout"] button');
+        if (await logoutButton.count() > 0) {
+          await logoutButton.first().click();
         } else {
           await page.goto('/logout');
+          await page.getByRole('button', { name: 'Sign out' }).click();
         }
       } else {
-        // Fallback: navigate directly to logout
+        // Fallback: the confirm page a typed /logout shows (#1631)
         await page.goto('/logout');
+        await page.getByRole('button', { name: 'Sign out' }).click();
       }
       await page.waitForLoadState('domcontentloaded');
 
