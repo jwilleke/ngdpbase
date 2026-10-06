@@ -11,6 +11,7 @@ import express from 'express';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 // Mock LocaleUtils
 vi.mock('../../utils/LocaleUtils', () => ({
@@ -225,6 +226,9 @@ describe('Maintenance Mode', () => {
     const WikiEngine = (WikiEngineMod).default ?? WikiEngineMod;
     mockEngine = new WikiEngine();
     mockEngine._resetMaintenanceMode();
+    // #1622: the page-read door, answering from the engine's mocks.
+    const pageManager = mockEngine.getManager('PageManager');
+    Object.assign(pageManager, readDoor(pageManager, mockEngine));
 
     // Create app with regular user
     app = setupApp({

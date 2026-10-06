@@ -130,6 +130,7 @@ import {
   type StoreKind
 } from '../utils/privateStoreDoor.js';
 import {
+  canonicalPageName,
   formatPrivatePageName,
   parsePrivatePageName,
   PRIVATE_URL_SEGMENT,
@@ -145,6 +146,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
+import type PageManagerClass from '../managers/PageManager.js';
 import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
 import { ThemeManager, getThemeManager } from '../managers/ThemeManager.js';
@@ -362,6 +364,11 @@ interface IPageManager {
   // Without it the owner's unlocked sealed-store pages (#1385) are never found.
   getPage(name: string, ctx: ActorContext): Promise<WikiPage | null>;
   getPageContent(name: string, ctx: ActorContext): Promise<string>;
+  /** #1622: the page-read door — a person's read decides `page-read` here, never in a route. */
+  readPage: PageManagerClass['readPage'];
+  readVersionHistory: PageManagerClass['readVersionHistory'];
+  readVersion: PageManagerClass['readVersion'];
+  readVersionDiff: PageManagerClass['readVersionDiff'];
   getAllPages(): Promise<string[]>;
   /** The pages `subject` may `action` on — the door for anything listed to a reader (#1219). */
   listPagesFor(subject: unknown, action?: string): Promise<string[]>;
@@ -868,6 +875,7 @@ class WikiRoutes {
     const configured = typeof raw === 'string' ? raw.trim() : '';
 
     if (configured) {
+      // page-door-ignore: site chrome around every page, read as anonymous, not a page view; rendering-path readers move to the door in #1622 slice 2.
       const page = await pageManager.getPage(configured, ANONYMOUS_SUBJECT);
       if (!page) {
         // ERROR, not warn: this is the operator's OWN configuration naming a
@@ -891,6 +899,7 @@ class WikiRoutes {
 
     // Legacy slug-convention chain (deprecated).
     for (const slug of legacySlugs) {
+      // page-door-ignore: site chrome around every page, read as anonymous, not a page view; rendering-path readers move to the door in #1622 slice 2.
       const page = await pageManager.getPage(slug, ANONYMOUS_SUBJECT);
       if (!page) continue;
       if (slug !== legacySlugs[legacySlugs.length - 1]) {
@@ -2778,6 +2787,7 @@ ${panes}
       const renderingManager = this.engine.getManager('RenderingManager');
 
       // Try to get LeftMenu page
+      // page-door-ignore: site chrome around every page, not a page view; rendering-path readers move to the door in #1622 slice 2.
       const leftMenuPage = await pageManager.getPage('LeftMenu', userContext);
       if (!leftMenuPage) {
         return null; // Return null to use fallback
@@ -2881,15 +2891,10 @@ ${panes}
         ).join('|')}`
       );
 
-      // Gracefully handle page not found
-      const markdown = await pageManager
-        .getPageContent(pageName, req.userContext)
-        .catch((err: unknown) => {
-          if (getErrorMessage(err).includes('not found')) return null;
-          throw err;
-        });
+      // #1622: the page door decides page-read before any content is read.
+      const read = await pageManager.readPage(pageName, req.userContext);
 
-      if (markdown === null) {
+      if (!read.ok && read.refusal === 'not-found') {
         // #1105: the four-step live ladder missed, so this may be a page's former
         // title — a bookmark or an external link that predates a rename. Those
         // are not ours to rewrite the way inbound page links are, so resolution
@@ -2942,35 +2947,18 @@ ${panes}
         );
       }
 
-      // Load page metadata before ACL checks so Tier 0 / Tier 1.5 have full
-      // context. Shared with the export routes (#1060) so the two paths to a
-      // page's content cannot present the evaluator with different facts.
-      const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
-      // #1431 step 7 (operator 2026-09-21): the content came back, so this page
-      // EXISTS and this reader could load it — no metadata here is damage, not
-      // a permission question. Fail loudly: 500, error log, admin notification.
-      // A missing page never reaches this line (404 above), and nor does a
-      // sealed page this session cannot unlock (#1422).
-      if (!metadata) {
+      // #1431 step 7 (operator 2026-09-21): this page EXISTS — no metadata is
+      // damage, not a permission question. Fail loudly: 500, error log, admin
+      // notification. A missing page never reaches this line (404 above), and
+      // nor does a sealed page this session cannot unlock (#1422).
+      if (!read.ok && read.refusal === 'no-metadata') {
         await reportMissingPageMetadata(this.engine, pageName, 'view', req.userContext?.username);
         return await this.renderError(
           req, res, 500, 'Page Cannot Be Opened',
           `The page '${pageName}' is damaged and cannot be opened. The administrators have been notified.`
         );
       }
-      (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
-
-      // Update WikiContext with page content for ACL checking
-      (wikiContext as { content: string | null }).content = markdown;
-
-      // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
-      // call that previously sat here. Tier 0 inside
-      // `checkPagePermissionWithContext` (below) already delegates to
-      // `PageManager.checkPrivatePageAccess` (per #711), so the legacy
-      // route-layer helper was running the same logic twice.
-      const canView = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'view');
-      logger.info(`[VIEW] ACL decision for ${pageName}: ${canView}`);
-      if (!canView) {
+      if (!read.ok) {
         return await this.renderError(
           req,
           res,
@@ -2979,6 +2967,10 @@ ${panes}
           'You do not have permission to view this page.'
         );
       }
+      const markdown = read.value.content;
+      const metadata = read.metadata;
+      (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
+      (wikiContext as { content: string | null }).content = markdown;
 
       // #1129: access accounting, recorded at the moment access was GRANTED —
       // an assessor asks who saw the page, not who requested it. Gated inside
@@ -3044,6 +3036,7 @@ ${panes}
           const noTabsList = (configManager?.getProperty('ngdpbase.page.notabs', []) as string[]);
           if (!noTabsList.includes(pageName)) {
             const tabTemplateName = (configManager?.getProperty('ngdpbase.tab.pagetabs.template', 'Template:PageTabs'));
+            // page-door-ignore: site chrome around every page, not a page view; rendering-path readers move to the door in #1622 slice 2.
             const tabTemplateContent = await pageManager.getPageContent(tabTemplateName, req.userContext).catch(() => null);
             if (tabTemplateContent) {
               tabSectionHtml = await this.buildPageTabsHtml(tabTemplateContent, wikiContext, renderingManager, configManager);
@@ -3066,6 +3059,7 @@ ${panes}
       const provider = pageManager.provider;
       if (provider && typeof provider.getVersionHistory === 'function') {
         try {
+          // page-door-ignore: the same page, its read decided above by readPage.
           const versions = await provider.getVersionHistory(pageName, req.userContext);
           if (versions && versions.length > 0) {
             const latestVersion = versions[0]; // Versions are returned newest first
@@ -3477,6 +3471,7 @@ ${panes}
       if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page', createTarget))) return;
 
       // Check if page already exists
+      // page-door-ignore: an existence probe before page-create; nothing read is returned.
       const existingPage = await pageManager.getPage(pageName, req.userContext);
       if (existingPage) {
         logger.debug(
@@ -3591,6 +3586,7 @@ ${panes}
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'page', pageName))) return;
 
       // Get page data to check ACL (if page exists)
+      // page-door-ignore: the editor's own read — the page-edit door decides below, not page-read.
       let pageData = await pageManager.getPage(pageName, req.userContext);
 
       // #714 Slice C: removed the redundant `this.checkPrivatePageAccess`
@@ -3877,6 +3873,7 @@ ${panes}
         const sectionIdx = parseInt(String(sectionBodyParam), 10);
         if (!isNaN(sectionIdx) && sectionIdx >= 0) {
           const pageManager0 = this.engine.getManager('PageManager');
+          // page-door-ignore: the page being saved — the save's page-edit door decides.
           const fullPage = await pageManager0.getPage(pageName, req.userContext);
           if (fullPage?.content) {
             const fullClean = stripAclMarkup(fullPage.content);
@@ -3899,6 +3896,7 @@ ${panes}
       const currentUser = wikiContext.userContext;
 
       // Get existing page data for ACL checking
+      // page-door-ignore: the page being saved — the save's page-edit door decides below.
       const existingPage = await pageManager.getPage(pageName, req.userContext);
 
       // Accept system-category as required field (new metadata format)
@@ -4579,20 +4577,6 @@ ${panes}
    * and checks the caller's permission for `action`. Returns null once a
    * response has been sent.
    */
-  /**
-   * The name a page an identifier opened is known by: its title — the
-   * identifier may be a uuid or slug, and every downstream index is keyed by
-   * title — or, for a vault page, its vault name (#1539). A vault page's bare
-   * title is a PUBLIC page's name, so the door would judge, and a write would
-   * hit, a different page.
-   */
-  private static canonicalPageName(identifier: string, pageData: { metadata?: { title?: string } | null }): string {
-    const privateName = parsePrivatePageName(identifier);
-    return privateName
-      ? formatPrivatePageName(privateName.owner, privateName.store, pageData.metadata?.title || privateName.title)
-      : pageData.metadata?.title || identifier;
-  }
-
   private async prepareApiPageMutation(
     req: Request,
     res: Response,
@@ -4619,13 +4603,14 @@ ${panes}
     }
 
     const pageManager = this.engine.getManager('PageManager');
+    // page-door-ignore: the delete/rename door decides its own action below.
     const pageData = await pageManager?.getPage(identifier, req.userContext);
     if (!pageData) {
       res.status(404).json({ error: 'Page not found', identifier });
       return null;
     }
 
-    const pageName = WikiRoutes.canonicalPageName(identifier, pageData);
+    const pageName = canonicalPageName(identifier, pageData.metadata);
 
     const wikiContext = this.createWikiContext(req, {
       context: WikiContext.CONTEXT.NONE,
@@ -4725,6 +4710,7 @@ ${panes}
       }
 
       const pageManager = this.engine.getManager('PageManager');
+      // page-door-ignore: admin-system gated; stamps a keyword, returns no content.
       const pageData = await pageManager?.getPage(identifier, req.userContext);
       if (!pageData) {
         return res.status(404).json({ error: 'Page not found', identifier });
@@ -4781,6 +4767,7 @@ ${panes}
 
       // Refuse rather than overwrite. Saving onto an existing title would merge
       // two pages into one and lose the target's content silently.
+      // page-door-ignore: an existence probe for the rename target; nothing read is returned.
       const existing = await pageManager?.getPage(newTitle, req.userContext);
       if (existing) {
         return res.status(409).json({
@@ -4947,6 +4934,7 @@ ${panes}
     if (!pageManager) return 'missing';
 
     for (let attempt = 0; attempt < 2; attempt++) {
+      // page-door-ignore: a referring page whose links are rewritten — a write, through savePage.
       const page = await pageManager.getPage(refPage, req.userContext);
       if (!page) return 'missing';
 
@@ -4956,6 +4944,7 @@ ${panes}
 
       // Re-read as late as possible. This is the same window the editor's
       // stale-base check lives in (#1061) — narrow, not closed.
+      // page-door-ignore: a referring page whose links are rewritten — a write, through savePage.
       const fresh = await pageManager.getPage(refPage, req.userContext);
       if (!fresh) return 'missing';
       if (isStaleSave(baseToken, versionTokenOf(fresh.metadata))) continue;
@@ -5200,6 +5189,7 @@ ${panes}
       const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
 
       // Check if page exists
+      // page-door-ignore: the delete door decides page-delete below.
       const pageData = await pageManager.getPage(pageName, req.userContext);
       if (!pageData) {
         logger.debug(`❌ Page not found: ${pageName}`);
@@ -5322,10 +5312,7 @@ ${panes}
     try {
       const interval = Math.max(1, parseInt(req.query.interval as string, 10) || 8);
 
-      const pageManager      = this.engine.getManager('PageManager') as {
-        listPagesFor(subject: unknown, action?: string): Promise<string[]>;
-        getPage(name: string, ctx: ActorContext): Promise<{ title?: string; content?: string; rawContent?: string } | null>;
-      };
+      const pageManager      = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager') as {
         textToHTML(ctx: unknown, markdown: string): Promise<string>;
       };
@@ -5345,18 +5332,17 @@ ${panes}
 
       // Render each page through the wiki engine (reader mode — full HTML).
       //
-      // #1219: through the read gate first. `getPage` does not evaluate access,
+      // #1219: through the read door. `getPage` does not evaluate access,
       // so the kiosk rendered the full content of any page the request named —
       // `?pages=` accepted a private title from anyone — and of any page the
-      // random draw landed on. The same gate `/view` and export use decides;
-      // a refused page is simply not a slide.
+      // random draw landed on. The page door decides, as for `/view` and
+      // export (#1622); a refused page is simply not a slide.
       const slides: { name: string; title: string; html: string; url: string }[] = [];
       for (const name of names) {
-        const { allowed } = await this.checkPageReadAccess(req, name);
-        if (!allowed) continue;
-        const page = await pageManager.getPage(name, req.userContext);
-        if (!page) continue;
-        const raw = String(page.rawContent ?? page.content ?? '');
+        const read = await pageManager.readPage(name, req.userContext);
+        if (!read.ok) continue;
+        const page = read.value;
+        const raw = String(page.content ?? '');
         const wikiCtx = this.createWikiContext(req, { pageName: name });
         const html = await renderingManager.textToHTML(wikiCtx, raw);
         slides.push({
@@ -5715,6 +5701,7 @@ ${panes}
         return 'filename contains a quote character — add the attachment link to the page manually';
       }
       const pageManager = this.engine.getManager('PageManager');
+      // page-door-ignore: the page the attachment is linked into — the editor's write door decides below.
       const page = await pageManager.getPage(pageName, req.userContext);
       if (!page) {
         return `page "${pageName}" not found — attachment stored but not linked`;
@@ -5909,9 +5896,11 @@ ${panes}
       const legacyTarget = !privateNamed && captureVault !== defaultVault
         ? formatPrivatePageName(String(currentUser.username), defaultVault, pageName)
         : null;
+      // page-door-ignore: the capture's target — its write door (page-create/page-edit) decides below.
       const ownPrivateName = (await pageManager.getPage(privateTarget, req.userContext)) ? privateTarget
         : legacyTarget && (await pageManager.getPage(legacyTarget, req.userContext)) ? legacyTarget : null;
       const ownPrivate = ownPrivateName ? await pageManager.getPage(ownPrivateName, req.userContext) : null;
+      // page-door-ignore: the capture's target — its write door (page-create/page-edit) decides below.
       const publicPage = ownPrivate || parsePrivatePageName(pageName) ? null : await pageManager.getPage(pageName, req.userContext);
       const existing = ownPrivate ?? publicPage;
       const targetName = ownPrivateName ?? (!publicPage && capturePrivate ? privateTarget : pageName);
@@ -6240,60 +6229,6 @@ ${panes}
   /**
    * Export page selection form
    */
-  /**
-   * Load a page's metadata in the shape the ACL evaluator expects (#1060).
-   *
-   * Tier 0 (private) and Tier 1 (audience/access) read frontmatter, so the
-   * metadata must be attached to the WikiContext BEFORE any permission check —
-   * evaluating with no metadata asks the evaluator a different question than
-   * the one the caller meant.
-   *
-   * Keyword fields are coerced to arrays because JSPWiki imports may store
-   * them as space-separated scalars (`user-keywords: foo bar baz`).
-   */
-  private async loadPageMetadataForAcl(pageName: string, ctx: ActorContext): Promise<PageFrontmatter | null> {
-    const pageManager = this.engine.getManager('PageManager');
-    const metadata = await pageManager.getPageMetadata(pageName, ctx);
-    if (metadata) {
-      if (!Array.isArray(metadata['user-keywords'])) {
-        metadata['user-keywords'] = metadata['user-keywords']
-          ? String(metadata['user-keywords']).split(/[\s,]+/).filter(Boolean)
-          : [];
-      }
-      if (!Array.isArray(metadata['system-keywords'])) {
-        const sk = metadata['system-keywords'];
-        metadata['system-keywords'] = (typeof sk === 'string' && sk) ? [sk] : [];
-      }
-    }
-    return metadata ?? null;
-  }
-
-  /**
-   * May this caller read this page? (#1060)
-   *
-   * The single read gate, shared by the view route and the export routes.
-   * Export existed as a second path to page content that evaluated no ACL at
-   * all, so a private page was extractable by anyone who could name it. The
-   * fix is not a second check that happens to agree — it is the same check.
-   *
-   * Returns the metadata alongside the decision so callers do not re-read it.
-   */
-  private async checkPageReadAccess(
-    req: Request,
-    pageName: string
-  ): Promise<{ allowed: boolean; metadata: PageFrontmatter | null }> {
-    const wikiContext = this.createWikiContext(req, {
-      context: WikiContext.CONTEXT.VIEW,
-      pageName
-    });
-    const metadata = await this.loadPageMetadataForAcl(pageName, req.userContext);
-    (wikiContext as { pageMetadata: unknown }).pageMetadata = metadata;
-
-    const policyInformationPoint = this.engine.getManager('PolicyInformationPoint');
-    const allowed = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'view');
-    return { allowed, metadata };
-  }
-
   async exportPage(req: Request, res: Response) {
     try {
       const commonData = await this.getCommonTemplateData(req);
@@ -6325,9 +6260,10 @@ ${panes}
    * Deny an export unless the caller may read the page (#1060). Returns a sent
    * response when denied, or null to proceed.
    *
-   * ONE check, deliberately: `checkPageReadAccess`, the SAME gate the view
-   * route uses. Export was a second path to page content that evaluated no ACL
-   * at all, so a private page was extractable by anyone who could name it.
+   * ONE check, deliberately: the page door's read (#1622), the SAME one the
+   * view route uses. Export was a second path to page content that evaluated
+   * no ACL at all, so a private page was extractable by anyone who could name
+   * it.
    *
    * A `page-export` check on top was written first and removed. For a page the
    * caller can already read, exporting hands back words they are looking at on
@@ -6343,8 +6279,8 @@ ${panes}
    * itself the disclosure.
    */
   private async denyExport(req: Request, res: Response, pageName: string): Promise<Response | null> {
-    const { allowed } = await this.checkPageReadAccess(req, pageName);
-    if (!allowed) {
+    const read = await this.engine.getManager('PageManager').readPage(pageName, req.userContext);
+    if (!read.ok) {
       logger.warn(`[export] Denied — no read access to '${pageName}'`);
       return res.status(404).send('Page not found');
     }
@@ -9959,6 +9895,7 @@ ${panes}
             if (pageManager.pageExists(newPageName, req.userContext)) {
               return res.redirect('/profile?error=Cannot rename: a page named "' + newPageName + '" already exists&success=Profile updated successfully');
             }
+            // page-door-ignore: the user's own profile page, renamed — a write.
             const page = await pageManager.getPage(oldPageName, req.userContext);
             if (page) {
               const content = page.content;
@@ -10535,6 +10472,7 @@ ${panes}
       }
 
       const pageManager = this.engine.getManager('PageManager');
+      // page-door-ignore: the page being ingested — its write door decides below.
       const existing = await pageManager.getPage(pageName, req.userContext);
       const action = existing ? 'updated' : 'created';
 
@@ -10648,6 +10586,7 @@ ${panes}
       pageName = written.name;
 
       // The page as saved, for the response.
+      // page-door-ignore: the page this caller has just written, reported back to them.
       const saved = await pageManager.getPage(pageName, req.userContext);
       if (!saved) {
         logger.error(`Ingest: page "${pageName}" not retrievable immediately after save`);
@@ -10790,9 +10729,10 @@ ${panes}
    * the 404 / 403 itself and returns true when it did.
    */
   private async footnotePageRefusal(req: Request, res: Response, pageUuid: string): Promise<boolean> {
+    // page-door-ignore: the footnote's page — the editor's write door decides next.
     const page = await this.engine.getManager('PageManager')?.getPage(pageUuid, req.userContext);
     if (!page) { res.status(404).json({ success: false, error: 'Page not found' }); return true; }
-    const refusal = await this.writeRefusal(req, WikiRoutes.canonicalPageName(pageUuid, page), page);
+    const refusal = await this.writeRefusal(req, canonicalPageName(pageUuid, page.metadata), page);
     if (refusal) { res.status(403).json({ success: false, error: refusal }); return true; }
     return false;
   }
@@ -10947,6 +10887,7 @@ ${panes}
 
       for (const pageName of allPageNames) {
         if (await this.isRequiredPage(pageName, req.userContext)) {
+          // page-door-ignore: admin dashboard: one metadata flag of each shipped page, no content.
           const page = await pageManager.getPage(pageName, req.userContext);
           requiredPages.push({
             name: pageName,
@@ -13204,6 +13145,7 @@ ${panes}
           // (a soft delete — recoverable from the trash — audited like any
           // delete). It carries the same title, so saving the canonical page
           // first would be refused as a duplicate title.
+          // page-door-ignore: admin required-pages sync: an existence probe before a delete.
           if (liveUuid !== sourceUuid && await syncPageManager.getPage(liveUuid, req.userContext)) {
             await this.auditPageDelete(req, wikiContext, liveUuid, liveUuid);
             await syncPageManager.deletePage(liveUuid, req.userContext);
@@ -13507,11 +13449,14 @@ ${panes}
     }
 
     if (a && b) {
-      // Compare two live pages by UUID or slug
-      const pageA = await pageManager.getPage(a, req.userContext);
-      const pageB = await pageManager.getPage(b, req.userContext);
+      // Compare two live pages by UUID or slug — through the page door
+      // (#1622): an administrator reads a page's content as any reader does.
+      const readA = await pageManager.readPage(a, req.userContext);
+      const readB = await pageManager.readPage(b, req.userContext);
 
-      if (!pageA || !pageB) return null;
+      if (!readA.ok || !readB.ok) return null;
+      const pageA = readA.value;
+      const pageB = readB.value;
 
       return {
         contentA: pageA.content || '',
@@ -14765,6 +14710,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
+      // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
@@ -14818,6 +14764,7 @@ ${panes}
       if (!pageManager) {
         return res.status(500).json({ success: false, error: 'PageManager not available' });
       }
+      // page-door-ignore: converting is an edit (#1127) — the page-edit door decides below.
       const page = await pageManager.getPage(pageName, this.createWikiContext(req).userContext ?? ANONYMOUS_SUBJECT);
       if (!page) {
         return res.status(404).json({ success: false, error: `Page not found: ${pageName}` });
@@ -15134,21 +15081,24 @@ ${panes}
   }
 
   /**
-   * Get raw page source (markdown content) for viewing/copying
+   * Get raw page source (markdown content) for viewing/copying.
+   *
+   * #1622: through the page door. A page this caller may not read is the same
+   * 404 as one that does not exist.
    */
   async getPageSource(req: Request, res: Response) {
     try {
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager');
 
-      const page = await pageManager.getPage(pageName, req.userContext);
-      if (!page) {
+      const read = await pageManager.readPage(pageName, req.userContext);
+      if (!read.ok) {
         return res.status(404).send('Page not found');
       }
 
       // Return the raw markdown content
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      return res.send(page.content || '');
+      return res.send(read.value.content || '');
     } catch (error: unknown) {
       logger.error('Error retrieving page source:', error);
       return res.status(500).send('Error retrieving page source');
@@ -16751,10 +16701,14 @@ ${panes}
       const pageName = decodeURIComponent(req.params.page);
       const pageManager = this.engine.getManager('PageManager');
 
-      const page = await pageManager.getPage(pageName, req.userContext);
-      if (!page) {
+      // #1622: through the page door — the metadata, the content statistics
+      // and the history below are the page's, and a page this caller may not
+      // read is the same 404 as one that does not exist.
+      const read = await pageManager.readPage(pageName, req.userContext);
+      if (!read.ok) {
         return res.status(404).json({ error: 'Page not found' });
       }
+      const page = read.value;
 
       // Extract metadata from the page (getPage returns 'metadata', not 'frontMatter')
       const metadata = page.metadata || {};
@@ -16800,6 +16754,7 @@ ${panes}
       try {
         const provider = pageManager.provider;
         if (provider && typeof provider.getVersionHistory === 'function') {
+          // page-door-ignore: the same page, its read decided above by readPage.
           const versions = await provider.getVersionHistory(pageName, req.userContext);
           if (versions && versions.length > 0) {
             const currentVersion = versions[0]; // Most recent version is first
@@ -17137,8 +17092,12 @@ ${panes}
         });
       }
 
-      // Get version history
-      const versions = await provider.getVersionHistory(identifier, req.userContext);
+      // #1622: the page door decides page-read; a refusal is a 404.
+      const read = await pageManager.readVersionHistory(identifier, req.userContext);
+      if (!read.ok) {
+        return res.status(404).json({ error: 'Page not found', message: `Page not found: ${identifier}` });
+      }
+      const versions = read.value;
 
       return res.json({
         success: true,
@@ -17196,8 +17155,12 @@ ${panes}
         });
       }
 
-      // Get version content
-      const versionData = await provider.getPageVersion(identifier, versionNum, req.userContext);
+      // #1622: the page door decides page-read; a refusal is a 404.
+      const read = await pageManager.readVersion(identifier, versionNum, req.userContext);
+      if (!read.ok) {
+        return res.status(404).json({ error: 'Page or version not found', message: `Page not found: ${identifier}` });
+      }
+      const versionData = read.value;
 
       return res.json({
         success: true,
@@ -17264,8 +17227,12 @@ ${panes}
         });
       }
 
-      // Compare versions
-      const comparison = await provider.compareVersions(identifier, version1, version2, req.userContext);
+      // #1622: the page door decides page-read; a refusal is a 404.
+      const read = await pageManager.readVersionDiff(identifier, version1, version2, req.userContext);
+      if (!read.ok) {
+        return res.status(404).json({ error: 'Page or version not found', message: `Page not found: ${identifier}` });
+      }
+      const comparison = read.value;
 
       return res.json({
         success: true,
@@ -17315,9 +17282,10 @@ ${panes}
       // #1198: restoring a version writes the page — page-edit is the door.
       // #1542: and the page's own rules, as the editor asks: the page door,
       // about the page itself (#1539: a vault page by its vault name).
+      // page-door-ignore: a restore is a save — the page-edit door decides below.
       const current = await pageManager.getPage(identifier, req.userContext);
       if (!current) return res.status(404).json({ error: 'Page not found', identifier });
-      const pageName = WikiRoutes.canonicalPageName(identifier, current);
+      const pageName = canonicalPageName(identifier, current.metadata);
       const restoreContext = this.createWikiContext(req, { pageName });
       if (!(await this.permitted(restoreContext, 'page-edit', req, res, 'json', pageName))) return;
       // Policy allowed but there is nobody to act as — refuse, never fall through.
@@ -17586,13 +17554,6 @@ ${panes}
 
       const pageManager = this.engine.getManager('PageManager');
 
-      // Create WikiContext for this request
-      const wikiContext = this.createWikiContext(req, {
-        context: WikiContext.CONTEXT.INFO,
-        pageName: pageName,
-        response: res
-      });
-
       if (!pageManager) {
         return this.renderError(req, res, 500, 'Server Error', 'PageManager not available');
       }
@@ -17604,39 +17565,26 @@ ${panes}
         return this.renderError(req, res, 501, 'Not Implemented', 'Page versioning is not enabled. Please configure VersioningFileProvider.');
       }
 
-      // Check if page exists
-      if (!pageManager.pageExists(pageName, req.userContext)) {
-        return this.renderError(req, res, 404, 'Not Found', `Page "${pageName}" not found`);
-      }
-
-      // #714 Slice C: pageHistory previously only checked the private
-      // dimension. Replaced with the full ACL evaluator via
-      // `wikiContext.canAccess('view')` — same gate the rendered page
-      // uses. This closes a pre-existing security gap where users who
-      // couldn't view a page (audience-restricted, policy-denied) could
-      // still see its full edit history. Now: if you can't view the
-      // page, you can't view its history. (The route's input is the
-      // current request page, so this is the same-page fast path through
-      // `checkPagePermissionWithContext`, NOT the cross-page
-      // `canUserAccessPage` route.)
-      const pageMetadataForHistory = await pageManager.getPageMetadata(pageName, req.userContext);
-      (wikiContext as { pageMetadata: unknown }).pageMetadata = pageMetadataForHistory ?? null;
-      if (!(await wikiContext.canAccess('view'))) {
-        return this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page history.');
-      }
-
-      // Get page metadata (only need uuid and title)
-      const pageMetadata = await pageManager.getPageMetadata(pageName, req.userContext);
-      logger.info(`[pageHistory] Page info - UUID: ${pageMetadata?.uuid}, Title: ${pageMetadata?.title}`);
-
-      // Get version history (BasePageProvider stubs throw; catch and render 501)
+      // #1622: the page door decides page-read — if you can't view the page,
+      // you can't view its history (#714 Slice C). A page that is not there
+      // is a 404; one this caller may not read keeps the 403 it had.
+      // BasePageProvider stubs throw; catch and render 501.
       logger.info(`[pageHistory] Fetching version history for: "${pageName}"`);
-      let versions: IVersionEntry[];
+      let read: Awaited<ReturnType<typeof pageManager.readVersionHistory>>;
       try {
-        versions = await provider.getVersionHistory(pageName, req.userContext);
+        read = await pageManager.readVersionHistory(pageName, req.userContext);
       } catch {
         return this.renderError(req, res, 501, 'Not Implemented', 'Page versioning is not enabled. Please configure VersioningFileProvider.');
       }
+      if (!read.ok && read.refusal === 'not-found') {
+        return this.renderError(req, res, 404, 'Not Found', `Page "${pageName}" not found`);
+      }
+      if (!read.ok) {
+        return this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view this page history.');
+      }
+      const pageMetadata = read.metadata;
+      const versions = read.value;
+      logger.info(`[pageHistory] Page info - UUID: ${pageMetadata?.uuid}, Title: ${pageMetadata?.title}`);
       logger.info(`[pageHistory] Found ${versions.length} versions`);
 
       // Get common template data (includes theme paths, user, pages, etc.)
@@ -17715,20 +17663,19 @@ ${panes}
         });
       }
 
-      // Check if page exists
-      if (!pageManager.pageExists(pageName, req.userContext)) {
+      // #1622: the page door decides page-read. A page this caller may not
+      // read is the same 404 as one that does not exist — the diff is the
+      // page's content, and this route used to show it to anyone.
+      const read = await pageManager.readVersionDiff(pageName, v1, v2, req.userContext);
+      if (!read.ok) {
         const templateData = this.getTemplateDataFromContext(wikiContext);
         return res.status(404).render('error', {
           ...templateData,
           message: `Page "${pageName}" not found`
         });
       }
-
-      // Get page metadata (only need uuid)
-      const pageMetadata = await pageManager.getPageMetadata(pageName, req.userContext);
-
-      // Compare versions
-      const comparison = (await provider.compareVersions(pageName, v1, v2, req.userContext)) ?? {};
+      const pageMetadata = read.metadata;
+      const comparison: IComparisonResult = { ...read.value };
 
       // Get common template data (includes theme paths, user, pages, etc.)
       const templateData = await this.getCommonTemplateData(req);
@@ -18413,6 +18360,7 @@ ${description}
       let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
+        // page-door-ignore: admin keyword rewrite over every page — a write, reading metadata only.
         const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
@@ -18514,6 +18462,7 @@ ${description}
       let privatePagesSkipped = 0;
 
       for (const pageName of allPages) {
+        // page-door-ignore: admin keyword rewrite over every page — a write, reading metadata only.
         const page = await pageManager.getPage(pageName, req.userContext);
         const pageKeywords = (page?.metadata?.['user-keywords'] as string[]) || [];
 
@@ -19294,8 +19243,8 @@ ${description}
    *   path, and a share must read the same for every holder of the link.
    * - Sets `X-Robots-Tag: noindex` and records an aggregated access hit.
    *
-   * The handlers then hand off to the ordinary doors — `checkPageReadAccess`,
-   * `mediaFile`, `mediaThumb` — which ask the evaluator as they do for a
+   * The handlers then hand off to the ordinary doors — the page door's
+   * `readPage` (#1622), `mediaFile`, `mediaThumb` — which ask the evaluator as they do for a
    * session, and the evaluator applies `viaShare` as a ceiling. A separate
    * route tree is structurally where a second door appears; this is what
    * keeps the share routes from being one. `WikiRoutes.shareDoors.test.ts`
@@ -19377,9 +19326,9 @@ ${description}
       const wikiContext = this.createWikiContext(req, { context: WikiContext.CONTEXT.VIEW });
 
       const pages: SharePageEntry[] = [];
+      const pageManager = this.engine.getManager('PageManager');
       for (const entry of candidates.pages) {
-        const { allowed } = await this.checkPageReadAccess(req, entry.name);
-        if (allowed) pages.push(entry);
+        if ((await pageManager.readPage(entry.name, req.userContext)).ok) pages.push(entry);
       }
       const media: MediaItem[] = [];
       for (const candidate of candidates.media) {
@@ -19485,15 +19434,12 @@ ${description}
   async sharePage(req: Request, res: Response) {
     try {
       const name = req.params.name;
-      const { allowed, metadata } = await this.checkPageReadAccess(req, name);
-      if (!allowed) return res.status(404).send('Not Found');
-
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
-      const markdown = pageManager
-        ? await pageManager.getPageContent(name, req.userContext).catch(() => null)
-        : null;
-      if (markdown === null || !renderingManager) return res.status(404).send('Not Found');
+      const read = pageManager ? await pageManager.readPage(name, req.userContext) : null;
+      if (!read?.ok || !renderingManager) return res.status(404).send('Not Found');
+      const { metadata } = read;
+      const markdown = read.value.content;
 
       const wikiContext = this.createWikiContext(req, {
         context: WikiContext.CONTEXT.VIEW,

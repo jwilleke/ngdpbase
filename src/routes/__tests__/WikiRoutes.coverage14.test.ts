@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes, { signupRateLimiter } from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -194,6 +195,9 @@ const mockConfigManager = {
   getResolvedDataPath: vi.fn((_k: string, def: string) => def),
   setProperty: vi.fn().mockResolvedValue(undefined)
 };
+
+// #1622: the page-read door, answering from the mocks above.
+Object.assign(mockPageManager, readDoor(mockPageManager, { getManager: (n: string) => (n === 'PolicyInformationPoint' ? mockPolicyInformationPoint : null) }));
 
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {
@@ -948,6 +952,7 @@ describe('WikiRoutes — coverage batch 14', () => {
         ])
       };
       mockPageManager.provider = mockProvider;
+      mockPageManager.pageExists.mockReturnValue(true); // #1622: the door finds the page first
       const res = await request(app).get('/api/page/test-page/versions');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -976,6 +981,7 @@ describe('WikiRoutes — coverage batch 14', () => {
         getPageVersion: vi.fn().mockResolvedValue({ content: '# V1', metadata: {} })
       };
       mockPageManager.provider = mockProvider;
+      mockPageManager.pageExists.mockReturnValue(true); // #1622: the door finds the page first
       const res = await request(app).get('/api/page/test-page/version/1');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -999,6 +1005,7 @@ describe('WikiRoutes — coverage batch 14', () => {
         compareVersions: vi.fn().mockResolvedValue({ version1: 1, version2: 2, diff: [] })
       };
       mockPageManager.provider = mockProvider;
+      mockPageManager.pageExists.mockReturnValue(true); // #1622: the door finds the page first
       const res = await request(app).get('/api/page/test-page/compare/1/2');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

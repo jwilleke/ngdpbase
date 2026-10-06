@@ -5,6 +5,7 @@
 
 import express from 'express';
 import { policyShaped } from './__fixtures__/policyShaped';
+import { readDoor } from './__fixtures__/pageReadDoor';
 import request from 'supertest';
 import WikiRoutes from '../WikiRoutes';
 
@@ -50,6 +51,9 @@ describe('WikiRoutes - Version Management API', () => {
         return null;
       })
     };
+
+    // #1622: the page-read door, answering from the mocks above.
+    Object.assign(mockPageManager, readDoor(mockPageManager, mockEngine));
 
     // Create Express app
     app = express();

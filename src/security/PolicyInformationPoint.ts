@@ -683,11 +683,15 @@ class PolicyInformationPoint extends BaseManager {
    * @param userContext - The user requesting access (may be null / anonymous).
    * @param pageName    - Target page to check.
    * @param action      - Action verb (e.g., `'view'`, `'edit'`, `'delete'`).
+   * @param knownMetadata - The page's metadata when the caller has just
+   *   resolved it: the page door (#1622), which reads the page by the same
+   *   resolution it decides on. Omitted, it is loaded here.
    */
   async canUserAccessPage(
     userContext: UserContext | null | undefined,
     pageName: string,
-    action: string
+    action: string,
+    knownMetadata?: PageFrontmatter
   ): Promise<boolean> {
     if (!pageName) {
       // Conservative-on-security: no page name → deny. Pre-#714 callers in
@@ -709,12 +713,12 @@ class PolicyInformationPoint extends BaseManager {
       getPageMetadata?: (id: string, ctx: ActorContext) => Promise<PageFrontmatter | null>;
     };
     const pm = this.engine.getManager<PageManagerShape>('PageManager');
-    const pageMetadata = pm?.getPageMetadata
+    const pageMetadata = knownMetadata ?? (pm?.getPageMetadata
       ? await pm.getPageMetadata(
         pageName,
         (userContext as unknown as ActorContext) ?? ANONYMOUS_SUBJECT
       ).catch(() => null)
-      : null;
+      : null);
     if (!pageMetadata) {
       return false;
     }

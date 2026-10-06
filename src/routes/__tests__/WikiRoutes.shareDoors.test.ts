@@ -48,9 +48,10 @@ describe('#1223 no /share/* handler contains an access decision', () => {
   test('each handler reaches its ordinary door', () => {
     expect(methodBody('shareFile')).toMatch(/this\.mediaFile\(req, res\)/);
     expect(methodBody('shareThumb')).toMatch(/this\.mediaThumb\(req, res\)/);
-    expect(methodBody('sharePage')).toMatch(/this\.checkPageReadAccess\(req, /);
-    // The album is a listing, filtered by the evaluator per item.
-    expect(methodBody('shareAlbum')).toMatch(/this\.checkPageReadAccess\(req, /);
+    // #1622: the page door's read, which decides page-read itself.
+    expect(methodBody('sharePage')).toMatch(/pageManager\.readPage\(/);
+    // The album is a listing, filtered by the page door per item.
+    expect(methodBody('shareAlbum')).toMatch(/pageManager\.readPage\(/);
     expect(methodBody('shareAlbum')).toMatch(/getItem\(/);
   });
 

@@ -11,6 +11,7 @@
  * no such page of their own gets exactly the 404 they get today.
  */
 import WikiRoutes from '../WikiRoutes';
+import { readDoor } from './__fixtures__/pageReadDoor';
 import type { Request, Response } from 'express';
 
 type Res = Response & { redirect: ReturnType<typeof vi.fn>; render: ReturnType<typeof vi.fn> };
@@ -48,7 +49,10 @@ function makeRoutes(options: {
     CacheManager: { isInitialized: () => false, get: vi.fn(), set: vi.fn() }
   };
 
-  const routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
+  const engine = { getManager: (name: string) => managers[name] ?? null };
+  // #1622: the page-read door, deciding through the PIP mock above.
+  Object.assign(pageManager, readDoor(pageManager, engine));
+  const routes = new WikiRoutes(engine);
   vi.spyOn(routes, 'createWikiContext').mockImplementation((req: Request) =>
     ({ userContext: req.userContext, hasPermission: async () => true }) as never);
   vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({ csrfToken: 't' });

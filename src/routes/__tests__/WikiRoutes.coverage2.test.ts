@@ -18,6 +18,7 @@ import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
 import { doorSaveResult } from './__fixtures__/pageDoor';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -169,6 +170,9 @@ const mockConfigManager = {
   getAllProperties: vi.fn().mockReturnValue({}),
   getResolvedDataPath: vi.fn((_k: string, def: string) => def)
 };
+
+// #1622: the page-read door, answering from the mocks above.
+Object.assign(mockPageManager, readDoor(mockPageManager, { getManager: (n: string) => (n === 'PolicyInformationPoint' ? mockPolicyInformationPoint : null) }));
 
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {

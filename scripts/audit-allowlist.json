@@ -6,6 +6,12 @@
       "issue": "#1582",
       "reason": "braces 3.0.3: no patched version. Reached only through micromatch (admin-written policy globs), pm2 -> chokidar (operator watch config) and dev tooling; no user-supplied input. Hygiene, not a vulnerability.",
       "reviewBy": "2026-12-31"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "issue": "#1655",
+      "reason": "sprintf-js 1.0.3: no in-range fix. Reached only through argparse 1.x, which only the js-yaml and mammoth CLI binaries load; the app uses the libraries, never the CLIs. Hygiene, not a vulnerability.",
+      "reviewBy": "2026-12-31"
     }
   ]
 }

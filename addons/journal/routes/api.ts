@@ -144,7 +144,9 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const p = pm();
 
         const exportData = await Promise.all(entries.map(async (e) => {
-          const page = p ? await p.getPage(e.name, req.userContext) : null;
+          // #1622: through the page door — an entry this caller may not read is left empty.
+          const read = p ? await p.readPage(e.name, req.userContext) : null;
+          const page = read?.ok ? read.value : null;
           return {
             slug:         e.slug,
             title:        e.title,
@@ -187,7 +189,9 @@ export default function apiRoutes(engine: WikiEngine, config: Record<string, unk
         const sections: string[] = [`# Journal — ${ctx.username!}\n`];
 
         for (const e of entries) {
-          const page = p ? await p.getPage(e.name, req.userContext) : null;
+          // #1622: through the page door — an entry this caller may not read is left empty.
+          const read = p ? await p.readPage(e.name, req.userContext) : null;
+          const page = read?.ok ? read.value : null;
           const meta: string[] = [`Date: ${e.journalDate}`];
           if (e.mood)        meta.push(`Mood: ${e.mood}`);
           if (e.tags.length) meta.push(`Tags: ${e.tags.join(', ')}`);

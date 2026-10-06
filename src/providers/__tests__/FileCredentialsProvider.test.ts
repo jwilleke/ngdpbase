@@ -118,4 +118,49 @@ describe('FileCredentialsProvider (#1524)', () => {
     const { rejected } = await opened();
     expect(rejected[0].reason).toBe('malformed');
   });
+
+  describe('#1633 a lost key costs no data', () => {
+    test('rows that fail verification survive the next write unchanged', async () => {
+      const first = await opened();
+      await first.store.add(row());
+      const before = JSON.parse(fs.readFileSync(file, 'utf8')).rows[0];
+
+      // The key changed: the row is quarantined, and an enrolment writes the file.
+      const rotated = await opened('a-new-key');
+      expect(rotated.rejected.map(r => r.reason)).toEqual(['bad-signature']);
+      await rotated.store.add(row({ id: 'c2', subject: 'cred-id-2', label: 'Laptop' }));
+
+      const rows = JSON.parse(fs.readFileSync(file, 'utf8')).rows;
+      expect(rows).toContainEqual(before);
+      expect(rotated.store.quarantined()).toHaveLength(1);
+      expect(rotated.store.get('c1')).toBeNull();
+    });
+
+    test('retrustQuarantined re-signs well-formed rows under the current key', async () => {
+      const first = await opened();
+      await first.store.add(row());
+      const rotated = await opened('a-new-key');
+      const trusted = await rotated.store.retrustQuarantined();
+      expect(trusted.map(r => r.id)).toEqual(['c1']);
+      expect(rotated.store.quarantined()).toEqual([]);
+
+      const reopened = await opened('a-new-key');
+      expect(reopened.rejected).toEqual([]);
+      expect(reopened.store.get('c1')?.label).toBe('Phone');
+    });
+
+    test('malformed rows and duplicates of a trusted credential stay quarantined', async () => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ version: 1, rows: [{ id: 'bad' }] }));
+      const opened1 = await opened();
+      await opened1.store.add(row({ id: 'c9', subject: 'dup' }));
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      raw.rows.push({ ...row({ id: 'c10', subject: 'dup' }), sig: 'forged' });
+      fs.writeFileSync(file, JSON.stringify(raw));
+
+      const again = await opened();
+      expect(await again.store.retrustQuarantined()).toEqual([]);
+      expect(again.store.quarantined().map(r => r.reason).sort()).toEqual(['bad-signature', 'malformed']);
+    });
+  });
 });

@@ -27,6 +27,7 @@ let shouldApiCtxAllowPerm = true;
 vi.mock('../../http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 
 import { guardedFetch as guardedFetchImport } from '../../http/guardedFetch.js';
+import { readDoor } from './__fixtures__/pageReadDoor';
 const guardedFetchMock = vi.mocked(guardedFetchImport);
 
 vi.mock('../../utils/LocaleUtils', () => {
@@ -227,6 +228,9 @@ const mockCatalogManager = {
   getUserKeywordsProvider: vi.fn(() => mockUserKeywordsProvider),
   getProviderTerms: vi.fn(async () => null)
 };
+
+// #1622: the page-read door, answering from the mocks above.
+Object.assign(mockPageManager, readDoor(mockPageManager, { getManager: (n: string) => (n === 'PolicyInformationPoint' ? mockPolicyInformationPoint : null) }));
 
 vi.mock('../../WikiEngine', () => {
   const MockEngine = vi.fn().mockImplementation(function () {

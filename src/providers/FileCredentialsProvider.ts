@@ -6,7 +6,9 @@
  *   readable by other local accounts, not even mid-write (#1560).
  * - Every row carries `sig`: HMAC-SHA-256 over its fields in a fixed order,
  *   keyed by `NGDPBASE_CREDENTIALS_KEY`. On load a row whose signature is
- *   missing or wrong is dropped and reported; it can never sign anyone in.
+ *   missing or wrong is reported and can never sign anyone in; it is kept in
+ *   quarantine and written back unchanged (#1633), so a lost key costs no
+ *   data. `scripts/retrust-credentials.ts` re-signs them on purpose.
  * - Nothing here is a password hash. Public keys, (when TOTP is built, #421, encrypted seeds) and token
  *   hashes are low value to a reader; a writer is what signing stops.
  */
@@ -25,7 +27,8 @@ import logger from '../utils/logger.js';
 
 interface StoredFile {
   version: 1;
-  rows: Array<CredentialRecord & { sig?: string }>;
+  /** Signed rows, plus quarantined rows exactly as they were read (#1633). */
+  rows: unknown[];
 }
 
 /** The signed fields, in a fixed order, so a signature never depends on key order in the file. */
@@ -45,6 +48,8 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
   protected override providerName = 'FileCredentialsProvider';
   protected override providerDescription = 'Signed JSON credentials store beside the user store';
   private rows = new Map<string, CredentialRecord>();
+  /** #1633: rows that failed verification, exactly as read, written back unchanged. */
+  private quarantine: Array<{ raw: Record<string, unknown>; rejected: RejectedCredential }> = [];
 
   /**
    * @param file the store; created on first write
@@ -67,6 +72,7 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
 
   async initialize(onRejected: (rejected: RejectedCredential[]) => void): Promise<void> {
     this.rows.clear();
+    this.quarantine = [];
     if (!(await fs.pathExists(this.file))) return;
     const tightened = secureExistingSecretFile(this.file); // #1560
     if (tightened) logger.warn(tightened);
@@ -74,12 +80,14 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
     const rejected: RejectedCredential[] = [];
     for (const raw of Array.isArray(parsed.rows) ? parsed.rows : []) {
       const { sig, ...fields } = raw as CredentialRecord & { sig?: unknown };
-      if (!isRecord(fields)) {
-        rejected.push({ row: fields, reason: 'malformed' });
-      } else if (typeof sig !== 'string' || sig === '') {
-        rejected.push({ row: fields, reason: 'unsigned' });
-      } else if (!this.verifies(fields, sig)) {
-        rejected.push({ row: fields, reason: 'bad-signature' });
+      let reason: RejectedCredential['reason'] | null = null;
+      if (!isRecord(fields)) reason = 'malformed';
+      else if (typeof sig !== 'string' || sig === '') reason = 'unsigned';
+      else if (!this.verifies(fields, sig)) reason = 'bad-signature';
+      if (reason) {
+        const entry: RejectedCredential = { row: fields, reason };
+        rejected.push(entry);
+        this.quarantine.push({ raw: raw as Record<string, unknown>, rejected: entry });
       } else {
         this.rows.set(fields.id, fields);
       }
@@ -140,12 +148,40 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
     return this.file;
   }
 
+  quarantined(): RejectedCredential[] {
+    return this.quarantine.map(q => q.rejected);
+  }
+
+  async retrustQuarantined(): Promise<CredentialRecord[]> {
+    const trusted: CredentialRecord[] = [];
+    const kept: typeof this.quarantine = [];
+    for (const q of this.quarantine) {
+      const { sig: _sig, ...fields } = q.raw;
+      const clash = isRecord(fields) && (this.rows.has(fields.id) ||
+        [...this.rows.values()].some(r => r.kind === fields.kind && r.subject === fields.subject));
+      if (!isRecord(fields) || clash) { kept.push(q); continue; }
+      this.rows.set(fields.id, { ...fields });
+      trusted.push({ ...fields });
+    }
+    this.quarantine = kept;
+    if (trusted.length > 0) await this.save();
+    return trusted;
+  }
+
   override getDurability(): ProviderDurability {
     return { bufferedForMs: 0, bufferedRecords: 0, fsync: true };
   }
 
   private async save(): Promise<void> {
-    const out: StoredFile = { version: 1, rows: [...this.rows.values()].map(r => ({ ...r, sig: this.sign(r) })) };
+    const out: StoredFile = {
+      version: 1,
+      rows: [
+        ...[...this.rows.values()].map(r => ({ ...r, sig: this.sign(r) })),
+        // #1633: quarantined rows go back exactly as they were read — never
+        // re-signed here, never dropped — until an operator re-trusts them.
+        ...this.quarantine.map(q => q.raw)
+      ]
+    };
     await fs.ensureDir(path.dirname(this.file), { mode: 0o700 });
     await writeFileAtomic(this.file, JSON.stringify(out, null, 2), 'utf8', { fsync: true, mode: 0o600 });
   }
