@@ -8369,7 +8369,10 @@ ${panes}
       const credentials = currentUser?.username
         ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch(() => []) ?? []
         : [];
-      const passkeyHost = authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null;
+      // #1664: no enrolment for an account that may not sign in with a passkey.
+      const passkeyHost = currentUser?.username && await authManagerForProfile?.userMayUseProvider?.(currentUser.username, 'passkey')
+        ? authManagerForProfile?.passkeyRelyingParty?.()?.rpID ?? null
+        : null;
       // #1601: the apps and devices approved through /oidc; null when the provider is off.
       const approvedApps = currentUser?.username ? await this.approvedAppsFor(currentUser.username) : null;
       // #1523: offer the email second factor where it can work and is not enrolled yet.

@@ -458,6 +458,33 @@ describe('AuthManager', () => {
       });
     });
 
+    describe('#1664 a method the account may not use is never offered or enrolled', () => {
+      const managerFor = async (allowedAuthMethods?: string[]) => {
+        const cm = makeConfigManager();
+        const manager = new AuthManager(makeEngine(cm, { UserManager: { getUser: vi.fn().mockResolvedValue({ username: 'admin', allowedAuthMethods }) } }));
+        await manager.initialize();
+        return manager;
+      };
+
+      test('allowedAuthMethods absent or empty means any provider', async () => {
+        expect(await (await managerFor()).userMayUseProvider('admin', 'passkey')).toBe(true);
+        expect(await (await managerFor([])).userMayUseProvider('admin', 'passkey')).toBe(true);
+      });
+
+      test('a list names the only providers the account may use', async () => {
+        const m = await managerFor(['password']);
+        expect(await m.userMayUseProvider('admin', 'password')).toBe(true);
+        expect(await m.userMayUseProvider('admin', 'passkey')).toBe(false);
+      });
+
+      test('passkey enrolment is refused for an account that may not sign in with a passkey', async () => {
+        const m = await managerFor(['password']);
+        vi.spyOn(m as never, 'mayManageCredentials').mockResolvedValue(true);
+        await expect(m.passkeyRegistrationOptions({ username: 'admin', roles: ['admin'], isAuthenticated: true }, 'admin', 'Admin'))
+          .rejects.toThrow(/cannot sign in with a passkey/);
+      });
+    });
+
     test('delegates magic-link verify to MagicLinkAuthProvider', async () => {
       const mockUserManager = {
         getUserByEmail: vi.fn().mockResolvedValue({ username: 'alice', email: 'a@b.com' })

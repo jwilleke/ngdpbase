@@ -144,6 +144,19 @@ export default defineConfig({
     // `search.spec.ts` header search past their timeouts — the full suite went
     // from consistently green to flaky across three consecutive runs, while the
     // token spec passed 7/7 in isolation every time.
+    // #1664: minting a token and switching maintenance mode are step-up
+    // actions (#1525, #1635): they need a sign-in fresher than the instance's
+    // ngdpbase.auth.step-up.max-age-minutes. CI's seed sets a long window, but
+    // a real instance keeps the shipped 5 minutes, and the single sign-in at
+    // the start of the run is long stale by the time these chained projects
+    // run. So each signs in again right before it, through the same setup —
+    // a test that needs a fresh sign-in gets one; no instance setting changes.
+    {
+      name: 'setup-fresh-tokens',
+      testMatch: /.*\.setup\.(js|ts)/,
+      timeout: 150000,
+      dependencies: ['chromium']
+    },
     {
       name: 'chromium-agent-tokens',
       testMatch: /agent-token-mutations\.spec\.(js|ts)/,
@@ -151,7 +164,7 @@ export default defineConfig({
         browserName: 'chromium',
         storageState: './tests/e2e/.auth/user.json'
       },
-      dependencies: ['chromium']
+      dependencies: ['setup-fresh-tokens']
     },
 
     // Plugin pagination creates a page and then reads it back under several
@@ -175,13 +188,19 @@ export default defineConfig({
     // agent-token project above, hence the chain rather than both depending on
     // 'chromium' and racing each other.
     {
+      name: 'setup-fresh-maintenance',
+      testMatch: /.*\.setup\.(js|ts)/,
+      timeout: 150000,
+      dependencies: ['chromium-plugin-pagination']
+    },
+    {
       name: 'chromium-maintenance',
       testMatch: /admin-maintenance\.spec\.(js|ts)/,
       use: {
         browserName: 'chromium',
         storageState: './tests/e2e/.auth/user.json'
       },
-      dependencies: ['chromium-plugin-pagination']
+      dependencies: ['setup-fresh-maintenance']
     }
   ],
 
