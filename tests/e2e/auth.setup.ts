@@ -108,6 +108,7 @@ async function upgradeToPasskeySession(page: Page): Promise<void> {
     await page.waitForURL(/\/profile\?success=Passkey/);
 
     await page.goto('/logout');
+    await page.getByRole('button', { name: 'Sign out' }).click(); // #1631: GET asks, POST signs out
     await page.goto('/login');
     await page.locator('[data-passkey-signin]').click();
     await expect(page).not.toHaveURL(/\/login/);

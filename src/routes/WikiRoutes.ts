@@ -7637,7 +7637,19 @@ ${panes}
   }
 
   /**
-   * Process logout
+   * GET /logout — ask first (#1631). A GET can be triggered by any site under
+   * SameSite=Lax, so it never signs out; the page's POST does, with the CSRF
+   * token. Signed-out visitors have nothing to confirm.
+   */
+  async confirmLogout(req: Request, res: Response) {
+    if (!req.session?.username) return res.redirect('/');
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    return res.render('logout-confirm', { ...commonData, title: 'Sign out' });
+  }
+
+  /**
+   * Process logout (POST /logout, CSRF-checked)
    */
   processLogout(req: Request, res: Response) {
     try {
@@ -15624,7 +15636,7 @@ ${panes}
     app.post('/auth/magic-link/verify', (req: Request, res: Response) => this.completeMagicLink(req, res));
     app.post('/auth/oauth/google', (req: Request, res: Response) => void this.initiateGoogleOIDC(req, res));
     app.get('/auth/oauth/google/callback', (req: Request, res: Response) => void this.verifyGoogleOIDCCallback(req, res));
-    app.get('/logout', (req: Request, res: Response) => this.processLogout(req, res));
+    app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));
     app.post('/register', (req: Request, res: Response) => this.processRegister(req, res));
