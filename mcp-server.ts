@@ -16,9 +16,9 @@
 // './data' and the MCP server operates on the wrong instance entirely — it is launched
 // by an MCP client that has no reason to export FAST_STORAGE.
 // See src/bootstrap-env.ts and docs/bootstrap-methodology.md.
+import './src/bootstrap-env.js';
 import { jobContextFromOperator, type JobContext } from './src/context/JobContext.js';
 import { systemPrincipalOf } from './src/context/bootActions.js';
-import './src/bootstrap-env.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';

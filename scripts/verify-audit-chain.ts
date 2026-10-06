@@ -35,6 +35,8 @@
  * Exit codes: 0 verified with a witness, 1 broken, 2 could not read the log,
  * 3 chain intact but truncation undetectable.
  */
+// Loads the instance .env (FAST_STORAGE, keys) before anything reads it (#1609).
+import '../src/bootstrap-env.js';
 import fs from 'fs-extra';
 import path from 'path';
 import { verifyLog } from '../src/utils/auditChain.js';
