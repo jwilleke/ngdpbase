@@ -24,7 +24,7 @@ test.describe('#1145 — the Security Posture section', () => {
     // matches five elements and proves nothing about THIS section.
     const posture = page.locator('#security-posture');
     await expect(posture.getByText('ngdpbase.session.secure')).toBeVisible();
-    await expect(posture.getByText('ngdpbase.filters.security.enabled')).toBeVisible();
+    await expect(posture.getByText('ngdpbase.markup.html-policy')).toBeVisible(); // #1623: replaced filters.security.enabled
   });
 
   test('it says which settings need a restart', async ({ page }) => {
