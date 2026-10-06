@@ -571,7 +571,9 @@ a developer's machine and does not exist in the container.
 
 The host's guards run over this directory: \`lint:code\`, \`lint:csrf\`,
 \`lint:http\`, \`lint:permission-subject\`, \`lint:gates\`, \`lint:addons\`,
-\`lint:audit-deps\` and the addon's own \`tsc\`. The rules in full are the
+\`lint:audit-deps\` and the addon's own \`tsc\`. Its CI also runs
+\`audit-coverage.js --check --addon\` in the ngdpbase image: the audit events
+it declares and the ones it emits must agree. The rules in full are the
 standing rules of ngdpbase's [addons developer guide](${GUIDE_URL}#standing-rules).
 
 ## Develop
@@ -702,6 +704,16 @@ jobs:
                 ${dir}/index.ts ${dir}/managers/*.ts \\
                 ${dir}/plugins/*.ts ${dir}/routes/*.ts
             '
+
+      # Every audit event this addon declares is emitted, every name it emits
+      # is declared, and none collides with a name ngdpbase ships (#1638). The
+      # host's own lint, compiled into the image, run over this directory.
+      - name: Audit events declared and emitted agree
+        run: |
+          NGDPBASE_VERSION=$(sed -n 's/^ARG NGDPBASE_VERSION=//p' Dockerfile)
+          docker run --rm -v "$PWD/${dir}:/app/${dir}:ro" -w /app \\
+            --entrypoint node "ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}" \\
+            dist/scripts/audit-coverage.js --check --addon ${dir}
 
       # The manifest slug and the name exported from index.ts must agree, or
       # the addon loads under one name and is configured under another.
