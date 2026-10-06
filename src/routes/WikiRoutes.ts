@@ -8857,7 +8857,7 @@ ${panes}
         return await this.renderStoreDoor(req, res, kind, { step: 'intro-sealed', needsPassword: true,
           error: 'That password is not correct.' });
       }
-      const created = createUserKeys(password);
+      const created = await createUserKeys(password);
       holdWordsForConfirmation(handle, {
         username,
         store: kind.id,

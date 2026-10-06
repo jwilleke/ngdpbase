@@ -27,7 +27,7 @@ describe('sealed store files (#1415)', () => {
   describe('sealBytes / openBytes', () => {
     const dek = randomBytes(32);
 
-    test('round-trips, and the ciphertext does not contain the plaintext', () => {
+    test('round-trips, and the ciphertext does not contain the plaintext', async () => {
       const plain = Buffer.from('---\ntitle: Diary\n---\nsecret body\n');
       const sealed = sealBytes(dek, plain);
       expect(isSealedBytes(sealed)).toBe(true);
@@ -36,12 +36,12 @@ describe('sealed store files (#1415)', () => {
       expect(openBytes(dek, sealed)).toEqual(plain);
     });
 
-    test('two seals of the same bytes differ (fresh IV)', () => {
+    test('two seals of the same bytes differ (fresh IV)', async () => {
       const plain = Buffer.from('same');
       expect(sealBytes(dek, plain).equals(sealBytes(dek, plain))).toBe(false);
     });
 
-    test('the wrong key, a flipped byte, or plaintext does not open', () => {
+    test('the wrong key, a flipped byte, or plaintext does not open', async () => {
       const sealed = sealBytes(dek, Buffer.from('secret'));
       expect(() => openBytes(randomBytes(32), sealed)).toThrow('cannot open sealed store file');
       const tampered = Buffer.from(sealed);
@@ -50,13 +50,13 @@ describe('sealed store files (#1415)', () => {
       expect(() => openBytes(dek, Buffer.from('plain markdown'))).toThrow('not a sealed store file');
     });
 
-    test('a key of the wrong length is refused', () => {
+    test('a key of the wrong length is refused', async () => {
       expect(() => sealBytes(Buffer.alloc(16), Buffer.from('x'))).toThrow(/locked/);
     });
   });
 
   describe('parsePrivateStoreRel', () => {
-    test('finds the store at any depth, and nothing beside the stores', () => {
+    test('finds the store at any depth, and nothing beside the stores', async () => {
       expect(parsePrivateStoreRel(['vaults', 'molly', 'yourphr', 'a.md'])).toEqual({ creator: 'molly', store: 'yourphr' });
       expect(parsePrivateStoreRel(['vaults', 'molly', 'yourphr', 'versions', 'u', 'v1', 'content.md']))
         .toEqual({ creator: 'molly', store: 'yourphr' });
@@ -72,7 +72,7 @@ describe('sealed store files (#1415)', () => {
 
     beforeEach(async () => {
       pagesDir = path.join(os.tmpdir(), `store-files-${Date.now()}-${Math.random().toString(36).slice(2)}`, 'pages');
-      const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
       const record = createEncryptedStore(kek);
       await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
       await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), record);

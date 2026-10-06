@@ -29,47 +29,47 @@ import {
 const kdf = TEST_PRIVATE_STORE_KDF;
 
 describe('private store keys (#1384)', () => {
-  afterEach(() => {
+  afterEach(async () => {
     clearUnlockedPrivateStores();
   });
 
-  test('password unwraps the KEK; a wrong password does not', () => {
-    const { envelope, kek } = createUserKeys('correct-horse', { kdf });
+  test('password unwraps the KEK; a wrong password does not', async () => {
+    const { envelope, kek } = await createUserKeys('correct-horse', { kdf });
 
-    expect(Buffer.compare(unwrapKekWithPassword(envelope, 'correct-horse'), kek)).toBe(0);
-    expect(() => unwrapKekWithPassword(envelope, 'wrong')).toThrow(/password/i);
+    expect(Buffer.compare(await unwrapKekWithPassword(envelope, 'correct-horse'), kek)).toBe(0);
+    await expect(unwrapKekWithPassword(envelope, 'wrong')).rejects.toThrow(/password/i);
   });
 
-  test('recovery phrase unwraps the same KEK', () => {
-    const { envelope, kek, mnemonic } = createUserKeys('pw', { kdf });
+  test('recovery phrase unwraps the same KEK', async () => {
+    const { envelope, kek, mnemonic } = await createUserKeys('pw', { kdf });
 
     expect(mnemonic.split(' ')).toHaveLength(mnemonicWordCount);
     expect(Buffer.compare(unwrapKekWithMnemonic(envelope, mnemonic), kek)).toBe(0);
     expect(() => unwrapKekWithMnemonic(envelope, 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about')).toThrow(/recovery/i);
   });
 
-  test('password change re-wraps the KEK; recovery wrap still works; DEK wrap is unchanged', () => {
-    const created = createUserKeys('old-pw', { kdf });
+  test('password change re-wraps the KEK; recovery wrap still works; DEK wrap is unchanged', async () => {
+    const created = await createUserKeys('old-pw', { kdf });
     const store = createEncryptedStore(created.kek);
     const dekBefore = unwrapDek(created.kek, store);
 
-    const rewrapped = rewrapPassword(created.envelope, 'old-pw', 'new-pw', { kdf });
-    const kek = unwrapKekWithPassword(rewrapped, 'new-pw');
+    const rewrapped = await rewrapPassword(created.envelope, 'old-pw', 'new-pw', { kdf });
+    const kek = await unwrapKekWithPassword(rewrapped, 'new-pw');
     expect(Buffer.compare(kek, created.kek)).toBe(0);
-    expect(() => unwrapKekWithPassword(rewrapped, 'old-pw')).toThrow(/password/i);
+    await expect(unwrapKekWithPassword(rewrapped, 'old-pw')).rejects.toThrow(/password/i);
     expect(Buffer.compare(unwrapKekWithMnemonic(rewrapped, created.mnemonic), created.kek)).toBe(0);
     expect(Buffer.compare(unwrapDek(kek, store), dekBefore)).toBe(0);
   });
 
-  test('encrypt-on write refuses a missing DEK; plaintext store does not need one', () => {
+  test('encrypt-on write refuses a missing DEK; plaintext store does not need one', async () => {
     expect(() => assertEncryptedStoreWritable({ encrypt: true, dek: undefined })).toThrow(/locked|DEK|decrypt/i);
     expect(() => assertEncryptedStoreWritable({ encrypt: true, dek: Buffer.alloc(0) })).toThrow();
     expect(() => assertEncryptedStoreWritable({ encrypt: false, dek: undefined })).not.toThrow();
   });
 
-  test('unlock bag is keyed by session id, not a manager instance', () => {
-    const a = createUserKeys('a', { kdf });
-    const b = createUserKeys('b', { kdf });
+  test('unlock bag is keyed by session id, not a manager instance', async () => {
+    const a = await createUserKeys('a', { kdf });
+    const b = await createUserKeys('b', { kdf });
     const storeA = createEncryptedStore(a.kek);
 
     unlockPrivateStores('sid-a', 'alice', a.kek);
@@ -90,17 +90,17 @@ describe('private store keys (#1384)', () => {
     ).toThrow();
   });
 
-  test('helpers never put key bytes into a JSON session blob', () => {
-    const { kek } = createUserKeys('pw', { kdf });
+  test('helpers never put key bytes into a JSON session blob', async () => {
+    const { kek } = await createUserKeys('pw', { kdf });
     unlockPrivateStores('sid', 'molly', kek);
     const json = JSON.stringify({ sessionId: 'sid', user: 'molly' });
     expect(json).not.toContain(kek.toString('base64'));
     expect(json).not.toContain(kek.toString('hex'));
   });
 
-  test('two envelopes for the same password are not byte-identical (salted wraps)', () => {
-    const a = createUserKeys('same', { kdf });
-    const b = createUserKeys('same', { kdf });
+  test('two envelopes for the same password are not byte-identical (salted wraps)', async () => {
+    const a = await createUserKeys('same', { kdf });
+    const b = await createUserKeys('same', { kdf });
     expect(a.envelope).not.toEqual(b.envelope);
     expect(createHash('sha256').update(JSON.stringify(a.envelope)).digest('hex'))
       .not.toBe(createHash('sha256').update(JSON.stringify(b.envelope)).digest('hex'));
@@ -108,18 +108,18 @@ describe('private store keys (#1384)', () => {
 });
 
 describe('rewrapPasswordWithKek (#1452)', () => {
-  test('the new password opens the same key, the old one does not, the words still do, and stores still open', () => {
-    const created = createUserKeys('forgotten', { kdf: TEST_PRIVATE_STORE_KDF });
+  test('the new password opens the same key, the old one does not, the words still do, and stores still open', async () => {
+    const created = await createUserKeys('forgotten', { kdf: TEST_PRIVATE_STORE_KDF });
     const store = createEncryptedStore(created.kek);
     const kek = unwrapKekWithMnemonic(created.envelope, created.mnemonic);
 
-    const next = rewrapPasswordWithKek(created.envelope, kek, 'brand-new', { kdf: TEST_PRIVATE_STORE_KDF });
+    const next = await rewrapPasswordWithKek(created.envelope, kek, 'brand-new', { kdf: TEST_PRIVATE_STORE_KDF });
 
-    expect(Buffer.compare(unwrapKekWithPassword(next, 'brand-new'), created.kek)).toBe(0);
-    expect(() => unwrapKekWithPassword(next, 'forgotten')).toThrow();
+    expect(Buffer.compare(await unwrapKekWithPassword(next, 'brand-new'), created.kek)).toBe(0);
+    await expect(unwrapKekWithPassword(next, 'forgotten')).rejects.toThrow();
     expect(Buffer.compare(unwrapKekWithMnemonic(next, created.mnemonic), created.kek)).toBe(0);
     expect(next.recoveryWrap).toEqual(created.envelope.recoveryWrap);
-    expect(Buffer.compare(unwrapDek(unwrapKekWithPassword(next, 'brand-new'), store), unwrapDek(created.kek, store))).toBe(0);
+    expect(Buffer.compare(unwrapDek(await unwrapKekWithPassword(next, 'brand-new'), store), unwrapDek(created.kek, store))).toBe(0);
   });
 });
 

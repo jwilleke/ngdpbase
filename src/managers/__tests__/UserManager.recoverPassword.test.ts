@@ -29,7 +29,7 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
   beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'um-recover-'));
     pagesDir = path.join(tmp, 'pages');
-    const created = createUserKeys('forgotten', { kdf: TEST_PRIVATE_STORE_KDF });
+    const created = await createUserKeys('forgotten', { kdf: TEST_PRIVATE_STORE_KDF });
     words = created.mnemonic;
     kek = created.kek;
     await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
@@ -54,7 +54,7 @@ describe('UserManager.resetPasswordWithRecoveryWords (#1452)', () => {
   test('the right words: the key opens with the new password, then the sign-in password is set through updateUser', async () => {
     expect(await manager.resetPasswordWithRecoveryWords('molly', words, 'brand-new', CTX)).toBe(true);
 
-    expect(Buffer.compare(unwrapKekWithPassword(await keysOnDisk(), 'brand-new'), kek)).toBe(0);
+    expect(Buffer.compare(await unwrapKekWithPassword(await keysOnDisk(), 'brand-new'), kek)).toBe(0);
     expect(updateUser).toHaveBeenCalledWith('molly', { password: 'brand-new' }, CTX);
   });
 

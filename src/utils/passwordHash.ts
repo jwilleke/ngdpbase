@@ -22,7 +22,7 @@
  *
  * The stored value is self-describing:
  *
- *     scrypt$16384$8$1$<salt base64>$<hash base64>
+ *     scrypt$131072$8$1$<salt base64>$<hash base64>
  *
  * Carrying the parameters in the hash is what makes this maintainable: the
  * cost can be raised later and old hashes keep verifying under the parameters
@@ -40,29 +40,44 @@
  * link, OIDC) store `''`, and no password may ever match it.
  */
 
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'crypto';
+
+/**
+ * scrypt off the main thread (#1632). The synchronous form froze every request
+ * for the length of each hash; at N=2^17 that is ~0.2 s per sign-in, and a
+ * burst of attempts would stall the whole site. This runs on libuv's pool.
+ */
+function scryptAsync(password: string, salt: Buffer, keylen: number, options: ScryptOptions): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, keylen, options, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+}
 
 /** Marks the current scheme. Anything else is treated as legacy. */
 const SCHEME = 'scrypt';
 
 /**
- * CPU/memory cost. 2^14 costs ~20ms per hash here — enough to make offline
- * guessing expensive while leaving login imperceptible. Raising it later is
- * safe: the value used is recorded in each hash.
+ * CPU/memory cost. 2^17 (#1632, was 2^14): ~0.2 s per hash, off the main
+ * thread, so offline guessing of a leaked user store is eight times harder and
+ * no request waits on another's sign-in. Raising it is safe: the value used is
+ * recorded in each hash, and needsRehash() upgrades a weaker one at the next
+ * successful sign-in.
  */
-const N = 16384;
+const N = 131072;
+/** A stored hash naming a cost above this is a corrupt record, not a match (bounds memory). */
+const MAX_N = 1 << 20;
 const R = 8;
 const P = 1;
 const KEYLEN = 64;
 const SALT_BYTES = 16;
 
-/** scryptSync throws unless maxmem covers 128 * N * r; the default is too low. */
+/** scrypt throws unless maxmem covers 128 * N * r; the default is too low. */
 const MAXMEM = 128 * N * R * 4;
 
 /** Hash a password under the current scheme. */
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
-  const derived = scryptSync(password, salt, KEYLEN, { N, r: R, p: P, maxmem: MAXMEM });
+  const derived = await scryptAsync(password, salt, KEYLEN, { N, r: R, p: P, maxmem: MAXMEM });
   return [SCHEME, N, R, P, salt.toString('base64'), derived.toString('base64')].join('$');
 }
 
@@ -87,7 +102,7 @@ function safeEqual(a: string, b: string): boolean {
  * @param stored      the value from the user record
  * @param legacySalt  instance-wide salt, for pre-#1042 hashes only
  */
-export function verifyPassword(password: string, stored: string, legacySalt: string): boolean {
+export async function verifyPassword(password: string, stored: string, legacySalt: string): Promise<boolean> {
   // External accounts store '' and must never match. Checked first so no
   // amount of parsing can turn an empty hash into a successful comparison.
   if (!stored) return false;
@@ -103,13 +118,13 @@ export function verifyPassword(password: string, stored: string, legacySalt: str
   const n = Number(nRaw);
   const r = Number(rRaw);
   const p = Number(pRaw);
-  if (!Number.isFinite(n) || !Number.isFinite(r) || !Number.isFinite(p)) return false;
+  if (!Number.isFinite(n) || !Number.isFinite(r) || !Number.isFinite(p) || n > MAX_N) return false;
 
   let derived: Buffer;
   let expected: Buffer;
   try {
     expected = Buffer.from(hashB64, 'base64');
-    derived = scryptSync(password, Buffer.from(saltB64, 'base64'), expected.length, {
+    derived = await scryptAsync(password, Buffer.from(saltB64, 'base64'), expected.length, {
       N: n, r, p, maxmem: 128 * n * r * 4
     });
   } catch {

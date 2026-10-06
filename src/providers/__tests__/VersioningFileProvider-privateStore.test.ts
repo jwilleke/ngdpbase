@@ -223,7 +223,7 @@ describe('private store default/ (#1383)', () => {
   });
 
   test('encrypt-on save refuses when the session has no DEK (#1394)', async () => {
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);
@@ -236,7 +236,7 @@ describe('private store default/ (#1383)', () => {
   });
 
   test('encrypt-on save proceeds when the session bag has the DEK (#1394)', async () => {
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);

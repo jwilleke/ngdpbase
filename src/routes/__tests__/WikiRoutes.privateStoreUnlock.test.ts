@@ -60,7 +60,7 @@ describe('private store unlock door (#1448)', () => {
     }) as never;
 
   async function giveMollyKeys(): Promise<void> {
-    const { envelope } = createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { envelope } = await createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const keysPath = privateUserKeysPath(pagesDir, 'molly');
     await fs.ensureDir(path.dirname(keysPath));
     await fs.writeJson(keysPath, envelope);
@@ -227,7 +227,7 @@ describe('private store unlock door (#1448)', () => {
   describe('with the 12 recovery words (#1453)', () => {
     /** Molly's keys, returning the words that also open them. */
     async function giveMollyKeysWithWords(): Promise<string> {
-      const { envelope, mnemonic } = createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const { envelope, mnemonic } = await createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
       await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), envelope);
       return mnemonic;
     }

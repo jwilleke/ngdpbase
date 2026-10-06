@@ -127,7 +127,7 @@ export async function unlockPrivateStoresWithPassword(args: {
 }): Promise<void> {
   const envelope = await readUserKeyEnvelope(args.pagesDirectory, args.username);
   if (!envelope) return;
-  await unlockWithKek(args, unwrapKekWithPassword(envelope, args.password));
+  await unlockWithKek(args, await unwrapKekWithPassword(envelope, args.password));
 }
 
 /**
@@ -214,7 +214,7 @@ export async function rewrapUserKeysOnPasswordChange(args: {
   if (!await fs.pathExists(keysPath)) return;
   const raw = await fs.readJson(keysPath) as unknown;
   if (!isUserKeyEnvelope(raw)) return;
-  const next = rewrapPassword(raw, args.oldPassword, args.newPassword);
+  const next = await rewrapPassword(raw, args.oldPassword, args.newPassword);
   await fs.ensureDir(privateUserDir(args.pagesDirectory, args.username));
   await writeUserKeyEnvelope(keysPath, next);
 }
@@ -242,7 +242,7 @@ export async function resetPasswordWrapWithMnemonic(args: {
     return false;
   }
   try {
-    await writeUserKeyEnvelope(privateUserKeysPath(args.pagesDirectory, args.username), rewrapPasswordWithKek(envelope, kek, args.newPassword));
+    await writeUserKeyEnvelope(privateUserKeysPath(args.pagesDirectory, args.username), await rewrapPasswordWithKek(envelope, kek, args.newPassword));
   } finally {
     kek.fill(0);
   }

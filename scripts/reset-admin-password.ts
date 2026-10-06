@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   // The one definition of a password change (#1592), shared with the running
   // server: hash, end every session the account had (#1482 — the reason to run
   // this is often that someone else may be signed in as it), record when.
-  setPassword(users[target], newPassword);
+  await setPassword(users[target], newPassword);
 
   // Write via a temp file so an interrupted run cannot leave users.json
   // truncated — losing every account is a far worse outcome than a failed

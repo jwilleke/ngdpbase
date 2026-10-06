@@ -49,7 +49,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
   });
 
   test('correct password puts KEK and store DEK in the bag, not a JSON blob', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     const store = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
@@ -73,7 +73,7 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
   });
 
   test('wrong password does not put a KEK in the bag', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
 
@@ -108,7 +108,7 @@ describe('assertContextCanWriteStore owner check (#1394, #1398)', () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'priv-owner-'));
     pagesDir = path.join(tmp, 'pages');
     clearUnlockedPrivateStores();
-    const alice = createUserKeys('pw-a', { kdf });
+    const alice = await createUserKeys('pw-a', { kdf });
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'alice', 'default')));
     await fs.writeJson(storeMetaPath(pagesDir, 'alice', 'default'), createEncryptedStore(alice.kek));
   });
@@ -120,7 +120,7 @@ describe('assertContextCanWriteStore owner check (#1394, #1398)', () => {
 
   test('another user\'s unlocked store of the same id does not unlock the owner\'s', async () => {
     // The admin's own sealed `default` is unlocked in the admin's session.
-    const adminKeys = createUserKeys('pw-b', { kdf });
+    const adminKeys = await createUserKeys('pw-b', { kdf });
     const adminStore = createEncryptedStore(adminKeys.kek);
     unlockPrivateStores('admin-sid', 'admin', adminKeys.kek);
     setUnlockedDek('admin-sid', 'default', unwrapDek(adminKeys.kek, adminStore));
@@ -150,7 +150,7 @@ describe('keys through the context handle (#1382, security-posture P1)', () => {
     await fs.remove(tmp);
   });
 
-  test('a handle is random and fresh each time', () => {
+  test('a handle is random and fresh each time', async () => {
     const a = newPrivateStoreHandle();
     const b = newPrivateStoreHandle();
     expect(a).toMatch(/^[0-9a-f-]{36}$/);
@@ -158,7 +158,7 @@ describe('keys through the context handle (#1382, security-posture P1)', () => {
   });
 
   test('dekFor returns the DEK only from the owner\'s own bag, reached by the context\'s handle', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const store = createEncryptedStore(kek);
     const dek = unwrapDek(kek, store);
     unlockPrivateStores('h-molly', 'molly', kek);
@@ -178,7 +178,7 @@ describe('keys through the context handle (#1382, security-posture P1)', () => {
   });
 
   test('assertContextCanWriteStore refuses an encrypted store without the owner\'s DEK, allows it with', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'default')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'default'), record);
@@ -198,7 +198,7 @@ describe('keys through the context handle (#1382, security-posture P1)', () => {
     })).resolves.toBeUndefined();
   });
 
-  test('userIndexFor reads only the handle\'s own catalog', () => {
+  test('userIndexFor reads only the handle\'s own catalog', async () => {
     unlockPrivateStores('h-molly', 'molly', Buffer.alloc(32, 1));
     expect(userIndexFor(molly('h-molly'))).toBeDefined();
     expect(userIndexFor(molly())).toBeUndefined();
@@ -223,7 +223,7 @@ describe('unlockPrivateStoresWithMnemonic (#1453)', () => {
   });
 
   async function mollyWithSealedStore() {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     const store = createEncryptedStore(created.kek);
     await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
     await fs.outputJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), store);
@@ -279,7 +279,7 @@ describe('resetPasswordWrapWithMnemonic (#1452)', () => {
   });
 
   test('the right words replace the password wrap on disk; nothing else about the key changes', async () => {
-    const created = createUserKeys('forgotten', { kdf });
+    const created = await createUserKeys('forgotten', { kdf });
     await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
 
     const ok = await resetPasswordWrapWithMnemonic({ pagesDirectory: pagesDir, username: 'molly', words: created.mnemonic, newPassword: 'brand-new' });
@@ -292,7 +292,7 @@ describe('resetPasswordWrapWithMnemonic (#1452)', () => {
   });
 
   test('wrong words write nothing', async () => {
-    const created = createUserKeys('forgotten', { kdf });
+    const created = await createUserKeys('forgotten', { kdf });
     await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
     const wrong = created.mnemonic.split(' ').reverse().join(' ');
 

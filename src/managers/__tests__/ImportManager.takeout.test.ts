@@ -117,7 +117,7 @@ describe('ImportManager.importOwnStoreTakeout (#1472)', () => {
   let kek: Buffer | undefined;
   const seal = async (store: string): Promise<void> => {
     if (!kek) {
-      kek = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF }).kek;
+      kek = (await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF })).kek;
       unlockPrivateStores('sid', 'molly', kek);
     }
     const record = createEncryptedStore(kek);

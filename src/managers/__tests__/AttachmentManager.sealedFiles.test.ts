@@ -75,7 +75,7 @@ describe('AttachmentManager — files in an encrypted store (#1400)', () => {
 
   /** An encrypted store for `user`, unlocked in `handle`'s session. */
   async function sealedStoreFor(user: string, handle: string) {
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, user, STORE)));
     await fs.writeJson(storeMetaPath(pagesDir, user, STORE), record);

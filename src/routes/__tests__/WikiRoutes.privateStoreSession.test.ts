@@ -139,7 +139,7 @@ describe('private store session bag (#1391, #1392)', () => {
   });
 
   test('successful password login unwraps the KEK and store DEK into the bag, not session JSON', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     const store = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
@@ -178,7 +178,7 @@ describe('private store session bag (#1391, #1392)', () => {
   });
 
   test('failed login does not unlock even when the posted password would unwrap the envelope', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
 
@@ -194,14 +194,14 @@ describe('private store session bag (#1391, #1392)', () => {
   });
 
   test('logout drops KEK and DEK for that session and leaves other sessions unlocked', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     const store = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), store);
 
-    const other = createUserKeys('other-pw', { kdf });
+    const other = await createUserKeys('other-pw', { kdf });
     unlockPrivateStores('other-sid', 'bob', other.kek);
 
     const session = createMockSession();

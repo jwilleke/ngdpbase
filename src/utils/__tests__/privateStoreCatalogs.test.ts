@@ -48,7 +48,7 @@ describe('private store catalogs (#1385)', () => {
   });
 
   test('user-index round-trip encrypts titles; the file has no plaintext title', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     await upsertUserIndexPage(pagesDir, 'molly', kek, {
       uuid: UUID,
       title: 'Sealed Diary',
@@ -71,7 +71,7 @@ describe('private store catalogs (#1385)', () => {
   });
 
   test('login decrypts catalogs into the session bag; logout drops them', async () => {
-    const created = createUserKeys('correct-horse', { kdf });
+    const created = await createUserKeys('correct-horse', { kdf });
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
     await writeUserCatalog(pagesDir, 'molly', created.kek, {

@@ -28,8 +28,8 @@ export interface PasswordRecord {
 }
 
 /** Change the record's password, in place. */
-export function setPassword(record: PasswordRecord, newPassword: string, now: Date = new Date()): void {
-  record.password = hashPassword(newPassword);
+export async function setPassword(record: PasswordRecord, newPassword: string, now: Date = new Date()): Promise<void> {
+  record.password = await hashPassword(newPassword);
   bumpSessionGeneration(record);
   record.passwordChangedAt = now.toISOString();
 }

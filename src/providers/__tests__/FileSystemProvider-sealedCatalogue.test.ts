@@ -76,7 +76,7 @@ describe('sealed store on FileSystemProvider (#1420)', () => {
   beforeEach(async () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fsp-sealed-catalogue-'));
     pagesDir = path.join(testDir, 'pages');
-    const created = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const created = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     kek = created.kek;
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));

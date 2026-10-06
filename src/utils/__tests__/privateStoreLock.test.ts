@@ -28,7 +28,7 @@ describe('#1448 privateStoreLockedFor', () => {
 
   /** Give `username` a key envelope on disk — i.e. an encrypted store exists. */
   async function giveKeys(username: string): Promise<Buffer> {
-    const { envelope, kek } = createUserKeys('correct horse', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { envelope, kek } = await createUserKeys('correct horse', { kdf: TEST_PRIVATE_STORE_KDF });
     const keysPath = privateUserKeysPath(pagesDir, username);
     await fs.ensureDir(path.dirname(keysPath));
     await fs.writeJson(keysPath, envelope);
@@ -101,7 +101,7 @@ describe('#1448 hasUnlockedKey', () => {
   beforeEach(() => clearUnlockedPrivateStores());
   afterEach(() => clearUnlockedPrivateStores());
 
-  test('answers yes/no without handing out key bytes', () => {
+  test('answers yes/no without handing out key bytes', async () => {
     const handle = newPrivateStoreHandle();
     const ctx = { username: 'molly', privateStoreHandle: handle } as never;
     expect(hasUnlockedKey(ctx)).toBe(false);
@@ -110,7 +110,7 @@ describe('#1448 hasUnlockedKey', () => {
     expect(typeof hasUnlockedKey(ctx)).toBe('boolean');
   });
 
-  test('a context with no handle has no key — a token or share request, say', () => {
+  test('a context with no handle has no key — a token or share request, say', async () => {
     expect(hasUnlockedKey({ username: 'molly' })).toBe(false);
     expect(hasUnlockedKey(undefined)).toBe(false);
   });

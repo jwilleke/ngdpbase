@@ -45,24 +45,24 @@ describe('store door (#1414)', () => {
       'ngdpbase.stores.legacy.owner': 'admin'
     });
 
-    test('a kind exists when a system-category declares its vault (#1505)', () => {
+    test('a kind exists when a system-category declares its vault (#1505)', async () => {
       expect(storeKindFromConfig(get, 'default')).toEqual({ id: 'default', owner: 'admin', encrypt: false });
       expect(storeKindFromConfig(get, 'yourphr')).toEqual({ id: 'yourphr', owner: 'yourphr', encrypt: true });
       expect(storeKindFromConfig(get, 'nosuch')).toBeNull();
       expect(storeKindFromConfig(get, 'legacy')).toBeNull();
     });
 
-    test('every kind is listed, by id, from the system-category entries (#1505)', () => {
+    test('every kind is listed, by id, from the system-category entries (#1505)', async () => {
       expect(storeKindIds({ 'ngdpbase.system-category': vaultKindCategories({ default: {}, yourphr: { owner: 'yourphr' } }), 'ngdpbase.stores.legacy.owner': 'admin' }))
         .toEqual(['default', 'yourphr']);
     });
 
-    test('encrypt is the boolean true and nothing else; a store id that is not a slug is no kind', () => {
+    test('encrypt is the boolean true and nothing else; a store id that is not a slug is no kind', async () => {
       expect(storeKindFromConfig(get, 'odd')?.encrypt).toBe(false);
       expect(storeKindFromConfig(get, '../default')).toBeNull();
     });
 
-    test('attempts are one plus the configured retries', () => {
+    test('attempts are one plus the configured retries', async () => {
       expect(confirmAttempts(config({}))).toBe(2);
       expect(confirmAttempts(config({ 'ngdpbase.stores.recovery.confirmretries': 0 }))).toBe(1);
       expect(confirmAttempts(config({ 'ngdpbase.stores.recovery.confirmretries': 3 }))).toBe(4);
@@ -72,22 +72,22 @@ describe('store door (#1414)', () => {
 
   describe('words pending confirmation', () => {
     const keys = () => createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
-    const hold = (attempts = 2) => {
-      const k = keys();
+    const hold = async (attempts = 2) => {
+      const k = await keys();
       holdWordsForConfirmation('h1', { username: 'molly', store: 'yourphr', kek: k.kek, envelope: k.envelope, mnemonic: k.mnemonic, attempts });
       return k;
     };
 
-    test('the right words hand over the key once, and are then forgotten', () => {
-      const k = hold();
+    test('the right words hand over the key once, and are then forgotten', async () => {
+      const k = await hold();
       const out = confirmWords('h1', 'molly', 'yourphr', `  ${k.mnemonic.toUpperCase()} `);
       expect(out.status).toBe('confirmed');
       if (out.status === 'confirmed') expect(out.kek.equals(k.kek)).toBe(true);
       expect(confirmWords('h1', 'molly', 'yourphr', k.mnemonic).status).toBe('none');
     });
 
-    test('a miss gets NEW words; the missed set no longer works, the new one does and unwraps the key', () => {
-      const k = hold();
+    test('a miss gets NEW words; the missed set no longer works, the new one does and unwraps the key', async () => {
+      const k = await hold();
       const miss = confirmWords('h1', 'molly', 'yourphr', 'wrong words');
       expect(miss.status).toBe('retry');
       if (miss.status !== 'retry') return;
@@ -95,7 +95,7 @@ describe('store door (#1414)', () => {
 
       expect(confirmWords('h1', 'molly', 'yourphr', k.mnemonic).status).toBe('exhausted');
 
-      const again = hold();
+      const again = await hold();
       const retry = confirmWords('h1', 'molly', 'yourphr', 'wrong');
       if (retry.status !== 'retry') throw new Error('expected retry');
       const ok = confirmWords('h1', 'molly', 'yourphr', retry.mnemonic);
@@ -103,30 +103,30 @@ describe('store door (#1414)', () => {
       if (ok.status === 'confirmed') {
         // The envelope that gets committed carries the words the user confirmed.
         expect(unwrapKekWithMnemonic(ok.envelope, retry.mnemonic).equals(again.kek)).toBe(true);
-        expect(unwrapKekWithPassword(ok.envelope, 'pw').equals(again.kek)).toBe(true);
+        expect((await unwrapKekWithPassword(ok.envelope, 'pw')).equals(again.kek)).toBe(true);
       }
     });
 
-    test('attempts run out and nothing is left', () => {
-      hold(1);
+    test('attempts run out and nothing is left', async () => {
+      await hold(1);
       expect(confirmWords('h1', 'molly', 'yourphr', 'wrong').status).toBe('exhausted');
       expect(hasPendingWords('h1', 'molly', 'yourphr')).toBe(false);
     });
 
-    test('pending words belong to one user and one store', () => {
-      const k = hold();
+    test('pending words belong to one user and one store', async () => {
+      const k = await hold();
       expect(confirmWords('h1', 'bob', 'yourphr', k.mnemonic).status).toBe('none');
       expect(hasPendingWords('h1', 'molly', 'yourphr')).toBe(false);
     });
 
-    test('logout drops them; so does the time limit', () => {
-      hold();
+    test('logout drops them; so does the time limit', async () => {
+      await hold();
       dropPendingWords('h1');
       expect(hasPendingWords('h1', 'molly', 'yourphr')).toBe(false);
 
       vi.useFakeTimers();
       try {
-        hold();
+        await hold();
         vi.advanceTimersByTime(31 * 60 * 1000);
         expect(hasPendingWords('h1', 'molly', 'yourphr')).toBe(false);
       } finally {
@@ -153,7 +153,7 @@ describe('store door (#1414)', () => {
     });
 
     test('a sealed copy with a new key writes the envelope and a DEK wrapped by that key', async () => {
-      const k = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const k = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
       const { dek } = await commitStoreCopy({ pagesDirectory: pagesDir, username: 'molly', kind: sealed, kek: k.kek, newEnvelope: k.envelope });
       expect(await fs.readJson(privateUserKeysPath(pagesDir, 'molly'))).toEqual(k.envelope);
       const meta = await fs.readJson(storeMetaPath(pagesDir, 'molly', 'yourphr'));
@@ -164,7 +164,7 @@ describe('store door (#1414)', () => {
     test('an existing store.json is never overwritten, and a key made for it is removed again', async () => {
       await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
       await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), { encrypt: true, dekWrap: { iv: 'a', tag: 'b', ct: 'c' } });
-      const k = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const k = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
 
       await expect(commitStoreCopy({ pagesDirectory: pagesDir, username: 'molly', kind: sealed, kek: k.kek, newEnvelope: k.envelope }))
         .rejects.toThrow();
@@ -180,7 +180,7 @@ describe('store door (#1414)', () => {
 });
 
 describe('the store door\'s state (#1414)', () => {
-  test('the door: the site\'s kinds always open, an addon\'s only while it is loaded', () => {
+  test('the door: the site\'s kinds always open, an addon\'s only while it is loaded', async () => {
     const site = { id: 'default', owner: 'admin', encrypt: false };
     const addon = { id: 'yourphr', owner: 'yourphr', encrypt: true };
 
