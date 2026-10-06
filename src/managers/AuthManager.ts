@@ -35,6 +35,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type UserManager from './UserManager.js';
 import type { PermissionSubject } from './UserManager.js';
+import type { JobContext } from '../context/JobContext.js';
 import type {
   Aal,
   AuthProvider,
@@ -496,7 +497,8 @@ class AuthManager extends BaseManager {
   private raiseRejectedCredentials(file: string, rejected: RejectedCredential[]): void {
     const summary = rejected.map(r => `${r.row.kind ?? '?'} ${r.row.id ?? '?'} for ${r.row.username ?? '?'} (${r.reason})`).join('; ');
     const message = `${rejected.length} credential row(s) in ${file} failed verification and were ignored: ${summary}. ` +
-      'A row that does not verify was written without the instance key — treat it as an attempt to plant a way into an account.';
+      'A row that does not verify was written without the instance key — treat it as an attempt to plant a way into an account. ' +
+      'The rows are kept, unchanged. If you know they are genuine (the credentials key was lost or changed), an operator can re-sign them with scripts/retrust-credentials.ts (#1633).';
     logger.error(`🚨 [AuthManager] SECURITY: ${message}`);
     void recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.SECURITY_EVENT,
@@ -530,6 +532,34 @@ class AuthManager extends BaseManager {
       { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
     if (!pdp || !ctx.isAuthenticated) return false;
     return pdp.permits(ctx, ctx.username === username ? 'account-security' : 'user-edit');
+  }
+
+  /**
+   * Trust again the credential rows that failed verification (#1633): the
+   * operator's deliberate repair after the credentials key was lost or
+   * changed, so people keep their passkeys and verified addresses. Run from
+   * `scripts/retrust-credentials.ts`, never from a request — a web button
+   * that re-signs whatever is in the file would let anyone who can write the
+   * file plant a credential and have it blessed. Recorded as a security event
+   * naming every row and the reason.
+   */
+  async retrustRejectedCredentials(reason: string, ctx: JobContext): Promise<{ trusted: number; remaining: number }> {
+    const store = this.requireCredentialsStore();
+    const trusted = await store.retrustQuarantined();
+    const remaining = store.quarantined().length;
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.SECURITY_EVENT,
+      user: ctx.username,
+      ipAddress: undefined,
+      action: 'credential-retrusted',
+      result: 'success',
+      severity: 'high',
+      resource: store.location(),
+      resourceType: 'credentials-store',
+      reason,
+      metadata: { securityEventType: 'credential-retrusted', rows: trusted.map(r => ({ id: r.id, username: r.username, kind: r.kind })), remaining }
+    });
+    return { trusted: trusted.length, remaining };
   }
 
   private requireCredentialsStore(): BaseCredentialsProvider {
