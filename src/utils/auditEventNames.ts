@@ -1,118 +1,67 @@
 /**
- * Every audit event name, once, in code (#1201, epic #1208).
+ * Every audit event name, in code (#1201, #1638, epic #1208).
  *
- * Configuration owns which names exist and what on-failure rule each carries
- * (`ngdpbase.audit.events`, read by auditRegistry.ts). Code owns which name
- * each action emits, and that half used to be thirty scattered string literals
- * typed as `string`, so a typo compiled and a rename meant editing every site.
+ * Configuration declares the names (`ngdpbase.audit.events`). Core's names are
+ * generated from `config/app-default-config.json` into
+ * `auditEventNames.generated.ts` by `npm run generate:permissions`, and
+ * `npm run lint:permissions` fails when that file is stale, so there is one
+ * declaration and no hand-kept list. `AuditEvent.eventType` is typed, so a
+ * core emitter cannot compile with a name configuration does not declare; a
+ * rename is one edit in configuration plus a regeneration, and the compiler
+ * finds every call site.
  *
- * This module is that half, listed once. `AuditEvent.eventType` is typed as
- * {@link AuditEventName}, so an emitter cannot compile with a name that is not
- * here, and `auditEventNames.test.ts` holds this list equal to the
- * configuration keys in both directions. A rename is one edit here and one in
- * configuration; the compiler finds every call site.
+ * An addon declares its own events in its `config/default-config.json`; they
+ * reach the registry through the configuration merge while the addon is
+ * enabled (addonConfigLayer.ts). The generated union cannot name them, and
+ * widening it to `string` would let a core typo compile again. So an addon
+ * names its event through {@link addonAuditEventName}, which brands a checked
+ * string, and `recordAuditEvent` refuses — throws — a branded name the merged
+ * registry does not declare. Core typing stays exactly as strict as before.
  *
  * Convention: `{target}-{action}`, hyphens only, URL-safe, sharing the slug of
  * the permission whose action it records (`page-read` authorizes; `page-read`
  * records). The containing map says which is meant.
  */
 
-export const AUDIT_EVENT = {
-  PAGE_CREATE: 'page-create',
-  PAGE_EDIT: 'page-edit',
-  PAGE_RENAME: 'page-rename',
-  PAGE_DELETE: 'page-delete',
-  PAGE_READ: 'page-read',
-  PAGE_LINK_REWRITE: 'page-link-rewrite',
-  ASSET_UPLOAD: 'asset-upload',
-  ASSET_DELETE: 'asset-delete',
-  TOKEN_MINT: 'token-mint',
-  TOKEN_REVOKE: 'token-revoke',
-  STORE_CREATE: 'store-create',
-  AUTHENTICATION_SUCCESS: 'authentication-success',
-  AUTHENTICATION_FAILED: 'authentication-failed',
-  AUTHENTICATION_LOGOUT: 'authentication-logout',
-  AUTHORIZATION_DENY: 'authorization-deny',
-  AUTHORIZATION_ALLOW: 'authorization-allow',
-  POLICY_EVALUATE: 'policy-evaluate',
-  SECURITY_EVENT: 'security-event',
-  SHARE_CREATE: 'share-create',
-  SHARE_ACCESS: 'share-access',
-  SHARE_REVOKE: 'share-revoke',
-  SHARE_EXTEND: 'share-extend',
-  SYSTEM_START: 'system-start',
-  SYSTEM_SHUTDOWN: 'system-shutdown',
-  CONFIG_CHANGE: 'config-change',
-  MANAGER_STATE_CHANGE: 'manager-state-change',
-  POSTURE_RECORDED: 'posture-recorded',
-  JOB_STARTED: 'job-started',
-  JOB_COMPLETED: 'job-completed',
-  JOB_FAILED: 'job-failed',
-  PAGE_RAW_EDIT: 'page-raw-edit',
-  SESSION_REVOKE: 'session-revoke',
-  SESSION_CLEAR_ANONYMOUS: 'session-clear-anonymous',
-  USER_CREATE: 'user-create',
-  USER_EDIT: 'user-edit',
-  USER_DELETE: 'user-delete',
-  SEARCH_USER: 'search-user',
-  /** #1232: a comment is user content written on someone's behalf — the page-edit class. */
-  COMMENT_CREATE: 'comment-create',
-  COMMENT_DELETE: 'comment-delete',
-  /** #1233: one name for the footnote sidecar; `action` says add / import / transfer / update / delete. */
-  FOOTNOTE_EDIT: 'footnote-edit',
-  PAGE_EXPORT: 'page-export',
-  /**
-   * #1387: someone downloaded a whole private store of their own, DECRYPTED.
-   * Not `page-export`: this is the most concentrated copy of a person's
-   * private data the system can produce, and it leaves in the clear.
-   */
-  STORE_TAKEOUT: 'store-takeout',
-  /**
-   * #1472: a takeout imported back into its owner's store. Its own event for
-   * the mirror-image reason: a bulk write into private data, in one request.
-   */
-  STORE_IMPORT: 'store-import',
-  ASSET_EDIT: 'asset-edit',
-  CONFIG_RESET: 'config-reset',
-  BACKUP_CREATE: 'backup-create',
-  SECRET_REVEAL: 'secret-reveal',
-  AUDIT_EXPORT: 'audit-export',
-  AUDIT_CHAIN_RESTART: 'audit-chain-restart',
-  ASSET_READ: 'asset-read',
-  SEARCH_PAGE: 'search-page',
-  USER_READ: 'user-read',
-  ADMIN_READ: 'admin-read',
-  /**
-   * #1575: the embedded OpenID Connect provider's events, reported by the
-   * oidc-auth-server package through OidcManager. The names are the package's
-   * own (`oidc` prefix, so none collides with the names above; its #33);
-   * `oidcAuditNames.test.ts` holds this list equal to the package's exported
-   * `AUDIT_EVENT_NAMES`, so a rename there fails here. Every one is
-   * on-failure continue: the package reports after the action has happened,
-   * so a record cannot be made a condition of it.
-   */
-  OIDCAUTHORIZE_ALLOW: 'oidcauthorize-allow',
-  OIDCAUTHORIZE_DENY: 'oidcauthorize-deny',
-  OIDCTOKEN_ISSUE: 'oidctoken-issue',
-  OIDCTOKEN_ERROR: 'oidctoken-error',
-  OIDCTOKEN_REUSE: 'oidctoken-reuse',
-  OIDCTOKEN_REVOKE: 'oidctoken-revoke',
-  OIDCGRANT_REVOKE: 'oidcgrant-revoke',
-  OIDCUSERINFO_ERROR: 'oidcuserinfo-error',
-  OIDCSERVER_ERROR: 'oidcserver-error',
-  /** #1525: step-up — a fresh sign-in asked for, given, or failed. */
-  REAUTH_PROMPT: 'reauth-prompt',
-  REAUTH_SUCCESS: 'reauth-success',
-  REAUTH_FAILURE: 'reauth-failure'
-} as const;
+import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, type AuditEventName } from './auditEventNames.generated.js';
 
-/** A name the code may emit. */
-export type AuditEventName = (typeof AUDIT_EVENT)[keyof typeof AUDIT_EVENT];
+export { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, type AuditEventName };
 
-/** Every name, sorted, for tests and tooling. */
+/** Every core name, sorted, for tests and tooling. */
 export function auditEventNames(): AuditEventName[] {
   return Object.values(AUDIT_EVENT).sort();
 }
 
-/** The `{target}-{action}` convention, as a test can assert it. */
-export const AUDIT_EVENT_NAME_PATTERN = /^[a-z]+(-[a-z]+)+$/;
+const CORE_NAMES: ReadonlySet<string> = new Set(Object.values(AUDIT_EVENT));
+
+/** Is this one of the names core declares (and so one the generated union admits)? */
+export function isCoreAuditEventName(name: string): name is AuditEventName {
+  return CORE_NAMES.has(name);
+}
+
+declare const addonAuditEventBrand: unique symbol;
+
+/**
+ * An audit event name an addon declares (#1638). A string literal is not one:
+ * the only way to get one is {@link addonAuditEventName}, so the brand marks a
+ * name that went through the check, and a core typo still fails to compile.
+ */
+export type AddonAuditEventName = string & { readonly [addonAuditEventBrand]: true };
+
+/** What `recordAuditEvent` accepts: a core name, or an addon's checked name. */
+export type RecordableAuditEventName = AuditEventName | AddonAuditEventName;
+
+/**
+ * Name an addon's audit event. Throws on a name outside `{target}-{action}`.
+ *
+ * Whether the name is declared is checked when the event is recorded, not
+ * here: the registry is bound when AuditManager initialises, which may be
+ * after the addon module loads. `lint:audit` reads the literal passed here as
+ * the addon's emitter, so pass a string literal.
+ */
+export function addonAuditEventName(name: string): AddonAuditEventName {
+  if (!AUDIT_EVENT_NAME_PATTERN.test(name)) {
+    throw new Error(`Audit event '${name}' is not a {target}-{action} name (hyphens only).`);
+  }
+  return name as AddonAuditEventName;
+}

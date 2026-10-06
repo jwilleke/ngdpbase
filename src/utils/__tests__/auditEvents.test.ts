@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AUDIT_EVENTS_KEY, bindAuditEvents } from '../auditRegistry';
+import { addonAuditEventName } from '../auditEventNames';
 import {
   buildPageMutationAuditEvent,
   buildAttachmentAuditEvent,
@@ -440,5 +441,31 @@ describe('#1203 recordAuditEvent honours the enabled switch', () => {
   it('an event switched on reaches the sink', async () => {
     await recordAuditEvent(sink, event);
     expect(sink.logAuditEvent).toHaveBeenCalledOnce();
+  });
+});
+
+describe('#1638 an addon records its own audit events', () => {
+  const sink = { logAuditEvent: vi.fn(async () => 'id'), flushAuditQueue: vi.fn(async () => undefined) };
+  const ledgerPost = { 'on-failure': 'continue', description: 'a ledger entry was posted' };
+  const event = (name: string) => ({ eventType: addonAuditEventName(name), user: 'jim', ipAddress: undefined, action: name, result: 'success' as const, severity: 'low' as const, metadata: {} });
+
+  afterEach(() => {
+    sink.logAuditEvent.mockClear();
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shippedEvents : d));
+  });
+
+  it('a name the merged registry declares is recorded', async () => {
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? { ...shippedEvents, 'ledger-post': ledgerPost } : d));
+    await expect(recordAuditEvent(sink, event('ledger-post'))).resolves.toBe('recorded');
+    expect(sink.logAuditEvent).toHaveBeenCalledOnce();
+  });
+
+  it('a name nobody declares is refused loudly, not recorded under no rule', async () => {
+    await expect(recordAuditEvent(sink, event('ledger-post'))).rejects.toThrow(/not declared in ngdpbase.audit.events/);
+    expect(sink.logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('a name outside {target}-{action} cannot even be made', () => {
+    expect(() => addonAuditEventName('LedgerPost')).toThrow(/target}-{action/);
   });
 });

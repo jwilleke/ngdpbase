@@ -24,8 +24,8 @@
  */
 
 import logger from './logger.js';
-import { isAuditEventEnabled, refusesOnFailure } from './auditRegistry.js';
-import { AUDIT_EVENT, type AuditEventName } from './auditEventNames.js';
+import { auditEventDeclarations, AUDIT_EVENTS_KEY, isAuditEventEnabled, refusesOnFailure } from './auditRegistry.js';
+import { AUDIT_EVENT, isCoreAuditEventName, type AuditEventName, type RecordableAuditEventName } from './auditEventNames.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
@@ -67,7 +67,8 @@ export const AUDIT_RESULTS = ['success', 'failure', 'allow', 'deny', 'error', 'l
 export type AuditResult = typeof AUDIT_RESULTS[number];
 
 export interface AuditEvent {
-  eventType: AuditEventName;
+  /** A core name (`AUDIT_EVENT.KEY`), or an addon's name from `addonAuditEventName` (#1638). */
+  eventType: RecordableAuditEventName;
   user: string;
   ipAddress: string | undefined;
   action: string;
@@ -375,6 +376,19 @@ export async function recordAuditEvent(
   event: AuditEvent,
   onError?: (err: unknown) => void
 ): Promise<AuditRecordOutcome> {
+  // #1638: an addon's name is checked here, against the merged registry, not
+  // by the compiler. One nobody declares — the addon is disabled, or its
+  // config/default-config.json never named it — is refused loudly rather than
+  // recorded under a name with no on-failure rule. Core names are the
+  // generated union and keep their existing path.
+  if (!isCoreAuditEventName(event.eventType) && !auditEventDeclarations()[event.eventType]) {
+    const message =
+      `Audit event '${event.eventType}' is not declared in ${AUDIT_EVENTS_KEY}. ` +
+      'An addon declares its events in its config/default-config.json, and they count only while the addon is enabled.';
+    logger.error(`[audit] ${message}`);
+    throw new Error(message);
+  }
+
   // #1203: `enabled: false` on the event in `ngdpbase.audit.events` is a
   // decision on the record. The emitter still exists and still calls this;
   // the switch is honoured here, once, rather than at every call site.
