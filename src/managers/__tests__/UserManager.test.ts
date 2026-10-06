@@ -102,24 +102,24 @@ describe('UserManager', () => {
       await expect(manager.initialize()).rejects.toThrow('UserManager requires ConfigurationManager');
     });
 
-    test('should initialize provider', () => {
+    test('should initialize provider', async () => {
       expect(userManager.provider).toBeTruthy();
       expect(userManager.provider.initialized).toBe(true);
     });
 
-    test('should get configuration from ConfigurationManager', () => {
+    test('should get configuration from ConfigurationManager', async () => {
       expect(mockConfigurationManager.getProperty).toHaveBeenCalledWith('ngdpbase.user.provider', expect.any(String));
     });
   });
 
   describe('getCurrentUserProvider()', () => {
-    test('should return the provider instance', () => {
+    test('should return the provider instance', async () => {
       const provider = userManager.getCurrentUserProvider();
       expect(provider).toBe(userManager.provider);
       expect(provider).toBeTruthy();
     });
 
-    test('should return provider with correct interface', () => {
+    test('should return provider with correct interface', async () => {
       const provider = userManager.getCurrentUserProvider();
       expect(provider.getProviderInfo).toBeDefined();
       expect(typeof provider.getProviderInfo).toBe('function');
@@ -197,7 +197,7 @@ describe('UserManager', () => {
 
   describe('Authentication', () => {
     test('authenticateUser() should validate and return user with isAuthenticated flag', async () => {
-      const hashedPassword = userManager.hashPassword('password');
+      const hashedPassword = await userManager.hashPassword('password');
       const mockUser = {
         username: 'test',
         email: 'test@example.com',
@@ -218,7 +218,7 @@ describe('UserManager', () => {
     });
 
     test('authenticateUser() should return null for invalid password', async () => {
-      const hashedPassword = userManager.hashPassword('correctpass');
+      const hashedPassword = await userManager.hashPassword('correctpass');
       const mockUser = {
         username: 'test',
         password: hashedPassword,
@@ -249,7 +249,7 @@ describe('UserManager', () => {
     let policiesConfig;
     let mockMemberRoles;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       // #1431 step 10: the policies are read through ConfigurationManager,
       // live — so the fixture puts them in the config, where the system reads
       // them, rather than in a PolicyManager that no longer exists.
@@ -521,7 +521,7 @@ describe('UserManager', () => {
       expect(policyEvaluator.evaluateAccess.mock.calls[0][0].userContext.roles).toEqual(['reader']);
     });
 
-    test('the PIP\'s systemPrincipalName() refuses an empty name rather than acting as nobody (#631)', () => {
+    test('the PIP\'s systemPrincipalName() refuses an empty name rather than acting as nobody (#631)', async () => {
       installSystemPrincipal(true, '');
       expect(() => pip.systemPrincipalName()).toThrow(/NGDPBASE_SYSTEM_USER/);
     });
@@ -539,44 +539,44 @@ describe('UserManager', () => {
   });
 
   describe('Password Management', () => {
-    test('hashPassword() should hash password with salt', () => {
-      const hashed = userManager.hashPassword('password123');
+    test('await hashPassword() should hash password with salt', async () => {
+      const hashed = await userManager.hashPassword('password123');
 
       expect(typeof hashed).toBe('string');
       expect(hashed).not.toBe('password123');
       expect(hashed.length).toBeGreaterThan(0);
     });
 
-    test('hashPassword() produces a DIFFERENT hash each time (#1042)', () => {
+    test('await hashPassword() produces a DIFFERENT hash each time (#1042)', async () => {
       // Asserted equality before #1042, when one instance-wide salt meant two
       // accounts with the same password stored identical bytes. Per-user salts
       // make that impossible, which is the point — the verify test below is now
       // what proves the hash is usable.
-      const hash1 = userManager.hashPassword('password123');
-      const hash2 = userManager.hashPassword('password123');
+      const hash1 = await userManager.hashPassword('password123');
+      const hash2 = await userManager.hashPassword('password123');
 
       expect(hash1).not.toBe(hash2);
-      expect(userManager.verifyPassword('password123', hash1)).toBe(true);
-      expect(userManager.verifyPassword('password123', hash2)).toBe(true);
+      expect(await userManager.verifyPassword('password123', hash1)).toBe(true);
+      expect(await userManager.verifyPassword('password123', hash2)).toBe(true);
     });
 
-    test('verifyPassword() should validate correct password', () => {
-      const hashed = userManager.hashPassword('password123');
-      const result = userManager.verifyPassword('password123', hashed);
+    test('await verifyPassword() should validate correct password', async () => {
+      const hashed = await userManager.hashPassword('password123');
+      const result = await userManager.verifyPassword('password123', hashed);
 
       expect(result).toBe(true);
     });
 
-    test('verifyPassword() should reject incorrect password', () => {
-      const hashed = userManager.hashPassword('password123');
-      const result = userManager.verifyPassword('wrongpass', hashed);
+    test('await verifyPassword() should reject incorrect password', async () => {
+      const hashed = await userManager.hashPassword('password123');
+      const result = await userManager.verifyPassword('wrongpass', hashed);
 
       expect(result).toBe(false);
     });
   });
 
   describe('Provider Normalization', () => {
-    test('should normalize fileuserprovider to FileUserProvider', () => {
+    test('should normalize fileuserprovider to FileUserProvider', async () => {
       expect(userManager.providerClass).toBe('FileUserProvider');
     });
 

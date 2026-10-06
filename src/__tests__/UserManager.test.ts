@@ -61,7 +61,7 @@ describe('UserManager', () => {
   let mockConfigManager;
   let mockRoleManager;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
 
     // Create mock ConfigurationManager
@@ -110,7 +110,7 @@ describe('UserManager', () => {
   });
 
   describe('constructor', () => {
-    test('should create UserManager with engine reference', () => {
+    test('should create UserManager with engine reference', async () => {
       expect(userManager).toBeDefined();
       expect(userManager.engine).toBe(mockEngine);
       expect(userManager.provider).toBeNull();
@@ -178,42 +178,42 @@ describe('UserManager', () => {
       await userManager.initialize();
     });
 
-    test('hashing the same password twice gives DIFFERENT values (#1042)', () => {
+    test('hashing the same password twice gives DIFFERENT values (#1042)', async () => {
       // This test used to assert the opposite — that two hashes of one password
       // were identical. That was true only because every account shared one
       // instance-wide salt, which is the defect #1042 fixed: the store
       // advertised which accounts used the same password. Each hash now carries
       // its own random salt, so equality is exactly what must NOT hold.
       const password = 'testpassword123';
-      const hash1 = userManager.hashPassword(password);
-      const hash2 = userManager.hashPassword(password);
+      const hash1 = await userManager.hashPassword(password);
+      const hash2 = await userManager.hashPassword(password);
 
       expect(hash1).not.toBe(hash2);
       expect(hash1).not.toBe(password);
       expect(hash1.length).toBeGreaterThan(0);
 
       // Both still verify — different bytes, same password.
-      expect(userManager.verifyPassword(password, hash1)).toBe(true);
-      expect(userManager.verifyPassword(password, hash2)).toBe(true);
+      expect(await userManager.verifyPassword(password, hash1)).toBe(true);
+      expect(await userManager.verifyPassword(password, hash2)).toBe(true);
     });
 
-    test('should verify correct passwords', () => {
+    test('should verify correct passwords', async () => {
       const password = 'testpassword123';
-      const hash = userManager.hashPassword(password);
+      const hash = await userManager.hashPassword(password);
 
-      expect(userManager.verifyPassword(password, hash)).toBe(true);
+      expect(await userManager.verifyPassword(password, hash)).toBe(true);
     });
 
-    test('should reject incorrect passwords', () => {
+    test('should reject incorrect passwords', async () => {
       const password = 'testpassword123';
-      const hash = userManager.hashPassword(password);
+      const hash = await userManager.hashPassword(password);
 
-      expect(userManager.verifyPassword('wrongpassword', hash)).toBe(false);
+      expect(await userManager.verifyPassword('wrongpassword', hash)).toBe(false);
     });
 
-    test('should produce different hashes for different passwords', () => {
-      const hash1 = userManager.hashPassword('password1');
-      const hash2 = userManager.hashPassword('password2');
+    test('should produce different hashes for different passwords', async () => {
+      const hash1 = await userManager.hashPassword('password1');
+      const hash2 = await userManager.hashPassword('password2');
 
       expect(hash1).not.toBe(hash2);
     });
@@ -236,12 +236,12 @@ describe('UserManager', () => {
       await userManager.initialize();
     });
 
-    test('the anonymous subject is the PIP\'s, not UserManager\'s (#1431 step 13)', () => {
+    test('the anonymous subject is the PIP\'s, not UserManager\'s (#1431 step 13)', async () => {
       expect('getAnonymousUser' in userManager).toBe(false);
       expect('getCurrentUser' in userManager).toBe(false);
     });
 
-    test('there is no asserted user to return (#1435)', () => {
+    test('there is no asserted user to return (#1435)', async () => {
       // Removed deliberately: a cookie evidences the browser, never the person
       // holding it, so "Good morning, Jim" greets whoever sits down at Jim's
       // machine. Nothing produced the subject; this pins that it stays gone.
@@ -268,7 +268,7 @@ describe('UserManager', () => {
   });
 
   describe('role membership is RoleManager\'s (#1431 step 12)', () => {
-    test('UserManager has no membership methods of its own', () => {
+    test('UserManager has no membership methods of its own', async () => {
       for (const name of ['hasRole', 'assignRole', 'removeRole', 'resolveUserRoles', 'applyRoleDiff']) {
         expect(name in userManager).toBe(false);
       }
@@ -295,7 +295,7 @@ describe('UserManager', () => {
   });
 
   describe('decisions are the PDP\'s (#1431 step 14)', () => {
-    test('UserManager answers no access question', () => {
+    test('UserManager answers no access question', async () => {
       for (const name of ['hasPermission', 'getUserPermissions', 'userHoldsPermission', 'requirePermissions', 'ensureAuthenticated']) {
         expect(name in userManager).toBe(false);
       }

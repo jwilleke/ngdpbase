@@ -76,7 +76,7 @@ describe('UserManager password rewrap (#1393)', () => {
   });
 
   test('updateUser with current+new password re-wraps the envelope; mnemonic still works', async () => {
-    const created = createUserKeys('old-pw', { kdf });
+    const created = await createUserKeys('old-pw', { kdf });
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
 
@@ -101,8 +101,8 @@ describe('UserManager password rewrap (#1393)', () => {
     expect(stored.password).not.toBe('old-pw');
 
     const envelope = await fs.readJson(privateUserKeysPath(pagesDir, 'molly'));
-    expect(Buffer.compare(unwrapKekWithPassword(envelope, 'new-pw'), created.kek)).toBe(0);
-    expect(() => unwrapKekWithPassword(envelope, 'old-pw')).toThrow(/password/i);
+    expect(Buffer.compare(await unwrapKekWithPassword(envelope, 'new-pw'), created.kek)).toBe(0);
+    await expect(unwrapKekWithPassword(envelope, 'old-pw')).rejects.toThrow(/password/i);
     expect(Buffer.compare(unwrapKekWithMnemonic(envelope, created.mnemonic), created.kek)).toBe(0);
   });
 

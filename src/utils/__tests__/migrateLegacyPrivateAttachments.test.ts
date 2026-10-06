@@ -35,7 +35,7 @@ describe('migrateLegacyPrivateAttachments (#1386)', () => {
     await fs.ensureDir(path.dirname(legacy));
     await fs.writeFile(legacy, 'pdf-bytes');
 
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'sealed-user', DEFAULT_PRIVATE_STORE)));
     await fs.writeJson(storeMetaPath(pagesDir, 'sealed-user', DEFAULT_PRIVATE_STORE), record);
@@ -80,7 +80,7 @@ describe('migrateLegacyPrivateAttachments (#1386)', () => {
     })).toEqual({ moved: 0 });
   });
 
-  test('legacyprivateroot is a migrate-FROM segment under attachment storagedir, not a second root', () => {
+  test('legacyprivateroot is a migrate-FROM segment under attachment storagedir, not a second root', async () => {
     expect(shipped['ngdpbase.attachment.provider.basic.legacyprivateroot']).toBe('private');
     expect(String(shipped['ngdpbase.attachment.provider.basic.legacyprivateroot'])).not.toMatch(
       /SLOW_STORAGE|FAST_STORAGE|[\\/]/

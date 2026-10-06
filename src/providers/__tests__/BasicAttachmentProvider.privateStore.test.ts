@@ -113,7 +113,7 @@ describe('BasicAttachmentProvider — the shared pool takes no private file (#14
   });
 
   test('an encrypted store is refused too — and its name never reaches the shared index', async () => {
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE)));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', DEFAULT_PRIVATE_STORE), record);

@@ -118,7 +118,7 @@ describe('bootstrap admin recreation', () => {
     const admin = store.get('admin') as { password: string; isSystem: boolean };
     // Compared by VERIFICATION, not by equality: hashes are salted per user
     // (#1042), so re-hashing the same password never reproduces the same bytes.
-    expect(manager.verifyPassword('admin123', admin.password)).toBe(true);
+    expect(await manager.verifyPassword('admin123', admin.password)).toBe(true);
     expect(admin.isSystem).toBe(true);
   });
 });
@@ -135,7 +135,7 @@ describe('bootstrap admin recreation', () => {
  * untouched.
  */
 describe('headless bootstrap admin guard (#1087)', () => {
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env.HEADLESS_INSTALL;
   });
 

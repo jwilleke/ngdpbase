@@ -92,7 +92,7 @@ async function plainStore(): Promise<void> {
 
 /** A SEALED store for molly, unlocked in her session, with one page and one file. */
 async function sealedStore(): Promise<void> {
-  const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+  const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
   const record = createEncryptedStore(kek);
   await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', STORE)));
   await fs.writeJson(storeMetaPath(pagesDir, 'molly', STORE), record);

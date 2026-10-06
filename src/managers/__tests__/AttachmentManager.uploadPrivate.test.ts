@@ -314,7 +314,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
   });
 
   test('encrypt-on refuses without a session DEK', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     const storeId = 'vault';
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', storeId)));
@@ -337,7 +337,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
   });
 
   test('encrypt-on proceeds when the session bag has the DEK', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     const storeId = 'vault';
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', storeId)));
@@ -366,7 +366,7 @@ describe('AttachmentManager.uploadAttachment options.private (#1396)', () => {
   });
 
   test('encrypt-on: a context without the session handle cannot unlock the store', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'vault')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'vault'), record);

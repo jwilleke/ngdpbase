@@ -13,7 +13,7 @@ import {
   timingSafeEqual,
   pbkdf2Sync,
   randomBytes,
-  scryptSync
+  scrypt
 } from 'crypto';
 import { BIP39_ENGLISH } from './bip39English.js';
 
@@ -90,12 +90,10 @@ function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 
   }
 }
 
-function derivePasswordKey(password: string, salt: Buffer, kdf: ScryptKdf): Buffer {
-  return scryptSync(password, salt, KEYLEN, {
-    N: kdf.N,
-    r: kdf.r,
-    p: kdf.p,
-    maxmem: maxmem(kdf)
+/** Off the main thread (#1632): a sign-in that unlocks stores never stalls other requests. */
+function derivePasswordKey(password: string, salt: Buffer, kdf: ScryptKdf): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, KEYLEN, { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: maxmem(kdf) }, (err, key) => (err ? reject(err) : resolve(key)));
   });
 }
 
@@ -122,10 +120,10 @@ function entropyToMnemonic(entropy: Buffer): string {
   return words.join(' ');
 }
 
-export function createUserKeys(
+export async function createUserKeys(
   password: string,
   opts: { kdf?: ScryptKdf } = {}
-): { envelope: UserKeyEnvelope; kek: Buffer; mnemonic: string } {
+): Promise<{ envelope: UserKeyEnvelope; kek: Buffer; mnemonic: string }> {
   const kdf = opts.kdf ?? PRIVATE_STORE_KDF;
   const kek = randomBytes(KEYLEN);
   const passwordSalt = randomBytes(16);
@@ -136,16 +134,16 @@ export function createUserKeys(
     envelope: {
       version: 1,
       kdf: { ...kdf, salt: passwordSalt.toString('base64') },
-      passwordWrap: wrap(derivePasswordKey(password, passwordSalt, kdf), kek),
+      passwordWrap: wrap(await derivePasswordKey(password, passwordSalt, kdf), kek),
       recoveryKdf: { alg: 'bip39-pbkdf2' },
       recoveryWrap: wrap(mnemonicToWrapKey(mnemonic), kek)
     }
   };
 }
 
-export function unwrapKekWithPassword(envelope: UserKeyEnvelope, password: string): Buffer {
+export async function unwrapKekWithPassword(envelope: UserKeyEnvelope, password: string): Promise<Buffer> {
   const salt = Buffer.from(envelope.kdf.salt, 'base64');
-  const key = derivePasswordKey(password, salt, envelope.kdf);
+  const key = await derivePasswordKey(password, salt, envelope.kdf);
   return unwrap(key, envelope.passwordWrap, 'password');
 }
 
@@ -171,13 +169,13 @@ export function sameMnemonic(entered: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function rewrapPassword(
+export async function rewrapPassword(
   envelope: UserKeyEnvelope,
   oldPassword: string,
   newPassword: string,
   opts: { kdf?: ScryptKdf } = {}
-): UserKeyEnvelope {
-  return rewrapPasswordWithKek(envelope, unwrapKekWithPassword(envelope, oldPassword), newPassword, opts);
+): Promise<UserKeyEnvelope> {
+  return rewrapPasswordWithKek(envelope, await unwrapKekWithPassword(envelope, oldPassword), newPassword, opts);
 }
 
 /**
@@ -186,18 +184,18 @@ export function rewrapPassword(
  * the recovery wrap are unchanged, so every store's wrapped DEK stays valid
  * and the same words keep working.
  */
-export function rewrapPasswordWithKek(
+export async function rewrapPasswordWithKek(
   envelope: UserKeyEnvelope,
   kek: Buffer,
   newPassword: string,
   opts: { kdf?: ScryptKdf } = {}
-): UserKeyEnvelope {
+): Promise<UserKeyEnvelope> {
   const kdf = opts.kdf ?? { N: envelope.kdf.N, r: envelope.kdf.r, p: envelope.kdf.p };
   const passwordSalt = randomBytes(16);
   return {
     ...envelope,
     kdf: { ...kdf, salt: passwordSalt.toString('base64') },
-    passwordWrap: wrap(derivePasswordKey(newPassword, passwordSalt, kdf), kek)
+    passwordWrap: wrap(await derivePasswordKey(newPassword, passwordSalt, kdf), kek)
   };
 }
 

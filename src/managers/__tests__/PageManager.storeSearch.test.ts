@@ -94,7 +94,7 @@ describe('a private store\'s own saved search index (#1458)', () => {
 
   /** Make `molly`'s `vault` an encrypted store and unlock it for her session. */
   const sealVault = async (): Promise<void> => {
-    const created = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const created = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);

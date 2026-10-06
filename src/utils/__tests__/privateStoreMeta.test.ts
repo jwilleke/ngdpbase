@@ -38,7 +38,7 @@ describe('private store meta (#1384)', () => {
   });
 
   test('written encrypt-on keeps the DEK wrap', async () => {
-    const { kek } = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(kek);
     await writeStoreMeta(pages, 'molly', 'yourphr', record);
     const meta = await readStoreMeta(pages, 'molly', 'yourphr');

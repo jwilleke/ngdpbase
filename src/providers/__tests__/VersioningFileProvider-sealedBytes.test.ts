@@ -112,7 +112,7 @@ describe('sealed store bytes at rest (#1415)', () => {
     };
     validation = new ValidationManager(engine);
 
-    const created = createUserKeys('pw', { kdf });
+    const created = await createUserKeys('pw', { kdf });
     kek = created.kek;
     const record = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));

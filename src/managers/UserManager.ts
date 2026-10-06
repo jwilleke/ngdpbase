@@ -416,7 +416,7 @@ class UserManager extends BaseManager {
    * @param {string} password - Plain text password
    * @returns {string} Self-describing hash: `scrypt$N$r$p$salt$hash`
    */
-  hashPassword(password: string): string {
+  hashPassword(password: string): Promise<string> {
     return hashPassword(password);
   }
 
@@ -431,7 +431,7 @@ class UserManager extends BaseManager {
    * @param {string} hash - Stored hash, either scheme
    * @returns {boolean} True if password matches
    */
-  verifyPassword(password: string, hash: string): boolean {
+  verifyPassword(password: string, hash: string): Promise<boolean> {
     // The legacy salt keeps its historic value on purpose. Renaming it to
     // `ngdp-salt` was floated as free once hashing moved to scrypt — it is not,
     // and cannot be while ANY legacy hash remains: those digests were computed
@@ -500,7 +500,7 @@ class UserManager extends BaseManager {
       if (defaultPassword === null) {
         return false;
       }
-      return this.verifyPassword(defaultPassword, adminUser.password);
+      return await this.verifyPassword(defaultPassword, adminUser.password);
     } catch (error) {
       logger.error('Error checking admin default password:', error);
       return false;
@@ -565,7 +565,7 @@ class UserManager extends BaseManager {
       username: 'admin',
       email: 'admin@localhost',
       displayName: 'Administrator',
-      password: this.hashPassword(defaultPassword),
+      password: await this.hashPassword(defaultPassword),
       isActive: true,
       isSystem: true,
       isExternal: false, // Local account
@@ -615,7 +615,7 @@ class UserManager extends BaseManager {
       return null;
     }
 
-    const isValid = this.verifyPassword(password, user.password);
+    const isValid = await this.verifyPassword(password, user.password);
     if (!isValid) {
       return null;
     }
@@ -626,7 +626,7 @@ class UserManager extends BaseManager {
     // nobody is locked out and no reset mail is needed.
     if (needsRehash(user.password)) {
       const wasLegacy = isLegacyHash(user.password);
-      user.password = hashPassword(password);
+      user.password = await hashPassword(password);
       logger.info(
         `🔐 Upgraded stored password hash for "${username}" ` +
         `(${wasLegacy ? 'legacy SHA-256 → scrypt' : 'scrypt parameters raised'}) (#1042)`
@@ -847,7 +847,7 @@ class UserManager extends BaseManager {
       );
     }
 
-    const hashedPassword = isExternal ? '' : this.hashPassword(password);
+    const hashedPassword = isExternal ? '' : await this.hashPassword(password);
 
     const userLocale = LocaleUtils.parseAcceptLanguage(acceptLanguage || 'en-US');
     const defaultDateFormat = LocaleUtils.getDateFormatFromLocale(userLocale);
@@ -997,7 +997,7 @@ class UserManager extends BaseManager {
     const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
-    if (passwordChange !== undefined) setPassword(user, passwordChange);
+    if (passwordChange !== undefined) await setPassword(user, passwordChange);
     await this.provider.updateUser(username, user);
 
     await this.syncPersonOnUpdate(username, updates);

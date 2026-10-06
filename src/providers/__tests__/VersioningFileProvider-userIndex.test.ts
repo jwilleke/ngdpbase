@@ -84,7 +84,7 @@ describe('private pages out of the global index (#1385, #1456)', () => {
 
   /** Molly's default store, encrypted, with her keys on disk; returns the KEK and store DEK. */
   const sealDefaultStore = async (): Promise<{ kek: Buffer; dek: Buffer }> => {
-    const created = createUserKeys('pw', { kdf });
+    const created = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
@@ -174,7 +174,7 @@ describe('private pages out of the global index (#1385, #1456)', () => {
   });
 
   test('rebuild does not scan a store tree into the global index', async () => {
-    const { kek } = createUserKeys('pw', { kdf });
+    const { kek } = await createUserKeys('pw', { kdf });
     const record = createEncryptedStore(kek);
     await fs.ensureDir(path.dirname(storeMetaPath(pagesDir, 'molly', 'yourphr')));
     await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), record);

@@ -99,7 +99,7 @@ describe('the owner\'s search merges their own private stores (#1458)', () => {
   };
 
   const sealVault = async (): Promise<void> => {
-    const created = createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const created = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
     const record = createEncryptedStore(created.kek);
     await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
     await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), created.envelope);
