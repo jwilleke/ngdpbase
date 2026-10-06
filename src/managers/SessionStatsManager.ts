@@ -109,6 +109,16 @@ export async function listSessionUsers(store: SessionStoreLike): Promise<Session
   throw new SessionStoreUnsupportedError('listing users');
 }
 
+/** The private-store handles held by sessions still in the store (#1626). */
+export async function liveSessionHandles(store: SessionStoreLike): Promise<Set<string>> {
+  if (typeof store.all !== 'function') throw new SessionStoreUnsupportedError('listing sessions');
+  const handles = new Set<string>();
+  for (const s of await storeAll(store)) {
+    if (typeof s?.privateStoreHandle === 'string' && s.privateStoreHandle) handles.add(s.privateStoreHandle);
+  }
+  return handles;
+}
+
 class SessionStatsManager extends BaseManager {
   private store: SessionStoreLike | null = null;
 
@@ -135,6 +145,12 @@ class SessionStatsManager extends BaseManager {
   async users(): Promise<SessionUsers> {
     if (!this.store) throw new Error('Session store not attached');
     return listSessionUsers(this.store);
+  }
+
+  /** @throws Error when no store is attached; SessionStoreUnsupportedError when it cannot list. */
+  async liveHandles(): Promise<Set<string>> {
+    if (!this.store) throw new Error('Session store not attached');
+    return liveSessionHandles(this.store);
   }
 }
 

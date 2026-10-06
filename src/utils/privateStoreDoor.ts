@@ -18,7 +18,6 @@
  */
 
 import fs from 'fs-extra';
-import path from 'path';
 import {
   createEncryptedStore,
   newRecoveryWords,
@@ -35,6 +34,8 @@ import {
 } from './privateStorePath.js';
 import type { StoreFileRecord } from './privateStoreMeta.js';
 import { listPrivateOwners } from './privateStoreTakeout.js';
+import { writeFileAtomic } from './atomicWrite.js';
+import { SECRET_FILE_MODE } from './secretFileMode.js';
 
 type GetProperty = (key: string, defaultValue: unknown) => unknown;
 
@@ -234,10 +235,10 @@ export function clearPendingWords(): void {
 }
 
 async function writeExclusive(file: string, value: unknown): Promise<void> {
-  await fs.ensureDir(path.dirname(file));
-  // `wx`: an existing file is a refusal, never an overwrite. Replacing a
-  // store.json loses the wrapped DEK — and with it every byte of the store.
-  await fs.writeFile(file, JSON.stringify(value), { flag: 'wx' });
+  // An existing file is a refusal, never an overwrite: replacing a store.json
+  // loses the wrapped DEK — and with it every byte of the store. Atomic, owner
+  // only and flushed (#1625): a crash mid-write leaves no truncated key file.
+  await writeFileAtomic(file, JSON.stringify(value), 'utf8', { exclusive: true, mode: SECRET_FILE_MODE, fsync: true });
 }
 
 /** Whether `username` already has a copy of `store` — the door is then just a way in. */

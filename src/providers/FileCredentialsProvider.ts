@@ -9,7 +9,7 @@
  *   missing or wrong is reported and can never sign anyone in; it is kept in
  *   quarantine and written back unchanged (#1633), so a lost key costs no
  *   data. `scripts/retrust-credentials.ts` re-signs them on purpose.
- * - Nothing here is a password hash. Public keys, encrypted seeds and token
+ * - Nothing here is a password hash. Public keys, (when TOTP is built, #421, encrypted seeds) and token
  *   hashes are low value to a reader; a writer is what signing stops.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';

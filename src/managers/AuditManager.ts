@@ -42,7 +42,7 @@ import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from
 import type { ActorContext } from '../context/ActorContext.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
-import { auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
+import { AUDIT_EVENTS_KEY, auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
 import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -249,13 +249,22 @@ class AuditManager extends BaseManager {
     // operator's configuration rather than the shipped defaults.
     bindAuditEvents((key, defaultValue) => configManager.getProperty(key, defaultValue));
 
-    // #1205: an enabled event the build cannot emit is a fatal configuration
-    // entry. `auditEventNames.ts` is what this build registers — every name in
-    // it has an emitter (lint:audit holds that) — so a custom configuration
-    // enabling a name outside it would claim a record nothing can write.
-    // Never silent, and not survivable: the instance boots into maintenance
-    // mode (security-posture.md D9, D10) with the name in the reason.
-    const known = new Set<string>(auditEventNames());
+    // #1205, #1638: an enabled event the build cannot emit is a fatal
+    // configuration entry. What this build can emit is what it declares: the
+    // shipped map (generated into AUDIT_EVENT, every name with an emitter —
+    // lint:audit holds that) plus the map of every ENABLED addon, read through
+    // the addon layer (getDeclaredProperty: shipped ⊕ addons, before custom).
+    // An addon's emitters are its own: lint:audit proves them for the bundled
+    // addons, an external addon's CI must. The operator's file may tune any
+    // declared entry, but a name only it declares would claim a record
+    // nothing can write. Never silent, and not survivable: the instance boots
+    // into maintenance mode (security-posture.md D9, D10) with the name in the
+    // reason.
+    const declared = configManager.getDeclaredProperty(AUDIT_EVENTS_KEY, {});
+    const known = new Set<string>([
+      ...auditEventNames(),
+      ...(declared && typeof declared === 'object' ? Object.keys(declared) : [])
+    ]);
     for (const [name, d] of Object.entries(auditEventDeclarations())) {
       // #1218: `tier` was renamed to `on-failure`. A custom configuration still
       // carrying the old field would be silently ignored otherwise — and a
@@ -276,7 +285,7 @@ class AuditManager extends BaseManager {
         );
       } else if (!known.has(name)) {
         this.engine.blockConfiguration(
-          `ngdpbase.audit.events enables '${name}', which nothing in this build emits. ` +
+          `ngdpbase.audit.events enables '${name}', which nothing in this build emits: neither the shipped defaults nor an enabled addon declare it. ` +
           'Set enabled: false on it, or remove it from app-custom-config.json, until an emitter exists.'
         );
       }

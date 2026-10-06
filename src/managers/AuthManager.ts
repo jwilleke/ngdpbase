@@ -23,9 +23,8 @@
  * Addons register through the same method, so the contributed path is the one
  * exercised on every boot rather than a second, less-travelled one.
  *
- * Future providers (see #421, #448):
+ * Future providers (see #421):
  *   - TotpAuthProvider
- *   - Passkey / WebAuthn
  *
  * @see {@link https://github.com/jwilleke/ngdpbase/issues/396}
  */

@@ -91,4 +91,20 @@ describe('POST /recover-password (#1452)', () => {
     expect(renderedError(res)).toMatch(message);
     expect(reset).not.toHaveBeenCalled();
   });
+
+  test('#1632: the minimum length comes from ngdpbase.user.security.password-min-length', async () => {
+    const config = { getProperty: vi.fn((key: string, fallback: unknown) => (key === 'ngdpbase.user.security.password-min-length' ? 12 : fallback)) };
+    routes = new WikiRoutes({
+      getManager: (name: string) => (name === 'UserManager' ? { resetPasswordWithRecoveryWords: reset } : name === 'ConfigurationManager' ? config : null)
+    });
+    vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({ csrfToken: 't' });
+    const internals = routes as unknown as { getLoginThrottle: () => unknown; auditAuthentication: () => Promise<void> };
+    vi.spyOn(internals, 'getLoginThrottle').mockImplementation(() => null);
+    vi.spyOn(internals, 'auditAuthentication').mockImplementation(auditAuthentication);
+
+    const res = newRes();
+    await routes.recoverPassword(req({ ...good, password: 'elevenchars', confirmPassword: 'elevenchars' }), res);
+    expect(renderedError(res)).toMatch(/at least 12/);
+    expect(reset).not.toHaveBeenCalled();
+  });
 });
