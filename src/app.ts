@@ -1106,7 +1106,7 @@ void (async (): Promise<void> => {
   if (unreachable.length > 0) {
     console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
     for (const problem of unreachable) console.error(`  - ${problem}`);
-    console.error('Lower the role\'s required-aal, or enable a factor that reaches it (passkeys, TOTP), then restart.');
+    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, or the email link as a second factor), then restart.');
     process.exit(1);
   }
 
@@ -1196,12 +1196,11 @@ void (async (): Promise<void> => {
   }
   console.log(`🌐 Visit: ${baseURL}`);
 
-  // The password itself is never echoed. It used to be, because it was the
-  // shipped, publicly-known 'admin123' and printing it gave away nothing.
-  // ngdpbase no longer ships a default: every bootstrap password is now
-  // operator-supplied, so echoing one would write a live credential into the
-  // logs — and /admin/logs is readable by anyone holding `admin-read`, which
-  // is exactly what the read-only demo role grants (#1029).
+  // The password itself is never echoed. The shipped default is the well-known
+  // 'admin123', but an operator may have set their own, and echoing that would
+  // write a live credential into the logs — /admin/logs is readable by anyone
+  // holding `admin-read`, which is exactly what the read-only demo role grants
+  // (#1029).
   const isDefaultPassword = await userManager.isAdminUsingDefaultPassword();
   if (isDefaultPassword) {
     console.log('⚠️  The admin account is still using the bootstrap password from');
