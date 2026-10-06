@@ -39,6 +39,15 @@ import * as crypto from 'crypto';
 /** Cookie carrying the opaque per-request state value. */
 export const DEVICE_STATE_COOKIE = 'ngdp_ml_state';
 
+/**
+ * The same binding for an OAuth sign-in (#1630): the browser that started the
+ * flow is the one the callback must come back to. Its own cookie, so a
+ * magic-link request and a Google sign-in in flight together do not overwrite
+ * each other. Unlike the magic link there is no cross-device flow here — the
+ * provider redirects the same browser back — so it is always enforced.
+ */
+export const OAUTH_STATE_COOKIE = 'ngdp_oauth_state';
+
 export type DeviceBindingOutcome =
   /** Cookie present and equal to the value stored with the token. */
   | 'match'

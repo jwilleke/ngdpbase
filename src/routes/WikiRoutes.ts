@@ -74,6 +74,7 @@ import { resolveRange } from '../utils/httpRange.js';
 import { safeRegistrationMessage } from '../utils/userCreateError.js';
 import {
   DEVICE_STATE_COOKIE,
+  OAUTH_STATE_COOKIE,
   deviceStateCookieOptions,
   newDeviceState,
   evaluateDeviceBinding
@@ -7558,7 +7559,12 @@ ${panes}
         return res.redirect('/login?error=Google+sign-in+not+enabled');
       }
       const redirect = (req.body.redirect as string) || '/';
-      const authUrl = authManager.startFlow('google-oidc', { redirect });
+      // #1630: the callback must return to this browser — the same opaque
+      // value goes into an HTTP-only cookie and alongside the OAuth state.
+      const deviceState = newDeviceState();
+      const cookieSecure = Boolean(this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.session.secure', false));
+      res.cookie(OAUTH_STATE_COOKIE, deviceState, deviceStateCookieOptions(10 * 60_000, cookieSecure));
+      const authUrl = authManager.startFlow('google-oidc', { redirect, deviceState });
       res.redirect(authUrl);
     } catch (err: unknown) {
       logger.error('Error initiating Google OIDC:', err);
@@ -7585,10 +7591,9 @@ ${panes}
       // Get redirect URL before consuming state (state deleted in consumeToken)
       const redirect = authManager.getFlowRedirect('google-oidc', state);
 
-      const result = await authManager.authenticate('google-oidc', {
-        token: code,
-        state
-      } as Parameters<typeof authManager.authenticate>[1]);
+      const deviceState = (req.cookies as Record<string, string> | undefined)?.[OAUTH_STATE_COOKIE];
+      res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
+      const result = await authManager.authenticate('google-oidc', { token: code, state, deviceState });
 
       if (!result.success) {
         const configManager = this.engine.getManager('ConfigurationManager');
