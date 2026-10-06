@@ -2,7 +2,7 @@
   "ngdpbase.application-name": "ngdp-instance",
   "ngdpbase.favicon-path": "/favicon.svg",
   "ngdpbase.application.category": "Digital Platform",
-  "ngdpbase.version": "4.21.2",
+  "ngdpbase.version": "4.22.0",
   "ngdpbase.github.repo": "jwilleke/ngdpbase",
   "ngdpbase.application.base-url": "http://localhost:3000",
   "ngdpbase.encoding": "UTF-8",
@@ -234,11 +234,51 @@
   "_comment_oidc_auth_server_enabled": "#1570 — the OpenID Connect provider at <base-url>/oidc (the oidc-auth-server package, embedded by OidcManager): device authorization (RFC 8628), UserInfo and code flow for apps that sign people in through this instance. Off: the package is not loaded and /oidc does not exist. On: requires ngdpbase.application.base-url set explicitly (https, or http on localhost) — the issuer is that plus /oidc; otherwise the manager reports degraded and mounts nothing. `oidc-auth-server` is a reserved namespace: every other oidc-auth-server.* key is the package's own (see its config/app-default-config.json) and goes in app-custom-config.json; issuer, trust-proxy, development and acr-values are derived by ngdpbase and refused if set. Its signing keys (OIDC_AUTH_SERVER_JWKS) and cookie keys (OIDC_AUTH_SERVER_COOKIE_KEYS) are environment-only and generated into <FAST_STORAGE>/.env on first enable.",
   "oidc-auth-server.enabled": false,
   "ngdpbase.auth.factors": [
-    { "authproviderid": "passkey", "primary": true, "amr": ["swk", "user"], "aal": 2, "acr": "phr", "enabled": true },
-    { "authproviderid": "password", "primary": true, "amr": ["pwd"], "aal": 1, "enabled": true },
-    { "authproviderid": "magic-link", "primary": true, "amr": ["email"], "aal": 1, "enabled": true },
-    { "authproviderid": "google-oidc", "primary": true, "amr": ["trust"], "enabled": true },
-    { "authproviderid": "cloudflare-access", "primary": true, "amr": ["trust"], "enabled": true }
+    {
+      "authproviderid": "passkey",
+      "primary": true,
+      "amr": [
+        "swk",
+        "user"
+      ],
+      "aal": 2,
+      "acr": "phr",
+      "enabled": true
+    },
+    {
+      "authproviderid": "password",
+      "primary": true,
+      "amr": [
+        "pwd"
+      ],
+      "aal": 1,
+      "enabled": true
+    },
+    {
+      "authproviderid": "magic-link",
+      "primary": true,
+      "amr": [
+        "email"
+      ],
+      "aal": 1,
+      "enabled": true
+    },
+    {
+      "authproviderid": "google-oidc",
+      "primary": true,
+      "amr": [
+        "trust"
+      ],
+      "enabled": true
+    },
+    {
+      "authproviderid": "cloudflare-access",
+      "primary": true,
+      "amr": [
+        "trust"
+      ],
+      "enabled": true
+    }
   ],
   "_comment_auth_throttle": "Login throttling (#1044) — failed password attempts are counted per username AND per client IP; a success clears the count. Locks always EXPIRE: a permanent lock on a known username like admin would be a denial-of-service vector against the operator. Consecutive lockouts double the wait, capped by max-lock-minutes.",
   "ngdpbase.auth.throttle.enabled": true,
@@ -815,35 +855,138 @@
   "_comment_markup_html_policy": "The one HTML policy for page content (#1623): the raw HTML an author may write. Rendering drops anything else from every page, whatever its origin (an edit, an import, an admin raw save, a page saved before this policy); a save is refused with a message naming what is not allowed. Always on. Each list is a set of name: true (#1612), so app-custom-config.json widens it by adding entries — {\"ngdpbase.markup.html-policy\": {\"attributes\": {\"span\": {\"style\": true}}}} — and narrows it with name: false. tags: allowed elements. attributes: allowed attributes per tag, '*' for every tag. schemes: URL schemes allowed in href/src/cite (relative URLs always are). schemes-by-tag: a tag's own scheme set, used instead of schemes for that tag. Left out on purpose: script, style and event handlers; iframe/object/embed (the map embeds come from plugins, which this policy never sees); svg and form controls; the style attribute (CSS can overlay the page; %%(css) blocks are the styling path); id (it can clobber the page's own scripts); data: URLs except in img src, where an image cannot run script. Without a valid value no author HTML renders at all. See docs/html-policy.md.",
   "ngdpbase.markup.html-policy": {
     "tags": {
-      "p": true, "div": true, "span": true, "br": true, "hr": true,
-      "strong": true, "em": true, "b": true, "i": true, "u": true, "s": true, "del": true, "ins": true, "mark": true, "small": true, "sub": true, "sup": true,
-      "ul": true, "ol": true, "li": true, "dl": true, "dt": true, "dd": true,
-      "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-      "a": true, "img": true, "figure": true, "figcaption": true,
-      "blockquote": true, "q": true, "cite": true, "code": true, "pre": true, "kbd": true, "samp": true, "var": true,
-      "table": true, "thead": true, "tbody": true, "tfoot": true, "tr": true, "th": true, "td": true, "caption": true, "colgroup": true, "col": true,
-      "abbr": true, "time": true, "details": true, "summary": true
+      "p": true,
+      "div": true,
+      "span": true,
+      "br": true,
+      "hr": true,
+      "strong": true,
+      "em": true,
+      "b": true,
+      "i": true,
+      "u": true,
+      "s": true,
+      "del": true,
+      "ins": true,
+      "mark": true,
+      "small": true,
+      "sub": true,
+      "sup": true,
+      "ul": true,
+      "ol": true,
+      "li": true,
+      "dl": true,
+      "dt": true,
+      "dd": true,
+      "h1": true,
+      "h2": true,
+      "h3": true,
+      "h4": true,
+      "h5": true,
+      "h6": true,
+      "a": true,
+      "img": true,
+      "figure": true,
+      "figcaption": true,
+      "blockquote": true,
+      "q": true,
+      "cite": true,
+      "code": true,
+      "pre": true,
+      "kbd": true,
+      "samp": true,
+      "var": true,
+      "table": true,
+      "thead": true,
+      "tbody": true,
+      "tfoot": true,
+      "tr": true,
+      "th": true,
+      "td": true,
+      "caption": true,
+      "colgroup": true,
+      "col": true,
+      "abbr": true,
+      "time": true,
+      "details": true,
+      "summary": true
     },
     "attributes": {
-      "*": { "class": true, "title": true, "lang": true, "dir": true },
-      "a": { "href": true, "name": true, "target": true, "rel": true },
-      "img": { "src": true, "alt": true, "width": true, "height": true, "loading": true },
-      "th": { "colspan": true, "rowspan": true, "scope": true },
-      "td": { "colspan": true, "rowspan": true },
-      "col": { "span": true },
-      "colgroup": { "span": true },
-      "ol": { "start": true, "reversed": true, "type": true },
-      "li": { "value": true },
-      "blockquote": { "cite": true },
-      "q": { "cite": true },
-      "del": { "cite": true, "datetime": true },
-      "ins": { "cite": true, "datetime": true },
-      "time": { "datetime": true },
-      "details": { "open": true }
+      "*": {
+        "class": true,
+        "title": true,
+        "lang": true,
+        "dir": true
+      },
+      "a": {
+        "href": true,
+        "name": true,
+        "target": true,
+        "rel": true
+      },
+      "img": {
+        "src": true,
+        "alt": true,
+        "width": true,
+        "height": true,
+        "loading": true
+      },
+      "th": {
+        "colspan": true,
+        "rowspan": true,
+        "scope": true
+      },
+      "td": {
+        "colspan": true,
+        "rowspan": true
+      },
+      "col": {
+        "span": true
+      },
+      "colgroup": {
+        "span": true
+      },
+      "ol": {
+        "start": true,
+        "reversed": true,
+        "type": true
+      },
+      "li": {
+        "value": true
+      },
+      "blockquote": {
+        "cite": true
+      },
+      "q": {
+        "cite": true
+      },
+      "del": {
+        "cite": true,
+        "datetime": true
+      },
+      "ins": {
+        "cite": true,
+        "datetime": true
+      },
+      "time": {
+        "datetime": true
+      },
+      "details": {
+        "open": true
+      }
     },
-    "schemes": { "http": true, "https": true, "mailto": true, "tel": true },
+    "schemes": {
+      "http": true,
+      "https": true,
+      "mailto": true,
+      "tel": true
+    },
     "schemes-by-tag": {
-      "img": { "http": true, "https": true, "data": true }
+      "img": {
+        "http": true,
+        "https": true,
+        "data": true
+      }
     }
   },
   "ngdpbase.markup.use-advanced-parser": true,
