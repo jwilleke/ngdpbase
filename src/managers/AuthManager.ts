@@ -842,17 +842,28 @@ class AuthManager extends BaseManager {
 
   /**
    * Step-up (#1525): which permissions ask for a fresh factor, and how fresh.
-   * `ngdpbase.auth.step-up`; a missing or malformed value means no step-up,
-   * logged, rather than a guess.
+   * Which: every permission entry marked `step-up: true` in
+   * `ngdpbase.permissions.definitions` — the permission entry is the one
+   * declaration of its action (#1638). How fresh:
+   * `ngdpbase.auth.step-up.max-age-minutes`; missing, malformed or 0 means no
+   * step-up. A `permissions` list still set under `ngdpbase.auth.step-up` (the
+   * shape before #1638) is honoured as well, and said once.
    */
   stepUpPolicy(): { maxAgeMs: number; permissions: ReadonlySet<string> } {
-    const raw = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.auth.step-up', null) as
-      { 'max-age-minutes'?: unknown; permissions?: unknown } | null;
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const raw = cm?.getProperty('ngdpbase.auth.step-up', null) as { 'max-age-minutes'?: unknown; permissions?: unknown } | null;
     const minutes = Number(raw?.['max-age-minutes']);
-    const permissions = enabledEntries(raw?.permissions);
     if (!Number.isFinite(minutes) || minutes <= 0) return { maxAgeMs: 0, permissions: new Set() };
-    return { maxAgeMs: minutes * 60_000, permissions: new Set(permissions) };
+    const definitions = cm?.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { 'step-up'?: unknown }> | null;
+    const flagged = Object.entries(definitions ?? {}).filter(([, d]) => d?.['step-up'] === true).map(([name]) => name);
+    const legacy = enabledEntries(raw?.permissions);
+    if (legacy.length > 0 && !this.warnedLegacyStepUp) {
+      this.warnedLegacyStepUp = true;
+      logger.warn(`[AuthManager] ngdpbase.auth.step-up.permissions is retired (#1638): mark the permission "step-up": true in ngdpbase.permissions.definitions instead. Honoured for now: ${legacy.join(', ')}`);
+    }
+    return { maxAgeMs: minutes * 60_000, permissions: new Set([...flagged, ...legacy]) };
   }
+  private warnedLegacyStepUp = false;
 
   /**
    * Whether `permission` needs a fresher factor than `signIn` holds (#1525).

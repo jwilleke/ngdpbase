@@ -224,7 +224,15 @@ describe('AuthManager', () => {
       });
 
       describe('step-up (#1525)', () => {
-        const STEP_UP = { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: ['account-security', 'config-manage'] } };
+        // #1638: the permission entry carries `step-up`; the window stays in ngdpbase.auth.step-up.
+        const STEP_UP = {
+          'ngdpbase.auth.step-up': { 'max-age-minutes': 5 },
+          'ngdpbase.permissions.definitions': {
+            'account-security': { description: 'own account', 'step-up': true },
+            'config-manage': { description: 'config', 'step-up': true },
+            'page-edit': { description: 'edit pages' }
+          }
+        };
         const NOW = Date.parse('2026-10-04T12:00:00Z');
         const factor = (aal: number, minutesAgo: number) => ({ provider: aal >= 2 ? 'passkey' : 'password', amr: aal >= 2 ? ['hwk', 'user'] : ['pwd'], aal, at: new Date(NOW - minutesAgo * 60_000).toISOString() });
         const signIn = (...factors: ReturnType<typeof factor>[]) => ({ provider: 'password', factors, amr: [], aal: 1, acr: 'aal1', mfa: false, at: '' });
@@ -258,6 +266,12 @@ describe('AuthManager', () => {
           expect(off.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(false);
           const zero = await withRoles({ reader: 1 }, { 'ngdpbase.auth.step-up': { 'max-age-minutes': 0, permissions: ['account-security'] } });
           expect(zero.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(false);
+        });
+
+        test('#1638: a step-up permissions list in a custom config (the old shape) is still honoured', async () => {
+          const legacy = await withRoles({ reader: 1 }, { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: ['account-security'] } });
+          expect(legacy.stepUpNeeded('account-security', undefined, ['reader'], false, NOW)).toBe(true);
+          expect(legacy.stepUpNeeded('page-edit', undefined, ['reader'], false, NOW)).toBe(false);
         });
 
         test('re-authenticating adds the factor, redoes the assessment and moves the sign-in time', async () => {

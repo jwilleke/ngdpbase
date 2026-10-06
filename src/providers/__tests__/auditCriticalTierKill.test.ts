@@ -61,7 +61,7 @@ import { bindAuditEvents, AUDIT_EVENTS_KEY } from ${JSON.stringify(DIST_REGISTRY
 // This child has no AuditManager, so it binds the shipped map itself — the
 // same thing vitest.setup.ts does for in-process tests.
 const shipped = JSON.parse(readFileSync(${JSON.stringify(SHIPPED_CONFIG)}, 'utf8'));
-bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? shipped[key] : d));
+bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY || key === 'ngdpbase.permissions.definitions' ? shipped[key] : d));
 
 const config = {
   'ngdpbase.audit.provider.file.auditfilename': 'audit.log',

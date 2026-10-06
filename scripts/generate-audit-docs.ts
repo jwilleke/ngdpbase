@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { coverage } from './audit-coverage.js';
+import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO = path.resolve(path.dirname(__filename), '..');
@@ -40,7 +41,8 @@ interface Declaration { 'on-failure': string; enabled?: boolean; description: st
 
 function declarations(): Record<string, Declaration> {
   const cfg = JSON.parse(readFileSync(CONFIG, 'utf8')) as Record<string, unknown>;
-  return (cfg['ngdpbase.audit.events'] ?? {}) as Record<string, Declaration>;
+  // #1638: the one reader — the events map plus every permission carrying `audit`.
+  return auditDeclarationsFrom((key, fallback) => cfg[key] ?? fallback) as Record<string, Declaration>;
 }
 
 /** The event table, as the manager document shows it. */

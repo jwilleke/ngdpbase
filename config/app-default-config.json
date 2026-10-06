@@ -227,15 +227,9 @@
   "ngdpbase.auth.credentials.file": "${FAST_STORAGE}/users/credentials.json",
   "_comment_auth_passkey": "#448 — passkeys (WebAuthn): a passkey alone signs a person in, at AAL2, phishing-resistant. Registered only when ngdpbase.application.base-url is set explicitly and is https (or localhost): a passkey is tied to that host, so it works only on that hostname — a site answering on several hostnames should redirect the others to it. Stored in the credentials store. false turns passkeys off.",
   "ngdpbase.auth.passkey.enabled": true,
-  "_comment_auth_step_up": "#1525 — step-up: these permissions ask for a fresh factor even inside a valid session, so a session left open on a shared machine cannot change what protects the account or the instance. Fresh means a factor satisfied within max-age-minutes that reaches the level the person's roles require (an admin re-authenticates with a passkey, others with a passkey or their password); a known device never counts, and a delegated credential (agent token, app token) never satisfies it. The prompt is /auth/reauth, which returns to the page. Every prompt and outcome is audited (reauth-prompt, reauth-success, reauth-failure). Rare by design: account-security, not profile-manage, so everyday self-service never prompts (decided 2026-10-04). permissions is a set (#1612): an addon or the custom file adds one with true and removes one with false. An empty set, or a max-age-minutes of 0, turns step-up off.",
+  "_comment_auth_step_up": "#1525 — step-up: permissions marked step-up: true in ngdpbase.permissions.definitions ask (#1638; the permissions list here was folded into the entries, and a list still set in a custom config is honoured with a warning) for a fresh factor even inside a valid session, so a session left open on a shared machine cannot change what protects the account or the instance. Fresh means a factor satisfied within max-age-minutes that reaches the level the person's roles require (an admin re-authenticates with a passkey, others with a passkey or their password); a known device never counts, and a delegated credential (agent token, app token) never satisfies it. The prompt is /auth/reauth, which returns to the page. Every prompt and outcome is audited (reauth-prompt, reauth-success, reauth-failure). Rare by design: account-security, not profile-manage, so everyday self-service never prompts (decided 2026-10-04). A max-age-minutes of 0 turns step-up off.",
   "ngdpbase.auth.step-up": {
-    "max-age-minutes": 5,
-    "permissions": {
-      "account-security": true,
-      "config-manage": true,
-      "secret-reveal": true,
-      "token-mint": true
-    }
+    "max-age-minutes": 5
   },
   "_comment_oidc_auth_server_enabled": "#1570 — the OpenID Connect provider at <base-url>/oidc (the oidc-auth-server package, embedded by OidcManager): device authorization (RFC 8628), UserInfo and code flow for apps that sign people in through this instance. Off: the package is not loaded and /oidc does not exist. On: requires ngdpbase.application.base-url set explicitly (https, or http on localhost) — the issuer is that plus /oidc; otherwise the manager reports degraded and mounts nothing. `oidc-auth-server` is a reserved namespace: every other oidc-auth-server.* key is the package's own (see its config/app-default-config.json) and goes in app-custom-config.json; issuer, trust-proxy, development and acr-values are derived by ngdpbase and refused if set. Its signing keys (OIDC_AUTH_SERVER_JWKS) and cookie keys (OIDC_AUTH_SERVER_COOKIE_KEYS) are environment-only and generated into <FAST_STORAGE>/.env on first enable.",
   "oidc-auth-server.enabled": false,
@@ -383,28 +377,8 @@
   "ngdpbase.audit.chain-witness.destination": "",
   "ngdpbase.audit.chain-witness.interval-minutes": 60,
   "ngdpbase.audit.retentiondays": 90,
-  "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code lists the same names once in src/utils/auditEventNames.ts and a test holds the two equal. Events are actions taken; permissions are authority; neither carries the other's fields. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
+  "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code's names are generated from configuration into src/utils/auditEventNames.generated.ts. #1638: an event that records a permission's action is declared on the permission entry itself (ngdpbase.permissions.definitions.<name>.audit); this map holds only events that are not a permission's action. A name is declared in exactly one place. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
   "ngdpbase.audit.events": {
-    "page-create": {
-      "on-failure": "continue",
-      "description": "Page created"
-    },
-    "page-edit": {
-      "on-failure": "continue",
-      "description": "Page edited"
-    },
-    "page-rename": {
-      "on-failure": "continue",
-      "description": "Page renamed"
-    },
-    "page-delete": {
-      "on-failure": "refuse",
-      "description": "Page deleted; destruction, so the record must outlive the page"
-    },
-    "comment-create": {
-      "on-failure": "continue",
-      "description": "Comment added to a page — user content written on someone's behalf, the page-edit class (#1232)"
-    },
     "comment-delete": {
       "on-failure": "continue",
       "description": "Comment marked deleted; who removed it and whose it was (#1232)"
@@ -413,30 +387,9 @@
       "on-failure": "continue",
       "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)"
     },
-    "page-read": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129)"
-    },
     "page-link-rewrite": {
       "on-failure": "continue",
       "description": "Inbound links rewritten after a rename"
-    },
-    "asset-upload": {
-      "on-failure": "continue",
-      "description": "File uploaded"
-    },
-    "asset-delete": {
-      "on-failure": "refuse",
-      "description": "File deleted; destruction"
-    },
-    "token-mint": {
-      "on-failure": "refuse",
-      "description": "Agent token minted; a credential nobody knows exists is the worst case"
-    },
-    "store-create": {
-      "on-failure": "refuse",
-      "description": "A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record"
     },
     "token-revoke": {
       "on-failure": "refuse",
@@ -530,27 +483,6 @@
       "on-failure": "continue",
       "description": "Anonymous sessions cleared"
     },
-    "user-create": {
-      "on-failure": "continue",
-      "description": "Account created; by an administrator, by self-registration, or provisioned by an identity provider"
-    },
-    "user-edit": {
-      "on-failure": "continue",
-      "description": "Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded"
-    },
-    "user-delete": {
-      "on-failure": "refuse",
-      "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
-    },
-    "search-user": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume"
-    },
-    "page-export": {
-      "on-failure": "continue",
-      "description": "Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists"
-    },
     "store-takeout": {
       "on-failure": "continue",
       "description": "A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left"
@@ -558,10 +490,6 @@
     "store-import": {
       "on-failure": "continue",
       "description": "A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped"
-    },
-    "asset-edit": {
-      "on-failure": "continue",
-      "description": "Attachment metadata edited; EXIF/IPTC and catalog fields change provenance"
     },
     "config-reset": {
       "on-failure": "refuse",
@@ -571,10 +499,6 @@
       "on-failure": "continue",
       "description": "A full backup written; where it went and who asked"
     },
-    "secret-reveal": {
-      "on-failure": "continue",
-      "description": "A masked configuration value shown to an administrator; the key is recorded, never the value"
-    },
     "audit-export": {
       "on-failure": "continue",
       "description": "The audit trail exported to a file; who took a copy, in what format, with what filter"
@@ -582,26 +506,6 @@
     "audit-chain-restart": {
       "on-failure": "refuse",
       "description": "Hash chain restarted, with the reason; the marker is the action and cannot half-complete"
-    },
-    "asset-read": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "Attachment read; not recorded, read volume"
-    },
-    "search-page": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "Page search; not recorded, read volume"
-    },
-    "user-read": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "User profile read; not recorded, read volume"
-    },
-    "admin-read": {
-      "on-failure": "continue",
-      "enabled": false,
-      "description": "Admin dashboard read; not recorded, read volume"
     },
     "oidcauthorize-allow": {
       "on-failure": "continue",
@@ -784,6 +688,14 @@
     },
     "ngdpbase.audit.events": {
       "group": "Audit",
+      "restart": false
+    },
+    "ngdpbase.permissions.definitions": {
+      "group": "Audit",
+      "restart": false
+    },
+    "ngdpbase.auth.step-up": {
+      "group": "Identity and registration",
       "restart": false
     },
     "ngdpbase.audit.retentiondays": {
@@ -1703,17 +1615,26 @@
     "allowedAuthMethods",
     "avatar"
   ],
-  "_comment_permissions": "Canonical permission registry. Format: {target}-{action}. Target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). Each entry: description, icon (Font Awesome name), color (hex). The key itself is the permission name.",
+  "_comment_permissions": "Canonical permission registry, and the one declaration of each action (#1638: a permission and its action are one thing). Format: {target}-{action}, target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). The key is the permission name. Each entry: description, icon (Font Awesome name), color (hex), and optionally audit — { on-failure: refuse | continue, enabled, description } — when using the permission is recorded (the event shares the permission's name; see ngdpbase.audit.events for the rules), and step-up: true when using it needs a fresh sign-in within ngdpbase.auth.step-up.max-age-minutes. An add-on declares its permissions, their audit and their step-up the same way in its config/default-config.json.",
   "ngdpbase.permissions.definitions": {
     "page-read": {
       "description": "View pages",
       "icon": "eye",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129)"
+      }
     },
     "page-edit": {
       "description": "Edit pages",
       "icon": "edit",
-      "color": "#007bff"
+      "color": "#007bff",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Page edited"
+      }
     },
     "page-public": {
       "description": "Make a page public: move it out of its vault (checked by the page's system-category, #1504)",
@@ -1723,27 +1644,48 @@
     "page-create": {
       "description": "Create new pages",
       "icon": "plus",
-      "color": "#28a745"
+      "color": "#28a745",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Page created"
+      }
     },
     "page-delete": {
       "description": "Delete pages",
       "icon": "trash",
-      "color": "#dc3545"
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Page deleted; destruction, so the record must outlive the page"
+      }
     },
     "page-rename": {
       "description": "Rename pages",
       "icon": "i-cursor",
-      "color": "#fd7e14"
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Page renamed"
+      }
     },
     "page-export": {
       "description": "Export pages",
       "icon": "file-export",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists"
+      }
     },
     "asset-read": {
       "description": "View assets (attachments)",
       "icon": "paperclip",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Attachment read; not recorded, read volume"
+      }
     },
     "media-read": {
       "description": "Browse and view the media library (not delegated to anonymous visitors)",
@@ -1753,12 +1695,20 @@
     "asset-upload": {
       "description": "Upload assets",
       "icon": "upload",
-      "color": "#28a745"
+      "color": "#28a745",
+      "audit": {
+        "on-failure": "continue",
+        "description": "File uploaded"
+      }
     },
     "asset-delete": {
       "description": "Delete assets",
       "icon": "trash",
-      "color": "#dc3545"
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "File deleted; destruction"
+      }
     },
     "share-manage": {
       "description": "Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224)",
@@ -1773,72 +1723,128 @@
     "account-security": {
       "description": "Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
       "icon": "user-shield",
-      "color": "#6f42c1"
+      "color": "#6f42c1",
+      "step-up": true
     },
     "config-manage": {
       "description": "Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
       "icon": "sliders-h",
-      "color": "#dc3545"
+      "color": "#dc3545",
+      "step-up": true
     },
     "secret-reveal": {
       "description": "Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed",
       "icon": "eye-slash",
-      "color": "#dc3545"
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "continue",
+        "description": "A masked configuration value shown to an administrator; the key is recorded, never the value"
+      },
+      "step-up": true
     },
     "comment-create": {
       "description": "Add a comment, and delete your own; deleting anyone's is admin-system (#1198)",
       "icon": "comment",
-      "color": "#0dcaf0"
+      "color": "#0dcaf0",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Comment added to a page — user content written on someone's behalf, the page-edit class (#1232)"
+      }
     },
     "token-mint": {
       "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope",
       "icon": "key",
-      "color": "#fd7e14"
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Agent token minted; a credential nobody knows exists is the worst case"
+      },
+      "step-up": true
     },
     "store-create": {
       "description": "Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it",
       "icon": "lock",
-      "color": "#198754"
+      "color": "#198754",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record"
+      }
     },
     "asset-edit": {
       "description": "Edit asset metadata (EXIF/IPTC/XMP)",
       "icon": "pen",
-      "color": "#fd7e14"
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Attachment metadata edited; EXIF/IPTC and catalog fields change provenance"
+      }
     },
     "search-page": {
       "description": "Search pages",
       "icon": "search",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Page search; not recorded, read volume"
+      }
     },
     "search-user": {
       "description": "Search users",
       "icon": "search",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume"
+      }
     },
     "user-read": {
       "description": "View user list and profiles",
       "icon": "users",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "User profile read; not recorded, read volume"
+      }
     },
     "user-edit": {
       "description": "Edit user accounts",
       "icon": "user-edit",
-      "color": "#007bff"
+      "color": "#007bff",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded"
+      }
     },
     "user-create": {
       "description": "Create user accounts",
       "icon": "user-plus",
-      "color": "#28a745"
+      "color": "#28a745",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Account created; by an administrator, by self-registration, or provisioned by an identity provider"
+      }
     },
     "user-delete": {
       "description": "Delete user accounts",
       "icon": "user-minus",
-      "color": "#dc3545"
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Account deleted; destruction of an identity and its attribution, recorded before the delete"
+      }
     },
     "admin-read": {
       "description": "View administration screens (read-only, no changes)",
       "icon": "eye",
-      "color": "#6c757d"
+      "color": "#6c757d",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Admin dashboard read; not recorded, read volume"
+      }
     },
     "admin-system": {
       "description": "System administration",

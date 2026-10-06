@@ -95,12 +95,13 @@ describe('#1214 merging', () => {
 
 describe('#1214 the pre-engine read agrees with the manager', () => {
   test('a one-entry override of ngdpbase.audit.events keeps the other entries', async () => {
-    writeCustom({ 'ngdpbase.audit.events': { 'page-delete': { 'on-failure': 'continue', description: 'lowered' } } });
+    // #1638: share-create / token-revoke stay in the events map (not a permission's action).
+    writeCustom({ 'ngdpbase.audit.events': { 'share-create': { 'on-failure': 'continue', description: 'lowered' } } });
 
     const pre = loadMergedConfigSync({ FAST_STORAGE: dataDir });
     const preEvents = pre?.merged['ngdpbase.audit.events'] as Record<string, { 'on-failure': string }>;
-    expect(preEvents['page-delete']['on-failure']).toBe('continue');
-    expect(preEvents['token-mint']['on-failure']).toBe('refuse');
+    expect(preEvents['share-create']['on-failure']).toBe('continue');
+    expect(preEvents['token-revoke']['on-failure']).toBe('refuse');
     expect(Object.keys(preEvents).length).toBeGreaterThan(30);
     expect(pre?.customKeys.has('ngdpbase.audit.events')).toBe(true);
 

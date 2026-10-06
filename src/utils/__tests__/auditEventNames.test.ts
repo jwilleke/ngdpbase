@@ -8,11 +8,13 @@
 import fs from 'fs';
 import path from 'path';
 import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames } from '../auditEventNames';
+import { auditDeclarationsFrom } from '../auditRegistry';
 
 const shipped = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')
 ) as Record<string, unknown>;
-const configured = Object.keys(shipped['ngdpbase.audit.events'] as Record<string, unknown>).sort();
+// #1638: the events map plus each permission's `audit`, through the one reader.
+const configured = Object.keys(auditDeclarationsFrom((key, d) => shipped[key] ?? d)).sort();
 
 describe('#1201 code and configuration name the same events', () => {
   test('every configured name is listed in code, and every listed name is configured', () => {

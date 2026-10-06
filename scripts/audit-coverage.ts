@@ -37,6 +37,7 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { AUDIT_EVENT_NAME_PATTERN, auditEventKey } from './generate-permission-types.js';
+import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,9 +50,17 @@ type EventMap = Record<string, { 'on-failure'?: string; enabled?: boolean }>;
 /** `ngdpbase.audit.events` from one config file, or {} when it has none. */
 function eventMap(rel: string): EventMap {
   const parsed = JSON.parse(read(rel)) as Record<string, unknown>;
-  const map = parsed['ngdpbase.audit.events'];
-  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
-  return map as EventMap;
+  // #1638: the one reader — the events map plus every permission carrying `audit`.
+  return auditDeclarationsFrom((key, fallback) => parsed[key] ?? fallback) as EventMap;
+}
+
+/** #1638: names one file declares twice — in the events map and on a permission entry. */
+function declaredTwice(rel: string): string[] {
+  const parsed = JSON.parse(read(rel)) as Record<string, unknown>;
+  const events = parsed['ngdpbase.audit.events'];
+  const permissions = parsed['ngdpbase.permissions.definitions'];
+  if (!events || typeof events !== 'object' || !permissions || typeof permissions !== 'object') return [];
+  return Object.keys(events).filter((n) => (permissions as Record<string, { audit?: unknown }>)[n]?.audit).sort();
 }
 
 /** The shipped map (#1200: configuration is the registry). Core's names; AUDIT_EVENT is generated from it. */
@@ -168,6 +177,8 @@ export interface Coverage {
   offVocabulary: string[];
   /** Declared or emitted under a name that is not `{target}-{action}` (#1201, #1206). */
   offConvention: string[];
+  /** #1638: declared both in the events map and on a permission entry of the same file. */
+  declaredTwice: string[];
 }
 
 
@@ -185,7 +196,8 @@ export function coverage(): Coverage {
     undeclared: emitted.filter((t) => !vocabSet.has(t)),
     unemitted: [...registry.keys()].filter((t) => !emitted.includes(t)).sort(),
     offVocabulary: emitted.filter((t) => !vocabSet.has(t)),
-    offConvention: [...new Set([...vocabulary, ...emitted])].filter((t) => !AUDIT_EVENT_NAME_PATTERN.test(t)).sort()
+    offConvention: [...new Set([...vocabulary, ...emitted])].filter((t) => !AUDIT_EVENT_NAME_PATTERN.test(t)).sort(),
+    declaredTwice: ['config/app-default-config.json', ...addonEventFiles()].flatMap((rel) => declaredTwice(rel).map((n) => `${n} (${rel})`))
   };
 }
 
@@ -226,6 +238,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     for (const t of c.offVocabulary) console.log(`   ${t}`);
   }
 
+  if (c.declaredTwice.length) {
+    console.log(`\nDECLARED TWICE (${c.declaredTwice.length}) — in ngdpbase.audit.events and on its permission entry (#1638)`);
+    for (const t of c.declaredTwice) console.log(`   ${t}`);
+  }
+
   if (c.unresolvedEmitters.length) {
     console.log(`\nEMITTERS THIS COULD NOT RESOLVE (${c.unresolvedEmitters.length})`);
     console.log('  Reported rather than dropped — an unaccounted name is the point.');
@@ -237,7 +254,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   // before the decision exists is one people disable. The decision exists now.
   const failed =
     c.undeclared.length + c.unemitted.length + c.offVocabulary.length +
-    c.unresolvedEmitters.length + c.offConvention.length;
+    c.unresolvedEmitters.length + c.offConvention.length + c.declaredTwice.length;
   console.log('');
   if (!check) {
     console.log('Report only. Run with --check to fail the build on a gap.');

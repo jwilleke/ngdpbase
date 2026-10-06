@@ -489,19 +489,30 @@ audited.
 <!-- AUTO:audit-events BEGIN -->
 | Event Type | Description | On failure | Recorded |
 | ----- | ----- | ----- | ----- |
-| `page-create` | Page created | continue | yes |
-| `page-edit` | Page edited | continue | yes |
-| `page-rename` | Page renamed | continue | yes |
-| `page-delete` | Page deleted; destruction, so the record must outlive the page | refuse | yes |
-| `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
-| `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
-| `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
 | `page-read` | Page read; off by default so a general-purpose deployment does not drown its log in reads. On, a records-style deployment gets who looked at what (#1129) | continue | no |
-| `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
+| `page-edit` | Page edited | continue | yes |
+| `page-create` | Page created | continue | yes |
+| `page-delete` | Page deleted; destruction, so the record must outlive the page | refuse | yes |
+| `page-rename` | Page renamed | continue | yes |
+| `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | continue | yes |
+| `asset-read` | Attachment read; not recorded, read volume | continue | no |
 | `asset-upload` | File uploaded | continue | yes |
 | `asset-delete` | File deleted; destruction | refuse | yes |
+| `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | continue | yes |
+| `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
+| `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
+| `search-page` | Page search; not recorded, read volume | continue | no |
+| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
+| `user-read` | User profile read; not recorded, read volume | continue | no |
+| `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
+| `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
+| `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
+| `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
+| `comment-delete` | Comment marked deleted; who removed it and whose it was (#1232) | continue | yes |
+| `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
+| `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
@@ -525,23 +536,12 @@ audited.
 | `page-raw-edit` | Page edited through the admin raw editor | continue | yes |
 | `session-revoke` | Session revoked by an administrator | continue | yes |
 | `session-clear-anonymous` | Anonymous sessions cleared | continue | yes |
-| `user-create` | Account created; by an administrator, by self-registration, or provisioned by an identity provider | continue | yes |
-| `user-edit` | Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded | continue | yes |
-| `user-delete` | Account deleted; destruction of an identity and its attribution, recorded before the delete | refuse | yes |
-| `search-user` | People searched for; enumerating people is disclosive in a way searching pages is not. Off by default as read volume | continue | no |
-| `page-export` | Page exported to a file; bulk extraction of content, gated on read until a bulk surface exists | continue | yes |
 | `store-takeout` | A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left | continue | yes |
 | `store-import` | A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped | continue | yes |
-| `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `config-reset` | Every custom configuration value discarded; recorded before the reset, which cannot proceed without it | refuse | yes |
 | `backup-create` | A full backup written; where it went and who asked | continue | yes |
-| `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | continue | yes |
 | `audit-export` | The audit trail exported to a file; who took a copy, in what format, with what filter | continue | yes |
 | `audit-chain-restart` | Hash chain restarted, with the reason; the marker is the action and cannot half-complete | refuse | yes |
-| `asset-read` | Attachment read; not recorded, read volume | continue | no |
-| `search-page` | Page search; not recorded, read volume | continue | no |
-| `user-read` | User profile read; not recorded, read volume | continue | no |
-| `admin-read` | Admin dashboard read; not recorded, read volume | continue | no |
 | `oidcauthorize-allow` | OpenID Connect: an app's sign-in request was allowed and a code issued (#1575) | continue | yes |
 | `oidcauthorize-deny` | OpenID Connect: an app's sign-in request was refused (denied consent, sign-in required, bad request) | continue | yes |
 | `oidctoken-issue` | OpenID Connect: tokens issued to an app, with the grant type that earned them | continue | yes |

@@ -12,10 +12,13 @@
  * an admin UI edit emits `config-change`, and a disk edit is reported by
  * `posture-recorded` at the next boot. See docs/audit-posture.md.
  *
- * Events are actions taken; permissions are authority. The map is keyed by
- * event, so one permission may gate several recorded actions and a recorded
- * action may have no permission at all, and neither registry carries the
- * other's fields.
+ * #1638 (operator, 2026-10-05): a permission and its action are one thing. An
+ * event that records a permission's action is declared on the permission
+ * entry itself — `ngdpbase.permissions.definitions.<name>.audit` — and
+ * `ngdpbase.audit.events` holds only events that are not a permission's
+ * action. {@link auditDeclarationsFrom} reads both, and is the one reader:
+ * the runtime, the generator, the lint, the doc generator and the boot check
+ * all call it, so they cannot disagree.
  *
  * What stays in code is the emitters. `scripts/audit-coverage.ts` proves the
  * map and the emitters agree.
@@ -24,6 +27,8 @@
 import logger from './logger.js';
 
 export const AUDIT_EVENTS_KEY = 'ngdpbase.audit.events';
+/** The permission registry; an entry's `audit` field declares its event (#1638). */
+export const PERMISSION_DEFINITIONS_KEY = 'ngdpbase.permissions.definitions';
 
 /**
  * What happens when the record cannot be written (#1121, #1158, #1218).
@@ -81,6 +86,41 @@ function asDeclarations(value: unknown): Record<string, AuditEventDeclaration> {
   return out;
 }
 
+const warnedDoubled = new Set<string>();
+
+/**
+ * Every declared event in a configuration (#1638): the entries of
+ * `ngdpbase.audit.events`, plus every permission entry carrying `audit`, under
+ * the permission's name. A permission's `audit.description` defaults to the
+ * permission's own description.
+ *
+ * A name in both places is a declaration made twice. The shipped file never
+ * does it (`npm run lint:audit` fails); an operator's custom file that still
+ * sets a moved event under `ngdpbase.audit.events` is honoured — its fields
+ * override the permission's — and said once, so it is never silent.
+ */
+export function auditDeclarationsFrom(read: AuditEventsSource): Record<string, AuditEventDeclaration> {
+  const events = asDeclarations(read(AUDIT_EVENTS_KEY, {}));
+  const permissions = read(PERMISSION_DEFINITIONS_KEY, {});
+  const out: Record<string, AuditEventDeclaration> = {};
+  if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) {
+    for (const [name, entry] of Object.entries(permissions as Record<string, unknown>)) {
+      const audit = (entry as { audit?: unknown } | null)?.audit;
+      if (!audit || typeof audit !== 'object') continue;
+      const description = (entry as { description?: unknown }).description;
+      out[name] = { description: typeof description === 'string' ? description : name, ...(audit as Partial<AuditEventDeclaration>) } as AuditEventDeclaration;
+    }
+  }
+  for (const [name, d] of Object.entries(events)) {
+    if (out[name] && !warnedDoubled.has(name)) {
+      warnedDoubled.add(name);
+      logger.warn(`[audit] '${name}' is declared in ${AUDIT_EVENTS_KEY} and on its permission entry; the ${AUDIT_EVENTS_KEY} entry wins. Move it to ${PERMISSION_DEFINITIONS_KEY}.${name}.audit (#1638).`);
+    }
+    out[name] = { ...out[name], ...d };
+  }
+  return out;
+}
+
 /** Every declared event, from the bound configuration. Empty, and said once, before binding. */
 export function auditEventDeclarations(): Record<string, AuditEventDeclaration> {
   if (!boundSource) {
@@ -90,7 +130,7 @@ export function auditEventDeclarations(): Record<string, AuditEventDeclaration> 
     }
     return {};
   }
-  return asDeclarations(boundSource(AUDIT_EVENTS_KEY, {}));
+  return auditDeclarationsFrom(boundSource);
 }
 
 /** The declaration for one event, or null when configuration does not name it. */

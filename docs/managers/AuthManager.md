@@ -51,11 +51,14 @@ A person who has enrolled a second factor signs in with their password __and__ o
 
 ## Step-up (#1525)
 
-A few permissions ask for a __fresh__ sign-in even inside a valid session, so a session left open on a shared machine can't change what protects the account or the instance. `ngdpbase.auth.step-up` lists them, with the window:
+A few permissions ask for a __fresh__ sign-in even inside a valid session, so a session left open on a shared machine can't change what protects the account or the instance. Each such permission is marked on its own entry in `ngdpbase.permissions.definitions` (#1638), and `ngdpbase.auth.step-up` holds only the window:
 
 ```json
-"ngdpbase.auth.step-up": { "max-age-minutes": 5, "permissions": ["account-security", "config-manage", "secret-reveal", "token-mint"] }
+"ngdpbase.permissions.definitions": { "config-manage": { "description": "…", "step-up": true } },
+"ngdpbase.auth.step-up": { "max-age-minutes": 5 }
 ```
+
+Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-reveal`, `token-mint`. An add-on marks its own permissions the same way. A `permissions` list still set under `ngdpbase.auth.step-up` in a custom config (the shape before #1638) is honoured, with a warning naming where it moved.
 
 - __Fresh__ (`stepUpNeeded`) means a factor satisfied within the window that reaches the level the person's roles require. An admin (AAL2) re-authenticates with a passkey; others with a passkey or their password. A known device never counts.
 - __Delegated credentials__ (agent tokens, app tokens, shares) never satisfy step-up. They're refused outright, not sent to a prompt.
