@@ -66,12 +66,16 @@ let sequence = 0;
  *   holding secrets (#1524, #1560). Set on the temp file before any data is
  *   written, so the secret is never on disk with wider permissions; the rename
  *   keeps them. Absent: the process default, as before.
+ * @param options.exclusive - create only: refuse (EEXIST) when `filePath`
+ *   already exists, instead of replacing it (#1625). The finished temp file is
+ *   published with a hard link, which fails atomically if the name is taken,
+ *   so a crash mid-write never leaves a truncated file under the real name.
  */
 export async function writeFileAtomic(
   filePath: string,
   data: string | Buffer,
   encoding: BufferEncoding = 'utf8',
-  options: { fsync?: boolean; mode?: number } = {}
+  options: { fsync?: boolean; mode?: number; exclusive?: boolean } = {}
 ): Promise<void> {
   const dir = path.dirname(filePath);
   const tempPath = path.join(
@@ -93,7 +97,12 @@ export async function writeFileAtomic(
     await handle.close();
     handle = undefined;
 
-    await fs.rename(tempPath, filePath);
+    if (options.exclusive) {
+      await fs.link(tempPath, filePath);
+      await fs.remove(tempPath);
+    } else {
+      await fs.rename(tempPath, filePath);
+    }
     if (options.fsync) await fsyncDirectory(dir);
   } catch (err) {
     if (handle) {

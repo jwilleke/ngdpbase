@@ -79,6 +79,10 @@ await backupManager.restore(backupPath, {
 });
 ```
 
+### Encrypted private stores
+
+A backup copies each person's private folder byte for byte, including `user-keys.json`, the file that holds their key wrapped by their password and by their recovery words. Restoring a backup brings back the key file as it was when the backup was taken: if the person has changed their password since, their encrypted stores open with the password they had then (or with their recovery words). The key file is always replaced whole and atomically (#1625), so a backup never captures a half-written one.
+
 ## Backup Object Structure
 
 ```javascript

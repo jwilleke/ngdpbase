@@ -155,3 +155,21 @@ describe('#1062 — concurrent writers', () => {
     }
   });
 });
+
+describe('#1625 — exclusive create', () => {
+  test('creates the file, owner-only when asked, and leaves no temp file', async () => {
+    const file = path.join(dir, 'user-keys.json');
+    await writeFileAtomic(file, '{"a":1}', 'utf8', { exclusive: true, mode: 0o600 });
+    expect(await fs.readFile(file, 'utf8')).toBe('{"a":1}');
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    expect(await strayTempFiles()).toEqual([]);
+  });
+
+  test('refuses an existing file and leaves it untouched', async () => {
+    const file = path.join(dir, 'store.json');
+    await fs.writeFile(file, 'original');
+    await expect(writeFileAtomic(file, 'replacement', 'utf8', { exclusive: true })).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(await fs.readFile(file, 'utf8')).toBe('original');
+    expect(await strayTempFiles()).toEqual([]);
+  });
+});
