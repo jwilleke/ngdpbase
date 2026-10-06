@@ -24,6 +24,7 @@
 
 import { NcmWarning } from './types.js';
 import { formatDroppedPlaceholder } from './placeholder.js';
+import { sniffMime } from '../../utils/sniffMime.js';
 
 /** Config for the image rule (size cap reuses ngdpbase.attachment.maxsize). */
 export interface NcmImageConfig {
@@ -41,15 +42,10 @@ export interface NcmImageDeps {
 }
 
 /** Fixed NCM raster allowlist — NOT configurable (spec: tighten, never loosen). */
+const NCM_RASTER = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 function sniffRasterMime(b: Buffer): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' | null {
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
-    && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png';
-  if (b.length >= 6 && b.toString('ascii', 0, 4) === 'GIF8'
-    && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return 'image/gif';
-  if (b.length >= 12 && b.toString('ascii', 0, 4) === 'RIFF'
-    && b.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
-  return null; // svg(text)/bmp/tiff/heic/raw/polyglot → rejected
+  const mime = sniffMime(b);
+  return mime && NCM_RASTER.has(mime) ? (mime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp') : null; // svg/bmp/tiff/heic/raw/polyglot → rejected
 }
 
 /** Decode a `data:` URI to bytes, or null if it isn't one / is malformed. */

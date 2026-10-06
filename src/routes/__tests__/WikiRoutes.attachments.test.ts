@@ -295,6 +295,26 @@ describe('WikiRoutes - Attachment Security (Issue #22)', () => {
       }
     });
 
+    test('an uploaded SVG is served sandboxed: it displays, its script does not run (#1624)', async () => {
+      const mockReq = createMockReq({ username: 'molly', isAuthenticated: true, roles: ['vault-owner'] }, { attachmentId: 'own-svg' });
+      const mockRes = { ...createMockRes(), setHeader: vi.fn(), send: vi.fn() };
+      const original = mockEngine.getManager.getMockImplementation();
+      mockEngine.getManager.mockImplementation((name) => {
+        if (name === 'AttachmentManager') {
+          return { ...mockAttachmentManager, getPrivateStoreAttachment: vi.fn(async () => ({ buffer: Buffer.from('<svg/>'), metadata: { name: 'x.svg', encodingFormat: 'image/svg+xml' } })) };
+        }
+        if (name === 'PolicyDecisionPoint') return mockPolicyDecisionPoint;
+        return null;
+      });
+      try {
+        await wikiRoutes.serveAttachment(mockReq, mockRes);
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'image/svg+xml');
+        expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Security-Policy', 'sandbox');
+      } finally {
+        mockEngine.getManager.mockImplementation(original);
+      }
+    });
+
     test('should serve attachments to authorized users', async () => {
       // Setup - serveAttachment uses attachmentId param
       const mockReq = createMockReq(
