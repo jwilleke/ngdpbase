@@ -230,7 +230,7 @@ describe('FootnotesPlugin', () => {
       const mockPage = {
         rawContent: '[^1]: This is a rocket science footnote\n[^2]: Second reference'
       };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'RocketPage',
@@ -246,7 +246,7 @@ describe('FootnotesPlugin', () => {
       const mockPage = {
         rawContent: '* [^1] - [Wikipedia|https://en.wikipedia.org/wiki/Rocket]\n* [^2] - [NASA|https://nasa.gov]'
       };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'TestPage',
@@ -261,7 +261,7 @@ describe('FootnotesPlugin', () => {
       const mockPage = {
         rawContent: '* [#1] - Old JSPWiki style footnote'
       };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'LegacyPage',
@@ -274,7 +274,7 @@ describe('FootnotesPlugin', () => {
 
     test('returns "No footnotes" when page has no footnote definitions', async () => {
       const mockPage = { rawContent: 'Just regular content with no footnotes at all.' };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'EmptyPage',
@@ -285,7 +285,7 @@ describe('FootnotesPlugin', () => {
     });
 
     test('returns "No footnotes" when page is null', async () => {
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(null) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: false, refusal: 'not-found' }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'MissingPage',
@@ -299,7 +299,7 @@ describe('FootnotesPlugin', () => {
       const mockPage = {
         rawContent: '[^1]: See https://example.com for details'
       };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ PageManager: mockPageManager }),
         pageName: 'TestPage',
@@ -313,7 +313,7 @@ describe('FootnotesPlugin', () => {
       const mockPage = {
         rawContent: '* [^1] - [Wikipedia:Rocket|Wikipedia:Rocket]'
       };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const mockConfigManager = {
         getProperty: vi.fn().mockReturnValue({
           Wikipedia: { url: 'https://en.wikipedia.org/wiki/%s', enabled: true }
@@ -333,7 +333,7 @@ describe('FootnotesPlugin', () => {
     test('falls through to legacy when footnoteManager disabled', async () => {
       const disabledFm = { isEnabled: () => false, getFootnotes: vi.fn() };
       const mockPage = { rawContent: '[^1]: fallback footnote' };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ FootnoteManager: disabledFm, PageManager: mockPageManager }),
         pageName: 'TestPage',
@@ -347,7 +347,7 @@ describe('FootnotesPlugin', () => {
     test('falls through to legacy when pageUuid absent', async () => {
       const fm = makeFootnoteManager([]);
       const mockPage = { rawContent: '[^1]: no uuid fallback' };
-      const mockPageManager = { getPage: vi.fn().mockResolvedValue(mockPage) };
+      const mockPageManager = { readPage: vi.fn().mockResolvedValue({ ok: true, value: mockPage }) };
       const context = {
         engine: makeEngine({ FootnoteManager: fm, PageManager: mockPageManager }),
         pageName: 'TestPage',

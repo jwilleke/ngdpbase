@@ -23,12 +23,28 @@ function makeContext(opts: {
 } = {}) {
   const managers: Record<string, unknown> = {};
   if (opts.pageManager !== null) {
-    managers.PageManager = opts.pageManager ?? {
+    const pm = opts.pageManager ?? {
       getPage: vi.fn().mockResolvedValue({
         content: '# Title\n\nFull body.\n\n# Two\n\nSection two.',
         metadata: {}
       })
     };
+    // #1622: the plugin reads through PageManager.readPage, the deciding door.
+    // This stand-in models its contract over the test's `getPage` fixture:
+    // not found, refused (the private rule — owner or admin — the way the
+    // decider applies it), or the page. A thrown read propagates.
+    if (pm.getPage && !pm.readPage) {
+      pm.readPage = async (name: unknown, viewer: unknown) => {
+        const page = await pm.getPage(name) as { metadata?: Record<string, unknown> } | null;
+        if (!page) return { ok: false, refusal: 'not-found' };
+        const md = page.metadata ?? {};
+        const user = viewer as { username?: string; roles?: string[] } | null;
+        const who = user?.username ?? '';
+        const visible = md.private !== true || (user?.roles ?? []).includes('admin') || (who !== '' && (md.author === who || md.creator === who));
+        return visible ? { ok: true, value: page } : { ok: false, refusal: 'denied' };
+      };
+    }
+    managers.PageManager = pm;
   }
   if (opts.renderingManager !== null) {
     managers.RenderingManager = opts.renderingManager ?? {
@@ -40,18 +56,7 @@ function makeContext(opts: {
     pageName: opts.hostPage ?? 'HostPage',
     linkGraph: {},
     engine: {
-      // #1198 / rule 10: visibility is the evaluator's answer. This stand-in
-      // applies the private rule — owner or admin — the way the decider does.
-      getManager: (name: string) => managers[name] ?? (name === 'PolicyInformationPoint' ? {
-        canUserAccessPage: async (user: { username?: string; roles?: string[] } | null, page: string) => {
-          const md = (managers.PageManager as { getPage?: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> } | undefined)?.getPage
-            ? (await (managers.PageManager as { getPage: (n: string) => Promise<{ metadata?: Record<string, unknown> } | null> }).getPage(page))?.metadata ?? {}
-            : {};
-          if (md.private !== true) return true;
-          const viewer = user?.username ?? '';
-          return (user?.roles ?? []).includes('admin') || (viewer !== '' && (md.author === viewer || md.creator === viewer));
-        }
-      } : undefined),
+      getManager: (name: string) => managers[name],
       logger: { error: vi.fn() }
     },
     userContext: opts.userContext ?? { username: 'alice', authenticated: true, roles: ['reader'] }

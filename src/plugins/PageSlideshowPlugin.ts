@@ -3,7 +3,7 @@
  *
  * Each slide shows the page title, an excerpt of the page body, and a
  * "Read more" link.  Pages the current viewer cannot access are silently
- * skipped (ACL-aware via PageManager.getPage returning null).
+ * skipped (PageManager.readPage decides page-read for the viewer, #1622).
  *
  * Syntax:
  *   [{PageSlideshowPlugin pages='Main,About,Contact'}]
@@ -25,6 +25,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { escapeHtml, splitParam, parseBoolParam, extractExcerpt, shuffleArray } from '../utils/pluginFormatters.js';
 
 let _idCounter = 0;
@@ -42,7 +43,8 @@ interface PageManagerLike {
   // #1422: the caller's context, as the real signature takes it. Without
   // it this read ran as nobody, so a sealed page never became a slide even
   // for its owner — while the line above already had the viewer to hand.
-  getPage(name: string, ctx: unknown): Promise<PageRecord | null>;
+  // #1622: the deciding read — the same page-read door every route uses.
+  readPage(name: string, ctx: unknown): Promise<{ ok: true; value: PageRecord } | { ok: false; refusal: string }>;
 }
 
 
@@ -54,9 +56,7 @@ const PageSlideshowPlugin: SimplePlugin = {
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
     const pageManager = context.engine?.getManager('PageManager') as PageManagerLike | undefined;
-    const policyInformationPoint = context.engine?.getManager('PolicyInformationPoint') as
-      { canUserAccessPage(user: unknown, page: string, action: string): Promise<boolean> } | undefined;
-    const viewer = (context as { userContext?: unknown }).userContext ?? null;
+    const viewer = (context as { userContext?: unknown }).userContext ?? ANONYMOUS_SUBJECT;
     if (!pageManager) {
       return '<span class="text-muted"><em>[PageSlideshowPlugin: PageManager unavailable]</em></span>';
     }
@@ -80,12 +80,11 @@ const PageSlideshowPlugin: SimplePlugin = {
     const slides: { title: string; excerpt: string; url: string }[] = [];
 
     for (const name of pageNames) {
-      // #1219: `getPage` does not evaluate access — the comment that said
-      // "null = no access" was wrong, and `pages=` named any page's excerpt
-      // to any viewer. The decider says; a refused page is not a slide.
-      if (policyInformationPoint && !(await policyInformationPoint.canUserAccessPage(viewer, name, 'view'))) continue;
-      const page = await pageManager.getPage(name, viewer);
-      if (!page) continue;
+      // #1219, #1622: `pages=` once named any page's excerpt to any viewer.
+      // The door decides; a refused or missing page is not a slide.
+      const read = await pageManager.readPage(name, viewer);
+      if (!read.ok) continue;
+      const page = read.value;
 
       const raw = String(page.rawContent ?? page.content ?? '');
       slides.push({

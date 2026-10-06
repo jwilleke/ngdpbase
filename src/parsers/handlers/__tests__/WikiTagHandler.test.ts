@@ -1,10 +1,15 @@
 import WikiTagHandler from '../WikiTagHandler';
 import ParseContext from '../../context/ParseContext';
+import { readPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
 
 // Mock PageManager
+// #1622: reads go through the real page-read door, over these pages, with the
+// engine's PolicyInformationPoint deciding.
 class MockPageManager {
   pages: Map<string, { content: string }>;
-  constructor() {
+  readPage: ReturnType<typeof readPageThroughDoor>;
+  constructor(engine) {
+    this.readPage = readPageThroughDoor(engine, (name) => this.pages.get(name));
     this.pages = new Map([
       ['ExistingPage', { content: '# Existing Page\n\nThis page exists.' }],
       ['PageWithSection', { content: '# Page Title\n\n## Introduction\n\nIntro content.\n\n## Details\n\nDetail content.' }]
@@ -78,18 +83,21 @@ class MockUserManager {
 }
 
 // Mock engine
-const createMockEngine = (userContext = null) => ({
-  getManager: vi.fn((name) => {
-    switch (name) {
-    case 'PageManager': return new MockPageManager();
-    case 'PolicyInformationPoint': return new MockPolicyInformationPoint();
-    case 'VariableManager': return new MockVariableManager();
-    case 'MarkupParser': return new MockMarkupParser();
-    case 'UserManager': return new MockUserManager();
-    default: return null;
-    }
-  })
-});
+const createMockEngine = (userContext = null) => {
+  const engine = {
+    getManager: vi.fn((name) => {
+      switch (name) {
+      case 'PageManager': return new MockPageManager(engine);
+      case 'PolicyInformationPoint': return new MockPolicyInformationPoint();
+      case 'VariableManager': return new MockVariableManager();
+      case 'MarkupParser': return new MockMarkupParser();
+      case 'UserManager': return new MockUserManager();
+      default: return null;
+      }
+    })
+  };
+  return engine;
+};
 
 // Create mock context
 const createMockContext = (overrides = {}) => {
@@ -423,6 +431,7 @@ describe('WikiTagHandler', () => {
       // #633: was MockPolicyManager — migrated to PolicyInformationPoint. Mock denies access.
       const restrictiveEngine = {
         getManager: vi.fn((name) => {
+          if (name === 'PageManager') return new MockPageManager(restrictiveEngine);
           if (name === 'PolicyInformationPoint') {
             return {
               checkPagePermissionWithContext: vi.fn().mockResolvedValue(false),
