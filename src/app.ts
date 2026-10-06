@@ -863,7 +863,9 @@ void (async (): Promise<void> => {
             ...sessionContext,
             ...(stepDown ? { roles: stepDown.kept } : {}),
             ipAddress: req.ip,
-            ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {})
+            ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {}),
+            // #1635: how and when this session signed in, so the PDP decides step-up at the door.
+            ...(req.session.signIn ? { signIn: req.session.signIn } : {})
           };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
         } else {

@@ -35,6 +35,11 @@ import type ConfigurationManager from '../managers/ConfigurationManager.js';
 import { normalizeUsername } from '../utils/username.js';
 import { roleGrants, type RoleGrant } from '../utils/roleGrants.js';
 import { vaultOfShare } from '../types/Share.js';
+
+/** The one AuthManager question the PDP asks (#1635); AuthManager owns the freshness rule. */
+interface StepUpDecider {
+  stepUpNeeded?(permission: string, signIn: PermissionSubject['signIn'], roles: readonly string[], delegated: boolean): boolean;
+}
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
 
@@ -198,6 +203,35 @@ export class PolicyDecisionPoint extends BaseManager {
     return (await this.decide(subject, { action })).permit;
   }
 
+  /**
+   * Does the subject HOLD this permission (#1635)? Policy alone — the
+   * step-up freshness rule is not applied. A different question from
+   * {@link permits}, which is "may it act now", and named so: an affordance
+   * (show the reveal button, show the sign-in methods section) asks this, so a
+   * person whose sign-in is not fresh still sees the way to the prompt that
+   * makes it fresh. A door never asks this.
+   */
+  async holds(subject: PermissionSubject | JobSubject | null | undefined, action: string): Promise<boolean> {
+    return (await this.evaluate(subject, { action }, false)).permit;
+  }
+
+  /**
+   * Step-up (#1525, #1635), decided here — in the one place every door asks —
+   * rather than by routes in front of the doors. A permission marked
+   * `step-up: true` needs a factor satisfied within
+   * `ngdpbase.auth.step-up.max-age-minutes` that reaches the level the
+   * subject's roles require. A request subject carries its `signIn`; a
+   * delegated credential (agent token, share) never satisfies it. Work with no
+   * request (a JobSubject: timers, operator commands) has no sign-in to be
+   * fresh and is not asked.
+   */
+  private stepUpRefuses(subject: PermissionSubject | JobSubject | null | undefined, action: string): boolean {
+    if (!subject || typeof subject !== 'object' || 'resolveRolesNow' in subject) return false;
+    const auth = this.engine.getManager<StepUpDecider>('AuthManager');
+    if (!auth?.stepUpNeeded) return false;
+    return auth.stepUpNeeded(action, subject.signIn, subject.roles ?? [], Boolean(subject.viaToken || subject.viaShare));
+  }
+
   /** Does the named issuer of a vault link still hold `action` inside that vault (#1539)? The vault rule, resolved live. */
   private async issuerHoldsInVault(issuer: string, action: string, where: { owner: string; vault: string }): Promise<boolean> {
     const subject = await this.informationPoint()?.subjectFor(issuer);
@@ -357,10 +391,23 @@ export class PolicyDecisionPoint extends BaseManager {
     subject: PermissionSubject | JobSubject | null | undefined,
     request: DecisionRequest
   ): Promise<Decision> {
+    return this.evaluate(subject, request, true);
+  }
+
+  /** `decide`, with the step-up rule applied or not — {@link holds} is the only caller that leaves it out. */
+  private async evaluate(
+    subject: PermissionSubject | JobSubject | null | undefined,
+    request: DecisionRequest,
+    applyStepUp: boolean
+  ): Promise<Decision> {
     const { action } = request;
 
     const ceiling = await this.ceiling(subject, request);
-    if (ceiling && (!ceiling.permit || ceiling.reason === 'share')) return ceiling;
+    if (ceiling && !ceiling.permit) return ceiling;
+    if (ceiling && ceiling.reason === 'share') {
+      // #1635: a share is delegated, so it never satisfies a step-up permission.
+      return applyStepUp && this.stepUpRefuses(subject, action) ? { permit: false, applicable: true, reason: 'step-up' } : ceiling;
+    }
 
     const policyEvaluator = this.engine.getManager<PolicyEvaluatorLike>('PolicyEvaluator');
     if (!policyEvaluator) {
@@ -403,6 +450,11 @@ export class PolicyDecisionPoint extends BaseManager {
     // `hasDecision` false means no policy spoke — NotApplicable, not a deny.
     // The page door has further tiers to try; a capability check has none, and
     // treats silence as a refusal, which is what `permit: false` says here.
+    if (result.allowed && applyStepUp && this.stepUpRefuses(subject, action)) {
+      // #1635: granted, but not fresh enough to act. Routes turn this reason
+      // into the /auth/reauth prompt; a door just sees a refusal.
+      return { permit: false, applicable: true, reason: 'step-up' };
+    }
     return {
       permit: result.allowed,
       applicable: result.hasDecision !== false,

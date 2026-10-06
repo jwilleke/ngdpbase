@@ -161,6 +161,11 @@ export function createMockWikiContext(
     hasPermissionOn: vi.fn(async function (this: { hasPermission: (a: string) => Promise<boolean> }, action: string) {
       return this.hasPermission(action);
     }),
+    // #1635: whether the subject HOLDS the permission (affordances). The mock
+    // applies no step-up, so holding and permitting are the same answer.
+    holdsPermission: vi.fn(async function (this: { hasPermission: (a: string) => Promise<boolean> }, action: string) {
+      return this.hasPermission(action);
+    }),
     canAccess: vi.fn().mockResolvedValue(true),
     getPrincipals: vi.fn(() => {
       const username = userContext?.username;

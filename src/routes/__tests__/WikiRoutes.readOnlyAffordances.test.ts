@@ -80,17 +80,21 @@ describe('can() reflects the caller’s permissions (#1034)', () => {
     expect(data.canViewAdmin).toBe(false);
   });
 
-  test('answers through the request’s own door, WikiContext.hasPermission — not a second copy of it (#1539)', async () => {
+  test('answers through the request’s own context, not a second copy of it (#1539); affordances ask holdsPermission (#1635)', async () => {
     const door = vi.spyOn(WikiContext.prototype, 'hasPermission');
+    const holds = vi.spyOn(WikiContext.prototype, 'holdsPermission');
     try {
       const data = await templateData(['page-edit', 'admin-read']);
 
       expect(data.can('page-edit')).toBe(true);
       expect(data.canViewAdmin).toBe(true);
-      const asked = door.mock.calls.map((c) => c[0]);
-      expect(asked).toEqual(expect.arrayContaining(['admin-read', 'page-edit', 'share-manage']));
+      expect(door.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['admin-read']));
+      // #1635: a control is shown to whoever HOLDS the permission; acting on it
+      // is where the step-up freshness rule is applied.
+      expect(holds.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['page-edit', 'share-manage']));
     } finally {
       door.mockRestore();
+      holds.mockRestore();
     }
   });
 });

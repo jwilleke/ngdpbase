@@ -1,5 +1,5 @@
 /**
- * #1525 — step-up at the route door: a permission on the step-up list,
+ * #1525, #1635 — step-up decided by the PDP, answered at the route: a permission marked step-up,
  * granted by policy, still needs a fresh factor. A stale page action goes to
  * /auth/reauth and back; a JSON action is told where; a delegated credential
  * is refused; a fresh session proceeds. The password re-authentication is
@@ -30,7 +30,14 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   const managers: Record<string, unknown> = {
     OidcManager: oidc,
     AuthManager: authManager,
-    PolicyDecisionPoint: { permits: vi.fn(() => Promise.resolve(true)) },
+    // #1635: the PDP decides step-up. This double grants by policy and asks
+    // AuthManager about freshness exactly as the real PDP does; `holds` is the
+    // policy-only question affordances ask.
+    PolicyDecisionPoint: {
+      permits: vi.fn((subject: { roles?: string[]; signIn?: unknown; viaToken?: unknown; viaShare?: unknown }, action: string) =>
+        Promise.resolve(!authManager.stepUpNeeded(action, subject.signIn, subject.roles ?? [], Boolean(subject.viaToken || subject.viaShare)))),
+      holds: vi.fn(() => Promise.resolve(true))
+    },
     AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audit.push(e); return Promise.resolve('a'); }, logAuthentication: vi.fn().mockResolvedValue('a') },
     UserManager: { hasPassword: vi.fn().mockResolvedValue(true), getUser: vi.fn().mockResolvedValue({ username: 'molly' }) },
     ConfigurationManager: { getProperty: (_k: string, d: unknown) => d }

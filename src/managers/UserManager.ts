@@ -128,6 +128,13 @@ export interface PermissionSubject {
    * the request subject is built; never recorded (`actorOf` must not gain it).
    */
   privateStoreHandle?: string;
+  /**
+   * How and when this session signed in (#1525, #1635): the factors and when
+   * each was last satisfied. Set only where the request subject is built from
+   * the session, so the PDP can decide a step-up permission itself — the door
+   * decides, not the route in front of it. Never recorded.
+   */
+  signIn?: import('./AuthManager.js').SignInRecord;
 }
 
 /**
