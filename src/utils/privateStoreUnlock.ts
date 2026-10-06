@@ -37,6 +37,8 @@ import {
 import { emptyUserCatalog, readUserCatalog, type UserCatalog } from './privateStoreCatalogs.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { PermissionSubject } from '../managers/UserManager.js';
+import { writeFileAtomic } from './atomicWrite.js';
+import { SECRET_FILE_MODE } from './secretFileMode.js';
 
 interface UnlockedBag {
   username: string;
@@ -64,6 +66,15 @@ export function unlockPrivateStores(sessionId: string, username: string, kek: Bu
 
 export function getSessionUserIndex(sessionId: string): UserCatalog | undefined {
   return bags.get(sessionId)?.userIndex;
+}
+
+/**
+ * Replace a user-keys.json (#1625): the only copy of both wraps of the KEK, so
+ * atomic (a crash leaves the old file or the new one, never a truncated one),
+ * owner-only and flushed to the device.
+ */
+async function writeUserKeyEnvelope(file: string, envelope: unknown): Promise<void> {
+  await writeFileAtomic(file, JSON.stringify(envelope), 'utf8', { mode: SECRET_FILE_MODE, fsync: true });
 }
 
 export function lockPrivateStores(sessionId: string): void {
@@ -205,7 +216,7 @@ export async function rewrapUserKeysOnPasswordChange(args: {
   if (!isUserKeyEnvelope(raw)) return;
   const next = rewrapPassword(raw, args.oldPassword, args.newPassword);
   await fs.ensureDir(privateUserDir(args.pagesDirectory, args.username));
-  await fs.writeJson(keysPath, next);
+  await writeUserKeyEnvelope(keysPath, next);
 }
 
 /**
@@ -231,7 +242,7 @@ export async function resetPasswordWrapWithMnemonic(args: {
     return false;
   }
   try {
-    await fs.writeJson(privateUserKeysPath(args.pagesDirectory, args.username), rewrapPasswordWithKek(envelope, kek, args.newPassword));
+    await writeUserKeyEnvelope(privateUserKeysPath(args.pagesDirectory, args.username), rewrapPasswordWithKek(envelope, kek, args.newPassword));
   } finally {
     kek.fill(0);
   }
