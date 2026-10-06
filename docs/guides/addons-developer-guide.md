@@ -186,7 +186,7 @@ An addon under `addons/` is linted with the host. These run in `npm run lint`, i
 - `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
 - `npm run lint:addons` — no addon value-import of host `src/`, and no compiled `.js` left under `src/`. On the pre-commit hook.
 - `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
-- `npm run lint:audit` — declared audit events are emitted. On the pre-commit hook.
+- `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook.
 
 `npm run check:addon-load` is not on the hook. After `npm run build:addons` (or `npm run build`), it imports each `addons/*/index.js` in a child Node process. It does not call `register()`.
 
