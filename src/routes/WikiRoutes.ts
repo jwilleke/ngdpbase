@@ -208,7 +208,8 @@ import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
  * after it silently destroyed capture marks on first edit (#1008).
  */
 /** The shortest password any form here accepts: sign-up, profile change, recovery (#1452). */
-const MIN_PASSWORD_LENGTH = 6;
+/** #1632: the shortest password accepted; read from config at each use, so a change takes effect at once. A missing or non-numeric value means 6, never no minimum. */
+const PASSWORD_MIN_LENGTH_KEY = 'ngdpbase.user.security.password-min-length';
 
 const DEFAULT_SEEDED_FIELDS = ['system-category', 'system-keywords', 'user-keywords', 'slug'] as const;
 
@@ -8326,9 +8327,10 @@ ${panes}
         return res.redirect('/register?error=Passwords do not match');
       }
 
-      if (password.length < MIN_PASSWORD_LENGTH) {
+      const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+      if (password.length < minLength) {
         return res.redirect(
-          `/register?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+          `/register?error=Password must be at least ${minLength} characters`
         );
       }
 
@@ -9012,7 +9014,7 @@ ${panes}
     res.render('recover-password', {
       ...commonData,
       title: 'Reset your password with your recovery words',
-      minPasswordLength: MIN_PASSWORD_LENGTH,
+      minPasswordLength: (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6),
       username: view.username ?? '',
       error: view.error ?? ''
     });
@@ -9041,8 +9043,9 @@ ${panes}
       if (password !== confirmPassword) {
         return await this.renderRecoverPassword(req, res, { username, error: 'The new passwords do not match.' });
       }
-      if (password.length < MIN_PASSWORD_LENGTH) {
-        return await this.renderRecoverPassword(req, res, { username, error: `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+      const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+      if (password.length < minLength) {
+        return await this.renderRecoverPassword(req, res, { username, error: `The new password must be at least ${minLength} characters.` });
       }
 
       const ctx = jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'password reset with recovery words (#1452)');
@@ -9959,9 +9962,10 @@ ${panes}
           return res.redirect('/profile?error=New passwords do not match');
         }
 
-        if (newPassword.length < MIN_PASSWORD_LENGTH) {
+        const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+        if (newPassword.length < minLength) {
           return res.redirect(
-            `/profile?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+            `/profile?error=Password must be at least ${minLength} characters`
           );
         }
 
