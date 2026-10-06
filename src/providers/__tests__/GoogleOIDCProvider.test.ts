@@ -18,7 +18,7 @@ vi.mock('google-auth-library', () => {
   (MockOAuth2Client as MockInstance & { _mockGetToken: MockInstance; _mockVerifyIdToken: MockInstance; _mockGenerateAuthUrl: MockInstance })._mockVerifyIdToken = mockVerifyIdToken;
   (MockOAuth2Client as MockInstance & { _mockGetToken: MockInstance; _mockVerifyIdToken: MockInstance; _mockGenerateAuthUrl: MockInstance })._mockGenerateAuthUrl = mockGenerateAuthUrl;
 
-  return { OAuth2Client: MockOAuth2Client };
+  return { OAuth2Client: MockOAuth2Client, CodeChallengeMethod: { Plain: 'plain', S256: 'S256' } };
 });
 
 import { OAuth2Client } from 'google-auth-library';
@@ -227,16 +227,18 @@ describe('GoogleOIDCProvider', () => {
   describe('verify() — user resolution', () => {
     let capturedNonce;
 
+    let capturedOidcNonce;
     const setupValidToken = (email = 'user@example.com', name = 'Test User') => {
       mockGetToken.mockResolvedValue({ tokens: { id_token: 'valid.jwt' } });
       mockVerifyIdToken.mockResolvedValue({
-        getPayload: () => ({ email, name })
+        getPayload: () => ({ email, name, email_verified: true, nonce: capturedOidcNonce })
       });
     };
 
     beforeEach(() => {
       mockGenerateAuthUrl.mockImplementation((params) => {
         capturedNonce = params.state;
+        capturedOidcNonce = params.nonce;
         return 'https://google.com/...';
       });
       provider.startFlow({ redirect: '/' });
@@ -357,7 +359,7 @@ describe('GoogleOIDCProvider', () => {
 
     test('normalises email to lowercase', async () => {
       mockVerifyIdToken.mockResolvedValue({
-        getPayload: () => ({ email: 'User@Example.COM', name: 'Test' })
+        getPayload: () => ({ email: 'User@Example.COM', name: 'Test', email_verified: true, nonce: capturedOidcNonce })
       });
       userManager.getUserByEmail.mockResolvedValue(undefined);
       userManager.getUser.mockResolvedValue(undefined);
@@ -367,6 +369,56 @@ describe('GoogleOIDCProvider', () => {
         expect.objectContaining({ email: 'user@example.com' }),
         expect.objectContaining({ origin: 'request', reason: 'provisioned by google-oidc' }) // #1204 / #1179
       );
+    });
+  });
+
+  // ── #1630: browser binding, PKCE, nonce, email_verified ─────────────────────
+
+  describe('#1630 relying-party checks', () => {
+    let params;
+    beforeEach(() => {
+      mockGenerateAuthUrl.mockImplementation((p) => { params = p; return 'https://google.com/...'; });
+      userManager.getUserByEmail.mockResolvedValue({ username: 'ext', isExternal: true });
+    });
+    const tokenWith = (payload) => {
+      mockGetToken.mockResolvedValue({ tokens: { id_token: 'valid.jwt' } });
+      mockVerifyIdToken.mockResolvedValue({ getPayload: () => payload });
+    };
+
+    test('sends an S256 PKCE challenge and an OIDC nonce, and exchanges the code with the verifier', async () => {
+      provider.startFlow({ redirect: '/', deviceState: 'browser-a' });
+      expect(params.code_challenge_method).toBe('S256');
+      expect(params.code_challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(typeof params.nonce).toBe('string');
+      tokenWith({ email: 'e@example.com', email_verified: true, nonce: params.nonce });
+      expect(await provider.verify({ token: 'code', state: params.state, deviceState: 'browser-a' })).toEqual({ username: 'ext' });
+      const [{ codeVerifier }] = mockGetToken.mock.calls[0];
+      const crypto = await import('crypto');
+      expect(crypto.createHash('sha256').update(codeVerifier).digest('base64url')).toBe(params.code_challenge);
+    });
+
+    test('a callback from a different browser is refused (login CSRF)', async () => {
+      provider.startFlow({ redirect: '/', deviceState: 'browser-a' });
+      tokenWith({ email: 'e@example.com', email_verified: true, nonce: params.nonce });
+      expect(await provider.verify({ token: 'code', state: params.state, deviceState: 'browser-b' })).toBeNull();
+      expect(mockGetToken).not.toHaveBeenCalled();
+    });
+
+    test('a callback with no browser cookie is refused', async () => {
+      provider.startFlow({ redirect: '/', deviceState: 'browser-a' });
+      expect(await provider.verify({ token: 'code', state: params.state })).toBeNull();
+    });
+
+    test('an ID token for another sign-in (wrong nonce) is refused', async () => {
+      provider.startFlow({ redirect: '/', deviceState: 'browser-a' });
+      tokenWith({ email: 'e@example.com', email_verified: true, nonce: 'someone-elses' });
+      expect(await provider.verify({ token: 'code', state: params.state, deviceState: 'browser-a' })).toBeNull();
+    });
+
+    test('an unverified email is refused', async () => {
+      provider.startFlow({ redirect: '/', deviceState: 'browser-a' });
+      tokenWith({ email: 'e@example.com', email_verified: false, nonce: params.nonce });
+      expect(await provider.verify({ token: 'code', state: params.state, deviceState: 'browser-a' })).toBeNull();
     });
   });
 });

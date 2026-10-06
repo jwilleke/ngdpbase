@@ -18,8 +18,10 @@
 import * as crypto from 'crypto';
 import { jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { systemPrincipalOf } from '../context/bootActions.js';
-import { OAuth2Client } from 'google-auth-library';
+import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
+import { evaluateDeviceBinding } from '../utils/magicLinkDeviceState.js';
 import type {
+  AuthInitiateContext,
   AuthProvider,
   AuthVerifyCredentials,
   AuthResult,
@@ -44,6 +46,12 @@ interface StateEntry {
   nonce: string;
   redirect: string;
   expiresAt: number;
+  /** #1630: the browser that started the flow; the callback must present it. */
+  deviceState?: string;
+  /** #1630: PKCE verifier; only its S256 challenge left this server. */
+  codeVerifier: string;
+  /** #1630: OIDC nonce; the ID token must carry it back. */
+  oidcNonce: string;
 }
 
 export class GoogleOIDCProvider implements AuthProvider {
@@ -80,19 +88,28 @@ export class GoogleOIDCProvider implements AuthProvider {
    * `generateAuthUrl` — this method used to share that name, which read as if
    * it were a thin passthrough when it also mints and stores the nonce.
    */
-  startFlow({ redirect = '/' }: { redirect?: string } = {}): string {
+  startFlow({ redirect = '/', deviceState }: AuthInitiateContext = {}): string {
     const nonce = crypto.randomBytes(16).toString('hex');
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const oidcNonce = crypto.randomBytes(16).toString('hex');
     this.states.set(nonce, {
       nonce,
       redirect,
-      expiresAt: Date.now() + 10 * 60_000   // 10 minutes
+      expiresAt: Date.now() + 10 * 60_000,   // 10 minutes
+      deviceState,
+      codeVerifier,
+      oidcNonce
     });
     this.cleanupExpired();
 
     const params: Parameters<OAuth2Client['generateAuthUrl']>[0] = {
       access_type: 'online',
       scope: ['openid', 'email', 'profile'],
-      state: nonce
+      state: nonce,
+      // #1630: PKCE (S256) and an OIDC nonce, as well as the client secret.
+      code_challenge: crypto.createHash('sha256').update(codeVerifier).digest('base64url'),
+      code_challenge_method: CodeChallengeMethod.S256,
+      nonce: oidcNonce
     };
     if (this.config.hostedDomain) {
       params.hd = this.config.hostedDomain;
@@ -120,7 +137,7 @@ export class GoogleOIDCProvider implements AuthProvider {
    */
   async verify(credentials: AuthVerifyCredentials): Promise<AuthResult | null> {
     const code  = credentials.token;
-    const nonce = (credentials as AuthVerifyCredentials & { state?: string }).state;
+    const nonce = credentials.state;
 
     if (!code || !nonce) {
       logger.debug('[GoogleOIDCProvider] Missing code or state');
@@ -139,10 +156,20 @@ export class GoogleOIDCProvider implements AuthProvider {
       return null;
     }
 
+    // #1630: the callback must come back to the browser that started the flow,
+    // or an attacker's own code and state could sign the victim into the
+    // attacker's account (login CSRF). Always enforced: no cross-device case.
+    const binding = evaluateDeviceBinding({ stored: stateEntry.deviceState, presented: credentials.deviceState, enforce: true });
+    if (!binding.allowed) {
+      this.states.delete(nonce);
+      logger.warn(`[GoogleOIDCProvider] Callback from a different browser than the one that started sign-in (${binding.outcome})`);
+      return null;
+    }
+
     // Exchange authorization code for tokens
     let idToken: string;
     try {
-      const { tokens } = await this.client.getToken(code);
+      const { tokens } = await this.client.getToken({ code, codeVerifier: stateEntry.codeVerifier });
       if (!tokens.id_token) {
         logger.error('[GoogleOIDCProvider] No id_token in token response');
         return null;
@@ -163,6 +190,16 @@ export class GoogleOIDCProvider implements AuthProvider {
       const payload = ticket.getPayload();
       if (!payload?.email) {
         logger.error('[GoogleOIDCProvider] ID token missing email claim');
+        return null;
+      }
+      // #1630: the ID token answers this sign-in, not another one.
+      if (payload.nonce !== stateEntry.oidcNonce) {
+        logger.warn('[GoogleOIDCProvider] ID token nonce does not match this sign-in');
+        return null;
+      }
+      // #1630: an address Google has not verified is not an identity.
+      if (payload.email_verified !== true) {
+        logger.warn('[GoogleOIDCProvider] Refusing an unverified email address');
         return null;
       }
       email = payload.email.toLowerCase().trim();
