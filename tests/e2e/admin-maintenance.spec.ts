@@ -17,6 +17,31 @@ test.describe('Admin Maintenance Mode', () => {
   // Use authenticated admin state
   test.use({ storageState: './tests/e2e/.auth/user.json' });
 
+  // #1664: this suite runs against real instances. If any test between
+  // "enable" and "disable" fails, the serial run stops and the instance would
+  // be left serving the maintenance page to everyone. So whatever happened,
+  // switch it off again — and fail loudly if that is not possible, never
+  // leave a live site stranded silently.
+  test.afterAll(async ({ browser }) => {
+    const baseURL = test.info().project.use.baseURL;
+    const context = await browser.newContext({ baseURL, storageState: './tests/e2e/.auth/user.json' });
+    const page = await context.newPage();
+    try {
+      await page.goto('/admin');
+      const disableButton = page.locator('button:has-text("Disable Maintenance"), a:has-text("Disable Maintenance")');
+      if ((await disableButton.count()) === 0) return;
+      page.on('dialog', (dialog) => dialog.accept());
+      await disableButton.first().click();
+      await page.waitForLoadState('domcontentloaded');
+      const anon = await browser.newContext({ baseURL, storageState: undefined });
+      const status = (await (await anon.newPage()).goto('/'))?.status();
+      await anon.close();
+      if (status === 503) throw new Error('Maintenance mode is still ON after the suite — switch it off from /admin (#1664)');
+    } finally {
+      await context.close();
+    }
+  });
+
   test('admin can enable maintenance mode', async ({ page }) => {
     // Go to admin dashboard
     await page.goto('/admin');

@@ -459,8 +459,21 @@ class AuthManager extends BaseManager {
   }
 
   /** Options for `username` to enrol a passkey (#448); the caller keeps `challenge` for verify. */
+  /**
+   * May this account sign in with `providerId`? Its `allowedAuthMethods`, when
+   * set, list the providers it may use; absent or empty means any. The one
+   * answer for signing in and for enrolling (#1664): a method the account
+   * cannot sign in with is never offered or enrolled.
+   */
+  async userMayUseProvider(username: string, providerId: string): Promise<boolean> {
+    const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
+    const allowed = user?.allowedAuthMethods;
+    return !allowed || allowed.length === 0 || allowed.includes(providerId);
+  }
+
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new Error('This account cannot sign in with a passkey');
     const provider = this.passkeyProvider();
     if (!provider) throw new Error('Passkeys are not available on this site');
     const existing = this.requireCredentialsStore().list(username).filter(c => c.kind === 'passkey');
@@ -473,6 +486,7 @@ class AuthManager extends BaseManager {
    */
   async passkeyRegister(ctx: PermissionSubject, username: string, response: unknown, expectedChallenge: string, label: string): Promise<string | null> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    if (!(await this.userMayUseProvider(username, 'passkey'))) throw new Error('This account cannot sign in with a passkey');
     credentialLabel(label); // refuse before the challenge is spent on a verification
     const provider = this.passkeyProvider();
     if (!provider) throw new Error('Passkeys are not available on this site');
@@ -735,16 +749,9 @@ class AuthManager extends BaseManager {
       const result = await provider.verify(credentials);
       if (!result) return { success: false };
 
-      // Check per-user allowedAuthMethods if set
-      const userManager = this.engine.getManager<UserManager>('UserManager');
-      if (userManager) {
-        const user = await userManager.getUser(result.username);
-        if (user?.allowedAuthMethods && user.allowedAuthMethods.length > 0) {
-          if (!user.allowedAuthMethods.includes(providerId)) {
-            logger.warn(`[AuthManager] User ${result.username} not allowed to use provider: ${providerId}`);
-            return { success: false };
-          }
-        }
+      if (!(await this.userMayUseProvider(result.username, providerId))) {
+        logger.warn(`[AuthManager] User ${result.username} not allowed to use provider: ${providerId}`);
+        return { success: false };
       }
 
       // #1523: say how — the provider, and the factor it satisfied with its
