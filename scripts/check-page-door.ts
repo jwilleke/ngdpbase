@@ -38,6 +38,14 @@
  *    writes (`storeAttachment`, `storeFileInStore`) are AttachmentManager's
  *    to call; a caller that reaches past it skips the permission check, the
  *    destination rules and the audit record. `/images/upload` was that path.
+ * 6. __No page read by a route past the door__ (#1622) — `page-read` is
+ *    decided inside PageManager's deciding reads (`readPage`,
+ *    `readVersionHistory`, `readVersion`, `readVersionDiff`). A route in
+ *    `src/routes/` or an addon's `routes/` that reads through the ACL-free
+ *    primitives — `getPage`, `getPageContent`, and the provider's
+ *    `getVersionHistory` / `getPageVersion` / `compareVersions` — hands out
+ *    whatever page it can find. Four API routes did, to anonymous callers,
+ *    because the decision was a route helper each route had to remember.
  *
  * A site that is genuinely none of these says so at the line, or in the few
  * lines just above it, with `page-door-ignore: <why>` — the
@@ -81,6 +89,16 @@ const FILE_WRITE = /\bfse?\s*\.\s*(writeFile|writeJson|outputFile|move|remove|co
 /** The title rule, spelled out somewhere other than where it is declared. */
 const TITLE_RULE_COPY = /\[\\?\/\\\\#\?%"<>\|\*\]/;
 
+/**
+ * A route reading a page past the read door (#1622). `this.` is excluded: a
+ * route handler named like a primitive (`this.getPageVersion(req, res)`) is
+ * not a read.
+ */
+const PAGE_READ = /(?<!\bthis)\.(getPage|getPageContent|getVersionHistory|getPageVersion|compareVersions)\s*\(/;
+
+/** Where a read is a person's read: the core routes and every addon's routes. */
+const READ_SCOPE = /^(?:src\/routes\/|addons\/[^/]+\/routes\/)/;
+
 /** The marker that says a line is deliberately none of these (#1462). */
 const IGNORE = /page-door-ignore/;
 
@@ -93,7 +111,7 @@ const INDEX_ALLOWED: Record<string, string> = {
 interface Violation {
   file: string;
   line: number;
-  rule: 'page-write-outside-door' | 'asset-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'title-rule-copy' | 'stale-allowlist';
+  rule: 'page-write-outside-door' | 'asset-write-outside-door' | 'index-write-outside-owner' | 'page-file-written-by-route' | 'page-read-outside-door' | 'title-rule-copy' | 'stale-allowlist';
   detail: string;
 }
 
@@ -226,6 +244,12 @@ export function scan(): Violation[] {
             detail: `a second copy of the title rule (${line.trim()}) — import it from utils/pageTitleRule`
           });
         }
+        if (READ_SCOPE.test(rel) && PAGE_READ.test(line) && !excused(at)) {
+          violations.push({
+            file: rel, line: at, rule: 'page-read-outside-door',
+            detail: `a page read past the door (${line.trim()}) — call PageManager.readPage / readVersionHistory / readVersion / readVersionDiff`
+          });
+        }
         if (rel.startsWith('src/routes/') && FILE_WRITE.test(line) && !excused(at)) {
           violations.push({
             file: rel, line: at, rule: 'page-file-written-by-route',
@@ -249,17 +273,17 @@ export function scan(): Violation[] {
 }
 
 function run(): void {
-  console.log('Page door (#1462)');
+  console.log('Page door (#1462, #1622)');
   console.log('=================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('Every page write goes through PageManager, every asset write through AttachmentManager, the shared indexes are written by their owners, and the save conditions are declared once.');
+    console.log('Every page write and every route\'s page read goes through PageManager, every asset write through AttachmentManager, the shared indexes are written by their owners, and the save conditions are declared once.');
     return;
   }
   for (const v of violations) {
     console.error(`  ${v.file}${v.line ? `:${v.line}` : ''}  [${v.rule}] ${v.detail}`);
   }
-  console.error(`\n${violations.length} violation(s). See issue #1462.`);
+  console.error(`\n${violations.length} violation(s). See issues #1462 (writes) and #1622 (reads).`);
   process.exit(1);
 }
 

@@ -24,6 +24,7 @@
 
 import WikiRoutes from '../WikiRoutes';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+import { readDoor } from './__fixtures__/pageReadDoor';
 
 // #1399: an anonymous caller carries the anonymous PRINCIPAL. The session
 // middleware assigns it, so `null` here modelled a request the server never makes.
@@ -68,22 +69,22 @@ const exportManager = {
  * @param granted   permissions the caller holds
  */
 function makeRoutes(canView: boolean, granted: string[]) {
+  const pageManager = {
+    getPageMetadata: vi.fn().mockResolvedValue({ 'system-category': 'private' }),
+    getPageContent: vi.fn().mockResolvedValue('# SECRET'),
+    getAllPages: vi.fn().mockResolvedValue(['SecretPlans', 'PublicNotes']),
+    // #1219: the listing door answers per subject — the owner sees the
+    // private page, anyone else does not.
+    listPagesFor: vi.fn(async (subject: { username?: string } | null | undefined) =>
+      subject?.username === 'owner' ? ['SecretPlans', 'PublicNotes'] : ['PublicNotes'])
+  };
   const engine = {
     getManager: vi.fn((name: string) => {
       if (name === 'ExportManager') return exportManager;
       if (name === 'PolicyInformationPoint') {
         return { checkPagePermissionWithContext: vi.fn().mockResolvedValue(canView) };
       }
-      if (name === 'PageManager') {
-        return {
-          getPageMetadata: vi.fn().mockResolvedValue({ 'system-category': 'private' }),
-          getAllPages: vi.fn().mockResolvedValue(['SecretPlans', 'PublicNotes']),
-          // #1219: the listing door answers per subject — the owner sees the
-          // private page, anyone else does not.
-          listPagesFor: vi.fn(async (subject: { username?: string } | null | undefined) =>
-            subject?.username === 'owner' ? ['SecretPlans', 'PublicNotes'] : ['PublicNotes'])
-        };
-      }
+      if (name === 'PageManager') return pageManager;
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint') {
         return { permits: vi.fn((_u: string, p: string) => Promise.resolve(granted.includes(p))) };
@@ -94,6 +95,8 @@ function makeRoutes(canView: boolean, granted: string[]) {
       return null;
     })
   };
+  // #1622: the page-read door, deciding through the PIP mock above.
+  Object.assign(pageManager, readDoor(pageManager, engine));
   const routes = new WikiRoutes(engine);
   vi.spyOn(routes, 'getCommonTemplateData').mockResolvedValue({});
   vi.spyOn(routes, 'renderError').mockImplementation(

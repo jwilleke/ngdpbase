@@ -10,6 +10,9 @@ import logger from '../utils/logger.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { PageProvider, ProviderInfo, RecentChangesOptions, RecentChangeEntry, GetPagesByCreatorOptions, PagesScanOptions, StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
 import { WikiPage, PageFrontmatter } from '../types/Page.js';
+import type { VersionContent, VersionDiff, VersionHistoryEntry } from '../types/Version.js';
+import type BasePageProvider from '../providers/BasePageProvider.js';
+import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type { PermissionSubject } from './UserManager.js';
 import type {
   CatalogSource,
@@ -29,6 +32,7 @@ import type ConfigurationManager from './ConfigurationManager.js';
 import type { FilterValidationError } from '../parsers/filters/FilterChain.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import {
+  canonicalPageName,
   formatPrivatePageName,
   isValidStoreId,
   parsePrivatePageName,
@@ -184,6 +188,53 @@ export interface PageSaveResult {
    * feet is a fact they are owed.
    */
   normalisedTitleFrom: string | null;
+}
+
+/**
+ * Why a deciding page read handed back nothing (#1622).
+ *
+ * - `not-found` — no such page for this caller (a sealed page this session
+ *   cannot unlock reads the same way).
+ * - `no-metadata` — the page exists but its metadata cannot be read, so
+ *   nothing can be decided about it: damage, refused (#1431 step 7d).
+ * - `denied` — the caller may not read it.
+ *
+ * A caller that answers a person who may not see the page should answer all
+ * three alike, so a refusal does not tell them the page exists.
+ */
+export type PageReadRefusal = 'not-found' | 'no-metadata' | 'denied';
+
+/**
+ * The answer of a deciding page read (#1622): the value, with the name and
+ * metadata the `page-read` decision was made on, or why there is none.
+ */
+export type PageRead<T> =
+  | { ok: true; name: string; metadata: PageFrontmatter; value: T }
+  | { ok: false; refusal: PageReadRefusal };
+
+/** The version reads a provider may offer — an optional capability, feature-detected. */
+type VersionReads = Pick<BasePageProvider, 'getVersionHistory' | 'getPageVersion' | 'compareVersions'>;
+
+/**
+ * Page metadata in the shape the page decision expects (#1060).
+ *
+ * Keyword fields become arrays because JSPWiki imports may store them as
+ * space-separated scalars (`user-keywords: foo bar baz`); a share's keyword
+ * cover asks `includes` of them, which on a string is a substring match.
+ * A copy — the provider's cached metadata is not changed.
+ */
+function metadataForDecision(metadata: PageFrontmatter): PageFrontmatter {
+  const userKeywords = metadata['user-keywords'] as unknown;
+  const systemKeywords = metadata['system-keywords'] as unknown;
+  return {
+    ...metadata,
+    'user-keywords': Array.isArray(userKeywords)
+      ? userKeywords as string[]
+      : typeof userKeywords === 'string' ? userKeywords.split(/[\s,]+/).filter(Boolean) : [],
+    'system-keywords': Array.isArray(systemKeywords)
+      ? systemKeywords as string[]
+      : (typeof systemKeywords === 'string' && systemKeywords) ? [systemKeywords] : []
+  };
 }
 
 /** {@link PageManager.convertPageToNcm}: the NCM result plus the fix steps that changed the body. */
@@ -1290,6 +1341,124 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager: Provider not initialized');
     }
     return this.provider.getPageMetadata(identifier, ctx);
+  }
+
+  // ============================================================================
+  // The page-read door (#1622)
+  //
+  // `getPage`, `getPageContent` and the provider's version reads find a page
+  // for the context they are given and decide nothing. The reads below are
+  // the door a person's read goes through: each decides `page-read` before a
+  // byte of content is read, and a caller that may not read the page gets a
+  // refusal, never the page. Routes ask these and do not decide
+  // (`npm run lint:page-door`). Internal readers move here in slice 2.
+  // ============================================================================
+
+  /**
+   * May `ctx` read this page, and which page is it? The one `page-read`
+   * decision (#1622), made for every deciding read below.
+   *
+   * The identifier — uuid, slug, title or vault name — is resolved once, and
+   * the decision is made on the page it resolved to, by its canonical name.
+   * `key` is how the reads then reach that same page: a vault page by its
+   * vault name, any other by its uuid, so a read cannot land on a different
+   * page than the one decided about.
+   *
+   * The page decision itself is the PIP's (`canUserAccessPage`, `view`):
+   * delegation ceilings, private, audience, policy. Without a PIP nothing is
+   * readable — never the page by accident.
+   */
+  private async decideRead(
+    identifier: string,
+    ctx: ActorContext
+  ): Promise<{ ok: true; name: string; key: string; metadata: PageFrontmatter } | { ok: false; refusal: PageReadRefusal }> {
+    if (!this.provider) {
+      throw new Error('PageManager: Provider not initialized');
+    }
+    if (!ctx) {
+      throw new Error('PageManager: a page read requires an ActorContext');
+    }
+    const found = await this.provider.getPageMetadata(identifier, ctx);
+    if (!found) {
+      return { ok: false, refusal: this.provider.pageExists(identifier, ctx) ? 'no-metadata' : 'not-found' };
+    }
+    const metadata = metadataForDecision(found);
+    const name = canonicalPageName(identifier, metadata);
+    const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
+    if (!pip) {
+      logger.warn('[PageManager] page read: PolicyInformationPoint unavailable — refusing');
+      return { ok: false, refusal: 'denied' };
+    }
+    // The PIP's subject type has an index signature a PermissionSubject lacks;
+    // the context is passed as it came, not rebuilt.
+    const subject = ctx as unknown as Parameters<PolicyInformationPoint['canUserAccessPage']>[0];
+    if (!(await pip.canUserAccessPage(subject, name, 'view', metadata))) {
+      return { ok: false, refusal: 'denied' };
+    }
+    const key = parsePrivatePageName(identifier) ? identifier : (metadata.uuid ?? identifier);
+    return { ok: true, name, key, metadata };
+  }
+
+  /** The provider's version reads, or a throw when it keeps no history. */
+  private versionReads(): VersionReads {
+    // An optional capability the PageProvider interface does not declare.
+    const provider = this.provider as unknown as Partial<VersionReads> | null;
+    if (!provider?.getVersionHistory || !provider.getPageVersion || !provider.compareVersions) {
+      throw new Error('PageManager: this page provider keeps no version history');
+    }
+    return provider as VersionReads;
+  }
+
+  /**
+   * Read a page — content and metadata — as `ctx`, if `ctx` may read it (#1622).
+   *
+   * @param identifier - Page UUID, title, slug or vault name
+   * @param ctx - Whose read this is (#1179) — never defaulted
+   * @returns The page, with the name and metadata the decision was made on,
+   *   or why there is none
+   */
+  async readPage(identifier: string, ctx: ActorContext): Promise<PageRead<WikiPage>> {
+    const decided = await this.decideRead(identifier, ctx);
+    if (!decided.ok) return decided;
+    const page = await this.provider?.getPage(decided.key, ctx);
+    if (!page) return { ok: false, refusal: 'not-found' };
+    return { ok: true, name: decided.name, metadata: decided.metadata, value: page };
+  }
+
+  /**
+   * A page's version history, newest first, if `ctx` may read the page (#1622).
+   *
+   * @throws When the provider keeps no history, or the history cannot be read
+   */
+  async readVersionHistory(identifier: string, ctx: ActorContext, limit?: number): Promise<PageRead<VersionHistoryEntry[]>> {
+    const decided = await this.decideRead(identifier, ctx);
+    if (!decided.ok) return decided;
+    const value = await this.versionReads().getVersionHistory(decided.key, ctx, limit);
+    return { ok: true, name: decided.name, metadata: decided.metadata, value };
+  }
+
+  /**
+   * One past version of a page, if `ctx` may read the page (#1622).
+   *
+   * @throws When the provider keeps no history, or the version does not exist
+   */
+  async readVersion(identifier: string, version: number, ctx: ActorContext): Promise<PageRead<VersionContent>> {
+    const decided = await this.decideRead(identifier, ctx);
+    if (!decided.ok) return decided;
+    const value = await this.versionReads().getPageVersion(decided.key, version, ctx);
+    return { ok: true, name: decided.name, metadata: decided.metadata, value };
+  }
+
+  /**
+   * The difference between two versions of a page, if `ctx` may read the page (#1622).
+   *
+   * @throws When the provider keeps no history, or either version does not exist
+   */
+  async readVersionDiff(identifier: string, fromVersion: number, toVersion: number, ctx: ActorContext): Promise<PageRead<VersionDiff>> {
+    const decided = await this.decideRead(identifier, ctx);
+    if (!decided.ok) return decided;
+    const value = await this.versionReads().compareVersions(decided.key, fromVersion, toVersion, ctx);
+    return { ok: true, name: decided.name, metadata: decided.metadata, value };
   }
 
   /**

@@ -1,7 +1,7 @@
 ---
 name: PageManager
 description: Page CRUD and storage facade over the PageProvider registry
-dateModified: 2026-05-14
+dateModified: 2026-10-06
 category: managers
 code: src/managers/PageManager.ts
 relatedModules: [BaseManager, FileSystemProvider, VersioningFileProvider]
@@ -58,8 +58,12 @@ await pageManager.deletePage('My Page');
 
 | Method | Returns | Description |
 | -------- | --------- | ------------- |
-| `getPage(identifier)` | `Promise<Object\|null>` | Get page by title or UUID |
-| `getPageContent(identifier)` | `Promise<string>` | Get content only |
+| `getPage(identifier, ctx)` | `Promise<Object\|null>` | Get page by title or UUID. Decides nothing: `ctx` only finds the page. A person's read goes through `readPage` |
+| `getPageContent(identifier, ctx)` | `Promise<string>` | Get content only. Decides nothing, like `getPage` |
+| `readPage(identifier, ctx)` | `Promise<PageRead<WikiPage>>` | The page-read door ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)). Resolves the identifier (uuid, slug, title or vault name), decides `page-read` on the page it resolved to through the PolicyInformationPoint, and only then reads that same page. Answers `{ ok: true, name, metadata, value }` or `{ ok: false, refusal }`, the refusal being `not-found`, `no-metadata` or `denied`. Refuses everything without a PolicyInformationPoint |
+| `readVersionHistory(identifier, ctx, limit?)` | `Promise<PageRead<VersionHistoryEntry[]>>` | The same door, for the version list |
+| `readVersion(identifier, version, ctx)` | `Promise<PageRead<VersionContent>>` | The same door, for one past version |
+| `readVersionDiff(identifier, v1, v2, ctx)` | `Promise<PageRead<VersionDiff>>` | The same door, for the difference between two versions |
 | `getPageMetadata(identifier)` | `Promise<Object\|null>` | Get metadata only |
 | `savePage(name, content, metadata, ctx, options?)` | `Promise<PageSaveResult>` | Save page — the one write door ([#1462](https://github.com/jwilleke/ngdpbase/issues/1462)) |
 | `deletePage(identifier, ctx)` | `Promise<boolean>` | Delete page — the one delete door |
