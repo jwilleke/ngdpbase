@@ -564,7 +564,7 @@ Every other file the app writes (pages, indexes, logs) keeps the process's defau
 
 At boot, an existing secret file that is wider than `0600` is tightened and logged. One owned by a different account than the server runs as refuses the boot, naming both UIDs. No UID is configured: the mode is set on write, so the owner is whoever runs the server (a login account, `node` in the image, the pod's user). Backups that go to a filesystem that does not honour modes (an SMB share) log a warning rather than fail.
 
-__What this does not protect against:__ permissions keep out other local accounts and processes, not root. Anyone with root on the host, with the disk, or with a copy of a backup is outside what they protect. Backups are encrypted for that ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)), and the instance `.env` should be kept somewhere other than the server.
+__What this does not protect against:__ permissions keep out other local accounts and processes, not root. Anyone with root on the host, with the disk, or with a copy of a backup is outside what they protect. Backups are not encrypted today; encrypting them is an optional setting still to be built ([#1561](https://github.com/jwilleke/ngdpbase/issues/1561)). The instance `.env` should be kept somewhere other than the server.
 
 ## Deferred to implementation
 

@@ -536,11 +536,11 @@ class UserManager extends BaseManager {
   /**
    * Create the bootstrap admin account.
    *
-   * Called only when the user store is empty. Throws when no bootstrap
-   * password is configured — refusing to start is the point: ngdpbase used to
-   * ship `admin123`, which meant any install left unattended was reachable
-   * with a credential published in this repository, and the login page
-   * advertised it (#1033).
+   * Called only when the user store is empty. The password is
+   * `ngdpbase.user.security.defaultpassword`, which ships as `admin123` so a
+   * first run needs no setup; a headless install refuses that well-known value
+   * (#1087), and startup warns while the admin still uses it. Low first-run
+   * friction is a decision: warn, never force (crypto/auth review, 2026-10-05).
    */
   async createDefaultAdmin(): Promise<void> {
     if (!this.provider) {

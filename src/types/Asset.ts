@@ -6,6 +6,8 @@
  * while AttachmentManager / MediaManager remain thin wrappers.
  */
 
+import type { ActorContext } from '../context/ActorContext.js';
+
 /**
  * Capabilities that an AssetProvider may declare.
  * Used to advertise which optional operations the provider supports.
@@ -342,8 +344,6 @@ export interface AssetInput {
   pageName?: string;
   /** Human-readable description */
   description?: string;
-  /** Username of uploader */
-  uploadedBy?: string;
 }
 
 /**
@@ -402,10 +402,13 @@ export interface AssetProvider {
 
   /**
    * Store a new asset. Only available when 'upload' is in capabilities.
+   * Goes through the asset-upload door (AttachmentManager.uploadAttachment,
+   * #1629), so it carries the acting context like every other upload.
    * @param buffer - Raw file data
    * @param info   - File information and linkage hints
+   * @param ctx    - Who is acting (request subject or JobContext)
    */
-  store?(buffer: Buffer, info: AssetInput): Promise<AssetRecord>;
+  store?(buffer: Buffer, info: AssetInput, ctx: ActorContext): Promise<AssetRecord>;
 
   /**
    * Delete an asset by its provider-internal ID.

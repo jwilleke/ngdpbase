@@ -282,11 +282,11 @@ The two exemption categories dissolve. `read-volume` becomes an event with `enab
 Nothing about recording fails silently — landed in [#1205](https://github.com/jwilleke/ngdpbase/issues/1205):
 
 - `recordAuditEvent` returns what became of the record: `recorded`, `not-enabled` (switched off in configuration), `no-sink` (auditing off or not yet initialised), or `dropped` (a standard event the sink refused; counted). A critical event that cannot be recorded throws instead. Every emitter, including the `AuditManager` helpers and the admin routes, goes through that one door.
-- An event that is `enabled` and has no emitter fails hard. `npm run lint:audit` fails the build; at boot `AuditManager` compares the enabled names against what this build lists in `src/utils/auditEventNames.ts` (every name there has an emitter, which the lint holds), and a name outside it — or outside the `{target}-{action}` convention — is a fatal configuration entry: the instance boots into maintenance mode with the name in the reason ([security-posture.md](security-posture.md) D9, D10).
+- An event that is `enabled` and has no emitter fails hard. `npm run lint:audit` fails the build; at boot `AuditManager` compares the enabled names against what this build declares — the shipped map plus every enabled add-on's (#1638); that each has an emitter is what the lint holds, and a name outside it — or outside the `{target}-{action}` convention — is a fatal configuration entry: the instance boots into maintenance mode with the name in the reason ([security-posture.md](security-posture.md) D9, D10).
 
 ### Naming: `{target}-{action}`, hyphens only — landed in [#1201](https://github.com/jwilleke/ngdpbase/issues/1201)
 
-Every event is `{target}-{action}`, sharing the permission's slug where the action is the one the permission authorizes; the table is [AuditManager — Event Types](managers/AuditManager.md#event-types). The code lists the names once in `src/utils/auditEventNames.ts`, typed, so an emitter cannot compile with a name configuration does not declare. Records on disk under dotted names are not mapped forward.
+Every event is `{target}-{action}`, sharing the permission's slug where the action is the one the permission authorizes; the table is [AuditManager — Event Types](managers/AuditManager.md#event-types). The code's names are generated from the map into `src/utils/auditEventNames.generated.ts` (#1638), typed, so a core emitter cannot compile with a name configuration does not declare; an add-on emits through `addonAuditEventName`, checked at record time. Records on disk under dotted names are not mapped forward.
 
 ### Tiers for the fifteen undeclared events — landed in [#1202](https://github.com/jwilleke/ngdpbase/issues/1202)
 
@@ -298,7 +298,7 @@ The switch, its comment, and its posture pointer are gone. `page-read` ships `en
 
 ### What the coverage check proves — landed in [#1206](https://github.com/jwilleke/ngdpbase/issues/1206)
 
-`scripts/audit-coverage.ts` reads `ngdpbase.audit.events` and resolves emitters through `src/utils/auditEventNames.ts`. `npm run lint:audit` fails on every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, and an emitter it cannot resolve. It reports, without failing, the events switched off. [Results](#results) and the [event table](managers/AuditManager.md#event-types) are generated from configuration by `npm run docs:audit`; `npm run docs:audit:check` fails the build when either is stale ([#1207](https://github.com/jwilleke/ngdpbase/issues/1207), landed).
+`scripts/audit-coverage.ts` reads `ngdpbase.audit.events` from the shipped defaults and every bundled add-on, and resolves emitters through the generated names and `addonAuditEventName` literals. `npm run lint:audit` fails on every direction: an emitted name with no declaration, a declared and enabled name nobody emits, a name outside `{target}-{action}`, and an emitter it cannot resolve. It reports, without failing, the events switched off. [Results](#results) and the [event table](managers/AuditManager.md#event-types) are generated from configuration by `npm run docs:audit`; `npm run docs:audit:check` fails the build when either is stale ([#1207](https://github.com/jwilleke/ngdpbase/issues/1207), landed).
 
 ## See also
 

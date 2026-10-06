@@ -55,7 +55,7 @@ Automatticlly creates reference on the page used for upload:
 
 ✅ Image Upload Migration Complete
 
-- Upload endpoint: /images/upload → /attachments/upload/:page
+- Upload endpoint: /attachments/upload/:page. The old /images/upload route is removed (#1629): it had no permission check.
 - Form field name: image → file
 - Response format: Uses attachment metadata (attachmentId, url, Schema.org format)
 - Image syntax: [{Image src='/attachments/HASH' alt='filename'}]

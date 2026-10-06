@@ -39,6 +39,7 @@ import { guardedFetch } from '../http/guardedFetch.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { AssetQuery, AssetRecord } from '../types/Asset.js';
 import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
+import { resolveUploadMime } from '../utils/sniffMime.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -582,6 +583,10 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     if (!this.attachmentProvider) {
       throw new Error('Attachment provider not initialized');
     }
+
+    // #1624: the type is what the bytes show, not what the browser declared.
+    // The allow-list check and the served Content-Type both use this.
+    fileInfo = { ...fileInfo, mimeType: resolveUploadMime(fileBuffer, fileInfo.mimeType) };
 
     // The uploader, from the context. A request subject built from a session
     // carries the account's fields; a JobContext carries a name only.

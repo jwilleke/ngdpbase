@@ -7,7 +7,7 @@
  * - Every row carries `sig`: HMAC-SHA-256 over its fields in a fixed order,
  *   keyed by `NGDPBASE_CREDENTIALS_KEY`. On load a row whose signature is
  *   missing or wrong is dropped and reported; it can never sign anyone in.
- * - Nothing here is a password hash. Public keys, encrypted seeds and token
+ * - Nothing here is a password hash. Public keys, (when TOTP is built, #421, encrypted seeds) and token
  *   hashes are low value to a reader; a writer is what signing stops.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';

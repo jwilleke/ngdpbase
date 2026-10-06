@@ -14,7 +14,7 @@
  * whoever runs the server (a login, `node` in the image, the pod's user).
  * Permissions keep out other local accounts and processes, not root; anyone
  * with root, the disk or a backup is outside what they protect against —
- * backups are encrypted for that (#1561).
+ * backup encryption, an optional setting still to be built (#1561), is for that.
  */
 import fs from 'node:fs';
 

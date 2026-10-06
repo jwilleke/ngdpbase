@@ -51,3 +51,14 @@ export function securityHeaders(mode: CspMode): Record<string, string> {
   }
   return headers;
 }
+
+/**
+ * Headers for serving a file someone uploaded (#1624). `sandbox` lets the
+ * browser display it — an SVG still draws and animates, an HTML file still
+ * renders — but no script inside it runs and it gets a unique origin, so it
+ * cannot act as the site. PDF is the exception: Chrome refuses to open a PDF
+ * in a sandboxed document, and its viewer does not run in the site's origin.
+ */
+export function untrustedFileHeaders(contentType: string): Record<string, string> {
+  return contentType.toLowerCase().startsWith('application/pdf') ? {} : { 'Content-Security-Policy': 'sandbox' };
+}

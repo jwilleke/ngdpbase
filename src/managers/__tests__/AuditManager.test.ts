@@ -23,15 +23,17 @@ import AuditManager from '../AuditManager';
 import logger from '../../utils/logger';
 import type { WikiEngine } from '../../types/WikiEngine';
 
-function makeConfigManager(overrides: Record<string, unknown> = {}) {
+function makeConfigManager(overrides: Record<string, unknown> = {}, declared: Record<string, unknown> = {}) {
   return {
     getProperty: vi.fn((key: string, dv: unknown) => overrides[key] ?? dv),
+    // #1638: shipped ⊕ enabled addons, before the operator's file.
+    getDeclaredProperty: vi.fn((key: string, dv: unknown) => declared[key] ?? dv),
     getResolvedDataPath: vi.fn((_key: string, dv: string) => dv)
   };
 }
 
-function makeEngine(configOverrides: Record<string, unknown> = {}): WikiEngine {
-  const cm = makeConfigManager(configOverrides);
+function makeEngine(configOverrides: Record<string, unknown> = {}, declared: Record<string, unknown> = {}): WikiEngine {
+  const cm = makeConfigManager(configOverrides, declared);
   // #1152: refuse-boot records a blocking condition rather than throwing, so
   // the engine finishes initialising and the repair screens exist.
   const blocking: string[] = [];
@@ -121,6 +123,29 @@ describe('AuditManager', () => {
       const said = vi.mocked(logger.warn).mock.calls.filter(([m]) => String(m).includes('read-events is retired'));
       expect(said).toHaveLength(1);
       expect(String(said[0][0])).toContain('ngdpbase.audit.events["page-read"].enabled');
+    });
+
+    test('#1638: an event an enabled addon declares boots; one only the operator file names still blocks', async () => {
+      const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
+      const events = shipped['ngdpbase.audit.events'] as Record<string, unknown>;
+      const ledgerPost = { 'on-failure': 'continue', description: 'a ledger entry was posted' };
+      const withAddon = { ...events, 'ledger-post': ledgerPost };
+
+      // Declared by an enabled addon (shipped ⊕ addons) and enabled: boots.
+      let engine = makeEngine(
+        { 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': withAddon },
+        { 'ngdpbase.audit.events': withAddon }
+      );
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions()).toEqual([]);
+
+      // Named only in the operator's file: nothing declares it, so it blocks.
+      engine = makeEngine(
+        { 'ngdpbase.audit.provider': 'nullauditprovider', 'ngdpbase.audit.events': withAddon },
+        { 'ngdpbase.audit.events': events }
+      );
+      await new AuditManager(engine).initialize();
+      expect(engine.getBlockingConditions().join('\n')).toMatch(/enables 'ledger-post', which nothing in this build emits/);
     });
 
     test('#1205: an enabled event this build cannot emit is a fatal configuration entry', async () => {
