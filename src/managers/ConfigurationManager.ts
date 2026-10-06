@@ -12,7 +12,7 @@ import { WikiConfig } from '../types/Config.js';
 import logger from '../utils/logger.js';
 import BaseManager, { BackupData } from './BaseManager.js';
 import { configFilePaths, enabledEntries, installCompletePath, readConfigFilesSync } from '../utils/configFiles.js';
-import { mergeConfigWithAddons } from '../utils/addonConfigLayer.js';
+import { mergeConfigWithAddons, mergeWithAddonLayer } from '../utils/addonConfigLayer.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
@@ -72,6 +72,8 @@ class ConfigurationManager extends BaseManager {
   private defaultConfig: WikiConfig | null;
   private customConfig: Partial<WikiConfig> | null;
   private mergedConfig: WikiConfig | null;
+  /** #1638: shipped ⊕ enabled addons, before the operator's file — what the build declares. */
+  private declaredConfig: WikiConfig | null;
   private environment: string;
   private defaultConfigPath: string;
   private customConfigPath: string;
@@ -89,6 +91,7 @@ class ConfigurationManager extends BaseManager {
     this.defaultConfig = null;
     this.customConfig = null;
     this.mergedConfig = null;
+    this.declaredConfig = null;
     this.environment = process.env.NODE_ENV || 'development';
 
     // #1214: one derivation of the data folder and both file paths, shared
@@ -441,6 +444,7 @@ class ConfigurationManager extends BaseManager {
     // ngdpbase.addons.<slug>.enabled gate, bundled and external alike.
     const { merged, addons } = mergeConfigWithAddons(this.defaultConfig, this.customConfig);
     this.mergedConfig = merged;
+    this.declaredConfig = mergeWithAddonLayer(this.defaultConfig, addons, {});
     for (const a of addons) {
       if (a.error) logger.warn(`[config] addon '${a.slug}': ${path.relative(process.cwd(), a.dir)}/config/default-config.json could not be read (${a.error}); it contributes nothing`);
       else logger.info(`[config] addon '${a.slug}' contributed ${Object.keys(a.defaults).length} default key(s)`);
@@ -582,6 +586,17 @@ class ConfigurationManager extends BaseManager {
    */
   getDefaultProperty(key: string, defaultValue: unknown = null): unknown {
     return this.defaultConfig?.[key] ?? defaultValue;
+  }
+
+  /**
+   * #1638: read a property as the build declares it — the shipped defaults
+   * with every ENABLED addon's default-config.json folded in — ignoring the
+   * operator's custom file. A registry check asks this when it must tell an
+   * entry the code can act on (shipped, or an enabled addon's) from one only
+   * the operator's file names. No env-override or env-ref resolution.
+   */
+  getDeclaredProperty(key: string, defaultValue: unknown = null): unknown {
+    return this.declaredConfig?.[key] ?? defaultValue;
   }
 
   /**

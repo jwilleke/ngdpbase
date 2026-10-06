@@ -11,8 +11,8 @@
 // ES imports are hoisted, so this is the only reliable way to populate the
 // environment before any other module's top-level code runs. See that file's
 // header for why containers need it and how precedence works.
-import { ANONYMOUS_SUBJECT } from './managers/UserManager.js';
 import { sessionSecretOrigin } from './bootstrap-env.js';
+import { ANONYMOUS_SUBJECT } from './managers/UserManager.js';
 import { AUDIT_EVENT } from './utils/auditEventNames.js';
 import { recordSystemAction, systemContext } from './context/bootActions.js';
 import { subjectMayDo } from './utils/subjectMayDo.js';
@@ -50,7 +50,7 @@ import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
-import { lockPrivateStores } from './utils/privateStoreUnlock.js';
+import { endSessionKeys, sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
@@ -70,6 +70,8 @@ const projectRoot = process.cwd();
 
 // --- PID File Lock to Prevent Multiple Instances ---
 const PID_FILE = path.join(projectRoot, '.ngdpbase.pid');
+/** How often unlocked keys of ended sessions are swept (#1626). */
+const ORPHANED_KEY_SWEEP_MS = 10 * 60 * 1000;
 
 // Mutable reference populated once the engine is ready — used by the SIGTERM handler
 let engineRef: IWikiEngine | null = null;
@@ -665,6 +667,21 @@ void (async (): Promise<void> => {
   // this server's own URL.
   (engine.getManager('SessionStatsManager') as { attachStore(store: unknown): void } | null)?.attachStore(sessionStore);
 
+  // #1626: a session that expires in the store, or is destroyed by a path that
+  // could not reach endSessionKeys, leaves its unlocked keys with no owner.
+  // Sweep them: any bag whose handle no live session holds is dropped.
+  const sessionStats = engine.getManager('SessionStatsManager') as { liveHandles(): Promise<Set<string>> } | null;
+  if (sessionStats) {
+    setInterval(() => {
+      void sessionStats.liveHandles()
+        .then((live) => {
+          const dropped = sweepOrphanedKeys(live);
+          if (dropped > 0) logger.info(`[SESSION] Dropped the unlocked keys of ${dropped} ended session(s) (#1626)`);
+        })
+        .catch((err: unknown) => logger.warn(`[SESSION] Could not sweep unlocked keys (#1626): ${(err as Error).message}`));
+    }, ORPHANED_KEY_SWEEP_MS).unref();
+  }
+
   app.use(session({
     store: sessionStore,
     // #1194: the ONLY reader of the session secret. bootstrap-env.ts made
@@ -777,8 +794,7 @@ void (async (): Promise<void> => {
     void (async (): Promise<void> => {
       // Ends the signed-in session in place; its private-store keys are dropped with it.
       const signOut = (why: string): void => {
-        const handle = req.session.privateStoreHandle;
-        if (typeof handle === 'string' && handle) lockPrivateStores(handle);
+        endSessionKeys(req.session.privateStoreHandle);
         logger.info(`[SESSION] Signed out ${req.session.username}: ${why}`);
         delete req.session.username;
         delete req.session.privateStoreHandle;
@@ -1090,7 +1106,7 @@ void (async (): Promise<void> => {
   if (unreachable.length > 0) {
     console.error('🔥🔥🔥 FATAL: Refusing to start — a role requires a sign-in level no available factor can reach (#1523):');
     for (const problem of unreachable) console.error(`  - ${problem}`);
-    console.error('Lower the role\'s required-aal, or enable a factor that reaches it (passkeys, TOTP), then restart.');
+    console.error('Lower the role\'s required-aal, or enable a sign-in method that reaches it (a passkey, or the email link as a second factor), then restart.');
     process.exit(1);
   }
 
@@ -1180,12 +1196,11 @@ void (async (): Promise<void> => {
   }
   console.log(`🌐 Visit: ${baseURL}`);
 
-  // The password itself is never echoed. It used to be, because it was the
-  // shipped, publicly-known 'admin123' and printing it gave away nothing.
-  // ngdpbase no longer ships a default: every bootstrap password is now
-  // operator-supplied, so echoing one would write a live credential into the
-  // logs — and /admin/logs is readable by anyone holding `admin-read`, which
-  // is exactly what the read-only demo role grants (#1029).
+  // The password itself is never echoed. The shipped default is the well-known
+  // 'admin123', but an operator may have set their own, and echoing that would
+  // write a live credential into the logs — /admin/logs is readable by anyone
+  // holding `admin-read`, which is exactly what the read-only demo role grants
+  // (#1029).
   const isDefaultPassword = await userManager.isAdminUsingDefaultPassword();
   if (isDefaultPassword) {
     console.log('⚠️  The admin account is still using the bootstrap password from');

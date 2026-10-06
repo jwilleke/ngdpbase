@@ -724,16 +724,6 @@ export interface StoreFileLocation {
  */
 export interface AttachmentProvider extends BaseProvider {
   /**
-   * Save attachment
-   * @param pageUuid - Page UUID
-   * @param filename - Filename
-   * @param buffer - File buffer
-   * @param metadata - Additional metadata
-   * @returns Attachment metadata
-   */
-  saveAttachment(pageUuid: string, filename: string, buffer: Buffer, metadata?: Record<string, unknown>): Promise<AttachmentMetadata>;
-
-  /**
    * Get attachment
    * @param attachmentId - Attachment ID
    * @returns File buffer and metadata

@@ -18,6 +18,8 @@
  * Usage:
  *   npx tsx scripts/restart-audit-chain.ts --reason "..." --actor "..."
  */
+// Loads the instance .env (FAST_STORAGE, keys) before anything reads it (#1609).
+import '../src/bootstrap-env.js';
 import WikiEngine from '../src/WikiEngine.js';
 import { jobContextFromOperator, type JobContext } from '../src/context/JobContext.js';
 

@@ -978,8 +978,8 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     });
 
     describe('GET /logout', () => {
-      test('should destroy session and redirect to home', async () => {
-        // processLogout calls req.session.destroy() and redirects to /
+      test('#1631: never signs out; a visitor with no signed-in session is sent home', async () => {
+        // A GET only asks (confirmLogout); signing out is the CSRF-checked POST below.
         const response = await request(app).get('/logout');
 
         expect(response.status).toBe(302);

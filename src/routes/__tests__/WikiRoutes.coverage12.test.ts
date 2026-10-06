@@ -1074,6 +1074,30 @@ describe('WikiRoutes — coverage batch 12', () => {
       expect(destroyed).toBe('my-own-sid');
     });
 
+    test('revoking a session ends its unlocked private-store keys (#1626)', async () => {
+      mockUserContext = { username: 'admin', isAuthenticated: true, roles: ['admin'] };
+      const { unlockPrivateStores, getUnlockedKek } = await import('../../utils/privateStoreUnlock');
+      unlockPrivateStores('h-revoked', 'molly', Buffer.alloc(32, 3));
+      const fakeStore = {
+        get: (_sid: string, cb: (err: unknown, data?: unknown) => void) =>
+          cb(null, { cookie: {}, username: 'molly', privateStoreHandle: 'h-revoked' }),
+        destroy: (_sid: string, cb: (err: unknown) => void) => cb(null)
+      };
+      const { default: WikiEngine } = await import('../../WikiEngine');
+      const testApp = buildApp();
+      testApp.use((req, _res, next) => {
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionStore = fakeStore;
+        (req as unknown as { sessionStore: typeof fakeStore; sessionID: string }).sessionID = 'admin-sid';
+        next();
+      });
+      const routes = new WikiRoutes(new WikiEngine());
+      routes.registerRoutes(testApp);
+
+      const res = await request(testApp).delete('/api/sessions/molly-sid').set('X-CSRF-Token', 'test-csrf-token');
+      expect(res.status).toBe(200);
+      expect(getUnlockedKek('h-revoked')).toBeUndefined();
+    });
+
     test('200 + destroys target on successful revoke (anonymous target)', async () => {
       mockUserContext = {
         username: 'admin',

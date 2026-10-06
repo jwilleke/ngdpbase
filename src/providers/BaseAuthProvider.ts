@@ -42,6 +42,10 @@ export interface AuthVerifyCredentials {
   password?: string;
   /** One-time token — used by MagicLinkAuthProvider */
   token?: string;
+  /** OAuth `state` from the callback — used by GoogleOIDCProvider */
+  state?: string;
+  /** The browser-binding value from the caller's cookie (#1022 magic link, #1630 OAuth) */
+  deviceState?: string;
   /** A WebAuthn assertion and the single-use challenge it must answer — used by PasskeyAuthProvider (#448). */
   webauthn?: { response: unknown; expectedChallenge: string };
 }

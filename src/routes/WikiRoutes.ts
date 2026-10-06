@@ -16,7 +16,7 @@ import { randomBytes } from 'crypto';
 import type { CorePermission } from '../security/permissions.generated.js';
 import { countSessions, listSessionUsers, SessionStoreUnsupportedError, type SessionStoreLike } from '../managers/SessionStatsManager.js';
 import { fileURLToPath } from 'url';
-import multer, { StorageEngine, Multer } from 'multer';
+import multer, { Multer } from 'multer';
 import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,6 +74,7 @@ import { resolveRange } from '../utils/httpRange.js';
 import { safeRegistrationMessage } from '../utils/userCreateError.js';
 import {
   DEVICE_STATE_COOKIE,
+  OAUTH_STATE_COOKIE,
   deviceStateCookieOptions,
   newDeviceState,
   evaluateDeviceBinding
@@ -106,7 +107,7 @@ import { getSuggestedKeywordSets, type RecentPageKeywords, type KeywordSetSugges
 import { normalizeKeywordValue, groupKeywordVariants, dedupeKeywords, keywordsCollide, type KeywordFormStat } from '../utils/keywordNormalizer.js';
 import {
   kekFor,
-  lockPrivateStores,
+  endSessionKeys,
   newPrivateStoreHandle,
   setUnlockedDek,
   unlockPrivateStores,
@@ -117,7 +118,6 @@ import {
   commitStoreCopy,
   confirmAttempts,
   confirmWords,
-  dropPendingWords,
   hasPendingWords,
   holdWordsForConfirmation,
   storeCopyExists,
@@ -189,6 +189,7 @@ import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
+import { untrustedFileHeaders } from '../utils/securityHeaders.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -210,7 +211,8 @@ import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
  * after it silently destroyed capture marks on first edit (#1008).
  */
 /** The shortest password any form here accepts: sign-up, profile change, recovery (#1452). */
-const MIN_PASSWORD_LENGTH = 6;
+/** #1632: the shortest password accepted; read from config at each use, so a change takes effect at once. A missing or non-numeric value means 6, never no minimum. */
+const PASSWORD_MIN_LENGTH_KEY = 'ngdpbase.user.security.password-min-length';
 
 const DEFAULT_SEEDED_FIELDS = ['system-category', 'system-keywords', 'user-keywords', 'slug'] as const;
 
@@ -647,43 +649,10 @@ export const agentMutationRateLimiter = new SimpleRateLimiter({ max: 60, windowM
  */
 export const signupRateLimiter = new SimpleRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 });
 
-const imageStorage: StorageEngine = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
-    const uploadDir = path.join(__dirname, '../../public/images');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (_req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'upload-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
 // Configure multer for general attachments (memory storage)
 const attachmentUpload: Multer = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit (can be overridden by config)
-});
-
-const imageUpload: Multer = multer({
-  storage: imageStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp|svg/;
-    const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
-    );
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(
-      new Error('Only image files (jpeg, jpg, png|gif|webp|svg) are allowed')
-    );
-  }
 });
 
 /**
@@ -1618,6 +1587,8 @@ class WikiRoutes {
           return;
         }
         const s = raw as Record<string, unknown>;
+        // #1626: the revoked session's keys end with it.
+        endSessionKeys(s.privateStoreHandle);
         targetMeta = {
           username: typeof s.username === 'string' && s.username ? s.username : null,
           ip: typeof s.ip === 'string' ? s.ip : undefined
@@ -6028,35 +5999,6 @@ ${panes}
   }
 
   /**
-   * Upload image file
-   */
-  uploadImage(req: Request, res: Response) {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No image file uploaded' });
-      }
-
-      // Return the image path that can be used in the Image plugin
-      const imagePath = `/images/${req.file.filename}`;
-
-      return res.json({
-        success: true,
-        imagePath: imagePath,
-        filename: req.file.filename,
-        originalName: req.file.originalname,
-        size: req.file.size,
-        message: 'Image uploaded successfully'
-      });
-    } catch (err: unknown) {
-      logger.error('Error uploading image:', err);
-      return res.status(500).json({
-        success: false,
-        error: getErrorMessage(err) || 'Error uploading image'
-      });
-    }
-  }
-
-  /**
    * Serve attachment file
    */
   async serveAttachment(req: Request, res: Response) {
@@ -6077,7 +6019,9 @@ ${panes}
       const own = await attachmentManager.getPrivateStoreAttachment(attachmentId, wikiContext.userContext);
       if (own) {
         const ownName = String(own.metadata.name ?? 'attachment');
-        res.setHeader('Content-Type', String(own.metadata.encodingFormat ?? 'application/octet-stream'));
+        const ownType = String(own.metadata.encodingFormat ?? 'application/octet-stream');
+        res.setHeader('Content-Type', ownType);
+        for (const [name, value] of Object.entries(untrustedFileHeaders(ownType))) res.setHeader(name, value);
         res.setHeader('Content-Disposition', `inline; filename="${ownName}"`);
         res.setHeader('Content-Length', String(own.buffer.length));
         res.setHeader('Cache-Control', 'private, no-store');
@@ -6152,6 +6096,7 @@ ${panes}
         ? 'video/mp4'
         : rawMime;
       res.setHeader('Content-Type', contentType);
+      for (const [name, value] of Object.entries(untrustedFileHeaders(contentType))) res.setHeader(name, value);
       res.setHeader(
         'Content-Disposition',
         `inline; filename="${fileName}"`
@@ -6693,6 +6638,9 @@ ${panes}
   }
 
   private regenerateSession(req: Request): Promise<void> {
+    // #1626: signing in again on a session that holds keys ends that session's
+    // keys; a pending sign-in's handle is never on the session, so is untouched.
+    endSessionKeys(req.session?.privateStoreHandle);
     return new Promise((resolve) => {
       if (typeof req.session?.regenerate !== 'function') {
         resolve();
@@ -7548,7 +7496,12 @@ ${panes}
         return res.redirect('/login?error=Google+sign-in+not+enabled');
       }
       const redirect = (req.body.redirect as string) || '/';
-      const authUrl = authManager.startFlow('google-oidc', { redirect });
+      // #1630: the callback must return to this browser — the same opaque
+      // value goes into an HTTP-only cookie and alongside the OAuth state.
+      const deviceState = newDeviceState();
+      const cookieSecure = Boolean(this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.session.secure', false));
+      res.cookie(OAUTH_STATE_COOKIE, deviceState, deviceStateCookieOptions(10 * 60_000, cookieSecure));
+      const authUrl = authManager.startFlow('google-oidc', { redirect, deviceState });
       res.redirect(authUrl);
     } catch (err: unknown) {
       logger.error('Error initiating Google OIDC:', err);
@@ -7575,10 +7528,9 @@ ${panes}
       // Get redirect URL before consuming state (state deleted in consumeToken)
       const redirect = authManager.getFlowRedirect('google-oidc', state);
 
-      const result = await authManager.authenticate('google-oidc', {
-        token: code,
-        state
-      } as Parameters<typeof authManager.authenticate>[1]);
+      const deviceState = (req.cookies as Record<string, string> | undefined)?.[OAUTH_STATE_COOKIE];
+      res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
+      const result = await authManager.authenticate('google-oidc', { token: code, state, deviceState });
 
       if (!result.success) {
         const configManager = this.engine.getManager('ConfigurationManager');
@@ -7621,17 +7573,25 @@ ${panes}
   }
 
   /**
-   * Process logout
+   * GET /logout — ask first (#1631). A GET can be triggered by any site under
+   * SameSite=Lax, so it never signs out; the page's POST does, with the CSRF
+   * token. Signed-out visitors have nothing to confirm.
+   */
+  async confirmLogout(req: Request, res: Response) {
+    if (!req.session?.username) return res.redirect('/');
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    return res.render('logout-confirm', { ...commonData, title: 'Sign out' });
+  }
+
+  /**
+   * Process logout (POST /logout, CSRF-checked)
    */
   processLogout(req: Request, res: Response) {
     try {
       // #1392: drop KEK/DEK before express-session JSON is gone — the bag is
       // keyed by the session's private-store handle, never the session id.
-      const privateStoreHandle = req.session?.privateStoreHandle;
-      if (typeof privateStoreHandle === 'string' && privateStoreHandle) {
-        lockPrivateStores(privateStoreHandle);
-        dropPendingWords(privateStoreHandle);
-      }
+      endSessionKeys(req.session?.privateStoreHandle);
 
       // #1572: signing out here signs out of the OpenID Connect provider too,
       // or its own session would keep finishing sign-ins for this person.
@@ -8262,9 +8222,10 @@ ${panes}
         return res.redirect('/register?error=Passwords do not match');
       }
 
-      if (password.length < MIN_PASSWORD_LENGTH) {
+      const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+      if (password.length < minLength) {
         return res.redirect(
-          `/register?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+          `/register?error=Password must be at least ${minLength} characters`
         );
       }
 
@@ -8948,7 +8909,7 @@ ${panes}
     res.render('recover-password', {
       ...commonData,
       title: 'Reset your password with your recovery words',
-      minPasswordLength: MIN_PASSWORD_LENGTH,
+      minPasswordLength: (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6),
       username: view.username ?? '',
       error: view.error ?? ''
     });
@@ -8977,8 +8938,9 @@ ${panes}
       if (password !== confirmPassword) {
         return await this.renderRecoverPassword(req, res, { username, error: 'The new passwords do not match.' });
       }
-      if (password.length < MIN_PASSWORD_LENGTH) {
-        return await this.renderRecoverPassword(req, res, { username, error: `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+      const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+      if (password.length < minLength) {
+        return await this.renderRecoverPassword(req, res, { username, error: `The new password must be at least ${minLength} characters.` });
       }
 
       const ctx = jobContextFromRequestWithReason({ username, ipAddress: req.ip }, 'password reset with recovery words (#1452)');
@@ -9895,9 +9857,10 @@ ${panes}
           return res.redirect('/profile?error=New passwords do not match');
         }
 
-        if (newPassword.length < MIN_PASSWORD_LENGTH) {
+        const minLength = (Number(this.engine.getManager('ConfigurationManager')?.getProperty(PASSWORD_MIN_LENGTH_KEY, 6)) || 6);
+        if (newPassword.length < minLength) {
           return res.redirect(
-            `/profile?error=Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+            `/profile?error=Password must be at least ${minLength} characters`
           );
         }
 
@@ -15623,7 +15586,7 @@ ${panes}
     app.post('/auth/magic-link/verify', (req: Request, res: Response) => this.completeMagicLink(req, res));
     app.post('/auth/oauth/google', (req: Request, res: Response) => void this.initiateGoogleOIDC(req, res));
     app.get('/auth/oauth/google/callback', (req: Request, res: Response) => void this.verifyGoogleOIDCCallback(req, res));
-    app.get('/logout', (req: Request, res: Response) => this.processLogout(req, res));
+    app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));
     app.post('/register', (req: Request, res: Response) => this.processRegister(req, res));
@@ -15792,34 +15755,6 @@ ${panes}
     app.get('/admin/convert', (req: Request, res: Response) => void this.adminConvert(req, res));
     app.post('/admin/convert/preview', (req: Request, res: Response) => void this.adminConvertPreview(req, res));
     app.post('/admin/convert/execute', (req: Request, res: Response) => void this.adminConvertExecute(req, res));
-
-    // Image upload route with error handling
-    app.post('/images/upload', (req: Request, res: Response) => {
-      imageUpload.single('image')(req, res, (err: unknown) => {
-        if (err) {
-          // Multer error handling
-          if (err instanceof multer.MulterError) {
-            if (err.code === 'LIMIT_FILE_SIZE') {
-              return res.status(400).json({
-                success: false,
-                error: 'File size exceeds 10MB limit'
-              });
-            }
-            return res.status(400).json({
-              success: false,
-              error: getErrorMessage(err)
-            });
-          }
-          // Other errors (e.g., file type validation)
-          return res.status(400).json({
-            success: false,
-            error: getErrorMessage(err)
-          });
-        }
-        // No error, proceed to handler
-        return void this.uploadImage(req, res);
-      });
-    });
 
     // Non-admin attachment browser (editor/contributor access)
     // #696: /attachments/browse is now an alias for /search (asset-picker UI
@@ -19204,7 +19139,8 @@ ${description}
         'Accept-Ranges': 'bytes',
         'Content-Length': end - start + 1,
         'Content-Type': mimeType,
-        'Content-Disposition': 'inline'
+        'Content-Disposition': 'inline',
+        ...untrustedFileHeaders(mimeType)
       });
       this.pipeFileToResponse(fs.createReadStream(filePath, { start, end }), res, filePath);
       return;
@@ -19214,7 +19150,8 @@ ${description}
       'Accept-Ranges': 'bytes',
       'Content-Disposition': 'inline',
       'Content-Length': fileSize,
-      'Content-Type': mimeType
+      'Content-Type': mimeType,
+      ...untrustedFileHeaders(mimeType)
     });
     this.pipeFileToResponse(fs.createReadStream(filePath), res, filePath);
     return;
@@ -19472,7 +19409,9 @@ ${description}
       if (!found) return res.status(404).send('Not Found');
       await this.engine.getManager('ShareManager')?.recordVaultVisit(req.params.token, { file: req.params.id }, req.ip);
       const name = String(found.metadata.name ?? req.params.id);
-      res.setHeader('Content-Type', String(found.metadata.encodingFormat ?? 'application/octet-stream'));
+      const foundType = String(found.metadata.encodingFormat ?? 'application/octet-stream');
+      res.setHeader('Content-Type', foundType);
+      for (const [name, value] of Object.entries(untrustedFileHeaders(foundType))) res.setHeader(name, value);
       // The URL carries the capability token: no shared cache may keep it.
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Content-Disposition', `inline; filename="${name.replace(/["\\\r\n]/g, '_')}"`);

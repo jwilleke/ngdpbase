@@ -35,8 +35,9 @@ const test = base.extend({
         await logoutLink.first().click();
         await page.waitForLoadState('domcontentloaded');
       } else {
-        // Fallback: navigate directly to logout endpoint
+        // Fallback: the confirm page a typed /logout shows (#1631)
         await page.goto('/logout');
+        await page.getByRole('button', { name: 'Sign out' }).click();
       }
     };
     await use(logoutFn);
