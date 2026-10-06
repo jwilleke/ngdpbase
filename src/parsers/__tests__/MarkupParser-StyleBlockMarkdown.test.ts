@@ -21,9 +21,11 @@
 
 import MarkupParser from '../MarkupParser';
 import { createMarkdownConverter } from '../../rendering/markdownConverter.js';
+import { shippedHtmlPolicy } from '../../rendering/__tests__/__fixtures__/shippedHtmlPolicy.js';
 
-// The production page converter itself (#1273), not a copy of its options.
-const converter = createMarkdownConverter('page');
+// The production page converter itself (#1273), not a copy of its options,
+// holding author HTML to the shipped policy (#1623).
+const converter = createMarkdownConverter('page', () => shippedHtmlPolicy);
 
 class MockEngine {
   managers: Map<string, unknown>;
@@ -40,7 +42,6 @@ class MockEngine {
             'ngdpbase.markup.handlers.interwiki.enabled': false,
             'ngdpbase.markup.handlers.linkparser.enabled': false,
             'ngdpbase.filters.enabled': true,
-            'ngdpbase.filters.security.enabled': false,
             'ngdpbase.filters.spam.enabled': false,
             'ngdpbase.filters.validation.enabled': false
           };

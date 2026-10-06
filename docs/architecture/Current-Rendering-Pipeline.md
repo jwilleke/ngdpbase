@@ -167,7 +167,7 @@ Three filters are registered and initialized:
 
 | Filter | Config key | Default |
 |---|---|---|
-| `SecurityFilter` | `ngdpbase.filters.security.enabled` | `false` |
+| `SecurityFilter` | always registered (save check; see [the HTML policy](../html-policy.md)) | — |
 | `SpamFilter` | `ngdpbase.filters.spam.enabled` | `false` |
 | `ValidationFilter` | `ngdpbase.filters.validation.enabled` | `true` |
 
@@ -177,7 +177,7 @@ This means:
 
 - `ValidationFilter.validateMarkupSyntax()` does not run
 - `<!-- VALIDATION WARNING -->` injection via `ValidationFilter` does not fire
-- `SecurityFilter` HTML sanitization does not run
+- `SecurityFilter`'s whole-document pass does not run for pages — author HTML is held to [the HTML policy](../html-policy.md) inside markdown-it instead
 - `SpamFilter` link detection does not run
 
 __Tracked in__: [#596 — FilterChain configured but filterChain.execute() never called](https://github.com/jwilleke/ngdpbase/issues/596)
@@ -208,7 +208,7 @@ Key config properties controlling the rendering pipeline:
 | `ngdpbase.markup.cache-ttl` | `300` | Cache TTL in seconds |
 | `ngdpbase.filters.enabled` | `true` | Global filter switch (has no effect until #596 is fixed) |
 | `ngdpbase.filters.validation.enabled` | `true` | Enable ValidationFilter (has no effect until #596 is fixed) |
-| `ngdpbase.filters.security.enabled` | `false` | Enable SecurityFilter (has no effect until #596 is fixed) |
+| `ngdpbase.markup.html-policy` | *(lists)* | The raw HTML an author may write; held at render inside markdown-it and at save — see [the HTML policy](../html-policy.md) |
 | `ngdpbase.filters.spam.enabled` | `false` | Enable SpamFilter (has no effect until #596 is fixed) |
 
 ---
@@ -221,7 +221,8 @@ Key config properties controlling the rendering pipeline:
 | `src/parsers/handlers/JSPWikiPreprocessor.ts` | Table and style-block conversion (Phase 2.5) |
 | `src/parsers/dom/WikiDocument.ts` | DOM node container for extracted elements |
 | `src/parsers/filters/ValidationFilter.ts` | Markup validation (wired but not called — #596) |
-| `src/parsers/filters/SecurityFilter.ts` | HTML sanitization (wired but not called — #596) |
+| `src/parsers/filters/SecurityFilter.ts` | Save check against the HTML policy; whole-document sanitising for comments |
+| `src/rendering/htmlPolicy.ts` | The HTML policy for author HTML — render filter and save check ([the HTML policy](../html-policy.md)) |
 | `src/managers/RenderingManager.ts` | Entry point — calls `MarkupParser.parse()`, holds the markdown-it page converter |
 | `src/rendering/markdownConverter.ts` | The markdown-it profiles (`page`, `untrusted`, `fallback`) — the one place converter options are set |
 | `src/routes/WikiRoutes.ts` | HTTP layer — `viewPage()` triggers rendering |

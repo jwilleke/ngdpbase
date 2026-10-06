@@ -7,37 +7,29 @@
  *   GHSA-22g5-r2x5-97cx — table header id, requires `tablesHeaderId`
  *
  * Neither option is enabled anywhere in ngdpbase, so neither advisory is
- * reachable. But checking that raised the larger question those advisories
- * only hint at: markdown permits raw HTML by design, and `SecurityFilter` —
- * which strips it — ships DISABLED (`ngdpbase.filters.security.enabled`
- * defaults to false, deliberately, per #596).
- *
- * These tests record what the pipeline does by default. They are deliberately
- * written as observations rather than aspirations: several assert that
- * dangerous markup SURVIVES. That is the current, intended-by-default
- * behaviour for a trusted-author wiki, and pinning it means any change to that
- * posture is a visible, deliberate diff rather than a silent one.
- *
- * It is NOT safe for an instance whose authors are strangers — which the
- * public demo now is. See #1032.
+ * reachable. Checking that raised the larger question those advisories only
+ * hint at: markdown permits raw HTML by design. Until #1623 the filter that
+ * stripped it shipped disabled, so a page author's script ran for every
+ * reader. Raw HTML in a page is now always held to the HTML policy
+ * (`ngdpbase.markup.html-policy`); these tests pin that, with the policy as it
+ * ships and with none at all.
  */
 
 import MarkupParser from '../MarkupParser';
 import FilterManager from '../../managers/FilterManager';
+import { HTML_POLICY_KEY } from '../../rendering/htmlPolicy';
+import { shippedHtmlPolicy } from '../../rendering/__tests__/__fixtures__/shippedHtmlPolicy';
 
-function makeEngine(securityFilterEnabled: boolean) {
+function makeEngine(policy: unknown) {
   const configManager = {
     getProperty: (key: string, defaultValue: unknown) => {
       const config: Record<string, unknown> = {
         'ngdpbase.markup.enabled': true,
         'ngdpbase.markup.caching': false,
         'ngdpbase.filters.enabled': true,
-        'ngdpbase.filters.security.enabled': securityFilterEnabled,
-        'ngdpbase.filters.security.prevent-xss': true,
-        'ngdpbase.filters.security.sanitize-html': true,
-        'ngdpbase.filters.security.strip-dangerous-content': true,
         'ngdpbase.filters.spam.enabled': false,
-        'ngdpbase.filters.validation.enabled': true
+        'ngdpbase.filters.validation.enabled': true,
+        [HTML_POLICY_KEY]: policy
       };
       return key in config ? config[key] : defaultValue;
     }
@@ -50,9 +42,9 @@ function makeEngine(securityFilterEnabled: boolean) {
   };
 }
 
-async function render(markdown: string, securityFilterEnabled = false): Promise<string> {
+async function render(markdown: string, policy: unknown = shippedHtmlPolicy): Promise<string> {
   // #1117: FilterManager owns the chain — construct it first, as WikiEngine does.
-  const engine = makeEngine(securityFilterEnabled);
+  const engine = makeEngine(policy);
   const filterManager = new FilterManager(engine);
   await filterManager.initialize();
   engine.managers.set('FilterManager', filterManager);
@@ -80,76 +72,57 @@ describe('neither showdown XSS advisory is reachable here (#1032)', () => {
   });
 });
 
-describe('raw HTML in page content — the real exposure (#1032)', () => {
-  // These record current default behaviour. They are not an endorsement of it.
-  test('a script tag written by a page author survives by default', async () => {
+describe('raw HTML in page content meets the HTML policy (#1623)', () => {
+  test('a script tag written by a page author does not reach the page', async () => {
     const html = await render("<script>alert('xss')</script>");
 
-    expect(html).toContain('<script>');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('alert');
   });
 
-  test('an event-handler attribute survives by default', async () => {
+  test('an event-handler attribute does not reach the page', async () => {
     const html = await render('<svg onload=alert(1)>');
 
-    expect(html).toMatch(/onload/i);
-  });
-});
-
-describe('SecurityFilter closes it when enabled (#1032)', () => {
-  test('script tags are stripped', async () => {
-    const html = await render("<script>alert('xss')</script>", true);
-
-    expect(html).not.toContain('<script>');
+    expect(html).not.toMatch(/onload/i);
   });
 
-  test('event-handler attributes are stripped', async () => {
-    const html = await render('<svg onload=alert(1)>', true);
+  test('with no policy configured, the failure is closed', async () => {
+    const html = await render('<b>bold</b> and <script>alert(1)</script>', null);
 
-    expect(html).not.toMatch(/onload\s*=/i);
+    expect(html).not.toContain('<b>');
+    expect(html).not.toContain('<script');
+    expect(html).toContain('bold');
   });
 
   test('ordinary markup still renders', async () => {
-    // The cost of enabling it: the allow-list is closed, so this guards
-    // against the filter being so aggressive that normal pages break.
-    const html = await render('Some **bold** text and a [link](https://example.org).', true);
+    const html = await render('Some **bold** text and a [link](https://example.org).');
 
     expect(html).toContain('<strong>bold</strong>');
     expect(html).toContain('example.org');
   });
 
   test('tables, code blocks and blockquotes survive', async () => {
-    // These were missing from the allow-list, so enabling the filter used to
-    // delete them from every page — quieter than the encoding bug, same class
-    // of "turning on security breaks the site".
-    const html = await render(
-      '| h |\n|---|\n| c |\n\n```\ncode\n```\n\n> quoted\n\n---\n',
-      true
-    );
+    const html = await render('| h |\n|---|\n| c |\n\n```\ncode\n```\n\n> quoted\n\n---\n');
 
     expect(html).toMatch(/<table[\s>]/);
     expect(html).toContain('<td>');
     expect(html).toMatch(/<code[\s>]/);
     expect(html).toMatch(/<blockquote[\s>]/);
-    // `class` is allow-listed, so styling survives the filter too.
     expect(html).toContain('class="table"');
   });
 
   test('a hostile page is scrubbed while its legitimate parts render', async () => {
-    // The whole point, in one case: the dangerous parts go, the rest stays.
     const html = await render(
       '## Heading\n\n<script>alert(1)</script>\n\n<iframe src="//evil"></iframe>\n\n' +
-      '<a href="/ok" onclick="steal()">link</a>\n\nNormal **text**.',
-      true
+      '<a href="/ok" onclick="steal()">link</a>\n\nNormal **text**.'
     );
 
     expect(html).not.toContain('<script');
     expect(html).not.toMatch(/onclick/i);
     expect(html).toContain('<strong>text</strong>');
-    expect(html).toContain('href');
-    // <iframe> is NOT stripped at render any more (#1037). It is refused at
-    // SAVE, where an author's frame can still be told apart from one our own
-    // LocationPlugin emits for embedded maps. Blocking it here removed every
-    // map on the wiki.
-    expect(html).toContain('<iframe');
+    expect(html).toContain('href="/ok"');
+    // An author's <iframe> is not allowed. The maps LocationPlugin embeds are
+    // plugin output, merged after markdown-it, which the policy never sees.
+    expect(html).not.toContain('<iframe');
   });
 });

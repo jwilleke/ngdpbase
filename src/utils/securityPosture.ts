@@ -4,11 +4,10 @@
  *
  * An operator cannot otherwise see what their instance's security settings
  * are: they sit in `config/app-default-config.json` among some five hundred
- * other keys, with nothing presenting them as one subject. Two of them are
- * actively misleading as they ship — `ngdpbase.filters.security.enabled` is
- * `false` while every sub-flag beneath it is `true`, and
- * `ngdpbase.auth.factors` offers only single factors, which is where the
- * absence of MFA becomes a visible fact rather than tribal knowledge.
+ * other keys, with nothing presenting them as one subject. One of them is
+ * where a gap becomes visible as it ships — `ngdpbase.auth.factors` offers
+ * only single factors, which is where the absence of MFA becomes a visible
+ * fact rather than tribal knowledge.
  *
  * __This is a view, not a resolution layer (D3).__ Every item is an ordinary
  * key with its own shipped default, read by live code. The posture decides

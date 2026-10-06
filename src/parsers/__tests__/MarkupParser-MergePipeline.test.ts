@@ -290,8 +290,10 @@ describe('MarkupParser - Merge Pipeline (Phase 3)', () => {
 
       const result = await parser.parseWithDOMExtraction(content, context);
 
-      // UUID prevents conflict, user's text preserved
-      expect(result).toContain('Test <!--JSPWIKI-0--> text');
+      // UUID prevents conflict: the comment is not filled. It is an HTML
+      // comment the author wrote, which the HTML policy drops (#1623).
+      expect(result).toContain('Test  text');
+      expect(result).not.toContain('<!--');
       expect(result).toContain('JohnDoe');
     });
 

@@ -38,26 +38,24 @@ const filterIds = (m: FilterManager) =>
   (m.getFilterChain()?.getFilters(false) ?? []).map((f) => f.constructor.name).sort();
 
 describe('FilterManager built-in registration follows configuration', () => {
-  test('defaults: ValidationFilter on, SecurityFilter present for block-on-save, Spam off', async () => {
-    // SecurityFilter registers by default because block-on-save defaults true
-    // (#1037: an unregistered filter contributes no save-time rules).
+  test('defaults: ValidationFilter on, SecurityFilter present, Spam off', async () => {
     const m = await makeManager();
     expect(filterIds(m)).toEqual(['SecurityFilter', 'ValidationFilter']);
     await m.shutdown();
   });
 
-  test('block-on-save false and security disabled: no SecurityFilter', async () => {
+  test('SecurityFilter has no off switch: a save always meets the HTML policy (#1623)', async () => {
+    // The retired keys are ignored if an old custom config still sets them.
     const m = await makeManager({
       'ngdpbase.filters.security.enabled': false,
       'ngdpbase.filters.security.block-on-save': false
     });
-    expect(filterIds(m)).toEqual(['ValidationFilter']);
+    expect(filterIds(m)).toEqual(['SecurityFilter', 'ValidationFilter']);
     await m.shutdown();
   });
 
   test('everything on', async () => {
     const m = await makeManager({
-      'ngdpbase.filters.security.enabled': true,
       'ngdpbase.filters.spam.enabled': true,
       'ngdpbase.filters.validation.enabled': true
     });
@@ -94,9 +92,8 @@ describe('the contributed path (#1117)', () => {
 
   test('a contributed filter actually runs in the chain', async () => {
     const m = await makeManager({
-      // Only the contributed filter, so the assertion isolates it.
-      'ngdpbase.filters.security.enabled': false,
-      'ngdpbase.filters.security.block-on-save': false,
+      // SecurityFilter's process() leaves page HTML alone, so with validation
+      // off the assertion isolates the contributed filter.
       'ngdpbase.filters.validation.enabled': false
     });
     await m.registerFilter(new HouseStyleFilter());

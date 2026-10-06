@@ -22,6 +22,8 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import MarkupParser from '../MarkupParser';
 import { createMarkdownConverter } from '../../rendering/markdownConverter';
+// The shipped HTML policy (#1623): test pages render as they do on an install.
+import { shippedHtmlPolicy } from '../../rendering/__tests__/__fixtures__/shippedHtmlPolicy';
 
 class MockEngine {
   managers: Map<string, unknown>;
@@ -47,7 +49,7 @@ class MockEngine {
         isInitialized: () => true,
         region: () => ({ get: async () => null, set: async () => {} })
       }],
-      ['RenderingManager', { converter: createMarkdownConverter('page') }]
+      ['RenderingManager', { converter: createMarkdownConverter('page', () => shippedHtmlPolicy) }]
     ]);
   }
   getManager(name: string) { return this.managers.get(name) || null; }

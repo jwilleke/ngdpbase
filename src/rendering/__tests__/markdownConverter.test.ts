@@ -8,8 +8,10 @@
 import { describe, it, expect } from 'vitest';
 import { createMarkdownConverter, buildMarkdownIt } from '../markdownConverter.js';
 import { headingSlug } from '../../utils/SectionUtils.js';
+import { shippedHtmlPolicy } from './__fixtures__/shippedHtmlPolicy.js';
 
-const page = createMarkdownConverter('page');
+// The shipped HTML policy (#1623): without one, no author HTML renders.
+const page = createMarkdownConverter('page', () => shippedHtmlPolicy);
 const html = (md: string): string => page.makeHtml(md);
 
 describe('page profile', () => {
@@ -121,8 +123,11 @@ describe('fallback profile (degraded paths)', () => {
 });
 
 describe('factory', () => {
-  it('returns one converter per profile', () => {
-    expect(createMarkdownConverter('page')).toBe(page);
-    expect(createMarkdownConverter('untrusted')).not.toBe(page);
+  it('reads the HTML policy on every render, so a configuration change applies at once (#1623)', () => {
+    let policy: unknown = null;
+    const converter = createMarkdownConverter('page', () => policy);
+    expect(converter.makeHtml('<kbd>K</kbd>')).not.toContain('<kbd>');
+    policy = { tags: { kbd: true }, attributes: {}, schemes: {} };
+    expect(converter.makeHtml('<kbd>K</kbd>')).toContain('<kbd>K</kbd>');
   });
 });

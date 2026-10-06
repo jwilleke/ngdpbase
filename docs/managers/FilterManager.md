@@ -47,10 +47,10 @@ Read at initialization from `ngdpbase.filters.*`. The namespace was renamed from
 | Key | Default | Meaning |
 |---|---|---|
 | `ngdpbase.filters.enabled` | `true` | Pipeline master switch — off means no chain at all |
-| `ngdpbase.filters.security.enabled` | `false` | SecurityFilter on the render path |
-| `ngdpbase.filters.security.block-on-save` | `true` | Save-time gate — registers SecurityFilter even when render filtering is off (#1037) |
 | `ngdpbase.filters.spam.enabled` | `false` | SpamFilter |
 | `ngdpbase.filters.validation.enabled` | `true` | ValidationFilter |
+
+`SecurityFilter` always registers. In the page pipeline it checks saves only: author HTML against the [HTML policy](../html-policy.md) (`ngdpbase.markup.html-policy`), naming what is not allowed, and the raw `<br>` markup rule. Page HTML is held to the same policy at render inside markdown-it, not by this filter; its whole-document `process()` pass runs only for comments. The `ngdpbase.filters.security.enabled` and `.block-on-save` switches were removed in [#1623](https://github.com/jwilleke/ngdpbase/issues/1623).
 
 Pipeline-level policy (`max-filters`, `timeout`, `enable-profiling`, `fail-on-error`, per-filter settings) is read by `FilterChain` itself.
 

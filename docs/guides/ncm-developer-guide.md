@@ -137,12 +137,12 @@ When the normalizer drops content (stripped HTML, rejected/over-cap/ad image, an
 
 ## 3.4 Render profiles — trust decides composition (#1123)
 
-The render pipeline was designed for __trusted page authors__: raw HTML survives by configuration, `[{Plugin}]` and `[{$variable}]` execute, and the SecurityFilter allow-list admits `<iframe>`/`<img>` because an author-written one is refused at save. Content from authors who are __not__ trusted — comments today; any user-of-user surface tomorrow — must not be piped through that composition, and must never get a parallel renderer either (the #599/#1032 lesson). So one engine, two profiles:
+The render pipeline was designed for __page authors__: raw HTML is held to the [HTML policy](../html-policy.md) at save and render, and `[{Plugin}]` and `[{$variable}]` execute. Content from authors who are __not__ trusted — comments today; any user-of-user surface tomorrow — must not be piped through that composition, and must never get a parallel renderer either (the #599/#1032 lesson). So one engine, two profiles:
 
 | Profile | Used for | Composition |
 |---|---|---|
-| `trusted-page` | Page bodies | Full pipeline: MarkupParser (plugins, variables, wiki links), markdown-it (`page` profile), filter chain per site config |
-| `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same markdown-it core, `untrusted` profile of `src/rendering/markdownConverter.ts` (CommonMark plus breaks, tables, fences and `<del>`; no heading ids, task lists or sub/superscript — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); same SecurityFilter with its config __forced on__ (not site-configurable — an operator toggling render filtering must not change what commenters can inject) and a tightened tag list (no `iframe`, no `img`); escape-everything fallback on any failure — degraded is safe, never open |
+| `trusted-page` | Page bodies | Full pipeline: MarkupParser (plugins, variables, wiki links), markdown-it (`page` profile) with author HTML held to the HTML policy, filter chain per site config |
+| `untrusted-inline` | Comments (`renderUntrustedInline`, `src/utils/renderUntrustedInline.ts`) | Same markdown-it core, `untrusted` profile of `src/rendering/markdownConverter.ts` (CommonMark plus breaks, tables, fences and `<del>`; no heading ids, task lists or sub/superscript — plugin/variable/wiki-link syntax inert __by construction__, MarkupParser never runs); SecurityFilter's whole-document pass with its config __forced on__ (not site-configurable) and a tightened tag list (no `iframe`, no `img`); escape-everything fallback on any failure — degraded is safe, never open |
 
 A future surface with untrusted authors adopts `untrusted-inline` rather than re-deciding; wiki-link support inside it (with viewer-context resolution, per the #1116 rule) is a possible extension, deliberately not in the first cut — a red-link in a comment is a page-creation lure and an existence probe.
 

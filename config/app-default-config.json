@@ -790,9 +790,9 @@
       "group": "Audit",
       "restart": false
     },
-    "ngdpbase.filters.security.enabled": {
+    "ngdpbase.markup.html-policy": {
       "group": "Content sanitisation",
-      "restart": true
+      "restart": false
     },
     "ngdpbase.filters.security.prevent-xss": {
       "group": "Content sanitisation",
@@ -900,6 +900,40 @@
     "mermaid": true
   },
   "ngdpbase.markup.enabled": true,
+  "_comment_markup_html_policy": "The one HTML policy for page content (#1623): the raw HTML an author may write. Rendering drops anything else from every page, whatever its origin (an edit, an import, an admin raw save, a page saved before this policy); a save is refused with a message naming what is not allowed. Always on. Each list is a set of name: true (#1612), so app-custom-config.json widens it by adding entries — {\"ngdpbase.markup.html-policy\": {\"attributes\": {\"span\": {\"style\": true}}}} — and narrows it with name: false. tags: allowed elements. attributes: allowed attributes per tag, '*' for every tag. schemes: URL schemes allowed in href/src/cite (relative URLs always are). schemes-by-tag: a tag's own scheme set, used instead of schemes for that tag. Left out on purpose: script, style and event handlers; iframe/object/embed (the map embeds come from plugins, which this policy never sees); svg and form controls; the style attribute (CSS can overlay the page; %%(css) blocks are the styling path); id (it can clobber the page's own scripts); data: URLs except in img src, where an image cannot run script. Without a valid value no author HTML renders at all. See docs/html-policy.md.",
+  "ngdpbase.markup.html-policy": {
+    "tags": {
+      "p": true, "div": true, "span": true, "br": true, "hr": true,
+      "strong": true, "em": true, "b": true, "i": true, "u": true, "s": true, "del": true, "ins": true, "mark": true, "small": true, "sub": true, "sup": true,
+      "ul": true, "ol": true, "li": true, "dl": true, "dt": true, "dd": true,
+      "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+      "a": true, "img": true, "figure": true, "figcaption": true,
+      "blockquote": true, "q": true, "cite": true, "code": true, "pre": true, "kbd": true, "samp": true, "var": true,
+      "table": true, "thead": true, "tbody": true, "tfoot": true, "tr": true, "th": true, "td": true, "caption": true, "colgroup": true, "col": true,
+      "abbr": true, "time": true, "details": true, "summary": true
+    },
+    "attributes": {
+      "*": { "class": true, "title": true, "lang": true, "dir": true },
+      "a": { "href": true, "name": true, "target": true, "rel": true },
+      "img": { "src": true, "alt": true, "width": true, "height": true, "loading": true },
+      "th": { "colspan": true, "rowspan": true, "scope": true },
+      "td": { "colspan": true, "rowspan": true },
+      "col": { "span": true },
+      "colgroup": { "span": true },
+      "ol": { "start": true, "reversed": true, "type": true },
+      "li": { "value": true },
+      "blockquote": { "cite": true },
+      "q": { "cite": true },
+      "del": { "cite": true, "datetime": true },
+      "ins": { "cite": true, "datetime": true },
+      "time": { "datetime": true },
+      "details": { "open": true }
+    },
+    "schemes": { "http": true, "https": true, "mailto": true, "tel": true },
+    "schemes-by-tag": {
+      "img": { "http": true, "https": true, "data": true }
+    }
+  },
   "ngdpbase.markup.use-advanced-parser": true,
   "ngdpbase.markup.fallback-to-legacy": true,
   "ngdpbase.markup.integration.rendering-manager": true,
@@ -967,10 +1001,7 @@
   "ngdpbase.filters.spam.blacklist-words": "spam,casino,pharmacy,viagra",
   "ngdpbase.filters.spam.whitelist-domains": "wikipedia.org,github.com,stackoverflow.com",
   "ngdpbase.filters.spam.cache-blacklist": true,
-  "_comment_security_filters": "Security filter configuration. Strips dangerous markup from RENDERED page HTML (phase: html). Ships DISABLED: on a wiki whose authors are trusted, raw HTML in a page is a feature, and enabling this removes it. Enable it on any instance whose authors are strangers — a public demo, an open-registration site — because markdown permits raw HTML by design and nothing else stops a page author injecting script. It was unusable before #1032: prevent-xss entity-encoded the whole rendered document, so every page displayed as visible HTML source, and the tag allow-list omitted tables, code blocks and blockquotes. Both fixed; allowed-tags/allowed-attributes below now ADD to a built-in baseline covering everything ngdpbase renders, rather than replacing it.",
-  "ngdpbase.filters.security.enabled": false,
-  "_comment_security_block_on_save": "Refuse a page SAVE whose source contains script tags, inline event handlers, javascript: URLs, framing tags, inline SVG or a raw <br> (NCM has \\\\ for that). Independent of .enabled above, and default TRUE: it inspects only what an AUTHOR typed, so it can be strict without touching anything else. Render-time filtering (.enabled) sees the whole rendered document — including our own plugin output, which legitimately uses inline onclick, style and an <iframe> for embedded maps — so it cannot distinguish application chrome from page content and stays off by default. Code fences and inline code are skipped: content in backticks renders escaped and cannot execute. adminSaveRaw bypasses this deliberately, as the escape hatch for repairing a page the rules would reject.",
-  "ngdpbase.filters.security.block-on-save": true,
+  "_comment_security_filters": "SecurityFilter. In the page pipeline it only checks a SAVE: it refuses author HTML that ngdpbase.markup.html-policy does not allow (naming each tag, attribute or URL) and a raw <br> (NCM has \\\\ for that). Page HTML is filtered at render by that policy inside markdown-it, not by this filter (#1623). The keys below shape the whole-document pass the comment profile (renderUntrustedInline) runs on comments, which forces it on. adminSaveRaw skips the save check, as the escape hatch for repairing a page; the render filter still applies to what it writes.",
   "ngdpbase.filters.security.priority": 110,
   "ngdpbase.filters.security.prevent-xss": true,
   "ngdpbase.filters.security.prevent-csrf": true,

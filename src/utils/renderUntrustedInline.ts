@@ -1,10 +1,9 @@
 /**
  * The untrusted-inline render profile (#1123).
  *
- * "One renderer, one sanitizer" was designed for TRUSTED page authors: raw
- * HTML survives by configuration, [{Plugin}] and [{$variable}] execute, and
- * the SecurityFilter allow-list admits <iframe>/<img> because an
- * author-written one is refused at save. Comments (and any future
+ * Pages hold author HTML to the HTML policy (`ngdpbase.markup.html-policy`,
+ * #1623) inside markdown-it, where it can be told apart from plugin output,
+ * and [{Plugin}] and [{$variable}] execute. Comments (and any future
  * user-of-user surface) pass no save gate and their authors are never
  * trusted — so this profile composes the SAME components differently rather
  * than building a second renderer:
@@ -15,12 +14,10 @@
  *   or sub/superscript;
  * - MarkupParser never runs, so plugin/variable/wikitag/wiki-link syntax is
  *   inert BY CONSTRUCTION — nothing to disable, nothing to forget;
- * - the same SecurityFilter sanitizes the output, with its config FORCED on
- *   (the page path gates it on `ngdpbase.filters.security.enabled` because
- *   page authors are trusted by config; commenters never are) and its tag
- *   list tightened: no <iframe> (the page baseline admits it for
- *   plugin-emitted maps), no <img> (an external src is a tracking pixel
- *   aimed at every reader of the comment thread).
+ * - SecurityFilter sanitizes the whole output, with its config FORCED on
+ *   (pages never run this pass) and its tag list tightened: no <iframe>
+ *   (its baseline admits one), no <img> (an external src is a tracking
+ *   pixel aimed at every reader of the comment thread).
  *
  * Failure is safe, not open: if the filter cannot be built, the caller gets
  * fully escaped text — the pre-#1123 behaviour — never unsanitized HTML.
