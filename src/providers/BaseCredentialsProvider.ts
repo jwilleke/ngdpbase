@@ -44,8 +44,22 @@ export interface RejectedCredential {
 }
 
 abstract class BaseCredentialsProvider extends BaseProvider {
-  /** Load the store. Rows that fail verification are dropped and reported. */
+  /**
+   * Load the store. Rows that fail verification sign no one in and are
+   * reported; they are kept, unchanged, in quarantine (#1633) so a lost or
+   * changed key does not destroy them on the next write.
+   */
   abstract initialize(onRejected: (rejected: RejectedCredential[]) => void): Promise<void>;
+
+  /** Rows held in quarantine because they failed verification (#1633). */
+  abstract quarantined(): RejectedCredential[];
+
+  /**
+   * Re-sign every quarantined row that is well formed under the current key
+   * and trust it again (#1633). Malformed rows, and rows that would duplicate a
+   * trusted credential, stay quarantined. Returns the rows now trusted.
+   */
+  abstract retrustQuarantined(): Promise<CredentialRecord[]>;
 
   /** A person's verified credentials, oldest first. */
   abstract list(username: string): CredentialRecord[];

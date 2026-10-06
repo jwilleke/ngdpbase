@@ -87,6 +87,7 @@
     "scripts/repair-jspwiki-frontmatter.ts",
     "scripts/repair-required-pages-history.ts",
     "scripts/restart-audit-chain.ts",
+    "scripts/retrust-credentials.ts",
     "scripts/strip-user-roles.ts",
     "scripts/verify-audit-chain.ts",
     "mcp-server.ts"
