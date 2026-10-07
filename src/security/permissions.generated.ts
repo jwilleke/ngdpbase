@@ -23,6 +23,8 @@ export type CorePermission =
   | 'asset-read'
   /** Upload assets */
   | 'asset-upload'
+  /** Export the audit trail to a file (#1638) */
+  | 'audit-export'
   /** Add a comment, and delete your own; deleting anyone's is admin-system (#1198) */
   | 'comment-create'
   /** Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up */
@@ -39,6 +41,8 @@ export type CorePermission =
   | 'page-export'
   /** Make a page public: move it out of its vault (checked by the page's system-category, #1504) */
   | 'page-public'
+  /** Edit a page's raw file in the admin raw editor — bypasses the page editor's checks (#1638) */
+  | 'page-raw-edit'
   /** View pages */
   | 'page-read'
   /** Rename pages */
@@ -51,6 +55,8 @@ export type CorePermission =
   | 'search-user'
   /** Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed */
   | 'secret-reveal'
+  /** End another person's signed-in session (#1638) */
+  | 'session-revoke'
   /** Create share links — hand out anonymous read access to content you may read — and see your own (#1224, #1638) */
   | 'share-create'
   /** Extend your own share links (#1638) */
@@ -80,6 +86,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'asset-edit',
   'asset-read',
   'asset-upload',
+  'audit-export',
   'comment-create',
   'config-manage',
   'media-read',
@@ -88,12 +95,14 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'page-edit',
   'page-export',
   'page-public',
+  'page-raw-edit',
   'page-read',
   'page-rename',
   'profile-manage',
   'search-page',
   'search-user',
   'secret-reveal',
+  'session-revoke',
   'share-create',
   'share-extend',
   'share-revoke',

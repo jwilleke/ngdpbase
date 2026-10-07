@@ -789,7 +789,7 @@ const TWO_STEP_COOKIE = 'ngdp_two_step';
  * permission they use that is missing.
  */
 export const VIEW_PERMISSIONS = [
-  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-create',
+  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-create', 'page-raw-edit',
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
   'config-manage', 'secret-reveal', 'account-security'
 ] as const;
@@ -1452,14 +1452,15 @@ class WikiRoutes {
       // #1034: was hasRole('admin'). For a MUTATION that is worse than a UX
       // bug — the read-only guarantee rested on role naming rather than on
       // permissions, so a custom role called 'admin' could destroy sessions
-      // while one holding admin-system could not.
+      // while one holding admin-system could not. #1638: session-revoke, the
+      // action's own name.
       if (
         !wikiContext.userContext?.isAuthenticated ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('session-revoke'))
       ) {
         res.status(403).json({
           error: 'This account cannot modify sessions',
-          reason: "Read-only access — requires the 'admin-system' permission"
+          reason: "Read-only access — requires the 'session-revoke' permission"
         });
         return;
       }
@@ -4193,14 +4194,14 @@ ${panes}
       // permission can arrive through any number of them.
       if (
         !wikiContext.userContext?.isAuthenticated ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('page-raw-edit'))
       ) {
         await this.renderError(
           req,
           res,
           403,
           'Access Denied',
-          "Read-only access — editing raw page content requires the 'admin-system' permission"
+          "Read-only access — editing raw page content requires the 'page-raw-edit' permission"
         );
         return;
       }
@@ -4251,14 +4252,14 @@ ${panes}
       // permission can arrive through any number of them.
       if (
         !wikiContext.userContext?.isAuthenticated ||
-        !(await wikiContext.hasPermission('admin-system'))
+        !(await wikiContext.hasPermission('page-raw-edit'))
       ) {
         await this.renderError(
           req,
           res,
           403,
           'Access Denied',
-          "Read-only access — editing raw page content requires the 'admin-system' permission"
+          "Read-only access — editing raw page content requires the 'page-raw-edit' permission"
         );
         return;
       }
@@ -16497,7 +16498,7 @@ ${panes}
       const wikiContext = this.createWikiContext(req);
       const currentUser = await this.engine.getManager('PolicyInformationPoint').currentSubject(req);
 
-      if (!currentUser || !(await wikiContext.hasPermission('admin-system'))) {
+      if (!currentUser || !(await wikiContext.hasPermission('audit-export'))) {
         return res.status(403).send('Access denied');
       }
 
