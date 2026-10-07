@@ -55,6 +55,8 @@ vi.mock('../../WikiEngine', () => {
       content: '# Test Page\nThis is a test page.',
       metadata: { title: 'TestPage' }
     }),
+    // #1622: site chrome (menu, footer, page tabs) is read by PageManager.readChromePage.
+    readChromePage: vi.fn().mockResolvedValue(null),
     getPageContent: vi.fn().mockResolvedValue('# Test Page'),
     getPageMetadata: vi.fn().mockResolvedValue({ title: 'TestPage' }),
     provider: {
