@@ -299,6 +299,51 @@ jobs:
 
           echo "All smoke tests passed."
 
+      - name: Smoke test — the image starts as a non-root user
+        run: |
+          # #1687: an operator whose data belongs to a fixed UID (an NFS volume
+          # that squashes every write, a pod with runAsUser) runs the server as
+          # that UID — #1560 tells them to. The image used to refuse: the PID
+          # lock, ./templates and ./exports were written under /app, which is
+          # root's. A named volume owned by 1000 stands in for that data.
+          docker volume create ngdpbase-smoke-nonroot-data
+          docker run --rm -v ngdpbase-smoke-nonroot-data:/d alpine sh -c \
+            'mkdir -p /d/config && printf "%s" "{\"ngdpbase.user.security.defaultpassword\":\"\$NGDPBASE_ADMIN_PASSWORD\"}" > /d/config/app-custom-config.json && chown -R 1000:1000 /d'
+          docker run -d \
+            --name ngdpbase-smoke-nonroot \
+            --user 1000:1000 \
+            -e HEADLESS_INSTALL=true \
+            -e NODE_ENV=production \
+            -e NGDPBASE_ADMIN_PASSWORD="ci-smoke-$(openssl rand -hex 12)" \
+            -v ngdpbase-smoke-nonroot-data:/app/data \
+            ${{ steps.img.outputs.ref }}
+          # Probed from inside the container: no host port, so nothing else on
+          # the runner can answer for it.
+          probe() {
+            docker exec ngdpbase-smoke-nonroot node -e \
+              "fetch('http://localhost:3000'+process.argv[1]).then(r=>console.log(r.status)).catch(()=>console.log('000'))" "$1" 2>/dev/null || echo 000
+          }
+          for i in $(seq 1 60); do
+            R=$(probe /health/readiness)
+            [ "$R" = "200" ] && break
+            if [ "$(docker inspect --format='{{.State.Running}}' ngdpbase-smoke-nonroot)" != "true" ]; then
+              echo "FAILED: the image stopped when run as UID 1000:"
+              docker logs ngdpbase-smoke-nonroot
+              exit 1
+            fi
+            sleep 3
+          done
+          if [ "$R" != "200" ]; then
+            echo "FAILED: not ready as UID 1000 after 180s"; docker logs ngdpbase-smoke-nonroot; exit 1
+          fi
+          if docker logs ngdpbase-smoke-nonroot 2>&1 | grep -E "EACCES|EPERM"; then
+            echo "FAILED: a permission error as UID 1000 — something writes outside the data volume."
+            exit 1
+          fi
+          LOGIN=$(probe /login)
+          [ "$LOGIN" = "200" ] || { echo "FAILED: /login answered $LOGIN as UID 1000"; exit 1; }
+          echo "Started and served as UID 1000, with no permission error."
+
       - name: Smoke test — dump logs on failure
         if: failure()
         run: docker logs ngdpbase-smoke 2>&1 || true
@@ -308,6 +353,8 @@ jobs:
         run: |
           docker rm -f ngdpbase-smoke 2>/dev/null || true
           docker rm -f ngdpbase-smoke-refuse 2>/dev/null || true
+          docker rm -f ngdpbase-smoke-nonroot 2>/dev/null || true
+          docker volume rm -f ngdpbase-smoke-nonroot-data 2>/dev/null || true
 
       # #1001: assert the runtime image really has no npm. #956 removed it and
       # nothing checked, so a later edit could put it back unnoticed — and the

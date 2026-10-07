@@ -249,6 +249,8 @@ __Rules:__
 4. Readable by: `cat .ngdpbase.pid` to get the PID
 5. Cleaned up on crash: `./server.sh unlock`
 
+The server process keeps its own single-instance lock, separate from this file: `<os.tmpdir()>/ngdpbase-<hash of the checkout path>.pid` (`src/utils/pidLock.ts`, [#1687](https://github.com/jwilleke/ngdpbase/issues/1687)). It used to share the name `.ngdpbase.pid` in the checkout, which made the container image unable to start as any user but root.
+
 ## PM2 Configuration
 
 ### Current Setup (PM2 handles restart/monitoring)

@@ -125,17 +125,37 @@ for u in / /login; do
   echo "  $u → $C"
   case "$C" in 200|301|302) ;; *) echo "FAILED: $u answered $C" ;; esac
 done
+
+# Half 3 — the image must start as a NON-ROOT user (#1687). An operator whose
+# data belongs to a fixed UID (an NFS volume, a pod with runAsUser) runs the
+# server as that UID; v4.22.0 could not, because it wrote under root-owned /app.
+# Probed from inside the container, so another local instance cannot answer.
+docker volume create ngdpbase-smoke-nonroot-data
+docker run --rm -v ngdpbase-smoke-nonroot-data:/d alpine sh -c \
+  'mkdir -p /d/config && printf "%s" "{\"ngdpbase.user.security.defaultpassword\":\"\$NGDPBASE_ADMIN_PASSWORD\"}" > /d/config/app-custom-config.json && chown -R 1000:1000 /d'
+docker run -d --name ngdpbase-smoke-nonroot --user 1000:1000 \
+  -e HEADLESS_INSTALL=true -e NODE_ENV=production \
+  -e NGDPBASE_ADMIN_PASSWORD="smoke-$(openssl rand -hex 12)" \
+  -v ngdpbase-smoke-nonroot-data:/app/data ngdpbase-release-smoke:local
+for i in $(seq 1 60); do
+  R=$(docker exec ngdpbase-smoke-nonroot node -e "fetch('http://localhost:3000/health/readiness').then(r=>console.log(r.status)).catch(()=>console.log('000'))" 2>/dev/null || echo 000)
+  [ "$R" = "200" ] && { echo "  non-root ready"; break; }
+  [ "$(docker inspect -f '{{.State.Running}}' ngdpbase-smoke-nonroot)" = "true" ] || { echo "FAILED: stopped as UID 1000"; docker logs ngdpbase-smoke-nonroot | tail -5; break; }
+  sleep 3
+done
+docker logs ngdpbase-smoke-nonroot 2>&1 | grep -E "EACCES|EPERM" && echo "FAILED: permission error as UID 1000"
 ```
 
 Then clean up whatever the outcome:
 
 ```bash
-docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse 2>/dev/null
+docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse ngdpbase-smoke-nonroot 2>/dev/null
+docker volume rm -f ngdpbase-smoke-nonroot-data 2>/dev/null
 docker rmi -f ngdpbase-release-smoke:local 2>/dev/null
 rm -rf "$SM"
 ```
 
-- __Half 1 refuses and half 2 reaches ready, with every check passing__ → continue to Step 5.
+- __Half 1 refuses, and halves 2 and 3 reach ready, with every check passing__ → continue to Step 5.
 - __Either half fails, or an HTTP check fails__ → __stop__. Read `docker logs`. Nothing is tagged yet, which is the whole point of the step. A failing half is not a stale instruction to work around.
 
 __If Docker is not running__, do not block the release: say so plainly, note it in the Step 9 report, and rely on Step 7a. A skipped check that is announced is fine; a skipped check that is silent is how #1035 happened.
