@@ -91,6 +91,27 @@ describe('SqliteDatabaseProvider (#1536)', () => {
     p.close();
   });
 
+  test('an add-on database records its ledger in its own table, not schema_migrations (ngdp-accounting-addons#13)', () => {
+    const p = new SqliteDatabaseProvider(file, KEY, [CREATE], 'accounting_schema_migrations');
+    const tables = (p.handle.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%schema_migrations'").all() as { name: string }[]).map(r => r.name);
+    expect(tables).toEqual(['accounting_schema_migrations']);
+    p.close();
+  });
+
+  test('migrate() runs a second ledger on the same file, kept apart from the first (ngdp-accounting-addons#13)', () => {
+    const DUES: Migration = { id: '20261007100000', description: 'dues table', up: (db) => db.exec('CREATE TABLE accounting_dues_tiers (id INTEGER PRIMARY KEY)') };
+    const p = new SqliteDatabaseProvider(file, KEY, [CREATE], 'accounting_schema_migrations');
+    expect(p.migrate([DUES], 'accounting_dues_schema_migrations')).toEqual({ applied: [DUES.id], skipped: 0 });
+    p.close();
+    // Reopened with only the owner's ledger: the second ledger's ids are not "from the future" to it.
+    const q = new SqliteDatabaseProvider(file, KEY, [CREATE], 'accounting_schema_migrations');
+    expect(q.migrations).toEqual({ applied: [], skipped: 1 });
+    expect(q.migrate([DUES], 'accounting_dues_schema_migrations')).toEqual({ applied: [], skipped: 1 });
+    // Each ledger keeps its own newer-schema refusal.
+    expect(() => q.migrate([], 'accounting_dues_schema_migrations')).toThrow(/newer than this build.*20261007100000/);
+    q.close();
+  });
+
   test('the ledger table name must be a plain name', () => {
     const p = new SqliteDatabaseProvider(file, KEY, []);
     expect(() => runMigrations(p.handle, [], 'x; DROP TABLE y')).toThrow(/not a plain name/);

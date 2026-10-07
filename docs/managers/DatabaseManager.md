@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-02'
+dateModified: '2026-10-07'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -30,12 +30,29 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 
 `src/providers/databaseMigrations.ts` is the ledger: entries with a `YYYYMMDDHHMMSS` id, strictly ascending, each a frozen snapshot of what it did on its date. Each runs once, in its own transaction, and is recorded in `schema_migrations`. There is no `down()`; the rollback is a backup taken before migrating. Use `addColumnWithDefault()` for any counter-like column, so existing rows are backfilled rather than left `NULL`.
 
+## Add-on databases
+
+An add-on that keeps rows gets its own database through the same door ([ngdp-accounting-addons#13](https://github.com/jwilleke/ngdp-accounting-addons/issues/13)):
+
+```ts
+const databaseManager = engine.getManager<DatabaseManager>('DatabaseManager');
+const db = databaseManager.openAddonDatabase<SqliteHandle>('accounting', {
+  migrations: ACCOUNTING_MIGRATIONS,
+  ledgerTable: 'accounting_schema_migrations'
+});
+```
+
+- Call it from `register()`. It needs the application database: when `ngdpbase.database.provider` is `none` it throws, naming the key, and the add-on should mount nothing and say why in `status()`.
+- The file is `<owner>.db` beside `ngdpbase.database.file`, opened by `SqliteDatabaseProvider` under `NGDPBASE_DATABASE_KEY`, so everything in [What boot refuses](#what-boot-refuses) applies to it too.
+- Its migrations follow the rules in [Migrations](#migrations), recorded in the add-on's own ledger table. The table name must start with the owner's slug, dashes as underscores, then `_`. Prefix the add-on's tables the same way, so several databases can later be told apart by table name in one backup.
+- An add-on that depends on the owner calls `openAddonDatabase` with the owner's slug and its own ledger table (`accounting_dues_schema_migrations`). Its migrations run on the owner's file and it gets the same connection. Registering one ledger table twice throws.
+- `integrityOk()` covers every open database, and `shutdown()` closes the add-on databases, then the application database. Managers shut down in reverse registration order, so `AddonsManager`, and the add-ons with it, stop before `DatabaseManager` closes their connections.
+
 ## Providers
 
 - [BaseDatabaseProvider](../../src/providers/BaseDatabaseProvider.ts) — `handle`, `integrityOk()`, `storage()`, `close()`.
-- [SqliteDatabaseProvider](../../src/providers/SqliteDatabaseProvider.ts) — `better-sqlite3-multiple-ciphers`, WAL mode, `synchronous = FULL`; durability: unbuffered and fsynced.
+- [SqliteDatabaseProvider](../../src/providers/SqliteDatabaseProvider.ts) — `better-sqlite3-multiple-ciphers`, WAL mode, `synchronous = FULL`; durability: unbuffered and fsynced. Its constructor takes the ledger table name (default `schema_migrations`), and `migrate(ledger, ledgerTable)` runs a further ledger on the same connection.
 
 ## Not yet
 
 - The encrypted file-level backup and staged restore from yourPHR (`sqlite-backup.ts`).
-- Shutdown order: the engine shuts managers down in registration order, so this one closes before the managers registered after it. Harmless while nothing uses it; the first row-storing provider must close its statements in its own `shutdown()` or the order must change.

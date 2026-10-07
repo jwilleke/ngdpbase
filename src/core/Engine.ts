@@ -240,8 +240,11 @@ class Engine {
   }
 
   async shutdown(): Promise<void> {
-    // Cleanup managers
-    for (const [, manager] of this.managers) {
+    // Cleanup managers in reverse registration order: a manager registered later
+    // may depend on one registered earlier (AddonsManager's add-ons on
+    // DatabaseManager's connections), so it must stop first
+    // (ngdp-accounting-addons#13).
+    for (const manager of [...this.managers.values()].reverse()) {
       if (manager.shutdown) {
         await manager.shutdown();
       }
