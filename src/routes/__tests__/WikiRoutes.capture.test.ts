@@ -485,22 +485,32 @@ describe('WikiRoutes capture (#881)', () => {
       gatedRoutes = new WikiRoutes(gatedEngine);
     });
 
+    // #1677: the site's error page, saying capture is off — never a bare "Not found".
+    const saysCaptureIsOff = (res: ReturnType<typeof createMockRes>) => {
+      const said = JSON.stringify([...res.render.mock.calls, ...res.send.mock.calls]);
+      expect(said).toContain('Capture is not enabled on this site.');
+      expect(res.send).not.toHaveBeenCalledWith('Not found');
+    };
+
     test('GET /capture is 404', async () => {
       const res = createMockRes();
       await gatedRoutes.captureForm(createMockReq(authedUser), res);
       expect(res.status).toHaveBeenCalledWith(404);
+      saysCaptureIsOff(res);
     });
 
     test('POST /capture is 404', async () => {
       const res = createMockRes();
       await gatedRoutes.captureSubmit(createMockReq(authedUser, {}, { pageName: 'X', url: 'https://a.b' }), res);
       expect(res.status).toHaveBeenCalledWith(404);
+      saysCaptureIsOff(res);
     });
 
     test('GET /capture/install is 404', async () => {
       const res = createMockRes();
       await gatedRoutes.captureInstall(createMockReq(authedUser), res);
       expect(res.status).toHaveBeenCalledWith(404);
+      saysCaptureIsOff(res);
     });
 
     // #1004: the read surface is gated exactly like the write surface. A
@@ -509,6 +519,7 @@ describe('WikiRoutes capture (#881)', () => {
       const res = createMockRes();
       await gatedRoutes.myCapturesPage(createMockReq(authedUser), res);
       expect(res.status).toHaveBeenCalledWith(404);
+      saysCaptureIsOff(res);
     });
   });
 

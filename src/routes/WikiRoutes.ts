@@ -5812,7 +5812,7 @@ ${panes}
   /** GET /capture — popup form pre-filled from bookmarklet query params. */
   async captureForm(req: Request, res: Response) {
     try {
-      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
+      if (!this.isCaptureEnabled()) return await this.renderError(req, res, 404, 'Not Available', 'Capture is not enabled on this site.'); // #1677
       const wikiContext = this.createWikiContext(req);
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-create', req, res, 'page'))) return;
@@ -5838,7 +5838,7 @@ ${panes}
   /** POST /capture — append the capture block to the target page via the save pipeline. */
   async captureSubmit(req: Request, res: Response) {
     try {
-      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
+      if (!this.isCaptureEnabled()) return await this.renderError(req, res, 404, 'Not Available', 'Capture is not enabled on this site.'); // #1677
       const wikiContext0 = this.createWikiContext(req);
       const currentUser = wikiContext0.userContext;
       // #1539: the write is asked once the target is known (below) — usually
@@ -5977,7 +5977,7 @@ ${panes}
   /** GET /capture/install — drag-to-toolbar bookmarklet installer. */
   async captureInstall(req: Request, res: Response) {
     try {
-      if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
+      if (!this.isCaptureEnabled()) return await this.renderError(req, res, 404, 'Not Available', 'Capture is not enabled on this site.'); // #1677
       const configManager = this.engine.getManager('ConfigurationManager');
       // The bookmarklet must target a host the *installing browser* can reach.
       // application.base-url is the wrong source here: on jimstest it is the
@@ -7733,7 +7733,8 @@ ${panes}
         true
       ) as boolean | undefined) ?? true;
       if (!enabled) {
-        res.status(404).send('Not found');
+        // #1677: say the feature is off, on the site's own error page.
+        await this.renderError(req, res, 404, 'Not Available', 'The contact form is not enabled on this site.');
         return;
       }
 
@@ -7819,7 +7820,8 @@ ${panes}
         true
       ) as boolean | undefined) ?? true;
       if (!enabled) {
-        res.status(404).send('Not found');
+        // #1677: say the feature is off, on the site's own error page.
+        await this.renderError(req, res, 404, 'Not Available', 'The contact form is not enabled on this site.');
         return;
       }
 
@@ -8191,7 +8193,8 @@ ${panes}
   async registerPage(req: Request, res: Response) {
     try {
       if (!this.isPasswordRegistrationEnabled()) {
-        res.status(404).send('Not found');
+        // #1677: say the feature is off, on the site's own error page.
+        await this.renderError(req, res, 404, 'Not Available', 'Registration with a password is not enabled on this site.');
         return;
       }
 
@@ -8221,7 +8224,8 @@ ${panes}
   async processRegister(req: Request, res: Response) {
     try {
       if (!this.isPasswordRegistrationEnabled()) {
-        res.status(404).send('Not found');
+        // #1677: say the feature is off, on the site's own error page.
+        await this.renderError(req, res, 404, 'Not Available', 'Registration with a password is not enabled on this site.');
         return;
       }
 
@@ -9235,7 +9239,7 @@ ${panes}
    * public is still a capture.
    */
   async myCapturesPage(req: Request, res: Response) {
-    if (!this.isCaptureEnabled()) return res.status(404).send('Not found');
+    if (!this.isCaptureEnabled()) return await this.renderError(req, res, 404, 'Not Available', 'Capture is not enabled on this site.'); // #1677
     return this.renderMyContributionsList(req, res, {
       title: 'My Captures',
       icon: 'fa-bookmark',
