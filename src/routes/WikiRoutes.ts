@@ -148,6 +148,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
+import { grantablePermissions } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
 import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
@@ -11337,7 +11338,8 @@ ${panes}
       const commonData = await this.getCommonTemplateData(req);
       const configManager = this.engine.getManager('ConfigurationManager');
       const roles = configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, { name: string }>;
-      const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { description?: string }>;
+      // #1638: records (grantable: false) are not rows in the roles matrix.
+      const permissions = grantablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, { description?: string }>);
       // #1431: each role's permission list is DERIVED from the access
       // policies, which are what grant. The catalogue's inline `permissions[]`
       // was a display copy kept matched by hand (#713), so this page could

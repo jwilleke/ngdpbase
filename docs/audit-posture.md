@@ -261,13 +261,17 @@ Decisions taken with the operator on 2026-09-04 under [#1184](https://github.com
 
 ### Configuration is authoritative — landed in [#1200](https://github.com/jwilleke/ngdpbase/issues/1200)
 
-`ngdpbase.audit.events` is the registry and the vocabulary; `auditRegistry.ts` and `auditVocabulary.ts` are readers. The reasoning is in [Guiding principle](#guiding-principle) and [Completeness](#completeness) above. What remains of the decision is the naming rule, the tiers, and the emitters, below.
+`ngdpbase.permissions.definitions` is the registry and the vocabulary (#1638): every event is declared on a permission entry's `audit` block. `auditRegistry.ts` (`auditDeclarationsFrom`) and `auditVocabulary.ts` are readers. The reasoning is in [Guiding principle](#guiding-principle) and [Completeness](#completeness) above. What remains of the decision is the naming rule, the tiers, and the emitters, below.
 
-### Events are actions; permissions are authority
+### One declaration per action
 
-`ngdpbase.permissions.definitions` says who may act. `ngdpbase.audit.events` says what is recorded when someone does. Neither carries the other's fields. One permission may gate several recorded actions (`admin-system` gates `config-change`, `page-raw-edit`, `session-revoke`, `session-clear-anonymous`), and many recorded actions have no permission at all (`authentication-failed`, `system-start`). A map keyed by event holds both kinds without a second entity.
+An action and its record are one thing (#1638). Each entry in `ngdpbase.permissions.definitions` declares a name once; its `audit` block says how using it is recorded, and `step-up: true` says it needs a fresh sign-in.
 
-The map is a map, not an array: a custom configuration overrides one entry without restating the rest, and an entry set to `null` removes a shipped one — the same reasoning as the `ngdpbase.security.posture` map.
+Some recorded things are not actions anyone may be granted: `system-start`, `authentication-failed`, `job-failed`. Their entries carry `"grantable": false` (`src/utils/permissionCatalog.ts`, the one predicate). A record is never offered to an app as a scope, never a row in the roles matrix or the permission listings, never in the generated `CorePermission` type, and no shipped policy grants one (a test holds that).
+
+Today some actions are still checked under a different permission than the name they are recorded under — `admin-system` gates `page-raw-edit`, `session-revoke` and `session-clear-anonymous`; `share-manage` gates `share-create`. Those recorded names are entries with `grantable: false` until the checks are renamed, which changes who holds what and is decided separately.
+
+The catalog is a map, not an array: a custom configuration overrides one entry without restating the rest, and an entry set to `null` removes a shipped one — the same reasoning as the `ngdpbase.security.posture` map. `ngdpbase.audit.events` ships empty; a custom file written before #1638 that overrides or removes (`null`) an event there is still honoured, and a name set in both places is reported at boot.
 
 Fields per event:
 

@@ -18,7 +18,7 @@ Whether a person may do something is decided by the policies alone. No other set
 
 | Key | Holds |
 |---|---|
-| `ngdpbase.permissions.definitions` | The catalogue of permissions: each name with its description, icon and colour. `src/security/permissions.generated.ts` is generated from it (`npm run generate:permissions`) |
+| `ngdpbase.permissions.definitions` | The catalogue of permissions: each name with its description, icon and colour, its `audit` block and `step-up` flag (#1638). An entry with `"grantable": false` is a recorded event, not a permission a policy grants. `src/security/permissions.generated.ts` is generated from the grantable entries (`npm run generate:permissions`) |
 | `ngdpbase.access.policies` | The list of policies |
 | `ngdpbase.access.policies.enabled` | Must be `true`. When it is not, no policy applies and every check is denied |
 | `ngdpbase.access.resource-types` | The kinds of thing a policy's `resources` may name, each with a description (#1504). Read through ConfigurationManager by the evaluator and the validator |
