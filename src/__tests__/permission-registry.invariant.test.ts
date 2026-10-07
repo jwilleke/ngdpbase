@@ -48,7 +48,10 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   // hasPermission with the subject forwarded, and both name the permission
   // as their second / third argument.
   /\bpermitted\(\s*\w+,\s*'([^']+)'/g,
-  /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g
+  /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g,
+  // #1638: ShareManager asks policy inside a vault (permitsInVault) for the
+  // owner's share-create / share-extend.
+  /\bpermitsInScope\(\s*[^,]+,\s*'([^']+)'/g
 ];
 
 /**

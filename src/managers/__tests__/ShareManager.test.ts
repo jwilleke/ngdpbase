@@ -96,7 +96,7 @@ const mockPolicyDecisionPoint = {
   decide: vi.fn(async (subject: { roles?: string[] }, { action, attributes }: { action: string; attributes?: { vault?: string } }) => ({
     permit: attributes?.vault !== undefined
       && (subject.roles ?? []).includes('vault-owner')
-      && ['page-read', 'asset-read', 'share-manage'].includes(action)
+      && ['page-read', 'asset-read', 'share-create', 'share-extend', 'share-revoke'].includes(action)
   }))
 };
 
@@ -554,10 +554,10 @@ describe('ShareManager', () => {
     const vault = (pages: string[] | null = null): VaultShareScope => ({ kind: 'vault', owner: 'jim', vault: 'journal', pages });
     const HOUR = 60 * 60 * 1000;
 
-    test('the owner needs share-manage in the vault — vault-owner — to issue or extend one (#1539)', async () => {
-      await expect(sm.issueVaultShare(vault(), 24, ISSUER('jim', ['editor']))).rejects.toThrow(/share-manage/);
+    test('the owner needs share-create to issue and share-extend to extend, in the vault — vault-owner (#1539, #1638)', async () => {
+      await expect(sm.issueVaultShare(vault(), 24, ISSUER('jim', ['editor']))).rejects.toThrow(/share-create/);
       const record = await sm.issueVaultShare(vault(), 24, JIM);
-      await expect(sm.extend(record.id, 1, ISSUER('jim', ['editor']))).rejects.toThrow(/share-manage/);
+      await expect(sm.extend(record.id, 1, ISSUER('jim', ['editor']))).rejects.toThrow(/share-extend/);
     });
 
     test('only the vault\'s owner can issue one, whatever the role', async () => {

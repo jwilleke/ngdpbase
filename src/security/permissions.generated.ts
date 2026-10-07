@@ -51,8 +51,12 @@ export type CorePermission =
   | 'search-user'
   /** Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed */
   | 'secret-reveal'
-  /** Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224) */
-  | 'share-manage'
+  /** Create share links — hand out anonymous read access to content you may read — and see your own (#1224, #1638) */
+  | 'share-create'
+  /** Extend your own share links (#1638) */
+  | 'share-extend'
+  /** Revoke your own share links; revoking anyone's also needs admin-system (#1638) */
+  | 'share-revoke'
   /** Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it */
   | 'store-create'
   /** Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope */
@@ -90,7 +94,9 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'search-page',
   'search-user',
   'secret-reveal',
-  'share-manage',
+  'share-create',
+  'share-extend',
+  'share-revoke',
   'store-create',
   'token-mint',
   'user-create',

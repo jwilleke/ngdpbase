@@ -27,3 +27,26 @@ export function grantablePermissionNames(definitions: unknown): string[] {
 export function grantablePermissions<T>(definitions: Record<string, T> | null | undefined): Record<string, T> {
   return Object.fromEntries(Object.entries(definitions ?? {}).filter(([, entry]) => isGrantable(entry)));
 }
+
+/**
+ * Permissions that were split into narrower ones, and what each stood for.
+ *
+ * A policy, an agent token or an app grant written before the split still
+ * names the old permission; it is read as all of the new ones, so nobody loses
+ * an ability on upgrade. New writing should name the new permissions.
+ */
+export const RETIRED_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  // #1638: one name per action — create, extend and revoke are separate.
+  ['share-manage', ['share-create', 'share-extend', 'share-revoke']]
+]);
+
+/** The names with every retired permission replaced by what it stood for, de-duplicated, order kept. */
+export function withRetiredExpanded(names: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const name of names) {
+    for (const n of RETIRED_PERMISSIONS.get(name) ?? [name]) {
+      if (!out.includes(n)) out.push(n);
+    }
+  }
+  return out;
+}

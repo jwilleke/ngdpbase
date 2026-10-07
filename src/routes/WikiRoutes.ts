@@ -789,7 +789,7 @@ const TWO_STEP_COOKIE = 'ngdp_two_step';
  * permission they use that is missing.
  */
 export const VIEW_PERMISSIONS = [
-  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-manage',
+  'admin-system', 'admin-roles', 'user-read', 'user-edit', 'user-create', 'page-create', 'page-edit', 'share-create',
   // #1525: configuration, backup and reveal controls; sign-in-method controls.
   'config-manage', 'secret-reveal', 'account-security'
 ] as const;
@@ -8145,7 +8145,7 @@ ${panes}
       let myShares: { active: number; total: number } | null = null;
       try {
         const shareManager = this.engine.getManager('ShareManager');
-        if (shareManager?.isEnabled() && (await this.canManageShares(wikiContext))) {
+        if (shareManager?.isEnabled() && (await wikiContext.hasPermission('share-create'))) {
           const own = shareManager.list(currentUser.username ?? '');
           const now = Date.now();
           myShares = {
@@ -18462,7 +18462,7 @@ ${description}
       const commonData = await this.getCommonTemplateData(req);
       // #854: Share entry point — visible only to users who may create shares.
       const shareManagerForAlbum = this.engine.getManager('ShareManager');
-      const canShare = !!shareManagerForAlbum?.isEnabled() && (await this.canManageShares(wikiContext));
+      const canShare = !!shareManagerForAlbum?.isEnabled() && (await wikiContext.hasPermission('share-create'));
       return res.render('media-keyword', {
         ...commonData,
         wikiContext,
@@ -19302,19 +19302,6 @@ ${description}
   // Share management routes (#854) — privileged users (epic #842 slice 3)
   // ---------------------------------------------------------------------------
 
-  /**
-   * Who may create and manage shares (#1198).
-   *
-   * Was `isAuthenticated && hasRole('admin', 'editor')`. Neither is an allow
-   * (security-posture.md P2): a role name skips the policy evaluator and the
-   * token ceiling, and a share is an anonymous-access credential. Issuing one
-   * is a governed capability (#1224): `share-manage`, shipped to admin and
-   * editor, the two roles the original decision named. Listing everyone's and
-   * revoking anyone's stay `admin-system`.
-   */
-  private async canManageShares(wikiContext: WikiContext): Promise<boolean> {
-    return wikiContext.hasPermission('share-manage');
-  }
 
   /**
    * Absolute base for displaying share links. Prefers the canonical
@@ -19332,10 +19319,17 @@ ${description}
    * Management list: own shares for editors, all shares for admins.
    * Shows full share link, status (active/expired/revoked), and expiry.
    */
+  /**
+   * Shares are a governed capability (#1198, #1224), shipped to admin and
+   * editor — never a role-name test, since a share is an anonymous-access
+   * credential. #1638: one permission per action — `share-create` (which
+   * includes seeing your own), `share-extend`, `share-revoke`. Listing
+   * everyone's and revoking anyone's stay `admin-system`.
+   */
   async sharesList(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.canManageShares(wikiContext))) {
+      if (!(await wikiContext.hasPermission('share-create'))) {
         return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to manage shares.');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -19412,7 +19406,7 @@ ${description}
   async sharesCreate(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.canManageShares(wikiContext))) {
+      if (!(await wikiContext.hasPermission('share-create'))) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');
@@ -19454,7 +19448,7 @@ ${description}
   async sharesRevoke(req: Request, res: Response) {
     try {
       const wikiContext = this.createWikiContext(req);
-      if (!(await this.canManageShares(wikiContext))) {
+      if (!(await wikiContext.hasPermission('share-revoke'))) {
         return res.status(403).send('Access denied');
       }
       const shareManager = this.engine.getManager('ShareManager');

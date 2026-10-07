@@ -1707,10 +1707,32 @@
         "description": "File deleted; destruction"
       }
     },
-    "share-manage": {
-      "description": "Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224)",
+    "share-create": {
+      "description": "Create share links — hand out anonymous read access to content you may read — and see your own (#1224, #1638)",
       "icon": "share-alt",
-      "color": "#20c997"
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint"
+      }
+    },
+    "share-extend": {
+      "description": "Extend your own share links (#1638)",
+      "icon": "clock",
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link's lifetime extended by its issuer, by up to 24 hours (#1388)"
+      }
+    },
+    "share-revoke": {
+      "description": "Revoke your own share links; revoking anyone's also needs admin-system (#1638)",
+      "icon": "ban",
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link revoked; pairs with token-revoke"
+      }
     },
     "profile-manage": {
       "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
@@ -1930,32 +1952,11 @@
         "on-failure": "continue"
       }
     },
-    "share-create": {
-      "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint",
-      "grantable": false,
-      "audit": {
-        "on-failure": "refuse"
-      }
-    },
     "share-access": {
       "description": "Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
-      }
-    },
-    "share-revoke": {
-      "description": "Share link revoked; pairs with token-revoke",
-      "grantable": false,
-      "audit": {
-        "on-failure": "refuse"
-      }
-    },
-    "share-extend": {
-      "description": "Share link's lifetime extended by its issuer, by up to 24 hours (#1388)",
-      "grantable": false,
-      "audit": {
-        "on-failure": "refuse"
       }
     },
     "system-start": {
@@ -2281,7 +2282,9 @@
         "media-read",
         "asset-upload",
         "asset-delete",
-        "share-manage",
+        "share-create",
+        "share-extend",
+        "share-revoke",
         "token-mint",
         "asset-edit",
         "search-page",
@@ -2396,7 +2399,9 @@
         "media-read",
         "asset-upload",
         "asset-delete",
-        "share-manage",
+        "share-create",
+        "share-extend",
+        "share-revoke",
         "token-mint",
         "search-page",
         "profile-manage",
@@ -2524,7 +2529,9 @@
         "asset-upload",
         "asset-edit",
         "asset-delete",
-        "share-manage"
+        "share-create",
+        "share-extend",
+        "share-revoke"
       ]
     },
     {
