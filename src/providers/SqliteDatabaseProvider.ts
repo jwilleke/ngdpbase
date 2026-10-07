@@ -30,8 +30,9 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
    * @param file   the database file; created when absent
    * @param key    the SQLCipher key; '' opens the file unencrypted
    * @param ledger the migrations, strictly ascending by id
+   * @param ledgerTable where applied ids are recorded; an add-on's database names its own (#13)
    */
-  constructor(private readonly file: string, key: string, ledger: Migration[]) {
+  constructor(private readonly file: string, key: string, ledger: Migration[], ledgerTable = 'schema_migrations') {
     super();
     refuseNetworkFilesystem(file);
     this.db = new Database(file);
@@ -44,11 +45,21 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
       // The first read: a wrong key fails here, before anything is written.
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('synchronous = FULL');
-      this.migrations = runMigrations(this.db, ledger);
+      this.migrations = runMigrations(this.db, ledger, ledgerTable);
     } catch (err) {
       this.db.close();
       throw err;
     }
+  }
+
+  /**
+   * Run a further migration ledger on this connection, recorded in its own
+   * table: an add-on that depends on the add-on owning this database brings
+   * its own tables (ngdp-accounting-addons#13). Same rules as the ledger run at
+   * open: once, in order, transactional, and a newer schema is refused.
+   */
+  migrate(ledger: Migration[], ledgerTable: string): MigrationReport {
+    return runMigrations(this.db, ledger, ledgerTable);
   }
 
   get handle(): SqliteHandle {
