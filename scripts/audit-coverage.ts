@@ -31,6 +31,13 @@
  * has an emitter is proved here, not there.
  *
  * Run: `npm run audit:coverage` (report) — `--check` (npm run lint:audit) exits 1 on any gap (#1206).
+ *
+ * #1638: `--addon <dir>` checks one external add-on instead of this repo. The
+ * vocabulary is the shipped map plus that add-on's map; the emitters are what
+ * that directory names; the requirement is the add-on's own enabled names. It
+ * also fails on an add-on name that collides with a shipped one. The compiled
+ * script ships in every image (`dist/scripts/`), so an add-on's CI runs it in
+ * the `-devtools` image: `node dist/scripts/audit-coverage.js --check --addon <dir>`.
  */
 
 import { readFileSync, readdirSync, statSync } from 'fs';
@@ -41,9 +48,16 @@ import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO = path.resolve(__dirname, '..');
+/** The install root — where `config/app-default-config.json` is — from `scripts/` under tsx or `dist/scripts/` compiled. */
+const REPO = [path.resolve(__dirname, '..'), path.resolve(__dirname, '..', '..')]
+  .find((dir) => { try { return statSync(path.join(dir, 'config', 'app-default-config.json')).isFile(); } catch { return false; } })
+  ?? path.resolve(__dirname, '..');
 
-const read = (rel: string): string => readFileSync(path.join(REPO, rel), 'utf8');
+const read = (rel: string): string => readFileSync(path.resolve(REPO, rel), 'utf8');
+
+/** #1638: one add-on directory to check instead of this repo, or null. */
+export interface Scope { addonDir: string | null }
+const REPO_SCOPE: Scope = { addonDir: null };
 
 type EventMap = Record<string, { 'on-failure'?: string; enabled?: boolean }>;
 
@@ -79,24 +93,35 @@ function addonEventFiles(): string[] {
     .sort();
 }
 
-/** The shipped map with every bundled addon's map folded in, per entry. */
-function auditEvents(): EventMap {
+/** The add-on config files in scope: every bundled one, or the one add-on checked. */
+function eventFiles(scope: Scope): string[] {
+  if (!scope.addonDir) return addonEventFiles();
+  const rel = path.join(scope.addonDir, 'config', 'default-config.json');
+  try { return statSync(path.resolve(REPO, rel)).isFile() && Object.keys(eventMap(rel)).length > 0 ? [rel] : []; } catch { return []; }
+}
+
+/** The shipped map with every in-scope addon's map folded in, per entry. */
+function auditEvents(scope: Scope = REPO_SCOPE): EventMap {
   const out: EventMap = { ...shippedEvents() };
-  for (const rel of addonEventFiles()) {
+  for (const rel of eventFiles(scope)) {
     for (const [name, d] of Object.entries(eventMap(rel))) out[name] = { ...out[name], ...d };
   }
   return out;
 }
 
 /** Names configuration declares. */
-export function vocabularyTypes(): string[] {
-  return Object.keys(auditEvents()).sort();
+export function vocabularyTypes(scope: Scope = REPO_SCOPE): string[] {
+  return Object.keys(auditEvents(scope)).sort();
 }
 
 /** Names configuration requires — declared and not switched off — with their on-failure rule. */
-export function registryTypes(): Map<string, string> {
+export function registryTypes(scope: Scope = REPO_SCOPE): Map<string, string> {
   const out = new Map<string, string>();
-  for (const [name, d] of Object.entries(auditEvents())) {
+  // An add-on is answerable for its own names, not for core's.
+  const required = scope.addonDir
+    ? Object.fromEntries(eventFiles(scope).flatMap((rel) => Object.entries(eventMap(rel))))
+    : auditEvents(scope);
+  for (const [name, d] of Object.entries(required)) {
     if (d.enabled === false) continue;
     out.set(name, d['on-failure'] ?? 'unspecified');
   }
@@ -110,7 +135,7 @@ export function registryTypes(): Map<string, string> {
  * `eventType:` position — a raw literal bypasses the module and is exactly
  * what the off-vocabulary check exists to catch.
  */
-export function emittedTypes(_names: string[]): { resolved: string[]; unresolved: string[] } {
+export function emittedTypes(_names: string[], scope: Scope = REPO_SCOPE): { resolved: string[]; unresolved: string[] } {
   // AUDIT_EVENT is generated from the shipped map with this key rule, so the
   // map resolves a key without reading the generated file (which lint:permissions
   // holds current).
@@ -120,7 +145,8 @@ export function emittedTypes(_names: string[]): { resolved: string[]; unresolved
   const resolved = new Set<string>();
   const unresolved = new Set<string>();
 
-  for (const file of walk(path.join(REPO, 'src')).concat(walk(path.join(REPO, 'addons')))) {
+  const roots = scope.addonDir ? [path.resolve(REPO, scope.addonDir)] : [path.join(REPO, 'src'), path.join(REPO, 'addons')];
+  for (const file of roots.flatMap((root) => walk(root))) {
     const rel = path.relative(REPO, file);
     if (rel.endsWith('auditEventNames.ts') || rel.endsWith('auditEventNames.generated.ts') || rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts')) continue;
     const src = stripComments(readFileSync(file, 'utf8'));
@@ -179,13 +205,18 @@ export interface Coverage {
   offConvention: string[];
   /** #1638: declared both in the events map and on a permission entry of the same file. */
   declaredTwice: string[];
+  /** #1638: an add-on name the shipped map already declares — one name, two owners. */
+  collides: string[];
+  /** In-scope names declared with `enabled: false` — decisions on the record, not gaps. */
+  switchedOff: string[];
 }
 
 
-export function coverage(): Coverage {
-  const vocabulary = vocabularyTypes();
-  const registry = registryTypes();
-  const { resolved: emitted, unresolved } = emittedTypes(vocabulary);
+export function coverage(scope: Scope = REPO_SCOPE): Coverage {
+  const vocabulary = vocabularyTypes(scope);
+  const registry = registryTypes(scope);
+  const { resolved: emitted, unresolved } = emittedTypes(vocabulary, scope);
+  const shipped = new Set(Object.keys(shippedEvents()));
   const vocabSet = new Set(vocabulary);
 
   return {
@@ -197,17 +228,31 @@ export function coverage(): Coverage {
     unemitted: [...registry.keys()].filter((t) => !emitted.includes(t)).sort(),
     offVocabulary: emitted.filter((t) => !vocabSet.has(t)),
     offConvention: [...new Set([...vocabulary, ...emitted])].filter((t) => !AUDIT_EVENT_NAME_PATTERN.test(t)).sort(),
-    declaredTwice: ['config/app-default-config.json', ...addonEventFiles()].flatMap((rel) => declaredTwice(rel).map((n) => `${n} (${rel})`))
+    declaredTwice: (scope.addonDir ? eventFiles(scope) : ['config/app-default-config.json', ...addonEventFiles()])
+      .flatMap((rel) => declaredTwice(rel).map((n) => `${n} (${rel})`)),
+    switchedOff: Object.entries(scope.addonDir ? Object.fromEntries(eventFiles(scope).flatMap((rel) => Object.entries(eventMap(rel)))) : auditEvents(scope))
+      .filter(([, d]) => d.enabled === false).map(([n]) => n).sort(),
+    collides: eventFiles(scope).flatMap((rel) => Object.keys(eventMap(rel)).filter((n) => shipped.has(n)).map((n) => `${n} (${rel})`)).sort()
   };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  const c = coverage();
+  const at = process.argv.indexOf('--addon');
+  const addonDir = at === -1 ? null : process.argv[at + 1] ?? null;
+  if (at !== -1 && (!addonDir || addonDir.startsWith('--'))) {
+    console.error('--addon needs the add-on directory: --addon <dir>');
+    process.exit(2);
+  }
+  const scope: Scope = { addonDir: addonDir ? path.resolve(addonDir) : null };
+  if (scope.addonDir && eventFiles(scope).length === 0) {
+    console.log(`${addonDir}: its config/default-config.json declares no audit events.`);
+  }
+  const c = coverage(scope);
   const check = process.argv.includes('--check');
 
-  console.log('Audit coverage — vocabulary vs registry vs emitters (#1184)');
+  console.log(`Audit coverage — vocabulary vs registry vs emitters (#1184)${scope.addonDir ? ` — add-on ${addonDir}` : ''}`);
   console.log('==========================================================');
-  console.log(`  vocabulary declares : ${c.vocabulary.length} (shipped${addonEventFiles().map((f) => ` + ${f.split(path.sep)[1]}`).join('')})`);
+  console.log(`  vocabulary declares : ${c.vocabulary.length} (shipped${eventFiles(scope).map((f) => ` + ${path.basename(path.dirname(path.dirname(f)))}`).join('')})`);
   console.log(`  registry requires   : ${c.registry.size}`);
   console.log(`  source emits        : ${c.emitted.length}`);
   console.log('');
@@ -221,7 +266,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     for (const t of c.offConvention) console.log(`   ${t}`);
   }
 
-  const off = c.vocabulary.filter((t) => !c.registry.has(t));
+  const off = c.switchedOff;
   if (off.length) {
     console.log(`\nDECLARED AND SWITCHED OFF (${off.length}) — decisions on the record, not gaps`);
     for (const t of off) console.log(`   ${t}`);
@@ -243,6 +288,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     for (const t of c.declaredTwice) console.log(`   ${t}`);
   }
 
+  if (c.collides.length) {
+    console.log(`\nADD-ON NAME ALREADY SHIPPED (${c.collides.length}) — pick a name core does not declare (#1638)`);
+    for (const t of c.collides) console.log(`   ${t}`);
+  }
+
   if (c.unresolvedEmitters.length) {
     console.log(`\nEMITTERS THIS COULD NOT RESOLVE (${c.unresolvedEmitters.length})`);
     console.log('  Reported rather than dropped — an unaccounted name is the point.');
@@ -254,7 +304,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   // before the decision exists is one people disable. The decision exists now.
   const failed =
     c.undeclared.length + c.unemitted.length + c.offVocabulary.length +
-    c.unresolvedEmitters.length + c.offConvention.length + c.declaredTwice.length;
+    c.unresolvedEmitters.length + c.offConvention.length + c.declaredTwice.length + c.collides.length;
   console.log('');
   if (!check) {
     console.log('Report only. Run with --check to fail the build on a gap.');
