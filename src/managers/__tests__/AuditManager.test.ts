@@ -49,7 +49,7 @@ function makeEngine(configOverrides: Record<string, unknown> = {}, declared: Rec
       if (name === 'PolicyDecisionPoint') {
         return {
           userHoldsPermission: vi.fn(async (username: string, permission: string) =>
-            username === 'root' && permission === 'admin-system')
+            username === 'root' && (permission === 'admin-system' || permission === 'audit-export'))
         };
       }
       return null;
@@ -521,12 +521,15 @@ describe('#1144 the on-failure key stands alone', () => {
 });
 
 describe('#1116 audit queries refuse without an admin-system caller', () => {
-  function makeEngineWithUsers(grants: Record<string, boolean>, configOverrides: Record<string, unknown> = {}) {
+  // grants: username → true (admin-system and audit-export), or the list it holds.
+  function makeEngineWithUsers(grants: Record<string, boolean | string[]>, configOverrides: Record<string, unknown> = {}) {
     const cm = makeConfigManager(configOverrides);
     // #1431 step 14: decisions are the PDP's.
     const pdp = {
-      userHoldsPermission: vi.fn(async (username: string, permission: string) =>
-        permission === 'admin-system' && grants[username] === true)
+      userHoldsPermission: vi.fn(async (username: string, permission: string) => {
+        const g = grants[username];
+        return g === true ? ['admin-system', 'audit-export'].includes(permission) : Array.isArray(g) && g.includes(permission);
+      })
     };
     return {
       getManager: vi.fn((name: string) => {
@@ -537,7 +540,7 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
     } as unknown as WikiEngine;
   }
 
-  async function makeGatedManager(grants: Record<string, boolean>) {
+  async function makeGatedManager(grants: Record<string, boolean | string[]>) {
     const am = new AuditManager(makeEngineWithUsers(grants));
     (am as unknown as { provider: unknown }).provider = {
       searchAuditLogs: vi.fn().mockResolvedValue({ results: [], total: 0, limit: 100, offset: 0, hasMore: false }),
@@ -558,7 +561,15 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
     const am = await makeGatedManager({ root: true });
     await expect(am.searchAuditLogs({}, {}, { username: 'mallory' })).rejects.toThrow(/admin-system/);
     await expect(am.getAuditStats({}, { username: 'mallory' })).rejects.toThrow(/admin-system/);
-    await expect(am.exportAuditLogs({}, 'json', { username: 'mallory' })).rejects.toThrow(/admin-system/);
+    await expect(am.exportAuditLogs({}, 'json', { username: 'mallory' })).rejects.toThrow(/audit-export/);
+  });
+
+  test('#1638 exporting is audit-export, reading is admin-system — each without the other', async () => {
+    const am = await makeGatedManager({ exporter: ['audit-export'], reader: ['admin-system'] });
+    await expect(am.exportAuditLogs({}, 'json', { username: 'exporter' })).resolves.toBeDefined();
+    await expect(am.searchAuditLogs({}, {}, { username: 'exporter' })).rejects.toThrow(/admin-system/);
+    await expect(am.exportAuditLogs({}, 'json', { username: 'reader' })).rejects.toThrow(/audit-export/);
+    await expect(am.searchAuditLogs({}, {}, { username: 'reader' })).resolves.toBeDefined();
   });
 
   test('a missing or anonymous caller is refused — absence is not authority', async () => {

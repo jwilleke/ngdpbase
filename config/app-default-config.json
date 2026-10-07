@@ -2016,17 +2016,21 @@
       }
     },
     "page-raw-edit": {
-      "description": "Page edited through the admin raw editor",
-      "grantable": false,
+      "description": "Edit a page's raw file in the admin raw editor — bypasses the page editor's checks (#1638)",
+      "icon": "file-code",
+      "color": "#dc3545",
       "audit": {
-        "on-failure": "continue"
+        "on-failure": "continue",
+        "description": "Page edited through the admin raw editor"
       }
     },
     "session-revoke": {
-      "description": "Session revoked by an administrator",
-      "grantable": false,
+      "description": "End another person's signed-in session (#1638)",
+      "icon": "user-slash",
+      "color": "#dc3545",
       "audit": {
-        "on-failure": "continue"
+        "on-failure": "continue",
+        "description": "Session revoked by an administrator"
       }
     },
     "session-clear-anonymous": {
@@ -2065,10 +2069,12 @@
       }
     },
     "audit-export": {
-      "description": "The audit trail exported to a file; who took a copy, in what format, with what filter",
-      "grantable": false,
+      "description": "Export the audit trail to a file (#1638)",
+      "icon": "file-export",
+      "color": "#dc3545",
       "audit": {
-        "on-failure": "continue"
+        "on-failure": "continue",
+        "description": "The audit trail exported to a file; who took a copy, in what format, with what filter"
       }
     },
     "audit-chain-restart": {
@@ -2296,6 +2302,9 @@
         "admin-roles",
         "admin-read",
         "admin-system",
+        "page-raw-edit",
+        "session-revoke",
+        "audit-export",
         "config-manage",
         "secret-reveal",
         "profile-manage",

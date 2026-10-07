@@ -115,3 +115,21 @@ describe('#1224 share management asks policy — #1638: share-create to list and
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 });
+
+describe('#1638 three admin actions are their own permissions, not admin-system', () => {
+  const admin = { username: 'root', isAuthenticated: true, roles: ['admin'] };
+
+  test.each([
+    ['adminEditRaw', 'page-raw-edit', { params: { page: 'X' } }],
+    ['adminSaveRaw', 'page-raw-edit', { params: { page: 'X' }, body: { content: 'x' } }],
+    ['clearOneSession', 'session-revoke', { params: { sid: 's1' } }],
+    ['adminAuditExport', 'audit-export', { query: { format: 'json' } }]
+  ])('%s asks %s, and refuses a holder of admin-system alone', async (route, permission, extra) => {
+    const { routes, asked } = makeRoutes(['admin-system'], { PolicyInformationPoint: { currentSubject: async () => admin } });
+    const res = createMockRes();
+    await routes[route](createMockReq(admin, extra), res);
+    expect(asked).toContain(permission);
+    expect(asked).not.toContain('admin-system');
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+});

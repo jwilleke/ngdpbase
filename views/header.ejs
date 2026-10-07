@@ -364,7 +364,7 @@
                                         <i class="fas fa-wand-magic-sparkles"></i> Convert to NCM&hellip;
                                     </a></li>
                                     <% } %>
-                                    <% if ((typeof can === 'function' && can('admin-system'))) { %>
+                                    <% if ((typeof can === 'function' && can('page-raw-edit'))) { %>
                                     <li><a class="dropdown-item text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>" title="Edit raw page file (frontmatter + body). Admin override — bypasses validation. (#689)">
                                         <i class="fas fa-file-code"></i> Edit raw (admin)
                                     </a></li>
@@ -465,7 +465,7 @@
                     <i class="fas fa-edit me-2"></i> Edit Page
                 </a>
                 <% } %>
-                <% if (_hasPage && (typeof can === 'function' && can('admin-system'))) { %>
+                <% if (_hasPage && (typeof can === 'function' && can('page-raw-edit'))) { %>
                 <a class="nav-link py-2 text-warning" href="/admin/edit-raw/<%= encodeURIComponent(pageName) %>">
                     <i class="fas fa-file-code me-2"></i> Edit raw (admin)
                 </a>

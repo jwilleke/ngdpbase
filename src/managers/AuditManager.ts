@@ -708,7 +708,7 @@ class AuditManager extends BaseManager {
    * all refuse. The audit log has no per-record narrowing, and a list that
    * cannot be narrowed refuses rather than returning everything.
    */
-  private async assertQueryCallerAllowed(caller?: AuditQueryCaller): Promise<void> {
+  private async assertQueryCallerAllowed(caller?: AuditQueryCaller, permission: 'admin-system' | 'audit-export' = 'admin-system'): Promise<void> {
     const username = caller?.username;
     if (username) {
       // #1173: `userHoldsPermission`, not `hasPermission`. This is a LOOKUP —
@@ -718,12 +718,12 @@ class AuditManager extends BaseManager {
       // reached with a bare string at all.
       const pdp = this.engine.getManager('PolicyDecisionPoint') as
         { userHoldsPermission(username: string, permission: string): Promise<boolean> } | null;
-      if (pdp && await pdp.userHoldsPermission(username, 'admin-system')) {
+      if (pdp && await pdp.userHoldsPermission(username, permission)) {
         return;
       }
     }
     throw new AuditQueryForbiddenError(
-      `Audit queries require an admin-system caller; refused for '${username ?? 'anonymous'}' (#1116)`
+      `Audit queries require a ${permission} caller; refused for '${username ?? 'anonymous'}' (#1116)`
     );
   }
 
@@ -771,7 +771,8 @@ class AuditManager extends BaseManager {
    * @returns {Promise<string>} Exported data
    */
   async exportAuditLogs(filters: AuditFilters = {}, format = 'json', caller?: AuditQueryCaller): Promise<string> {
-    await this.assertQueryCallerAllowed(caller);
+    // #1638: exporting is its own action, audit-export; reading stays admin-system.
+    await this.assertQueryCallerAllowed(caller, 'audit-export');
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
