@@ -98,6 +98,15 @@ describe('DatabaseManager (#1536)', () => {
       await manager.shutdown();
     });
 
+    test('an owner whose slug carries digits gets its database (ledger names allow digits)', async () => {
+      const manager = await withDatabase();
+      const LOG: Migration = { id: '20261007110000', description: 'i18n strings', up: (db) => db.exec('CREATE TABLE i18n_strings (id INTEGER PRIMARY KEY)') };
+      const db = manager.openAddonDatabase<Db>('i18n', { migrations: [LOG], ledgerTable: 'i18n_schema_migrations' });
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'i18n_strings'").get()).toEqual({ name: 'i18n_strings' });
+      expect(fs.existsSync(path.join(dir, 'i18n.db'))).toBe(true);
+      await manager.shutdown();
+    });
+
     test('the same ledger cannot be registered twice', async () => {
       const manager = await withDatabase();
       manager.openAddonDatabase('accounting', { migrations: [LEDGER], ledgerTable: 'accounting_schema_migrations' });

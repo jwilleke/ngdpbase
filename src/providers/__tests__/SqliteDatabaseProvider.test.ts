@@ -115,6 +115,8 @@ describe('SqliteDatabaseProvider (#1536)', () => {
   test('the ledger table name must be a plain name', () => {
     const p = new SqliteDatabaseProvider(file, KEY, []);
     expect(() => runMigrations(p.handle, [], 'x; DROP TABLE y')).toThrow(/not a plain name/);
+    expect(() => runMigrations(p.handle, [], '2fast')).toThrow(/not a plain name/);
+    expect(runMigrations(p.handle, [], 'calendar2_schema_migrations')).toEqual({ applied: [], skipped: 0 });
     p.close();
   });
 });

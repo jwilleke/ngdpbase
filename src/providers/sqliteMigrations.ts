@@ -62,7 +62,9 @@ export function addColumnWithDefault(
  * TABLE NAME on restore, and two tables called schema_migrations could not be told apart.
  */
 export function runMigrations(db: InstanceType<typeof Database>, registry: Migration[], ledgerTable = 'schema_migrations'): MigrationReport {
-  if (!/^[a-z_]+$/.test(ledgerTable)) throw new Error(`migration ledger table ${ledgerTable} is not a plain name`);
+  // Digits are allowed after the first letter: an add-on slug may carry them ('calendar2'), and its
+  // ledger is named after the slug (ngdp-accounting-addons#13).
+  if (!/^[a-z][a-z0-9_]*$/.test(ledgerTable)) throw new Error(`migration ledger table ${ledgerTable} is not a plain name`);
   // Registry hygiene before anything touches the database.
   let previous = '';
   for (const m of registry) {
