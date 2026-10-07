@@ -76,3 +76,21 @@ describe('#631 — provenance reaches the run record and the audit log', () => {
     expect(m.getStatus(runId)?.status).toBe('completed');
   });
 });
+
+describe('#1667 — the requester\'s address reaches the job records', () => {
+  test('every job record carries the address the request came from', async () => {
+    const { m, events } = makeManager();
+    await m.enqueue('test.job', jobContextFromRequest({ username: 'jim', ipAddress: '203.0.113.7' }));
+    await settle();
+    for (const type of ['job-started', 'job-completed']) {
+      expect(events.find((e) => e.eventType === type)?.ipAddress, type).toBe('203.0.113.7');
+    }
+  });
+
+  test('a job with no request behind it records no address', async () => {
+    const { m, events } = makeManager();
+    await m.enqueue('test.job', jobContextFromSystem('svc-ngdpbase', 'scheduled sweep'));
+    await settle();
+    expect(events.find((e) => e.eventType === 'job-started')?.ipAddress).toBeUndefined();
+  });
+});

@@ -114,6 +114,16 @@ export class ApiContext extends BaseContext {
    */
   readonly subject: PermissionSubject | null;
 
+  /**
+   * The address the request came from (#1179), read from the subject the
+   * middleware wrote — not a copy. Forwarded with the context, so a job or a
+   * record an add-on starts from it carries the provenance (#1667).
+   */
+  get ipAddress(): string | undefined {
+    const ip = this.subject?.ipAddress;
+    return typeof ip === 'string' && ip ? ip : undefined;
+  }
+
   private constructor(
     engine: WikiEngine,
     isAuthenticated: boolean,

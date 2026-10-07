@@ -261,3 +261,23 @@ describe('ApiContext#requirePermission()', () => {
 // ── requireRole() ─────────────────────────────────────────────────────────────
 
 // #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).
+
+// ── #1667: the address travels with the context ─────────────────────────────
+
+describe('#1667 ApiContext carries the request address', () => {
+  test('reads it from the subject the middleware wrote', () => {
+    const ctx = ApiContext.from(makeReq({ userContext: { ...ANONYMOUS_SUBJECT, ipAddress: '203.0.113.7' } as never }), mockEngine);
+    expect(ctx.ipAddress).toBe('203.0.113.7');
+  });
+
+  test('undefined when the subject has none', () => {
+    expect(ApiContext.from(makeReq(), mockEngine as never).ipAddress).toBeUndefined();
+  });
+
+  test('a job started from a forwarded ApiContext records the address', async () => {
+    const { jobContextFromRequest } = await import('../JobContext');
+    const ctx = ApiContext.from(makeReq({ userContext: { username: 'jim', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' } as never }), mockEngine);
+    const job = jobContextFromRequest(ctx);
+    expect(job).toMatchObject({ username: 'jim', origin: 'request', ipAddress: '203.0.113.7' });
+  });
+});
