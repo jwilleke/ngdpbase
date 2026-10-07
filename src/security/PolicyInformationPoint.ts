@@ -22,6 +22,7 @@ import type { PageFrontmatter } from '../types/Page.js';
 import { shareCoversPage, shareCoversResource, type ShareGrant } from '../types/Share.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { decideFrontmatterAccess } from '../utils/frontmatterAccess.js';
+import { hiddenByFeature } from '../utils/pageFeature.js';
 
 /** The one thing the page tiers need from PageManager (#1431 7c). */
 interface PrivateAccessCheck {
@@ -586,6 +587,13 @@ class PolicyInformationPoint extends BaseManager {
     policy: (attributes: { vault?: string }) => Promise<{ applicable: boolean; permit: boolean; reason: string } | null>;
   }): Promise<{ allowed: boolean; reason: string }> {
     const { userContext, pageName, metadata, action, viaShare } = args;
+
+    // #1677: a page whose feature is off is not there to view — for anyone, so
+    // listings leave it out exactly as the page-read door answers not-found.
+    if (action.toLowerCase() === 'view'
+      && hiddenByFeature(metadata, this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager'))) {
+      return { allowed: false, reason: 'feature_disabled' };
+    }
 
     // Tier 0: private. Refuses only (#1539); an admitted subject goes on to
     // policy with the page's vault. The frontmatter fallback (no PageManager)
