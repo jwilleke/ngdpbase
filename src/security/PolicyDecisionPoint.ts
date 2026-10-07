@@ -42,6 +42,7 @@ interface StepUpDecider {
 }
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
+import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
 
 export const POLICIES_KEY = 'ngdpbase.access.policies';
 export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
@@ -104,7 +105,11 @@ export class PolicyDecisionPoint extends BaseManager {
     if (!configManager || configManager.getProperty(POLICIES_ENABLED_KEY, false) !== true) return [];
     const raw = configManager.getProperty(POLICIES_KEY, []);
     if (!Array.isArray(raw)) return [];
-    return raw.filter(isPolicy).sort((a, b) => (b.priority || 0) - (a.priority || 0));
+    return raw.filter(isPolicy)
+      // #1638: a policy written before a permission was split still grants
+      // what the old name stood for.
+      .map((p) => (p.actions?.some((a) => RETIRED_PERMISSIONS.has(a)) ? { ...p, actions: withRetiredExpanded(p.actions) } : p))
+      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
   }
 
   /**
@@ -328,7 +333,7 @@ export class PolicyDecisionPoint extends BaseManager {
     const { action } = request;
 
     const viaToken = subject?.viaToken;
-    if (viaToken && !viaToken.scopes.includes(action)) {
+    if (viaToken && !withRetiredExpanded(viaToken.scopes).includes(action)) {
       logger.info(
         `[PDP] token ${viaToken.id} ("${viaToken.name}") lacks scope '${action}' ` +
         `(has: ${viaToken.scopes.join(',') || 'none'}) — denied`

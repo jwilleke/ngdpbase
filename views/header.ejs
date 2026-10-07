@@ -139,7 +139,7 @@
                         </button>
                         <div class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                             <a class="dropdown-item" href="/profile"><i class="fas fa-user-cog"></i> Profile</a>
-                            <% if ((typeof canViewAdmin !== 'undefined' && canViewAdmin) || (typeof can === 'function' && can('share-manage'))) { %>
+                            <% if ((typeof canViewAdmin !== 'undefined' && canViewAdmin) || (typeof can === 'function' && can('share-create'))) { %>
                                 <div class="dropdown-divider"></div>
                                 <h6 class="dropdown-header">Management</h6>
                                 <a class="dropdown-item" href="/admin/attachments"><i class="fas fa-paperclip"></i> Attachments</a>
@@ -330,7 +330,7 @@
                                     // gated on the same roles that may create shares (decision 2).
                                     const _shareKws = (typeof shareEnabled !== 'undefined' && shareEnabled
                                         && typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated
-                                        && (typeof can === 'function' && can('share-manage'))
+                                        && (typeof can === 'function' && can('share-create'))
                                         && typeof metadata !== 'undefined' && metadata && Array.isArray(metadata['user-keywords']))
                                         ? metadata['user-keywords'].filter(function(k) { return k && k !== 'owner-only'; }).slice(0, 6)
                                         : [];

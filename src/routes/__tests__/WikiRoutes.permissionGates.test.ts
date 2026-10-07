@@ -97,19 +97,19 @@ describe('#1198 the attachment browser asks for asset-upload', () => {
   });
 });
 
-describe('#1224 share management asks for share-manage', () => {
+describe('#1224 share management asks policy — #1638: share-create to list and create', () => {
   const shareManager = { isEnabled: () => true, list: () => [] };
 
-  test('refused by policy: 403, and the permission asked is share-manage', async () => {
+  test('refused by policy: 403, and the permission asked is share-create', async () => {
     const { routes, asked } = makeRoutes([], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
-    expect(asked).toContain('share-manage');
+    expect(asked).toContain('share-create');
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
   test('granted by policy: the list renders, regardless of role name', async () => {
-    const { routes } = makeRoutes(['share-manage'], { ShareManager: shareManager });
+    const { routes } = makeRoutes(['share-create'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
     expect(res.status).not.toHaveBeenCalledWith(403);

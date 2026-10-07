@@ -7,7 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { isGrantable, grantablePermissionNames, grantablePermissions } from '../permissionCatalog';
+import { isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS } from '../permissionCatalog';
 import { delegablePermissions } from '../../managers/OidcManager';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
@@ -52,5 +52,29 @@ describe('#1638 the shipped catalog keeps the promise', () => {
       const granted = (policy.actions ?? []).filter((a) => records.includes(a));
       expect(granted, policy.id).toEqual([]);
     }
+  });
+});
+
+describe('#1638 a split permission still grants what it stood for', () => {
+  test('share-manage reads as share-create, share-extend and share-revoke', () => {
+    expect(withRetiredExpanded(['page-read', 'share-manage', 'share-create'])).toEqual(['page-read', 'share-create', 'share-extend', 'share-revoke']);
+    expect(withRetiredExpanded(['page-read'])).toEqual(['page-read']);
+  });
+
+  test('the shipped catalog no longer declares share-manage, and declares what replaced it', () => {
+    expect(catalog['share-manage']).toBeUndefined();
+    for (const n of RETIRED_PERMISSIONS.get('share-manage') ?? []) expect(isGrantable(catalog[n]), n).toBe(true);
+  });
+
+  test('a custom policy that still grants share-manage grants the three through the PDP', async () => {
+    const { default: PolicyDecisionPoint } = await import('../../security/PolicyDecisionPoint');
+    const policy = { id: 'old', name: 'old', priority: 10, effect: 'allow', subjects: [{ type: 'role', value: 'sharer' }], resources: [{ type: 'page', pattern: '*' }], actions: ['share-manage'] };
+    const engine = {
+      getManager: (name: string) => (name === 'ConfigurationManager'
+        ? { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.access.policies' ? [policy] : k === 'ngdpbase.access.policies.enabled' ? true : d) }
+        : null)
+    };
+    const pdp = new PolicyDecisionPoint(engine);
+    expect([...(pdp.rolePermissions().get('sharer') ?? [])].sort()).toEqual(['share-create', 'share-extend', 'share-revoke']);
   });
 });

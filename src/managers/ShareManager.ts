@@ -134,7 +134,7 @@ export default class ShareManager extends BaseManager {
    * Issue a new share: a delegation by `issuer` of `actions` over `resources`
    * (#1221, epic #1225).
    *
-   * The route asks policy for `share-manage` before calling this (#1224).
+   * The route asks policy for `share-create` before calling this (#1224, #1638).
    * Here the delegation rule is enforced: __nobody delegates what they do not
    * hold.__ Every action the share would carry is checked against the
    * issuer's live authority through the PDP (`PolicyDecisionPoint.permits`), with the
@@ -188,9 +188,9 @@ export default class ShareManager extends BaseManager {
       throw new Error('ShareManager: only a vault\'s owner can share it');
     }
     if (!isValidStoreId(scope.vault)) throw new Error(`ShareManager: '${scope.vault}' is not a vault id`);
-    // #1539: sharing is share-manage, asked in the vault — vault-owner's grant.
-    if (!(await this.permitsInScope(issuer, 'share-manage', scope))) {
-      throw new Error(`ShareManager: ${issuer.username} does not hold 'share-manage' in this vault`);
+    // #1539: sharing is asked in the vault — vault-owner's grant. #1638: share-create.
+    if (!(await this.permitsInScope(issuer, 'share-create', scope))) {
+      throw new Error(`ShareManager: ${issuer.username} does not hold 'share-create' in this vault`);
     }
     if (scope.pages !== null && scope.pages.length === 0) throw new Error('ShareManager: a link to chosen pages needs at least one page');
     const maxHours = this.maxShareDays(scope.vault) * 24;
@@ -252,8 +252,8 @@ export default class ShareManager extends BaseManager {
     }
     if (!this.liveRecord(record.token) || record.expiresAt === null) return null;
     // #1539: a longer life is more access — asked as issuing it was.
-    if (record.scope.kind === 'vault' && !(await this.permitsInScope(by, 'share-manage', record.scope))) {
-      throw new Error(`ShareManager: ${by.username} does not hold 'share-manage' in this vault`);
+    if (record.scope.kind === 'vault' && !(await this.permitsInScope(by, 'share-extend', record.scope))) {
+      throw new Error(`ShareManager: ${by.username} does not hold 'share-extend' in this vault`);
     }
     const expiresAt = new Date(Date.parse(record.expiresAt) + hours * HOUR_MS).toISOString();
     // Recorded before the link changes, like create and revoke: a lifetime

@@ -69,6 +69,7 @@ import { FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
+import { RETIRED_PERMISSIONS } from '../utils/permissionCatalog.js';
 
 /** Configuration namespace. See the extraction note in the file header. */
 const CONFIG_PREFIX = 'ngdpbase.auth.agent-token';
@@ -97,8 +98,10 @@ export { MINT_PERMISSION } from '../utils/delegation.js';
  * expansion loop threw `TypeError: function is not iterable` — a user-supplied
  * scope name turning a clean validation error into a 500.
  */
-const SCOPE_ALIASES = new Map<string, string[]>([
-  ['page-ingest', ['page-create', 'page-edit']]
+const SCOPE_ALIASES = new Map<string, readonly string[]>([
+  ['page-ingest', ['page-create', 'page-edit']],
+  // #1638: a retired permission asked for by name mints what it stood for.
+  ...RETIRED_PERMISSIONS
 ]);
 
 /** Expand any aliases and de-duplicate, preserving order. */

@@ -30,6 +30,8 @@
  * check somebody has to remember.
  */
 
+import { withRetiredExpanded } from '../utils/permissionCatalog.js';
+
 /** One reachable surface, and the scopes that reach it. */
 export interface TokenRoute {
   /** Uppercase HTTP method. */
@@ -279,7 +281,9 @@ export function tokenGateDecision(
     };
   }
 
-  const held = route.scopes.some((s) => scopes.includes(s));
+  // #1638: a token minted before a permission was split holds what it stood for.
+  const holding = withRetiredExpanded(scopes);
+  const held = route.scopes.some((s) => holding.includes(s));
   if (!held) {
     return {
       allowed: false,

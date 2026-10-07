@@ -164,14 +164,14 @@ const mockUserManager = {
 };
 
 // #1431 step 14: decisions are the PDP's.
-// #1198/#1224: the share routes ask policy — share-manage to issue, list
-// and revoke one's own shares (shipped to admin and editor), admin-system
+// #1198/#1224: the share routes ask policy — #1638: share-create to issue and
+// list, share-revoke to revoke one's own (shipped to admin and editor), admin-system
 // for the override views. Shaped like the shipped catalog.
 const mockPolicyDecisionPoint = {
   permits: vi.fn(async (username: string, action: string) => {
     const roles = username === 'root' ? ['admin'] : username === 'ed' ? ['editor'] : username === 'reader' ? ['reader'] : [];
     if (action === 'admin-system') return roles.includes('admin');
-    if (action === 'share-manage') return roles.includes('admin') || roles.includes('editor');
+    if (['share-create', 'share-extend', 'share-revoke'].includes(action)) return roles.includes('admin') || roles.includes('editor');
     // #1485: the media door — reader and above, never anonymous.
     if (action === 'media-read') return roles.length > 0;
     return false;

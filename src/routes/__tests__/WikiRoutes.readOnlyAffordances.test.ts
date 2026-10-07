@@ -91,7 +91,7 @@ describe('can() reflects the caller’s permissions (#1034)', () => {
       expect(door.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['admin-read']));
       // #1635: a control is shown to whoever HOLDS the permission; acting on it
       // is where the step-up freshness rule is applied.
-      expect(holds.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['page-edit', 'share-manage']));
+      expect(holds.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['page-edit', 'share-create']));
     } finally {
       door.mockRestore();
       holds.mockRestore();
