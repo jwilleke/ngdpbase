@@ -238,6 +238,27 @@ __By hand__, except the boot backfills. Those append one line each to `<FAST_STO
 cp .env.example .env
 ```
 
+### How values reach each implementation
+
+ngdpbase has one environment mechanism, `bootstrap-env.ts`. It does not know or care how it was launched. Every implementation hands it values the same two ways — the ambient environment, and `.env` files — and the ambient environment always wins.
+
+| Implementation | Ambient environment comes from | `.env` read at boot | To change a value |
+|---|---|---|---|
+| Bare metal (`server.sh`) | `server.sh` sources `<checkout>/.env`, then `<FAST_STORAGE>/.env`, into the shell | both, already in the environment | edit the file, `./server.sh restart` |
+| Docker (compose or `docker run`) | compose `environment:`, `docker run -e`, and the image's own `ENV` lines | `<FAST_STORAGE>/.env` on the mounted data volume (`/app/data/.env`) | edit the volume's `.env` or the compose file, restart the container |
+| Kubernetes | the Deployment: `envFrom:` a ConfigMap and a Secret, or `env:` entries (`secretKeyRef` for secrets) | `/app/data/.env` on the persistent volume | edit the volume's `.env` and restart the pod, or change the ConfigMap/Secret and roll the deployment |
+| Downstream image (`FROM ngdpbase`) | as Kubernetes or Docker, plus anything its own Dockerfile sets with `ENV` | as above | as above |
+
+Rules that follow from this, for every implementation:
+
+- __Read once, at startup.__ A changed `.env` or Secret takes effect on the next restart, never live.
+- __The ambient environment beats the file.__ A variable set in the Deployment or compose file cannot be changed by editing `.env`; remove it from the launcher first.
+- __The image carries no `.env`.__ A checkout's `.env` (yours, jimstest's) never reaches a container. Per-instance values live on the instance's own data volume or in its launcher.
+- __Names are exact.__ There are no aliases: `SESSION_SECRET` is not `NGDPBASE_SESSION_SECRET`, and a misnamed variable is silently unused ([#1678](https://github.com/jwilleke/ngdpbase/issues/1678)). An `optional: true` `secretKeyRef` hides a Secret that does not exist, so check the name in `.env.example`.
+- __Missing secrets are generated, not required.__ The boot backfills write `NGDPBASE_SESSION_SECRET` and `NGDPBASE_CREDENTIALS_KEY` into the instance `.env` when nothing supplied them, so a fresh volume works; supply them yourself only to manage them (rotation, a GitOps-held Secret).
+
+Which of those homes a *new* variable belongs in is decided by what it is — see [Where a new variable goes](#where-a-new-variable-goes).
+
 ### The intended split
 
 - __`.env`__ — secrets and machine-specific paths. Never committed.

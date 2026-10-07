@@ -101,6 +101,13 @@ export interface PageFrontmatter {
   audience?: string[];
 
   /**
+   * The boolean setting this page belongs to (#1677). While that setting is
+   * not `true` the page reads as not found and is left out of listings — a
+   * help page for a feature that is off. See `src/utils/pageFeature.ts`.
+   */
+  'requires-setting'?: string;
+
+  /**
    * Whether the page is private — accessible only to the page creator and admins.
    *
    * Peer of `audience` and `author-lock`; canonical signal for PolicyInformationPoint's tier-0

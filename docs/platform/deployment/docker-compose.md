@@ -235,12 +235,14 @@ Likely causes (in order):
 
 ### Logged-in users get bumped to Anonymous after a restart
 
-You haven't set `SESSION_SECRET`. Without it, the server generates a fresh one on every restart and existing session cookies stop validating. See [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret) — pass via `environment:` in the compose file (or `.env`):
+The session secret changed. Without `NGDPBASE_SESSION_SECRET`, ngdpbase generates one on first boot and saves it to the data volume's `.env`, so it changes only when that volume does not persist. Mount a persistent volume at `/app/data`, or pass a stable secret via `environment:` in the compose file. See [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret).
 
 ```yaml
 environment:
-  SESSION_SECRET: ${SESSION_SECRET}
+  NGDPBASE_SESSION_SECRET: ${NGDPBASE_SESSION_SECRET}
 ```
+
+The name must be exactly `NGDPBASE_SESSION_SECRET`; `SESSION_SECRET` is silently ignored.
 
 Generate once with `openssl rand -base64 32`.
 

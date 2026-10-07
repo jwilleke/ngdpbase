@@ -129,9 +129,11 @@ spec:
 
 Apply this to __every__ workload that makes external HTTPS calls (the main Deployment, plus any CronJobs running addons that call external APIs). See [§5](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#5-alpine-musl--k8s-ndots5-breaks-external-dns) for the full diagnosis. A trailing-dot FQDN bypass test confirms the issue if you want to verify before applying the fix.
 
-### 5. Set `SESSION_SECRET` from a Secret
+### 5. Set `NGDPBASE_SESSION_SECRET` from a Secret
 
-Without `SESSION_SECRET`, every pod restart invalidates all existing session cookies — users get bumped to anonymous. See [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret).
+Without `NGDPBASE_SESSION_SECRET`, ngdpbase generates one on first boot and saves it to the data volume's `.env`. That survives restarts on a persistent volume; on an ephemeral one every restart generates a new secret and signs everyone out. Supplying it from a Secret makes it yours to manage either way. See [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret).
+
+The name must be exactly `NGDPBASE_SESSION_SECRET`. A variable named `SESSION_SECRET` is silently ignored.
 
 ```bash
 kubectl create secret generic ngdpbase-secrets \
@@ -143,7 +145,7 @@ In the Deployment:
 
 ```yaml
 env:
-  - name: SESSION_SECRET
+  - name: NGDPBASE_SESSION_SECRET
     valueFrom:
       secretKeyRef:
         name: ngdpbase-secrets
