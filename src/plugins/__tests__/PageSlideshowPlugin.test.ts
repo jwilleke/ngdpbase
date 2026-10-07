@@ -16,19 +16,22 @@
 
 import PageSlideshowPlugin from '../PageSlideshowPlugin';
 
-/** `allPages` is what the viewer may read (#1219); `denied` are pages that exist but the evaluator refuses. */
+/**
+ * `allPages` is what the viewer may read (#1219); `denied` are pages that exist
+ * but the door refuses. `readPage` models PageManager's deciding read (#1622):
+ * refused, not found, or the page.
+ */
+let denied: string[] = [];
 const makePageManager = (allPages: string[] = [], pages: Record<string, unknown> = {}) => ({
   getAllPages: vi.fn().mockResolvedValue(allPages),
   listPagesFor: vi.fn().mockResolvedValue(allPages),
-  getPage: vi.fn(async (name: string) => pages[name] ?? null)
+  readPage: vi.fn(async (name: string) =>
+    denied.includes(name) ? { ok: false, refusal: 'denied' }
+      : pages[name] ? { ok: true, value: pages[name] } : { ok: false, refusal: 'not-found' })
 });
 
-let denied: string[] = [];
 const makeEngine = (pageManager: unknown = null) => ({
-  getManager: vi.fn((name: string) =>
-    name === 'PageManager' ? pageManager
-      : name === 'PolicyInformationPoint' ? { canUserAccessPage: vi.fn(async (_u: unknown, page: string) => !denied.includes(page)) }
-        : null)
+  getManager: vi.fn((name: string) => name === 'PageManager' ? pageManager : null)
 });
 beforeEach(() => { denied = []; });
 
@@ -134,7 +137,7 @@ describe('PageSlideshowPlugin', () => {
       const html = await PageSlideshowPlugin.execute({ engine: makeEngine(pm) }, { pages: 'Public,Secret' });
       expect(html).toContain('Public');
       expect(html).not.toContain('secret text');
-      expect(pm.getPage).not.toHaveBeenCalledWith('Secret');
+      expect(pm.readPage).toHaveBeenCalledWith('Secret', expect.anything()); // the door was asked, and refused
     });
 
     test('uses the listing door when random is set', async () => {

@@ -11,6 +11,7 @@
  * what the decider was handed, and a mocked decider cannot see that.
  */
 import PolicyInformationPoint from '../../../security/PolicyInformationPoint';
+import { readPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
 import WikiTagHandler from '../WikiTagHandler';
 
 const PAGES: Record<string, Record<string, unknown>> = {
@@ -28,13 +29,13 @@ const evaluator = {
 };
 
 function makeEngine(withAcl = true) {
+  let acl: unknown = null;
+  // #1622: the include reads through PageManager's real page-read door.
   const pageManager = {
     getPageMetadata: async (name: string) => PAGES[name] ?? null,
-    getPage: async (name: string) =>
-      PAGES[name] ? { content: CONTENT[name], metadata: PAGES[name] } : null,
-    checkPrivatePageAccess: async () => null
+    checkPrivatePageAccess: async () => null,
+    readPage: null as unknown
   };
-  let acl: unknown = null;
   const engine = {
     getManager: (name: string): unknown => {
       if (name === 'PageManager') return pageManager;
@@ -45,6 +46,8 @@ function makeEngine(withAcl = true) {
     }
   };
   acl = new PolicyInformationPoint(engine);
+  pageManager.readPage = readPageThroughDoor(engine, (name) =>
+    PAGES[name] ? { content: CONTENT[name], metadata: PAGES[name] } : null);
   return engine;
 }
 
@@ -57,7 +60,8 @@ function contextFor(engine: ReturnType<typeof makeEngine>, userContext: unknown)
     getManager: (n: string) => engine.getManager(n),
     wikiContext: { pageName: 'Host', userContext },
     getMetadata: (k: string) => metadata.get(k),
-    setMetadata: (k: string, v: unknown) => metadata.set(k, v)
+    setMetadata: (k: string, v: unknown) => metadata.set(k, v),
+    clone: (pageContext: unknown) => ({ pageContext, setMetadata: () => undefined })
   } as never;
 }
 
@@ -65,9 +69,12 @@ const reader = { username: 'bob', roles: ['reader'], isAuthenticated: true };
 const admin = { username: 'root', roles: ['admin'], isAuthenticated: true };
 
 describe('#1431 <wiki:Include> honours the included page\'s audience', () => {
+  // #1622: the include itself, through the page-read door — true when the
+  // page's text reached the output, false when it was refused or missing.
   const include = (h: WikiTagHandler, page: string, ctx: never) =>
-    (h as unknown as { checkIncludePermission(p: string, c: never): Promise<boolean> })
-      .checkIncludePermission(page, ctx);
+    (h as unknown as { handleIncludeTag(a: { page: string }, c: never): Promise<string> })
+      .handleIncludeTag({ page }, ctx)
+      .then((out) => page in CONTENT && out.includes(CONTENT[page]), () => false);
 
   test('a reader outside the audience cannot include the page', async () => {
     const engine = makeEngine();
@@ -97,5 +104,19 @@ describe('#1431 <wiki:Include> honours the included page\'s audience', () => {
     const engine = makeEngine(false);
     const handler = new WikiTagHandler(engine);
     expect(await include(handler, 'Public', contextFor(engine, reader))).toBe(false);
+  });
+});
+
+describe('#1622 exists: answers through the page-read door', () => {
+  const exists = (h: WikiTagHandler, page: string, ctx: never) =>
+    (h as unknown as { evaluateCondition(c: string, x: never): Promise<boolean> }).evaluateCondition(`exists:${page}`, ctx);
+
+  test('a page the reader may not read does not exist for them', async () => {
+    const engine = makeEngine();
+    const handler = new WikiTagHandler(engine);
+    expect(await exists(handler, 'AdminsOnly', contextFor(engine, reader))).toBe(false);
+    expect(await exists(handler, 'AdminsOnly', contextFor(engine, admin))).toBe(true);
+    expect(await exists(handler, 'Public', contextFor(engine, reader))).toBe(true);
+    expect(await exists(handler, 'NoSuchPage', contextFor(engine, admin))).toBe(false);
   });
 });

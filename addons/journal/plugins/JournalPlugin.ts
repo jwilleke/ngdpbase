@@ -164,7 +164,8 @@ const JournalPlugin = {
         journalDate: e.journalDate,
         mood:        e.mood,
         tags:        e.tags,
-        content:     (await pm.getPage(e.name, userContext))?.content ?? undefined
+        // #1622: through the page-read door, as every page read for a viewer.
+        content:     await pm.readPage(e.name, userContext).then(r => r.ok ? r.value.content : undefined)
       })));
 
       if (view === 'streak') {

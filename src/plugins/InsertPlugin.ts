@@ -33,6 +33,7 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { escapeHtml } from '../utils/pluginFormatters.js';
 import { extractSection } from '../utils/SectionUtils.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 interface PageMetadataLike {
   private?: boolean;
@@ -52,7 +53,9 @@ interface PageManagerLike {
   // this read ran as nobody — so a sealed page, which resolves only through
   // its owner's unlocked session, was invisible to [{InsertPage}] even for
   // the owner looking at it.
-  getPage?: (name: string, ctx: unknown) => Promise<WikiPageLike | null | undefined>;
+  // #1622: the deciding read — page-read is decided on the viewer before the
+  // page is read, by the same door every route uses.
+  readPage?: (name: string, ctx: unknown) => Promise<{ ok: true; value: WikiPageLike } | { ok: false; refusal: string }>;
 }
 
 interface RenderingManagerLike {
@@ -222,41 +225,29 @@ const InsertPlugin: SimplePlugin = {
     if (!pageName) return '';
 
     const pageManager = ctx.engine?.getManager('PageManager') as PageManagerLike | undefined;
-    if (!pageManager?.getPage) {
+    if (!pageManager?.readPage) {
       return renderPlaceholder(pageName, 'Insert: PageManager unavailable');
     }
 
-    let page: WikiPageLike | null | undefined;
+    // The viewer this parse is running for — forwarded, never rebuilt. No
+    // viewer reads as anonymous, never as nobody-in-particular.
+    const viewer = ctx.userContext ?? ctx.currentUser ?? ANONYMOUS_SUBJECT;
+    let read: Awaited<ReturnType<NonNullable<PageManagerLike['readPage']>>>;
     try {
-      // The viewer this parse is running for — forwarded, never rebuilt.
-      page = await pageManager.getPage(pageName, ctx.userContext ?? ctx.currentUser ?? null);
+      read = await pageManager.readPage(pageName, viewer);
     } catch (err) {
-      ctx.engine?.logger?.error?.('[InsertPlugin] getPage failed:', err);
+      ctx.engine?.logger?.error?.('[InsertPlugin] readPage failed:', err);
       return renderPlaceholder(pageName, 'Insert: page lookup failed');
     }
 
-    if (!page) {
-      return renderPlaceholder(pageName, 'Insert: page not found');
+    // #1198 / rule 10, #1622: the door decides whether the viewer may read the
+    // inserted page — private, audience, access lists and policy alike.
+    if (!read.ok) {
+      return renderPlaceholder(pageName, read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
     }
-
-    // ACL — simplified: only the `private` flag is honoured. Frontmatter
-    // audience and global policy evaluation are NOT consulted here. Tracked
-    // as a known limitation; full ACL parity is a follow-up if needed.
-    // #1198 / rule 10: the evaluator decides whether the viewer may read the
-    // inserted page — private, audience, access lists and policy alike. This
-    // used to re-implement the private rule with an owner-or-`admin` role
-    // test, which skipped every other tier and the token ceiling. Without an
-    // PolicyInformationPoint (fixtures) a private page is refused and nothing else is.
+    const page = read.value;
     const metadata = page.metadata ?? {};
-    const viewer = ctx.userContext ?? ctx.currentUser ?? null;
-    const policyInformationPoint = ctx.engine?.getManager('PolicyInformationPoint') as
-      { canUserAccessPage(user: unknown, page: string, action: string): Promise<boolean> } | undefined;
-    const visible = policyInformationPoint
-      ? await policyInformationPoint.canUserAccessPage(viewer, pageName, 'view')
-      : metadata.private !== true;
-    if (!visible) {
-      return renderPlaceholder(pageName, 'Insert: page not visible');
-    }
+
 
     // Extract requested content (full page, section-by-index, or section-by-heading).
     let content = typeof page.content === 'string' ? page.content : '';

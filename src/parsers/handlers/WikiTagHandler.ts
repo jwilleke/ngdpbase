@@ -2,6 +2,7 @@ import BaseSyntaxHandler, { InitializationContext } from './BaseSyntaxHandler.js
 import ParseContext from '../context/ParseContext.js';
 import * as crypto from 'crypto';
 import logger from '../../utils/logger.js';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager.js';
 
 /**
  * WikiTag match information
@@ -61,7 +62,8 @@ interface PageManager {
   // #1422: the real signature takes the caller's context. Typed without it,
   // both reads below ran as nobody — so `wiki:Include` of a sealed page, and
   // the `exists:` condition on one, answered "no such page" to its owner.
-  getPage(pageName: string, ctx: unknown): Promise<{ content: string } | null>;
+  // #1622: the deciding read — page-read decided for the reader first.
+  readPage(pageName: string, ctx: unknown): Promise<{ ok: true; value: { content: string } } | { ok: false; refusal: string }>;
 }
 
 /**
@@ -310,9 +312,16 @@ class WikiTagHandler extends BaseSyntaxHandler {
       throw new Error('wiki:Include tag requires "page" attribute');
     }
 
-    // Security check - validate user can access the included page
-    const hasPermission = await this.checkIncludePermission(pageName, context);
-    if (!hasPermission) {
+    const pageManager = context.getManager('PageManager') as PageManager | undefined;
+    if (!pageManager) {
+      throw new Error('PageManager not available');
+    }
+
+    // #1431 step 7, #1622: the page-read door decides whether this reader may
+    // read the included page — its own audience, access lists and policy —
+    // before anything of it is read. No reader is the anonymous reader.
+    const read = await pageManager.readPage(pageName, context.wikiContext?.userContext ?? ANONYMOUS_SUBJECT);
+    if (!read.ok && read.refusal === 'denied') {
       throw new Error(`Access denied to include page: ${pageName}`);
     }
 
@@ -321,18 +330,11 @@ class WikiTagHandler extends BaseSyntaxHandler {
       throw new Error(`Recursive inclusion detected for page: ${pageName}`);
     }
 
-    // Get PageManager
-    const pageManager = context.getManager('PageManager') as PageManager | undefined;
-    if (!pageManager) {
-      throw new Error('PageManager not available');
-    }
-
     try {
-      // Load the page content
-      const pageData = await pageManager.getPage(pageName, context.wikiContext?.userContext);
-      if (!pageData) {
+      if (!read.ok) {
         return `<!-- Page not found: ${pageName} -->`;
       }
+      const pageData = read.value;
 
       let includeContent = pageData.content;
 
@@ -460,8 +462,9 @@ class WikiTagHandler extends BaseSyntaxHandler {
       const pageManager = context.getManager('PageManager') as PageManager | undefined;
       if (pageManager) {
         try {
-          const page = await pageManager.getPage(pageName, context.wikiContext?.userContext);
-          return !!page;
+          // #1622: a page this reader may not read does not exist for them.
+          const read = await pageManager.readPage(pageName, context.wikiContext?.userContext ?? ANONYMOUS_SUBJECT);
+          return read.ok;
         } catch {
           return false;
         }
@@ -560,38 +563,6 @@ class WikiTagHandler extends BaseSyntaxHandler {
       return '';
     }
     }
-  }
-
-  /**
-   * Check if user has permission to include specified page
-   * @param pageName - Page to include
-   * @param context - Parse context
-   * @returns True if permission granted
-   */
-  private async checkIncludePermission(pageName: string, context: WikiTagParseContext): Promise<boolean> {
-    // #633: prior implementation called PolicyManager.checkPermission (which the
-    // class doesn't actually expose — broken at runtime) for anonymous users and
-    // the deprecated two-arg ParseContext.hasPermission for authenticated users.
-    // Migrated to the canonical PolicyInformationPoint 3-tier evaluator so anonymous and
-    // authenticated paths share one code path. PolicyEvaluator's anonymous-role
-    // expansion ('anonymous', 'All') makes the if-anonymous branch unnecessary.
-    //
-    // #1431 step 7: this used to pass `pageMetadata: null`, and its comment said
-    // so — the INCLUDED page's own rules were skipped and global policy
-    // answered alone. Tier 1 is that page's audience, so a page restricted to
-    // `audience: [admin]` rendered into any page for any reader the global
-    // policy lets view. `canUserAccessPage` is the cross-page door: it loads
-    // the target's metadata as this reader and runs every tier on it, the same
-    // check `[{InsertPlugin}]` asks.
-    //
-    // It also used to allow when PolicyInformationPoint was missing, under a comment
-    // calling that "conservative". Allowing is the permissive direction;
-    // without a decider there is no decision, so no include.
-    const policyInformationPoint = context.getManager('PolicyInformationPoint') as {
-      canUserAccessPage(userContext: unknown, pageName: string, action: string): Promise<boolean>;
-    } | undefined;
-    if (!policyInformationPoint) return false;
-    return policyInformationPoint.canUserAccessPage(context.wikiContext?.userContext ?? null, pageName, 'view');
   }
 
   /**
