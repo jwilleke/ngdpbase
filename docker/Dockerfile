@@ -135,6 +135,10 @@ COPY --from=builder /app/themes ./themes
 # Copy required-pages (system templates)
 COPY --from=builder /app/required-pages ./required-pages
 
+# Page templates (#1687): shipped content the TemplateManager reads. Absent, it
+# created ./templates at runtime — which only root can do in /app.
+COPY --from=builder /app/templates ./templates
+
 # Copy addons (compiled JS, views, public assets, seed pages, node_modules)
 COPY --from=builder /app/addons ./addons
 

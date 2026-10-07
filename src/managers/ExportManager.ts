@@ -7,6 +7,7 @@ import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type PageManager from './PageManager.js';
 import type RenderingManager from './RenderingManager.js';
+import type ConfigurationManager from './ConfigurationManager.js';
 
 /**
  * Export file metadata interface
@@ -94,7 +95,11 @@ class ExportManager extends BaseManager {
   async initialize(config: ExportConfig = {}): Promise<void> {
     await super.initialize(config);
 
-    this.exportDirectory = config.exportDirectory || './exports';
+    // #1687: exports are files people generate — runtime data, so they live in
+    // the instance data folder, never in the checkout (root-owned in the image).
+    this.exportDirectory = config.exportDirectory
+      || this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getResolvedDataPath('ngdpbase.directories.exports', '${FAST_STORAGE}/exports')
+      || './exports';
 
     const preflight = this.preflightConfiguredPath(
       'exportDirectory',

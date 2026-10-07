@@ -366,6 +366,7 @@
   "_comment_attachment_legacy_private": "Migrate-FROM folder under attachment storagedir (pre-#1386 attachments/private/{user}/). Not a live write target. Destination is the page store under pages storagedir.",
   "ngdpbase.attachment.provider.basic.legacyprivateroot": "private",
   "ngdpbase.directories.templates": "./templates",
+  "ngdpbase.directories.exports": "${FAST_STORAGE}/exports",
   "ngdpbase.directories.resources": "./resources",
   "ngdpbase.directories.data": "${FAST_STORAGE}",
   "ngdpbase.directories.users": "${FAST_STORAGE}/users",

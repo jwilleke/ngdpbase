@@ -56,10 +56,11 @@ import type PageManager from './managers/PageManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
 import { bearerProviderIds } from './utils/bearerProviders.js';
+import { pidLockPath } from './utils/pidLock.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
 // __dirname would resolve to dist/src/ after compilation, so it cannot be used for
-// views/, public/, themes/, addons/, .env, or the PID file.
+// views/, public/, themes/, addons/ or .env.
 const projectRoot = process.cwd();
 
 // .env is loaded by the bootstrap-env import at the top of this file, which
@@ -70,7 +71,9 @@ const projectRoot = process.cwd();
 // competing source of truth.
 
 // --- PID File Lock to Prevent Multiple Instances ---
-const PID_FILE = path.join(projectRoot, '.ngdpbase.pid');
+// #1687: in the temp directory, named per checkout — the checkout itself is
+// root-owned in the image, so a non-root server could not start.
+const PID_FILE = pidLockPath(projectRoot);
 /** How often unlocked keys of ended sessions are swept (#1626). */
 const ORPHANED_KEY_SWEEP_MS = 10 * 60 * 1000;
 
