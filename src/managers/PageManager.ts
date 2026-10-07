@@ -55,6 +55,7 @@ import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pa
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
 /**
@@ -1383,6 +1384,11 @@ class PageManager extends BaseManager implements CatalogSource {
       return { ok: false, refusal: this.provider.pageExists(identifier, ctx) ? 'no-metadata' : 'not-found' };
     }
     const metadata = metadataForDecision(found);
+    // #1677: a page whose feature is off is not there — the ordinary not-found,
+    // not a refusal that tells the reader it exists.
+    if (hiddenByFeature(metadata, this.engine.getManager<ConfigurationManager>('ConfigurationManager'))) {
+      return { ok: false, refusal: 'not-found' };
+    }
     const name = canonicalPageName(identifier, metadata);
     const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
     if (!pip) {
