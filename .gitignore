@@ -223,7 +223,7 @@ addons/*/index.d.ts.map
 # src/ .js files emitted as a side-effect of addon tsconfig (rootDir: ../..)
 # These are NOT the main build output (which goes to dist/src/) but are
 # required at runtime by the addon's compiled requires.
-# Note: src/types/express.d.ts is tracked (hand-written) — .d.ts excluded narrowly below.
+# Note: the Request augmentation is src/types/express.ts (#1665), emitted to dist/ — .d.ts excluded narrowly below.
 src/context/*.js
 src/context/*.js.map
 src/context/*.d.ts

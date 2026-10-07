@@ -26,6 +26,9 @@
  */
 
 import type { Request } from 'express';
+// #1665: the Request augmentation (req.userContext, req.session). Imported here so the
+// emitted ApiContext.d.ts carries it to every add-on that typechecks against dist/.
+import '../types/express.js';
 import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';

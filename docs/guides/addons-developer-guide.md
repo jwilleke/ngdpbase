@@ -727,32 +727,21 @@ What is not built is the add-on declaring that entry in its manifest and core pe
 
 Add-on route handlers that call `res.render()` must pass `leftMenu` explicitly — the core `getCommonTemplateData()` method is only available inside `WikiRoutes` and is not accessible to addon routes.
 
-Use the shared helper in `addons/journal/routes/helpers.ts` as a reference, or copy the pattern into your own addon:
+Read the menu through the host's one chrome reader, `PageManager.readChromePage('left-menu')`, and format it with the shared `formatLeftMenuContent`. Both are the host's: the reader honours `ngdpbase.chrome.left-menu-page` and reports a missing page, and the formatter is the one core uses, so do not copy either ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)). `addons/journal/routes/helpers.ts` is the reference:
 
 ```typescript
 // addons/my-addon/routes/helpers.ts
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
-import type { ActorContext } from '../../../dist/src/context/ActorContext.js';
 import type PageManager from '../../../dist/src/managers/PageManager';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager';
-
-function formatLeftMenuContent(content: string): string {
-  content = content.replace(/<ul>/g, '<ul class="nav flex-column">');
-  content = content.replace(/<li>/g, '<li class="nav-item">');
-  content = content.replace(/<a href="([^"]*)">/g, '<a class="nav-link" href="$1">');
-  return content;
-}
+import { formatLeftMenuContent } from '../../../dist/src/utils/leftMenuNav.js';
 
 export async function getLeftMenu(engine: WikiEngine, userContext: unknown): Promise<string | null> {
   const pm = engine.getManager<PageManager>('PageManager');
   const rm = engine.getManager<RenderingManager>('RenderingManager');
   if (!pm || !rm) return null;
-  const page = await pm.getPage('LeftMenu', (userContext as ActorContext | null) ?? ANONYMOUS_SUBJECT);
-  if (!page) {
-    engine.logger?.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty.');
-    return null;
-  }
+  const page = await pm.readChromePage('left-menu');
+  if (!page) return null;
   const rendered = await rm.renderMarkdown(page.content ?? '', 'LeftMenu', userContext, null);
   return formatLeftMenuContent(rendered);
 }
@@ -852,6 +841,8 @@ caller identity for free and establishes a consistent pattern.
 
 Do __not__ access `req.userContext`, `req.session`, or `req.session.isAuthenticated` directly
 in route handlers. `ApiContext` wraps these correctly and handles TypeScript typing.
+
+The request's types come with the host: `dist/src/context/ApiContext.d.ts` imports ngdpbase's `Request` augmentation (`req.userContext`, `req.session`), so an add-on that imports `ApiContext` sees those properties with no tsconfig entry and no copy of the type ([#1665](https://github.com/jwilleke/ngdpbase/issues/1665)). Typechecking outside the image also needs `@types/express`, `@types/express-session` and `@types/multer` installed; the CI that `create:addon --repo` generates installs them.
 
 __`ApiContext.from()` always succeeds — it never throws for anonymous callers.__
 On an unauthenticated request it returns a context with `isAuthenticated: false`

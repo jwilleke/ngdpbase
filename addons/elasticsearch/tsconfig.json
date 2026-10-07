@@ -11,8 +11,7 @@
   "include": [
     "index.ts",
     "routes/**/*.ts",
-    "src/**/*.ts",
-    "../../src/types/**/*.d.ts"
+    "src/**/*.ts"
   ],
   "exclude": [
     "node_modules",
