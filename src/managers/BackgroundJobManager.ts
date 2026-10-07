@@ -300,7 +300,8 @@ class BackgroundJobManager extends BaseManager {
     await recordAuditEvent(sink, {
       eventType: JOB_EVENT[outcome],
       user: by.username,
-      ipAddress: undefined,
+      // #1667: the address the requesting call came from, when there was one.
+      ipAddress: by.ipAddress,
       action: `job-${outcome}`,
       result: 'success',
       severity: outcome === 'failed' ? 'medium' : 'low',
