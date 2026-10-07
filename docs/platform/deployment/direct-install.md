@@ -215,11 +215,13 @@ If addons in a non-default directory aren't loading at all, you may have hit [§
 
 ### Logged-in users get bumped to Anonymous after a restart
 
-You're hitting [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret) — without `SESSION_SECRET`, the server generates a fresh one on every boot and existing session cookies stop validating. Set a stable one in `.env`:
+The session secret changed — see [§8](../../../docker/HEADLESS-DEPLOYMENT-NOTES.md#8-use-a-stable-session-secret). ngdpbase generates `NGDPBASE_SESSION_SECRET` on first boot and saves it to `<FAST_STORAGE>/.env`, so check that file still holds it and that `FAST_STORAGE` points where it did. To manage it yourself, set it in that `.env` (generate a value with `openssl rand -base64 32`):
 
 ```bash
-SESSION_SECRET=$(openssl rand -base64 32)
+NGDPBASE_SESSION_SECRET=<the generated value>
 ```
+
+The name must be exactly `NGDPBASE_SESSION_SECRET`; `SESSION_SECRET` is silently ignored.
 
 ### Anything else
 
