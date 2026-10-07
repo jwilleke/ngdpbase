@@ -34,6 +34,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
+import { grantablePermissionNames } from '../src/utils/permissionCatalog.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = path.join(REPO, 'config', 'app-default-config.json');
@@ -66,7 +67,9 @@ function doc(entry: Described | undefined): string {
 
 export function render(): string {
   const definitions = readMap('ngdpbase.permissions.definitions');
-  const names = Object.keys(definitions).sort();
+  // #1638: records (grantable: false) are declared here for their audit
+  // block only; nothing may require one, so they are not in the union.
+  const names = grantablePermissionNames(definitions).sort();
 
   const entries = names
     .map((name) => `  /** ${doc(definitions[name])} */\n  | '${name}'`)

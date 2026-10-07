@@ -43,6 +43,7 @@ import {
   applyPagination,
   formatPaginationLinks
 } from '../utils/pluginFormatters.js';
+import { grantablePermissions } from '../utils/permissionCatalog.js';
 
 // ============================================================================
 // Type Definitions
@@ -239,7 +240,8 @@ function displayPermissions(configManager: ConfigurationManager, pdp: PolicyDeci
   // #1431 step 14b: what a role permits is the PDP's reading of the policies.
   const granted = pdp.rolePermissions();
   const roles = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
-  const permissions = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>;
+  // #1638: records (grantable: false) are not permissions a role can hold.
+  const permissions = grantablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>);
 
   if (!roles || roles.length === 0) {
     return '<p class="text-muted">No roles configured</p>';
@@ -1281,7 +1283,8 @@ function displayFeatures(configManager: ConfigurationManager): string {
 // ─── displayPermissionsList ────────────────────────────────────────────────
 
 function displayPermissionsList(configManager: ConfigurationManager): string {
-  const defs = configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>;
+  // #1638: records (grantable: false) are not listed as permissions.
+  const defs = grantablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>);
 
   if (!defs || Object.keys(defs).length === 0) {
     return '<p class="text-muted">No permission definitions found.</p>';

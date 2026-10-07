@@ -8,9 +8,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AUDIT_EVENT_NAMES } from '@jwilleke/oidc-auth-server';
 import { AUDIT_EVENT } from '../auditEventNames';
+import { auditDeclarationsFrom } from '../auditRegistry';
 
 const shipped = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
-const events = shipped['ngdpbase.audit.events'] as Record<string, { 'on-failure': string }>;
+// #1638: declared on permission entries (grantable: false), read through the one reader.
+const events = auditDeclarationsFrom((key, d) => shipped[key] ?? d) as Record<string, { 'on-failure': string }>;
 const ours = Object.values(AUDIT_EVENT).filter((n) => n.startsWith('oidc')).sort();
 
 describe('OIDC audit names (#1575)', () => {
@@ -18,7 +20,7 @@ describe('OIDC audit names (#1575)', () => {
     expect(ours).toEqual([...AUDIT_EVENT_NAMES].sort());
   });
 
-  test('are declared in ngdpbase.audit.events, each on-failure continue', () => {
+  test('are declared, each on-failure continue', () => {
     for (const name of ours) {
       expect(events[name], name).toBeDefined();
       expect(events[name]['on-failure'], name).toBe('continue');

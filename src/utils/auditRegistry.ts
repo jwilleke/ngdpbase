@@ -111,6 +111,14 @@ export function auditDeclarationsFrom(read: AuditEventsSource): Record<string, A
       out[name] = { description: typeof description === 'string' ? description : name, ...(audit as Partial<AuditEventDeclaration>) } as AuditEventDeclaration;
     }
   }
+  // A custom file written before #1638 removed an event with null in the
+  // events map; that still removes it, wherever it is now declared.
+  const rawEvents = read(AUDIT_EVENTS_KEY, {});
+  if (rawEvents && typeof rawEvents === 'object' && !Array.isArray(rawEvents)) {
+    for (const [name, entry] of Object.entries(rawEvents as Record<string, unknown>)) {
+      if (entry === null) delete out[name];
+    }
+  }
   for (const [name, d] of Object.entries(events)) {
     if (out[name] && !warnedDoubled.has(name)) {
       warnedDoubled.add(name);

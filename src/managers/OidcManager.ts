@@ -37,6 +37,7 @@ import type { AuditEvent as OidcAuditEvent, SignInContext } from '@jwilleke/oidc
 import { passwordChangedAtSeconds } from '../utils/passwordChange.js';
 import { refusedDelegatedScope } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import { grantablePermissionNames } from '../utils/permissionCatalog.js';
 
 export const OIDC_PREFIX = 'oidc-auth-server.';
 export const OIDC_ENABLED_KEY = 'oidc-auth-server.enabled';
@@ -83,8 +84,8 @@ export function aalOfAcr(acr: unknown): 1 | 2 | 3 {
 
 /** The permissions an app may be delegated: every defined one a delegation may carry. */
 export function delegablePermissions(definitions: unknown): string[] {
-  const names = definitions && typeof definitions === 'object' && !Array.isArray(definitions) ? Object.keys(definitions) : [];
-  return names.filter((n) => refusedDelegatedScope(n) === null).sort();
+  // #1638: a record (grantable: false) is not an action, so never a scope.
+  return grantablePermissionNames(definitions).filter((n) => refusedDelegatedScope(n) === null).sort();
 }
 
 /** What a verified access token for ngdpbase's API stands for. */
