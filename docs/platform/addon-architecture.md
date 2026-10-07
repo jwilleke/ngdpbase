@@ -380,8 +380,7 @@ Call `load()` manually in `register()` before calling `engine.registerManager()`
     "index.ts",
     "managers/**/*.ts",
     "routes/**/*.ts",
-    "plugins/**/*.ts",
-    "../../src/types/**/*.d.ts"
+    "plugins/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__/**"]
 }
@@ -391,7 +390,7 @@ Key points:
 
 - `rootDir: "../.."` and `outDir: "../.."` together cause output to land at `dist/addons/{name}/…` mirroring the source layout
 - Imports from core use `../../../dist/src/…` paths (compiled core output)
-- `../../src/types/**/*.d.ts` provides ambient type declarations
+- The request's types (`req.userContext`, `req.session`) arrive through `dist/src/context/ApiContext.d.ts`, which imports the host's `Request` augmentation; no `include` entry is needed ([#1665](https://github.com/jwilleke/ngdpbase/issues/1665))
 
 ### eslint.config.mjs
 

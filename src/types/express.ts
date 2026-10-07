@@ -1,42 +1,22 @@
+/// <reference types="express" preserve="true" />
+/// <reference types="express-session" preserve="true" />
+/// <reference types="multer" preserve="true" />
 /**
- * Express type extensions for ngdpbase
- * Extends Express Request and Response with custom properties
+ * Express type extensions for ngdpbase: `req.userContext`, `req.session`'s
+ * fields, uploads.
+ *
+ * A module, not a hand-written `.d.ts` (#1665): tsc emits
+ * `dist/src/types/express.d.ts` from it, and `src/context/ApiContext.ts`
+ * imports it, so an add-on that typechecks against `dist/` — bundled or
+ * external — sees these properties through the types it already imports, with
+ * no tsconfig entry. A hand-written `.d.ts` was never emitted, so external
+ * add-ons could not see it at all.
+ *
+ * Being a module also ends the restated copies the `.d.ts` needed: the share
+ * and sign-in shapes are imported, not transcribed.
  */
-
-import 'express';
-import 'express-session';
-
-/**
- * The share a request presented (#1222), structurally identical to
- * `ShareGrant` in `src/types/Share.ts`. Declared inline ON PURPOSE: the
- * bundled addons compile with `rootDir`/`outDir` at the repo root and include
- * every `.d.ts` under `src/types/` for this augmentation, so an `import` here pulls the
- * imported module into every addon program and tsc emits `src/types/Share.js`
- * in place beside its source (seen on every satellite after v4.15.0). A
- * `.d.ts` must not import a `.ts` module.
- */
-/**
- * How a session signed in (#1523), structurally identical to `SignInRecord`
- * in `src/managers/AuthManager.ts`. Inline for the reason above: importing it
- * would compile AuthManager and everything it imports into every addon build.
- */
-interface SessionSignIn {
-  provider: string;
-  factors: Array<{ provider: string; amr: string[]; aal: 0 | 1 | 2 | 3; acr?: 'phr' | 'phrh'; at: string }>;
-  amr: string[];
-  aal: 0 | 1 | 2 | 3;
-  acr: 'phr' | 'phrh' | 'aal1' | 'aal2' | 'aal3';
-  mfa: boolean;
-  at: string;
-}
-
-interface RequestShareGrant {
-  id: string;
-  issuer: string;
-  actions: string[];
-  resources: Array<{ type: string; pattern: string }>;
-  expiresAt: string | null;
-}
+import type { ShareGrant } from './Share.js';
+import type { SignInRecord } from '../managers/AuthManager.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -51,7 +31,7 @@ declare module 'express-session' {
     /** The account's password-change generation when this session signed in (#1482). */
     sessionGeneration?: number;
     /** How this session signed in: provider, factors with their times, amr / aal / acr (#1523). */
-    signIn?: SessionSignIn;
+    signIn?: SignInRecord;
     /** A pending WebAuthn challenge (#448): single-use, tied to its purpose, short-lived. */
     passkeyChallenge?: { value: string; purpose: 'register' | 'authenticate' | 'reauth'; expires: number };
     /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
@@ -64,6 +44,9 @@ declare module 'express-session' {
 }
 
 declare global {
+  // Express declares Request in its global `Express` namespace; augmenting it
+  // means reopening that namespace. The rule skipped this when it was a .d.ts.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       /**
@@ -107,10 +90,9 @@ declare global {
         /** The agent token this request arrived with, when it did. */
         viaToken?: { id: string; name: string; scopes: string[] };
         /** The share this request presented, when it did (#1222). Forwarded like `viaToken`. */
-        viaShare?: RequestShareGrant;
+        viaShare?: ShareGrant;
         [key: string]: unknown;
       };
-      sessionID?: string;
       file?: Multer.File;
       files?: Multer.File[] | { [fieldname: string]: Multer.File[] };
     }

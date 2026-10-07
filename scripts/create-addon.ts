@@ -696,7 +696,7 @@ jobs:
             --entrypoint sh "ghcr.io/jwilleke/ngdpbase:\${NGDPBASE_VERSION}-devtools" -c '
               set -e
               cd /tmp && npm init -y >/dev/null
-              npm install --no-save typescript@^5 @types/node@^24 @types/express@^5 >/dev/null
+              npm install --no-save typescript@^5 @types/node@^24 @types/express@^5 @types/express-session@^1 @types/multer@^2 >/dev/null
               mkdir -p /app/node_modules/@types && cp -r /tmp/node_modules/@types/. /app/node_modules/@types/
               cd /app
               /tmp/node_modules/.bin/tsc --noEmit --strict --skipLibCheck \\
