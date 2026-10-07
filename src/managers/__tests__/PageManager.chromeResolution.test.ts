@@ -1,5 +1,5 @@
 /**
- * Site chrome page resolution — #952.
+ * Site chrome page resolution — #952, and since #1622 one reader for every caller.
  *
  * Chrome used to be resolved by slug convention: `left-menu-content` silently
  * beat the core `LeftMenu`, so an operator could edit `LeftMenu`, save
@@ -10,36 +10,36 @@
  * silently revert navigation on any instance relying on the convention —
  * geohazardwatch among them — the moment it upgraded.
  */
-
-import WikiRoutes from '../WikiRoutes';
+vi.unmock('../PageManager');
+import PageManager, { type ChromeSlot } from '../PageManager';
+import { ANONYMOUS_SUBJECT } from '../UserManager';
 
 type PageRec = { content: string; metadata: Record<string, unknown> };
 
-function makeRoutes(pages: Record<string, PageRec>, config: Record<string, unknown> = {}) {
+function makeManager(pages: Record<string, PageRec>, config: Record<string, unknown> | null = {}) {
+  const reads: Array<{ slug: string; ctx: unknown }> = [];
   const engine = {
     getManager: (name: string) => {
-      if (name === 'PageManager') {
-        return { getPage: async (slug: string) => pages[slug] ?? null };
-      }
-      if (name === 'ConfigurationManager') {
+      if (name === 'ConfigurationManager' && config) {
         return { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d) };
       }
       return null;
     }
   };
-  const routes = Object.create(WikiRoutes.prototype) as WikiRoutes;
-  (routes as unknown as { engine: unknown }).engine = engine;
-  return routes;
+  const pm = Object.create(PageManager.prototype) as PageManager;
+  (pm as unknown as { engine: unknown }).engine = engine;
+  (pm as unknown as { provider: unknown }).provider = {
+    getPage: async (slug: string, ctx: unknown) => { reads.push({ slug, ctx }); return pages[slug] ?? null; }
+  };
+  return Object.assign(pm, { reads });
 }
 
-const resolve = (routes: WikiRoutes, key = 'ngdpbase.chrome.left-menu-page') =>
-  (routes as unknown as {
-    resolveChromePage(k: string, legacy: string[], label: string): Promise<PageRec | null>;
-  }).resolveChromePage(key, ['left-menu-content', 'LeftMenu'], 'LeftMenu');
+const resolve = (pm: PageManager, slot: ChromeSlot = 'left-menu') => pm.readChromePage(slot);
+const makeRoutes = makeManager;
 
 const page = (content: string): PageRec => ({ content, metadata: {} });
 
-describe('resolveChromePage (#952)', () => {
+describe('PageManager.readChromePage (#952, #1622)', () => {
   describe('unset config — legacy behaviour must be preserved exactly', () => {
     test('the override still wins over the core page', async () => {
       // This is the pre-#952 behaviour. Changing it would silently revert
@@ -112,16 +112,31 @@ describe('resolveChromePage (#952)', () => {
         { 'footer-content': page('ADDON FOOTER'), 'Footer': page('CORE FOOTER') },
         { 'ngdpbase.chrome.footer-page': 'Footer' }
       );
-      const got = await (engine as unknown as {
-        resolveChromePage(k: string, l: string[], lbl: string): Promise<PageRec | null>;
-      }).resolveChromePage('ngdpbase.chrome.footer-page', ['footer-content', 'Footer'], 'Footer');
+      const got = await resolve(engine, 'footer');
       expect(got?.content).toBe('CORE FOOTER');
     });
   });
 
-  test('missing PageManager degrades to null rather than throwing', async () => {
-    const routes = Object.create(WikiRoutes.prototype) as WikiRoutes;
-    (routes as unknown as { engine: unknown }).engine = { getManager: () => null };
-    expect(await resolve(routes)).toBeNull();
+  test('no configuration reader falls back to the legacy chain', async () => {
+    const pm = makeManager({ LeftMenu: page('CORE MENU') }, null);
+    expect((await resolve(pm))?.content).toBe('CORE MENU');
+  });
+
+  describe('#1622 one reader for every caller', () => {
+    test('chrome is read as the anonymous reader, never as the viewer', async () => {
+      const pm = makeManager({ LeftMenu: page('CORE MENU') });
+      await resolve(pm);
+      expect(pm.reads.every((r) => r.ctx === ANONYMOUS_SUBJECT)).toBe(true);
+    });
+
+    test('the page-tabs template defaults to Template:PageTabs and honours its setting', async () => {
+      expect((await resolve(makeManager({ 'Template:PageTabs': page('TABS') }), 'page-tabs'))?.content).toBe('TABS');
+      const custom = makeManager({ 'Template:PageTabs': page('TABS'), 'My Tabs': page('MINE') }, { 'ngdpbase.tab.pagetabs.template': 'My Tabs' });
+      expect((await resolve(custom, 'page-tabs'))?.content).toBe('MINE');
+    });
+
+    test('a missing page-tabs template is quiet — tabs are optional', async () => {
+      expect(await resolve(makeManager({}), 'page-tabs')).toBeNull();
+    });
   });
 });

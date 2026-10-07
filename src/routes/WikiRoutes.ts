@@ -43,6 +43,7 @@ import { sessionGenerationOf } from '../utils/sessionGeneration.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
+import { formatLeftMenuContent } from '../utils/leftMenuNav.js';
 import { reportMissingPageMetadata } from '../utils/pageMetadataMissing.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { packZip } from '../utils/zipArchive.js';
@@ -365,6 +366,7 @@ interface IPageManager {
   // Without it the owner's unlocked sealed-store pages (#1385) are never found.
   getPage(name: string, ctx: ActorContext): Promise<WikiPage | null>;
   getPageContent(name: string, ctx: ActorContext): Promise<string>;
+  readChromePage: import('../managers/PageManager.js').default['readChromePage'];
   /** #1622: the page-read door — a person's read decides `page-read` here, never in a route. */
   readPage: PageManagerClass['readPage'];
   readVersionHistory: PageManagerClass['readVersionHistory'];
@@ -837,90 +839,6 @@ class WikiRoutes {
    * @param {object} options - Additional context options (pageName, content, context type)
    * @returns {WikiContext} WikiContext instance
    */
-  /**
-   * Resolve a site-chrome page (LeftMenu, Footer) — #952.
-   *
-   * Chrome used to be resolved by **slug convention**: a page named
-   * `left-menu-content` silently beat the core `LeftMenu`. That is a trap —
-   * an operator edits `LeftMenu`, the save succeeds, and nothing changes,
-   * with no feedback anywhere.
-   *
-   * Resolution order:
-   *   1. The configured page, when `configKey` is set to a non-empty slug.
-   *      Authoritative: if that page is missing, we do NOT silently fall back
-   *      to the legacy chain, because doing so would reintroduce the same
-   *      invisible-substitution problem the config exists to remove.
-   *   2. Otherwise the legacy chain, logged at info so the shadowing is
-   *      discoverable in logs during migration.
-   *
-   * The config key defaults to **empty**, not to the core page name. Defaulting
-   * it to `leftmenu` would change behaviour on upgrade for any instance relying
-   * on the convention — geohazardwatch's navigation would silently revert to
-   * core's. Empty preserves today's behaviour exactly and makes explicit
-   * configuration opt-in.
-   *
-   * @param configKey   e.g. `ngdpbase.chrome.left-menu-page`
-   * @param legacySlugs override-first chain, e.g. ['left-menu-content', 'LeftMenu']
-   * @param label       human label for log messages
-   */
-  private async resolveChromePage(
-    configKey: string,
-    legacySlugs: string[],
-    label: string
-  ): Promise<WikiPage | null> {
-    const pageManager = this.engine.getManager<import('../managers/PageManager.js').default>('PageManager');
-    if (!pageManager) return null;
-
-    const configManager = this.engine.getManager<{ getProperty(k: string, d: string): string }>('ConfigurationManager');
-    const raw = configManager?.getProperty(configKey, '');
-    const configured = typeof raw === 'string' ? raw.trim() : '';
-
-    if (configured) {
-      // page-door-ignore: site chrome around every page, read as anonymous, not a page view; rendering-path readers move to the door in #1622 slice 2.
-      const page = await pageManager.getPage(configured, ANONYMOUS_SUBJECT);
-      if (!page) {
-        // ERROR, not warn: this is the operator's OWN configuration naming a
-        // page that does not exist — unambiguous misconfiguration, nobody
-        // else's fault, and site-wide in effect (no nav or no footer on every
-        // page). Same reasoning as #672, which refuses to boot when operator
-        // config names a nonexistent addon. We stop short of failing boot
-        // because chrome degrades rather than breaking, but it must not be
-        // filed alongside routine warnings.
-        //
-        // Deliberately does NOT fall through to the legacy chain: silently
-        // substituting a page the operator did not choose is the exact problem
-        // this config removes (#952).
-        logger.error(
-          `[${label}] ${configKey} is set to '${configured}' but no such page exists — ` +
-          `${label} will be empty on every page. Fix the setting or create the page.`
-        );
-      }
-      return page ?? null;
-    }
-
-    // Legacy slug-convention chain (deprecated).
-    for (const slug of legacySlugs) {
-      // page-door-ignore: site chrome around every page, read as anonymous, not a page view; rendering-path readers move to the door in #1622 slice 2.
-      const page = await pageManager.getPage(slug, ANONYMOUS_SUBJECT);
-      if (!page) continue;
-      if (slug !== legacySlugs[legacySlugs.length - 1]) {
-        logger.info(
-          `[${label}] Using '${slug}' via the legacy slug convention, shadowing ` +
-          `'${legacySlugs[legacySlugs.length - 1]}'. Set ${configKey} to make this explicit (#952).`
-        );
-      }
-      return page;
-    }
-
-    // Nothing found via the legacy chain either. Warn rather than error: on a
-    // fresh instance this simply means the page has not been created yet,
-    // which is not a misconfiguration.
-    logger.warn(
-      `[${label}] No ${label} page found (tried ${legacySlugs.map(s => `'${s}'`).join(', ')}) — ` +
-      `${label} will be empty. Create one, or set ${configKey}.`
-    );
-    return null;
-  }
 
   createWikiContext(req: Request, options: WikiContextOptions = {}): WikiContext {
     // #625 Step 1 — theme is resolved lazily by WikiContext.activeTheme/themeInfo
@@ -1234,14 +1152,9 @@ class WikiRoutes {
     // Load LeftMenu — #952: resolved via explicit config, with the legacy
     // slug-convention chain as a deprecated fallback.
     try {
-      const leftMenuPage = await this.resolveChromePage(
-        'ngdpbase.chrome.left-menu-page',
-        ['left-menu-content', 'LeftMenu'],
-        'LeftMenu'
-      );
-      // #952: resolveChromePage owns the diagnostics — a second message here
-      // told the operator to create a "LeftMenu" page even when the config
-      // pointed at a different page entirely, which was actively misleading.
+      // #1622: PageManager.readChromePage is the one chrome reader, and owns
+      // its diagnostics and the #950 restriction warning.
+      const leftMenuPage = await this.engine.getManager<import('../managers/PageManager.js').default>('PageManager')?.readChromePage('left-menu') ?? null;
       const leftMenuContent = leftMenuPage?.content ?? null;
       logger.info(
         `[TEMPLATE] Loading LeftMenu for user=${
@@ -1270,11 +1183,10 @@ class WikiRoutes {
       // was delete the sidebar from EVERY page of the site, silently, for
       // whoever it denied.
       //
-      // The frontmatter is not ignored quietly — warnOnChromeRestriction
+      // The frontmatter is not ignored quietly — PageManager.readChromePage
       // reports any audience/access/private on a chrome page, so an operator
       // who restricted one learns it is no longer honoured rather than
       // discovering it when the nav mysteriously reappears.
-      this.warnOnChromeRestriction('LeftMenu', leftMenuPage?.metadata);
 
       if (leftMenuCtx !== null && leftMenuContent !== null) {
         templateData.leftMenu = await renderingManager.textToHTML(
@@ -1294,11 +1206,7 @@ class WikiRoutes {
     // Load Footer — #952: resolved via explicit config, with the legacy
     // slug-convention chain as a deprecated fallback.
     try {
-      const footerPage = await this.resolveChromePage(
-        'ngdpbase.chrome.footer-page',
-        ['footer-content', 'Footer'],
-        'Footer'
-      );
+      const footerPage = await this.engine.getManager<import('../managers/PageManager.js').default>('PageManager')?.readChromePage('footer') ?? null;
       const footerContent = footerPage?.content ?? null;
       logger.info(
         `[TEMPLATE] Loading Footer for user=${
@@ -1317,7 +1225,6 @@ class WikiRoutes {
         })
         : null;
       // #950: see the LeftMenu note above — chrome renders unconditionally.
-      this.warnOnChromeRestriction('Footer', footerPage?.metadata);
 
       if (footerCtx !== null && footerContent !== null) {
         templateData.footer = await renderingManager.textToHTML(
@@ -2805,9 +2712,9 @@ ${panes}
       const pageManager = this.engine.getManager('PageManager');
       const renderingManager = this.engine.getManager('RenderingManager');
 
-      // Try to get LeftMenu page
-      // page-door-ignore: site chrome around every page, not a page view; rendering-path readers move to the door in #1622 slice 2.
-      const leftMenuPage = await pageManager.getPage('LeftMenu', userContext);
+      // #1622: the same chrome reader as every page's sidebar — it honours
+      // ngdpbase.chrome.left-menu-page, which this used to ignore.
+      const leftMenuPage = await pageManager.readChromePage('left-menu');
       if (!leftMenuPage) {
         return null; // Return null to use fallback
       }
@@ -2822,61 +2729,13 @@ ${panes}
       );
 
       // Format for Bootstrap navigation
-      return this.formatLeftMenuContent(renderedContent);
+      return formatLeftMenuContent(renderedContent);
     } catch (err: unknown) {
       logger.error('Error loading left menu:', err);
       return null; // Return null to use fallback
     }
   }
 
-  /**
-   * Format left menu content for Bootstrap navigation
-   */
-  formatLeftMenuContent(content: string): string {
-    // Convert basic markdown list to Bootstrap nav structure
-    content = content.replace(/<ul>/g, '<ul class="nav flex-column">');
-    content = content.replace(/<li>/g, '<li class="nav-item">');
-    content = content.replace(
-      /<a href="([^"]*)">/g,
-      '<a class="nav-link" href="$1">'
-    );
-
-    // Add icons to common menu items
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)Main page/g,
-      '$1<i class="fas fa-home"></i> Main page'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)About/g,
-      '$1<i class="fas fa-info-circle"></i> About'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)Find pages/g,
-      '$1<i class="fas fa-search"></i> Find pages'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)Search/g,
-      '$1<i class="fas fa-search"></i> Search'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)News/g,
-      '$1<i class="fas fa-newspaper"></i> News'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)Recent Changes/g,
-      '$1<i class="fas fa-history"></i> Recent Changes'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)Page Index/g,
-      '$1<i class="fas fa-list"></i> Page Index'
-    );
-    content = content.replace(
-      /(<a class="nav-link"[^>]*>)SystemInfo/g,
-      '$1<i class="fas fa-server"></i> SystemInfo'
-    );
-
-    return content;
-  }
 
   /**
    * Display a wiki page
@@ -3054,9 +2913,8 @@ ${panes}
         if (tabsEnabled) {
           const noTabsList = (configManager?.getProperty('ngdpbase.page.notabs', []) as string[]);
           if (!noTabsList.includes(pageName)) {
-            const tabTemplateName = (configManager?.getProperty('ngdpbase.tab.pagetabs.template', 'Template:PageTabs'));
-            // page-door-ignore: site chrome around every page, not a page view; rendering-path readers move to the door in #1622 slice 2.
-            const tabTemplateContent = await pageManager.getPageContent(tabTemplateName, req.userContext).catch(() => null);
+            // #1622: chrome, read by the one chrome reader (ngdpbase.tab.pagetabs.template).
+            const tabTemplateContent = (await pageManager.readChromePage('page-tabs').catch(() => null))?.content ?? null;
             if (tabTemplateContent) {
               tabSectionHtml = await this.buildPageTabsHtml(tabTemplateContent, wikiContext, renderingManager, configManager);
             }
@@ -4532,62 +4390,6 @@ ${panes}
     });
   }
 
-  /**
-   * Warn when a chrome page carries access control that is no longer honoured (#950).
-   *
-   * `LeftMenu` and `Footer` used to run the full ACL evaluator, and a denial
-   * replaced the fragment with an empty string — so an affected user lost the
-   * sidebar or footer on EVERY page of the site, with nothing logged above
-   * `info` and nothing pointing at permissions as the cause.
-   *
-   * That gating is removed. A fragment is never a destination: denying it
-   * protected nothing, because the pages it links to still enforce their own
-   * ACLs, and a link the user cannot follow returns a comprehensible 403.
-   *
-   * The failure mode of removing it is the mirror image — frontmatter that
-   * silently stops working — so a restriction on a chrome page is reported
-   * rather than dropped in silence. `private: true` is called out by name
-   * because it is a hard constraint everywhere else in the evaluator, and an
-   * operator who set it has the strongest expectation of enforcement.
-   *
-   * @param label - Chrome slot being rendered
-   * @param metadata - The chrome page's frontmatter, if a page was resolved
-   */
-  private warnOnChromeRestriction(
-    label: 'LeftMenu' | 'Footer',
-    metadata: unknown
-  ): void {
-    const meta = metadata as {
-      audience?: unknown; access?: unknown; private?: unknown;
-    } | null | undefined;
-    if (!meta) return;
-
-    // Only what the removed gate ever honoured counts (#1275). The gate
-    // evaluated `view`, and the frontmatter resolver reads `access[action]`, so
-    // `audience` (view shorthand), a non-empty `access.view`, and `private`
-    // are the restrictions that used to blank the chrome. An `access` object
-    // carrying only `edit` never affected rendering and is still enforced on
-    // edits of the page itself — and every addon system page carries exactly
-    // that stamp (#971), so warning on it fired on every render of every
-    // deployment whose chrome comes from an addon, for a restriction that did
-    // not exist.
-    const restrictions: string[] = [];
-    if (Array.isArray(meta.audience) && meta.audience.length > 0) restrictions.push('audience');
-    const view = meta.access && typeof meta.access === 'object'
-      ? (meta.access as Record<string, unknown>)['view']
-      : undefined;
-    if (Array.isArray(view) && view.length > 0) restrictions.push('access.view');
-    if (meta.private === true) restrictions.push('private:true');
-    if (restrictions.length === 0) return;
-
-    logger.warn(
-      `[TEMPLATE] ${label} declares ${restrictions.join(', ')}, which is NOT enforced — site ` +
-      'chrome renders for everyone (#950). A fragment is not a destination, so gating it only ' +
-      'removed navigation site-wide without protecting the pages it links to; those still ' +
-      'enforce their own ACLs. Move the restriction to the linked pages, or keep sensitive ' +
-      `content out of ${label}.`
-    );
-  }
 
   /**
    * Guard shared by the #946 slice-2 mutation endpoints.

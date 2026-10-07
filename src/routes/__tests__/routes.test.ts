@@ -171,6 +171,8 @@ vi.mock('../../WikiEngine', () => {
     }),
     savePage: vi.fn().mockImplementation(async (name: string, content: string, metadata?: Record<string, unknown>) => doorSaveResult(name, content, metadata)),
     deletePage: vi.fn().mockResolvedValue(true),
+    // #1622: site chrome (menu, footer, page tabs) is read by PageManager.readChromePage.
+    readChromePage: vi.fn().mockResolvedValue(null),
     getPageContent: vi.fn().mockImplementation((pageName) => {
       if (pageName === 'Footer' || pageName === 'LeftMenu' || pageName === 'NonExistentPage') {
         return Promise.reject(new Error(`Page "${pageName}" not found`));

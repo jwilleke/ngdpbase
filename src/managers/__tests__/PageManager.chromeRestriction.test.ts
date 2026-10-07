@@ -1,5 +1,5 @@
 /**
- * @file WikiRoutes-ChromeDenial.test.ts
+ * @file PageManager.chromeRestriction.test.ts
  * @description #950 — site chrome renders unconditionally, and a restriction
  * that is no longer honoured must say so.
  *
@@ -12,10 +12,12 @@
  * image, frontmatter that silently stops working, so these tests pin that a
  * restriction is reported rather than dropped in silence.
  */
+vi.unmock('../PageManager');
 import logger from '../../utils/logger';
 
+// #1622: the warning moved with the chrome reader into PageManager.
 type ChromeWarner = {
-  warnOnChromeRestriction(label: 'LeftMenu' | 'Footer', metadata: unknown): void;
+  warnOnChromeRestriction(label: string, metadata: unknown): void;
 };
 
 describe('#950 chrome restriction reporting', () => {
@@ -27,9 +29,9 @@ describe('#950 chrome restriction reporting', () => {
     // spyOn reuses an existing spy, so recorded calls survive restoreAllMocks
     // and leak between cases.
     warn.mockClear();
-    const mod = await import('../WikiRoutes');
-    const WikiRoutes = (mod.default ?? mod) as unknown as { prototype: ChromeWarner };
-    routes = Object.create(WikiRoutes.prototype) as ChromeWarner;
+    const mod = await import('../PageManager');
+    const PageManager = (mod.default ?? mod) as unknown as { prototype: ChromeWarner };
+    routes = Object.create(PageManager.prototype) as ChromeWarner;
   });
 
   afterEach(() => {
