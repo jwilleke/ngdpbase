@@ -103,8 +103,16 @@ describe('#1200 configuration is authoritative', () => {
   });
 
   it('a custom configuration removing an entry with null removes it', () => {
-    const custom = { ...shippedEvents, 'share-access': null };
-    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? custom : key === PERMISSIONS_KEY ? shippedPermissions : d));
+    // #1638: share-access is declared on its permission entry now.
+    // The events map ships empty; the entry is removed where it is declared.
+    const custom = { ...(shippedPermissions as Record<string, unknown>), 'share-access': null };
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? {} : key === PERMISSIONS_KEY ? custom : d));
+    expect(auditEventTypes()).not.toContain('share-access');
+  });
+
+  it('#1638 a pre-#1638 custom file removing an event with null in the events map still removes it', () => {
+    const legacy = { ...shippedEvents, 'share-access': null };
+    bindAuditEvents((key, d) => (key === AUDIT_EVENTS_KEY ? legacy : key === PERMISSIONS_KEY ? shippedPermissions : d));
     expect(auditEventTypes()).not.toContain('share-access');
   });
 });

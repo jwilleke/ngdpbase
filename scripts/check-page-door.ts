@@ -38,7 +38,7 @@
  *    writes (`storeAttachment`, `storeFileInStore`) are AttachmentManager's
  *    to call; a caller that reaches past it skips the permission check, the
  *    destination rules and the audit record. `/images/upload` was that path.
- * 6. __No page read by a route past the door__ (#1622) — `page-read` is
+ * 6. __No page read for a person past the door__ (#1622) — routes, and since slice 2 plugins and parser handlers — `page-read` is
  *    decided inside PageManager's deciding reads (`readPage`,
  *    `readVersionHistory`, `readVersion`, `readVersionDiff`). A route in
  *    `src/routes/` or an addon's `routes/` that reads through the ACL-free
@@ -96,8 +96,12 @@ const TITLE_RULE_COPY = /\[\\?\/\\\\#\?%"<>\|\*\]/;
  */
 const PAGE_READ = /(?<!\bthis)\.(getPage|getPageContent|getVersionHistory|getPageVersion|compareVersions)\s*\(/;
 
-/** Where a read is a person's read: the core routes and every addon's routes. */
-const READ_SCOPE = /^(?:src\/routes\/|addons\/[^/]+\/routes\/)/;
+/**
+ * Where a read is a person's read: the core routes and every addon's routes,
+ * and — #1622 slice 2 — what renders a page for its reader: plugins and
+ * parser handlers, core and addon.
+ */
+const READ_SCOPE = /^(?:src\/routes\/|src\/plugins\/|src\/parsers\/|addons\/[^/]+\/(?:routes|plugins)\/)/;
 
 /** The marker that says a line is deliberately none of these (#1462). */
 const IGNORE = /page-door-ignore/;
@@ -277,7 +281,7 @@ function run(): void {
   console.log('=================');
   const violations = scan();
   if (violations.length === 0) {
-    console.log('Every page write and every route\'s page read goes through PageManager, every asset write through AttachmentManager, the shared indexes are written by their owners, and the save conditions are declared once.');
+    console.log('Every page write, and every page read for a person (routes, plugins, parsers), goes through PageManager, every asset write through AttachmentManager, the shared indexes are written by their owners, and the save conditions are declared once.');
     return;
   }
   for (const v of violations) {

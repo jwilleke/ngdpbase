@@ -20,12 +20,15 @@ import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import type { PageFootnote } from '../managers/FootnoteManager.js';
 import { parseBoolParam, escapeHtml } from '../utils/pluginFormatters.js';
+import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 interface PageManagerLike {
   // #1422: the real signature takes the caller's context. Typed without it,
   // this read ran as nobody, so a sealed page — which resolves only through
   // its owner's unlocked session — had no footnotes even for its owner.
-  getPage(name: string, ctx: unknown): Promise<{ content?: string; rawContent?: string } | null>;
+  // #1622: the deciding read — page-read is decided for the viewer, as on
+  // every route, even though the page is the one being rendered.
+  readPage(name: string, ctx: unknown): Promise<{ ok: true; value: { content?: string; rawContent?: string } } | { ok: false; refusal: string }>;
 }
 
 interface InterWikiSiteConfig {
@@ -79,8 +82,9 @@ async function readLegacyFootnotes(
   interWikiSites: Map<string, InterWikiSiteConfig>,
   viewer: unknown
 ): Promise<Array<{ id: string; html: string }>> {
-  const page = await pageManager.getPage(pageName, viewer);
-  if (!page) return [];
+  const read = await pageManager.readPage(pageName, viewer ?? ANONYMOUS_SUBJECT);
+  if (!read.ok) return [];
+  const page = read.value;
   const raw = String(page.rawContent ?? page.content ?? '').replace(/\r\n/g, '\n');
   const footnotes: Array<{ id: string; html: string }> = [];
 

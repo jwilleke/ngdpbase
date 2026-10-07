@@ -97,21 +97,39 @@ describe('#1198 the attachment browser asks for asset-upload', () => {
   });
 });
 
-describe('#1224 share management asks for share-manage', () => {
+describe('#1224 share management asks policy — #1638: share-create to list and create', () => {
   const shareManager = { isEnabled: () => true, list: () => [] };
 
-  test('refused by policy: 403, and the permission asked is share-manage', async () => {
+  test('refused by policy: 403, and the permission asked is share-create', async () => {
     const { routes, asked } = makeRoutes([], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
-    expect(asked).toContain('share-manage');
+    expect(asked).toContain('share-create');
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
   test('granted by policy: the list renders, regardless of role name', async () => {
-    const { routes } = makeRoutes(['share-manage'], { ShareManager: shareManager });
+    const { routes } = makeRoutes(['share-create'], { ShareManager: shareManager });
     const res = createMockRes();
     await routes.sharesList(createMockReq(editor, { get: vi.fn().mockReturnValue('') }), res);
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+});
+
+describe('#1638 three admin actions are their own permissions, not admin-system', () => {
+  const admin = { username: 'root', isAuthenticated: true, roles: ['admin'] };
+
+  test.each([
+    ['adminEditRaw', 'page-raw-edit', { params: { page: 'X' } }],
+    ['adminSaveRaw', 'page-raw-edit', { params: { page: 'X' }, body: { content: 'x' } }],
+    ['clearOneSession', 'session-revoke', { params: { sid: 's1' } }],
+    ['adminAuditExport', 'audit-export', { query: { format: 'json' } }]
+  ])('%s asks %s, and refuses a holder of admin-system alone', async (route, permission, extra) => {
+    const { routes, asked } = makeRoutes(['admin-system'], { PolicyInformationPoint: { currentSubject: async () => admin } });
+    const res = createMockRes();
+    await routes[route](createMockReq(admin, extra), res);
+    expect(asked).toContain(permission);
+    expect(asked).not.toContain('admin-system');
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });

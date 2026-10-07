@@ -55,6 +55,7 @@ import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pa
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { hiddenByFeature } from '../utils/pageFeature.js';
 import { ANONYMOUS_SUBJECT } from './UserManager.js';
 
 /**
@@ -202,6 +203,19 @@ export interface PageSaveResult {
  * A caller that answers a person who may not see the page should answer all
  * three alike, so a refusal does not tell them the page exists.
  */
+/**
+ * A site-chrome slot: a page that frames every page (#952, #950, #1622).
+ * `configKey` names the page; `legacy` is the deprecated slug-convention
+ * chain tried when the key is empty; `defaultPage` is used when the key is
+ * unset; `quiet` slots are optional, so a missing page is not reported.
+ */
+export type ChromeSlot = 'left-menu' | 'footer' | 'page-tabs';
+const CHROME_SLOTS: Record<ChromeSlot, { configKey: string; legacy: string[]; label: string; defaultPage?: string; quiet?: boolean }> = {
+  'left-menu': { configKey: 'ngdpbase.chrome.left-menu-page', legacy: ['left-menu-content', 'LeftMenu'], label: 'LeftMenu' },
+  footer: { configKey: 'ngdpbase.chrome.footer-page', legacy: ['footer-content', 'Footer'], label: 'Footer' },
+  'page-tabs': { configKey: 'ngdpbase.tab.pagetabs.template', legacy: [], label: 'PageTabs', defaultPage: 'Template:PageTabs', quiet: true }
+};
+
 export type PageReadRefusal = 'not-found' | 'no-metadata' | 'denied';
 
 /**
@@ -1244,6 +1258,126 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * The page in a site-chrome slot — the left menu, the footer, the page-tabs
+   * template — read the same way for every caller (#952, #950, #1622).
+   *
+   * Resolution order (#952):
+   *   1. The configured page, when the slot's key is set. Authoritative: if
+   *      that page is missing, the legacy chain is NOT tried, because silently
+   *      substituting a page the operator did not choose is the problem the
+   *      setting exists to remove.
+   *   2. Otherwise the legacy slug chain (`left-menu-content` before
+   *      `LeftMenu`), logged at info when a page shadows the core one.
+   *
+   * Chrome is read as the anonymous reader, for every viewer: it frames every
+   * page for everyone, and gating a fragment only ever removed navigation
+   * site-wide without protecting the pages it links to (#950). A restriction
+   * set on a chrome page is therefore reported, not enforced. This is not a
+   * person's page view, so it does not pass the page-read door; it is the one
+   * place chrome is read, which is what the door rule needs (#1622).
+   *
+   * @param slot - Which chrome page
+   * @returns The page, or null when none resolves
+   */
+  async readChromePage(slot: ChromeSlot): Promise<WikiPage | null> {
+    const spec = CHROME_SLOTS[slot];
+    const config = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const raw: unknown = config?.getProperty(spec.configKey, spec.defaultPage ?? '');
+    const configured = typeof raw === 'string' ? raw.trim() : '';
+
+    let page: WikiPage | null = null;
+    if (configured) {
+      page = await this.getPage(configured, ANONYMOUS_SUBJECT);
+      if (!page && !spec.quiet) {
+        // ERROR, not warn: the operator's own setting names a page that does
+        // not exist, and the slot is empty on every page of the site.
+        logger.error(
+          `[${spec.label}] ${spec.configKey} is set to '${configured}' but no such page exists — ` +
+          `${spec.label} will be empty on every page. Fix the setting or create the page.`
+        );
+      }
+    } else {
+      for (const slug of spec.legacy) {
+        page = await this.getPage(slug, ANONYMOUS_SUBJECT);
+        if (!page) continue;
+        if (slug !== spec.legacy[spec.legacy.length - 1]) {
+          logger.info(
+            `[${spec.label}] Using '${slug}' via the legacy slug convention, shadowing ` +
+            `'${spec.legacy[spec.legacy.length - 1]}'. Set ${spec.configKey} to make this explicit (#952).`
+          );
+        }
+        break;
+      }
+      if (!page && !spec.quiet) {
+        // Warn, not error: on a fresh instance the page is simply not made yet.
+        logger.warn(
+          `[${spec.label}] No ${spec.label} page found (tried ${spec.legacy.map(x => `'${x}'`).join(', ')}) — ` +
+          `${spec.label} will be empty. Create one, or set ${spec.configKey}.`
+        );
+      }
+    }
+    if (page) this.warnOnChromeRestriction(spec.label, page.metadata);
+    return page;
+  }
+
+  /**
+   * Warn when a chrome page carries access control that is no longer honoured (#950).
+   *
+   * `LeftMenu` and `Footer` used to run the full ACL evaluator, and a denial
+   * replaced the fragment with an empty string — so an affected user lost the
+   * sidebar or footer on EVERY page of the site, with nothing logged above
+   * `info` and nothing pointing at permissions as the cause.
+   *
+   * That gating is removed. A fragment is never a destination: denying it
+   * protected nothing, because the pages it links to still enforce their own
+   * ACLs, and a link the user cannot follow returns a comprehensible 403.
+   *
+   * The failure mode of removing it is the mirror image — frontmatter that
+   * silently stops working — so a restriction on a chrome page is reported
+   * rather than dropped in silence. `private: true` is called out by name
+   * because it is a hard constraint everywhere else in the evaluator, and an
+   * operator who set it has the strongest expectation of enforcement.
+   *
+   * @param label - Chrome slot being rendered
+   * @param metadata - The chrome page's frontmatter, if a page was resolved
+   */
+  private warnOnChromeRestriction(
+    label: string,
+    metadata: unknown
+  ): void {
+    const meta = metadata as {
+      audience?: unknown; access?: unknown; private?: unknown;
+    } | null | undefined;
+    if (!meta) return;
+
+    // Only what the removed gate ever honoured counts (#1275). The gate
+    // evaluated `view`, and the frontmatter resolver reads `access[action]`, so
+    // `audience` (view shorthand), a non-empty `access.view`, and `private`
+    // are the restrictions that used to blank the chrome. An `access` object
+    // carrying only `edit` never affected rendering and is still enforced on
+    // edits of the page itself — and every addon system page carries exactly
+    // that stamp (#971), so warning on it fired on every render of every
+    // deployment whose chrome comes from an addon, for a restriction that did
+    // not exist.
+    const restrictions: string[] = [];
+    if (Array.isArray(meta.audience) && meta.audience.length > 0) restrictions.push('audience');
+    const view = meta.access && typeof meta.access === 'object'
+      ? (meta.access as Record<string, unknown>)['view']
+      : undefined;
+    if (Array.isArray(view) && view.length > 0) restrictions.push('access.view');
+    if (meta.private === true) restrictions.push('private:true');
+    if (restrictions.length === 0) return;
+
+    logger.warn(
+      `[TEMPLATE] ${label} declares ${restrictions.join(', ')}, which is NOT enforced — site ` +
+      'chrome renders for everyone (#950). A fragment is not a destination, so gating it only ' +
+      'removed navigation site-wide without protecting the pages it links to; those still ' +
+      'enforce their own ACLs. Move the restriction to the linked pages, or keep sensitive ' +
+      `content out of ${label}.`
+    );
+  }
+
+  /**
    * Get only page content (without metadata)
    *
    * More efficient than getPage() when only content is needed.
@@ -1383,6 +1517,11 @@ class PageManager extends BaseManager implements CatalogSource {
       return { ok: false, refusal: this.provider.pageExists(identifier, ctx) ? 'no-metadata' : 'not-found' };
     }
     const metadata = metadataForDecision(found);
+    // #1677: a page whose feature is off is not there — the ordinary not-found,
+    // not a refusal that tells the reader it exists.
+    if (hiddenByFeature(metadata, this.engine.getManager<ConfigurationManager>('ConfigurationManager'))) {
+      return { ok: false, refusal: 'not-found' };
+    }
     const name = canonicalPageName(identifier, metadata);
     const pip = this.engine.getManager<PolicyInformationPoint>('PolicyInformationPoint');
     if (!pip) {

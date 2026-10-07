@@ -462,7 +462,7 @@ describe('#1638 an addon records its own audit events', () => {
   });
 
   it('a name nobody declares is refused loudly, not recorded under no rule', async () => {
-    await expect(recordAuditEvent(sink, event('ledger-post'))).rejects.toThrow(/not declared in ngdpbase.audit.events/);
+    await expect(recordAuditEvent(sink, event('ledger-post'))).rejects.toThrow(/is not declared/);
     expect(sink.logAuditEvent).not.toHaveBeenCalled();
   });
 

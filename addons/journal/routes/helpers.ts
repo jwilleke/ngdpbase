@@ -1,6 +1,5 @@
 
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
-import { ANONYMOUS_SUBJECT } from '../../../dist/src/managers/UserManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
@@ -12,6 +11,7 @@ import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../di
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError } from '../../../dist/src/context/ApiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
+import { formatLeftMenuContent } from '../../../dist/src/utils/leftMenuNav.js';
 
 /**
  * Title and slug of a user's journal entry for a date (#1329).
@@ -170,20 +170,6 @@ export async function createJournalEntry(
   return name;
 }
 
-function formatLeftMenuContent(content: string): string {
-  content = content.replace(/<ul>/g, '<ul class="nav flex-column">');
-  content = content.replace(/<li>/g, '<li class="nav-item">');
-  content = content.replace(/<a href="([^"]*)">/g, '<a class="nav-link" href="$1">');
-  content = content.replace(/(<a class="nav-link"[^>]*>)Main page/g, '$1<i class="fas fa-home"></i> Main page');
-  content = content.replace(/(<a class="nav-link"[^>]*>)About/g, '$1<i class="fas fa-info-circle"></i> About');
-  content = content.replace(/(<a class="nav-link"[^>]*>)Find pages/g, '$1<i class="fas fa-search"></i> Find pages');
-  content = content.replace(/(<a class="nav-link"[^>]*>)Search/g, '$1<i class="fas fa-search"></i> Search');
-  content = content.replace(/(<a class="nav-link"[^>]*>)News/g, '$1<i class="fas fa-newspaper"></i> News');
-  content = content.replace(/(<a class="nav-link"[^>]*>)Recent Changes/g, '$1<i class="fas fa-history"></i> Recent Changes');
-  content = content.replace(/(<a class="nav-link"[^>]*>)Page Index/g, '$1<i class="fas fa-list"></i> Page Index');
-  content = content.replace(/(<a class="nav-link"[^>]*>)SystemInfo/g, '$1<i class="fas fa-server"></i> SystemInfo');
-  return content;
-}
 
 export async function getLeftMenu(
   engine: WikiEngine,
@@ -194,14 +180,10 @@ export async function getLeftMenu(
     const rm = engine.getManager<RenderingManager>('RenderingManager');
     if (!pm || !rm) return null;
 
-    // The left menu is public furniture; read it as the viewer, or anonymously.
-    // page-door-ignore: site chrome around every page, not a page view; the
-    // rendering-path readers move to the door in #1622 slice 2.
-    const page = await pm.getPage('LeftMenu', userContext ?? ANONYMOUS_SUBJECT);
-    if (!page) {
-      engine.logger?.warn('[LeftMenu] LeftMenu page not found — sidebar will be empty.');
-      return null;
-    }
+    // #1622: the host's one chrome reader — the same left menu every core page
+    // shows, honouring ngdpbase.chrome.left-menu-page. It reports a missing page.
+    const page = await pm.readChromePage('left-menu');
+    if (!page) return null;
 
     const rendered = await rm.renderMarkdown(page.content ?? '', 'LeftMenu', userContext, null);
     return formatLeftMenuContent(rendered);

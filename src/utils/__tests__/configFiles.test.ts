@@ -94,23 +94,23 @@ describe('#1214 merging', () => {
 });
 
 describe('#1214 the pre-engine read agrees with the manager', () => {
-  test('a one-entry override of ngdpbase.audit.events keeps the other entries', async () => {
-    // #1638: share-create / token-revoke stay in the events map (not a permission's action).
-    writeCustom({ 'ngdpbase.audit.events': { 'share-create': { 'on-failure': 'continue', description: 'lowered' } } });
+  test('a one-entry override of ngdpbase.permissions.definitions keeps the other entries', async () => {
+    // #1638: every event is a permission entry; the catalog is the map an operator overrides.
+    writeCustom({ 'ngdpbase.permissions.definitions': { 'share-create': { description: 'lowered', grantable: false, audit: { 'on-failure': 'continue' } } } });
 
     const pre = loadMergedConfigSync({ FAST_STORAGE: dataDir });
-    const preEvents = pre?.merged['ngdpbase.audit.events'] as Record<string, { 'on-failure': string }>;
-    expect(preEvents['share-create']['on-failure']).toBe('continue');
-    expect(preEvents['token-revoke']['on-failure']).toBe('refuse');
+    const preEvents = pre?.merged['ngdpbase.permissions.definitions'] as Record<string, { audit?: { 'on-failure': string } }>;
+    expect(preEvents['share-create'].audit?.['on-failure']).toBe('continue');
+    expect(preEvents['token-revoke'].audit?.['on-failure']).toBe('refuse');
     expect(Object.keys(preEvents).length).toBeGreaterThan(30);
-    expect(pre?.customKeys.has('ngdpbase.audit.events')).toBe(true);
+    expect(pre?.customKeys.has('ngdpbase.permissions.definitions')).toBe(true);
 
     const saved = process.env.FAST_STORAGE;
     process.env.FAST_STORAGE = dataDir;
     try {
       const cm = new ConfigurationManager({ getManager: () => null });
       await cm.initialize();
-      expect(cm.getProperty('ngdpbase.audit.events')).toEqual(preEvents);
+      expect(cm.getProperty('ngdpbase.permissions.definitions')).toEqual(preEvents);
     } finally {
       if (saved === undefined) delete process.env.FAST_STORAGE; else process.env.FAST_STORAGE = saved;
     }

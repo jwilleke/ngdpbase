@@ -15,6 +15,9 @@
  *
  * So these assert both directions on the real tree, not on fixtures.
  */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { coverage, vocabularyTypes, registryTypes, emittedTypes } from '../audit-coverage';
 
 describe('#1184 — the three lists are read correctly', () => {
@@ -108,5 +111,56 @@ describe('#1206 — each failing direction is proven to fire', () => {
     const pattern = /^[a-z]+(-[a-z]+)+$/;
     expect(['page-delete', 'page.delete', 'security_event', 'page'].filter((t) => !pattern.test(t)))
       .toEqual(['page.delete', 'security_event', 'page']);
+  });
+});
+
+describe('#1638 — --addon <dir> checks one external add-on', () => {
+  let dir: string;
+  const addon = (events: Record<string, unknown>, source: string): void => {
+    fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'config', 'default-config.json'), JSON.stringify({ 'ngdpbase.audit.events': events }));
+    fs.writeFileSync(path.join(dir, 'index.ts'), source);
+  };
+
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-addon-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  test('an add-on whose declared names are emitted has no gaps', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' } }, "recordAuditEvent(addonAuditEventName('widget-create'));\n");
+    const c = coverage({ addonDir: dir });
+    expect(c.vocabulary).toContain('widget-create');
+    expect(c.vocabulary).toContain('page-delete');
+    expect([...c.registry.keys()]).toEqual(['widget-create']);
+    expect(c.undeclared).toEqual([]);
+    expect(c.unemitted).toEqual([]);
+    expect(c.collides).toEqual([]);
+    expect(c.switchedOff).toEqual([]);
+  });
+
+  test('core names are not the add-on\'s to emit', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' } }, "addonAuditEventName('widget-create');\n");
+    expect(coverage({ addonDir: dir }).unemitted).not.toContain('page-delete');
+  });
+
+  test('reports an emitted name the add-on never declared', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' } }, "addonAuditEventName('widget-create'); addonAuditEventName('widget-delete');\n");
+    expect(coverage({ addonDir: dir }).undeclared).toEqual(['widget-delete']);
+  });
+
+  test('reports a declared, enabled name nothing emits; a switched-off one is a decision', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' }, 'widget-read': { 'on-failure': 'log', enabled: false } }, '');
+    const c = coverage({ addonDir: dir });
+    expect(c.unemitted).toEqual(['widget-create']);
+    expect(c.switchedOff).toEqual(['widget-read']);
+  });
+
+  test('reports an add-on name core already ships', () => {
+    addon({ 'page-delete': { 'on-failure': 'log' } }, "addonAuditEventName('page-delete');\n");
+    expect(coverage({ addonDir: dir }).collides).toEqual([`page-delete (${path.join(dir, 'config', 'default-config.json')})`]);
+  });
+
+  test('reports a name built at runtime', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' } }, "addonAuditEventName('widget-create'); addonAuditEventName(name);\n");
+    expect(coverage({ addonDir: dir }).unresolvedEmitters).toEqual([`addonAuditEventName(name) in ${path.relative(path.resolve(__dirname, '..', '..'), path.join(dir, 'index.ts'))}`]);
   });
 });

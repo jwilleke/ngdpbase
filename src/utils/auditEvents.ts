@@ -383,7 +383,7 @@ export async function recordAuditEvent(
   // generated union and keep their existing path.
   if (!isCoreAuditEventName(event.eventType) && !auditEventDeclarations()[event.eventType]) {
     const message =
-      `Audit event '${event.eventType}' is not declared in ${AUDIT_EVENTS_KEY}. ` +
+      `Audit event '${event.eventType}' is not declared (as a permission entry's audit block, or in ${AUDIT_EVENTS_KEY}). ` +
       'An addon declares its events in its config/default-config.json, and they count only while the addon is enabled.';
     logger.error(`[audit] ${message}`);
     throw new Error(message);

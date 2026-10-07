@@ -417,185 +417,8 @@
   "ngdpbase.audit.chain-witness.destination": "",
   "ngdpbase.audit.chain-witness.interval-minutes": 60,
   "ngdpbase.audit.retentiondays": 90,
-  "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code's names are generated from configuration into src/utils/auditEventNames.generated.ts. #1638: an event that records a permission's action is declared on the permission entry itself (ngdpbase.permissions.definitions.<name>.audit); this map holds only events that are not a permission's action. A name is declared in exactly one place. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
-  "ngdpbase.audit.events": {
-    "comment-delete": {
-      "on-failure": "continue",
-      "description": "Comment marked deleted; who removed it and whose it was (#1232)"
-    },
-    "footnote-edit": {
-      "on-failure": "continue",
-      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)"
-    },
-    "page-link-rewrite": {
-      "on-failure": "continue",
-      "description": "Inbound links rewritten after a rename"
-    },
-    "token-revoke": {
-      "on-failure": "refuse",
-      "description": "Agent token revoked"
-    },
-    "authentication-success": {
-      "on-failure": "continue",
-      "description": "Sign-in succeeded"
-    },
-    "authentication-failed": {
-      "on-failure": "continue",
-      "description": "Sign-in failed"
-    },
-    "authentication-logout": {
-      "on-failure": "continue",
-      "description": "User signed out"
-    },
-    "authorization-deny": {
-      "on-failure": "continue",
-      "description": "Access denied"
-    },
-    "authorization-allow": {
-      "on-failure": "continue",
-      "description": "Access granted; emitter exists, nothing in production calls it"
-    },
-    "policy-evaluate": {
-      "on-failure": "continue",
-      "description": "Security policy evaluated; emitter exists, nothing in production calls it"
-    },
-    "security-event": {
-      "on-failure": "continue",
-      "description": "Security violation detected; the kind is in metadata.securityEventType"
-    },
-    "share-create": {
-      "on-failure": "refuse",
-      "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint"
-    },
-    "share-access": {
-      "on-failure": "continue",
-      "description": "Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388)"
-    },
-    "share-revoke": {
-      "on-failure": "refuse",
-      "description": "Share link revoked; pairs with token-revoke"
-    },
-    "share-extend": {
-      "on-failure": "refuse",
-      "description": "Share link's lifetime extended by its issuer, by up to 24 hours (#1388)"
-    },
-    "system-start": {
-      "on-failure": "refuse",
-      "description": "Instance started; reports whether the previous run ended cleanly"
-    },
-    "system-shutdown": {
-      "on-failure": "refuse",
-      "description": "Instance shut down cleanly; its absence before the next start is the signal"
-    },
-    "config-change": {
-      "on-failure": "continue",
-      "description": "Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI"
-    },
-    "manager-state-change": {
-      "on-failure": "continue",
-      "description": "A manager changed state: degraded, disabled, failed or recovered"
-    },
-    "posture-recorded": {
-      "on-failure": "refuse",
-      "description": "Security posture at startup, compared against the previous start"
-    },
-    "job-started": {
-      "on-failure": "continue",
-      "description": "A background job started, and who asked for it"
-    },
-    "job-completed": {
-      "on-failure": "continue",
-      "description": "A background job finished successfully"
-    },
-    "job-failed": {
-      "on-failure": "continue",
-      "description": "A background job failed"
-    },
-    "page-raw-edit": {
-      "on-failure": "continue",
-      "description": "Page edited through the admin raw editor"
-    },
-    "session-revoke": {
-      "on-failure": "continue",
-      "description": "Session revoked by an administrator"
-    },
-    "session-clear-anonymous": {
-      "on-failure": "continue",
-      "description": "Anonymous sessions cleared"
-    },
-    "store-takeout": {
-      "on-failure": "continue",
-      "description": "A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left"
-    },
-    "store-import": {
-      "on-failure": "continue",
-      "description": "A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped"
-    },
-    "config-reset": {
-      "on-failure": "refuse",
-      "description": "Every custom configuration value discarded; recorded before the reset, which cannot proceed without it"
-    },
-    "backup-create": {
-      "on-failure": "continue",
-      "description": "A full backup written; where it went and who asked"
-    },
-    "audit-export": {
-      "on-failure": "continue",
-      "description": "The audit trail exported to a file; who took a copy, in what format, with what filter"
-    },
-    "audit-chain-restart": {
-      "on-failure": "refuse",
-      "description": "Hash chain restarted, with the reason; the marker is the action and cannot half-complete"
-    },
-    "oidcauthorize-allow": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: an app's sign-in request was allowed and a code issued (#1575)"
-    },
-    "oidcauthorize-deny": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: an app's sign-in request was refused (denied consent, sign-in required, bad request)"
-    },
-    "oidctoken-issue": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: tokens issued to an app, with the grant type that earned them"
-    },
-    "oidctoken-error": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: the token endpoint refused an app's request"
-    },
-    "oidctoken-reuse": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: a used code or refresh token was presented again; its grant was revoked (possible replay)"
-    },
-    "oidctoken-revoke": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: an access or refresh token was destroyed"
-    },
-    "oidcgrant-revoke": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: an app's grant and every token under it were revoked"
-    },
-    "oidcuserinfo-error": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account)"
-    },
-    "oidcserver-error": {
-      "on-failure": "continue",
-      "description": "OpenID Connect: the provider failed while handling a request"
-    },
-    "reauth-prompt": {
-      "on-failure": "continue",
-      "description": "Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one"
-    },
-    "reauth-success": {
-      "on-failure": "continue",
-      "description": "Step-up: the person re-authenticated, with the factor used"
-    },
-    "reauth-failure": {
-      "on-failure": "continue",
-      "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)"
-    }
-  },
+  "_comment_audit_events": "#1200/#1201 (epic #1208) — the audit event registry and vocabulary, keyed by event. Names are {target}-{action}, hyphens only, matching the permission slug where the action is the one the permission authorizes; the code's names are generated from configuration into src/utils/auditEventNames.generated.ts. #1638: every event is declared on its permission entry (ngdpbase.permissions.definitions.<name>.audit); an event that is a record rather than an action anyone may be granted (system-start, authentication-failed, job-*) is an entry with grantable: false. This map ships empty: it remains so an app-custom-config.json written before #1638 still overrides an event here (warned at boot). A name is declared in exactly one place. on-failure: what happens when the record cannot be written — refuse (the action must not complete unless the record does; the write is flushed to the device first) or continue (the action proceeds, the lost record is counted and surfaced). How important an event is lives on each record as severity; this field is only failure handling (#1218). enabled: whether the emitter fires; omitted means true; false is a decision on the record. description: one line, shown in the admin filter and the documented table. A map, not an array, so app-custom-config.json overrides one entry and null removes one. Configuration is authoritative: code emits what this names and honours the on-failure rule it declares; npm run lint:audit fails when the two disagree. See docs/audit-posture.md.",
+  "ngdpbase.audit.events": {},
   "_comment_security_egress": "#1133 — the outbound address boundary. Two CIDR lists, IPv4 and IPv6, evaluated against the address the server actually resolved and connected to, on every redirect hop. NOT a URL list: a URL check cannot be the boundary, because a redirect sends the request somewhere the original URL never named and a name can resolve differently between validation and connection. Loopback, link-local (which covers 169.254.169.254), multicast and Teredo are the MECHANISM and are refused on every profile — no allow entry reaches them, because an editor on your LAN can already reach the LAN but cannot reach 127.0.0.1 on the server. RFC1918, CGNAT and IPv6 unique-local are POLICY: denied by default and openable here, so a home instance can permit its own segment with '192.168.68.0/24' without also permitting 10.0.0.0/8 and in-cluster space. Overlap between the lists is normal and resolves by LONGEST PREFIX — the routing convention, used because the values are routes — with explicit entries beating the built-in defaults at equal length. The lists are reconciled at boot and NOTHING stops the boot (#1144): an allow entry reaching the mechanism is unsatisfiable and dropped, and a range appearing verbatim in both is a prefix-length tie the DENY wins — the operator's stricter statement survives. A range that does not parse as CIDR is the one case with no safe silent resolution, because a malformed deny rule means the restriction was never applied; it is reported loudly and #1152 will make it block serving.",
   "ngdpbase.security.egress.denied-ranges": [],
   "_comment_security_headers": "#1488 — browser security headers on every response: X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, and a Content-Security-Policy of object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'. It has no script-src: the views still use inline scripts and handlers, and the nonce-based script policy is #1489. csp-mode: 'report-only' (default — the browser reports what would be blocked and blocks nothing), 'enforce' (Content-Security-Policy plus X-Frame-Options SAMEORIGIN; frames from other sites and cross-origin form posts are then refused), or 'off'. Read per request.",
@@ -1789,7 +1612,7 @@
     "allowedAuthMethods",
     "avatar"
   ],
-  "_comment_permissions": "Canonical permission registry, and the one declaration of each action (#1638: a permission and its action are one thing). Format: {target}-{action}, target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). The key is the permission name. Each entry: description, icon (Font Awesome name), color (hex), and optionally audit — { on-failure: refuse | continue, enabled, description } — when using the permission is recorded (the event shares the permission's name; see ngdpbase.audit.events for the rules), and step-up: true when using it needs a fresh sign-in within ngdpbase.auth.step-up.max-age-minutes. An add-on declares its permissions, their audit and their step-up the same way in its config/default-config.json.",
+  "_comment_permissions": "Canonical permission registry, and the one declaration of each action (#1638: a permission and its action are one thing). Format: {target}-{action}, target-first, hyphen-separated (URL-safe, matches the 'permissions' array in role definitions). The key is the permission name. Each entry: description, icon (Font Awesome name), color (hex), and optionally audit — { on-failure: refuse | continue, enabled, description } — when using the permission is recorded (the event shares the permission's name; see ngdpbase.audit.events for the rules), and step-up: true when using it needs a fresh sign-in within ngdpbase.auth.step-up.max-age-minutes. grantable: false marks an entry that declares a record, not an action anyone may hold (system-start, job-failed, authentication-failed): never offered to an app as a scope, listed as grantable (roles matrix, permission listings), or in the CorePermission type, and no shipped policy grants one (#1638 slice 3). Omitted means true. An add-on declares its permissions, their audit and their step-up the same way in its config/default-config.json.",
   "ngdpbase.permissions.definitions": {
     "page-read": {
       "description": "View pages",
@@ -1884,10 +1707,32 @@
         "description": "File deleted; destruction"
       }
     },
-    "share-manage": {
-      "description": "Create, list and revoke your own share links — hand out anonymous read access to content you may read (#1224)",
+    "share-create": {
+      "description": "Create share links — hand out anonymous read access to content you may read — and see your own (#1224, #1638)",
       "icon": "share-alt",
-      "color": "#20c997"
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link created; mints an anonymous-access credential, the same shape as token-mint"
+      }
+    },
+    "share-extend": {
+      "description": "Extend your own share links (#1638)",
+      "icon": "clock",
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link's lifetime extended by its issuer, by up to 24 hours (#1388)"
+      }
+    },
+    "share-revoke": {
+      "description": "Revoke your own share links; revoking anyone's also needs admin-system (#1638)",
+      "icon": "ban",
+      "color": "#20c997",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Share link revoked; pairs with token-revoke"
+      }
     },
     "profile-manage": {
       "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
@@ -2029,6 +1874,299 @@
       "description": "Role management",
       "icon": "shield-alt",
       "color": "#dc3545"
+    },
+    "comment-delete": {
+      "description": "Comment marked deleted; who removed it and whose it was (#1232)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "footnote-edit": {
+      "description": "A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "page-link-rewrite": {
+      "description": "Inbound links rewritten after a rename",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "token-revoke": {
+      "description": "Agent token revoked",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "authentication-success": {
+      "description": "Sign-in succeeded",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "authentication-failed": {
+      "description": "Sign-in failed",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "authentication-logout": {
+      "description": "User signed out",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "authorization-deny": {
+      "description": "Access denied",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "authorization-allow": {
+      "description": "Access granted; emitter exists, nothing in production calls it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "policy-evaluate": {
+      "description": "Security policy evaluated; emitter exists, nothing in production calls it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "security-event": {
+      "description": "Security violation detected; the kind is in metadata.securityEventType",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "share-access": {
+      "description": "Share link used; batched counts for keyword links, one record per page or file opened through a vault link (#1388)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "system-start": {
+      "description": "Instance started; reports whether the previous run ended cleanly",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "system-shutdown": {
+      "description": "Instance shut down cleanly; its absence before the next start is the signal",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "config-change": {
+      "description": "Configuration changed by an administrator; standard so a broken audit configuration can still be repaired from the UI",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "manager-state-change": {
+      "description": "A manager changed state: degraded, disabled, failed or recovered",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "posture-recorded": {
+      "description": "Security posture at startup, compared against the previous start",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "job-started": {
+      "description": "A background job started, and who asked for it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "job-completed": {
+      "description": "A background job finished successfully",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "job-failed": {
+      "description": "A background job failed",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "page-raw-edit": {
+      "description": "Edit a page's raw file in the admin raw editor — bypasses the page editor's checks (#1638)",
+      "icon": "file-code",
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Page edited through the admin raw editor"
+      }
+    },
+    "session-revoke": {
+      "description": "End another person's signed-in session (#1638)",
+      "icon": "user-slash",
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "continue",
+        "description": "Session revoked by an administrator"
+      }
+    },
+    "session-clear-anonymous": {
+      "description": "Anonymous sessions cleared",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "store-takeout": {
+      "description": "A whole private store downloaded by its owner, DECRYPTED; who took it, which store, and how much left",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "store-import": {
+      "description": "A takeout imported into its owner's private store; a bulk write — who, which store, pages and files written or skipped",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "config-reset": {
+      "description": "Every custom configuration value discarded; recorded before the reset, which cannot proceed without it",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "backup-create": {
+      "description": "A full backup written; where it went and who asked",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "audit-export": {
+      "description": "Export the audit trail to a file (#1638)",
+      "icon": "file-export",
+      "color": "#dc3545",
+      "audit": {
+        "on-failure": "continue",
+        "description": "The audit trail exported to a file; who took a copy, in what format, with what filter"
+      }
+    },
+    "audit-chain-restart": {
+      "description": "Hash chain restarted, with the reason; the marker is the action and cannot half-complete",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "oidcauthorize-allow": {
+      "description": "OpenID Connect: an app's sign-in request was allowed and a code issued (#1575)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidcauthorize-deny": {
+      "description": "OpenID Connect: an app's sign-in request was refused (denied consent, sign-in required, bad request)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidctoken-issue": {
+      "description": "OpenID Connect: tokens issued to an app, with the grant type that earned them",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidctoken-error": {
+      "description": "OpenID Connect: the token endpoint refused an app's request",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidctoken-reuse": {
+      "description": "OpenID Connect: a used code or refresh token was presented again; its grant was revoked (possible replay)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidctoken-revoke": {
+      "description": "OpenID Connect: an access or refresh token was destroyed",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidcgrant-revoke": {
+      "description": "OpenID Connect: an app's grant and every token under it were revoked",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidcuserinfo-error": {
+      "description": "OpenID Connect: UserInfo refused a request (bad, expired or revoked token, unknown account)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "oidcserver-error": {
+      "description": "OpenID Connect: the provider failed while handling a request",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "reauth-prompt": {
+      "description": "Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "reauth-success": {
+      "description": "Step-up: the person re-authenticated, with the factor used",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "reauth-failure": {
+      "description": "Step-up: a re-authentication failed (wrong password, another person's passkey, throttled)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
     }
   },
   "_comment_roles": "#1431 — Role definitions declare which roles EXIST and how they are shown: name, displayname, description, issystem, icon, color. They do NOT say what a role permits. That is `ngdpbase.access.policies` below, the only grant path, resolved at the moment of each decision. The inline `permissions[]` arrays that used to sit here were a display copy this comment asked operators to keep matched by hand (#713); they drifted, so the admin matrix and the user summary now DERIVE the table from the policies (src/utils/rolePermissions.ts). Role names are ALL LOWERCASE. Adding a role here grants it nothing until a policy names it. Optional idle-timeout-minutes on a role shortens the session idle limit for its holders (#1546); none ships with one. required-aal (1-3) is the NIST assurance level a sign-in must reach to hold the role (#1523); a person needs the highest among their roles; anonymous has none. admin and user-admin ship at 2 (since passkeys, #448), every other role at 1. In a session signed in below a role's level the role STEPS DOWN: the person acts without it, and a banner offers the passkey sign-in or enrolment (decided 2026-10-03). A shipped level no available factor reaches (no explicit https base-url, so no passkeys) acts at what is reachable and marks AuthManager degraded; a level set in app-custom-config.json that no factor reaches refuses the boot.",
@@ -2150,7 +2288,9 @@
         "media-read",
         "asset-upload",
         "asset-delete",
-        "share-manage",
+        "share-create",
+        "share-extend",
+        "share-revoke",
         "token-mint",
         "asset-edit",
         "search-page",
@@ -2162,6 +2302,9 @@
         "admin-roles",
         "admin-read",
         "admin-system",
+        "page-raw-edit",
+        "session-revoke",
+        "audit-export",
         "config-manage",
         "secret-reveal",
         "profile-manage",
@@ -2265,7 +2408,9 @@
         "media-read",
         "asset-upload",
         "asset-delete",
-        "share-manage",
+        "share-create",
+        "share-extend",
+        "share-revoke",
         "token-mint",
         "search-page",
         "profile-manage",
@@ -2393,7 +2538,9 @@
         "asset-upload",
         "asset-edit",
         "asset-delete",
-        "share-manage"
+        "share-create",
+        "share-extend",
+        "share-revoke"
       ]
     },
     {

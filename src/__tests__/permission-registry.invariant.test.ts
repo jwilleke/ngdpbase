@@ -29,6 +29,7 @@
 import { describe, test, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { grantablePermissionNames } from '../utils/permissionCatalog';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
@@ -47,7 +48,10 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   // hasPermission with the subject forwarded, and both name the permission
   // as their second / third argument.
   /\bpermitted\(\s*\w+,\s*'([^']+)'/g,
-  /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g
+  /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g,
+  // #1638: ShareManager asks policy inside a vault (permitsInVault) for the
+  // owner's share-create / share-extend.
+  /\bpermitsInScope\(\s*[^,]+,\s*'([^']+)'/g
 ];
 
 /**
@@ -122,8 +126,8 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 
 function registryPermissions(): string[] {
   const config = JSON.parse(fs.readFileSync(CONFIG, 'utf8')) as Record<string, unknown>;
-  const defs = config['ngdpbase.permissions.definitions'] as Record<string, unknown> | undefined;
-  return Object.keys(defs ?? {});
+  // #1638: a record (grantable: false) is not an action, so nothing enforces it.
+  return grantablePermissionNames(config['ngdpbase.permissions.definitions']);
 }
 
 /** Every string reaching an enforcement call site across `src/`. */

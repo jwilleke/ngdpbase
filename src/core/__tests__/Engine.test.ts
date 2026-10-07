@@ -179,6 +179,19 @@ describe('Engine', () => {
       expect(mgr2.shutdown).toHaveBeenCalled();
     });
 
+    test('shuts managers down in reverse registration order, so a later one stops before what it depends on', async () => {
+      const order: string[] = [];
+      const recording = (name: string): BaseManager => (({ name, shutdown: vi.fn(() => { order.push(name); return Promise.resolve(); }) }));
+      engine.registerManager('DatabaseManager', recording('DatabaseManager'));
+      engine.registerManager('PolicyDecisionPoint', recording('PolicyDecisionPoint'));
+      engine.registerManager('AddonsManager', recording('AddonsManager'));
+      await engine.initialize({});
+
+      await engine.shutdown();
+
+      expect(order).toEqual(['AddonsManager', 'PolicyDecisionPoint', 'DatabaseManager']);
+    });
+
     test('marks engine as not initialized', async () => {
       await engine.initialize({});
       await engine.shutdown();
