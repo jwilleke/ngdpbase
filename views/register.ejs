@@ -63,7 +63,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // Client-side password confirmation validation
 document.getElementById('confirmPassword').addEventListener('input', function() {
     const password = document.getElementById('password').value;

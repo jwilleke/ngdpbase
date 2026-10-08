@@ -157,7 +157,7 @@
 }
 </style>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // Store diff data
 const diffData = <%- jsonForScript(diff) %>;
 

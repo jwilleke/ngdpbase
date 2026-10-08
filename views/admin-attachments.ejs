@@ -129,7 +129,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 document.addEventListener('DOMContentLoaded', function() {
     const PER_PAGE = 25;
     let currentPage = 1;
@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
     var btn = document.getElementById('healthScanBtn');
     var out = document.getElementById('healthResults');

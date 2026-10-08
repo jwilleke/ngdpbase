@@ -332,7 +332,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 function startEdit(encodedName) {
     var row = document.getElementById('row-' + encodedName);
     if (!row) return;

@@ -47,7 +47,7 @@ import { resolveSessionSecurity } from './utils/sessionSecurity.js';
 import { resolveSessionSecret } from './utils/sessionSecret.js';
 import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
-import { securityHeaders, cspModeOf } from './utils/securityHeaders.js';
+import { securityHeaders, cspModeOf, newCspNonce } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
 import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
@@ -206,6 +206,10 @@ void (async (): Promise<void> => {
   // configuration once the engine is up; until then it is the shipped default.
   app.disable('x-powered-by');
   app.use((_req: Request, res: Response, next: NextFunction) => {
+    // #1703: a fresh nonce per response. Every inline <script> in the views
+    // carries it (`nonce="<%= locals.cspNonce %>"`), so a strict script-src
+    // (#1705) can allow exactly those and refuse an injected one.
+    res.locals.cspNonce = newCspNonce();
     const configured = engineReady
       ? engine.getManager<{ getProperty(key: string, fallback: unknown): unknown }>('ConfigurationManager')
         ?.getProperty('ngdpbase.security.headers.csp-mode', 'report-only')

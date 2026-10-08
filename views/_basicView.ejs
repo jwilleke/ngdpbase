@@ -40,7 +40,7 @@
       <strong><%= pageName %></strong>. Please update your bookmark.
     </div>
   </div>
-  <script>
+  <script nonce="<%= locals.cspNonce %>">
     // Drop ?from= from the address bar so re-bookmarking captures the canonical
     // URL. The notice has already rendered; this only tidies what the user sees.
     try {
@@ -78,7 +78,7 @@
 .markdown-body h5:hover .section-edit-link,
 .markdown-body h6:hover .section-edit-link { opacity: 1; }
 </style>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 document.addEventListener('DOMContentLoaded', function () {
     var body = document.querySelector('.markdown-body');
     if (!body) return;
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </div>
 <% } %>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 function deletePage(pageName) {
     if (confirm('Are you sure you want to delete this page?')) {
         // #727: state-changing request must carry the CSRF token (#663

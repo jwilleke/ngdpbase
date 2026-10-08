@@ -437,7 +437,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 document.addEventListener('DOMContentLoaded', function() {
     // Handle all configuration save forms via AJAX
     document.querySelectorAll('form[action="/admin/configuration"]').forEach(function(form) {

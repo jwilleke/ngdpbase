@@ -141,7 +141,7 @@ const PREFILL_PATHS = [
   <% PREFILL_PATHS.forEach(function(p) { %><option value="<%= p %>"><% }) %>
 </datalist>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section'];
 var fields = <%- jsonForScript(form?.fields ?? []) %>.map(function(f) { return Object.assign({}, f); });
 

@@ -252,7 +252,7 @@
                 </div>
               </form>
               <div id="takeoutImportResult" class="mt-3" aria-live="polite"></div>
-              <script>
+              <script nonce="<%= locals.cspNonce %>">
                 (function () {
                   var form = document.getElementById('takeoutImportForm');
                   var out = document.getElementById('takeoutImportResult');

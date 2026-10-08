@@ -196,7 +196,7 @@
 
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // When "Custom" radio is selected, build the autoBackupDays value from checked day checkboxes on submit
 document.querySelector('form[action="/admin/backup/config"]').addEventListener('submit', function(e) {
     const customRadio = document.getElementById('days_custom');

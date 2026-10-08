@@ -19,7 +19,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script>hljs.highlightAll();</script>
+    <script nonce="<%= locals.cspNonce %>">hljs.highlightAll();</script>
     <!-- theme-manager.js removed: SimpleThemeManager in header.ejs handles theming (#377) -->
     <!-- Page Link Autocomplete - Issue #90 (loaded globally) -->
     <script src="/js/page-autocomplete.js"></script>
@@ -28,7 +28,7 @@
     <!-- My Links pinned pages - Issue #537 -->
     <script src="/js/my-links.js"></script>
 
-    <script>
+    <script nonce="<%= locals.cspNonce %>">
     // Initialize user preferences if available
     if (typeof currentUser !== 'undefined' && currentUser && currentUser.preferences) {
         window.userPrefs = new UserPreferences(currentUser.preferences);

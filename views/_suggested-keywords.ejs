@@ -25,7 +25,7 @@
     </button>
   <% }); %>
 </div>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
   var wrap = document.getElementById('<%= _kwSetsId %>');
   if (!wrap || wrap.dataset.bound) return;

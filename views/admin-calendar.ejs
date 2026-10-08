@@ -181,7 +181,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 const calAdmin = (function () {
   const modal = new bootstrap.Modal(document.getElementById('calEventModal'));
   const form  = document.getElementById('calEventForm');

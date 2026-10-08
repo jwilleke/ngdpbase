@@ -27,6 +27,8 @@
  * browsers), or `off`. The two plain headers are sent in every mode but off.
  */
 
+import { randomBytes } from 'node:crypto';
+
 export type CspMode = 'report-only' | 'enforce' | 'off';
 
 export const CSP_POLICY = "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'";
@@ -62,3 +64,13 @@ export function securityHeaders(mode: CspMode): Record<string, string> {
 export function untrustedFileHeaders(contentType: string): Record<string, string> {
   return contentType.toLowerCase().startsWith('application/pdf') ? {} : { 'Content-Security-Policy': 'sandbox' };
 }
+
+/**
+ * A fresh nonce for one response's inline scripts (#1703): 128 random bits,
+ * base64, as CSP's `'nonce-…'` source expects. Never reused: a nonce an
+ * attacker can predict or replay is no nonce.
+ */
+export function newCspNonce(): string {
+  return randomBytes(16).toString('base64');
+}
+

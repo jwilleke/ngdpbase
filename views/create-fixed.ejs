@@ -74,7 +74,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // Category checkboxes limitation and validation
     const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
     categoryCheckboxes.forEach(checkbox => {

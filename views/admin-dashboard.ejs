@@ -704,7 +704,7 @@
     </div>
     <% } %>
 
-    <script>
+    <script nonce="<%= locals.cspNonce %>">
     (function() {
         // #776: lazy-load the session list on first expand (don't pay the
         // potentially-large JSON serialisation cost on every admin page render).
@@ -1014,7 +1014,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 async function confirmRestart() {
     if (!confirm('Are you sure you want to restart the system? This will temporarily interrupt service.')) {
         return;
@@ -1304,7 +1304,7 @@ async function dashboardMediaRebuild() {
 </script>
 
 <% if (typeof agentTokenSummary !== 'undefined' && agentTokenSummary) { %>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // #946: admin oversight for delegated agent tokens. Read + revoke only —
 // minting stays with the owner, so a token always traces to a person who
 // chose to delegate. Rows are fetched client-side so no token data is

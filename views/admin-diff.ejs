@@ -68,7 +68,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.56/bundles/js/diff2html.min.js"></script>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 const diffString = <%- jsonForScript(diffString) %>;
 let currentFormat = 'line-by-line';
 
