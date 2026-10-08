@@ -34,7 +34,7 @@ describe('#1635 the PDP decides step-up', () => {
     const d = await pdp.decide(person({ at: 'stale' }), { action: 'account-security' });
     expect(d).toEqual({ permit: false, applicable: true, reason: 'step-up' });
     expect(await pdp.permits(person({ at: 'stale' }), 'account-security')).toBe(false);
-    expect(stepUpNeeded).toHaveBeenCalledWith('account-security', { at: 'stale' }, ['reader'], false);
+    expect(stepUpNeeded).toHaveBeenCalledWith('account-security', { at: 'stale' }, ['reader'], false, undefined, undefined);
   });
 
   test('a fresh sign-in is permitted', async () => {
@@ -55,7 +55,7 @@ describe('#1635 the PDP decides step-up', () => {
   test('a delegated credential never satisfies step-up', async () => {
     const { pdp, stepUpNeeded } = makePdp();
     expect(await pdp.permits(person({ at: 'fresh' }, { viaToken: { id: 't', scopes: ['account-security'] } }), 'account-security')).toBe(false);
-    expect(stepUpNeeded).toHaveBeenLastCalledWith('account-security', { at: 'fresh' }, ['reader'], true);
+    expect(stepUpNeeded).toHaveBeenLastCalledWith('account-security', { at: 'fresh' }, ['reader'], true, undefined, undefined);
   });
 
   test('work with no request (a JobSubject) is not asked: it has no sign-in to be fresh', async () => {

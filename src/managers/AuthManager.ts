@@ -808,12 +808,37 @@ class AuthManager extends BaseManager {
       [role, (!operatorSet && aal > reachable ? Math.max(reachable, 1) : aal) as Aal]));
   }
 
-  /** The level a sign-in must reach for someone holding `roles`: the highest effective level among them (#1523). */
-  requiredAalFor(roles: readonly string[]): Aal {
+  /**
+   * The highest level an account's own allowed sign-in methods reach, never
+   * below 1 (#1690). Operator rule (2026-10-08): whenever an account has no
+   * way to reach AAL2, AAL1 is what its roles require. The site-wide factors,
+   * narrowed to the account's `allowedAuthMethods` (none listed = all).
+   */
+  async aalCapFor(username: string): Promise<Aal> {
+    const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
+    const allowed = user?.allowedAuthMethods;
+    const factors = this.getFactors().filter(f => !allowed || allowed.length === 0 || allowed.includes(f.provider));
+    const reach = factors.some(f => f.primary) ? this.assess(factors).aal : 0;
+    return Math.max(reach, 1) as Aal;
+  }
+
+  /** A role level, lowered to what the account can reach when its cap is known (#1690). */
+  private capped(level: Aal, cap: number | undefined): Aal {
+    return (cap !== undefined && level > cap ? cap : level) as Aal;
+  }
+
+  /**
+   * The level a sign-in must reach for someone holding `roles`: the highest
+   * effective level among them (#1523), never above the account's own cap
+   * when it is known (#1690).
+   */
+  requiredAalFor(roles: readonly string[], cap?: number): Aal {
     const levels = this.effectiveLevels();
     return roles.reduce<Aal>((max, r) => {
       const aal = levels.get(r);
-      return aal !== undefined && aal > max ? aal : max;
+      if (aal === undefined) return max;
+      const level = this.capped(aal, cap);
+      return level > max ? level : max;
     }, 0);
   }
 
@@ -824,11 +849,12 @@ class AuthManager extends BaseManager {
    * enough. Roles without a level are always kept, so a signed-in person keeps
    * `profile-manage` and can reach their profile to enrol.
    */
-  rolesAtSignIn(roles: readonly string[], signInAal: number): { kept: string[]; steppedDown: string[] } {
+  rolesAtSignIn(roles: readonly string[], signInAal: number, cap?: number): { kept: string[]; steppedDown: string[] } {
     const levels = this.effectiveLevels();
     const kept: string[] = [];
     const steppedDown: string[] = [];
-    for (const role of roles) ((levels.get(role) ?? 0) > signInAal ? steppedDown : kept).push(role);
+    // #1690: never more than the account can reach — no way to AAL2 means AAL1.
+    for (const role of roles) (this.capped(levels.get(role) ?? 0, cap) > signInAal ? steppedDown : kept).push(role);
     return { kept, steppedDown };
   }
 
@@ -909,11 +935,11 @@ class AuthManager extends BaseManager {
    * never counts). A delegated credential has no sign-in of its own, so it
    * never satisfies step-up.
    */
-  stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now()): boolean {
+  stepUpNeeded(permission: string, signIn: SignInRecord | undefined, roles: readonly string[], delegated: boolean, now: number = Date.now(), cap?: number): boolean {
     const policy = this.stepUpPolicy();
     if (!policy.permissions.has(permission)) return false;
     if (delegated) return true;
-    const need = Math.max(this.requiredAalFor(roles), 1);
+    const need = Math.max(this.requiredAalFor(roles, cap), 1);
     const since = now - policy.maxAgeMs;
     return !(signIn?.factors ?? []).some((f) => f.aal >= need && Date.parse(f.at) >= since);
   }

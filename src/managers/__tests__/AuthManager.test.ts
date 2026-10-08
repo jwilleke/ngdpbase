@@ -327,6 +327,52 @@ describe('AuthManager', () => {
         expect(manager.rolesAtSignIn(['admin', 'vault-owner'], 2)).toEqual({ kept: ['admin', 'vault-owner'], steppedDown: [] });
       });
 
+      describe('#1690 an account with no way to AAL2 holds its roles at AAL1', () => {
+        const KEY_SITE = { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'key' }] };
+        const withAccount = async (allowedAuthMethods: string[] | undefined) => {
+          const cm = makeConfigManager({ properties: KEY_SITE });
+          const manager = new AuthManager(makeEngine(cm, {
+            RoleManager: { roleRequiredAal: () => ({ admin: 2, reader: 1 }), operatorRequiredAal: () => ({}) },
+            UserManager: { getUser: async () => ({ username: 'admin', allowedAuthMethods }) }
+          }));
+          await manager.initialize();
+          manager.registerProvider(fake('key', { amr: ['swk', 'user'], aal: 2, acr: 'phr', primary: true }));
+          return manager;
+        };
+
+        test('the cap is what the account\'s allowed methods reach, never below 1', async () => {
+          expect(await (await withAccount(['password', 'magic-link'])).aalCapFor('admin')).toBe(1);
+          expect(await (await withAccount(['password', 'key'])).aalCapFor('admin')).toBe(2);
+          expect(await (await withAccount(undefined)).aalCapFor('admin')).toBe(2);
+          expect(await (await withAccount([])).aalCapFor('admin')).toBe(2);
+          expect(await (await withAccount(['nothing-offered'])).aalCapFor('admin')).toBe(1);
+        });
+
+        test('a password session keeps admin when the account cannot reach AAL2', async () => {
+          const m = await withAccount(['password']);
+          const cap = await m.aalCapFor('admin');
+          expect(m.rolesAtSignIn(['admin', 'reader'], 1, cap)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
+          expect(m.requiredAalFor(['admin'], cap)).toBe(1);
+        });
+
+        test('an account that can reach AAL2 still steps down on a password session', async () => {
+          const m = await withAccount(['password', 'key']);
+          const cap = await m.aalCapFor('admin');
+          expect(m.rolesAtSignIn(['admin', 'reader'], 1, cap)).toEqual({ kept: ['reader'], steppedDown: ['admin'] });
+        });
+
+        test('step-up asks for the account\'s level, not one it can never reach', async () => {
+          const cm = makeConfigManager({ properties: { ...KEY_SITE, 'ngdpbase.auth.step-up': { 'max-age-minutes': 5 }, 'ngdpbase.permissions.definitions': { 'config-manage': { description: 'c', 'step-up': true } } } });
+          const m = new AuthManager(makeEngine(cm, { RoleManager: { roleRequiredAal: () => ({ admin: 2 }), operatorRequiredAal: () => ({}) } }));
+          await m.initialize();
+          m.registerProvider(fake('key', { amr: ['swk', 'user'], aal: 2, acr: 'phr', primary: true }));
+          const now = Date.parse('2026-10-08T12:00:00Z');
+          const fresh = { provider: 'password', factors: [{ provider: 'password', amr: ['pwd'], aal: 1, at: new Date(now - 60_000).toISOString() }], amr: [], aal: 1, acr: 'aal1', mfa: false, at: '' };
+          expect(m.stepUpNeeded('config-manage', fresh as never, ['admin'], false, now)).toBe(true);
+          expect(m.stepUpNeeded('config-manage', fresh as never, ['admin'], false, now, 1)).toBe(false);
+        });
+      });
+
       test('an email link never lifts the reachable level', async () => {
         const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'mail' }] });
         manager.registerProvider(fake('mail', { amr: ['email'], aal: 1, primary: false }));
