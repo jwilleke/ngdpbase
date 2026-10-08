@@ -78,7 +78,7 @@
             </a>
         </div>
     </template>
-    <script>
+    <script nonce="<%= locals.cspNonce %>">
     // #1098: the <video> element's inline fallback content only
     // renders for a browser with NO <video> support at all. A
     // browser that has the element but cannot decode the source

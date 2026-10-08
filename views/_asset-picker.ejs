@@ -262,7 +262,7 @@ var _apYearsCatalog  = typeof assetPickerYears !== 'undefined' && Array.isArray(
 </style>
 <% } %>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
     var AP_PAGE_SIZE = 48;
     var _apPage   = 0;      // zero-based page index

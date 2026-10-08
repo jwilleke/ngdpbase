@@ -626,7 +626,7 @@
                 </div>
 <% } %>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // #1456: the current page's name and its action URLs, from the server — a
     // private page lives under /vaults/, so neither can be read off /view/.
     window.ngdpPageName = <%- jsonForScript((typeof pageName !== 'undefined' && pageName) ? pageName : null).replace(/</g, '\\u003c') %>;
@@ -1479,7 +1479,7 @@
 </script>
 
 <!-- Light/Dark Mode Manager (#377 #379) -->
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function() {
     var MODES = ['light', 'dark', 'system'];
     var KEY = 'lightdark-mode';

@@ -180,7 +180,7 @@
     <% } %>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // The whole-vault form's lifetime follows the chosen vault's limit.
     (function () {
         var select = document.getElementById('whole-vault');

@@ -98,7 +98,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 /** Poll /api/admin/jobs/:runId/status until completed or failed. */
 async function pollJobStatus(runId, intervalMs = 1500, maxWaitMs = 600000, onProgress = null) {
     const deadline = Date.now() + maxWaitMs;

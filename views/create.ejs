@@ -137,7 +137,7 @@
 <%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
 <script type="application/json" id="ngdpTitleRule"><%- jsonForScript(typeof titleRule !== 'undefined' ? titleRule : null) %></script>
 <script type="application/json" id="ngdpPrivateStart"><%- jsonForScript(typeof privateStart !== 'undefined' ? privateStart : null) %></script>
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // #1504: the Private box starts as the chosen system-category says, and is
     // hidden for one with no vault. It only sets the start; the person can
     // still change it before creating the page — unless they may only create

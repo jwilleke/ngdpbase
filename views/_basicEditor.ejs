@@ -366,7 +366,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
 
 <%# #1468: the title rule, from utils/pageTitleRule via titleRule — never retyped here. %>
 <script type="application/json" id="ngdpTitleRule"><%- jsonForScript(typeof titleRule !== 'undefined' ? titleRule : null) %></script>
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // Update preview function
     function updatePreview() {
         const content = document.getElementById('content');
@@ -673,7 +673,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
 </script>
 
 <!-- Page Link Autocomplete - Issue #90 / Emoji Autocomplete - Issue #512 -->
-<script>
+<script nonce="<%= locals.cspNonce %>">
     // Wait for PageAutocomplete and EmojiAutocomplete to load (both in footer.ejs)
     function initEditPageAutocomplete() {
         const contentTextarea = document.getElementById('content');
@@ -850,7 +850,7 @@ const jsValue = (v) => JSON.stringify(String(v ?? '')).replace(/</g, '\\u003C');
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // Emoji picker modal — lazy grid rendering (Issue #512)
 function initEmojiPicker() {
     const modal = document.getElementById('emojiPickerModal');
@@ -942,7 +942,7 @@ if (document.readyState === 'loading') {
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
     var modalEl = document.getElementById('assetPickerModal');
     modalEl.addEventListener('shown.bs.modal',  function () { window._apModalOpen = true;  if (typeof window.apRunSearch === 'function') window.apRunSearch(); });
@@ -966,7 +966,7 @@ if (document.readyState === 'loading') {
     the clobber #1061's conflict check exists to prevent. Such a draft is
     still offered (it is the user's own work) but as a divergent copy, with
     the difference stated and restoring made a deliberate click. %>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
     'use strict';
     if (!window.EditorDraft) return;

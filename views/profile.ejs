@@ -726,7 +726,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // Profile page rename prompt
 (function() {
     const profilePageInput = document.getElementById('profilePage');
@@ -923,7 +923,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 // #946: Agent API Tokens card. Entirely client-driven against /api/tokens —
 // the secret is only ever in the one-time mint response, never rendered
 // server-side into the page.
@@ -1051,7 +1051,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <% } %>
 
 <%# #1517: delete an unused vault file, through the attachment door. %>
-<script>
+<script nonce="<%= locals.cspNonce %>">
 (function () {
   document.querySelectorAll('[data-delete-unused]').forEach(function (button) {
     button.addEventListener('click', async function () {
