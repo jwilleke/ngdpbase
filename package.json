@@ -139,7 +139,6 @@
     "markdown-it-sub": "^2.0.0",
     "markdown-it-sup": "^2.0.0",
     "markdown-it-task-lists": "^2.1.1",
-    "markdownlint": "^0.41.1",
     "micromatch": "^4.0.8",
     "minimatch": "^10.2.6",
     "multer": "^2.4.0",
@@ -224,7 +223,8 @@
       "@pm2/js-api": {
         "ws": "7.5.11"
       }
-    }
+    },
+    "katex": "^0.18.2"
   },
   "engines": {
     "node": ">=24.0.0",
