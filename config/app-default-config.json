@@ -57,6 +57,8 @@
   "_comment_database": "#1536 — the application database, the one door for managers that store rows. provider: none (default; nothing in core stores rows yet) | sqlite. The file is encrypted with SQLCipher when NGDPBASE_DATABASE_KEY is set in the environment or the instance .env (never in config); without it the file is plain SQLite and boot says so. Must be on local disk: boot refuses a network filesystem (WAL needs shared memory).",
   "ngdpbase.database.provider": "none",
   "ngdpbase.database.file": "${FAST_STORAGE}/ngdpbase.db",
+  "_comment_database_busy_timeout": "#1710 — how long a database statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with SQLITE_BUSY. Applies to the application database and every add-on database. 5000 is the SQLite driver's own default, now stated. A whole number, 0 or more; anything else refuses to start.",
+  "ngdpbase.database.busy-timeout-ms": 5000,
   "ngdpbase.session.max-age": 86400000,
   "_comment_session_idle": "#1546 — end a signed-in session after this many minutes with no request; 0 = off. Enforced server-side on the next request. Separate from max-age (the absolute lifetime): a value at or above it has no effect. Read per request, so no restart. Regulated guides: PCI DSS 4.0 8.2.8 15 minutes; NIST SP 800-63B-4 AAL2 60, AAL3 15. A role may set a SHORTER limit with idle-timeout-minutes on its entry in ngdpbase.roles.definitions; a person gets the shortest among the site value and their roles, never a longer one. The page warns shortly before sign-out with a Stay signed in button.",
   "ngdpbase.session.idle-timeout-minutes": 0,

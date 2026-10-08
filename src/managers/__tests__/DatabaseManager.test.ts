@@ -55,6 +55,22 @@ describe('DatabaseManager (#1536)', () => {
     expect(manager.isEnabled()).toBe(false);
   });
 
+  test('ngdpbase.database.busy-timeout-ms reaches the application database and every add-on database (#1710)', async () => {
+    process.env[DATABASE_KEY_ENV] = 'test-key-not-a-secret';
+    const manager = await started({ 'ngdpbase.database.provider': 'sqlite', 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db'), 'ngdpbase.database.busy-timeout-ms': 2500 });
+    type P = { pragma(sql: string, o: { simple: true }): unknown };
+    expect(manager.getHandle<P>().pragma('busy_timeout', { simple: true })).toBe(2500);
+    const addon = manager.openAddonDatabase<P>('accounting', { migrations: [], ledgerTable: 'accounting_schema_migrations' });
+    expect(addon.pragma('busy_timeout', { simple: true })).toBe(2500);
+    await manager.shutdown();
+  });
+
+  test('a busy-timeout that is not a whole number of milliseconds refuses to start, naming the key (#1710)', async () => {
+    for (const bad of [-1, 1.5, '5000', null]) {
+      await expect(started({ 'ngdpbase.database.provider': 'sqlite', 'ngdpbase.database.file': path.join(dir, 'ngdpbase.db'), 'ngdpbase.database.busy-timeout-ms': bad })).rejects.toThrow(/busy-timeout-ms/);
+    }
+  });
+
   test('an unknown provider refuses to start, naming the choices', async () => {
     await expect(started({ 'ngdpbase.database.provider': 'postgres' })).rejects.toThrow(/'sqlite' or 'none'/);
   });

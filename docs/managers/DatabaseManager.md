@@ -1,7 +1,7 @@
 ---
 name: DatabaseManager
 description: "The one door to the application database: an optional SQLite file, encrypted with SQLCipher when a key is set, with a dated migration ledger"
-dateModified: '2026-10-07'
+dateModified: '2026-10-08'
 category: managers
 code: src/managers/DatabaseManager.ts
 ---
@@ -17,6 +17,7 @@ The one door to the application database ([#1536](https://github.com/jwilleke/ng
 
 - `ngdpbase.database.provider` — `none` (default) or `sqlite`. Nothing in core stores rows yet, so no database is opened by default; the first user will be the database audit provider ([#1537](https://github.com/jwilleke/ngdpbase/issues/1537)). Any other value refuses to start.
 - `ngdpbase.database.file` — the SQLite file, default `${FAST_STORAGE}/ngdpbase.db`.
+- `ngdpbase.database.busy-timeout-ms` — how long a statement waits, in milliseconds, for a lock another connection holds (a second pod during a rolling update, a long read) before failing with `SQLITE_BUSY`. Default `5000`, the driver's own default, stated ([#1710](https://github.com/jwilleke/ngdpbase/issues/1710)). Applies to the application database and every add-on database. A value that is not a whole number, 0 or more, refuses to start.
 - `NGDPBASE_DATABASE_KEY` — the SQLCipher key, from the environment or the instance `.env`, never from config. Without it the file is plain SQLite and boot logs a warning.
 
 ## What boot refuses

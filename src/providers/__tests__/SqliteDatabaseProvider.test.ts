@@ -112,6 +112,15 @@ describe('SqliteDatabaseProvider (#1536)', () => {
     q.close();
   });
 
+  test('the lock wait is the configured one, else the stated 5000 ms default (#1710)', () => {
+    const p = new SqliteDatabaseProvider(file, KEY, [CREATE], 'schema_migrations', { busyTimeoutMs: 1234 });
+    expect(p.handle.pragma('busy_timeout', { simple: true })).toBe(1234);
+    p.close();
+    const q = new SqliteDatabaseProvider(file, KEY, [CREATE]);
+    expect(q.handle.pragma('busy_timeout', { simple: true })).toBe(5000);
+    q.close();
+  });
+
   test('the ledger table name must be a plain name', () => {
     const p = new SqliteDatabaseProvider(file, KEY, []);
     expect(() => runMigrations(p.handle, [], 'x; DROP TABLE y')).toThrow(/not a plain name/);
