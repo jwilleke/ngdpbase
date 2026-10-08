@@ -177,6 +177,7 @@
     "@typescript-eslint/parser": "^8.71.0",
     "@vitest/coverage-v8": "^5.0.3",
     "baseline-browser-mapping": "^2.11.27",
+    "commonmark-spec": "0.31.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-formatter-summary": "^2.0.2",
