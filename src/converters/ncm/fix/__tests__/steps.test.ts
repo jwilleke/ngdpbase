@@ -12,6 +12,7 @@ import { jspwikiIndent } from '../jspwikiIndent.js';
 import { moreInformationFooter } from '../moreInformationFooter.js';
 import { bulletMarkers } from '../bulletMarkers.js';
 import { tightenLists } from '../tightenLists.js';
+import { jspwikiLinkLeftovers } from '../jspwikiLinkLeftovers.js';
 import { FIX_STEPS, runFixes, selectFixSteps } from '../index.js';
 
 describe('jspwiki-code-markers', () => {
@@ -517,6 +518,41 @@ describe('jspwiki-indent (#1342)', () => {
   it('is idempotent', () => {
     const once = run('x\n;:a\n;:b\ny').content;
     expect(run(once).lines).toEqual([]);
+  });
+});
+
+describe('jspwiki-link-leftovers (#1492)', () => {
+  const apply = (md: string) => jspwikiLinkLeftovers.apply(md);
+  const url = 'https://www.example.org/data-breaches';
+
+  it('url(url) and url(url|target=\'_blank\') with the same address become the address', () => {
+    expect(apply(`See ${url}(${url}) now`).content).toBe(`See ${url} now`);
+    expect(apply(`See ${url}(${url}|target='_blank') now`).content).toBe(`See ${url} now`);
+    expect(apply(`See ${url}(${url}|target="_blank")`).lines).toEqual([1]);
+  });
+
+  it('a Markdown link destination loses the JSPWiki attribute', () => {
+    expect(apply(`Read [the report](${url}|target='_blank') today`).content).toBe(`Read [the report](${url}) today`);
+    expect(apply(`Title on the line above](${url}|target='_blank') - captured`).content).toBe(`Title on the line above](${url}) - captured`);
+  });
+
+  it('leaves two different addresses, a split wiki link, and parentheses inside an address', () => {
+    const different = `${url}(https://other.example.org/)`;
+    expect(apply(different).lines).toEqual([]);
+    expect(apply(`|${url}|target='_blank']`).lines).toEqual([]);
+    expect(apply('https://en.wikipedia.org/wiki/Gold_(element)').lines).toEqual([]);
+    expect(apply(`[Text|${url}|target='_blank']`).lines).toEqual([]);
+  });
+
+  it('never touches code', () => {
+    expect(apply(`\`${url}(${url})\``).lines).toEqual([]);
+    expect(apply(`\`\`\`\n${url}(${url})\n\`\`\``).lines).toEqual([]);
+    expect(apply(`\`a\` ${url}(${url}) \`b\``).content).toBe(`\`a\` ${url} \`b\``);
+  });
+
+  it('is idempotent', () => {
+    const once = apply(`${url}(${url}) and [x](${url}|target='_blank')`).content;
+    expect(apply(once).lines).toEqual([]);
   });
 });
 
