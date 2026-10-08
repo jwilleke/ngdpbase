@@ -45,6 +45,7 @@ import {
 } from './utils/sessionSecret.js';
 import { ensureInstanceEnvSecret, nodeInstanceEnvFs as instanceEnvFs } from './utils/instanceEnvSecret.js';
 import { secureExistingSecretFile } from './utils/secretFileMode.js';
+import { becomeRunAsUser } from './utils/runAsUser.js';
 import { CREDENTIALS_KEY_ENV } from './providers/BaseCredentialsProvider.js';
 
 const rootEnvPath = path.join(process.cwd(), '.env');
@@ -73,6 +74,20 @@ dotenv.config({
 });
 
 dotenv.config({ path: rootEnvPath, quiet: true });
+
+/**
+ * #1693: become the configured run-as user (PUID/PGID) before anything below
+ * writes a file — or refuse. Started as root, it re-owns the instance data
+ * folder and switches; started as anyone else, it must already be that user.
+ * `src/utils/runAsUser.ts` has the rule.
+ */
+try {
+  const runAs = becomeRunAsUser(process.env, resolveInstanceDataDir(), process.env.SLOW_STORAGE);
+  for (const note of runAs?.notes ?? []) console.warn(note);
+} catch (err) {
+  console.error('🔥🔥🔥 FATAL: ' + (err as Error).message);
+  process.exit(1);
+}
 
 /**
  * #1194: `NGDPBASE_SESSION_SECRET` MUST be defined in `.env`. If none of the

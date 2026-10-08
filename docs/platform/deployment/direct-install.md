@@ -1,5 +1,7 @@
 # Direct install
 
+> __Run-as user (required):__ set `PUID` / `PGID` in `.env` to your own ids (`id -u`, `id -g`; macOS typically `501` / `20`). The server refuses to start without them, or as a different user — see [Run-as user](../../guides/bootstrap-developer-guide.md#run-as-user-puidpgid) ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
+
 Recommended for most operators. Runs ngdpbase as a regular Node.js process on a single machine.
 
 See [../Deployment.md](../Deployment.md) for project-scope context and how this mode compares to the other two.

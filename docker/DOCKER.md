@@ -128,7 +128,7 @@ open http://localhost:3000
 The `docker-setup.sh` script automatically:
 
 - Creates required directories
-- Configures `docker/.env` with your current user's UID/GID
+- Configures `docker/.env` with your current user's ids as `PUID`/`PGID` (1000:1000 when run as root)
 - Optionally creates production config
 - Validates Docker installation
 
@@ -145,9 +145,9 @@ mkdir -p pages data logs sessions
 # 3. Configure environment (port and user permissions)
 cp docker/.env.example docker/.env
 
-# Set your current user's UID/GID to avoid permission issues (Linux/macOS)
-echo "UID=$(id -u)" >> docker/.env
-echo "GID=$(id -g)" >> docker/.env
+# Set the run-as user (#1693) — required; 1000:1000 is the standard default
+echo "PUID=$(id -u)" >> docker/.env
+echo "PGID=$(id -g)" >> docker/.env
 
 # Optional: Change port if 3000 is in use
 # Edit docker/.env and set HOST_PORT=8080
@@ -603,7 +603,7 @@ __Auto-Creation Behavior:__
 
 - Docker Compose will automatically create the `data/` directory
 - Subdirectories are created automatically by the application
-- __Best practice:__ Pre-create `data/` and configure UID/GID before first run
+- __Best practice:__ Pre-create `data/` and set `PUID`/`PGID` before first run
 
 __Recommended setup:__
 
@@ -611,75 +611,25 @@ __Recommended setup:__
 # Create the data directory
 mkdir -p data
 
-# Configure UID/GID to match your user (recommended)
-# See "User Permissions (UID/GID)" section below
+# Set PUID/PGID (required)
+# See "Run-as user (PUID/PGID)" below
 ```
 
-### User Permissions (UID/GID)
+### Run-as user (PUID/PGID)
 
-Why this matters:
+`PUID` and `PGID` are __required__: the server refuses to start without them, and it never runs as root ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). The standard default is `1000:1000`, which `docker/.env.example` and `docker-compose.yml` ship. The full rule is in [the bootstrap guide](../docs/guides/bootstrap-developer-guide.md#run-as-user-puidpgid).
 
-- Files created by the container need to match your host user permissions
-- Without proper UID/GID configuration, you may get "permission denied" errors
-- Or files may be owned by root, making them hard to edit on the host
-
-Solution: Configure UID/GID in .env file
-
-Docker Compose is configured to run as `UID:GID` specified in your `.env` file (default: 1000:1000).
-
-#### Option 1: Auto-configure with your current user (Recommended)
+- __Started as root__ (plain `docker run`, the shipped Compose file): the server gives the data folder to `PUID:PGID` if it isn't already theirs, switches to that user, then starts.
+- __Started directly as the user__ (Compose `user: "1000:1000"`, Kubernetes `runAsUser`): `PUID`/`PGID` must be the same ids, or it refuses and says what to set.
 
 ```bash
-# Copy example and add your current user's UID/GID
-cp .env.example .env
-echo "UID=$(id -u)" >> .env
-echo "GID=$(id -g)" >> .env
-
-# Start with your user permissions
-docker-compose up -d
+# Match your host user (macOS typically 501:20)
+echo "PUID=$(id -u)" >> docker/.env
+echo "PGID=$(id -g)" >> docker/.env
+docker compose up -d
 ```
 
-#### Option 2: Manually set UID/GID
-
-```bash
-# Find your UID and GID
-id -u  # Shows your UID (e.g., 1000 or 501)
-id -g  # Shows your GID (e.g., 1000 or 20)
-
-# Edit .env file and set:
-# UID=1000
-# GID=1000
-```
-
-#### Option 3: Set at runtime
-
-```bash
-# Override without editing .env
-UID=$(id -u) GID=$(id -g) docker-compose up -d
-```
-
-#### Common UID/GID values
-
-| Platform | First User | Notes |
-| ---------- | ----------- | ------- |
-| Linux | 1000:1000 | Standard first user |
-| macOS | 501:20 | Standard first user |
-| Docker default | 1000:1000 | Built-in 'node' user |
-
-#### Troubleshooting Permissions
-
-If you see permission errors:
-
-```bash
-# Check current ownership
-ls -la pages/ data/ logs/
-
-# Fix ownership to match your .env UID/GID
-sudo chown -R $(id -u):$(id -g) pages data logs sessions
-
-# Restart container
-docker-compose restart
-```
+On an NFS share that maps every file to one owner, use that owner's ids (for example `PUID=977`, `PGID=988`). Set them in the container's environment rather than in the volume's `.env`: a root start may not be able to read that file.
 
 ### Using Named Volumes
 

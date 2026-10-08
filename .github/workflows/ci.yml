@@ -292,6 +292,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # #1693: the server and its scripts refuse to start without PUID/PGID,
+      # and a non-root process must already be that user — the runner's own ids.
+      - name: Run-as user
+        run: |
+          echo "PUID=$(id -u)" >> "$GITHUB_ENV"
+          echo "PGID=$(id -g)" >> "$GITHUB_ENV"
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -378,6 +385,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      # #1693: the server and its scripts refuse to start without PUID/PGID,
+      # and a non-root process must already be that user — the runner's own ids.
+      - name: Run-as user
+        run: |
+          echo "PUID=$(id -u)" >> "$GITHUB_ENV"
+          echo "PGID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v7

@@ -1,5 +1,7 @@
 # Installation System - Comprehensive Testing Results
 
+> Historical: a test report from 2025-12-06, kept for the record. Not current guidance — see the [bootstrap guide](../guides/bootstrap-developer-guide.md).
+
 __Date:__ 2025-12-06
 __Status:__ ✅ PASSED - Installation system fully operational
 __Tested Version:__ v1.3.3

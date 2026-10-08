@@ -800,12 +800,13 @@ class VersioningFileProvider extends FileSystemProvider {
     this.pagesVersionsDir = path.join(this.pagesDirectory, this.privateStoreLayout.versionsDir);
     await fs.ensureDir(this.pagesVersionsDir);
 
-    // Create versions subdirectory under required-pages
+    // Legacy history under required-pages is READ if present, never created
+    // (#1693): the shipped required-pages folder is image content, read-only to
+    // the server, and every save writes its history under pages (#1371).
     this.requiredPagesVersionsDir = path.join(
       this.requiredPagesDirectory,
       this.privateStoreLayout.versionsDir
     );
-    await fs.ensureDir(this.requiredPagesVersionsDir);
 
     // Legacy private versions dir = join(versionsdir, privateroot)
     this.privateVersionsDir = legacyPrivateVersionsRoot(
@@ -2428,10 +2429,11 @@ class VersioningFileProvider extends FileSystemProvider {
    * exactly where it came from without the trash layout having to mirror the
    * live one.
    */
-  private getDeletedDirectory(location: 'pages' | 'required-pages' | 'private'): string {
-    const base = location === 'required-pages'
-      ? this.requiredPagesDirectory
-      : this.pagesDirectory;
+  private getDeletedDirectory(_location: 'pages' | 'required-pages' | 'private'): string {
+    // #1693: trash is a write, so it is always under pages — never the shipped
+    // required-pages folder, which is read-only image content. A page indexed
+    // at 'required-pages' (install mode reads the shipped folder) trashes there too.
+    const base = this.pagesDirectory;
 
     if (!base) {
       throw new Error('Storage directories not initialized');

@@ -31,6 +31,15 @@ data:
   # See HEADLESS-DEPLOYMENT-NOTES.md for the gotchas the wizard normally papers over.
   HEADLESS_INSTALL: "true"
 
+  # Run-as user (#1693) — REQUIRED; the server refuses to start without them and
+  # never runs as root. Standard default 1000:1000. Started as root it gives the
+  # data volume to this user and drops to it; with a pod securityContext
+  # runAsUser/runAsGroup these must be the same ids. On NFS that maps every file
+  # to one owner, use that owner (e.g. "977" / "988"), and set them here rather
+  # than in the volume's .env: a root start may not be able to read that file.
+  PUID: "1000"
+  PGID: "1000"
+
   # Where the app stores operational data inside the container.
   # Must match the volumeMount in deployment.yaml.
   INSTANCE_DATA_FOLDER: "/app/data"
