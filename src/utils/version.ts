@@ -251,7 +251,7 @@ function updateChangelogForRelease(newVersion: string): void {
 
     if (/## \[Unreleased\]/.test(changelog)) {
       // Replace [Unreleased] heading, preserving a fresh one above the new entry
-      const replacement = `## [Unreleased]\n\n### Planned\n- Future enhancements\n\n${newHeader}`;
+      const replacement = `## [Unreleased]\n\n### Planned\n\n- Future enhancements\n\n${newHeader}`;
       changelog = changelog.replace(/## \[Unreleased\]/, replacement);
     } else {
       // No [Unreleased] section — insert new version after the header block (first ---)

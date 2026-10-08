@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Future enhancements
 
+## [5.0.0] - 2026-10-08
+
+### ⚠️ Upgrade required — set PUID and PGID first
+
+The server now refuses to start unless `PUID` and `PGID` are set, and it never runs as root ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). Before upgrading, add the run-as user to every install:
+
+- __Bare metal:__ in `.env`, your own ids — `PUID=$(id -u)` and `PGID=$(id -g)` (Linux typically `1000`/`1000`, macOS `501`/`20`).
+- __Docker Compose:__ in `docker/.env` — `PUID=1000` and `PGID=1000` (the standard default), or your own ids. `docker-compose.yml` passes them in; the container starts as root, gives the data folder to that user, and switches to it.
+- __Kubernetes:__ `PUID` / `PGID` in the env ConfigMap, or `runAsUser` / `runAsGroup` with the same ids.
+- __NFS that maps every file to one owner__ (e.g. `977:988`): that owner's ids, set in the container's environment rather than the volume's `.env`.
+
+The full rule, where to set the values on each platform, and what happens when they do not match: [Run-as user (PUID/PGID)](docs/guides/bootstrap-developer-guide.md#run-as-user-puidpgid).
+
+### Fixed
+
+- The container image runs as any non-root UID:GID. Nothing is written under the application folder at runtime: the page-history provider no longer creates `required-pages/versions` ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693), [#1687](https://github.com/jwilleke/ngdpbase/issues/1687))
+- CI starts the image as `977:988` with the versioning page provider, both from root via `PUID`/`PGID` and directly with `--user`, and requires a refusal without them
+
 ## [4.24.0] - 2026-10-08
 
 ### Planned
