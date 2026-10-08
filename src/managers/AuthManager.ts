@@ -80,6 +80,12 @@ export interface FactorEntry {
 }
 
 /** A factor as offered: its entry lowered to what the provider's code gives. */
+/**
+ * Providers that count toward a sign-in level only once the account has
+ * enrolled one (#1690): the provider id, and the credential kind it needs.
+ */
+const ENROLLED_FACTORS: Readonly<Record<string, CredentialKind>> = { passkey: 'passkey' };
+
 export interface Factor {
   provider: string;
   primary: boolean;
@@ -815,11 +821,40 @@ class AuthManager extends BaseManager {
    * narrowed to the account's `allowedAuthMethods` (none listed = all).
    */
   async aalCapFor(username: string): Promise<Aal> {
+    return (await this.aalReachFor(username)).now;
+  }
+
+  /**
+   * What an account can reach now, and what it could reach once it enrols
+   * the factors it is allowed but has not set up (#1690). A factor that has
+   * to be enrolled — a passkey — counts toward `now` only when the account
+   * has one (operator, 2026-10-08: allowed but not enrolled is no way to
+   * AAL2 yet). Both are at least 1. The gap between them is what the account
+   * is told, on every page, to close.
+   */
+  async aalReachFor(username: string): Promise<{ now: Aal; ifEnrolled: Aal }> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
-    const factors = this.getFactors().filter(f => !allowed || allowed.length === 0 || allowed.includes(f.provider));
-    const reach = factors.some(f => f.primary) ? this.assess(factors).aal : 0;
-    return Math.max(reach, 1) as Aal;
+    const offered = this.getFactors().filter(f => !allowed || allowed.length === 0 || allowed.includes(f.provider));
+    const reach = (factors: Factor[]): Aal => Math.max(factors.some(f => f.primary) ? this.assess(factors).aal : 0, 1) as Aal;
+    const usable = offered.filter(f => {
+      const kind = ENROLLED_FACTORS[f.provider];
+      return kind === undefined || this.hasCredential(username, kind);
+    });
+    return { now: reach(usable), ifEnrolled: reach(offered) };
+  }
+
+  /**
+   * The roles an account holds at a lower level than they require only
+   * because it has not enrolled a factor it is allowed (#1690): it acts with
+   * them, and is told on every page to add the factor.
+   */
+  rolesAwaitingEnrolment(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[] {
+    const levels = this.effectiveLevels();
+    return roles.filter(r => {
+      const level = levels.get(r) ?? 0;
+      return level > reach.now && level <= reach.ifEnrolled;
+    });
   }
 
   /** A role level, lowered to what the account can reach when its cap is known (#1690). */

@@ -767,6 +767,8 @@ void (async (): Promise<void> => {
   const authManagerForRoles = engine.getManager('AuthManager') as {
     rolesAtSignIn?(roles: readonly string[], signInAal: number, cap?: number): { kept: string[]; steppedDown: string[] };
     aalCapFor?(username: string): Promise<1 | 2 | 3 | 0>;
+    aalReachFor?(username: string): Promise<{ now: 1 | 2 | 3 | 0; ifEnrolled: 1 | 2 | 3 | 0 }>;
+    rolesAwaitingEnrolment?(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[];
     hasCredential?(username: string, kind: 'passkey'): boolean;
     passkeyRelyingParty?(): unknown;
   } | null;
@@ -851,7 +853,12 @@ void (async (): Promise<void> => {
           // from before sign-ins were recorded counts as AAL1.
           // #1690: never above what this account's allowed sign-in methods can
           // reach — an account with no way to AAL2 holds its roles at AAL1.
-          const aalCap = await authManagerForRoles?.aalCapFor?.(sessionContext.username);
+          const reach = await authManagerForRoles?.aalReachFor?.(sessionContext.username);
+          const aalCap = reach?.now;
+          // #1690: a role held below its level only because no factor is
+          // enrolled — the person keeps it, and every page says to add one.
+          const awaiting = reach ? authManagerForRoles?.rolesAwaitingEnrolment?.(sessionContext.roles ?? [], reach) ?? [] : [];
+          if (awaiting.length > 0) res.locals.aalEnrolNag = { roles: awaiting };
           const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
           if (stepDown && stepDown.steppedDown.length > 0) {
             res.locals.aalStepDown = {

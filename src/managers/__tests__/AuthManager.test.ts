@@ -373,6 +373,42 @@ describe('AuthManager', () => {
         });
       });
 
+      describe('#1690 allowed a passkey but none enrolled: keep the role, nag until one is added', () => {
+        const PASSKEY_SITE = { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'passkey' }] };
+        const withPasskeySite = async (enrolled: boolean) => {
+          const cm = makeConfigManager({ properties: PASSKEY_SITE });
+          const manager = new AuthManager(makeEngine(cm, {
+            RoleManager: { roleRequiredAal: () => ({ admin: 2, reader: 1 }), operatorRequiredAal: () => ({}) },
+            UserManager: { getUser: async () => ({ username: 'admin' }) }
+          }));
+          await manager.initialize();
+          manager.registerProvider(fake('passkey', { amr: ['hwk', 'user'], aal: 2, acr: 'phr', primary: true }));
+          (manager as unknown as { credentials: unknown }).credentials = { list: () => (enrolled ? [{ kind: 'passkey' }] : []) };
+          return manager;
+        };
+
+        test('not enrolled: AAL1 now, AAL2 once enrolled; admin kept and awaiting enrolment', async () => {
+          const m = await withPasskeySite(false);
+          const reach = await m.aalReachFor('admin');
+          expect(reach).toEqual({ now: 1, ifEnrolled: 2 });
+          expect(m.rolesAtSignIn(['admin', 'reader'], 1, reach.now)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
+          expect(m.rolesAwaitingEnrolment(['admin', 'reader'], reach)).toEqual(['admin']);
+        });
+
+        test('enrolled: no nag, and a password session steps admin down as before', async () => {
+          const m = await withPasskeySite(true);
+          const reach = await m.aalReachFor('admin');
+          expect(reach).toEqual({ now: 2, ifEnrolled: 2 });
+          expect(m.rolesAwaitingEnrolment(['admin', 'reader'], reach)).toEqual([]);
+          expect(m.rolesAtSignIn(['admin', 'reader'], 1, reach.now)).toEqual({ kept: ['reader'], steppedDown: ['admin'] });
+        });
+
+        test('barred from passkeys: no nag — there is nothing to enrol', async () => {
+          const m = await withPasskeySite(false);
+          expect(m.rolesAwaitingEnrolment(['admin'], { now: 1, ifEnrolled: 1 })).toEqual([]);
+        });
+      });
+
       test('an email link never lifts the reachable level', async () => {
         const manager = await withRoles({ admin: 2 }, { 'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'mail' }] });
         manager.registerProvider(fake('mail', { amr: ['email'], aal: 1, primary: false }));
