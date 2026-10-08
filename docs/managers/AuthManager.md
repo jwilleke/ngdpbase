@@ -8,6 +8,8 @@ code: src/managers/AuthManager.ts
 
 # AuthManager
 
+The standing rules and the checklist for adding a sign-in method are in [authentication-developer-guide.md](../guides/authentication-developer-guide.md); this page is the methods.
+
 Registers one or more `AuthProvider` instances and delegates authenticate/initiate calls to the appropriate provider. Routes call only AuthManager — never individual providers directly. `ngdpbase.auth.factors` lists the sign-in methods offered, one entry per provider with the `amr` / `aal` / `acr` it gives; configuration may lower those values against what the provider's code declares, never raise them ([#1523](https://github.com/jwilleke/ngdpbase/issues/1523)). `getFactors()` returns the factors actually available, `assess()` what a set of satisfied factors amounts to (combined `amr`, AAL, `acr`, MFA), and a successful `authenticate()` reports the provider and the factors satisfied with their times. `signInRecord(result)` turns that into what the session keeps as `req.session.signIn` — provider, factors, `amr` / `aal` / `acr` / `mfa`, and when — on every sign-in path (password, magic link, Google, Cloudflare Access). Step-up (#1525) and UserInfo (#1529) read it there. A delegated credential never starts a session, so it never gets one. Signing in still uses one factor; the per-role `required-aal` check and the second-factor flow follow under #1523. The retired flat `ngdpbase.auth.required-factors` list is still read from custom config and converted, with a warning.
 
 ## Built-in Providers

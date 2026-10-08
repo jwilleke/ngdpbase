@@ -1,5 +1,7 @@
 # Authentication — planning
 
+The standing rules — how sign-in works today and how to change it — are in [authentication-developer-guide.md](../guides/authentication-developer-guide.md). This page keeps the plans, the decisions behind them, and prior art.
+
 Where authentication in ngdpbase stands, what is planned, in what order, and which questions are still open. Gathered from the GitHub issues on 2026-10-01.
 
 Mostly an index: where an issue holds a design, this page points at it and says how the pieces fit. Two things are recorded here because no issue holds them yet — what YourPHR needs from this work, and the delivery-channel research (2026-10-01). What `AuthManager` does today is [AuthManager.md](../managers/AuthManager.md) and the provider docs it links. How a request is authorised once someone is signed in is [security-posture.md](../security-posture.md) and [access-policies.md](../access-policies.md).
@@ -167,16 +169,7 @@ __`acr` follows NIST strictly__ (operator, 2026-10-02). A sign-in's `acr` is com
 
 __The required level is per role__ (operator, 2026-10-02). Each role declares the assurance level its holders must reach — AAL1, AAL2, AAL3, with phishing resistance as an extra — and a person must meet the __highest__ among their roles. The sign-in's computed `acr` is compared with it; short of it, the next factor is asked for. "Admins need a second factor" becomes the `admin` role's level. Shipped defaults (approved for the catalogue): `admin` and `user-admin` AAL2; `editor`, `contributor`, `reader`, `vault-owner`, `demo-admin` AAL1; `anonymous` none. There is __no "MFA" step__ (operator, 2026-10-02): the levels are NIST's only, so password plus an email link (AAL1) never meets a role at AAL2. Still open: how a known device meets a role above AAL1.
 
-__When a role's level cannot be reached__ (operator, 2026-10-08: "whenever there is no way to be aal2 then aal1 must be set"). Nobody is ever locked out of their roles by a level they have no way to meet:
-
-| Situation | What a password sign-in gets | Where |
-| --- | --- | --- |
-| The site offers no AAL2 method at all (no explicit https `base-url`, so no passkeys) and the level is the shipped default | The roles, at AAL1. AuthManager reports `degraded` and says how to fix it | `effectiveLevels()`, #448 |
-| The site offers no AAL2 method, and the operator set the level in `app-custom-config.json` | The boot refuses and names the role: the operator asked for something the site cannot do | `checkRequiredAal()`, #1523 |
-| The site offers AAL2, but this account's `allowedAuthMethods` exclude every AAL2 method | The roles, at AAL1 | `aalCapFor()`, [#1690](https://github.com/jwilleke/ngdpbase/issues/1690) |
-| AAL2 is available to this account (allowed, offered) | Roles above AAL1 step down for this session. Everything else stays, including the profile, where the banner offers to sign in with a passkey or add one | `rolesAtSignIn()`, #448 |
-
-The same cap applies to step-up: a fresh factor is asked for at the level the account can reach, never above it. Found on The Fairways (v4.23.0): its admin was allowed password, Google and the email link but not passkeys, so with the admin role at AAL2 it lost admin on every page, including the one that could change its methods. Still open: whether an account that is allowed passkeys but has __not enrolled one__ should count as having no AAL2 yet.
+__When a role's level cannot be reached__ (operator, 2026-10-08: "whenever there is no way to be aal2 then aal1 must be set"; an account allowed a passkey but without one is nagged on every page until it adds one). The rule and its cases are standing practice now: [authentication-developer-guide.md](../guides/authentication-developer-guide.md#when-a-roles-level-cannot-be-reached) ([#1690](https://github.com/jwilleke/ngdpbase/issues/1690)).
 
 __Known devices and misclassification__ (operator, 2026-10-02):
 

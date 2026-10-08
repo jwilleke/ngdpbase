@@ -12,6 +12,7 @@ Each file is the door for one area: standing rules, a checklist, pointers, and o
 | Area | Guide |
 | --- | --- |
 | Security | [security-developer-guide.md](security-developer-guide.md) |
+| Authentication | [authentication-developer-guide.md](authentication-developer-guide.md) |
 | Audit | [audit-developer-guide.md](audit-developer-guide.md) |
 | Configuration | [configuration-developer-guide.md](configuration-developer-guide.md) |
 | Bootstrap | [bootstrap-developer-guide.md](bootstrap-developer-guide.md) |

@@ -47,7 +47,7 @@ An addon's `config/default-config.json` is a layer of the configuration merge, b
 1. The handler asks `hasPermission` or `canAccess` for the permission the action *is*. If no permission means that, add one to the catalog; do not borrow a role name.
 2. The context is forwarded, not rebuilt. Addon API routes use `ApiContext.from(req, engine)`.
 3. The refusal answers 401 or 403 by `isAuthenticated`, after policy.
-4. The action's audit event exists, is declared in `ngdpbase.audit.events`, and is emitted at the manager door — see [audit-developer-guide.md](audit-developer-guide.md).
+4. The action's audit event exists, is declared on its permission entry's `audit` block in `ngdpbase.permissions.definitions` ([#1638](https://github.com/jwilleke/ngdpbase/issues/1638)), and is emitted at the manager door — see [audit-developer-guide.md](audit-developer-guide.md).
 5. Tests: refused by policy, allowed by policy with the subject's role name saying otherwise, and the audit record written. Sabotage each once.
 
 ## How you know you are done
@@ -65,6 +65,7 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 ## See also
 
 - [security-posture.md](../security-posture.md) — P1, P2, numbered decisions
+- [authentication-developer-guide.md](authentication-developer-guide.md) — sign-in, levels, step-up
 - [audit-developer-guide.md](audit-developer-guide.md)
 - [configuration-developer-guide.md](configuration-developer-guide.md)
 - `src/context/ActorContext.ts`, `src/utils/subjectMayDo.ts`
