@@ -242,7 +242,7 @@
                     <!-- #448 / #1524: Sign-in methods — the password and every credential -->
                     <% const signInWithPassword = typeof hasPassword !== 'undefined' && hasPassword; %>
                     <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>
-                    <div class="row mb-4">
+                    <div class="row mb-4" id="sign-in-methods">
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-header">

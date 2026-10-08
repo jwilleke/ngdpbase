@@ -600,6 +600,17 @@
                     <div id="aal-stepdown-error" class="w-100 small text-danger d-none"></div>
                 </div>
                 <% } %>
+                <% if (typeof aalEnrolNag !== 'undefined' && aalEnrolNag && aalEnrolNag.roles.length > 0) { %>
+                <%# #1690: the role is held at AAL1 only because no passkey is enrolled. Shown on every page,
+                    never dismissible, until one is (operator, 2026-10-08). %>
+                <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mt-2" role="alert" data-aal-enrol-nag>
+                    <i class="fas fa-key"></i>
+                    <span>
+                        Your <strong><%= aalEnrolNag.roles.join(', ') %></strong> role<%= aalEnrolNag.roles.length === 1 ? ' needs' : 's need' %> a passkey, and you have not added one. You are using <%= aalEnrolNag.roles.length === 1 ? 'it' : 'them' %> with a password alone until you do.
+                    </span>
+                    <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add a passkey now</a>
+                </div>
+                <% } %>
 <%# #1448: this session has not unwrapped the signed-in owner's store key — after
     a restart, typically — so their private pages 404 and are absent from lists.
     About the user's STATE only: it never names a page, because while locked the
