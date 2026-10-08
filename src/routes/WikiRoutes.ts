@@ -6598,7 +6598,7 @@ ${panes}
     if (typeof user.username !== 'string') return this.refuse(wikiContext, req, res, 'page', 'profile-manage');
     const authManager = this.engine.getManager<AuthManager>('AuthManager');
     const next = safeRedirect(req.query.next ?? (req.body as { next?: unknown } | undefined)?.next);
-    const needsPasskey = (authManager?.requiredAalFor(user.roles ?? []) ?? 0) >= 2;
+    const needsPasskey = (authManager?.requiredAalFor(user.roles ?? [], user.aalCap) ?? 0) >= 2;
     const commonData = await this.getCommonTemplateData(req);
     res.set('Cache-Control', 'no-store');
     res.status(view.error ? 401 : 200).render('reauth', {

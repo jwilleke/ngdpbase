@@ -38,7 +38,7 @@ import { vaultOfShare } from '../types/Share.js';
 
 /** The one AuthManager question the PDP asks (#1635); AuthManager owns the freshness rule. */
 interface StepUpDecider {
-  stepUpNeeded?(permission: string, signIn: PermissionSubject['signIn'], roles: readonly string[], delegated: boolean): boolean;
+  stepUpNeeded?(permission: string, signIn: PermissionSubject['signIn'], roles: readonly string[], delegated: boolean, now?: number, cap?: number): boolean;
 }
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
@@ -234,7 +234,7 @@ export class PolicyDecisionPoint extends BaseManager {
     if (!subject || typeof subject !== 'object' || 'resolveRolesNow' in subject) return false;
     const auth = this.engine.getManager<StepUpDecider>('AuthManager');
     if (!auth?.stepUpNeeded) return false;
-    return auth.stepUpNeeded(action, subject.signIn, subject.roles ?? [], Boolean(subject.viaToken || subject.viaShare));
+    return auth.stepUpNeeded(action, subject.signIn, subject.roles ?? [], Boolean(subject.viaToken || subject.viaShare), undefined, subject.aalCap);
   }
 
   /** Does the named issuer of a vault link still hold `action` inside that vault (#1539)? The vault rule, resolved live. */

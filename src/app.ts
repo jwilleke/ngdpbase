@@ -765,7 +765,8 @@ void (async (): Promise<void> => {
   const debugRequests = configManager.getProperty('ngdpbase.logging.debug.requests', false);
 
   const authManagerForRoles = engine.getManager('AuthManager') as {
-    rolesAtSignIn?(roles: readonly string[], signInAal: number): { kept: string[]; steppedDown: string[] };
+    rolesAtSignIn?(roles: readonly string[], signInAal: number, cap?: number): { kept: string[]; steppedDown: string[] };
+    aalCapFor?(username: string): Promise<1 | 2 | 3 | 0>;
     hasCredential?(username: string, kind: 'passkey'): boolean;
     passkeyRelyingParty?(): unknown;
   } | null;
@@ -848,7 +849,10 @@ void (async (): Promise<void> => {
           // steps down — the person acts without it until they sign in strongly
           // enough. One rule, here where the request's roles are set. A session
           // from before sign-ins were recorded counts as AAL1.
-          const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1);
+          // #1690: never above what this account's allowed sign-in methods can
+          // reach — an account with no way to AAL2 holds its roles at AAL1.
+          const aalCap = await authManagerForRoles?.aalCapFor?.(sessionContext.username);
+          const stepDown = authManagerForRoles?.rolesAtSignIn?.(sessionContext.roles ?? [], req.session.signIn?.aal ?? 1, aalCap);
           if (stepDown && stepDown.steppedDown.length > 0) {
             res.locals.aalStepDown = {
               roles: stepDown.steppedDown,
@@ -859,6 +863,7 @@ void (async (): Promise<void> => {
           req.userContext = {
             ...sessionContext,
             ...(stepDown ? { roles: stepDown.kept } : {}),
+            ...(aalCap !== undefined ? { aalCap } : {}),
             ipAddress: req.ip,
             ...(typeof privateStoreHandle === 'string' && privateStoreHandle ? { privateStoreHandle } : {}),
             // #1635: how and when this session signed in, so the PDP decides step-up at the door.
@@ -902,7 +907,8 @@ void (async (): Promise<void> => {
           aal?: number;
         }>;
         getProviders?: () => Array<{ id: string; acceptsBearer?: boolean }>;
-        rolesAtSignIn?: (roles: readonly string[], signInAal: number) => { kept: string[]; steppedDown: string[] };
+        rolesAtSignIn?: (roles: readonly string[], signInAal: number, cap?: number) => { kept: string[]; steppedDown: string[] };
+        aalCapFor?: (username: string) => Promise<1 | 2 | 3 | 0>;
       } | null;
       const candidates = bearerProviderIds(authManager?.getProviders?.() ?? []);
       const token = header.slice('Bearer '.length).trim();
@@ -950,12 +956,14 @@ void (async (): Promise<void> => {
         if (subject) {
           // #1576: a credential that carries its sign-in level holds only the
           // roles that level reaches, as a web session does (#1569).
+          const aalCap = await authManager.aalCapFor?.(result.username);
           const roles = result.aal !== undefined && authManager.rolesAtSignIn
-            ? authManager.rolesAtSignIn(subject.roles, result.aal).kept
+            ? authManager.rolesAtSignIn(subject.roles, result.aal, aalCap).kept
             : subject.roles;
           req.userContext = {
             ...subject,
             roles,
+            ...(aalCap !== undefined ? { aalCap } : {}),
             ipAddress: req.ip,
             // #946: scopes ride on userContext so they reach both the ACL
             // scope gate and the save path (for via-token provenance) through

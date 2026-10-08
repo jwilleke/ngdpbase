@@ -135,6 +135,13 @@ export interface PermissionSubject {
    * decides, not the route in front of it. Never recorded.
    */
   signIn?: import('./AuthManager.js').SignInRecord;
+  /**
+   * The highest level this account's allowed sign-in methods can reach, at
+   * least 1 (#1690). A role's required level never exceeds it: an account
+   * with no way to reach AAL2 holds its roles at AAL1. Set where the request
+   * subject is built, beside `signIn`.
+   */
+  aalCap?: import('../providers/BaseAuthProvider.js').Aal;
 }
 
 /**
