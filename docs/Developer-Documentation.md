@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 41 | 46 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 43 | 44 | Storage and service providers |
+| [Providers](#providers) | 45 | 46 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -179,6 +179,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileAuditProvider | ✅ [doc](providers/FileAuditProvider.md) | Appends audit events to JSONL files on local disk — the default backend |
 | FileBackupProvider | ✅ [doc](providers/FileBackupProvider.md) | Default backup storage provider — local filesystem against ngdpbase.backup.directory (#170) |
 | FileCredentialsProvider | ✅ [doc](providers/FileCredentialsProvider.md) | The credentials store as one signed JSON file beside the user store, written owner-only (#1524) |
+| FileJobStateProvider | ✅ [doc](providers/FileJobStateProvider.md) | Scheduled-job state, run history, checkpoints and slot locks as files in FAST_STORAGE; atomic fsynced writes, exclusive-create locks, refuses NFS/SMB (#1714) |
 | FileLoggingProvider | ✅ [doc](providers/FileLoggingProvider.md) | Default logging provider — winston console + rotating-file transports (#169) |
 | FileOidcAdapter | ✅ [doc](providers/FileOidcAdapter.md) | The embedded OpenID Connect provider's storage — node-oidc-provider's adapter on owner-only JSON files under FAST_STORAGE (#1571) |
 | FileOrganizationProvider | ✅ [doc](providers/FileOrganizationProvider.md) | File-backed Organization storage — one JSON file per organization under data/organizations/ |
@@ -198,6 +199,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
 | SqliteDatabaseProvider | ✅ [doc](providers/SqliteDatabaseProvider.md) | The application database as one SQLite file, SQLCipher-encrypted when NGDPBASE_DATABASE_KEY is set; WAL mode, fsynced, migrated at open (#1536) |
+| SqliteJobStateProvider | ✅ [doc](providers/SqliteJobStateProvider.md) | Scheduled-job state, run history, checkpoints and slot locks in the application database (job_state, job_runs, job_checkpoints, job_leases); lock by one conditional write (#1714) |
 | VersioningFileProvider | 📘 [doc](providers/VersioningFileProvider.md) + [guide](providers/VersioningFileProvider-Complete-Guide.md) | File-based page storage with delta-compressed version history; the default PageManager backend |
 <!-- AUTO:providers-table END -->
 
@@ -341,7 +343,7 @@ __Managers:__ 41/41 with quick-reference docs (100%); 17 with Complete Guides.
 
 __Plugins:__ 32/32 with quick-reference docs (100%).
 
-__Providers:__ 43/43 with quick-reference docs (100%); 5 with Complete Guides.
+__Providers:__ 45/45 with quick-reference docs (100%); 5 with Complete Guides.
 <!-- AUTO:doc-status END -->
 
 See [issue #178](https://github.com/jwilleke/ngdpbase/issues/178) for the doc-coverage tracking issue and [#660](https://github.com/jwilleke/ngdpbase/issues/660) for the discoverability problem this index addresses.

@@ -27,6 +27,25 @@ export const NETWORK_FILESYSTEMS: Readonly<Record<number, string>> = {
 
 export interface StatFsLike { type: number }
 
+/** The network filesystem `target` would live on, or null (#1714: shared by the SQLite and file stores). */
+export function networkFilesystemAt(
+  target: string,
+  statfs: (path: string) => StatFsLike = (p) => statfsSync(p),
+  platform: string = process.platform
+): { name: string; probe: string; type: number } | null {
+  if (platform !== 'linux') return null; // the numbers below are Linux's; elsewhere, unknown = allowed
+  let probe = resolve(target);
+  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+  let type: number;
+  try {
+    type = statfs(probe).type;
+  } catch {
+    return null; // cannot tell: fail open, as for an unrecognised type
+  }
+  const name = NETWORK_FILESYSTEMS[type];
+  return name ? { name, probe, type } : null;
+}
+
 /**
  * Throws, naming the path and the filesystem, when `databaseFile` would be opened on a network
  * filesystem. A file that does not exist yet is judged by the nearest directory that does, since
@@ -37,19 +56,10 @@ export function refuseNetworkFilesystem(
   statfs: (path: string) => StatFsLike = (p) => statfsSync(p),
   platform: string = process.platform
 ): void {
-  if (platform !== 'linux') return; // the numbers below are Linux's; elsewhere, unknown = allowed
-  let probe = resolve(databaseFile);
-  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
-  let type: number;
-  try {
-    type = statfs(probe).type;
-  } catch {
-    return; // cannot tell: fail open, as for an unrecognised type
-  }
-  const name = NETWORK_FILESYSTEMS[type];
-  if (name) {
+  const found = networkFilesystemAt(databaseFile, statfs, platform);
+  if (found) {
     throw new Error(
-      `refusing to start: the SQLite database ${databaseFile} would live on ${name} (${probe}, filesystem type 0x${type.toString(16)}). ` +
+      `refusing to start: the SQLite database ${databaseFile} would live on ${found.name} (${found.probe}, filesystem type 0x${found.type.toString(16)}). ` +
       'SQLite in WAL mode needs shared memory, which network filesystems do not provide — the database would fail to open or corrupt. ' +
       'Put the data directory (FAST_STORAGE) on local disk; backups may still go to the NAS (#1536).'
     );
