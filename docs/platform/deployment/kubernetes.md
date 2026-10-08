@@ -1,5 +1,7 @@
 # Kubernetes
 
+> __Run-as user (required):__ set `PUID` / `PGID` in the env ConfigMap (standard `1000` / `1000`; for NFS that maps every file to one owner, that owner, e.g. `977` / `988`), or use `runAsUser` / `runAsGroup` with the same ids. The server refuses to start without them and never runs as root — see [Run-as user](../../guides/bootstrap-developer-guide.md#run-as-user-puidpgid) ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
+
 For ops teams already running a Kubernetes cluster. Appropriate when your organization already has the K8s tooling, monitoring, and habits to support another workload there.
 
 __Most small organizations do not need this.__ If you're reading this page and the requirements feel like a stretch, [Direct install](./direct-install.md) or [Docker Compose](./docker-compose.md) are almost always simpler and cheaper. You can always move to Kubernetes later once the rest of your stack lives there.

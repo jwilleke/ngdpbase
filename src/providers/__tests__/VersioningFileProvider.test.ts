@@ -103,11 +103,13 @@ describe('VersioningFileProvider', () => {
       expect(provider.deltaStorageEnabled).toBe(true);
     });
 
-    test('should create version directories', async () => {
+    test('creates the pages versions directory, never one under required-pages (#1693)', async () => {
       await provider.initialize();
 
       expect(await fs.pathExists(provider.pagesVersionsDir)).toBe(true);
-      expect(await fs.pathExists(provider.requiredPagesVersionsDir)).toBe(true);
+      // The shipped required-pages folder is read-only image content: its legacy
+      // history is read if present, never created.
+      expect(await fs.pathExists(provider.requiredPagesVersionsDir)).toBe(false);
       expect(provider.pagesVersionsDir).toContain('pages/versions');
       expect(provider.requiredPagesVersionsDir).toContain('required-pages/versions');
     });

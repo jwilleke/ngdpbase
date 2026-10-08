@@ -8,12 +8,11 @@ services:
     container_name: ngdpbase
     restart: unless-stopped
 
-    # User configuration
-    # Run container as specific UID:GID to match host user and avoid permission issues
-    # Default: 1000:1000 (standard 'node' user in the container)
-    # Set in .env file or override at runtime: UID=1001 GID=1001 docker-compose up
-    # To use current user: export UID=$(id -u) GID=$(id -g) && docker-compose up
-    user: "${UID:-1000}:${GID:-1000}"
+    # Run-as user (#1693): PUID/PGID below are REQUIRED. The container starts
+    # as root, gives the data folder to PUID:PGID if needed, and drops to that
+    # user before the app runs; it never runs as root. Standard default 1000:1000.
+    # Alternative: run it directly as the user with `user: "1000:1000"` — then
+    # PUID/PGID must be the same ids, or the server refuses to start.
 
     # Port mapping
     # Maps container port to host port
@@ -37,6 +36,8 @@ services:
     #   2. INSTANCE_DATA_FOLDER/config/{INSTANCE_CONFIG_FILE} (instance overrides)
     environment:
       - NODE_ENV=production
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - INSTANCE_DATA_FOLDER=${INSTANCE_DATA_FOLDER:-./data}
       - INSTANCE_CONFIG_FILE=${INSTANCE_CONFIG_FILE:-app-custom-config.json}
       - EXTERNAL_PORT=${HOST_PORT:-3000}

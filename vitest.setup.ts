@@ -195,6 +195,12 @@ process.env.LOG_LEVEL = 'error';
 // VITEST_WORKER_ID gives each parallel worker its own isolated directory.
 process.env.FAST_STORAGE = `/tmp/ngdpbase-test-${process.env.VITEST_WORKER_ID ?? '0'}`;
 process.env.SLOW_STORAGE = process.env.FAST_STORAGE;
+// #1693: the server refuses to start without PUID/PGID. Tests run as whoever
+// runs the suite, so that is the run-as user here; a test of the refusal unsets them.
+if (typeof process.getuid === 'function') {
+  process.env.PUID ??= String(process.getuid());
+  process.env.PGID ??= String(process.getgid());
+}
 
 // #1200: the audit event registry is `ngdpbase.audit.events` in configuration,
 // bound by AuditManager.initialize at boot. Tests have no boot, so bind the

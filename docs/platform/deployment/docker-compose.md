@@ -1,5 +1,7 @@
 # Docker Compose
 
+> __Run-as user (required):__ `docker/.env` sets `PUID` / `PGID` (standard `1000` / `1000`), which `docker-compose.yml` passes in. The container starts as root, gives the data folder to that user and switches to it; it refuses to start without them and never runs as root — see [Run-as user](../../guides/bootstrap-developer-guide.md#run-as-user-puidpgid) ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
+
 The easiest way to try ngdpbase. Runs the wiki in a container on a single machine. Good for evaluation, homelab setups, and small single-host production deployments.
 
 See [../Deployment.md](../Deployment.md) for project-scope context and how this mode compares to the other two.

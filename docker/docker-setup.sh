@@ -52,7 +52,7 @@ chmod 755 pages data logs sessions search-index work required-pages
 echo "   ✅ Created: pages, data, logs, sessions, search-index, work, required-pages"
 echo ""
 
-# 3. Create .env file with current user's UID/GID
+# 3. Create .env file with current user's PUID/PGID (#1693)
 if [ -f docker/.env ]; then
     echo "⚠️  docker/.env file already exists"
     read -p "   Do you want to overwrite it? (y/N): " -n 1 -r
@@ -77,8 +77,10 @@ if [ ! -f docker/.env ]; then
     
     # Auto-detect platform-specific defaults if needed
     if [ "$CURRENT_UID" -eq 0 ]; then
-        echo "   ⚠️  Warning: Running as root (UID 0)"
-        echo "   Recommended: Use a non-root user for better security"
+        # #1693: ngdpbase never runs as root, so PUID/PGID 0 would refuse to start.
+        echo "   ⚠️  Running as root (UID 0): using the standard run-as user 1000:1000 instead"
+        CURRENT_UID=1000
+        CURRENT_GID=1000
     fi
 
     # Check for available port starting from 3000
@@ -99,17 +101,17 @@ if [ ! -f docker/.env ]; then
     # Note: Using different approach for cross-platform compatibility
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        sed -i '' "s/^UID=.*/UID=$CURRENT_UID/" docker/.env
-        sed -i '' "s/^GID=.*/GID=$CURRENT_GID/" docker/.env
+        sed -i '' "s/^PUID=.*/PUID=$CURRENT_UID/" docker/.env
+        sed -i '' "s/^PGID=.*/PGID=$CURRENT_GID/" docker/.env
         sed -i '' "s/^HOST_PORT=.*/HOST_PORT=$AVAILABLE_PORT/" docker/.env
     else
         # Linux
-        sed -i "s/^UID=.*/UID=$CURRENT_UID/" docker/.env
-        sed -i "s/^GID=.*/GID=$CURRENT_GID/" docker/.env
+        sed -i "s/^PUID=.*/PUID=$CURRENT_UID/" docker/.env
+        sed -i "s/^PGID=.*/PGID=$CURRENT_GID/" docker/.env
         sed -i "s/^HOST_PORT=.*/HOST_PORT=$AVAILABLE_PORT/" docker/.env
     fi
 
-    echo "   ✅ Created docker/.env with UID=$CURRENT_UID, GID=$CURRENT_GID, PORT=$AVAILABLE_PORT"
+    echo "   ✅ Created docker/.env with PUID=$CURRENT_UID, PGID=$CURRENT_GID, PORT=$AVAILABLE_PORT"
     echo ""
 fi
 
@@ -124,7 +126,7 @@ echo "✅ Setup complete!"
 echo ""
 echo "📝 Configuration summary:"
 echo "   - Directories: pages, data, logs, sessions, search-index, work, required-pages"
-echo "   - User permissions: UID=$(grep '^UID=' docker/.env | cut -d= -f2), GID=$(grep '^GID=' docker/.env | cut -d= -f2)"
+echo "   - Run-as user: PUID=$(grep '^PUID=' docker/.env | cut -d= -f2), PGID=$(grep '^PGID=' docker/.env | cut -d= -f2)"
 echo "   - Host port: $(grep '^HOST_PORT=' docker/.env | cut -d= -f2)"
 echo "   - Node environment: $(grep '^NODE_ENV=' docker/.env | cut -d= -f2)"
 echo "   - Docker status: ✅ Installed and running"

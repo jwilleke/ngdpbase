@@ -71,7 +71,7 @@ docker build -f docker/Dockerfile --target runtime --build-arg NODE_VERSION=24 \
 # Half 1 — an UNCONFIGURED headless install must REFUSE to boot (#1087).
 docker rm -f ngdpbase-smoke-refuse 2>/dev/null
 docker run -d --name ngdpbase-smoke-refuse \
-  -e HEADLESS_INSTALL=true -e NODE_ENV=production ngdpbase-release-smoke:local
+  -e HEADLESS_INSTALL=true -e NODE_ENV=production -e PUID=1000 -e PGID=1000 ngdpbase-release-smoke:local
 sleep 20
 docker inspect --format='{{.State.Running}}' ngdpbase-smoke-refuse   # must be false
 docker logs ngdpbase-smoke-refuse 2>&1 | grep "Refusing to create the bootstrap admin account"
@@ -87,6 +87,7 @@ docker rm -f ngdpbase-release-smoke 2>/dev/null
 docker run -d --name ngdpbase-release-smoke -p 3099:3000 \
   -e HEADLESS_INSTALL=true -e NODE_ENV=production \
   -e NGDPBASE_ADMIN_PASSWORD="smoke-$(openssl rand -hex 12)" \
+  -e PUID=1000 -e PGID=1000 \
   -v "$SM:/app/data" ngdpbase-release-smoke:local
 
 for i in $(seq 1 18); do
@@ -126,31 +127,26 @@ for u in / /login; do
   case "$C" in 200|301|302) ;; *) echo "FAILED: $u answered $C" ;; esac
 done
 
-# Half 3 — the image must start as a NON-ROOT user (#1687). An operator whose
-# data belongs to a fixed UID (an NFS volume, a pod with runAsUser) runs the
-# server as that UID; v4.22.0 could not, because it wrote under root-owned /app.
-# Probed from inside the container, so another local instance cannot answer.
-docker volume create ngdpbase-smoke-nonroot-data
-docker run --rm -v ngdpbase-smoke-nonroot-data:/d alpine sh -c \
-  'mkdir -p /d/config && printf "%s" "{\"ngdpbase.user.security.defaultpassword\":\"\$NGDPBASE_ADMIN_PASSWORD\"}" > /d/config/app-custom-config.json && chown -R 1000:1000 /d'
-docker run -d --name ngdpbase-smoke-nonroot --user 1000:1000 \
-  -e HEADLESS_INSTALL=true -e NODE_ENV=production \
-  -e NGDPBASE_ADMIN_PASSWORD="smoke-$(openssl rand -hex 12)" \
-  -v ngdpbase-smoke-nonroot-data:/app/data ngdpbase-release-smoke:local
-for i in $(seq 1 60); do
-  R=$(docker exec ngdpbase-smoke-nonroot node -e "fetch('http://localhost:3000/health/readiness').then(r=>console.log(r.status)).catch(()=>console.log('000'))" 2>/dev/null || echo 000)
-  [ "$R" = "200" ] && { echo "  non-root ready"; break; }
-  [ "$(docker inspect -f '{{.State.Running}}' ngdpbase-smoke-nonroot)" = "true" ] || { echo "FAILED: stopped as UID 1000"; docker logs ngdpbase-smoke-nonroot | tail -5; break; }
-  sleep 3
+# Half 3 — the run-as user (#1687, #1693). Without PUID/PGID the image must
+# refuse; with them it runs as an ARBITRARY non-root UID:GID (977:988, an
+# NFS-squashed volume's owner) with the versioning page provider and an
+# instance .env holding secrets — once started as root with PUID/PGID (the app
+# drops to them), once started directly as that user. These are the same
+# commands as the two docker-build.yml steps "no PUID/PGID, no start" and
+# "runs as an arbitrary non-root UID:GID, both ways": extract and run those
+# steps against ngdpbase-release-smoke:local rather than retyping them here.
+for STEP in "no PUID/PGID, no start" "runs as an arbitrary non-root UID:GID, both ways"; do
+  ( echo 'set -e'; awk -v n="      - name: Smoke test — $STEP" 'index($0,n)==1{f=1;next} f&&/^      - name:/{exit} f' .github/workflows/docker-build.yml \
+      | sed 1d | sed 's/^          //' | sed 's#${{ steps.img.outputs.ref }}#ngdpbase-release-smoke:local#' ) | bash \
+    || echo "FAILED: $STEP"
 done
-docker logs ngdpbase-smoke-nonroot 2>&1 | grep -E "EACCES|EPERM" && echo "FAILED: permission error as UID 1000"
 ```
 
 Then clean up whatever the outcome:
 
 ```bash
-docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse ngdpbase-smoke-nonroot 2>/dev/null
-docker volume rm -f ngdpbase-smoke-nonroot-data 2>/dev/null
+docker rm -f ngdpbase-release-smoke ngdpbase-smoke-refuse ngdpbase-smoke-nopuid ngdpbase-smoke-runas-puid ngdpbase-smoke-runas-user 2>/dev/null
+docker volume rm -f ngdpbase-smoke-runas-puid-data ngdpbase-smoke-runas-user-data 2>/dev/null
 docker rmi -f ngdpbase-release-smoke:local 2>/dev/null
 rm -rf "$SM"
 ```

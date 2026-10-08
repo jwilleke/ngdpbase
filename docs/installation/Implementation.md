@@ -2,6 +2,8 @@
 
 The lead document for running ngdpbase. It names the four ways an instance is implemented, what each one inherits from this repository and what it does not, and where its environment, configuration and data live. Every other installation and deployment document is a detail page under one of these four; this page says which one you are reading about.
 
+The standing rules for running an instance — the environment, the run-as user (`PUID` / `PGID`), configuration layers and install — are in [the bootstrap guide](../guides/bootstrap-developer-guide.md), the door for installing and running; this page is the map of methods.
+
 Read this first. If a question is "where does this value go so that instance X gets it", the answer starts with which method instance X is.
 
 ## The four methods

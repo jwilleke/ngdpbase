@@ -1,5 +1,7 @@
 ## Installation System Testing Guide
 
+> Historical: a manual test script for the first-run wizard. The checks that run today are the E2E suite and the image smoke tests ([bootstrap guide](../guides/bootstrap-developer-guide.md)).
+
 Complete guide for testing the first-run installation wizard.
 
 ## Quick Test

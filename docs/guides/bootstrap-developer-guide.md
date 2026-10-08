@@ -1,10 +1,12 @@
 # Bootstrap developer guide
 
-How an ngdpbase instance comes up: how environment variables are found, how configuration is layered on top of them, and how a fresh install completes. Where a comment in the source disagrees, this document follows the code.
+How an ngdpbase instance comes up: how environment variables are found, which user it runs as, how configuration is layered on top of them, and how a fresh install completes. It is the door for installing and running an instance: the detail pages under `docs/installation/` are listed in [The installation documents](#the-installation-documents). Where a comment in the source disagrees, this document follows the code.
 
 ## Standing rules
 
 - `src/bootstrap-env.ts` is the only environment bootstrap. Scripts that need instance paths import it first.
+- `PUID` and `PGID` are required on every boot, and the server never runs as root ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). See [Run-as user](#run-as-user-puidpgid).
+- Nothing is written under the application folder at runtime (`/app` in the image). Only `FAST_STORAGE` and `SLOW_STORAGE` are written ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687), [#1693](https://github.com/jwilleke/ngdpbase/issues/1693)).
 - Nothing writes a `.env` except the boot backfills: `NGDPBASE_SESSION_SECRET` and `NGDPBASE_CREDENTIALS_KEY` when they are absent, and, only when the OpenID Connect provider is enabled, `OIDC_AUTH_SERVER_JWKS` and `OIDC_AUTH_SERVER_COOKIE_KEYS`.
 - `NGDPBASE_SYSTEM_USER` is required on every boot. `NGDPBASE_ADMIN_PASSWORD` is required for a headless install that would otherwise create the admin on the shipped password, and whenever `ngdpbase.user.security.defaultpassword` is the bare ref `$NGDPBASE_ADMIN_PASSWORD`. An interactive fresh install may boot on the shipped `admin123` and warn.
 - Configuration merge and `${VAR}` resolution live in `ConfigurationManager`, not in the env loader.
@@ -281,6 +283,7 @@ That split is what lets an instance config be committed or managed by GitOps whi
 | `NGDPBASE_CREDENTIALS_KEY` | Signs the credentials store and encrypts TOTP seeds. Generated into `<FAST_STORAGE>/.env` on first boot if absent. No config key |
 | `OIDC_AUTH_SERVER_JWKS` | OpenID Connect signing keys. Generated into the instance `.env` only when `oidc-auth-server.enabled` is true |
 | `OIDC_AUTH_SERVER_COOKIE_KEYS` | OpenID Connect cookie keys. Same gate as the JWKS |
+| `PUID` / `PGID` | The user and group the server runs as. Required; never 0. Standard default `1000` / `1000` ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)) |
 | `HEADLESS_INSTALL` | `true` skips the setup wizard |
 | `NGDPBASE_SYSTEM_USER` | Name of the system principal ([#631](https://github.com/jwilleke/ngdpbase/issues/631)). Required on a direct install; the Docker image bakes `system` |
 
@@ -302,15 +305,51 @@ Three files can carry an environment variable, and they are not interchangeable.
 
 ### Multiple instances on one machine
 
-Instance separation is environment-driven rather than first-class: give each instance its own `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, and optionally `INSTANCE_CONFIG_FILE`. `server.sh` refuses to start a second instance on an occupied port, and a single `.ngdpbase.pid` lock guards against two processes sharing one checkout.
+Instance separation is environment-driven rather than first-class: give each instance its own `FAST_STORAGE`, `SLOW_STORAGE`, `PORT`, and optionally `INSTANCE_CONFIG_FILE`. `server.sh` refuses to start a second instance on an occupied port and keeps `<checkout>/.ngdpbase.pid`; the server's own single-instance lock is `<os.tmpdir()>/ngdpbase-<hash of the checkout>.pid` ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687)), so two servers never share one checkout.
+
+## Run-as user (PUID/PGID)
+
+The user the server runs as is a setting, the same on bare metal, Docker and Kubernetes ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693), operator 2026-10-08). `bootstrap-env.ts` loads the environment and the `.env` files, then — before anything is written — runs `becomeRunAsUser()` (`src/utils/runAsUser.ts`):
+
+| Started as | What happens |
+| --- | --- |
+| `PUID` or `PGID` unset, not a number, or `0` | Refuses to start and says what to set. Never falls back to root |
+| root (a plain `docker run`, the shipped Compose file, a pod without `runAsUser`) | Gives `FAST_STORAGE` to `PUID:PGID` if it isn't already theirs (a filesystem that refuses, such as NFS, is reported and skipped), then switches to that group and user. The LinuxServer.io pattern, done in the app |
+| `PUID:PGID` already (bare metal, Compose `user:`, Kubernetes `runAsUser`) | Starts |
+| any other non-root user | Refuses, naming both ids and what to set |
+
+After the switch, `SLOW_STORAGE` must be writable or the server refuses; it is never re-owned, since it can be a NAS holding tens of thousands of files.
+
+Where to set them:
+
+- __Bare metal:__ the repo or instance `.env`, as your own ids (`id -u`, `id -g`; macOS typically `501` / `20`). `.env.example` ships `1000` / `1000`.
+- __Docker Compose:__ `docker/.env` (`PUID` / `PGID`, read by `docker-compose.yml`). To run directly as the user instead, add `user: "1000:1000"` with the same ids.
+- __Kubernetes:__ the env ConfigMap (`docker/k8s/configmap-env.yaml.example`), or `runAsUser` / `runAsGroup` with the same ids.
+- __NFS that maps every file to one owner__ (geohazardwatch: `977:988`): use that owner's ids, and set them in the launcher's environment, not the volume's `.env` — a root start may not be able to read a `0600` file another user owns.
+
+The image tests both ways in CI: as `977:988` with the versioning page provider and an instance `.env` holding secrets, once from root with `PUID`/`PGID` and once with `--user`, failing on any permission error; and it must refuse without `PUID`/`PGID`.
 
 ## Container deployments
 
-`docker/docker-compose.yml` passes `NODE_ENV`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` read-only. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists. The same holds for the session secret: a container started without `NGDPBASE_SESSION_SECRET` generates one into the volume's `.env`, so it survives restarts as long as the volume does. On an ephemeral volume it is regenerated each start and every user is signed out — the symptom in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 — never an insecure one.
+`docker/docker-compose.yml` passes `NODE_ENV`, `PUID`, `PGID`, `INSTANCE_DATA_FOLDER`, `INSTANCE_CONFIG_FILE`, and `EXTERNAL_PORT` through the `environment:` block, mounts `../data` at `/app/data`, and mounts `../required-pages` read-only. Because `bootstrap-env.ts` runs regardless of launcher, a `.env` placed on the mounted data volume is picked up — which is the whole reason that module exists. The same holds for the session secret: a container started without `NGDPBASE_SESSION_SECRET` generates one into the volume's `.env`, so it survives restarts as long as the volume does. On an ephemeral volume it is regenerated each start and every user is signed out — the symptom in `docker/HEADLESS-DEPLOYMENT-NOTES.md` §8 — never an insecure one.
+
+## The installation documents
+
+The detail pages, each under one of the four implementation methods:
+
+| Document | What it is for |
+| --- | --- |
+| [Implementation.md](../installation/Implementation.md) | The four ways an instance runs (direct install, container, Kubernetes, downstream image), what each inherits from this repository, and where its environment, configuration and data live. Read it to know which method you are on |
+| [startup-process.md](../installation/startup-process.md) | What happens, in order, from `server.sh` / `node dist/src/app.js` to serving requests |
+| [installation-system.md](../installation/installation-system.md) | The first-run wizard and the headless install |
+| [install-complete.md](../installation/install-complete.md) | The `.install-complete` marker file |
+| [install-testing.md](../installation/install-testing.md) | A manual test script for the wizard. Historical: the E2E and the image smoke tests are the checks that run |
+| [installation-testing-results.md](../installation/installation-testing-results.md) | A test report from 2025-12-06. Historical; not current guidance |
+
+Deployment detail per platform: [docker/DOCKER.md](../../docker/DOCKER.md), [docs/platform/deployment/](../platform/deployment/) (direct install, Docker Compose, Kubernetes).
 
 ## Related
 
-- [`docs/installation/Implementation.md`](../installation/Implementation.md) — the lead document: the four implementation methods and what each inherits
 - [`SETUP.md`](../../SETUP.md) — first-time setup walkthrough
 - [`docs/SEMVER.md`](../SEMVER.md) — release and version bumping
 - `config/app-default-config.json` — every shipped key, with `_comment_*` entries explaining the non-obvious ones

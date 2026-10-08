@@ -161,9 +161,13 @@ The `.env` file is gitignored. The app does not use `dotenv` at runtime — only
 
 `app.js` is the Node.js entry point launched by PM2. It performs these steps in order:
 
+### Step 0: Environment and run-as user
+
+`src/bootstrap-env.ts`, imported first, loads the environment and the `.env` files, then becomes the configured run-as user (`PUID` / `PGID`) or refuses — see [Run-as user](../guides/bootstrap-developer-guide.md#run-as-user-puidpgid) ([#1693](https://github.com/jwilleke/ngdpbase/issues/1693)). Only then are the generated secrets backfilled.
+
 ### Step 1: PID Lock
 
-Creates `.ngdpbase.pid` with the current process ID. If a PID file already exists and the process is running, the app exits with an error.
+Creates `<os.tmpdir()>/ngdpbase-<hash of the checkout>.pid` with the current process ID ([#1687](https://github.com/jwilleke/ngdpbase/issues/1687)). If it already exists and that process is running, the app exits with an error.
 
 ### Step 2: Express Setup (Pre-Engine)
 
