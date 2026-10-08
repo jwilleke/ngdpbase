@@ -12,7 +12,8 @@
  * real pages use: without a RenderingManager the parser falls back to the
  * `fallback` profile, which is not what a reader sees. Comparison ignores what
  * is serialisation rather than meaning: `<hr />` against `<hr>`, whitespace
- * between tags, and the `id` our heading anchors add (R2). The spec writes a
+ * between tags, `&#160;` and `&quot;` against the characters they stand for,
+ * and the `id` our heading anchors add (R2). The spec writes a
  * tab as `→`; it is turned back into a tab, as the spec's own runner does.
  */
 
@@ -59,7 +60,7 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
     623, 625, 626, 627, 628, 630, 631, 642, 643
   ]],
   ['soft-line-break', [
-    25, 28, 37, 46, 49, 70, 81, 82, 87, 88, 93, 95, 104, 105,
+    14, 25, 28, 37, 46, 49, 70, 81, 82, 87, 88, 93, 95, 104, 105,
     106, 113, 138, 145, 213, 216, 217, 220, 222, 223, 224, 228, 229, 230,
     232, 233, 238, 243, 247, 250, 251, 253, 254, 285, 286, 287, 288, 290,
     291, 292, 293, 304, 312, 334, 367, 384, 394, 405, 423, 432, 490, 505,
@@ -71,14 +72,14 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
     573, 576, 577
   ]],
   ['bug-code-extraction', [
-    14, 42, 91, 121, 123, 124, 134, 211, 318, 321, 324, 333, 335, 336,
-    343, 346, 537
+    134, 211, 321,
+    537
   ]],
   ['wiki-link', [
     182, 511, 513, 523, 629
   ]],
   ['fence-class-as-written', [
-    24, 34, 143, 146
+    24, 34
   ]],
   ['ncm-escape', [
     548, 559, 560, 590
@@ -91,6 +92,9 @@ const EXCEPTIONS: Record<number, keyof typeof REASONS> = Object.fromEntries(([
 const tabs = (s: string): string => s.replace(/\u2192/g, '\t');
 const normalise = (html: string): string => html
   .replace(/(<h[1-6])\s+id="[^"]*"/g, '$1')
+  // The same character written two ways: an entity or the character itself.
+  .replace(/&#160;/g, '\u00a0')
+  .replace(/&quot;/g, '"')
   .replace(/\s*\/>/g, '>')
   .replace(/>\s+</g, '><')
   .replace(/\s+/g, ' ')

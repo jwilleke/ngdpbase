@@ -16,6 +16,16 @@ import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
 import { NOT_TASK_MARKER, UNESCAPED_BRACKET, insideMarkdownLinkText, markdownLinkTextRanges } from './LinkParser.js';
+
+/** A CommonMark autolink at the start of the text: `<scheme:…>` or `<user@host>` (#1726). */
+const AUTOLINK = /^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\s]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>/;
+
+/**
+ * A line inside would-be code-span content that starts a new block (#1726): a
+ * blank line, a list item, a quote, an ATX heading, a setext underline, or a
+ * table row (`|` / `||`, a block in NCM).
+ */
+const CROSSES_BLOCK = /\n[ \t]*(?:\n|(?:[-*+]|\d{1,9}[.)])[ \t]|>|\||#{1,6}(?:[ \t]|$)|(?:=+|-+)[ \t]*(?:\n|$))/;
 import { parseTableRows } from './jspwikiTableRow.js';
 import { STYLE_BLOCK_OPENER, styleBlockClasses } from './styleBlockSyntax.js';
 import ParseContext from './context/ParseContext.js';
@@ -1455,17 +1465,27 @@ class MarkupParser extends BaseManager {
         // glued on; anything else fell through to the inline-code scanner
         // below, which paired the two ``` runs into ONE inline span — the
         // whole block on a single line, language name included.
-        const fenceOpen = inputLines[li].match(/^([ \t]*)(`{3,})[ \t]*([^\s`]*)[^`]*$/);
-        if (fenceOpen) {
-          const indent = fenceOpen[1];
-          const fence = fenceOpen[2]; // the actual backtick sequence (``` or longer)
+        // #1726: a `~~~` fence too, and a fence opened on a list item's
+        // marker line (`- ```` `), both CommonMark. Only backtick fences at a
+        // line's start were taken, so the inline-code scanner below found the
+        // backticks inside a `~~~` block, or the fence after a marker, and its
+        // placeholder was printed into the page.
+        const fenceOpen = inputLines[li].match(/^([ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?)(`{3,}|~{3,})[ \t]*([^\s`]*)(.*)$/);
+        const fenceValid = fenceOpen && !(fenceOpen[2].startsWith('`') && fenceOpen[4].includes('`'));
+        if (fenceOpen && fenceValid) {
+          const marker = fenceOpen[1];
+          // Code lines align with the list item's content, so the marker
+          // counts as indent; the placeholder keeps the marker itself.
+          const indent = ' '.repeat(marker.length);
+          const fence = fenceOpen[2]; // the actual fence run (``` or longer, or ~~~)
           const lang = fenceOpen[3] || '';
           // A closing fence may be indented up to the opening fence's indent,
           // or 3 spaces, whichever is more — never further. That keeps an
           // example fence written inside a column-0 block (four spaces in, as
-          // on FootnoteExample) from closing the block around it.
+          // on FootnoteExample) from closing the block around it. It is a run
+          // of the same character at least as long as the opener (#1726).
           const closeIndentMax = Math.max(3, indent.length);
-          const closeRe = new RegExp(`^([ \\t]{0,${closeIndentMax}})${fence}\\s*$`);
+          const closeRe = new RegExp(`^([ \\t]{0,${closeIndentMax}})${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`);
           const contentLines: string[] = [];
           const startLine = li;
           li++;
@@ -1492,7 +1512,7 @@ class MarkupParser extends BaseManager {
           });
           // Keep the fence's indent on the placeholder so an indented block
           // stays inside the list item it was written in.
-          outputLines.push(`${indent}<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
+          outputLines.push(`${marker}<span data-jspwiki-placeholder="${uuid}-${id - 1}"></span>`);
         } else {
           outputLines.push(inputLines[li]);
           li++;
@@ -1680,8 +1700,25 @@ class MarkupParser extends BaseManager {
       const out: string[] = [];
       let i = 0;
       while (i < sanitized.length) {
+        // #1726: an autolink is taken before a code span inside it.
+        if (sanitized[i] === '<') {
+          const autolink = AUTOLINK.exec(sanitized.slice(i, i + 2048));
+          if (autolink) {
+            out.push(autolink[0]);
+            i += autolink[0].length;
+            continue;
+          }
+        }
         if (sanitized[i] !== '`') {
           out.push(sanitized[i]);
+          i++;
+          continue;
+        }
+        // #1726: a backslash-escaped backtick is a literal one and opens nothing.
+        let backslashes = 0;
+        for (let b = i - 1; b >= 0 && sanitized[b] === '\\'; b--) backslashes++;
+        if (backslashes % 2 === 1) {
+          out.push('`');
           i++;
           continue;
         }
@@ -1707,16 +1744,21 @@ class MarkupParser extends BaseManager {
           }
           // Different-length run: part of the content, keep scanning.
         }
+        // #1726: a code span is inline; it cannot run into the next block (a
+        // blank line, a list item, a quote, a heading, a setext underline),
+        // which markdown-it will have parsed as its own block.
+        if (closeStart !== -1 && CROSSES_BLOCK.test(sanitized.substring(i, closeStart))) closeStart = -1;
         if (closeStart === -1) {
           // No matching close — emit the opening backticks as literal text.
           out.push(sanitized.substring(openStart, i));
           continue;
         }
-        // Extract content between the open and close runs. CommonMark: if
-        // the content has both a leading and trailing space and is not
-        // entirely spaces, strip one space from each end.
+        // Extract content between the open and close runs. CommonMark: line
+        // endings become spaces (#1726); then, if the content has both a
+        // leading and trailing space and is not entirely spaces, strip one
+        // space from each end.
         const rawContent = sanitized.substring(i, closeStart);
-        let content = rawContent;
+        let content = rawContent.replace(/\r?\n/g, ' ');
         if (
           content.length >= 2 &&
           content.startsWith(' ') &&
