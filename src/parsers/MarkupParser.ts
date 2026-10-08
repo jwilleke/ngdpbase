@@ -15,7 +15,7 @@ import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
-import { NOT_TASK_MARKER, UNESCAPED_BRACKET } from './LinkParser.js';
+import { NOT_TASK_MARKER, UNESCAPED_BRACKET, insideMarkdownLinkText, markdownLinkTextRanges } from './LinkParser.js';
 import { parseTableRows } from './jspwikiTableRow.js';
 import { STYLE_BLOCK_OPENER, styleBlockClasses } from './styleBlockSyntax.js';
 import ParseContext from './context/ParseContext.js';
@@ -1858,8 +1858,12 @@ class MarkupParser extends BaseManager {
     //   inner starts with ^  → footnote-ref     [^1]        → <a href="#footnote-1">
     //   inner is blank       → pass through     [ ]         → task-list checkbox
     //   otherwise            → wiki link        [PageName], [Display|Target]
+    // #1708: brackets inside a Markdown link's text are that text, for markdown-it.
+    const markdownLinkText = markdownLinkTextRanges(sanitized);
     sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^\\]]*)\\](?!\\()`, 'g'),
       (match: string, inner: string, offset: number) => {
+        if (insideMarkdownLinkText(markdownLinkText, offset)) return match;
+
         // Pass through blank brackets (task-list checkboxes [ ])
         if (inner.trim() === '') return match;
 

@@ -77,6 +77,48 @@ export const NOT_TASK_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+
  */
 export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
 
+/**
+ * The link text of every Markdown link whose text holds brackets of its own
+ * (#1708): `[a [b] c](url)`. CommonMark allows balanced brackets there, and
+ * markdown-it renders them, but the wiki link syntax took the inner `[b`
+ * first and split the link. Each range runs from the opening `[` to its
+ * matching `]`, which is followed by `(`.
+ *
+ * Every reader of wiki links skips a match that starts inside one of these
+ * ranges, so the renderer, the link graph and the rename rewriter agree that
+ * the brackets are link text. An escaped bracket (#1480) is not counted, and
+ * link text that starts with NCM's `[[` escape is left to it. One
+ * pass with a stack, so a long page costs no more than its length.
+ */
+export function markdownLinkTextRanges(content: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const open: Array<{ start: number; nested: boolean }> = [];
+  // findLinks() is handed null and undefined by JavaScript callers.
+  if (typeof content !== 'string') return ranges;
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (ch !== '[' && ch !== ']') continue;
+    let backslashes = 0;
+    for (let j = i - 1; j >= 0 && content[j] === '\\'; j--) backslashes++;
+    if (backslashes % 2 === 1) continue;
+    if (ch === '[') {
+      const outer = open[open.length - 1];
+      if (outer) outer.nested = true;
+      open.push({ start: i, nested: false });
+      continue;
+    }
+    const group = open.pop();
+    // `[[` opens NCM's escape (`[[text]` is the literal `[text]`), which wins.
+    if (group?.nested && content[i + 1] === '(' && content[group.start + 1] !== '[') ranges.push([group.start, i]);
+  }
+  return ranges;
+}
+
+/** Whether `offset` falls inside one of `ranges`, its opening bracket included. */
+export function insideMarkdownLinkText(ranges: ReadonlyArray<[number, number]>, offset: number): boolean {
+  return ranges.some(([start, end]) => offset >= start && offset < end);
+}
+
 /** A fresh global RegExp for the wiki link syntax. Never share one. */
 export function wikiLinkPattern(): RegExp {
   return new RegExp(WIKI_LINK_PATTERN_SOURCE, 'g');
@@ -390,8 +432,10 @@ export class LinkParser {
 
     // Reset regex state
     this.linkPattern.lastIndex = 0;
+    const linkText = markdownLinkTextRanges(content);
 
     while ((match = this.linkPattern.exec(content)) !== null) {
+      if (insideMarkdownLinkText(linkText, match.index)) continue;
       const link = new Link({
         originalText: match[0],
         text: match[1]?.trim(),

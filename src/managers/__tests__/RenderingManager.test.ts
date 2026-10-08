@@ -181,6 +181,31 @@ describe('RenderingManager', () => {
       }
     });
 
+    test('#1708: brackets inside a Markdown link\'s text are not a link in the graph', async () => {
+      const pageManager = {
+        isSharedIndexable: () => true,
+        getAllPages: async () => ['Welcome', 'Target', 'Linker'],
+        getPage: async (pageName) => (pageName === 'Linker'
+          ? { title: 'Linker', content: 'See [Welcome] and [a [Target] b](https://example.com/x)' }
+          : { title: pageName, content: '' })
+      };
+      const testEngine = {
+        log: vi.fn(),
+        getManager: (name) => {
+          if (name === 'ConfigurationManager') return mockConfigurationManager;
+          if (name === 'PageManager') return pageManager;
+          return null;
+        },
+        getConfig: vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue({ wiki: { pagesDir: './pages' } }) })
+      };
+      const testManager = new RenderingManager(testEngine);
+      await testManager.initialize();
+
+      const graph = testManager.getLinkGraph();
+      expect(graph['Welcome']).toContain('Linker');
+      expect(graph['Target'] ?? []).not.toContain('Linker');
+    });
+
     test('should handle unresolved links gracefully', async () => {
       // Setup: Page links to a non-existent page
       const mockPageManagerWithBadLink = {

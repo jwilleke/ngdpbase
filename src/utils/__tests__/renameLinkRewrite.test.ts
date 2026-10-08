@@ -10,6 +10,12 @@ import { describe, it, expect } from 'vitest';
 import { rewriteLinkTargets } from '../renameLinkRewrite.js';
 
 describe('rewriteLinkTargets', () => {
+  it('#1708: leaves brackets inside a Markdown link\'s text alone', () => {
+    const result = rewriteLinkTargets('[see [it|Old Title] here](https://example.com) and [Old Title]', 'Old Title', 'New Title');
+    expect(result.content).toBe('[see [it|Old Title] here](https://example.com) and [New Title]');
+    expect(result.rewritten).toBe(1);
+  });
+
   describe('the three link forms', () => {
     it('rewrites [Old Title]', () => {
       const result = rewriteLinkTargets('See [Old Title] for more.', 'Old Title', 'New Title');

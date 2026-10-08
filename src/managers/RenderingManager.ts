@@ -20,7 +20,7 @@ import logger from '../utils/logger.js';
 // Footnotes are handled in the WikiDocument DOM pipeline (MarkupParser Steps 3.5/3.6/4)
 import { createMarkdownConverter, type MarkdownConverter } from '../rendering/markdownConverter.js';
 import { HTML_POLICY_KEY } from '../rendering/htmlPolicy.js';
-import { LinkParser } from '../parsers/LinkParser.js';
+import { LinkParser, insideMarkdownLinkText, markdownLinkTextRanges } from '../parsers/LinkParser.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
 import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
 import { WikiEngine } from '../types/WikiEngine.js';
@@ -1152,7 +1152,10 @@ class RenderingManager extends BaseManager {
         // Include parentheses () in character class for page names like "Shang Dynasty (1600 BCE-1046 BCE)"
         // Negative lookahead (?!\() skips [text](url) markdown links — their bracket text is not a wiki link
         const simpleLinkRegex = /\[([a-zA-Z0-9\s_.()-]+)(?:\|([a-zA-Z0-9\s_().  :?=&-]+))?(?:\|([^|\]]+))?\](?!\()/g;
+        const markdownLinkText = markdownLinkTextRanges(content);
         while ((match = simpleLinkRegex.exec(content)) !== null) {
+          // #1708: brackets inside a Markdown link's text are not a link.
+          if (insideMarkdownLinkText(markdownLinkText, match.index)) continue;
           // For pipe syntax [DisplayText|Target|Parameters], use the target; otherwise use the display text
           let linkedPage = match[2] || match[1];
 
