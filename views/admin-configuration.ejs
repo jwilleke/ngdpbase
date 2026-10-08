@@ -64,6 +64,9 @@
                                             <% } else { %>
                                                 <code><%= JSON.stringify(item.value) %></code>
                                             <% } %>
+                                            <% if (item.note) { %>
+                                                <div class="text-warning"><%= item.note %></div>
+                                            <% } %>
                                         </td>
                                         <td class="small">
                                             <% if (item.restart) { %>

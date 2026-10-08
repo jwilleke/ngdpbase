@@ -44,6 +44,8 @@ export interface PostureItem {
    * section quietly incomplete.
    */
   secret: boolean;
+  /** A plain-words caution when the value, read with another setting, does not do what it seems to. */
+  note?: string;
 }
 
 export interface PostureGroup {
@@ -54,6 +56,23 @@ export interface PostureGroup {
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
+
+/**
+ * Cautions for settings whose effect depends on another one. Keyed by the
+ * posture key; each returns the note, or nothing when the value does what it
+ * says.
+ */
+const NOTES: Record<string, (read: ConfigReader) => string | undefined> = {
+  // #1546: the idle limit only ends a session sooner than its absolute lifetime.
+  'ngdpbase.session.idle-timeout-minutes': (read) => {
+    const minutes = read('ngdpbase.session.idle-timeout-minutes', 0);
+    const maxAge = read('ngdpbase.session.max-age', undefined);
+    if (typeof minutes !== 'number' || minutes <= 0 || typeof maxAge !== 'number' || maxAge <= 0) return undefined;
+    return minutes * 60_000 >= maxAge
+      ? `Has no effect: a session already ends after ${Math.round(maxAge / 60_000)} minutes (ngdpbase.session.max-age).`
+      : undefined;
+  }
+};
 
 /**
  * Read the posture and each ingredient's current value.
@@ -90,6 +109,8 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
     // reintroduce, through a different route, the disclosure that
     // ngdpbase.config.secret-keys exists to prevent (D15).
     if (!secret) item.value = read(key, undefined);
+    const note = NOTES[key]?.(read);
+    if (note) item.note = note;
 
     const existing = byGroup.get(group);
     if (existing) existing.push(item);

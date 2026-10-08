@@ -27,6 +27,19 @@ describe('#1145 — resolvePosture', () => {
     expect(items.find((i) => i.key === 'ngdpbase.application.registration')?.value).toBe(false);
   });
 
+  test('#1546: an idle limit at or above the session lifetime carries a note', () => {
+    const idle = { [POSTURE_KEY]: { 'ngdpbase.session.idle-timeout-minutes': { group: 'Session and cookie' } } };
+    const noteFor = (minutes: number, maxAge: number) => resolvePosture(reader({
+      ...idle,
+      'ngdpbase.session.idle-timeout-minutes': minutes,
+      'ngdpbase.session.max-age': maxAge
+    }))[0].items[0].note;
+    expect(noteFor(1440, 86400000)).toMatch(/no effect.*1440 minutes/i);
+    expect(noteFor(2000, 86400000)).toMatch(/no effect/i);
+    expect(noteFor(60, 86400000)).toBeUndefined();
+    expect(noteFor(0, 86400000)).toBeUndefined();
+  });
+
   test('groups ingredients by their declared group', () => {
     const groups = resolvePosture(reader({ [POSTURE_KEY]: posture }));
     expect(groups.map((g) => g.group)).toEqual(['Identity and registration', 'Session and cookie']);
