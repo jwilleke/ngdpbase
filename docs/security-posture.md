@@ -329,6 +329,7 @@ What remains, grouped as the admin section would group them:
 | Login throttling | `auth.throttle.enabled`, `.max-attempts`, `.window-minutes`, `.lock-minutes`, `.max-lock-minutes` |
 | Agent tokens | `auth.agent-token.enabled`, `.max-per-user`, `.max-ttl-hours`, `.default-ttl-hours`, `.retention-days` |
 | Audit | `audit.enabled`, `audit.provider`, `audit.on-failure`, `audit.events`, `audit.retentiondays` |
+| Access control | `access.policies` (which role holds which permission), `roles.definitions` (each role's `required-aal`). A hand edit that gives a sensitive permission to a weaker role, or lowers a role's required level, shows in the boot-to-boot comparison |
 | Content sanitisation | `markup.html-policy`, `filters.security.prevent-xss`, `.prevent-csrf`, `.sanitize-html`, `.strip-dangerous-content`, `.allowed-tags`, `.allowed-attributes`, `style.security.allow-inline-css`, `style.security.allowed-properties` |
 | Rate limiting | `mail.rate-limit.enabled`, `.max-submissions`, `.window-minutes` |
 | Browser security headers | `security.headers.csp-mode` — `report-only` (default), `enforce` or `off`. The policy (`object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'`, plus `nosniff` and `Referrer-Policy`) is fixed in `src/utils/securityHeaders.ts` and has no `script-src` yet ([#1488](https://github.com/jwilleke/ngdpbase/issues/1488); the nonce-based script policy is [#1489](https://github.com/jwilleke/ngdpbase/issues/1489)) |

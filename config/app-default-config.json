@@ -566,6 +566,14 @@
       "group": "Audit",
       "restart": false
     },
+    "ngdpbase.access.policies": {
+      "group": "Access control",
+      "restart": false
+    },
+    "ngdpbase.roles.definitions": {
+      "group": "Access control",
+      "restart": false
+    },
     "ngdpbase.markup.html-policy": {
       "group": "Content sanitisation",
       "restart": false
