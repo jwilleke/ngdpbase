@@ -80,4 +80,11 @@ describe('code extraction follows CommonMark (#1726)', () => {
   test('an autolink is taken before a backtick inside it', async () => {
     expect(await render('<https://foo.bar.`baz>`')).toContain('<a href="https://foo.bar.%60baz">');
   });
+
+  test('a [[ escape around a plugin prints the plugin as written, not its placeholder', async () => {
+    const html = await render('[[Inline: [{Image src=\'a.png\'}] and `code` here.]');
+
+    expect(html).toContain('[Inline: [{Image src=\'a.png\'}] and `code` here.]');
+    expect(html).not.toContain('placeholder');
+  });
 });

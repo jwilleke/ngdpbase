@@ -1915,11 +1915,15 @@ class MarkupParser extends BaseManager {
         if (inner.startsWith('{')) return match;
 
         if (inner.startsWith('[')) {
-          // [[text] → escaped literal [text]
+          // [[text] → escaped literal [text]. #1726: anything already lifted
+          // out of the text (a plugin, a variable, code) is put back as it
+          // was written; its placeholder is not literal text.
+          const restored = inner.replace(new RegExp(`<span data-jspwiki-placeholder="${uuid}-(\\d+)"></span>`, 'g'),
+            (placeholder: string, n: string) => jspwikiElements.find((e) => e.id === Number(n))?.syntax ?? placeholder);
           jspwikiElements.push({
             type: 'escaped',
             syntax: match,
-            literal: inner + ']',  // inner is "[text", restore the closing ]
+            literal: restored + ']',  // inner is "[text", restore the closing ]
             id: id++,
             position: offset
           });
