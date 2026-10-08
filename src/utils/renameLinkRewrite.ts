@@ -62,6 +62,8 @@
 
 import {
   wikiLinkPattern,
+  markdownLinkTextRanges,
+  insideMarkdownLinkText,
   LINK_URL_PATTERNS,
   INTERWIKI_PATTERN
 } from '../parsers/LinkParser.js';
@@ -144,9 +146,12 @@ export function rewriteLinkTargetsBy(
   let rewritten = 0;
   const unchanged = new Set<string>();
 
+  const linkText = markdownLinkTextRanges(content);
   const rewrittenContent = content.replace(
     wikiLinkPattern(),
-    (whole: string, text: string, target?: string, attributes?: string) => {
+    (whole: string, text: string, target: string | undefined, attributes: string | undefined, offset: number) => {
+      // #1708: brackets inside a Markdown link's text are not a link.
+      if (insideMarkdownLinkText(linkText, offset)) return whole;
       // `[text]` carries its target in the text; the piped forms do not.
       const targetIsDisplayText = target === undefined;
       const rawTarget = targetIsDisplayText ? text : target;

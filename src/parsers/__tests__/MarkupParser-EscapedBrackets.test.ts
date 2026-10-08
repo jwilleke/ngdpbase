@@ -206,3 +206,64 @@ describe('dotted classes in a block-form style block (#1345)', () => {
     expect(await parser.parseWithDOMExtraction('%%information\nx\n/%', { pageName: 'T' })).toMatch(/information/);
   });
 });
+
+describe('brackets inside a Markdown link\'s text (#1708)', () => {
+  let parser;
+
+  beforeEach(async () => {
+    const engine = createMockEngine();
+    parser = new MarkupParser(engine);
+    parser.domVariableHandler = new DOMVariableHandler(engine);
+    await parser.domVariableHandler.initialize();
+    parser.domPluginHandler = new DOMPluginHandler(engine);
+    await parser.domPluginHandler.initialize();
+    parser.domLinkHandler = new DOMLinkHandler(engine);
+    await parser.domLinkHandler.initialize();
+  });
+
+  const render = (content: string): Promise<string> => parser.parseWithDOMExtraction(content, { pageName: 'TestPage' });
+
+  // Expected HTML from the CommonMark spec (0.31.2, links: balanced brackets in link text).
+  test.each([
+    ['[a [b] c](https://example.com/x)', '<a href="https://example.com/x">a [b] c</a>'],
+    ['[link [foo [bar]]](/uri)', '<a href="/uri">link [foo [bar]]</a>'],
+    ['[see [HomePage] here](https://example.com/y)', '<a href="https://example.com/y">see [HomePage] here</a>']
+  ])('%s renders as one link', async (input, expected) => {
+    const html = await render(input);
+
+    expect(html).toContain(expected);
+    expect(html).not.toContain('wiki-link');
+  });
+
+  test('an image inside link text stays an image', async () => {
+    expect(await render('[![moon](moon.jpg)](/uri)')).toContain('<a href="/uri"><img src="moon.jpg" alt="moon"></a>');
+  });
+
+  test('an unbalanced bracket is not link text: the inner link stands (spec example)', async () => {
+    expect(await render('[link [bar](/uri)')).toContain('[link <a href="/uri">bar</a>');
+  });
+
+  test('a wiki link outside a Markdown link is still a wiki link', async () => {
+    const html = await render('[HomePage] and [a [b] c](https://example.com/x)');
+
+    expect(html).toContain('wiki-link');
+    expect(html).toContain('<a href="https://example.com/x">a [b] c</a>');
+  });
+
+  test('bracket groups not followed by ( are not link text', async () => {
+    expect(await render('[HomePage] (a note)')).toContain('wiki-link');
+  });
+});
+
+describe('markdownLinkTextRanges (#1708)', () => {
+  test('finds link text that holds brackets, and nothing else', async () => {
+    const { markdownLinkTextRanges } = await import('../LinkParser');
+
+    expect(markdownLinkTextRanges('[a [b] c](u)')).toEqual([[0, 8]]);
+    expect(markdownLinkTextRanges('x [a](u) [Main] [b [c]] d')).toEqual([]);
+    expect(markdownLinkTextRanges('[a \\[b\\] c](u)')).toEqual([]);
+    expect(markdownLinkTextRanges('[link [bar](/uri)')).toEqual([]);
+    // NCM's [[ escape wins: [[^1]](#ref-1) keeps rendering as it did.
+    expect(markdownLinkTextRanges('[[^1]](#ref-1) and [[a] b](u)')).toEqual([]);
+  });
+});
