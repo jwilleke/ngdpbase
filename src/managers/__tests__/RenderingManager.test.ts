@@ -181,12 +181,12 @@ describe('RenderingManager', () => {
       }
     });
 
-    test('#1708: brackets inside a Markdown link\'s text are not a link in the graph', async () => {
+    test('#1708/#1491: Markdown link text and reference links are not links in the graph', async () => {
       const pageManager = {
         isSharedIndexable: () => true,
         getAllPages: async () => ['Welcome', 'Target', 'Linker'],
         getPage: async (pageName) => (pageName === 'Linker'
-          ? { title: 'Linker', content: 'See [Welcome] and [a [Target] b](https://example.com/x)' }
+          ? { title: 'Linker', content: 'See [Welcome] and [a [Target] b](https://example.com/x) and [Ref]\n\n[ref]: https://example.com/r' }
           : { title: pageName, content: '' })
       };
       const testEngine = {
@@ -204,6 +204,8 @@ describe('RenderingManager', () => {
       const graph = testManager.getLinkGraph();
       expect(graph['Welcome']).toContain('Linker');
       expect(graph['Target'] ?? []).not.toContain('Linker');
+      // #1491: a reference link to a defined label is not a page link either.
+      expect(graph['Ref'] ?? []).not.toContain('Linker');
     });
 
     test('should handle unresolved links gracefully', async () => {

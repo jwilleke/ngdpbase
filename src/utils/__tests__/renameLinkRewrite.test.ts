@@ -16,6 +16,12 @@ describe('rewriteLinkTargets', () => {
     expect(result.rewritten).toBe(1);
   });
 
+  it('#1491: leaves a reference link alone when the page defines its label', () => {
+    const result = rewriteLinkTargets('[Old Title] and [x][Old Title]\n\n[old title]: https://example.com', 'Old Title', 'New Title');
+    expect(result.content).toBe('[Old Title] and [x][Old Title]\n\n[old title]: https://example.com');
+    expect(result.rewritten).toBe(0);
+  });
+
   describe('the three link forms', () => {
     it('rewrites [Old Title]', () => {
       const result = rewriteLinkTargets('See [Old Title] for more.', 'Old Title', 'New Title');

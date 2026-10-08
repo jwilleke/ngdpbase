@@ -267,3 +267,79 @@ describe('markdownLinkTextRanges (#1708)', () => {
     expect(markdownLinkTextRanges('[[^1]](#ref-1) and [[a] b](u)')).toEqual([]);
   });
 });
+
+describe('reference links (#1491)', () => {
+  let parser;
+
+  beforeEach(async () => {
+    const engine = createMockEngine();
+    parser = new MarkupParser(engine);
+    parser.domVariableHandler = new DOMVariableHandler(engine);
+    await parser.domVariableHandler.initialize();
+    parser.domPluginHandler = new DOMPluginHandler(engine);
+    await parser.domPluginHandler.initialize();
+    parser.domLinkHandler = new DOMLinkHandler(engine);
+    await parser.domLinkHandler.initialize();
+  });
+
+  const render = (content: string): Promise<string> => parser.parseWithDOMExtraction(content, { pageName: 'TestPage' });
+
+  test('full, collapsed and shortcut forms render; definitions render as nothing', async () => {
+    const html = await render([
+      'Read [the spec][cm] and [markdown-it][] or [CM].',
+      '',
+      '[cm]: https://spec.commonmark.org "CommonMark spec"',
+      '[markdown-it]: https://github.com/markdown-it/markdown-it'
+    ].join('\n'));
+
+    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec">the spec</a>');
+    expect(html).toContain('<a href="https://github.com/markdown-it/markdown-it">markdown-it</a>');
+    expect(html).toContain('<a href="https://spec.commonmark.org" title="CommonMark spec">CM</a>');
+    expect(html).not.toContain('wiki-link');
+    expect(html).not.toContain('[cm]:');
+  });
+
+  test('labels match case-insensitively with whitespace collapsed', async () => {
+    expect(await render('[Foo  Bar][] here\n\n[foo bar]: /path')).toContain('<a href="/path">Foo  Bar</a>');
+  });
+
+  test('an undefined bracket on the same page stays a wiki link', async () => {
+    const html = await render('[HomePage] stays.\n\n[cm]: https://spec.commonmark.org');
+
+    expect(html).toContain('wiki-link');
+    expect(html).toContain('HomePage');
+  });
+
+  test('a page that defines nothing renders as before', async () => {
+    expect(await render('[the spec][cm] here')).toContain('wiki-link');
+  });
+
+  test('[Term]: value is not a definition unless the value looks like a link', async () => {
+    const html = await render('[LOINC Code]: 785-6');
+
+    expect(html).toContain('wiki-link');
+    expect(html).toContain(': 785-6');
+  });
+
+  test('brackets inside code are untouched', async () => {
+    expect(await render('`[cm]` in code\n\n[cm]: https://example.com')).toContain('<code>[cm]</code>');
+  });
+
+  test('[x] [cm] with a space is a wiki link and a shortcut reference, not a full reference', async () => {
+    const html = await render('[x] [cm] here\n\n[cm]: https://example.com');
+
+    expect(html).toContain('<a href="https://example.com">cm</a>');
+    expect(html).toContain('data-target="x"');
+  });
+});
+
+describe('referenceLinkRanges (#1491)', () => {
+  test('marks definitions and uses of defined labels only', async () => {
+    const { referenceLinkRanges } = await import('../LinkParser');
+    const text = '[a][cm] [Main]\n\n[cm]: https://x.example';
+
+    expect(referenceLinkRanges(text)).toEqual([[16, 19], [0, 6]]);
+    expect(referenceLinkRanges('[a][cm]')).toEqual([]);
+    expect(referenceLinkRanges('[^1]: https://x.example')).toEqual([]);
+  });
+});
