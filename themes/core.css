@@ -1136,6 +1136,55 @@ main p, main div, main span, main li {
     color: var(--alert-info-text);
 }
 
+/* GitHub alerts (#1493): `> [!NOTE]` and four more, in GitHub's own look —
+   a coloured bar down the left, a coloured title with its icon, the text in
+   the normal colour, no fill. Colours are GitHub's (Primer), light and dark. */
+.markdown-alert {
+    --markdown-alert-note: #0969da;
+    --markdown-alert-tip: #1a7f37;
+    --markdown-alert-important: #8250df;
+    --markdown-alert-warning: #9a6700;
+    --markdown-alert-caution: #d1242f;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    color: inherit;
+    border-left: 0.25em solid var(--markdown-alert-color, var(--border-color));
+}
+.markdown-alert > :last-child { margin-bottom: 0; }
+.markdown-alert .markdown-alert-title {
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--markdown-alert-color);
+}
+.markdown-alert .markdown-alert-title .octicon {
+    margin-right: 0.5rem;
+    fill: currentColor;
+}
+.markdown-alert-note { --markdown-alert-color: var(--markdown-alert-note); }
+.markdown-alert-tip { --markdown-alert-color: var(--markdown-alert-tip); }
+.markdown-alert-important { --markdown-alert-color: var(--markdown-alert-important); }
+.markdown-alert-warning { --markdown-alert-color: var(--markdown-alert-warning); }
+.markdown-alert-caution { --markdown-alert-color: var(--markdown-alert-caution); }
+
+[data-bs-theme="dark"] .markdown-alert {
+    --markdown-alert-note: #4493f8;
+    --markdown-alert-tip: #3fb950;
+    --markdown-alert-important: #ab7df8;
+    --markdown-alert-warning: #d29922;
+    --markdown-alert-caution: #f85149;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-bs-theme]) .markdown-alert {
+    --markdown-alert-note: #4493f8;
+    --markdown-alert-tip: #3fb950;
+    --markdown-alert-important: #ab7df8;
+    --markdown-alert-warning: #d29922;
+    --markdown-alert-caution: #f85149;
+  }
+}
+
 /* Navbar — custom dark-navbar text support via --navbar-text */
 .navbar {
     background-color: var(--navbar-bg);

@@ -62,6 +62,14 @@ export const UNESCAPED_BRACKET = '(?<=(?:^|[^\\\\])(?:\\\\\\\\)*)';
 export const NOT_TASK_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+)\\[[ xX]\\][ \\t])';
 
 /**
+ * Not a GitHub alert marker (#1493): `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
+ * `[!WARNING]` or `[!CAUTION]` alone on a blockquote's line, which the page
+ * profile renders as an alert box — never a link to a page named "!NOTE". A
+ * lookahead, so it consumes nothing; spells the line start as `(?:^|\n)`.
+ */
+export const NOT_ALERT_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:>[ \\t]?)+[ \\t]*)\\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\][ \\t]*(?:\\n|$))';
+
+/**
  * The wiki link syntax, as a source string: `[text]`, `[text|target]` or
  * `[text|target|attributes]`. The trailing `(?!\()` skips `[text](url)` —
  * that is a markdown link, and its bracket text is not a wiki link target.
@@ -75,7 +83,7 @@ export const NOT_TASK_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+
  * a link *is*. A second copy of this pattern is a second answer waiting to
  * drift from this one.
  */
-export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
+export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}${NOT_ALERT_MARKER}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
 
 /**
  * A link reference definition (CommonMark §4.7) on a line of its own:
