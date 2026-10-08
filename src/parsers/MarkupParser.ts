@@ -15,7 +15,7 @@ import PluginSyntaxHandler from './handlers/PluginSyntaxHandler.js';
 import WikiTagHandler from './handlers/WikiTagHandler.js';
 import WikiFormHandler from './handlers/WikiFormHandler.js';
 import LinkParserHandler from './handlers/LinkParserHandler.js';
-import { NOT_TASK_MARKER, UNESCAPED_BRACKET, insideMarkdownLinkText, markdownLinkTextRanges } from './LinkParser.js';
+import { NOT_ALERT_MARKER, NOT_TASK_MARKER, UNESCAPED_BRACKET, insideMarkdownLinkText, markdownLinkTextRanges } from './LinkParser.js';
 import { parseTableRows } from './jspwikiTableRow.js';
 import { STYLE_BLOCK_OPENER, styleBlockClasses } from './styleBlockSyntax.js';
 import ParseContext from './context/ParseContext.js';
@@ -1860,7 +1860,7 @@ class MarkupParser extends BaseManager {
     //   otherwise            → wiki link        [PageName], [Display|Target]
     // #1708: brackets inside a Markdown link's text are that text, for markdown-it.
     const markdownLinkText = markdownLinkTextRanges(sanitized);
-    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^\\]]*)\\](?!\\()`, 'g'),
+    sanitized = sanitized.replace(new RegExp(`${UNESCAPED_BRACKET}${NOT_TASK_MARKER}${NOT_ALERT_MARKER}\\[([^\\]]*)\\](?!\\()`, 'g'),
       (match: string, inner: string, offset: number) => {
         if (insideMarkdownLinkText(markdownLinkText, offset)) return match;
 

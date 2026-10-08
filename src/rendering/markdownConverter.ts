@@ -41,6 +41,7 @@ import sup from 'markdown-it-sup';
 import taskLists from 'markdown-it-task-lists';
 import { headingSlug } from '../utils/SectionUtils.js';
 import { asHtmlPolicy, filterAuthorHtml, type HtmlPolicy } from './htmlPolicy.js';
+import { githubAlerts } from './githubAlerts.js';
 
 export type MarkdownProfile = 'page' | 'untrusted' | 'fallback';
 
@@ -150,6 +151,7 @@ export function buildMarkdownIt(profile: MarkdownProfile): MarkdownIt {
     md.use(sub);
     md.use(sup);
     md.use(taskLists);
+    md.use(githubAlerts); // #1493
     authorHtmlThroughPolicy(md); // after the plugins: see its comment
   }
   return md;
