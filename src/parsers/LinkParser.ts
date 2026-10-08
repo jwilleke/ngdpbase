@@ -78,6 +78,61 @@ export const NOT_TASK_MARKER = '(?!(?<=(?:^|\\n)[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+
 export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\\[([^|\\]]+)(?:\\|([^|\\]]+))?(?:\\|([^\\]]+))?\\](?!\\()`;
 
 /**
+ * A link reference definition (CommonMark §4.7) on a line of its own:
+ * `[label]: destination "optional title"`. A destination on the next line is
+ * not recognised.
+ */
+const REFERENCE_DEFINITION = /^ {0,3}\[((?:[^\]\\\n]|\\.)+)\]:[ \t]*(<[^>\n]*>|\S+)(?:[ \t]+("[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
+
+/**
+ * Only a destination that looks like a link makes a definition (#1491).
+ * Wiki pages are full of `[Term]: value` lines — `[LOINC Code]: 785-6` —
+ * which CommonMark would read as definitions and hide. Those stay a wiki link
+ * and text, as they always rendered; a URL, a path or an anchor is a
+ * definition.
+ */
+const LINK_LIKE_DESTINATION = /^(?:<[^>]*>|[a-z][a-z0-9+.-]*:\/\/\S+|mailto:\S+|\.{0,2}\/\S*|#\S+)$/i;
+
+/** A reference label as CommonMark matches it: case-insensitive, inner whitespace collapsed. */
+export function referenceLabel(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Where the page's reference links are (#1491): each definition's `[label]`,
+ * and each use of a defined label — `[text][label]` (no space between),
+ * `[label][]` and `[label]`. markdown-it renders them and hides the
+ * definitions; every other `[…]` stays a wiki link. A page that defines
+ * nothing has no ranges, so it renders exactly as before.
+ */
+export function referenceLinkRanges(content: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  if (typeof content !== 'string') return ranges;
+
+  const labels = new Set<string>();
+  for (const m of content.matchAll(REFERENCE_DEFINITION)) {
+    const label = m[1] ?? '';
+    // `[^1]:` is a footnote definition, not a link reference.
+    if (label.startsWith('^') || !LINK_LIKE_DESTINATION.test(m[2] ?? '')) continue;
+    labels.add(referenceLabel(label));
+    const open = (m.index ?? 0) + m[0].indexOf('[');
+    ranges.push([open, open + label.length + 1]);
+  }
+  if (labels.size === 0) return ranges;
+
+  // `[a]` optionally followed straight away by `[b]`; never `[a](` (an inline
+  // link) or `[a]:` (a definition, handled above).
+  const use = new RegExp(`${UNESCAPED_BRACKET}\\[([^\\[\\]\\n]+)\\](?:\\[([^\\[\\]\\n]*)\\])?(?![(:])`, 'g');
+  for (const m of content.matchAll(use)) {
+    const label = m[2] ? m[2] : m[1] ?? '';
+    if (!labels.has(referenceLabel(label))) continue;
+    const start = m.index ?? 0;
+    ranges.push([start, start + m[0].length - 1]);
+  }
+  return ranges;
+}
+
+/**
  * The link text of every Markdown link whose text holds brackets of its own
  * (#1708): `[a [b] c](url)`. CommonMark allows balanced brackets there, and
  * markdown-it renders them, but the wiki link syntax took the inner `[b`
@@ -89,9 +144,13 @@ export const WIKI_LINK_PATTERN_SOURCE = `${UNESCAPED_BRACKET}${NOT_TASK_MARKER}\
  * the brackets are link text. An escaped bracket (#1480) is not counted, and
  * link text that starts with NCM's `[[` escape is left to it. One
  * pass with a stack, so a long page costs no more than its length.
+ *
+ * Reference links (#1491) are Markdown link text too: `[text][label]`,
+ * `[label][]` and `[label]` when the page defines `label`, and the
+ * definition line's `[label]` itself. See {@link referenceLinkRanges}.
  */
 export function markdownLinkTextRanges(content: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
+  const ranges: Array<[number, number]> = referenceLinkRanges(content);
   const open: Array<{ start: number; nested: boolean }> = [];
   // findLinks() is handed null and undefined by JavaScript callers.
   if (typeof content !== 'string') return ranges;
