@@ -547,11 +547,14 @@ class AuthManager extends BaseManager {
    * `profile-manage`, anyone else's under `user-edit` (#1524). No PDP, no answer,
    * no access.
    */
-  private async mayManageCredentials(ctx: PermissionSubject, username: string): Promise<boolean> {
+  private async mayManageCredentials(ctx: PermissionSubject, username: string, opts: { viewOnly?: boolean } = {}): Promise<boolean> {
     const pdp = this.engine.getManager('PolicyDecisionPoint') as
-      { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
+      { permits(subject: PermissionSubject, action: string): Promise<boolean>; holds?(subject: PermissionSubject, action: string): Promise<boolean> } | null;
     if (!pdp || !ctx.isAuthenticated) return false;
-    return pdp.permits(ctx, ctx.username === username ? 'account-security' : 'user-edit');
+    const action = ctx.username === username ? 'account-security' : 'user-edit';
+    // #1738: viewing needs the permission, not a fresh sign-in.
+    if (opts.viewOnly && typeof pdp.holds === 'function') return pdp.holds(ctx, action);
+    return pdp.permits(ctx, action);
   }
 
   /**
@@ -587,9 +590,15 @@ class AuthManager extends BaseManager {
     return this.credentials;
   }
 
-  /** `username`'s credentials, without their secrets (#1524). */
+  /**
+   * `username`'s credentials, without their secrets (#1524). Reading the list
+   * is not a change, so it asks whether the person HOLDS the permission and
+   * leaves out the fresh-sign-in rule (#1738): a stale sign-in that was
+   * refused here showed its owner no passkeys at all, and they believed them
+   * lost. Adding, renaming and removing still ask for a fresh sign-in.
+   */
   async listCredentials(ctx: PermissionSubject, username: string): Promise<CredentialView[]> {
-    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
     return this.requireCredentialsStore().list(username).map(({ secret: _secret, ...view }) => view);
   }
 

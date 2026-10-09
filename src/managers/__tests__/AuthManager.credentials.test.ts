@@ -24,7 +24,7 @@ describe('AuthManager credentials (#1524)', () => {
   let notices: Array<Record<string, unknown>>;
   let users: Record<string, { password?: string; isExternal?: boolean }>;
 
-  const started = async (granted: Record<string, string[]> = { molly: ['account-security'], admin: ['account-security', 'user-edit'] }) => {
+  const started = async (granted: Record<string, string[]> = { molly: ['account-security'], admin: ['account-security', 'user-edit'] }, opts: { staleSignIn?: boolean } = {}) => {
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
         getProperty: (_k: string, d: unknown) => d,
@@ -33,7 +33,12 @@ describe('AuthManager credentials (#1524)', () => {
         isBaseUrlExplicit: () => true,
         getBaseURL: () => 'https://wiki.example.com'
       },
-      PolicyDecisionPoint: { permits: (s: { username: string }, action: string) => Promise.resolve((granted[s.username] ?? []).includes(action)) },
+      // `holds` is policy only; `permits` adds the fresh-sign-in rule (#1635), so a
+      // stale sign-in is refused by `permits` and still holds the permission.
+      PolicyDecisionPoint: {
+        permits: (s: { username: string }, action: string) => Promise.resolve(!opts.staleSignIn && (granted[s.username] ?? []).includes(action)),
+        holds: (s: { username: string }, action: string) => Promise.resolve((granted[s.username] ?? []).includes(action))
+      },
       // The real contract: getUser() never returns the password (it is stripped),
       // and hasPassword() is the door that sees it. The earlier mock returned
       // the password from getUser(), so the last-way-in rule passed here while
@@ -72,6 +77,15 @@ describe('AuthManager credentials (#1524)', () => {
     expect(listed).toEqual([expect.objectContaining({ id, kind: 'passkey', label: 'Phone' })]);
     expect(listed[0]).not.toHaveProperty('secret');
     expect(audit).toContainEqual(expect.objectContaining({ eventType: 'user-edit', action: 'credential-add', user: 'molly', resource: 'molly' }));
+  });
+
+  test('#1738: a stale sign-in still lists its own passkeys; changing them needs a fresh one', async () => {
+    const fresh = await started();
+    await fresh.addCredential(subject('molly'), 'molly', PASSKEY);
+    const stale = await started(undefined, { staleSignIn: true });
+    expect(await stale.listCredentials(subject('molly'), 'molly')).toHaveLength(1);
+    await expect(stale.addCredential(subject('molly'), 'molly', PASSKEY)).rejects.toThrow(/Permission denied/);
+    await expect(stale.listCredentials(subject('bob'), 'molly')).rejects.toThrow(/Permission denied/);
   });
 
   test('someone else’s credentials need user-edit', async () => {
