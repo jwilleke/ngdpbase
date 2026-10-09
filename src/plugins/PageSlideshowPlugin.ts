@@ -27,6 +27,7 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { escapeHtml, splitParam, parseBoolParam, extractExcerpt, shuffleArray } from '../utils/pluginFormatters.js';
+import { pageUrl } from '../utils/pageUrl.js';
 
 let _idCounter = 0;
 
@@ -90,7 +91,8 @@ const PageSlideshowPlugin: SimplePlugin = {
       slides.push({
         title:   page.title || name,
         excerpt: extractExcerpt(raw, excerptLen),
-        url:     '/wiki/' + encodeURIComponent(name)
+        // The page's own URL: /view/<name>, or /vaults/… for a private page (#1456).
+        url:     pageUrl(name)
       });
     }
 

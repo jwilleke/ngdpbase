@@ -15,6 +15,7 @@
  */
 
 import PageSlideshowPlugin from '../PageSlideshowPlugin';
+import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 
 /**
  * `allPages` is what the viewer may read (#1219); `denied` are pages that exist
@@ -127,6 +128,37 @@ describe('PageSlideshowPlugin', () => {
       const result = await PageSlideshowPlugin.execute(context, { pages: 'TestPage' });
       expect(result).toContain('carousel-control-prev');
       expect(result).toContain('carousel-control-next');
+    });
+  });
+
+  describe('slide links', () => {
+    test('a slide links to the page at /view/, not the retired /wiki/', async () => {
+      const pm = makePageManager(['My Page'], { 'My Page': samplePage('My Page') });
+      const result = await PageSlideshowPlugin.execute({ engine: makeEngine(pm) }, { pages: 'My Page' });
+      expect(result).toContain('href="/view/My%20Page"');
+      expect(result).not.toContain('/wiki/');
+    });
+
+    test('a private page links under /vaults/', async () => {
+      const name = 'vaults/jim/default/Diary';
+      const pm = makePageManager([name], { [name]: samplePage('Diary') });
+      const result = await PageSlideshowPlugin.execute({ engine: makeEngine(pm) }, { pages: name });
+      expect(result).toContain('href="/vaults/jim/default/Diary"');
+    });
+  });
+
+  describe('who the pages are read as (#1622)', () => {
+    test('with no viewer, every page is read as an anonymous visitor', async () => {
+      const pm = makePageManager(['Public'], { Public: samplePage('Public') });
+      await PageSlideshowPlugin.execute({ engine: makeEngine(pm) }, { pages: 'Public' });
+      expect(pm.readPage).toHaveBeenCalledWith('Public', ANONYMOUS_SUBJECT);
+    });
+
+    test('with a viewer, pages are read as that viewer', async () => {
+      const viewer = { username: 'jim' };
+      const pm = makePageManager(['Public'], { Public: samplePage('Public') });
+      await PageSlideshowPlugin.execute({ engine: makeEngine(pm), userContext: viewer }, { pages: 'Public' });
+      expect(pm.readPage).toHaveBeenCalledWith('Public', viewer);
     });
   });
 
