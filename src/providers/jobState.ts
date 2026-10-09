@@ -27,7 +27,8 @@ export interface JobRunRecord {
   startedAt: string;
   /** 1 for the first try; a run resumed after a restart counts up. */
   attempt: number;
-  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  /** `skipped`: a slot the scheduler passed over, by its catch-up or overlap rule (#1715). */
+  status: 'running' | 'completed' | 'failed' | 'interrupted' | 'skipped';
   completedAt?: string;
   error?: string;
 }
@@ -35,8 +36,16 @@ export interface JobRunRecord {
 export interface JobState {
   jobId: string;
   lastSlotDone: string | null;
+  /** The first slot not yet handled: run, skipped or failed (#1715). */
   nextSlot: string | null;
   current: JobRunRecord | null;
+  /**
+   * The schedule the slots were computed from (`rrule|dtstart|timeZone`), so a
+   * rule changed while the server was down is seen at the next start: slots
+   * are recomputed from then, and nothing is caught up for the old rule
+   * (#1715). Null for state written before the rule was kept.
+   */
+  rule: string | null;
 }
 
 export interface JobStateLimits {

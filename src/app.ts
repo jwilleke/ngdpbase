@@ -1128,6 +1128,10 @@ void (async (): Promise<void> => {
     process.exit(1);
   }
 
+  // #1715: scheduled jobs start looking for due slots only now, with every
+  // manager and add-on up, so a catch-up run never meets one still starting.
+  (engine.getManager('BackgroundJobManager') as { startScheduler?(): void } | null)?.startScheduler?.();
+
   // 7. Register Routes
   const installRoutes = new InstallRoutes(engine);
   app.use('/install', installRoutes.getRouter());

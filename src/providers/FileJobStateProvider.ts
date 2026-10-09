@@ -102,7 +102,8 @@ class FileJobStateProvider implements JobStateProvider {
   }
 
   async getState(jobId: string): Promise<JobState | null> {
-    return this.readJson<JobState>(this.file('state', jobId));
+    const state = await this.readJson<JobState>(this.file('state', jobId));
+    return state ? { ...state, rule: state.rule ?? null } : null;
   }
 
   async putState(state: JobState): Promise<void> {

@@ -55,11 +55,20 @@ describe.each([
   test('state round-trips, and a job never written has none', async () => {
     const p = make();
     expect(await p.getState('acct.month-close')).toBeNull();
-    const state = { jobId: 'acct.month-close', lastSlotDone: '2026-09-30T23:00:00.000Z', nextSlot: SLOT, current: run(31, 'running') };
+    const state = {
+      jobId: 'acct.month-close', lastSlotDone: '2026-09-30T23:00:00.000Z', nextSlot: SLOT, current: run(31, 'running'),
+      rule: 'FREQ=MONTHLY;BYMONTHDAY=-1;BYHOUR=23;BYMINUTE=0|2000-01-01T00:00:00|America/New_York'
+    };
     await p.putState(state);
     expect(await p.getState('acct.month-close')).toEqual(state);
-    await p.putState({ ...state, current: null, lastSlotDone: SLOT });
-    expect(await p.getState('acct.month-close')).toEqual({ ...state, current: null, lastSlotDone: SLOT });
+    await p.putState({ ...state, current: null, lastSlotDone: SLOT, rule: null });
+    expect(await p.getState('acct.month-close')).toEqual({ ...state, current: null, lastSlotDone: SLOT, rule: null });
+  });
+
+  test('a skipped slot is recorded as skipped (#1715)', async () => {
+    const p = make();
+    await p.recordRun('acct.month-close', run(1, 'skipped'));
+    expect((await p.listRuns('acct.month-close'))[0].status).toBe('skipped');
   });
 
   test('history keeps the newest runs up to the limit, and a run recorded again is replaced', async () => {
@@ -123,9 +132,17 @@ describe.each([
 });
 
 describe('file backend', () => {
+  test('state written before the rule was kept reads back with rule null (#1715)', async () => {
+    const p = new FileJobStateProvider(path.join(dir, 'jobs'), { now });
+    fs.mkdirSync(path.join(dir, 'jobs', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'jobs', 'state', 'acct.month-close.json'),
+      JSON.stringify({ jobId: 'acct.month-close', lastSlotDone: null, nextSlot: SLOT, current: null }));
+    expect((await p.getState('acct.month-close'))?.rule).toBeNull();
+  });
+
   test('a crash between writing and renaming leaves the previous state whole', async () => {
     const p = new FileJobStateProvider(path.join(dir, 'jobs'), { now });
-    const before = { jobId: 'acct.month-close', lastSlotDone: null, nextSlot: SLOT, current: null };
+    const before = { jobId: 'acct.month-close', lastSlotDone: null, nextSlot: SLOT, current: null, rule: null };
     await p.putState(before);
     const rename = vi.spyOn(fsExtra, 'rename').mockRejectedValueOnce(new Error('simulated crash'));
     await expect(p.putState({ ...before, nextSlot: '2026-11-30T23:00:00.000Z' })).rejects.toThrow('simulated crash');

@@ -42,27 +42,29 @@ class SqliteJobStateProvider implements JobStateProvider {
 
   async getState(jobId: string): Promise<JobState | null> {
     assertJobId(jobId);
-    const row = this.db.prepare('SELECT last_slot_done, next_slot, current_run FROM job_state WHERE job_id = ?').get(jobId) as
-      { last_slot_done: string | null; next_slot: string | null; current_run: string | null } | undefined;
+    const row = this.db.prepare('SELECT last_slot_done, next_slot, current_run, rule FROM job_state WHERE job_id = ?').get(jobId) as
+      { last_slot_done: string | null; next_slot: string | null; current_run: string | null; rule: string | null } | undefined;
     if (!row) return null;
     return {
       jobId,
       lastSlotDone: row.last_slot_done,
       nextSlot: row.next_slot,
-      current: row.current_run ? JSON.parse(row.current_run) as JobRunRecord : null
+      current: row.current_run ? JSON.parse(row.current_run) as JobRunRecord : null,
+      rule: row.rule
     };
   }
 
   async putState(state: JobState): Promise<void> {
     assertJobId(state.jobId);
-    this.db.prepare(`INSERT INTO job_state (job_id, last_slot_done, next_slot, current_run, updated_at)
-      VALUES (@jobId, @last, @next, @current, @at)
+    this.db.prepare(`INSERT INTO job_state (job_id, last_slot_done, next_slot, current_run, rule, updated_at)
+      VALUES (@jobId, @last, @next, @current, @rule, @at)
       ON CONFLICT (job_id) DO UPDATE SET last_slot_done = excluded.last_slot_done, next_slot = excluded.next_slot,
-        current_run = excluded.current_run, updated_at = excluded.updated_at`).run({
+        current_run = excluded.current_run, rule = excluded.rule, updated_at = excluded.updated_at`).run({
       jobId: state.jobId,
       last: state.lastSlotDone,
       next: state.nextSlot,
       current: state.current ? JSON.stringify(state.current) : null,
+      rule: state.rule ?? null,
       at: new Date(this.now()).toISOString()
     });
   }

@@ -40,6 +40,15 @@ const DATABASE_MIGRATIONS: Migration[] = [
         PRIMARY KEY (job_id, slot)
       )`);
     }
+  },
+  {
+    // #1715: the schedule a job's slots were computed from, so a rule changed
+    // while the server was down is recomputed rather than caught up.
+    id: '20261009140000',
+    description: 'scheduled jobs: job_state.rule',
+    up: (db) => {
+      db.exec('ALTER TABLE job_state ADD COLUMN rule TEXT');
+    }
   }
 ];
 

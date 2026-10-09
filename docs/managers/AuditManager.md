@@ -533,6 +533,8 @@ audited.
 | `job-started` | A background job started, and who asked for it | continue | yes |
 | `job-completed` | A background job finished successfully | continue | yes |
 | `job-failed` | A background job failed | continue | yes |
+| `job-skipped` | Scheduled slots a job passed over, by its catch-up or overlap rule | continue | yes |
+| `job-schedule-change` | A scheduled job's rule changed; its slots are counted again from then | continue | yes |
 | `page-raw-edit` | Page edited through the admin raw editor | continue | yes |
 | `session-revoke` | Session revoked by an administrator | continue | yes |
 | `session-clear-anonymous` | Anonymous sessions cleared | continue | yes |
