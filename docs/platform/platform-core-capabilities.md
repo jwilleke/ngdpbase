@@ -125,14 +125,14 @@ __Adding plugins:__
 
 ## Search
 
-- Full-text Lunr search across all page content and metadata
+- Full-text search across all page content and metadata (MiniSearch; Lunr query syntax and English stemming)
 - Indexed fields: title, body, tags, frontmatter fields
 - Search results with relevance scoring and snippets
 - Advanced search (field-specific queries)
 - Configurable result count
 - Autocomplete suggestions *(enabled by default)*
 - Private pages excluded from results for unauthorized users
-- Pluggable `SearchProvider` interface — swap Lunr for Elasticsearch or any backend
+- Pluggable `SearchProvider` interface — swap the built-in index for Elasticsearch or any backend
 - Real-time index update on page save (no full rebuild required for single changes)
 
 ---

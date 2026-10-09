@@ -138,7 +138,7 @@ Where, today and planned, does ngdp actually use metadata? Each row here is a ju
 
 | Surface | What it reads |
 |---|---|
-| Search index (Lunr default; ES addon) | `name`, `description`, `keywords`, `articleBody`, `author`, `dateCreated`, `dateModified` |
+| Search index (MiniSearch default; ES addon) | `name`, `description`, `keywords`, `articleBody`, `author`, `dateCreated`, `dateModified` |
 | Asset picker tiles | `name`, `dateCreated`, `thumbnailUrl`, type-specific summary (image dimensions, video duration, page snippet) |
 | Asset picker filters | `dateCreated` range, `keywords`, `author`, type, mime category |
 | Page header / breadcrumbs | `name`, `dateModified`, `author`, `keywords`, page category |

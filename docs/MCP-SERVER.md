@@ -687,7 +687,7 @@ dist/mcp-server.js      # Compiled JavaScript
 The MCP server initializes WikiEngine on first tool call and maintains a single instance for all subsequent requests. This provides access to:
 
 - __PageManager__: Page CRUD operations
-- __SearchManager__: Full-text search with Lunr
+- __SearchManager__: Full-text search (MiniSearch, Lunr query syntax)
 - __ValidationManager__: Metadata validation and category management
 - __AttachmentManager__: File attachment operations
 - __ConfigurationManager__: System configuration access
@@ -730,7 +730,7 @@ The WikiEngine maintains in-memory caches:
 
 - Page cache (full content)
 - Title/UUID/Slug indexes
-- Search index (Lunr)
+- Search index (MiniSearch)
 
 ### Lazy Loading
 

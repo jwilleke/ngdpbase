@@ -319,7 +319,7 @@ highlight.js runs in Phase 7 (post-processing) — no client-side JS needed to a
 | --- | --- |
 | Why not use Confluence / Notion? | Those are hosted SaaS. ngdpbase runs on your infrastructure, all data in files you own, no vendor lock-in. |
 | Why no database? | Files are inspectable, versionable with git, trivially backed up, and portable. The FileSystemProvider abstraction allows a database backend without changing application code. |
-| How does search work? | Lunr.js full-text index built in-memory on startup and incrementally updated on page save. Index lives on fast storage (SSD path configurable). Elasticsearch addon available for larger deployments. |
+| How does search work? | A MiniSearch full-text index built in memory on startup and updated one page at a time on save. Index lives on fast storage (SSD path configurable). Elasticsearch addon available for larger deployments. |
 | What is the plugin security model? | Plugins execute server-side in the Node.js process. There is no sandbox — plugin authors are trusted developers. User-provided markup cannot inject arbitrary plugins; only registered plugin names are dispatched. |
 | How fast is page rendering? | Rendered HTML is cached in `CacheManager` per page per role-set. On a cache hit the rendering pipeline is bypassed entirely — response time drops to file I/O + template render. Cache is automatically invalidated on save, rename, or delete. |
 | Can it scale horizontally? | Currently single-process. FileSystemProvider requires a shared mount or provider swap (S3/database) for multi-node. Session store is already configurable. |

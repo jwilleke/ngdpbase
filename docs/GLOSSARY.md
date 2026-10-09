@@ -131,9 +131,10 @@ on page save/delete/rename. Not the same as a Search Index Rebuild.
 Preferred: __Search Index__
 Avoid: "Lunr index", "search-index", "full-text index"
 
-The in-memory Lunr.js full-text index used to power wiki search. Persisted to
-disk at `$FAST_STORAGE/search-index/`. Separate from the Page Index.
-Provided by `LunrSearchProvider`.
+The in-memory full-text index used to power search: MiniSearch since #1736, which
+updates one page per save. Built at start-up from the documents persisted at
+`$FAST_STORAGE/search-index/`. Separate from the Page Index. Provided by
+`LunrSearchProvider` (the name is kept; it still reads Lunr's query syntax).
 
 ### Search Index Rebuild
 

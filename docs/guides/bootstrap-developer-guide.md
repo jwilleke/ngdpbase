@@ -314,7 +314,7 @@ The user the server runs as is a setting, the same on bare metal, Docker and Kub
 | Started as | What happens |
 | --- | --- |
 | `PUID` or `PGID` unset, not a number, or `0` | Refuses to start and says what to set. Never falls back to root |
-| root (a plain `docker run`, the shipped Compose file, a pod without `runAsUser`) | Gives `FAST_STORAGE` to `PUID:PGID` if it isn't already theirs (a filesystem that refuses, such as NFS, is reported and skipped), then switches to that group and user. The LinuxServer.io pattern, done in the app |
+| root (a plain `docker run`, the shipped Compose file, a pod without `runAsUser`) | Walks the whole of `FAST_STORAGE` on every start and gives each entry that isn't `PUID:PGID` to them, then switches to that group and user. An entry that can't be changed (a read-only ConfigMap file mounted inside, a filesystem that maps owners, such as NFS) is skipped and reported by path and error code, never the end of the walk, so an interrupted hand-over finishes on the next start ([#1695](https://github.com/jwilleke/ngdpbase/issues/1695)). Once everything is theirs, a start only reads owners. The LinuxServer.io pattern, done in the app |
 | `PUID:PGID` already (bare metal, Compose `user:`, Kubernetes `runAsUser`) | Starts |
 | any other non-root user | Refuses, naming both ids and what to set |
 
