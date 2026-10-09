@@ -695,6 +695,53 @@ Per-instance encryption may be appropriate for simpler deployments where admin a
 
 ---
 
+## Unlocking an encrypted store: which sign-in methods can (2026-10-09)
+
+Status: discussion with the operator, not yet approved to build. Builds on [#1594](https://github.com/jwilleke/ngdpbase/issues/1594) (strong sign-ins unlock private stores) and [private-stores.md](../private-stores.md).
+
+An encrypted store opens only with the person's vault key (the KEK). The KEK is kept in `user-keys.json` as wrapped copies, one per way in. A sign-in method can unlock only if it can give the server a secret that opens one of those copies. __The test that matters: can the server open the vault by itself?__ If it can, that way in protects against a stolen disk or backup, and nothing more.
+
+### The methods
+
+| Method | Can it unlock? | Works on which devices | Survives a move to a new domain | Can the server unlock alone? | Status |
+|---|---|---|---|---|---|
+| Password | Yes | Any device | Yes | No (the server sees it while you sign in) | Today |
+| 12 recovery words | Yes; __the master key__ | Any device | Yes | No | Today |
+| Printed recovery sheet / QR | Yes (the same words) | Any device | Yes | No | Easy add-on |
+| Passkey with PRF, synced (iCloud Keychain, Google Password Manager, a password manager) | Yes | Every device signed in to that same Apple, Google or password-manager account. Other devices only by scanning a QR with a phone that holds it, where the browser and phone support PRF over that link (not guaranteed) | __No__ (passkeys are bound to the site's domain) | No | Proposed, [#1700](https://github.com/jwilleke/ngdpbase/issues/1700) |
+| Passkey with PRF, device-bound (Windows Hello, a phone not syncing) | Yes | That one device only | __No__ | No | Proposed, #1700 |
+| Hardware security key with PRF / hmac-secret (YubiKey, etc.) | Yes, where the key supports it | Any computer the key is plugged into or tapped on | __No__ | No | Comes with #1700 |
+| TOTP codes (authenticator app) | __No__ by itself: the server holds the TOTP seed, so the code is not a secret the server lacks | — | — | — | Only through the server-held copy below. TOTP itself: [#421](https://github.com/jwilleke/ngdpbase/issues/421) |
+| Email link, SMS code | __No__ by itself: same reason | — | — | — | Only through the server-held copy |
+| Google, Authentik, other OIDC sign-in | __No__ by itself: these hand the server an identity, not a secret | — | — | — | Only through the server-held copy |
+| Server-held copy for AAL2 sign-ins | Yes, after any AAL2 sign-in | Any device | Yes | __Yes__, with its `.env` instance secret | Proposed, opt-in, [#1701](https://github.com/jwilleke/ngdpbase/issues/1701); open decision: per instance or per person |
+| "Remember this device" key (a non-exportable key in the browser) | Yes | That one browser | Yes | No | Not filed. Lost when browser data is cleared; a stolen unlocked laptop opens the vault |
+| Trusted contacts (the KEK split among 3–5 people, any 2–3 restore it) | Recovery, not daily unlock | Any device | Yes | No | Belongs in account recovery, [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) |
+| Organisation recovery key (a copy wrapped for the organisation) | Recovery by the organisation | Any device | Yes | No, but the organisation can | Not filed. Breaks "an administrator cannot read your vault": explicit opt-in only, per person, visible to them |
+
+### What works across all devices
+
+- __The password and the 12 recovery words work everywhere__: any device, any browser, and after the site moves to a new domain or is restored somewhere else. That is why the words stay the master key.
+- __Passkeys do not.__ A synced passkey follows the person's Apple, Google or password-manager account, not every device they own. A device-bound passkey stays on its device. A hardware key travels with the key itself. And every passkey stops working if the site's domain changes, for sign-in and for unlock alike.
+- So passkeys are for daily convenience and strength. They never replace the words, and the help text must say so plainly.
+
+### What this means for restoring a vault
+
+- The wrapped copies travel in the normal backup (`user-keys.json`). A stolen backup gains nothing from the passkey copies: each needs its physical authenticator.
+- Restored onto the same domain, passkey unlock keeps working. Onto a new domain, only the password and the words unlock.
+- An administrator still cannot open anyone's vault, unless the person opted in to the server-held copy (#1701) or an organisation key. Lose the password, the words and every passkey, and the vault is gone.
+
+### Recommended plan
+
+- Daily unlock: passkey with PRF (#1700), and security keys with it.
+- Master key: the 12 recovery words, unchanged.
+- Google, Authentik, email link and TOTP users: only the server-held copy (#1701), opt-in, with its trade-off stated where it is switched on.
+- People who lose everything: trusted contacts under #1545.
+- Organisation recovery key: only where an organisation genuinely needs it, opt-in per person.
+- "Remember this device": not recommended. A passkey gives the same convenience without the stolen-laptop risk.
+
+---
+
 ## New npm Dependency
 
 - __`exiftool-vendored`__ — MWG-compliant EXIF/IPTC/XMP metadata for MediaManager. ExifTool binary is bundled by this package (no system Perl required). `sharp` (already a dependency) remains for thumbnail generation only.
