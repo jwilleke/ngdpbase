@@ -7,7 +7,7 @@
  * CloudflareAccessAuthProvider test harness (#649).
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, vi } from 'vitest';
 import {
   createLocalJWKSet,
   exportJWK,
@@ -17,6 +17,7 @@ import {
   type JWTVerifyGetKey
 } from 'jose';
 import { AuthentikBearerAuthProvider } from '../AuthentikBearerAuthProvider';
+import logger from '../../utils/logger';
 
 const ISSUER = 'https://auth.example.com/application/o/ngdpbase/';
 const JWKS_URL = `${ISSUER}jwks/`;
@@ -171,6 +172,35 @@ describe('AuthentikBearerAuthProvider (#818)', () => {
     const provider = buildProvider(engine);
     const result = await provider.verify({ token: undefined });
     expect(result).toBeNull();
+  });
+
+  test('non-JWT bearer token (agent token) → null without a warn', async () => {
+    // The bearer middleware tries authentik-bearer before agent-token, so
+    // every agent-token request used to log "JWT verification failed:
+    // Invalid Compact JWS" at warn.
+    const { engine } = buildEngine([]);
+    const provider = buildProvider(engine);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const result = await provider.verify({ token: 'ngdp_at_abcdefABCDEF0123456789' });
+      expect(result).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('JWT-shaped token that fails verification still warns', async () => {
+    const { engine } = buildEngine([]);
+    const provider = buildProvider(engine);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const result = await provider.verify({ token: 'aaa.bbb.ccc' });
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('JWT verification failed'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('invalid signature (wrong key) → null', async () => {

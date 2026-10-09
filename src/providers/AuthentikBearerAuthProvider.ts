@@ -97,6 +97,19 @@ export class AuthentikBearerAuthProvider implements AuthProvider {
       return null;
     }
 
+    // The bearer middleware offers every bearer token to every bearer
+    // provider in turn, so this one routinely sees credentials that belong to
+    // another provider (an `ngdp_at_` agent token, an opaque OIDC token). A
+    // token that is not a compact JWS (three dot-separated segments) cannot be
+    // an Authentik JWT: decline it quietly. The result is the same `null`
+    // jwtVerify would give — nothing is accepted that was refused before —
+    // only the warn line, which fired on every agent-token request, goes.
+    // JWT-shaped tokens that fail verification still warn below.
+    if (token.split('.').length !== 3) {
+      logger.debug('[AuthentikBearerAuthProvider] bearer token is not a JWT — not an Authentik credential');
+      return null;
+    }
+
     let verified: JWTVerifyResult<AuthentikJwtPayload>;
     try {
       verified = await jwtVerify<AuthentikJwtPayload>(token, this.jwks, {
