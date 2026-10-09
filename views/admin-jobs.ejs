@@ -1,0 +1,115 @@
+<%- include('header', { pageName: 'Scheduled Jobs' }) %>
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-clock"></i> Scheduled Jobs</h1>
+        <a href="/admin" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-danger"><%= error %></div><% } %>
+
+    <p class="text-muted">
+        Work the server and its add-ons run by themselves on a schedule. Times are UTC.
+        <strong>Run now</strong> runs a job outside its schedule and marks no slot done.
+        A slot that was skipped, or failed after its last attempt, can be run again under its own time.
+    </p>
+
+    <% if (!jobs || jobs.length === 0) { %>
+        <div class="alert alert-info">No scheduled jobs are registered.</div>
+    <% } %>
+
+    <% (jobs || []).forEach(function(job) { %>
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong><%= job.displayName %></strong> <code class="ms-2"><%= job.id %></code>
+                <% if (!job.enabled) { %><span class="badge bg-warning text-dark ms-2">Paused</span><% } %>
+                <% if (job.running) { %><span class="badge bg-primary ms-2">Running</span><% } %>
+                <% if (job.current && job.current.status === 'failed' && job.current.retryAt) { %>
+                    <span class="badge bg-danger ms-2">Retry <%= job.current.attempt + 1 %> of <%= job.maxAttempts %> at <%= job.current.retryAt %></span>
+                <% } else if (job.current && job.current.status === 'interrupted') { %>
+                    <span class="badge bg-secondary ms-2">Interrupted — resumes shortly</span>
+                <% } %>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <form method="post" action="/admin/jobs/<%= encodeURIComponent(job.id) %>/run-now">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-primary"<%- lockedUnless('admin-system') %><%= job.running || job.current ? ' disabled' : '' %>><i class="fas fa-play"></i> Run now</button>
+                </form>
+                <% if (job.current && job.current.status === 'failed' && job.current.retryAt) { %>
+                <form method="post" action="/admin/jobs/<%= encodeURIComponent(job.id) %>/retry">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"<%- lockedUnless('admin-system') %><%= job.running ? ' disabled' : '' %>><i class="fas fa-redo"></i> Retry now</button>
+                </form>
+                <% } %>
+                <form method="post" action="/admin/jobs/<%= encodeURIComponent(job.id) %>/pause">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="hidden" name="paused" value="<%= job.enabled ? 'true' : 'false' %>">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"<%- lockedUnless('config-manage') %>>
+                        <% if (job.enabled) { %><i class="fas fa-pause"></i> Pause<% } else { %><i class="fas fa-play-circle"></i> Resume<% } %>
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="card-body">
+            <dl class="row mb-3">
+                <dt class="col-sm-3">Schedule</dt>
+                <dd class="col-sm-9"><code><%= job.schedule %></code><% if (job.schedule !== job.rrule) { %> <span class="text-muted small">(<%= job.rrule %>)</span><% } %>, <%= job.timeZone %></dd>
+                <dt class="col-sm-3">Next slot</dt>
+                <dd class="col-sm-9"><%= job.nextSlot || '—' %></dd>
+                <dt class="col-sm-3">Last slot done</dt>
+                <dd class="col-sm-9"><%= job.lastSlotDone || '—' %></dd>
+                <dt class="col-sm-3">Rules</dt>
+                <dd class="col-sm-9 small text-muted">
+                    Missed slots: <%= job.catchUp %>; while running: <%= job.overlap %>; attempts: <%= job.maxAttempts %><%= job.persist ? '' : '; kept in memory only' %>
+                </dd>
+            </dl>
+
+            <% if (job.runs.length === 0) { %>
+                <p class="text-muted small mb-0">No runs recorded yet.</p>
+            <% } else { %>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr><th>Slot</th><th>Status</th><th>Attempt</th><th>Started</th><th>Detail</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        <% var completedSlots = job.runs.filter(function(r) { return r.status === 'completed' && r.slot; }).map(function(r) { return r.slot; }); %>
+                        <% job.runs.slice(0, 20).forEach(function(r) { %>
+                        <tr>
+                            <td><%= r.slot || 'Run now' %></td>
+                            <td>
+                                <% if (r.status === 'completed') { %><span class="badge bg-success">Completed</span>
+                                <% } else if (r.status === 'running') { %><span class="badge bg-primary">Running</span>
+                                <% } else if (r.status === 'skipped') { %><span class="badge bg-warning text-dark">Skipped</span>
+                                <% } else if (r.status === 'interrupted') { %><span class="badge bg-secondary">Interrupted</span>
+                                <% } else { %><span class="badge bg-danger">Failed</span><% } %>
+                            </td>
+                            <td><%= r.attempt || '—' %></td>
+                            <td class="small"><%= r.status === 'skipped' ? '—' : r.startedAt %></td>
+                            <td class="small text-muted"><%= r.error || (r.retryAt ? 'retry at ' + r.retryAt : '') %></td>
+                            <td>
+                                <% if (r.slot && (r.status === 'skipped' || (r.status === 'failed' && !r.retryAt)) && completedSlots.indexOf(r.slot) === -1) { %>
+                                <form method="post" action="/admin/jobs/<%= encodeURIComponent(job.id) %>/rerun">
+                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                    <input type="hidden" name="slot" value="<%= r.slot %>">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary"<%- lockedUnless('admin-system') %><%= job.running || job.current ? ' disabled' : '' %>>Run this slot</button>
+                                </form>
+                                <% } %>
+                            </td>
+                        </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+            <% } %>
+        </div>
+    </div>
+    <% }); %>
+</div>
+
+<%- include('footer') %>

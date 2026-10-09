@@ -547,3 +547,105 @@ describe('checkpoints (#1716)', () => {
     expect(await state.loadCheckpoint('test.cp', runId)).toEqual({ n: 5 });
   });
 });
+
+describe('what an administrator does (#1718)', () => {
+  const admin = { username: 'jim', origin: 'request' as const, requestedAt: '2026-10-09T12:00:00.000Z', reason: 'admin' };
+
+  test('the list shows each job, its slots and its history', async () => {
+    const t = job();
+    const m = manager();
+    m.registerJob(t.def);
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    const [view] = await m.listScheduledJobs();
+    expect(view).toMatchObject({
+      id: 'test.hourly', schedule: 'hourly', rrule: 'FREQ=HOURLY;BYMINUTE=0', timeZone: 'UTC', enabled: true, running: false,
+      nextSlot: '2026-10-09T11:00:00.000Z', lastSlotDone: '2026-10-09T10:00:00.000Z', current: null
+    });
+    expect(view.runs[0]).toMatchObject({ slot: '2026-10-09T10:00:00.000Z', status: 'completed' });
+  });
+
+  test('run now runs as the person asking, outside the schedule, and marks no slot done', async () => {
+    const t = job();
+    const m = manager();
+    m.registerJob(t.def);
+    await m.tick();
+    const before = await provider().getState('test.hourly');
+    const runId = await m.runNow('test.hourly', admin);
+    await settle(m);
+    expect(t.contexts[0]).toMatchObject({ username: 'jim', origin: 'request', slot: null });
+    expect(await provider().getState('test.hourly')).toEqual(before);
+    expect((await provider().listRuns('test.hourly'))[0]).toMatchObject({ runId, slot: null, status: 'completed' });
+    expect(named('job-started').at(-1)).toMatchObject({ user: 'jim' });
+  });
+
+  test('run now is refused while the job runs, and for a job that is not scheduled', async () => {
+    const t = job();
+    const m = manager();
+    m.registerJob(t.def);
+    await m.tick();
+    t.holdNext();
+    await m.runNow('test.hourly', admin);
+    await expect(m.runNow('test.hourly', admin)).rejects.toMatchObject({ status: 409 });
+    t.release();
+    await settle(m);
+    await expect(m.runNow('no.such-job', admin)).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('a skipped slot is run again under its own key, as the person asking, and the next slot does not move', async () => {
+    const state = provider();
+    const before = manager(state);
+    before.registerJob(job({ catchUp: 'none' }).def);
+    await before.tick();
+    clock = Date.parse('2026-10-09T12:10:00Z');
+    const t = job({ catchUp: 'none' });
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.slots).toEqual([]);
+    const nextSlot = (await state.getState('test.hourly'))?.nextSlot;
+
+    await m.rerunSlot('test.hourly', '2026-10-09T11:00:00.000Z', admin);
+    await settle(m);
+    expect(t.slots).toEqual(['2026-10-09T11:00:00.000Z']);
+    expect(t.contexts[0].username).toBe('jim');
+    expect(await state.getState('test.hourly')).toMatchObject({ nextSlot, lastSlotDone: '2026-10-09T11:00:00.000Z', current: null });
+    // Done now: a second rerun of it is refused.
+    await expect(m.rerunSlot('test.hourly', '2026-10-09T11:00:00.000Z', admin)).rejects.toMatchObject({ status: 409 });
+  });
+
+  test('a rerun of a slot with no record, or of something that is not a time, is refused', async () => {
+    const m = manager();
+    m.registerJob(job().def);
+    await m.tick();
+    await expect(m.rerunSlot('test.hourly', '2026-01-01T00:00:00.000Z', admin)).rejects.toMatchObject({ status: 404 });
+    await expect(m.rerunSlot('test.hourly', 'yesterday', admin)).rejects.toMatchObject({ status: 400 });
+  });
+
+  test('retry now runs a waiting retry at once, and is audited as the person asking', async () => {
+    const tries: number[] = [];
+    const m = manager();
+    m.registerJob({
+      id: 'test.flaky',
+      displayName: 'Flaky',
+      schedule: 'hourly',
+      run: (_progress, ctx) => {
+        tries.push(ctx.resume?.attempt ?? 1);
+        return Promise.resolve(ctx.resume ? { success: true } : { success: false, error: 'ledger locked' });
+      }
+    });
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    await expect(m.runNow('test.flaky', admin)).rejects.toMatchObject({ status: 409 });
+    await m.retryNow('test.flaky', admin);
+    await vi.waitFor(() => { expect(tries).toEqual([1, 2]); });
+    await settle(m);
+    expect(named('job-retry')[0]).toMatchObject({ user: 'jim' });
+    await expect(m.retryNow('test.flaky', admin)).rejects.toMatchObject({ status: 409 });
+  });
+});

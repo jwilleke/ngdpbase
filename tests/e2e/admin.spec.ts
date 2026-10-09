@@ -110,6 +110,17 @@ test.describe('Admin Dashboard', () => {
     });
   });
 
+  test.describe('Scheduled Jobs (#1718)', () => {
+    test('the dashboard links to the scheduled-jobs page, which renders', async ({ page }) => {
+      // The link sits in the collapsed Add-ons section, beside Private Stores.
+      await page.goto('/admin');
+      await expect(page.locator('a[href="/admin/jobs"]')).toHaveCount(1);
+      await page.goto('/admin/jobs');
+      await expect(page.locator('h1')).toContainText('Scheduled Jobs');
+      await expect(page.locator('.alert-info')).toContainText('No scheduled jobs are registered');
+    });
+  });
+
   test.describe('Admin Security', () => {
     test('should protect admin routes from non-admin users', async ({ browser }) => {
       // Create new context without authentication - explicitly clear storage

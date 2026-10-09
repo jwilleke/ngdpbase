@@ -90,6 +90,45 @@ interface Resume {
   reason: string;
 }
 
+/** A slot an administrator asked to run again (#1718): the run's id, and who asked. */
+interface Rerun {
+  runId: string;
+  requestedBy: JobContext;
+}
+
+type DrainItem = { slot: Date; resume?: Resume; rerun?: Rerun };
+
+/** Why an administrator's action on a job was refused (#1718); `status` is the HTTP answer. */
+export class JobActionError extends Error {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
+    super(message);
+    this.name = 'JobActionError';
+  }
+}
+
+/** A scheduled job as the admin page shows it (#1718). */
+export interface ScheduledJobView {
+  id: string;
+  displayName: string;
+  /** The schedule in force, as written (a shorthand or an RRULE), and what it compiled to. */
+  schedule: string;
+  rrule: string;
+  timeZone: string;
+  catchUp: CatchUp;
+  overlap: Overlap;
+  maxAttempts: number;
+  persist: boolean;
+  /** False while `ngdpbase.jobs.<id>.enabled` is false: paused. */
+  enabled: boolean;
+  running: boolean;
+  nextSlot: string | null;
+  lastSlotDone: string | null;
+  /** The run the state names as current: running, waiting for a retry, or interrupted. */
+  current: JobRunRecord | null;
+  /** History, newest first. A run with no slot was started by hand. */
+  runs: JobRunRecord[];
+}
+
 /**
  * A job type that can be registered with the BackgroundJobManager.
  */
@@ -511,7 +550,7 @@ class BackgroundJobManager extends BaseManager {
     await this.saveState(job, { ...state, current: null, nextSlot: this.nextSlotAfter(job, state.nextSlot, record.slot) });
     await provider?.recordRun(job.def.id, final);
     logger.error(`[BackgroundJobManager] '${job.def.id}' slot ${record.slot} failed after ${record.attempt} attempt(s): ${error}`);
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: record.runId, slot: record.slot, attempt: record.attempt, maxAttempts: job.maxAttempts }, final.error as string);
+    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: record.runId, slot: record.slot, attempt: record.attempt, maxAttempts: job.maxAttempts }, final.error as string, this.schedulerContext(job));
     return false;
   }
 
@@ -522,7 +561,7 @@ class BackgroundJobManager extends BaseManager {
     return isoOrNull(job.schedule.nextSlot(new Date(slot)));
   }
 
-  private startDrain(job: ScheduledJob, items: Array<{ slot: Date; resume?: Resume }>, after: string | null): void {
+  private startDrain(job: ScheduledJob, items: DrainItem[], after: string | null): void {
     if (this.stopping) return;
     job.draining = true;
     const drained: Promise<void> = this.drain(job, items, after).catch((err: unknown) => {
@@ -533,6 +572,132 @@ class BackgroundJobManager extends BaseManager {
       this.drains.delete(drained);
     });
     this.drains.add(drained);
+  }
+
+  // ---------------------------------------------------------------------------
+  // What an administrator sees and does (#1718). The routes check permission;
+  // these refuse what would break the scheduler's own rules.
+  // ---------------------------------------------------------------------------
+
+  /** Every scheduled job, its state and its recent history. */
+  async listScheduledJobs(): Promise<ScheduledJobView[]> {
+    const views: ScheduledJobView[] = [];
+    for (const job of this.scheduled.values()) {
+      const enabled = this.refreshFromConfig(job);
+      const state = await this.loadState(job);
+      const runs = job.persist && this.stateProvider ? await this.stateProvider.listRuns(job.def.id) : [];
+      views.push({
+        id: job.def.id,
+        displayName: job.def.displayName,
+        schedule: job.source,
+        rrule: job.schedule.rrule,
+        timeZone: job.schedule.timeZone,
+        catchUp: job.catchUp,
+        overlap: job.overlap,
+        maxAttempts: job.maxAttempts,
+        persist: job.persist,
+        enabled,
+        running: job.draining || this.activeByJobId.has(job.def.id),
+        nextSlot: state?.nextSlot ?? null,
+        lastSlotDone: state?.lastSlotDone ?? null,
+        current: state?.current ?? null,
+        runs
+      });
+    }
+    return views;
+  }
+
+  private scheduledOrThrow(jobId: string): ScheduledJob {
+    const job = this.scheduled.get(jobId);
+    if (!job) throw new JobActionError(`'${jobId}' is not a scheduled job`, 404);
+    return job;
+  }
+
+  /** Refused while the job runs, waits for a retry, or the server is stopping: one run of a job at a time. */
+  private async assertIdle(job: ScheduledJob): Promise<void> {
+    if (this.stopping) throw new JobActionError('The server is shutting down', 409);
+    if (job.draining || this.activeByJobId.has(job.def.id)) throw new JobActionError(`'${job.def.id}' is running`, 409);
+    const current = (await this.loadState(job))?.current;
+    if (current) throw new JobActionError(`'${job.def.id}' has an unfinished run (${current.status}${current.retryAt ? `, retry at ${current.retryAt}` : ''}) — retry it or let it finish first`, 409);
+  }
+
+  /**
+   * Run a scheduled job now, outside its schedule (#1611 §9). As the person
+   * who asked, with their permissions. It is no slot: it marks no slot done,
+   * catches nothing up, and is not retried. Slots that come due while it runs
+   * follow the job's overlap rule, as for any run. Returns the run id.
+   */
+  async runNow(jobId: string, requestedBy: JobContext): Promise<string> {
+    const job = this.scheduledOrThrow(jobId);
+    await this.assertIdle(job);
+    const runId = randomUUID();
+    const run: JobRun = { runId, jobId, displayName: job.def.displayName, requestedBy, status: 'pending', startedAt: this.clock() };
+    this.runs.set(runId, run);
+    this.activeByJobId.set(jobId, runId);
+    const provider = job.persist ? this.stateProvider : null;
+    const record: JobRunRecord = { runId, slot: null, startedAt: run.startedAt.toISOString(), attempt: 1, status: 'running' };
+    await provider?.recordRun(jobId, record);
+
+    job.draining = true;
+    const maxBytes = this.checkpointMaxBytes();
+    const done: Promise<void> = this.executeJob(job.def, run, {
+      slot: null,
+      timeoutMs: job.timeoutMs,
+      resume: null,
+      checkpoint: (data) => { checkpointJson(data, maxBytes); }
+    }).then(async () => {
+      await provider?.recordRun(jobId, {
+        ...record,
+        status: run.status === 'completed' ? 'completed' : 'failed',
+        completedAt: (run.completedAt ?? this.clock()).toISOString(),
+        ...(run.status === 'completed' ? {} : { error: run.result?.error ?? 'failed' })
+      });
+    }).catch((err: unknown) => {
+      logger.error(`[BackgroundJobManager] '${jobId}' run now ${runId} failed outside its own handler:`, err);
+    }).finally(() => {
+      job.draining = false;
+      job.busyUntil = this.clock();
+      this.drains.delete(done);
+    });
+    this.drains.add(done);
+    return runId;
+  }
+
+  /**
+   * Run one slot again, under its own key (#1611 §9): one the scheduler
+   * skipped, or one that failed for good. As the person who asked. Success
+   * marks that slot done; the job's next slot does not move. Returns the run id.
+   */
+  async rerunSlot(jobId: string, slot: string, requestedBy: JobContext): Promise<string> {
+    const job = this.scheduledOrThrow(jobId);
+    const t = Date.parse(slot);
+    if (Number.isNaN(t)) throw new JobActionError(`'${slot}' is not a slot`, 400);
+    const slotIso = new Date(t).toISOString();
+    await this.assertIdle(job);
+    const runs = job.persist && this.stateProvider ? await this.stateProvider.listRuns(jobId) : [];
+    const ofSlot = runs.filter((r) => r.slot === slotIso);
+    if (ofSlot.length === 0) throw new JobActionError(`'${jobId}' has no record of slot ${slotIso}`, 404);
+    if (ofSlot.some((r) => r.status === 'completed')) throw new JobActionError(`Slot ${slotIso} of '${jobId}' already completed`, 409);
+    const runId = randomUUID();
+    this.startDrain(job, [{ slot: new Date(t), rerun: { runId, requestedBy } }], null);
+    return runId;
+  }
+
+  /**
+   * Try a run that is waiting out its backoff now, rather than at its retry
+   * time (#1611 §9). Counts as its next attempt, like any retry.
+   */
+  async retryNow(jobId: string, requestedBy: JobContext): Promise<void> {
+    const job = this.scheduledOrThrow(jobId);
+    if (job.draining || this.activeByJobId.has(jobId)) throw new JobActionError(`'${jobId}' is running`, 409);
+    const state = await this.loadState(job);
+    const current = state?.current;
+    if (!state || !current || current.status !== 'failed' || !current.retryAt) {
+      throw new JobActionError(`'${jobId}' has no run waiting for a retry`, 409);
+    }
+    await this.saveState(job, { ...state, current: { ...current, retryAt: this.clock().toISOString() } });
+    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_RETRY, 'job-retry', { runId: current.runId, slot: current.slot, attempt: current.attempt + 1 }, `retried now by ${requestedBy.username}`, requestedBy);
+    void this.tick();
   }
 
   /** Resolves once every scheduled run started so far has finished. */
@@ -546,15 +711,15 @@ class BackgroundJobManager extends BaseManager {
    * after it are looked at again once it is done. `after` is the next slot
    * once all are handled; null leaves it to each run.
    */
-  private async drain(job: ScheduledJob, items: Array<{ slot: Date; resume?: Resume }>, after: string | null): Promise<void> {
-    for (const { slot, resume } of items) {
-      if (!resume) {
+  private async drain(job: ScheduledJob, items: DrainItem[], after: string | null): Promise<void> {
+    for (const { slot, resume, rerun } of items) {
+      if (!resume && !rerun) {
         // Until a slot's run starts it is still the next one, so a restart finds it due.
         const state = await this.loadState(job);
         await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), nextSlot: slot.toISOString() });
       }
       if (this.stopping) return;
-      if (await this.runSlot(job, slot, resume) === 'retry') return;
+      if (await this.runSlot(job, slot, resume, rerun) === 'retry') return;
     }
     if (after === null) return;
     const state = await this.loadState(job);
@@ -562,7 +727,7 @@ class BackgroundJobManager extends BaseManager {
   }
 
   /** One attempt at one slot. `retry` when it failed with attempts left. */
-  private async runSlot(job: ScheduledJob, slot: Date, resume?: Resume): Promise<'done' | 'retry' | 'held'> {
+  private async runSlot(job: ScheduledJob, slot: Date, resume?: Resume, rerun?: Rerun): Promise<'done' | 'retry' | 'held'> {
     // Shutdown began: the slot is left as the next one, and the next start runs it.
     if (this.stopping) return 'retry';
     const slotIso = slot.toISOString();
@@ -577,8 +742,10 @@ class BackgroundJobManager extends BaseManager {
       : null;
     heartbeat?.unref();
 
-    const requestedBy = scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}${resume ? ` (attempt ${resume.attempt}, resumed: ${resume.reason})` : ''}`);
-    const runId = resume?.runId ?? randomUUID();
+    // A slot an administrator reran runs as them (#1718); every other slot as the system principal.
+    const requestedBy = rerun?.requestedBy
+      ?? scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}${resume ? ` (attempt ${resume.attempt}, resumed: ${resume.reason})` : ''}`);
+    const runId = rerun?.runId ?? resume?.runId ?? randomUUID();
     const attempt = resume?.attempt ?? 1;
     const run: JobRun = {
       runId, jobId: job.def.id, displayName: job.def.displayName, requestedBy, status: 'pending', startedAt: this.clock(),
@@ -612,7 +779,7 @@ class BackgroundJobManager extends BaseManager {
       await provider?.recordRun(job.def.id, interrupted);
       await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
       logger.info(`[BackgroundJobManager] '${job.def.id}' slot ${slotIso} handed off at shutdown (attempt ${attempt}); the next start resumes it`);
-      await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId, slot: slotIso, attempt }, `slot ${slotIso} interrupted by shutdown`);
+      await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId, slot: slotIso, attempt }, `slot ${slotIso} interrupted by shutdown`, this.schedulerContext(job));
     };
     this.handoffs.set(runId, handOffRun);
 
@@ -638,7 +805,8 @@ class BackgroundJobManager extends BaseManager {
           await this.saveState(job, {
             ...(after ?? emptyState(job, ruleKey(job.schedule))),
             current: null,
-            lastSlotDone: slotIso,
+            // A rerun of an old slot does not move the last slot done backwards (#1718).
+            lastSlotDone: after?.lastSlotDone && after.lastSlotDone > slotIso ? after.lastSlotDone : slotIso,
             nextSlot: this.nextSlotAfter(job, after?.nextSlot ?? null, slotIso)
           });
           await provider?.recordRun(job.def.id, { ...record, status: 'completed', completedAt });
@@ -734,12 +902,17 @@ class BackgroundJobManager extends BaseManager {
       reason,
       catchUp: job.catchUp,
       overlap: job.overlap
-    }, detail);
+    }, detail, this.schedulerContext(job));
+  }
+
+  /** Who the scheduler acts as when nobody asked: the system principal, origin schedule. */
+  private schedulerContext(job: ScheduledJob): JobContext {
+    return scheduleContext(this.engine, job.schedule.rrule);
   }
 
   private async recordScheduleChange(job: ScheduledJob, from: string, to: string): Promise<void> {
     logger.info(`[BackgroundJobManager] '${job.def.id}' schedule changed: ${from} → ${to}; next slots counted from now, none caught up`);
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_SCHEDULE_CHANGE, 'job-schedule-change', { from, to }, `${from} → ${to}`);
+    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_SCHEDULE_CHANGE, 'job-schedule-change', { from, to }, `${from} → ${to}`, this.schedulerContext(job));
   }
 
   private async recordSchedulerEvent(
@@ -747,11 +920,11 @@ class BackgroundJobManager extends BaseManager {
     eventType: AuditEventName,
     action: string,
     fields: Record<string, unknown>,
-    detail: string
+    detail: string,
+    by: JobContext
   ): Promise<void> {
     const sink = this.engine?.getManager?.('AuditManager') as AuditEventSink | null;
     if (!sink) return;
-    const by = scheduleContext(this.engine, `${job.schedule.rrule}`);
     await recordAuditEvent(sink, {
       eventType,
       user: by.username,

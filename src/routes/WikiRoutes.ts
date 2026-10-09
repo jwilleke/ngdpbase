@@ -164,6 +164,7 @@ import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
 import type { AuthenticateResult } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
+import { JobActionError } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
 import type CacheManager from '../managers/CacheManager.js';
 import type CatalogManager from '../managers/CatalogManager.js';
@@ -15834,6 +15835,14 @@ ${panes}
     // Background job API
     app.post('/api/admin/jobs/:jobId/enqueue', (req: Request, res: Response) => void this.apiJobEnqueue(req, res));
     app.get('/api/admin/jobs/active', (req: Request, res: Response) => void this.apiJobsActive(req, res));
+    // #1718: scheduled jobs — the page, its list as JSON, and the four actions
+    // as forms (redirect back) and as API (JSON).
+    app.get('/admin/jobs', (req: Request, res: Response) => void this.adminJobsPage(req, res));
+    app.get('/api/admin/jobs/scheduled', (req: Request, res: Response) => void this.apiScheduledJobs(req, res));
+    for (const action of ['run-now', 'rerun', 'retry', 'pause'] as const) {
+      app.post(`/admin/jobs/:jobId/${action}`, (req: Request, res: Response) => void this.scheduledJobAction(req, res, action));
+      app.post(`/api/admin/jobs/:jobId/${action}`, (req: Request, res: Response) => void this.scheduledJobAction(req, res, action));
+    }
     app.get('/api/admin/jobs/:runId/status', (req: Request, res: Response) => void this.apiJobStatus(req, res));
 
     this.registerAdminJobs();
@@ -19787,6 +19796,97 @@ ${description}
     } catch (err: unknown) {
       logger.error('[jobs] Error getting active jobs:', err);
       return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * GET /admin/jobs — scheduled jobs (#1718): each job's schedule, next and
+   * last slot, the run in hand, and its history with skipped and failed slots.
+   */
+  async adminJobsPage(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return await this.renderError(req, res, 403, 'Access Denied', 'You do not have permission to view scheduled jobs');
+      }
+      const jobs = await this.engine.getManager('BackgroundJobManager').listScheduledJobs();
+      const commonData = await this.getCommonTemplateData(req);
+      return res.render('admin-jobs', {
+        ...commonData,
+        title: 'Scheduled Jobs',
+        jobs,
+        success: typeof req.query.success === 'string' ? req.query.success : null,
+        error: typeof req.query.error === 'string' ? req.query.error : null
+      });
+    } catch (err: unknown) {
+      logger.error('[jobs] Error listing scheduled jobs:', err);
+      return this.renderError(req, res, 500, 'Error', 'The scheduled jobs could not be listed.');
+    }
+  }
+
+  /** GET /api/admin/jobs/scheduled — the same list as JSON (#1718). */
+  async apiScheduledJobs(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      if (!wikiContext.userContext || !(await this.hasAdminViewAccess(wikiContext))) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      return res.json(await this.engine.getManager('BackgroundJobManager').listScheduledJobs());
+    } catch (err: unknown) {
+      logger.error('[jobs] Error listing scheduled jobs:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * POST /admin/jobs/:jobId/<action> and /api/admin/jobs/:jobId/<action> (#1718).
+   *
+   * - `run-now`: run outside the schedule, as the person asking (admin-system).
+   * - `rerun`: run a skipped or failed slot (body `slot`) under its own key (admin-system).
+   * - `retry`: try a run waiting out its backoff now (admin-system).
+   * - `pause`: body `paused` true or false, written to `ngdpbase.jobs.<id>.enabled`.
+   *   A configuration change, so config-manage, with its step-up — as for an add-on's switch.
+   *
+   * The form answers by going back to /admin/jobs with a message; the API answers JSON.
+   */
+  async scheduledJobAction(req: Request, res: Response, action: 'run-now' | 'rerun' | 'retry' | 'pause') {
+    const api = req.path.startsWith('/api/');
+    const answer = (status: number, message: string, extra: Record<string, unknown> = {}) => (api
+      ? res.status(status).json(status < 300 ? { message, ...extra } : { error: message })
+      : res.redirect(`/admin/jobs?${status < 300 ? 'success' : 'error'}=${encodeURIComponent(message)}`));
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const permission = action === 'pause' ? 'config-manage' : 'admin-system';
+      if (!(await this.permitted(wikiContext, permission, req, res, api ? 'json' : 'page'))) return;
+      const currentUser = wikiContext.userContext;
+      if (!currentUser) return answer(403, 'Access denied');
+      const { jobId } = req.params;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const jobManager = this.engine.getManager('BackgroundJobManager');
+      const asker = jobContextFromRequestWithReason(req.userContext, `admin: ${action} ${jobId}`);
+
+      if (action === 'run-now') {
+        const runId = await jobManager.runNow(jobId, asker);
+        return answer(202, `'${jobId}' started (run ${runId})`, { runId });
+      }
+      if (action === 'rerun') {
+        const slot = typeof body.slot === 'string' ? body.slot : '';
+        const runId = await jobManager.rerunSlot(jobId, slot, asker);
+        return answer(202, `Slot ${slot} of '${jobId}' started again (run ${runId})`, { runId });
+      }
+      if (action === 'retry') {
+        await jobManager.retryNow(jobId, asker);
+        return answer(202, `'${jobId}' is being retried now`);
+      }
+      const paused = body.paused === true || body.paused === 'true';
+      if (!(await jobManager.listScheduledJobs()).some((j) => j.id === jobId)) return answer(404, `'${jobId}' is not a scheduled job`);
+      await this.engine.getManager('ConfigurationManager').setProperty(`ngdpbase.jobs.${jobId}.enabled`, !paused, currentUser);
+      logger.info(`[jobs] ${currentUser.username} ${paused ? 'paused' : 'resumed'} scheduled job '${jobId}'`);
+      return answer(200, `'${jobId}' ${paused ? 'paused: no slot starts until it is resumed' : 'resumed'}`);
+    } catch (err: unknown) {
+      if (err instanceof JobActionError) return answer(err.status, err.message);
+      logger.error(`[jobs] Scheduled job action '${action}' failed:`, err);
+      return answer(500, 'The action could not be completed');
     }
   }
 

@@ -2051,6 +2051,13 @@
         "on-failure": "continue"
       }
     },
+    "job-retry": {
+      "description": "An administrator retried a scheduled run now instead of at its retry time",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
     "job-schedule-change": {
       "description": "A scheduled job's rule changed; its slots are counted again from then",
       "grantable": false,

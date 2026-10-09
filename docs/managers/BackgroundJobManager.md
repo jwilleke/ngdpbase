@@ -79,7 +79,20 @@ jobManager.registerJob({
 - A hard kill (SIGKILL, a crash, power loss) reaches none of this: the run's lock expires after 60 s and the resume counts as an attempt.
 - Nothing depends on PM2, systemd, Docker or Kubernetes beyond delivering the signal.
 
-Not yet: the admin page ([#1718](https://github.com/jwilleke/ngdpbase/issues/1718)).
+### Admin page and API (#1718)
+
+`/admin/jobs` (linked from the dashboard) lists every scheduled job: its schedule and time zone, next slot, last slot done, the run in hand, and its recent history with skipped and failed slots. The same list is `GET /api/admin/jobs/scheduled`. Reading needs admin read access.
+
+| Action | Form | API | Permission |
+|---|---|---|---|
+| Run now: outside the schedule, as the person asking; marks no slot done, is not retried | `POST /admin/jobs/:jobId/run-now` | `POST /api/admin/jobs/:jobId/run-now` | `admin-system` |
+| Run a skipped slot, or one that failed for good, again under its own time (`slot` in the body); success marks that slot done, the next slot does not move | `…/rerun` | `…/rerun` | `admin-system` |
+| Retry a run waiting out its backoff now | `…/retry` | `…/retry` | `admin-system` |
+| Pause or resume (`paused` true or false): writes `ngdpbase.jobs.<jobId>.enabled` | `…/pause` | `…/pause` | `config-manage`, with step-up |
+
+- One run of a job at a time: run now and rerun are refused (409) while the job runs or has an unfinished run (waiting for a retry, or interrupted).
+- The manager methods are `listScheduledJobs`, `runNow`, `rerunSlot` and `retryNow`; a refusal is a `JobActionError` carrying its HTTP status.
+- Audited: run now and rerun as `job-started` / `job-completed` / `job-failed` with the person as the user; retry now as `job-retry`; pause as a configuration change.
 
 ## See Also
 

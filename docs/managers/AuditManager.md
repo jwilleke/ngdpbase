@@ -535,6 +535,7 @@ audited.
 | `job-failed` | A background job failed | continue | yes |
 | `job-skipped` | Scheduled slots a job passed over, by its catch-up or overlap rule | continue | yes |
 | `job-interrupted` | A scheduled run stopped by shutdown and handed to the next start, which resumes it | continue | yes |
+| `job-retry` | An administrator retried a scheduled run now instead of at its retry time | continue | yes |
 | `job-schedule-change` | A scheduled job's rule changed; its slots are counted again from then | continue | yes |
 | `page-raw-edit` | Page edited through the admin raw editor | continue | yes |
 | `session-revoke` | Session revoked by an administrator | continue | yes |
