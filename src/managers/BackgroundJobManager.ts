@@ -46,6 +46,8 @@ const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const CHECKPOINT_THROTTLE_MS = 5_000;
 /** `ngdpbase.jobs.max-checkpoint-bytes` when it is not set. */
 const DEFAULT_CHECKPOINT_MAX_BYTES = 64 * 1024;
+/** `ngdpbase.jobs.shutdown-grace-ms` when it is not set: how long running jobs get to stop at shutdown. */
+const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
 /** Who holds a slot lock: this host, this process, this start. */
 const LOCK_OWNER = `${os.hostname()}:${process.pid}:${randomUUID()}`;
 
@@ -193,6 +195,8 @@ export interface JobRun {
   slot?: string;
   attempt?: number;
   resumeReason?: string;
+  /** Set at shutdown (#1717): the run was stopped to be handed to the next process, not failed. */
+  interrupted?: boolean;
   startedAt: Date;
   completedAt?: Date;
   result?: JobResult;
@@ -228,6 +232,13 @@ class BackgroundJobManager extends BaseManager {
   private ticking = false;
   /** Scheduled runs in progress, so a caller can wait for them. */
   private drains: Set<Promise<void>> = new Set();
+  /** Set once shutdown begins: no slot starts after it (#1717). */
+  private stopping = false;
+  private handedOff: Promise<void> | null = null;
+  /** Each running job's abort, by run id. */
+  private controllers: Map<string, AbortController> = new Map();
+  /** For each running scheduled run: write it as interrupted and let go of its slot. */
+  private handoffs: Map<string, () => Promise<void>> = new Map();
 
   /**
    * @param options - for tests: a state provider in place of the configured
@@ -393,7 +404,7 @@ class BackgroundJobManager extends BaseManager {
    * the ones chosen. Public so tests can drive the clock.
    */
   async tick(): Promise<void> {
-    if (this.ticking) return;
+    if (this.ticking || this.stopping) return;
     this.ticking = true;
     try {
       for (const job of this.scheduled.values()) {
@@ -512,6 +523,7 @@ class BackgroundJobManager extends BaseManager {
   }
 
   private startDrain(job: ScheduledJob, items: Array<{ slot: Date; resume?: Resume }>, after: string | null): void {
+    if (this.stopping) return;
     job.draining = true;
     const drained: Promise<void> = this.drain(job, items, after).catch((err: unknown) => {
       logger.error(`[BackgroundJobManager] Scheduled job '${job.def.id}' stopped draining:`, err);
@@ -541,6 +553,7 @@ class BackgroundJobManager extends BaseManager {
         const state = await this.loadState(job);
         await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), nextSlot: slot.toISOString() });
       }
+      if (this.stopping) return;
       if (await this.runSlot(job, slot, resume) === 'retry') return;
     }
     if (after === null) return;
@@ -550,6 +563,8 @@ class BackgroundJobManager extends BaseManager {
 
   /** One attempt at one slot. `retry` when it failed with attempts left. */
   private async runSlot(job: ScheduledJob, slot: Date, resume?: Resume): Promise<'done' | 'retry' | 'held'> {
+    // Shutdown began: the slot is left as the next one, and the next start runs it.
+    if (this.stopping) return 'retry';
     const slotIso = slot.toISOString();
     const provider = job.persist ? this.stateProvider : null;
     if (provider && !(await provider.takeLock(job.def.id, slotIso, LOCK_OWNER, LOCK_TTL_MS))) {
@@ -580,6 +595,27 @@ class BackgroundJobManager extends BaseManager {
     const checkpoint = resume && provider ? await provider.loadCheckpoint(job.def.id, runId) : null;
     const writer = this.checkpointWriter(provider, job.def.id, runId);
     let outcome: 'done' | 'retry' = 'done';
+
+    // #1717: the run as handed to the next process — its last checkpoint
+    // written, marked interrupted (not an attempt), its slot let go. Called by
+    // the run's own ending when shutdown stopped it, or by `handOff` for a job
+    // that did not stop within the grace period. Whichever comes first writes.
+    let settled = false;
+    const handOffRun = async (): Promise<void> => {
+      if (settled) return;
+      settled = true;
+      if (heartbeat) clearInterval(heartbeat);
+      await writer.flush();
+      const interrupted: JobRunRecord = { ...record, status: 'interrupted', completedAt: this.clock().toISOString() };
+      const state = await this.loadState(job);
+      await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), current: interrupted });
+      await provider?.recordRun(job.def.id, interrupted);
+      await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
+      logger.info(`[BackgroundJobManager] '${job.def.id}' slot ${slotIso} handed off at shutdown (attempt ${attempt}); the next start resumes it`);
+      await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId, slot: slotIso, attempt }, `slot ${slotIso} interrupted by shutdown`);
+    };
+    this.handoffs.set(runId, handOffRun);
+
     try {
       await this.executeJob(job.def, run, {
         slot: slotIso,
@@ -588,23 +624,30 @@ class BackgroundJobManager extends BaseManager {
         checkpoint: writer.checkpoint
       });
     } finally {
-      if (heartbeat) clearInterval(heartbeat);
-      await writer.flush();
-      const completedAt = (run.completedAt ?? this.clock()).toISOString();
-      if (run.status === 'completed') {
-        const after = await this.loadState(job);
-        await this.saveState(job, {
-          ...(after ?? emptyState(job, ruleKey(job.schedule))),
-          current: null,
-          lastSlotDone: slotIso,
-          nextSlot: this.nextSlotAfter(job, after?.nextSlot ?? null, slotIso)
-        });
-        await provider?.recordRun(job.def.id, { ...record, status: 'completed', completedAt });
-        await provider?.clearCheckpoint(job.def.id, runId);
-      } else if (await this.afterFailedAttempt(job, { ...record, completedAt }, run.result?.error ?? 'failed', this.clock())) {
+      this.handoffs.delete(runId);
+      if (settled || (run.interrupted && run.status !== 'completed')) {
+        await handOffRun();
         outcome = 'retry';
+      } else {
+        settled = true;
+        if (heartbeat) clearInterval(heartbeat);
+        await writer.flush();
+        const completedAt = (run.completedAt ?? this.clock()).toISOString();
+        if (run.status === 'completed') {
+          const after = await this.loadState(job);
+          await this.saveState(job, {
+            ...(after ?? emptyState(job, ruleKey(job.schedule))),
+            current: null,
+            lastSlotDone: slotIso,
+            nextSlot: this.nextSlotAfter(job, after?.nextSlot ?? null, slotIso)
+          });
+          await provider?.recordRun(job.def.id, { ...record, status: 'completed', completedAt });
+          await provider?.clearCheckpoint(job.def.id, runId);
+        } else if (await this.afterFailedAttempt(job, { ...record, completedAt }, run.result?.error ?? 'failed', this.clock())) {
+          outcome = 'retry';
+        }
+        await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
       }
-      await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
     }
     return outcome;
   }
@@ -854,6 +897,12 @@ class BackgroundJobManager extends BaseManager {
     };
 
     const controller = new AbortController();
+    this.controllers.set(run.runId, controller);
+    // Shutdown began while this run was being set up: it is handed off, not run on.
+    if (this.stopping) {
+      if (this.handoffs.has(run.runId)) run.interrupted = true;
+      controller.abort(new Error('the server is shutting down'));
+    }
     const ctx: JobRunContext = {
       ...run.requestedBy,
       signal: controller.signal,
@@ -876,9 +925,12 @@ class BackgroundJobManager extends BaseManager {
         await this.sendNotification('info', `${def.displayName} complete`, result.summary ?? 'Job completed successfully');
       } else {
         run.status = 'failed';
-        logger.warn(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, error: "${result.error ?? ''}" }`);
-        await this.recordJobEvent(run, 'failed', result.error);
-        await this.sendNotification('error', `${def.displayName} failed`, result.error ?? 'Job failed');
+        // A run stopped for shutdown is handed off, not failed (#1717): its ending is recorded as interrupted.
+        if (!run.interrupted) {
+          logger.warn(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, error: "${result.error ?? ''}" }`);
+          await this.recordJobEvent(run, 'failed', result.error);
+          await this.sendNotification('error', `${def.displayName} failed`, result.error ?? 'Job failed');
+        }
       }
     } catch (err: unknown) {
       const durationMs = Date.now() - startMs;
@@ -886,10 +938,13 @@ class BackgroundJobManager extends BaseManager {
       run.status = 'failed';
       run.result = { success: false, error: message };
       run.completedAt = new Date();
-      logger.error(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs} }`, err);
-      await this.recordJobEvent(run, 'failed', message);
-      await this.sendNotification('error', `${def.displayName} failed`, message);
+      if (!run.interrupted) {
+        logger.error(`[BackgroundJobManager] job-failed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs} }`, err);
+        await this.recordJobEvent(run, 'failed', message);
+        await this.sendNotification('error', `${def.displayName} failed`, message);
+      }
     } finally {
+      this.controllers.delete(run.runId);
       this.activeByJobId.delete(def.id);
     }
   }
@@ -958,11 +1013,59 @@ class BackgroundJobManager extends BaseManager {
     }
   }
 
-  async shutdown(): Promise<void> {
+  /**
+   * Hand running work to the next process (#1717, #1611 §7). No slot starts
+   * after this. Every running job's `ctx.signal` is aborted, and the jobs get
+   * `ngdpbase.jobs.shutdown-grace-ms` (default 5 s) to stop. A scheduled run
+   * that did not finish is written as `interrupted` with its last checkpoint
+   * and its slot lock released, so the next start resumes it at once, without
+   * counting an attempt. A job that ignores the signal is handed off anyway
+   * when the grace ends.
+   *
+   * Depends only on being called: the signal handlers in app.ts (SIGTERM,
+   * SIGINT) reach it through `engine.shutdown()`, which calls it before any
+   * other manager stops. A hard kill never gets here; its lock expires and the
+   * resume counts as an attempt (#1716).
+   */
+  handOff(): Promise<void> {
+    this.handedOff ??= this.runHandOff();
+    return this.handedOff;
+  }
+
+  private async runHandOff(): Promise<void> {
+    this.stopping = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.controllers.size === 0 && this.drains.size === 0) return;
+
+    for (const runId of this.handoffs.keys()) {
+      const run = this.runs.get(runId);
+      if (run) run.interrupted = true;
+    }
+    logger.info(`[BackgroundJobManager] Shutting down: stopping ${this.controllers.size} running job(s)`);
+    for (const controller of this.controllers.values()) controller.abort(new Error('the server is shutting down'));
+
+    const graceMs = Number(this.setting('ngdpbase.jobs.shutdown-grace-ms', DEFAULT_SHUTDOWN_GRACE_MS));
+    let graceTimer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      this.whenIdle(),
+      new Promise<void>((resolve) => { graceTimer = setTimeout(resolve, graceMs); })
+    ]);
+    clearTimeout(graceTimer);
+
+    for (const handOffRun of [...this.handoffs.values()]) {
+      try {
+        await handOffRun();
+      } catch (err) {
+        logger.error('[BackgroundJobManager] Handing off a run failed; its lock will expire and the resume counts as an attempt:', err);
+      }
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    await this.handOff();
     const active = this.getActiveJobs();
     if (active.length > 0) {
       logger.warn(`[BackgroundJobManager] Shutting down with ${active.length} job(s) still active`);

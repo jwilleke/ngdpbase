@@ -61,15 +61,25 @@ jobManager.registerJob({
 | `ngdpbase.jobs.max-timeout-ms` | `0` | caps every job's timeout; 0 = no cap |
 | `ngdpbase.jobs.history-limit` | `50` | runs kept per job |
 | `ngdpbase.jobs.max-checkpoint-bytes` | `65536` | largest checkpoint a job may save |
+| `ngdpbase.jobs.shutdown-grace-ms` | `5000` | how long running jobs get to stop at shutdown |
 
 ### Attempts, resume and checkpoints (#1716)
 
 - A scheduled slot gets `maxAttempts` (default 3). A failed attempt — an error, a timeout, a `success: false` result, or the server stopping mid-run — is tried again after 1, 5, then 15 minutes, with the same run id and slot. While it waits, the job starts no other slot. After the last attempt the slot is failed for good and audited, and the next slot runs as usual.
-- A run the state still names as running, whose lock has expired, belongs to a server that stopped: it counts as a failed attempt. One whose lock is still held belongs to a live server and is left alone. A run handed off as `interrupted` at shutdown is picked up at once and does not count ([#1717](https://github.com/jwilleke/ngdpbase/issues/1717) writes it).
+- A run the state still names as running, whose lock has expired, belongs to a server that stopped: it counts as a failed attempt. One whose lock is still held belongs to a live server and is left alone. A run handed off as `interrupted` at shutdown is picked up at once and does not count (the shutdown handoff below writes it).
 - The next attempt gets `ctx.resume = { attempt, checkpoint, reason }`.
 - `ctx.checkpoint(data)` saves a bookmark such as `{ doneThrough: 311 }`: JSON, at most `ngdpbase.jobs.max-checkpoint-bytes` (default 64 KiB; larger throws to the job), written at most once every 5 s with the latest winning, and once more when the run ends. Deleted when the slot succeeds, kept when it fails. Without a checkpoint, a resumed job starts its slot again, so a job must be idempotent per slot.
 
-Not yet: the shutdown handoff ([#1717](https://github.com/jwilleke/ngdpbase/issues/1717)) and the admin page ([#1718](https://github.com/jwilleke/ngdpbase/issues/1718)).
+### Shutdown handoff (#1717)
+
+- On SIGTERM (Docker, Kubernetes) or SIGINT (PM2, a terminal), app.ts calls `engine.shutdown()`, which calls `handOff()` before any manager stops, add-ons included.
+- `handOff()` starts no new slot, aborts every running job's `ctx.signal`, and gives the jobs `ngdpbase.jobs.shutdown-grace-ms` (default 5 s) to stop.
+- A scheduled run that has not finished is then saved as `interrupted`, with its last checkpoint, and its slot lock is released. A job that ignores its signal is handed off when the grace ends. Each is audited as `job-interrupted`.
+- The next start resumes an interrupted run at once, as the same attempt, with `ctx.resume.reason` `interrupted`.
+- A hard kill (SIGKILL, a crash, power loss) reaches none of this: the run's lock expires after 60 s and the resume counts as an attempt.
+- Nothing depends on PM2, systemd, Docker or Kubernetes beyond delivering the signal.
+
+Not yet: the admin page ([#1718](https://github.com/jwilleke/ngdpbase/issues/1718)).
 
 ## See Also
 

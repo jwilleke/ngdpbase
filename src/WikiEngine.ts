@@ -418,6 +418,16 @@ class WikiEngine extends Engine {
   }
 
   /**
+   * Stop the engine. Scheduled jobs are handed off first (#1717): a running
+   * job may use any manager, an add-on's included, and the reverse-order stop
+   * below would shut those down while it still runs.
+   */
+  async shutdown(): Promise<void> {
+    await this.getManager<BackgroundJobManager>('BackgroundJobManager')?.handOff();
+    await super.shutdown();
+  }
+
+  /**
    * Initialize the AddonsManager — must be called from app.ts AFTER session and
    * userContext middleware have been registered on the Express app, so that addon
    * route handlers can read req.session and req.userContext normally.

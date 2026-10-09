@@ -51,6 +51,8 @@ export const AUDIT_EVENT = {
   JOB_COMPLETED: 'job-completed',
   /** A background job failed */
   JOB_FAILED: 'job-failed',
+  /** A scheduled run stopped by shutdown and handed to the next start, which resumes it */
+  JOB_INTERRUPTED: 'job-interrupted',
   /** A scheduled job's rule changed; its slots are counted again from then */
   JOB_SCHEDULE_CHANGE: 'job-schedule-change',
   /** Scheduled slots a job passed over, by its catch-up or overlap rule */
