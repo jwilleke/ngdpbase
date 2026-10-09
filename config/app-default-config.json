@@ -66,6 +66,8 @@
   "ngdpbase.jobs.min-interval-ms": 60000,
   "ngdpbase.jobs.max-timeout-ms": 0,
   "ngdpbase.jobs.history-limit": 50,
+  "_comment_jobs_checkpoints": "#1716 — the largest checkpoint a job may save with ctx.checkpoint(data), in bytes of JSON. A larger one throws to the job. A checkpoint is a bookmark (\"done through account 311\"), not storage for results.",
+  "ngdpbase.jobs.max-checkpoint-bytes": 65536,
   "ngdpbase.session.max-age": 86400000,
   "_comment_session_idle": "#1546 — end a signed-in session after this many minutes with no request; 0 = off. Enforced server-side on the next request. Separate from max-age (the absolute lifetime): a value at or above it has no effect. Read per request, so no restart. Regulated guides: PCI DSS 4.0 8.2.8 15 minutes; NIST SP 800-63B-4 AAL2 60, AAL3 15. A role may set a SHORTER limit with idle-timeout-minutes on its entry in ngdpbase.roles.definitions; a person gets the shortest among the site value and their roles, never a longer one. The page warns shortly before sign-out with a Stay signed in button.",
   "ngdpbase.session.idle-timeout-minutes": 0,

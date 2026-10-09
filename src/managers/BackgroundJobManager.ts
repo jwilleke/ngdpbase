@@ -8,7 +8,7 @@ import { describeJobContext, type JobContext } from '../context/JobContext.js';
 import { scheduleContext } from '../context/bootActions.js';
 import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
 import { selectSlots, CATCH_UP_ALL_CAP, type CatchUp, type Overlap } from '../utils/jobSlots.js';
-import { assertJobId, selectJobStateBackend, type JobRunRecord, type JobState, type JobStateProvider } from '../providers/jobState.js';
+import { assertJobId, checkpointJson, selectJobStateBackend, type JobRunRecord, type JobState, type JobStateProvider } from '../providers/jobState.js';
 import FileJobStateProvider from '../providers/FileJobStateProvider.js';
 import SqliteJobStateProvider from '../providers/SqliteJobStateProvider.js';
 
@@ -38,6 +38,14 @@ const LOCK_RENEW_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 /** After a timeout's abort, how long the job has to stop before the run is failed anyway. */
 const TIMEOUT_GRACE_MS = 5_000;
+/** Attempts a scheduled slot gets before it is failed for good (#1716). */
+const DEFAULT_MAX_ATTEMPTS = 3;
+/** Wait before attempt 2, 3, 4 and later (#1611 §6). */
+const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
+/** At most one checkpoint write per run this often; the latest wins. */
+const CHECKPOINT_THROTTLE_MS = 5_000;
+/** `ngdpbase.jobs.max-checkpoint-bytes` when it is not set. */
+const DEFAULT_CHECKPOINT_MAX_BYTES = 64 * 1024;
 /** Who holds a slot lock: this host, this process, this start. */
 const LOCK_OWNER = `${os.hostname()}:${process.pid}:${randomUUID()}`;
 
@@ -57,6 +65,27 @@ export interface JobRunContext extends JobContext {
   signal: AbortSignal;
   /** The slot this run is for (ISO instant); null for a run nobody scheduled. */
   slot: string | null;
+  /**
+   * Set when this run picks up a slot an earlier attempt did not finish
+   * (#1716): which attempt this is, the last checkpoint that attempt saved
+   * (null if none), and why it ended. Null on a first attempt.
+   */
+  resume: { attempt: number; checkpoint: unknown; reason: string } | null;
+  /**
+   * Save a bookmark the next attempt receives as `resume.checkpoint`, e.g.
+   * `{ doneThrough: 311 }`. JSON only; larger than
+   * `ngdpbase.jobs.max-checkpoint-bytes` throws. Written at most once every
+   * 5 s, the latest winning; deleted when the run succeeds, kept when it fails.
+   * Kept only for a persisted scheduled job; elsewhere it is checked and dropped.
+   */
+  checkpoint(data: unknown): void;
+}
+
+/** What a resumed attempt carries over from the one before. */
+interface Resume {
+  runId: string;
+  attempt: number;
+  reason: string;
 }
 
 /**
@@ -92,6 +121,13 @@ export interface JobDefinition {
    */
   persist?: boolean;
   /**
+   * Attempts a scheduled slot gets (default 3, #1716). A failed attempt — an
+   * error, a timeout, a failure result, or the server stopping mid-run — is
+   * tried again after 1, 5, then 15 minutes, with the same run id and slot.
+   * After the last, the slot is failed and the next slot runs as usual.
+   */
+  maxAttempts?: number;
+  /**
    * The work to perform. Resolves with a JobResult.
    *
    * __`ctx` is mandatory (#631).__ Without it the actor this manager captured
@@ -120,6 +156,7 @@ interface ScheduledJob {
   overlap: Overlap;
   timeoutMs: number;
   persist: boolean;
+  maxAttempts: number;
   /** For `persist: false`: the state, held here. */
   memoryState: JobState | null;
   /** Running or waiting to run the slots chosen at the last look. */
@@ -152,6 +189,10 @@ export interface JobRun {
   status: 'pending' | 'running' | 'completed' | 'failed';
   /** Live progress message set by the job via reportProgress(); cleared on completion */
   progress?: string;
+  /** For a scheduled run: its slot, its attempt, and why the attempt before it ended (#1716). */
+  slot?: string;
+  attempt?: number;
+  resumeReason?: string;
   startedAt: Date;
   completedAt?: Date;
   result?: JobResult;
@@ -192,10 +233,13 @@ class BackgroundJobManager extends BaseManager {
    * @param options - for tests: a state provider in place of the configured
    *   one, and the clock.
    */
-  constructor(engine: WikiEngine, options: { stateProvider?: JobStateProvider; now?: () => Date } = {}) {
+  private readonly checkpointThrottleMs: number;
+
+  constructor(engine: WikiEngine, options: { stateProvider?: JobStateProvider; now?: () => Date; checkpointThrottleMs?: number } = {}) {
     super(engine);
     this.stateProvider = options.stateProvider ?? null;
     this.clock = options.now ?? (() => new Date());
+    this.checkpointThrottleMs = options.checkpointThrottleMs ?? CHECKPOINT_THROTTLE_MS;
   }
 
   async initialize(config: Record<string, unknown> = {}): Promise<void> {
@@ -207,14 +251,18 @@ class BackgroundJobManager extends BaseManager {
     if (!this.stateProvider && configManager) {
       const database = this.engine.getManager<{ isEnabled(): boolean; getHandle<H>(): H }>('DatabaseManager');
       const backend = selectJobStateBackend(configManager.getProperty('ngdpbase.jobs.state.provider', 'auto'), database?.isEnabled() ?? false);
-      const historyLimit = Number(configManager.getProperty('ngdpbase.jobs.history-limit', 50));
+      const limits = { historyLimit: Number(configManager.getProperty('ngdpbase.jobs.history-limit', 50)), checkpointMaxBytes: this.checkpointMaxBytes() };
       this.stateProvider = backend === 'sqlite' && database
-        ? new SqliteJobStateProvider(database.getHandle(), { historyLimit })
-        : new FileJobStateProvider(configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs'), { historyLimit });
+        ? new SqliteJobStateProvider(database.getHandle(), limits)
+        : new FileJobStateProvider(configManager.getResolvedDataPath('ngdpbase.jobs.state.dir', './data/jobs'), limits);
       logger.info(`BackgroundJobManager initialized (scheduled-job state: ${backend})`);
       return;
     }
     logger.info('BackgroundJobManager initialized');
+  }
+
+  private checkpointMaxBytes(): number {
+    return Number(this.setting('ngdpbase.jobs.max-checkpoint-bytes', DEFAULT_CHECKPOINT_MAX_BYTES));
   }
 
   private configManager(): ConfigurationManager | null {
@@ -259,13 +307,15 @@ class BackgroundJobManager extends BaseManager {
       if (!this.stateProvider) throw new Error(`${where}: persist is true but no scheduled-job state is open — register it after BackgroundJobManager has initialized`);
     }
     const timeoutMs = this.timeoutFor(def, DEFAULT_TIMEOUT_MS);
+    const maxAttempts = def.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new Error(`${where}: maxAttempts must be a whole number, 1 or more`);
     const override = this.setting<unknown>(`ngdpbase.jobs.${def.id}.schedule`, null);
     const job: ScheduledJob = {
       def,
       registered: def.schedule as ScheduleInput,
       schedule: this.compile(def.schedule as ScheduleInput, where),
       source: sourceOf(def.schedule as ScheduleInput),
-      catchUp, overlap, timeoutMs, persist,
+      catchUp, overlap, timeoutMs, persist, maxAttempts,
       memoryState: null,
       draining: false,
       busyUntil: null,
@@ -379,6 +429,7 @@ class BackgroundJobManager extends BaseManager {
       });
       return;
     }
+    if (state.current && await this.handleUnfinished(job, state, now)) return;
     if (!state.nextSlot || Date.parse(state.nextSlot) > now.getTime()) return;
 
     const due = job.schedule.slotsBetween(new Date(state.nextSlot), now);
@@ -394,8 +445,75 @@ class BackgroundJobManager extends BaseManager {
       await this.saveState(job, { ...state, nextSlot: after });
       return;
     }
+    this.startDrain(job, run.map((slot) => ({ slot })), after);
+  }
+
+  /**
+   * A run the state still names as current, which this process is not
+   * running (#1716). True when it takes this look: it is held by another
+   * server, waiting out its backoff, or being resumed now.
+   */
+  private async handleUnfinished(job: ScheduledJob, state: JobState, now: Date): Promise<boolean> {
+    const current = state.current as JobRunRecord;
+    if (!current.slot) return false;
+    const provider = job.persist ? this.stateProvider : null;
+
+    if (current.status === 'running') {
+      // Its lock is still held: a live server is running it (a rolling update).
+      if (provider && !(await provider.takeLock(job.def.id, current.slot, LOCK_OWNER, LOCK_TTL_MS))) return true;
+      await provider?.releaseLock(job.def.id, current.slot, LOCK_OWNER);
+      return this.afterFailedAttempt(job, current, 'the server stopped during the run', now);
+    }
+    if (current.status === 'interrupted') {
+      // Handed off at shutdown (#1717): picked up at once, and not counted as an attempt.
+      this.startDrain(job, [{ slot: new Date(current.slot), resume: { runId: current.runId, attempt: current.attempt, reason: 'interrupted' } }], null);
+      return true;
+    }
+    if (current.status === 'failed' && current.retryAt) {
+      if (Date.parse(current.retryAt) > now.getTime()) return true;
+      this.startDrain(job, [{ slot: new Date(current.slot), resume: { runId: current.runId, attempt: current.attempt + 1, reason: current.error ?? 'failed' } }], null);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * An attempt failed. With attempts left, the slot waits out its backoff and
+   * is tried again (true: the job waits). After the last, the slot is failed
+   * for good, audited, and the job goes on to its next slot (false).
+   */
+  private async afterFailedAttempt(job: ScheduledJob, record: JobRunRecord, error: string, now: Date): Promise<boolean> {
+    const provider = job.persist ? this.stateProvider : null;
+    const state = (await this.loadState(job)) ?? emptyState(job, ruleKey(job.schedule));
+    const ended = { ...record, status: 'failed' as const, error, completedAt: record.completedAt ?? now.toISOString() };
+
+    if (record.attempt < job.maxAttempts) {
+      const wait = BACKOFF_MS[Math.min(record.attempt, BACKOFF_MS.length) - 1];
+      const retrying: JobRunRecord = { ...ended, retryAt: new Date(now.getTime() + wait).toISOString() };
+      await this.saveState(job, { ...state, current: retrying });
+      await provider?.recordRun(job.def.id, retrying);
+      logger.warn(`[BackgroundJobManager] '${job.def.id}' slot ${record.slot} attempt ${record.attempt} of ${job.maxAttempts} failed (${error}) — trying again at ${retrying.retryAt}`);
+      return true;
+    }
+
+    const final: JobRunRecord = { ...ended, error: `${error} (attempt ${record.attempt} of ${job.maxAttempts}; not tried again)` };
+    await this.saveState(job, { ...state, current: null, nextSlot: this.nextSlotAfter(job, state.nextSlot, record.slot) });
+    await provider?.recordRun(job.def.id, final);
+    logger.error(`[BackgroundJobManager] '${job.def.id}' slot ${record.slot} failed after ${record.attempt} attempt(s): ${error}`);
+    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: record.runId, slot: record.slot, attempt: record.attempt, maxAttempts: job.maxAttempts }, final.error as string);
+    return false;
+  }
+
+  /** The job's next slot once `slot` is handled: never earlier than the one already recorded. */
+  private nextSlotAfter(job: ScheduledJob, recorded: string | null, slot: string | null): string | null {
+    if (!slot) return recorded;
+    if (recorded && Date.parse(recorded) > Date.parse(slot)) return recorded;
+    return isoOrNull(job.schedule.nextSlot(new Date(slot)));
+  }
+
+  private startDrain(job: ScheduledJob, items: Array<{ slot: Date; resume?: Resume }>, after: string | null): void {
     job.draining = true;
-    const drained: Promise<void> = this.drain(job, run, after).catch((err: unknown) => {
+    const drained: Promise<void> = this.drain(job, items, after).catch((err: unknown) => {
       logger.error(`[BackgroundJobManager] Scheduled job '${job.def.id}' stopped draining:`, err);
     }).finally(() => {
       job.draining = false;
@@ -410,61 +528,134 @@ class BackgroundJobManager extends BaseManager {
     while (this.drains.size > 0) await Promise.all([...this.drains]);
   }
 
-  /** Run the chosen slots one at a time, oldest first. */
-  private async drain(job: ScheduledJob, slots: Date[], after: string | null): Promise<void> {
-    for (const slot of slots) {
-      // Until a slot's run starts it is still the next one, so a restart finds it due.
-      const state = await this.loadState(job);
-      await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), nextSlot: slot.toISOString() });
-      await this.runSlot(job, slot);
+  /**
+   * Run the chosen slots one at a time, oldest first. A slot that fails with
+   * attempts left stops the drain: the job waits for its retry, and the slots
+   * after it are looked at again once it is done. `after` is the next slot
+   * once all are handled; null leaves it to each run.
+   */
+  private async drain(job: ScheduledJob, items: Array<{ slot: Date; resume?: Resume }>, after: string | null): Promise<void> {
+    for (const { slot, resume } of items) {
+      if (!resume) {
+        // Until a slot's run starts it is still the next one, so a restart finds it due.
+        const state = await this.loadState(job);
+        await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), nextSlot: slot.toISOString() });
+      }
+      if (await this.runSlot(job, slot, resume) === 'retry') return;
     }
+    if (after === null) return;
     const state = await this.loadState(job);
     await this.saveState(job, { ...(state ?? emptyState(job, ruleKey(job.schedule))), nextSlot: after });
   }
 
-  private async runSlot(job: ScheduledJob, slot: Date): Promise<void> {
+  /** One attempt at one slot. `retry` when it failed with attempts left. */
+  private async runSlot(job: ScheduledJob, slot: Date, resume?: Resume): Promise<'done' | 'retry' | 'held'> {
     const slotIso = slot.toISOString();
     const provider = job.persist ? this.stateProvider : null;
     if (provider && !(await provider.takeLock(job.def.id, slotIso, LOCK_OWNER, LOCK_TTL_MS))) {
       // Another server holds this slot (a rolling update): it runs and records it.
       logger.info(`[BackgroundJobManager] '${job.def.id}' slot ${slotIso} is held by another server — leaving it`);
-      return;
+      return 'held';
     }
     const heartbeat = provider
       ? setInterval(() => { void provider.renewLock(job.def.id, slotIso, LOCK_OWNER, LOCK_TTL_MS); }, LOCK_RENEW_MS)
       : null;
     heartbeat?.unref();
 
-    const requestedBy = scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}`);
-    const runId = randomUUID();
-    const run: JobRun = { runId, jobId: job.def.id, displayName: job.def.displayName, requestedBy, status: 'pending', startedAt: this.clock() };
+    const requestedBy = scheduleContext(this.engine, `${job.schedule.rrule} slot ${slotIso}${resume ? ` (attempt ${resume.attempt}, resumed: ${resume.reason})` : ''}`);
+    const runId = resume?.runId ?? randomUUID();
+    const attempt = resume?.attempt ?? 1;
+    const run: JobRun = {
+      runId, jobId: job.def.id, displayName: job.def.displayName, requestedBy, status: 'pending', startedAt: this.clock(),
+      slot: slotIso, attempt, ...(resume ? { resumeReason: resume.reason } : {})
+    };
     this.runs.set(runId, run);
     this.activeByJobId.set(job.def.id, runId);
 
-    const record: JobRunRecord = { runId, slot: slotIso, startedAt: run.startedAt.toISOString(), attempt: 1, status: 'running' };
+    const record: JobRunRecord = { runId, slot: slotIso, startedAt: run.startedAt.toISOString(), attempt, status: 'running' };
     const before = await this.loadState(job);
     await this.saveState(job, { ...(before ?? emptyState(job, ruleKey(job.schedule))), current: record });
     await provider?.recordRun(job.def.id, record);
 
+    const checkpoint = resume && provider ? await provider.loadCheckpoint(job.def.id, runId) : null;
+    const writer = this.checkpointWriter(provider, job.def.id, runId);
+    let outcome: 'done' | 'retry' = 'done';
     try {
-      await this.executeJob(job.def, run, { slot: slotIso, timeoutMs: job.timeoutMs });
+      await this.executeJob(job.def, run, {
+        slot: slotIso,
+        timeoutMs: job.timeoutMs,
+        resume: resume ? { attempt, checkpoint: checkpoint ?? null, reason: resume.reason } : null,
+        checkpoint: writer.checkpoint
+      });
     } finally {
       if (heartbeat) clearInterval(heartbeat);
-      const finished: JobRunRecord = {
-        ...record,
-        status: run.status === 'completed' ? 'completed' : 'failed',
-        completedAt: (run.completedAt ?? this.clock()).toISOString(),
-        ...(run.status === 'completed' ? {} : { error: run.result?.error ?? 'failed' })
-      };
-      const after = await this.loadState(job);
-      await this.saveState(job, {
-        ...(after ?? emptyState(job, ruleKey(job.schedule))),
-        current: null,
-        lastSlotDone: finished.status === 'completed' ? slotIso : (after?.lastSlotDone ?? null)
-      });
-      await provider?.recordRun(job.def.id, finished);
+      await writer.flush();
+      const completedAt = (run.completedAt ?? this.clock()).toISOString();
+      if (run.status === 'completed') {
+        const after = await this.loadState(job);
+        await this.saveState(job, {
+          ...(after ?? emptyState(job, ruleKey(job.schedule))),
+          current: null,
+          lastSlotDone: slotIso,
+          nextSlot: this.nextSlotAfter(job, after?.nextSlot ?? null, slotIso)
+        });
+        await provider?.recordRun(job.def.id, { ...record, status: 'completed', completedAt });
+        await provider?.clearCheckpoint(job.def.id, runId);
+      } else if (await this.afterFailedAttempt(job, { ...record, completedAt }, run.result?.error ?? 'failed', this.clock())) {
+        outcome = 'retry';
+      }
       await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
     }
+    return outcome;
+  }
+
+  /**
+   * A run's `ctx.checkpoint` (#1716). The size is checked at once, so an
+   * oversize checkpoint throws to the job. Writes are at most one per
+   * throttle interval, the latest winning, and `flush` writes what is still
+   * waiting. Without a provider (not persisted) a checkpoint is checked and dropped.
+   */
+  private checkpointWriter(provider: JobStateProvider | null, jobId: string, runId: string): { checkpoint: (data: unknown) => void; flush: () => Promise<void> } {
+    const maxBytes = this.checkpointMaxBytes();
+    const throttleMs = this.checkpointThrottleMs;
+    let pending: { data: unknown } | null = null;
+    let lastWrite = 0;
+    let timer: NodeJS.Timeout | null = null;
+    let writing: Promise<void> = Promise.resolve();
+
+    const write = (): void => {
+      timer = null;
+      if (!pending || !provider) return;
+      const { data } = pending;
+      pending = null;
+      lastWrite = Date.now();
+      writing = writing
+        .then(() => provider.saveCheckpoint(jobId, runId, data))
+        .catch((err: unknown) => { logger.warn(`[BackgroundJobManager] '${jobId}' checkpoint not saved:`, err); });
+    };
+
+    return {
+      checkpoint: (data: unknown): void => {
+        checkpointJson(data, maxBytes);
+        if (!provider) return;
+        pending = { data };
+        if (timer) return;
+        const wait = lastWrite + throttleMs - Date.now();
+        if (wait <= 0) {
+          write();
+        } else {
+          timer = setTimeout(write, wait);
+          timer.unref();
+        }
+      },
+      flush: async (): Promise<void> => {
+        if (timer) {
+          clearTimeout(timer);
+          write();
+        }
+        await writing;
+      }
+    };
   }
 
   private async loadState(job: ScheduledJob): Promise<JobState | null> {
@@ -606,7 +797,8 @@ class BackgroundJobManager extends BaseManager {
     // nothing a job does can become an unhandled rejection in the host.
     // A job that is only ever enqueued has no time limit unless it declares one (#1715).
     const timeoutMs = def.timeout === undefined ? 0 : this.timeoutFor(def, 0);
-    this.executeJob(def, run, { slot: null, timeoutMs }).catch((err: unknown) => {
+    const maxBytes = this.checkpointMaxBytes();
+    this.executeJob(def, run, { slot: null, timeoutMs, resume: null, checkpoint: (data) => { checkpointJson(data, maxBytes); } }).catch((err: unknown) => {
       run.status = 'failed';
       run.result = { success: false, error: err instanceof Error ? err.message : String(err) };
       run.completedAt = new Date();
@@ -644,7 +836,11 @@ class BackgroundJobManager extends BaseManager {
     return Array.from(this.jobs.keys());
   }
 
-  private async executeJob(def: JobDefinition, run: JobRun, options: { slot: string | null; timeoutMs: number }): Promise<void> {
+  private async executeJob(
+    def: JobDefinition,
+    run: JobRun,
+    options: { slot: string | null; timeoutMs: number; resume: JobRunContext['resume']; checkpoint: JobRunContext['checkpoint'] }
+  ): Promise<void> {
     run.status = 'running';
     const startMs = Date.now();
     logger.info(
@@ -658,7 +854,13 @@ class BackgroundJobManager extends BaseManager {
     };
 
     const controller = new AbortController();
-    const ctx: JobRunContext = { ...run.requestedBy, signal: controller.signal, slot: options.slot };
+    const ctx: JobRunContext = {
+      ...run.requestedBy,
+      signal: controller.signal,
+      slot: options.slot,
+      resume: options.resume,
+      checkpoint: options.checkpoint
+    };
 
     try {
       const result = await runWithTimeout(def.run(reportProgress, ctx), controller, options.timeoutMs);
@@ -732,6 +934,10 @@ class BackgroundJobManager extends BaseManager {
         reason: by.reason ?? null,
         viaTokenId: by.viaToken?.id ?? null,
         viaTokenName: by.viaToken?.name ?? null,
+        // #1716: a scheduled run's slot and attempt, and for a resumed attempt why the one before ended.
+        slot: run.slot ?? null,
+        attempt: run.attempt ?? null,
+        resumed: run.resumeReason ?? null,
         detail: detail ?? null
       }
     });

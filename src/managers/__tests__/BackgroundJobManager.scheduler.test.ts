@@ -1,6 +1,7 @@
 /**
  * The scheduler in BackgroundJobManager (#1715, epic #1611): slots, catch-up,
- * overlap, timeout, configuration overrides, locks.
+ * overlap, timeout, configuration overrides, locks; and (#1716) resuming a
+ * run the server did not finish, retries with backoff, and checkpoints.
  *
  * State lives in a real FileJobStateProvider in a temporary directory, so a
  * "restart" is a second manager over the same directory. Each test removes
@@ -38,7 +39,7 @@ function provider(): FileJobStateProvider {
 }
 
 /** A manager over the shared state directory; a second one is a restart. */
-function manager(state = provider()): BackgroundJobManager {
+function manager(state = provider(), options: { checkpointThrottleMs?: number } = {}): BackgroundJobManager {
   const engine = {
     getManager: (name: string) => {
       if (name === 'AuditManager') return { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } };
@@ -46,7 +47,7 @@ function manager(state = provider()): BackgroundJobManager {
       return null;
     }
   } as never;
-  return new BackgroundJobManager(engine, { stateProvider: state, now: () => new Date(clock) });
+  return new BackgroundJobManager(engine, { stateProvider: state, now: () => new Date(clock), ...options });
 }
 
 /** A job that records each slot it ran, and can be held open. */
@@ -348,5 +349,201 @@ describe('persist: false', () => {
     await settle(m);
     expect(t.slots).toEqual(['2026-10-09T10:00:00.000Z']);
     expect(await provider().getState('test.hourly')).toBeNull();
+  });
+});
+
+describe('attempts and resume (#1716)', () => {
+  const SLOT = '2026-10-09T10:00:00.000Z';
+  const MINUTE = 60_000;
+
+  test('maxAttempts must be a whole number, 1 or more', () => {
+    expect(() => manager().registerJob(job({ maxAttempts: 0 }).def)).toThrow(/maxAttempts/);
+  });
+
+  test('a slot that keeps failing is tried 3 times, after 1 then 5 minutes, then failed for good; the next slot still runs', async () => {
+    const tries: number[] = [];
+    const m = manager();
+    m.registerJob({
+      id: 'test.flaky',
+      displayName: 'Flaky',
+      schedule: 'hourly',
+      run: (_progress, ctx) => {
+        tries.push(ctx.resume?.attempt ?? 1);
+        return Promise.resolve(ctx.slot === SLOT ? { success: false, error: 'ledger locked' } : { success: true });
+      }
+    });
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    expect(tries).toEqual([1]);
+    expect((await provider().getState('test.flaky'))?.current).toMatchObject({ status: 'failed', attempt: 1, retryAt: '2026-10-09T10:01:05.000Z' });
+
+    // Not before its backoff.
+    clock += 30_000;
+    await m.tick();
+    await settle(m);
+    expect(tries).toEqual([1]);
+
+    clock += MINUTE;
+    await m.tick();
+    await settle(m);
+    expect(tries).toEqual([1, 2]);
+    expect((await provider().getState('test.flaky'))?.current?.retryAt).toBe(new Date(clock + 5 * MINUTE).toISOString());
+
+    clock += 5 * MINUTE + 1;
+    await m.tick();
+    await settle(m);
+    expect(tries).toEqual([1, 2, 3]);
+    const state = await provider().getState('test.flaky');
+    expect(state?.current).toBeNull();
+    expect(state?.lastSlotDone).toBeNull();
+    expect((await provider().listRuns('test.flaky'))[0].error).toMatch(/ledger locked \(attempt 3 of 3; not tried again\)/);
+    expect(named('job-failed').some((e) => String((e.metadata as Record<string, unknown>).detail).includes('not tried again'))).toBe(true);
+
+    clock = Date.parse('2026-10-09T11:00:05Z');
+    await m.tick();
+    await settle(m);
+    expect(tries).toEqual([1, 2, 3, 1]);
+    expect((await provider().getState('test.flaky'))?.lastSlotDone).toBe('2026-10-09T11:00:00.000Z');
+  });
+
+  test('a run the server stopped in the middle of is resumed with the same run id, the next attempt and its checkpoint', async () => {
+    const state = provider();
+    const crashed = manager(state);
+    crashed.registerJob(job().def);
+    await crashed.tick();
+    // The server died during the 10:00 slot: the run is still "running", its
+    // lock is held by the dead process, and it had saved a checkpoint.
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await state.putState({ ...(await state.getState('test.hourly'))!, nextSlot: SLOT, current: { runId: 'run-a', slot: SLOT, startedAt: SLOT, attempt: 1, status: 'running' } });
+    await state.takeLock('test.hourly', SLOT, 'dead-host:1:boot', 60_000);
+    await state.saveCheckpoint('test.hourly', 'run-a', { doneThrough: 311 });
+
+    const t = job();
+    const restarted = manager(state);
+    restarted.registerJob(t.def);
+    // While the dead process's lock lasts, the run is left alone.
+    await restarted.tick();
+    await settle(restarted);
+    expect(t.slots).toEqual([]);
+    expect((await state.getState('test.hourly'))?.current?.status).toBe('running');
+
+    // Lock expired: counted as a failed attempt, retried after its backoff.
+    clock += 61_000;
+    await restarted.tick();
+    await settle(restarted);
+    expect(t.slots).toEqual([]);
+    expect((await state.getState('test.hourly'))?.current).toMatchObject({ status: 'failed', error: 'the server stopped during the run' });
+
+    clock += 61_000;
+    await restarted.tick();
+    await settle(restarted);
+    expect(t.slots).toEqual([SLOT]);
+    expect(t.contexts[0].resume).toEqual({ attempt: 2, checkpoint: { doneThrough: 311 }, reason: 'the server stopped during the run' });
+    const after = await state.getState('test.hourly');
+    expect(after).toMatchObject({ current: null, lastSlotDone: SLOT, nextSlot: '2026-10-09T11:00:00.000Z' });
+    expect((await state.listRuns('test.hourly')).find((r) => r.status === 'completed')?.runId).toBe('run-a');
+    // Succeeded: its checkpoint is gone.
+    expect(await state.loadCheckpoint('test.hourly', 'run-a')).toBeNull();
+    const started = named('job-started').at(-1)?.metadata as Record<string, unknown>;
+    expect(started).toMatchObject({ runId: 'run-a', attempt: 2, resumed: 'the server stopped during the run' });
+  });
+
+  test('a run handed off as interrupted is picked up at once, without counting as an attempt', async () => {
+    const state = provider();
+    const before = manager(state);
+    before.registerJob(job().def);
+    await before.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await state.putState({ ...(await state.getState('test.hourly'))!, nextSlot: SLOT, current: { runId: 'run-b', slot: SLOT, startedAt: SLOT, attempt: 1, status: 'interrupted' } });
+    const t = job();
+    const after = manager(state);
+    after.registerJob(t.def);
+    await after.tick();
+    await settle(after);
+    expect(t.contexts[0].resume).toMatchObject({ attempt: 1, reason: 'interrupted' });
+  });
+
+  test('a failed attempt keeps its checkpoint for the next one', async () => {
+    const state = provider();
+    const seen: unknown[] = [];
+    const m = manager(state);
+    m.registerJob({
+      id: 'test.close',
+      displayName: 'Close',
+      schedule: 'hourly',
+      run: (_progress, ctx) => {
+        seen.push(ctx.resume?.checkpoint ?? null);
+        if (!ctx.resume) {
+          ctx.checkpoint({ doneThrough: 120 });
+          return Promise.resolve({ success: false, error: 'interrupted by the bank' });
+        }
+        return Promise.resolve({ success: true });
+      }
+    });
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    clock += 2 * MINUTE;
+    await m.tick();
+    await settle(m);
+    expect(seen).toEqual([null, { doneThrough: 120 }]);
+  });
+});
+
+describe('checkpoints (#1716)', () => {
+  function checkpointing(steps: (ctx: JobRunContext) => Promise<void>) {
+    const errors: string[] = [];
+    const def: JobDefinition = {
+      id: 'test.cp',
+      displayName: 'Checkpointing',
+      schedule: 'hourly',
+      maxAttempts: 1,
+      run: async (_progress, ctx) => {
+        try {
+          await steps(ctx);
+        } catch (err) {
+          errors.push((err as Error).message);
+        }
+        return { success: false, error: 'stop here so the checkpoint is kept' };
+      }
+    };
+    return { def, errors };
+  }
+
+  test('a checkpoint larger than ngdpbase.jobs.max-checkpoint-bytes throws to the job', async () => {
+    settings['ngdpbase.jobs.max-checkpoint-bytes'] = 16;
+    const t = checkpointing((ctx) => { ctx.checkpoint({ note: 'far more than sixteen bytes' }); return Promise.resolve(); });
+    const m = manager();
+    m.registerJob(t.def);
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    expect(t.errors[0]).toMatch(/Checkpoint is \d+ bytes; the limit is 16/);
+  });
+
+  test('writes are throttled, the latest winning, and the last one is written when the run ends', async () => {
+    const state = provider();
+    const save = vi.spyOn(state, 'saveCheckpoint');
+    const t = checkpointing(async (ctx) => {
+      ctx.checkpoint({ n: 1 });
+      ctx.checkpoint({ n: 2 });
+      ctx.checkpoint({ n: 3 });
+      await new Promise((r) => setTimeout(r, 80));
+      ctx.checkpoint({ n: 4 });
+      ctx.checkpoint({ n: 5 });
+    });
+    const m = manager(state, { checkpointThrottleMs: 50 });
+    m.registerJob(t.def);
+    await m.tick();
+    clock = Date.parse('2026-10-09T10:00:05Z');
+    await m.tick();
+    await settle(m);
+    expect(save.mock.calls.map((c) => c[2])).toEqual([{ n: 1 }, { n: 3 }, { n: 5 }]);
+    const runId = (await state.listRuns('test.cp'))[0].runId;
+    expect(await state.loadCheckpoint('test.cp', runId)).toEqual({ n: 5 });
   });
 });

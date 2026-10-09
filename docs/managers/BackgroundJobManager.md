@@ -17,7 +17,7 @@ Lets the platform run long-running work (page-reindex, version-history maintenan
 | `JobDefinition` | Registered job blueprint: `{ id, displayName, run }`, plus `schedule`, `catchUp`, `overlap`, `timeout` and `persist` for a scheduled job |
 | `JobResult` | What a job's `run` resolves with: `{ success, summary? }` |
 | `ReportProgress` | Callback the job calls during execution to push live progress messages |
-| `JobRunContext` | The `ctx` a run receives: who asked (`JobContext`), the `signal` aborted on timeout, and the `slot` it runs for |
+| `JobRunContext` | The `ctx` a run receives: who asked (`JobContext`), the `signal` aborted on timeout, the `slot` it runs for, `resume` (set when it picks up an unfinished slot) and `checkpoint(data)` |
 
 ## Lifecycle
 
@@ -60,8 +60,16 @@ jobManager.registerJob({
 | `ngdpbase.jobs.min-interval-ms` | `60000` | slots closer than this are refused |
 | `ngdpbase.jobs.max-timeout-ms` | `0` | caps every job's timeout; 0 = no cap |
 | `ngdpbase.jobs.history-limit` | `50` | runs kept per job |
+| `ngdpbase.jobs.max-checkpoint-bytes` | `65536` | largest checkpoint a job may save |
 
-Not yet: resuming a run cut off by a restart, retries and checkpoints ([#1716](https://github.com/jwilleke/ngdpbase/issues/1716)), the shutdown handoff ([#1717](https://github.com/jwilleke/ngdpbase/issues/1717)), and the admin page ([#1718](https://github.com/jwilleke/ngdpbase/issues/1718)).
+### Attempts, resume and checkpoints (#1716)
+
+- A scheduled slot gets `maxAttempts` (default 3). A failed attempt — an error, a timeout, a `success: false` result, or the server stopping mid-run — is tried again after 1, 5, then 15 minutes, with the same run id and slot. While it waits, the job starts no other slot. After the last attempt the slot is failed for good and audited, and the next slot runs as usual.
+- A run the state still names as running, whose lock has expired, belongs to a server that stopped: it counts as a failed attempt. One whose lock is still held belongs to a live server and is left alone. A run handed off as `interrupted` at shutdown is picked up at once and does not count ([#1717](https://github.com/jwilleke/ngdpbase/issues/1717) writes it).
+- The next attempt gets `ctx.resume = { attempt, checkpoint, reason }`.
+- `ctx.checkpoint(data)` saves a bookmark such as `{ doneThrough: 311 }`: JSON, at most `ngdpbase.jobs.max-checkpoint-bytes` (default 64 KiB; larger throws to the job), written at most once every 5 s with the latest winning, and once more when the run ends. Deleted when the slot succeeds, kept when it fails. Without a checkpoint, a resumed job starts its slot again, so a job must be idempotent per slot.
+
+Not yet: the shutdown handoff ([#1717](https://github.com/jwilleke/ngdpbase/issues/1717)) and the admin page ([#1718](https://github.com/jwilleke/ngdpbase/issues/1718)).
 
 ## See Also
 

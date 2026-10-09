@@ -31,6 +31,8 @@ export interface JobRunRecord {
   status: 'running' | 'completed' | 'failed' | 'interrupted' | 'skipped';
   completedAt?: string;
   error?: string;
+  /** A failed attempt with attempts left: when it is tried again (#1716). */
+  retryAt?: string;
 }
 
 export interface JobState {
