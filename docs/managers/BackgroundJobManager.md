@@ -29,7 +29,7 @@ Lets the platform run long-running work (page-reindex, version-history maintenan
 
 ## Scheduled jobs (#1715)
 
-A job registered with a `schedule` also runs by itself. The design and its decisions are on epic [#1611](https://github.com/jwilleke/ngdpbase/issues/1611); the add-on guide section is [#1719](https://github.com/jwilleke/ngdpbase/issues/1719).
+A job registered with a `schedule` also runs by itself. The design and its decisions are on epic [#1611](https://github.com/jwilleke/ngdpbase/issues/1611). For add-on authors: [Background Jobs](../guides/addons-developer-guide.md#8-background-jobs); for operators: [Scheduled Jobs](../admin/Scheduled-Jobs.md).
 
 ```ts
 jobManager.registerJob({

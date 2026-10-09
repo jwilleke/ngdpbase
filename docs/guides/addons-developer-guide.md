@@ -40,6 +40,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
 - Import host HTTP as `../../dist/src/http/guardedFetch.js`, never `src/http/`.
+- Recurring work is a scheduled job ([Background Jobs](#8-background-jobs)), never `setInterval`: a timer catches nothing up, runs twice during a rolling update, and records nothing when it misses.
 
 ---
 
@@ -931,25 +932,105 @@ There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role nam
 
 ## 8. Background Jobs
 
-Register a job so the admin panel can trigger and monitor it:
+`BackgroundJobManager` runs two kinds of job: one that runs when something asks for it, and one that runs by itself on a schedule. Register both in `register()`. The design and its decisions are on [#1611](https://github.com/jwilleke/ngdpbase/issues/1611); the manager's reference is [BackgroundJobManager.md](../managers/BackgroundJobManager.md).
+
+### A job that runs when asked
 
 ```javascript
-async register(engine, config) {
-  const jobManager = engine.getManager('BackgroundJobManager');
-  if (jobManager) {
-    jobManager.registerJob({
-      id: 'my-addon-reindex',
-      displayName: 'My Addon — Reindex',
-      async run(reportProgress, ctx) {
-        reportProgress('Starting...');
-        // ... do work; ctx is the JobContext captured at enqueue ...
-        reportProgress('Done');
-        return { success: true, summary: 'Done' };
-      }
-    });
+jobManager.registerJob({
+  id: 'my-addon.reindex',
+  displayName: 'My Addon — Reindex',
+  async run(reportProgress, ctx) {
+    reportProgress('Starting...');
+    // ... ctx names who asked (#631): use it for any permission check or record ...
+    return { success: true, summary: 'Reindexed 120 items' };
   }
-}
+});
+
+// From a route, as the person asking:
+const runId = await jobManager.enqueue('my-addon.reindex', jobContextFromRequest(req.userContext));
 ```
+
+`enqueue` returns at once; `getStatus(runId)` gives progress. A job enqueued again while it runs returns the run already going.
+
+### A job that runs on a schedule
+
+```javascript
+jobManager.registerJob({
+  id: 'my-addon.month-close',
+  displayName: 'My Addon — Month close',
+  schedule: 'end-of-month 06:00',          // or { rrule: 'FREQ=MONTHLY;BYMONTHDAY=-1;BYHOUR=6;BYMINUTE=0', tz: 'America/New_York' }
+  catchUp: 'latest',                       // none | latest | all
+  overlap: 'queue',                        // queue | skip
+  timeout: 2 * 60 * 60_000,                // ms; scheduled default 1 h; 0 = no limit
+  maxAttempts: 3,
+  async run(reportProgress, ctx) {
+    const start = ctx.resume?.checkpoint?.doneThrough ?? 0;
+    for (let n = start + 1; n <= accounts.length; n++) {
+      if (ctx.signal.aborted) return { success: false, error: 'stopped' };
+      await closeAccount(accounts[n - 1], ctx.slot);    // safe to repeat for the same slot
+      ctx.checkpoint({ doneThrough: n });
+    }
+    return { success: true, summary: `Closed ${accounts.length} accounts for ${ctx.slot}` };
+  }
+});
+```
+
+Nothing else is needed: the scheduler finds the slots, runs each once, and keeps what it must across restarts.
+
+__The schedule.__ An iCalendar recurrence rule (RFC 5545 RRULE), or one of these shorthands, each an optional `HH:MM` (default 00:00):
+
+| Shorthand | Runs |
+|---|---|
+| `hourly` | on the hour |
+| `daily 06:00` | every day |
+| `weekly MO 06:00` | one day a week (`MO` … `SU`) |
+| `every 15m`, `every 6h`, `every 30d 06:00` | at that interval |
+| `start-of-month`, `end-of-month` | the 1st; the last day |
+| `last-business-day` | the last Monday–Friday of the month |
+| `end-of-quarter` | the last day of March, June, September, December |
+| `start-of-year` | 1 January |
+
+- An RRULE goes in as `FREQ=…`, or as `{ rrule, tz, dtstart }`. Interval rules (`every 30d`) count from `dtstart`, default `2000-01-01T00:00:00`, so their phase is the same on every start.
+- The time zone is `tz`, else `ngdpbase.default.timezone`. Daylight saving does what a person expects: a time skipped in spring runs at the next valid instant; a time repeated in autumn runs once.
+- A date that does not exist is skipped, as RFC 5545 says: `BYMONTHDAY=31` skips short months. The last day of a month is `BYMONTHDAY=-1`.
+- `FREQ=SECONDLY` and slots closer than `ngdpbase.jobs.min-interval-ms` (default 60 s) are refused. A schedule that does not compile throws from `registerJob`, naming the job: it is your error at start, never a job that silently never runs.
+- Cron is not accepted.
+
+__The job id__ is `<slug>.<job>`: lowercase letters and digits, joined by single dots or dashes. It names the job's state files and the operator's override keys.
+
+__What the run is handed__ (`ctx`, a `JobRunContext`):
+
+| Field | |
+|---|---|
+| `username`, `origin`, `reason` | Who it runs as. A scheduled run is the system principal with origin `schedule`; an admin's "run now" or rerun is that admin. Permission checks the job makes ask with this, as in [security-developer-guide.md](security-developer-guide.md). |
+| `slot` | The slot's instant (ISO, UTC), or `null` for a run nobody scheduled. Key your work on it. |
+| `signal` | Aborted at the timeout and at shutdown. A long job checks it and stops. |
+| `resume` | `null` on a first attempt; on a later one `{ attempt, checkpoint, reason }`. |
+| `checkpoint(data)` | Saves a bookmark the next attempt gets back. |
+
+__Catch-up and overlap.__ Slots missed while the server was down or the job idle follow `catchUp`: `none` runs only a slot that has just come due, `latest` (the default) runs the newest once, `all` runs the newest 12, oldest first. Slots that came due while the job was still running follow `overlap`: `queue` (the default) keeps one waiting, `skip` keeps none. One job never runs twice at once. Every slot passed over is recorded and audited (`job-skipped`), never dropped silently.
+
+__Attempts.__ A failed attempt — an error, a timeout, `success: false`, or the server stopping mid-run — is tried again after 1, 5, then 15 minutes, with the same run id and slot, up to `maxAttempts` (default 3). After the last the slot is failed, audited and notified, and the next slot runs as usual.
+
+__Idempotent per slot.__ A slot can run more than once: a retry, a resume after a crash, an admin's rerun. So doing the slot's work again must change nothing it already did. "Close account X for October" checks whether it is closed and skips it if so.
+
+__Checkpoint or start again.__ A process that stops loses everything in memory: its place in the loop, running totals, results not yet written, open connections. What survives is what was written. A job that wants to continue rather than start again saves a bookmark as it goes:
+
+- __With a checkpoint__: the month close saves `{ doneThrough: 311 }`; on resume `ctx.resume.checkpoint` gives it back and it carries on at 312.
+- __Without one__: it starts the slot again from account 1. That is safe only because closing an account twice changes nothing.
+
+A checkpoint is a bookmark, not storage for results: JSON, at most `ngdpbase.jobs.max-checkpoint-bytes` (64 KiB; larger throws to the job), written at most once every 5 s with the latest winning, and once more when the run ends. Deleted when the slot succeeds, kept when it fails. Results go where the addon keeps its data.
+
+__Timeouts and shutdown.__ At its `timeout` the run's `signal` is aborted, and it is failed as timed out. On SIGTERM or SIGINT every running job's `signal` is aborted and it gets `ngdpbase.jobs.shutdown-grace-ms` (default 5 s) to stop; the run is then saved as interrupted with its last checkpoint, and the next start resumes it at once without counting an attempt. A hard kill does not get that far: the run resumes once its lock expires, as its next attempt.
+
+__`persist`__ (default `true` for a scheduled job) keeps slots, history and locks in FAST_STORAGE, or the application database. `persist: false` keeps them in memory: no catch-up after a restart, no lock, no resume. Use it only for a harmless tick whose next run does the same work.
+
+__Do not use `setInterval` for recurring work.__ A timer catches nothing up after downtime, runs twice during a rolling update, records nothing when it misses, and is not stopped cleanly at shutdown. Register a scheduled job instead.
+
+__What the operator controls__, without changing your code: `ngdpbase.jobs.<id>.schedule` replaces the schedule, `ngdpbase.jobs.<id>.enabled: false` pauses it, and Admin → Scheduled Jobs runs it now, reruns a skipped or failed slot, or retries a waiting run. See [Scheduled Jobs](../admin/Scheduled-Jobs.md).
+
+__Testing a scheduled job.__ Construct `BackgroundJobManager` with `{ stateProvider, now }` (a `FileJobStateProvider` in a temporary directory and your own clock), register the job, move the clock, call `tick()`, then `whenIdle()`. A second manager over the same directory is a restart. `src/managers/__tests__/BackgroundJobManager.scheduler.test.ts` shows each case.
 
 ---
 
@@ -1006,6 +1087,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] `addonsManager.registerDashboardCard(...)` called if you have an admin UI page
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
 - [ ] `shutdown()` closes any open connections or file handles
+- [ ] Recurring work is a scheduled job with an id `<slug>.<job>`, safe to run again for the same slot, honouring `ctx.signal` — no `setInterval`
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
 - [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
 - [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
@@ -1164,4 +1246,4 @@ ngdpbase does not need to know your addon exists. Your addon repo does not need 
 
 ---
 
-Last updated: 2026-10-05
+Last updated: 2026-10-09
