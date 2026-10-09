@@ -82,6 +82,59 @@ describe('#1693 started as root: switch to PUID/PGID', () => {
   });
 });
 
+describe('#1695 the hand-over walks the whole folder and finishes what it started', () => {
+  /** Pretend some paths already belong to `owner`; everything else keeps its real owner. */
+  function ownedBy(owner: { uid: number; gid: number }, paths: string[]) {
+    const real = fs.lstatSync;
+    return vi.spyOn(fs, 'lstatSync').mockImplementation(((p: fs.PathLike) => {
+      const st = real(p);
+      return paths.includes(String(p)) ? Object.assign(Object.create(Object.getPrototypeOf(st)), st, owner) : st;
+    }) as typeof fs.lstatSync);
+  }
+
+  test('an entry that cannot be changed is skipped and named; the walk goes on', () => {
+    const data = path.resolve(dir);
+    fs.mkdirSync(path.join(data, 'organizations'));
+    fs.writeFileSync(path.join(data, 'organizations', 'org.json'), '{}');
+    fs.mkdirSync(path.join(data, 'users'));
+    fs.writeFileSync(path.join(data, 'users', 'users.json'), '{}');
+    const readOnly = path.join(data, 'organizations', 'org.json');
+    const chowned: string[] = [];
+    vi.spyOn(fs, 'lchownSync').mockImplementation((p) => {
+      if (String(p) === readOnly) throw Object.assign(new Error('EROFS: read-only file system'), { code: 'EROFS' });
+      chowned.push(String(p));
+    });
+    const r = becomeRunAsUser({ PUID: '977', PGID: '988' }, dir, undefined, ids(0, 0));
+    // The ConfigMap-style file did not stop the walk: users/ and its file were reached.
+    expect(chowned).toEqual(expect.arrayContaining([path.join(data, 'users'), path.join(data, 'users', 'users.json')]));
+    const notes = r?.notes.join('\n') ?? '';
+    expect(notes).toMatch(/Could not give 1 entry .*org\.json \(EROFS\)/);
+    expect(notes).not.toMatch(/NFS\)\. Continuing/);
+    vi.restoreAllMocks();
+  });
+
+  test('a top folder already PUID:PGID does not stop an unfinished hand-over below it', () => {
+    const data = path.resolve(dir);
+    fs.mkdirSync(path.join(data, 'pages'));
+    fs.writeFileSync(path.join(data, 'pages', 'a.md'), 'x');
+    ownedBy({ uid: 977, gid: 988 }, [data]);
+    const chowned: string[] = [];
+    vi.spyOn(fs, 'lchownSync').mockImplementation((p) => { chowned.push(String(p)); });
+    becomeRunAsUser({ PUID: '977', PGID: '988' }, dir, undefined, ids(0, 0));
+    expect(chowned).not.toContain(data);
+    expect(chowned).toEqual(expect.arrayContaining([path.join(data, 'pages'), path.join(data, 'pages', 'a.md')]));
+    vi.restoreAllMocks();
+  });
+
+  test('a long list of failures names five and counts the rest', () => {
+    for (let i = 0; i < 8; i++) fs.writeFileSync(path.join(dir, `f${i}`), 'x');
+    vi.spyOn(fs, 'lchownSync').mockImplementation(() => { throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); });
+    const r = becomeRunAsUser({ PUID: '977', PGID: '988' }, dir, undefined, ids(0, 0));
+    expect(r?.notes.join('\n')).toMatch(/Could not give 9 entries .*, and 4 more\./);
+    vi.restoreAllMocks();
+  });
+});
+
 describe('#1693 started as non-root: must already be PUID/PGID', () => {
   test('matching ids start, with no switch', () => {
     const p = ids(977, 988);

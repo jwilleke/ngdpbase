@@ -60,22 +60,52 @@ function idFrom(env: NodeJS.ProcessEnv, name: 'PUID' | 'PGID'): number {
   return id;
 }
 
-/** Give every entry under `dir` (and `dir`) to uid:gid, without following links. Returns the first failure, if any. */
-function chownTree(dir: string, uid: number, gid: number): Error | null {
-  try {
-    fs.lchownSync(dir, uid, gid);
-    const st = fs.lstatSync(dir);
-    if (st.isDirectory()) {
-      for (const name of fs.readdirSync(dir)) {
-        const err = chownTree(path.join(dir, name), uid, gid);
-        if (err) return err;
-      }
-    }
-    return null;
-  } catch (err) {
-    return err as Error;
-  }
+/** What one walk of the data folder did (#1695). */
+export interface HandOver {
+  /** Entries whose owner was changed to uid:gid. */
+  changed: number;
+  /** Entries that could not be changed, with why: a read-only mount, an owner-mapping filesystem. */
+  failed: Array<{ path: string; code: string }>;
 }
+
+/**
+ * Give every entry under `dir` (and `dir`) to uid:gid, without following links
+ * (#1695). Visits the whole tree whatever happens: an entry that cannot be
+ * changed (a read-only ConfigMap file mounted inside the folder, a file on a
+ * filesystem that maps owners itself) is recorded and skipped, never the end
+ * of the walk. Only entries not already uid:gid are changed, so a second
+ * start after a finished hand-over only reads owners.
+ */
+export function handOverTree(dir: string, uid: number, gid: number, out: HandOver = { changed: 0, failed: [] }): HandOver {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(dir);
+  } catch (err) {
+    out.failed.push({ path: dir, code: (err as NodeJS.ErrnoException).code ?? (err as Error).message });
+    return out;
+  }
+  if (st.uid !== uid || st.gid !== gid) {
+    try {
+      fs.lchownSync(dir, uid, gid);
+      out.changed++;
+    } catch (err) {
+      out.failed.push({ path: dir, code: (err as NodeJS.ErrnoException).code ?? (err as Error).message });
+    }
+  }
+  if (st.isDirectory()) {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch (err) {
+      out.failed.push({ path: dir, code: (err as NodeJS.ErrnoException).code ?? (err as Error).message });
+    }
+    for (const name of names) handOverTree(path.join(dir, name), uid, gid, out);
+  }
+  return out;
+}
+
+/** How many failed entries a note names before it says "and N more". */
+const FAILED_SHOWN = 5;
 
 /**
  * Become the configured run-as user, or refuse (#1693).
@@ -101,12 +131,19 @@ export function becomeRunAsUser(
   if (ids.getuid() === 0) {
     const data = path.resolve(dataDir);
     fs.mkdirSync(data, { recursive: true });
-    const st = fs.statSync(data);
-    if (st.uid !== uid || st.gid !== gid) {
-      const err = chownTree(data, uid, gid);
-      notes.push(err
-        ? `⚠️  Could not give ${data} to ${uid}:${gid} (${err.message}); its filesystem may map owners itself (NFS). Continuing as ${uid}:${gid} (#1693)`
-        : `🔐 Gave ${data} to ${uid}:${gid}, the configured run-as user (#1693)`);
+    // #1695: the whole tree, every start as root. Deciding by the top folder
+    // alone meant one interrupted hand-over (top folder already PUID:PGID,
+    // everything below still root's) was never finished, and the server
+    // crash-looped on the first file it could not read.
+    const result = handOverTree(data, uid, gid);
+    if (result.changed > 0) {
+      notes.push(`🔐 Gave ${result.changed} entr${result.changed === 1 ? 'y' : 'ies'} under ${data} to ${uid}:${gid}, the configured run-as user (#1693)`);
+    }
+    if (result.failed.length > 0) {
+      const shown = result.failed.slice(0, FAILED_SHOWN).map((f) => `${f.path} (${f.code})`).join(', ');
+      const more = result.failed.length > FAILED_SHOWN ? `, and ${result.failed.length - FAILED_SHOWN} more` : '';
+      notes.push(`⚠️  Could not give ${result.failed.length} entr${result.failed.length === 1 ? 'y' : 'ies'} under ${data} to ${uid}:${gid}: ${shown}${more}. ` +
+        `Usually a read-only mount or a filesystem that maps owners itself; anything ${uid}:${gid} cannot read will fail later (#1695)`);
     }
     ids.setgroups?.([gid]);
     ids.setgid(gid);
