@@ -16,7 +16,7 @@ Renders the footnote definitions for the current page from sidecar storage. Fall
 
 - Sidecar: `${SLOW_STORAGE}/footnotes/{pageUuid}.json`
 - Managed by: `FootnoteManager`
-- Migration: `scripts/migrate-footnotes-to-sidecar.mjs`
+- Moving definitions out of a page body: Convert to NCM, ingest and import, through `FootnoteManager.transferFromContent` (#1125)
 - Tracking: #553, #557
 
 ## Usage

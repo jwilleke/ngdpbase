@@ -14,7 +14,7 @@ Stores footnote definitions as a sidecar JSON file per page, decoupling them fro
 
 - Sidecar: `${SLOW_STORAGE}/footnotes/{pageUuid}.json`
 - Enabled flag: configurable (default `true`)
-- Migration: `scripts/migrate-footnotes-to-sidecar.mjs`
+- Moving definitions out of a page body: Convert to NCM, ingest and import, through `FootnoteManager.transferFromContent` (#1125)
 
 ## `PageFootnote` Shape
 

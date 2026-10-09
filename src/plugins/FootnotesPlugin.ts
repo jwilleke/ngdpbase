@@ -4,7 +4,8 @@
  * pages not yet migrated to sidecar storage.
  *
  * Sidecar format: ${SLOW_STORAGE}/footnotes/{pageUuid}.json
- * Migration script: scripts/migrate-footnotes-to-sidecar.mjs
+ * Definitions move from a body to the sidecar through Convert to NCM, ingest and
+ * import (FootnoteManager.transferFromContent, #1125).
  * Tracking issue: #553 / #557
  *
  * Syntax:
