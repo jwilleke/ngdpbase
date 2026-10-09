@@ -58,3 +58,48 @@ describe('SessionStatsManager', () => {
     expect(await m.users()).toEqual({ users: ['alice', 'bob'], anonymous: 1, total: 4 });
   });
 });
+
+describe('liveSessionHandles (#1626)', () => {
+  test('reads handles through all() where the store has it', async () => {
+    const { liveSessionHandles } = await import('../SessionStatsManager');
+    const store = { all: (cb: (e: unknown, s?: unknown) => void) => cb(null, { a: { privateStoreHandle: 'h1' }, b: {}, c: { privateStoreHandle: 'h2' } }) };
+    expect([...(await liveSessionHandles(store))].sort()).toEqual(['h1', 'h2']);
+  });
+
+  test('a store with list() and get() but no all() is read session by session; an unreadable one is left out', async () => {
+    const { liveSessionHandles } = await import('../SessionStatsManager');
+    const sessions: Record<string, unknown> = { s1: { privateStoreHandle: 'h1' }, s2: { privateStoreHandle: 'h2' }, s3: {} };
+    const store = {
+      list: (cb: (e: unknown, f?: string[]) => void) => cb(null, ['s1.json', 's2.json', 's3.json', 'bad.json']),
+      get: (sid: string, cb: (e: unknown, s?: unknown) => void) => (sid === 'bad' ? cb(new Error('corrupt')) : cb(null, sessions[sid]))
+    };
+    expect([...(await liveSessionHandles(store))].sort()).toEqual(['h1', 'h2']);
+  });
+
+  test('works against the real session-file-store, the default store', async () => {
+    const { liveSessionHandles } = await import('../SessionStatsManager');
+    const os = await import('os');
+    const fsMod = await import('fs');
+    const pathMod = await import('path');
+    const session = (await import('express-session')).default;
+    const FileStore = (await import('session-file-store')).default(session);
+    const dir = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'ngdpbase-1626-'));
+    try {
+      const store = new FileStore({ path: dir, logFn: () => undefined, retries: 0 });
+      const put = (sid: string, data: Record<string, unknown>) => new Promise<void>((resolve, reject) =>
+        store.set(sid, { cookie: { maxAge: 60000, expires: new Date(Date.now() + 60000) }, ...data } as never, (e: unknown) => (e ? reject(e instanceof Error ? e : new Error(String(e))) : resolve())));
+      await put('one', { privateStoreHandle: 'live-1' });
+      await put('two', { privateStoreHandle: 'live-2' });
+      await put('three', { username: 'nobody' });
+      expect([...(await liveSessionHandles(store as never))].sort()).toEqual(['live-1', 'live-2']);
+    } finally {
+      // Only this test's temporary folder.
+      fsMod.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a store that can neither list nor read is unsupported', async () => {
+    const { liveSessionHandles } = await import('../SessionStatsManager');
+    await expect(liveSessionHandles({ length: (cb: (e: unknown, n?: number) => void) => cb(null, 1) })).rejects.toBeInstanceOf(SessionStoreUnsupportedError);
+  });
+});
