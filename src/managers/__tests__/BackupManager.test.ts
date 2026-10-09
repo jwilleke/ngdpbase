@@ -14,7 +14,11 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import BackupManager from '../BackupManager';
+import BackupManager, { autoBackupSchedule, AUTO_BACKUP_JOB_ID } from '../BackupManager';
+import BackgroundJobManager, { type JobDefinition, type JobRunContext } from '../BackgroundJobManager';
+import FileJobStateProvider from '../../providers/FileJobStateProvider';
+import { jobContextFromSchedule } from '../../context/JobContext';
+import { parseSchedule } from '../../utils/schedule';
 
 /** #1179: config writes take the actor's context; the scheduler settings are written on an admin's behalf. */
 const ADMIN_CTX = { username: 'admin', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
@@ -71,25 +75,22 @@ describe('BackupManager', () => {
   describe('#1196 the scheduled backup names its actor', () => {
     test('backup-create carries the system principal, origin schedule and the reason — never unknown', async () => {
       const logAuditEvent = vi.fn(async () => 'id');
+      const registered: JobDefinition[] = [];
       mockEngine.getManager.mockImplementation((name: string) => {
         if (name === 'ConfigurationManager') return mockConfigManager;
         if (name === 'AuditManager') return { logAuditEvent };
+        if (name === 'BackgroundJobManager') return { registerJob: (d: JobDefinition) => { registered.push(d); } };
         return null;
       });
-      vi.useFakeTimers();
-      try {
-        // 02:00 on a Tuesday — the fixture's auto-backup-time, daily.
-        vi.setSystemTime(new Date(2026, 8, 8, 2, 0, 0));
-        await bm['checkAndRunScheduledBackup']();
-      } finally {
-        vi.useRealTimers();
-      }
-      const events = logAuditEvent.mock.calls.map((c) => c[0]);
-      const created = events.find((e) => e.eventType === 'backup-create');
-      expect(created).toBeDefined();
+      const manager = new BackupManager(mockEngine);
+      await manager.initialize();
+      const ctx = { ...jobContextFromSchedule('system', 'FREQ=DAILY;BYHOUR=2;BYMINUTE=0 slot 2026-09-08T02:00:00.000Z'), signal: new AbortController().signal, slot: null, resume: null, checkpoint: () => undefined } as JobRunContext;
+      await registered.at(-1)!.run(() => undefined, ctx);
+      const created = logAuditEvent.mock.calls.map((c) => c[0]).find((e) => e.eventType === 'backup-create');
       expect(created).toMatchObject({ user: 'system', metadata: { origin: 'schedule' } });
-      expect(String((created!.metadata as Record<string, unknown>).reason)).toMatch(/scheduled auto-backup at 02:00 \(daily\)/);
+      expect(String((created!.metadata as Record<string, unknown>).reason)).toMatch(/slot 2026-09-08T02:00:00.000Z/);
       expect((created!.metadata as Record<string, unknown>).actorMissing).toBeUndefined();
+      await manager.shutdown();
     });
   });
 
@@ -423,104 +424,111 @@ describe('BackupManager', () => {
       expect(await fs.pathExists(newDir)).toBe(true);
     });
 
-    test('enables auto-backup and starts scheduler', async () => {
+    test('turning automatic backups on schedules the job; off leaves it to be run by hand (#1720)', async () => {
+      const registered: JobDefinition[] = [];
+      mockEngine.getManager.mockImplementation((name: string) => {
+        if (name === 'ConfigurationManager') return mockConfigManager;
+        if (name === 'BackgroundJobManager') return { registerJob: (d: JobDefinition) => { registered.push(d); } };
+        return null;
+      });
       await bm.updateAutoBackupConfig({ enabled: true }, ADMIN_CTX);
-
-      const timer = (bm as unknown as { schedulerTimer: unknown }).schedulerTimer;
-      expect(timer).not.toBeNull();
-      // Clean up: disable to stop the interval
+      expect(registered.at(-1)).toMatchObject({
+        id: AUTO_BACKUP_JOB_ID,
+        schedule: { rrule: 'FREQ=DAILY;BYHOUR=2;BYMINUTE=0', tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        catchUp: 'latest', overlap: 'skip', persist: true
+      });
       await bm.updateAutoBackupConfig({ enabled: false }, ADMIN_CTX);
-    });
-
-    test('disables auto-backup and stops scheduler', async () => {
-      // First enable so there is a timer to stop
-      await bm.updateAutoBackupConfig({ enabled: true }, ADMIN_CTX);
-      await bm.updateAutoBackupConfig({ enabled: false }, ADMIN_CTX);
-
-      const timer = (bm as unknown as { schedulerTimer: unknown }).schedulerTimer;
-      expect(timer).toBeNull();
+      expect(registered.at(-1)?.schedule).toBeUndefined();
     });
   });
 
-  describe('checkAndRunScheduledBackup() — via fake timers', () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
+  describe('autoBackupSchedule (#1720): the settings as a rule, in the server\'s own time zone', () => {
+    test.each([
+      ['daily', 'FREQ=DAILY;BYHOUR=2;BYMINUTE=0'],
+      ['monthly', 'FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=2;BYMINUTE=0'],
+      ['weekdays', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=2;BYMINUTE=0'],
+      ['Mon,Wed,Fri', 'FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=2;BYMINUTE=0'],
+      ['mon, wednesday ,FRI', 'FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=2;BYMINUTE=0']
+    ])('%s', (days, rrule) => {
+      expect(autoBackupSchedule('02:00', days, 'America/New_York')).toEqual({ rrule, tz: 'America/New_York' });
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
+    test('a time or a day it cannot read is refused, naming the setting', () => {
+      expect(() => autoBackupSchedule('25:00', 'daily', 'UTC')).toThrow(/auto-backup-time '25:00'/);
+      expect(() => autoBackupSchedule('2pm', 'daily', 'UTC')).toThrow(/auto-backup-time/);
+      expect(() => autoBackupSchedule('02:00', 'Mon,Funday', 'UTC')).toThrow(/auto-backup-days 'Mon,Funday'.*funday/);
+      expect(() => autoBackupSchedule('02:00', '', 'UTC')).toThrow(/auto-backup-days/);
     });
 
-    async function callScheduledBackup(manager: BackupManager) {
-      return (manager as unknown as { checkAndRunScheduledBackup(): Promise<void> }).checkAndRunScheduledBackup();
-    }
-
-    test('runs backup when time matches and days=daily', async () => {
-      // Wednesday 02:00 local time
-      vi.setSystemTime(new Date(2025, 0, 8, 2, 0, 0));
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'daily';
-
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
-      await callScheduledBackup(bm);
-
-      expect(spy).toHaveBeenCalled();
+    test('the same days and time the old timer matched, in local time', () => {
+      const tz = 'America/New_York';
+      const monthly = parseSchedule(autoBackupSchedule('02:00', 'monthly', tz), { defaultTimeZone: 'UTC' });
+      // 02:00 New York on the 1st. On 2026-11-01 the clocks go back at 02:00
+      // daylight time, so 02:00 is then standard time: 07:00 UTC, once.
+      expect(monthly.slotsBetween(new Date('2026-10-02T00:00:00Z'), new Date('2027-01-02T00:00:00Z')).map((d) => d.toISOString()))
+        .toEqual(['2026-11-01T07:00:00.000Z', '2026-12-01T07:00:00.000Z', '2027-01-01T07:00:00.000Z']);
+      const weekly = parseSchedule(autoBackupSchedule('23:30', 'Mon,Fri', tz), { defaultTimeZone: 'UTC' });
+      // Friday 2026-10-09 23:30 New York (daylight time) is 03:30 UTC on the 10th.
+      expect(weekly.nextSlot(new Date('2026-10-09T12:00:00Z'))?.toISOString()).toBe('2026-10-10T03:30:00.000Z');
     });
+  });
 
-    test('runs backup on day-1 of month when days=monthly', async () => {
-      // First of the month 02:00 local time
-      vi.setSystemTime(new Date(2025, 0, 1, 2, 0, 0));
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'monthly';
+  describe('a backup missed while the server was down runs once when it is back (#1720)', () => {
+    test('down across 02:00: one backup at start, from the schedule, audited', async () => {
+      const stateDir = path.join(tmpDir, 'jobs');
+      let clock = new Date(2026, 9, 9, 1, 30).getTime(); // 01:30 local, before the backup time
+      const events: Record<string, unknown>[] = [];
+      const config = {
+        ...mockConfigManager,
+        getProperty: vi.fn((key: string, fallback: unknown) => {
+          if (key === 'ngdpbase.backup.auto-backup') return true;
+          if (key === 'ngdpbase.backup.auto-backup-time') return '02:00';
+          if (key === 'ngdpbase.backup.auto-backup-days') return 'daily';
+          if (key === 'ngdpbase.backup.max-backups') return 10;
+          return fallback;
+        })
+      };
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
-      await callScheduledBackup(bm);
+      /** One server start: a job manager over the shared state, and BackupManager registering with it. */
+      async function start() {
+        const managers: Record<string, unknown> = {
+          ConfigurationManager: config,
+          AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } }
+        };
+        const engine = { getManager: (n: string) => managers[n] ?? null, getRegisteredManagers: () => [] as string[] };
+        const jobs = new BackgroundJobManager(engine, {
+          stateProvider: new FileJobStateProvider(stateDir, { now: () => clock }),
+          now: () => new Date(clock)
+        });
+        managers.BackgroundJobManager = jobs;
+        const backups = new BackupManager(engine);
+        await backups.initialize();
+        const created = vi.spyOn(backups, 'createBackup').mockResolvedValue('/backups/one.json.gz');
+        return { jobs, backups, created };
+      }
 
-      expect(spy).toHaveBeenCalled();
-    });
+      const first = await start();
+      await first.jobs.tick();
+      expect(first.created).not.toHaveBeenCalled();
+      await first.jobs.shutdown();
+      await first.backups.shutdown();
 
-    test('skips backup on non-first day of month when days=monthly', async () => {
-      vi.setSystemTime(new Date(2025, 0, 8, 2, 0, 0)); // 8th — not day 1
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'monthly';
+      // Down until 07:00 local: 02:00 passed with nobody running.
+      clock = new Date(2026, 9, 9, 7, 0).getTime();
+      const second = await start();
+      await second.jobs.tick();
+      await second.jobs.whenIdle();
+      expect(second.created).toHaveBeenCalledTimes(1);
+      expect(second.created.mock.calls[0][0]).toMatchObject({ origin: 'schedule', slot: new Date(2026, 9, 9, 2, 0).toISOString() });
+      expect(events.filter((e) => e.eventType === 'job-completed')).toHaveLength(1);
 
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
-      await callScheduledBackup(bm);
-
-      expect(spy).not.toHaveBeenCalled();
-    });
-
-    test('runs backup when current day matches comma-separated days list', async () => {
-      // new Date(2025, 0, 8) is a Wednesday
-      vi.setSystemTime(new Date(2025, 0, 8, 2, 0, 0));
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'Mon,Wed,Fri';
-
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
-      await callScheduledBackup(bm);
-
-      expect(spy).toHaveBeenCalled();
-    });
-
-    test('skips backup when time does not match', async () => {
-      vi.setSystemTime(new Date(2025, 0, 8, 3, 0, 0)); // 03:00, config says 02:00
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'daily';
-
-      const spy = vi.spyOn(bm, 'createBackup').mockResolvedValue(undefined);
-      await callScheduledBackup(bm);
-
-      expect(spy).not.toHaveBeenCalled();
-    });
-
-    test('catches and logs error when createBackup throws', async () => {
-      vi.setSystemTime(new Date(2025, 0, 8, 2, 0, 0));
-      (bm as unknown as { autoBackupTime: string }).autoBackupTime = '02:00';
-      (bm as unknown as { autoBackupDays: string }).autoBackupDays = 'daily';
-
-      vi.spyOn(bm, 'createBackup').mockRejectedValue(new Error('disk full'));
-      // Should not throw — error is caught internally
-      await expect(callScheduledBackup(bm)).resolves.toBeUndefined();
+      // A later look in the same morning does not back up again.
+      clock += 10 * 60_000;
+      await second.jobs.tick();
+      await second.jobs.whenIdle();
+      expect(second.created).toHaveBeenCalledTimes(1);
+      await second.jobs.shutdown();
+      await second.backups.shutdown();
     });
   });
 });

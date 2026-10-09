@@ -170,7 +170,7 @@ node scripts/backup-cleanup.js
 
 ## Best Practices
 
-1. __Regular Backups__: Schedule daily backups via cron
+1. __Regular Backups__: Turn on automatic backups (`ngdpbase.backup.auto-backup`); they run as a scheduled job, and one missed while the server was down runs when it is back
 2. __Off-site Storage__: Copy backups to remote location
 3. __Test Restores__: Periodically test restore process
 4. __Monitor Size__: Watch backup sizes for anomalies

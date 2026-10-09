@@ -236,8 +236,9 @@ PolicyInformationPoint does __not__ implement backup/restore because:
   "ngdpbase.backup.directory": "./backups",
   "ngdpbase.backup.max-backups": 10,
   "ngdpbase.backup.compression": "gzip",
-  "ngdpbase.backup.auto-backup.enabled": false,
-  "ngdpbase.backup.auto-backup.schedule": "0 2 * * *"
+  "ngdpbase.backup.auto-backup": false,
+  "ngdpbase.backup.auto-backup-time": "02:00",
+  "ngdpbase.backup.auto-backup-days": "daily"
 }
 ```
 
@@ -249,8 +250,9 @@ PolicyInformationPoint does __not__ implement backup/restore because:
 | `ngdpbase.backup.directory` | string | `"./backups"` | Directory for backup files |
 | `ngdpbase.backup.max-backups` | number | `10` | Maximum backups to retain |
 | `ngdpbase.backup.compression` | string | `"gzip"` | Compression algorithm |
-| `ngdpbase.backup.auto-backup.enabled` | boolean | `false` | Enable automatic backups |
-| `ngdpbase.backup.auto-backup.schedule` | string | `"0 2 * * *"` | Cron schedule (daily at 2 AM) |
+| `ngdpbase.backup.auto-backup` | boolean | `false` | Enable automatic backups |
+| `ngdpbase.backup.auto-backup-time` | string | `"02:00"` | Time of day, HH:MM, in the server's local time |
+| `ngdpbase.backup.auto-backup-days` | string | `"daily"` | `daily`, `monthly` (the 1st), `weekdays`, or day names such as `Mon,Wed,Fri` |
 
 ---
 
@@ -481,24 +483,13 @@ await backupManager.deleteBackup('backups/old-backup-2025-09-01.json.gz');
 
 #### Scheduled Automatic Backups
 
-```javascript
-const cron = require('node-cron');
+Automatic backups are a scheduled job, `backup.auto`, run by BackgroundJobManager's scheduler (#1720; see [BackgroundJobManager](BackgroundJobManager.md)). BackupManager registers it at start and again whenever the settings change, translating `auto-backup-time` and `auto-backup-days` into a recurrence rule in the server's local time zone.
 
-// Run backup daily at 2 AM
-cron.schedule('0 2 * * *', async () => {
-  const backupManager = engine.getManager('BackupManager');
-
-  try {
-    const backupPath = await backupManager.backup();
-    logger.info(`Automatic backup created: ${backupPath}`);
-
-    // Clean up old backups
-    await backupManager.cleanupOldBackups();
-  } catch (error) {
-    logger.error('Automatic backup failed:', error);
-  }
-});
-```
+- A backup missed while the server was down runs once when it is back (`catchUp: 'latest'`), and is audited like any scheduled run.
+- A failed backup is tried again after 1, 5 and 15 minutes, then reported as failed (`job-failed`, and an error notification).
+- A backup still running when the next comes due is not doubled (`overlap: 'skip'`).
+- A setting it cannot read (a time that isn't HH:MM, an unknown day) is reported at start as an error and in a notification; automatic backups then do not run until it is fixed.
+- The job appears on Admin → Scheduled Jobs, where it can be run now, paused, or a missed slot run again.
 
 #### Backup Before Critical Operations
 
@@ -881,10 +872,8 @@ await backupManager.restore('partial-backup.json.gz');
 ### 1. Regular Backups
 
 ```javascript
-// Schedule daily backups
-cron.schedule('0 2 * * *', async () => {
-  await backupManager.backup();
-});
+// Turn on daily automatic backups at 02:00 server time (a scheduled job, #1720)
+await backupManager.updateAutoBackupConfig({ enabled: true, time: '02:00', days: 'daily' }, adminContext);
 ```
 
 ### 2. Verify Backups

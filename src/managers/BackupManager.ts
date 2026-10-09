@@ -1,11 +1,13 @@
 import BaseManager, { BackupData as BaseBackupData } from './BaseManager.js';
-import { scheduleContext } from '../context/bootActions.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import zlib from 'zlib';
 import { promisify } from 'util';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type BackgroundJobManager from './BackgroundJobManager.js';
+import type { JobDefinition } from './BackgroundJobManager.js';
+import type { ScheduleInput } from '../utils/schedule.js';
 import type BaseBackupProvider from '../providers/BaseBackupProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
@@ -99,12 +101,50 @@ export interface AutoBackupConfig {
   directory: string;
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** The scheduled job automatic backups run as (#1720). */
+export const AUTO_BACKUP_JOB_ID = 'backup.auto';
+
+const BYDAY: Record<string, string> = { sun: 'SU', mon: 'MO', tue: 'TU', wed: 'WE', thu: 'TH', fri: 'FR', sat: 'SA' };
+
+/**
+ * The automatic-backup settings as a schedule (#1720): `ngdpbase.backup.auto-backup-time`
+ * (HH:MM) and `ngdpbase.backup.auto-backup-days` — `daily`, `monthly` (the 1st),
+ * `weekdays` (Monday to Friday), or day names such as `Mon,Wed,Fri`.
+ *
+ * In `timeZone`: the server's own, because the timer this replaces compared
+ * the server's local clock, so an existing setting keeps its time.
+ *
+ * Throws, naming the setting, for a time or a day it does not understand. The
+ * timer this replaces matched neither, so such a setting never backed up, and
+ * said nothing.
+ */
+export function autoBackupSchedule(time: string, days: string, timeZone: string): ScheduleInput {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(time).trim());
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) {
+    throw new Error(`ngdpbase.backup.auto-backup-time '${time}' is not a time of day (HH:MM)`);
+  }
+  const at = `BYHOUR=${Number(m[1])};BYMINUTE=${Number(m[2])}`;
+  const value = String(days).trim().toLowerCase();
+  if (value === 'daily') return { rrule: `FREQ=DAILY;${at}`, tz: timeZone };
+  if (value === 'monthly') return { rrule: `FREQ=MONTHLY;BYMONTHDAY=1;${at}`, tz: timeZone };
+  if (value === 'weekdays') return { rrule: `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;${at}`, tz: timeZone };
+  const names = value.split(',').map((d) => d.trim()).filter(Boolean);
+  const unknown = names.filter((d) => !(d.slice(0, 3) in BYDAY) || !'sunday monday tuesday wednesday thursday friday saturday'.split(' ').some((full) => full.startsWith(d)));
+  if (names.length === 0 || unknown.length > 0) {
+    throw new Error(`ngdpbase.backup.auto-backup-days '${days}' is not daily, monthly, weekdays or a list of day names (${unknown.join(', ') || 'empty'} not understood)`);
+  }
+  const byDay = [...new Set(names.map((d) => BYDAY[d.slice(0, 3)]))];
+  return { rrule: `FREQ=WEEKLY;BYDAY=${byDay.join(',')};${at}`, tz: timeZone };
+}
+
+/** The server's own time zone: what the replaced timer's `getHours()` read. */
+function serverTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
 
 class BackupManager extends BaseManager {
   private backupDirectory: string | null;
   private maxBackups: number;
-  private schedulerTimer: ReturnType<typeof setInterval> | null;
   private autoBackupEnabled: boolean;
   private autoBackupTime: string;   // HH:MM
   private autoBackupDays: string;   // "daily" | "monthly" | "Mon,Wed,..."
@@ -124,7 +164,6 @@ class BackupManager extends BaseManager {
     super(engine);
     this.backupDirectory = null;
     this.maxBackups = 10;
-    this.schedulerTimer = null;
     this.autoBackupEnabled = false;
     this.autoBackupTime = '02:00';
     this.autoBackupDays = 'daily';
@@ -225,10 +264,8 @@ class BackupManager extends BaseManager {
     // #170: load the storage provider — it owns ensuring the container exists.
     await this.loadProvider();
 
-    // Start scheduler if auto-backup is enabled
-    if (this.autoBackupEnabled) {
-      this.startScheduler();
-    }
+    // #1720: automatic backups are a scheduled job.
+    this.scheduleAutoBackup();
 
     logger.info('✅ BackupManager initialized');
     logger.info(`📁 Backup directory: ${this.backupDirectory}`);
@@ -635,68 +672,63 @@ class BackupManager extends BaseManager {
       await this.provider?.setBackupDirectory(config.directory);
     }
 
-    // Restart scheduler with updated settings
-    this.stopScheduler();
-    if (this.autoBackupEnabled) {
-      this.startScheduler();
-    }
+    // The job takes the new settings; a changed rule counts its slots from now (#1720).
+    this.scheduleAutoBackup();
 
     logger.info(`✅ Auto-backup config updated: ${this.autoBackupEnabled ? `enabled at ${this.autoBackupTime} (${this.autoBackupDays})` : 'disabled'}`);
   }
 
   /**
-   * Start the auto-backup scheduler. Checks every minute whether a backup is due.
+   * Automatic backups as a scheduled job (#1720, epic #1611).
+   *
+   * They ran from a timer that checked every minute for an exact match of the
+   * clock, so a server that was down at the backup time — or a tick that
+   * landed a minute late — skipped that backup and left no record that it had
+   * (operator: backups are never silent, #1563). As a scheduled job a backup
+   * missed while the server was down runs once when it is back (`catchUp:
+   * 'latest'`), a failed one is tried again and then reported, and the run
+   * survives a restart. A backup still running when the next one comes due is
+   * not doubled (`overlap: 'skip'`).
+   *
+   * Called at start and whenever the settings change. With automatic backups
+   * off, or a setting that cannot be read, the job is registered without a
+   * schedule: it can still be run by hand, and nothing runs by itself.
    */
-  private startScheduler(): void {
-    this.stopScheduler();
-    logger.info(`🕐 Auto-backup scheduler started — ${this.autoBackupTime} (${this.autoBackupDays})`);
-
-    const timer = setInterval(() => {
-      void this.checkAndRunScheduledBackup();
-    }, 60_000); // check every minute
-
-    timer.unref(); // don't prevent process exit
-    this.schedulerTimer = timer;
-  }
-
-  /**
-   * Stop the auto-backup scheduler.
-   */
-  private stopScheduler(): void {
-    if (this.schedulerTimer) {
-      clearInterval(this.schedulerTimer);
-      this.schedulerTimer = null;
-      logger.info('🛑 Auto-backup scheduler stopped');
+  private scheduleAutoBackup(): void {
+    const jobs = this.engine.getManager<BackgroundJobManager>('BackgroundJobManager');
+    if (!jobs) {
+      if (this.autoBackupEnabled) logger.error('❌ Automatic backups are ON but BackgroundJobManager is not available — NO automatic backup will run');
+      return;
     }
-  }
-
-  /**
-   * Called every minute by the scheduler. Runs a backup if the current
-   * time matches the configured schedule (within the same minute).
-   */
-  private async checkAndRunScheduledBackup(): Promise<void> {
+    const def: JobDefinition = {
+      id: AUTO_BACKUP_JOB_ID,
+      displayName: 'Automatic backup',
+      run: async (_progress, ctx) => {
+        // #1196: the run's context names the system principal on a schedule, or the admin who ran it.
+        const file = await this.createBackup(ctx);
+        return { success: true, summary: `Backup written: ${file}` };
+      }
+    };
+    if (!this.autoBackupEnabled || !this.provider) {
+      jobs.registerJob(def);
+      return;
+    }
     try {
-      const now = new Date();
-      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      if (hhmm !== this.autoBackupTime) return;
-
-      const dayName = DAY_NAMES[now.getDay()];
-      const dom = now.getDate();
-      const days = this.autoBackupDays.toLowerCase();
-
-      const shouldRun =
-        days === 'daily' ||
-        (days === 'monthly' && dom === 1) ||
-        days.split(',').map(d => d.trim().toLowerCase()).includes(dayName.toLowerCase());
-
-      if (!shouldRun) return;
-
-      logger.info(`⏰ Scheduled auto-backup triggered at ${hhmm} (${dayName})`);
-      // #1196: a scheduled backup has an actor — the system principal on a
-      // schedule — so backup-create no longer records "unknown".
-      await this.createBackup(scheduleContext(this.engine, `scheduled auto-backup at ${this.autoBackupTime} (${this.autoBackupDays})`));
+      jobs.registerJob({
+        ...def,
+        schedule: autoBackupSchedule(this.autoBackupTime, this.autoBackupDays, serverTimeZone()),
+        catchUp: 'latest',
+        overlap: 'skip',
+        persist: true
+      });
+      logger.info(`🕐 Automatic backup scheduled: ${this.autoBackupTime} (${this.autoBackupDays}), ${serverTimeZone()}`);
     } catch (err) {
-      logger.error('❌ Scheduled auto-backup failed:', err);
+      jobs.registerJob(def);
+      logger.error(`❌ Automatic backups are ON but NOT scheduled: ${(err as Error).message}. Fix the setting in Admin → Backup.`);
+      void this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
+        type: 'system', level: 'error', title: 'Automatic backups are not running',
+        message: `${(err as Error).message}. Fix the setting in Admin → Backup.`
+      }).catch(() => undefined);
     }
   }
 }
