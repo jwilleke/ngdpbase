@@ -2342,19 +2342,21 @@ class WikiRoutes {
       res.status(403).json({ success: false, error: 'This needs a fresh sign-in by the person; a token cannot give one', stepUp: permission });
       return;
     }
-    const reauth = `/auth/reauth?next=${encodeURIComponent(this.reauthReturnTo(req))}`;
+    const reauth = `/auth/reauth?next=${encodeURIComponent(this.reauthReturnTo(req, mode))}`;
     if (mode === 'page') res.redirect(reauth);
     else if (mode === 'text') res.status(403).send('A fresh sign-in is needed: ' + reauth);
     else res.status(403).json({ success: false, error: 'A fresh sign-in is needed', reauth });
   }
 
   /**
-   * Where to return after re-authenticating: this page for a GET, the page
-   * that posted for anything else (the form is filled in again; a POST body
-   * is not replayed). Always a path on this site.
+   * Where to return after re-authenticating: this page for a page GET, and
+   * the page the person was on for anything else — a POST (the form is
+   * filled in again; a POST body is not replayed) or a script's request for
+   * data (#1738: returning to `/auth/passkey/register/options` showed the
+   * person raw JSON). Always a path on this site.
    */
-  private reauthReturnTo(req: Request): string {
-    if (req.method === 'GET') return safeRedirect(req.originalUrl || '/');
+  private reauthReturnTo(req: Request, mode: 'json' | 'page' | 'text' = 'page'): string {
+    if (req.method === 'GET' && mode === 'page') return safeRedirect(req.originalUrl || '/');
     const referer = req.get('referer');
     if (!referer) return '/';
     try {
@@ -8176,8 +8178,15 @@ ${panes}
 
       // #448 / #1524: the person's own credentials (never their secrets) and the host passkeys are tied to.
       const authManagerForProfile = this.engine.getManager('AuthManager');
+      // #1738: a list that could not be read is not an empty one — showing
+      // "no passkeys" made their owner think them lost.
+      let credentialsUnavailable = false;
       const credentials = currentUser?.username
-        ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch(() => []) ?? []
+        ? await authManagerForProfile?.listCredentials?.(currentUser as never, currentUser.username).catch((err: unknown) => {
+          credentialsUnavailable = true;
+          logger.warn(`[profile] Could not list the sign-in methods of ${currentUser.username}: ${(err as Error).message}`);
+          return [];
+        }) ?? []
         : [];
       // #1664: no enrolment for an account that may not sign in with a passkey.
       const passkeyHost = currentUser?.username && await authManagerForProfile?.userMayUseProvider?.(currentUser.username, 'passkey')
@@ -8198,6 +8207,7 @@ ${panes}
         ...commonData,
         title: 'Profile',
         credentials, // #1524
+        credentialsUnavailable, // #1738
         passkeyHost, // #448
         approvedApps, // #1601
         offerEmailSecondFactor, // #1523

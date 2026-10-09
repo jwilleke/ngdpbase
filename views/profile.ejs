@@ -241,7 +241,7 @@
 
                     <!-- #448 / #1524: Sign-in methods — the password and every credential -->
                     <% const signInWithPassword = typeof hasPassword !== 'undefined' && hasPassword; %>
-                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>
+                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0) || (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
                     <div class="row mb-4" id="sign-in-methods">
                         <div class="col-12">
                             <div class="card">
@@ -249,6 +249,10 @@
                                     <h6 class="mb-0"><i class="fas fa-key"></i> Sign-in methods</h6>
                                 </div>
                                 <div class="card-body">
+                                    <% if (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable) { %>
+                                    <%# #1738: never show a list that could not be read as an empty one. %>
+                                    <div class="alert alert-warning small" role="alert">Your passkeys and other sign-in methods could not be loaded just now. They have not been removed. Reload the page; if this keeps happening, sign out and back in.</div>
+                                    <% } %>
                                     <% if (signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>
                                     <table class="table table-sm align-middle mb-3">
                                         <thead><tr><th>Name</th><th>Kind</th><th>Added</th><th>Last used</th><th></th></tr></thead>
@@ -285,7 +289,9 @@
                                         </tbody>
                                     </table>
                                     <% } else { %>
+                                    <% if (!(typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
                                     <p class="text-muted small">No sign-in methods are set up for this account here.</p>
+                                    <% } %>
                                     <% } %>
                                     <% if (typeof offerEmailSecondFactor !== 'undefined' && offerEmailSecondFactor) { %>
                                     <%# #1523: a second factor for password sign-ins — the email approves each one. %>

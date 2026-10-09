@@ -65,12 +65,13 @@ describe('step-up at the route door (#1525)', () => {
     expect(audit).toContainEqual(expect.objectContaining({ eventType: 'reauth-prompt', resource: 'account-security' }));
   });
 
-  test('a JSON action is told where to re-authenticate', async () => {
+  test('a JSON action is told where to re-authenticate, and comes back to the page it was on (#1738)', async () => {
     const { r } = routes(true);
     const out = res();
     await r.passkeyRegisterOptions(req(session(), { method: 'GET', originalUrl: '/auth/passkey/register/options' }), out);
     expect(out.status).toHaveBeenCalledWith(403);
-    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: '/auth/reauth?next=%2Fauth%2Fpasskey%2Fregister%2Foptions' }));
+    // Not the data URL: returning there showed the person raw JSON.
+    expect(out.json).toHaveBeenCalledWith(expect.objectContaining({ reauth: '/auth/reauth?next=%2Fprofile' }));
   });
 
   test('a delegated credential is refused outright, never sent to a prompt', async () => {
