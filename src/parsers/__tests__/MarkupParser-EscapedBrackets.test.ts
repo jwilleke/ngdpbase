@@ -13,6 +13,12 @@ import MarkupParser from '../MarkupParser';
 import DOMVariableHandler from '../dom/handlers/DOMVariableHandler';
 import DOMPluginHandler from '../dom/handlers/DOMPluginHandler';
 import DOMLinkHandler from '../dom/handlers/DOMLinkHandler';
+import { createMarkdownConverter } from '../../rendering/markdownConverter';
+
+// The page profile, the markdown settings real pages use. Without a
+// RenderingManager the parser falls back to the `fallback` profile, which is
+// not what a reader sees (found by the #1709 suite).
+const pageConverter = createMarkdownConverter('page');
 
 // Mock engine for testing
 const createMockEngine = () => {
@@ -57,6 +63,9 @@ const createMockEngine = () => {
           getAllPages: async () => ['HomePage', 'TestPage', 'AboutPage', 'Features']
         };
       }
+      if (name === 'RenderingManager') {
+        return { converter: pageConverter };
+      }
       return null;
     })
   };
@@ -77,6 +86,10 @@ describe('escaped brackets (#1476)', () => {
   });
 
   const render = (content: string): Promise<string> => parser.parseWithDOMExtraction(content, { pageName: 'TestPage' });
+
+  test('renders with the page profile: a single newline is a line break', async () => {
+    expect(await render('first\nsecond')).toMatch(/first<br\s*\/?>\s*second/);
+  });
 
   test('\\[text\\] is the literal [text], and no placeholder leaks', async () => {
     const html = await render('Say \\[not a link\\] here.');
