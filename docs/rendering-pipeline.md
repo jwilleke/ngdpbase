@@ -183,6 +183,19 @@ In the `page` and `fallback` profiles the HTML an author wrote — markdown-it's
 
 Footnotes (`[^id]`) are not a markdown-it plugin: `MarkupParser` extracts `[^id]` references and `[^id]: text` definitions into DOM nodes before conversion, and FootnoteManager stores the per-page footnotes that FootnotesPlugin lists.
 
+#### Math
+
+The pipeline has no math stage. No profile uses a markdown-it math plugin, no view or client script loads KaTeX or MathJax, and no configuration property turns math on. LaTeX between `$…$`, `$$…$$`, `\(…\)` or `\[…\]` reaches markdown-it as ordinary text, and the earlier phases treat it as any other text:
+
+- `$` and `$$` are literal characters, so dollar amounts never become math.
+- CommonMark backslash escapes remove the backslash before punctuation: `\(…\)` renders `(…)`, `\[…\]` renders `[…]`, `\,` and `\{` lose theirs. Backslashes before letters (`\frac`) stay.
+- Markdown and the parser's own syntax still apply inside the delimiters: `*…*` becomes emphasis, `[a,b]` becomes a page link (the parser recognises links before markdown-it runs), `\\` becomes a line break, and the `page` profile turns each newline inside a `$$` block into `<br>`.
+- Code spans and fences keep TeX verbatim, which is what the author help page recommends.
+
+`katex` appears in `package.json` only under `overrides`: it pins the copy that `markdownlint-cli2` pulls in through `micromark-extension-math` (a dev tool) to a patched release. It is not a runtime dependency and nothing imports it.
+
+A math stage would be a markdown-it plugin in the `page` profile of `src/rendering/markdownConverter.ts`, plus KaTeX as a runtime dependency and its stylesheet in the page layout. It would have to run before the things above take the TeX apart: the parser's `[…]` link and `[{…}]` plugin recognition, the `\\` line-break rewrite in `MarkupParser`, and the backslash escapes; and it would need a rule for dollar amounts. The current behaviour is pinned by `src/parsers/__tests__/MathDelimiters.test.ts`, page and fallback profiles, so adding math changes those tests on purpose. The author-facing page is __Math and Formulas__ (`required-pages/866b5f8e-f3bf-49dc-82a7-15efb2468e6c.md`).
+
 markdown-it replaced the `showdown` library in [#1273](https://github.com/jwilleke/ngdpbase/issues/1273); showdown, its extensions and the `guardShowdownInput` ReDoS guard were removed in [#1274](https://github.com/jwilleke/ngdpbase/issues/1274). Each deliberate rendering difference from showdown is recorded as a decision (R1–R17) in the [#1271 decision log](https://github.com/jwilleke/ngdpbase/issues/1271#issuecomment-5617541677).
 
 ### Phase 7: Post-processing

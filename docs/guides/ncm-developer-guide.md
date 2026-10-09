@@ -79,6 +79,7 @@ Transcoding/re-encoding fetched images (decode-bomb defense, EXIF/payload stripp
 - __Remote-hosted images / `data:` URIs__ as the goal: converted to attachments (§2.2) or dropped. Gap: only Convert to NCM localizes today; file import, ingest and MCP still leave remote images as links (#1486).
 - `<script>`, `<style>`, `<iframe>`, event-handler attributes — never.
 - Anything that triggers a render-time outbound fetch.
+- __LaTeX math__ — not typeset; TeX stays text. See [Math in the rendering pipeline](../rendering-pipeline.md#math).
 
 ### 2.4 Links (internal vs external)
 
