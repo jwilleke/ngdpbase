@@ -189,7 +189,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
 | FileUserProvider | 📘 [doc](providers/FileUserProvider.md) + [guide](providers/FileUserProvider-Complete-Guide.md) | JSON-file user, role, and session storage — the default UserManager backend |
 | GoogleOIDCProvider | ✅ [doc](providers/GoogleOIDCProvider.md) | OIDC authentication via Google as the identity provider |
-| LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory Lunr.js search index — default backend for SearchManager |
+| LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory full-text search index (MiniSearch, Lunr query syntax and stemming) — default backend for SearchManager |
 | MagicLinkAuthProvider | ✅ [doc](providers/MagicLinkAuthProvider.md) | Email-based passwordless authentication — user gets a single-use verification link |
 | NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |
 | NullAuditProvider | ✅ [doc](providers/NullAuditProvider.md) | Discards all audit events — for tests and minimal-config deployments where auditing is off |
