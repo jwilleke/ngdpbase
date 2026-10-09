@@ -103,12 +103,12 @@ beforeEach(() => {
     snippetLength: 200
   };
 
-  // Mock the Lunr index to return all three documents as hits
+  // A stand-in index returning all three documents as hits, in MiniSearch's result shape (#1736)
   provider['searchIndex'] = {
     search: vi.fn().mockReturnValue([
-      { ref: 'AlicePrivatePage', score: 1.0, matchData: {} },
-      { ref: 'BobPrivatePage',   score: 0.9, matchData: {} },
-      { ref: 'PublicPage',       score: 0.8, matchData: {} }
+      { id: 'AlicePrivatePage', score: 1.0, terms: [], queryTerms: [], match: {} },
+      { id: 'BobPrivatePage', score: 0.9, terms: [], queryTerms: [], match: {} },
+      { id: 'PublicPage', score: 0.8, terms: [], queryTerms: [], match: {} }
     ])
   };
 });
@@ -229,9 +229,9 @@ describe('LunrSearchProvider.search — private filtering — frontmatter audien
     };
     provider['searchIndex'] = {
       search: vi.fn().mockReturnValue([
-        { ref: 'AliceShared', score: 1.0, matchData: {} },
-        { ref: 'AliceRoleShared', score: 0.9, matchData: {} },
-        { ref: 'AliceUnshared', score: 0.8, matchData: {} }
+        { id: 'AliceShared', score: 1.0, terms: [], queryTerms: [], match: {} },
+        { id: 'AliceRoleShared', score: 0.9, terms: [], queryTerms: [], match: {} },
+        { id: 'AliceUnshared', score: 0.8, terms: [], queryTerms: [], match: {} }
       ])
     };
   });

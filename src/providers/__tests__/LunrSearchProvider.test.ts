@@ -288,7 +288,7 @@ describe('LunrSearchProvider.advancedSearch — #740 field-scoped AND (title)', 
       'Boise':   makeDoc('Boise',   { title: 'Boise, ID', content: 'mentions Public services and Education separately' }),
       'OnlyPub': makeDoc('OnlyPub', { title: 'Public Notices', content: 'nothing relevant' })
     };
-    provider['rebuildLunrFromDocuments']();
+    provider['rebuildSearchIndexFromDocuments']();
   });
 
   test('quoted multi-word title search requires ALL tokens in the title', async () => {

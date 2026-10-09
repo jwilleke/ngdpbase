@@ -107,6 +107,8 @@ describe('no private text in the shared Lunr index (#1458)', () => {
     await provider.updatePageInIndex(PRIVATE_NAME, { content: SECRET, metadata: { uuid: 'u-2', private: true } });
     // The same page addressed by a bare title, with the private flag.
     await provider.updatePageInIndex('Diary', { content: SECRET, metadata: { uuid: 'u-2', private: true } });
+    // #1736: writes are coalesced after a save; close() flushes them.
+    await provider.close();
 
     expect(Object.keys(await persisted())).toEqual(['Welcome']);
     expect(JSON.stringify(await persisted())).not.toContain('apricot');

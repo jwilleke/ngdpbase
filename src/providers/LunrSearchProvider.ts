@@ -23,6 +23,8 @@ import BaseSearchProvider, { SearchResult, SearchOptions, SearchCriteria, Search
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 import { WikiPage } from '../types/index.js';
 import lunr from 'lunr';
+import MiniSearch from 'minisearch';
+import { lunrQueryToMiniSearch } from './lunrQueryToMiniSearch.js';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -32,14 +34,16 @@ import path from 'path';
 import type MetricsManager from '../managers/MetricsManager.js';
 
 /**
- * Lunr search index type (lunr types not fully typed)
+ * The indexed text fields, in the order the boosts are configured. #1736: the
+ * index is MiniSearch, which adds, replaces and removes one page at a time; a
+ * Lunr index could only be rebuilt in full, which froze the site for seconds
+ * on every save of a large instance. Lunr is kept for its English stemmer and
+ * stop-word list only, so a word matches exactly what it matched before.
  */
-type LunrIndex = ReturnType<typeof lunr>;
+const INDEXED_FIELDS = ['title', 'content', 'systemCategory', 'knowledgeRole', 'userKeywords', 'tags', 'keywords', 'urlTokens'] as const;
 
-/**
- * Lunr search result
- */
-type LunrSearchResult = lunr.Index.Result;
+/** How long after the last change `documents.json` is written (#1736). */
+const PERSIST_DEBOUNCE_MS = 2000;
 
 /**
  * Document structure for indexing
@@ -196,7 +200,8 @@ interface PageManager {
  * LunrSearchProvider - Full-text search using Lunr.js
  */
 class LunrSearchProvider extends BaseSearchProvider {
-  private searchIndex: LunrIndex | null;
+  private searchIndex: MiniSearch<LunrDocument> | null;
+  private persistTimer: NodeJS.Timeout | null = null;
   private documents: Record<string, LunrDocument>;
   private config: LunrConfig | null;
   private flushInterval: NodeJS.Timeout | null = null;
@@ -366,7 +371,7 @@ class LunrSearchProvider extends BaseSearchProvider {
     if (Object.keys(documents).length === 0 && !(await fs.pathExists(this.documentsPath))) return;
     try {
       const data = { savedAt: new Date().toISOString(), documents };
-      await fs.writeFile(this.documentsPath, JSON.stringify(data, null, 2), 'utf8');
+      await fs.writeFile(this.documentsPath, JSON.stringify(data), 'utf8');
       logger.debug(`[LunrSearchProvider] Persisted ${Object.keys(documents).length} documents to disk`);
     } catch (err) {
       logger.error('[LunrSearchProvider] Failed to persist documents:', (err as Error).message);
@@ -374,25 +379,53 @@ class LunrSearchProvider extends BaseSearchProvider {
   }
 
   /**
-   * Rebuild the Lunr index from in-memory documents — no NAS reads, pure CPU
+   * A term as both the index and a query read it: lower-cased, stop words
+   * dropped, and stemmed with Lunr's English stemmer when stemming is on, so a
+   * word matches what it matched under Lunr (#1736).
    */
-  private rebuildLunrFromDocuments(): void {
+  private processTerm(term: string): string | null {
+    const lower = term.toLowerCase();
+    const token = new lunr.Token(lower, {});
+    if (!lunr.stopWordFilter(token)) return null;
+    return this.config?.stemming === false ? lower : lunr.stemmer(token).toString();
+  }
+
+  /**
+   * Build the index from the in-memory documents: at start-up and after a
+   * restore. A save changes one document (`updatePageInIndex`), never this.
+   */
+  private rebuildSearchIndexFromDocuments(): void {
     if (!this.config) return;
-    const boostConfig = this.config.boost;
-    const docs = this.documents;
-    this.searchIndex = lunr(function () {
-      this.ref('id');
-      this.field('title', { boost: boostConfig.title });
-      this.field('content');
-      this.field('systemCategory', { boost: boostConfig.systemCategory });
-      this.field('knowledgeRole', { boost: boostConfig.knowledgeRole });
-      this.field('userKeywords', { boost: boostConfig.userKeywords });
-      this.field('tags', { boost: boostConfig.tags });
-      this.field('keywords', { boost: boostConfig.keywords });
-      // #884: URLs are otherwise only matchable as one opaque string.
-      this.field('urlTokens', { boost: boostConfig.urlTokens ?? 3 });
-      Object.values(docs).forEach(doc => { this.add(doc); });
+    const index = new MiniSearch<LunrDocument>({
+      fields: [...INDEXED_FIELDS],
+      idField: 'id',
+      processTerm: (term) => this.processTerm(term)
     });
+    index.addAll(Object.values(this.documents));
+    this.searchIndex = index;
+  }
+
+  /** The configured field boosts, for every search. Content is the 1.0 baseline. */
+  private fieldBoosts(): Record<string, number> {
+    const b = this.config?.boost;
+    if (!b) return {};
+    return {
+      title: b.title, systemCategory: b.systemCategory, knowledgeRole: b.knowledgeRole,
+      userKeywords: b.userKeywords, tags: b.tags, keywords: b.keywords, urlTokens: b.urlTokens ?? 3, content: 1
+    };
+  }
+
+  /**
+   * Write `documents.json` shortly after the last change rather than on every
+   * save (#1736). The interval flush and `close()` still write it.
+   */
+  private schedulePersist(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.persistDocuments();
+    }, PERSIST_DEBOUNCE_MS);
+    this.persistTimer.unref?.();
   }
 
   /**
@@ -507,7 +540,7 @@ class LunrSearchProvider extends BaseSearchProvider {
     // held only private documents. There is then nothing warm to rebuild
     // from, so the cold path below reads the public pages (#1458).
     if (Object.keys(this.documents).length > 0) {
-      this.rebuildLunrFromDocuments();
+      this.rebuildSearchIndexFromDocuments();
       this.engine.getManager<MetricsManager>('MetricsManager')
         ?.recordSearchRebuild?.(Date.now() - metricsStart);
       logger.info(`[LunrSearchProvider] Index rebuilt from ${Object.keys(this.documents).length} persisted documents (no NAS reads)`);
@@ -547,7 +580,7 @@ class LunrSearchProvider extends BaseSearchProvider {
       }
 
       this.documents = documents;
-      this.rebuildLunrFromDocuments();
+      this.rebuildSearchIndexFromDocuments();
 
       this.engine.getManager<MetricsManager>('MetricsManager')?.recordSearchRebuild?.(Date.now() - metricsStart);
       logger.info(`[LunrSearchProvider] Index built with ${Object.keys(documents).length} documents`);
@@ -573,14 +606,16 @@ class LunrSearchProvider extends BaseSearchProvider {
     try {
       const maxResults = options.maxResults || this.config?.maxResults || 50;
       const effectiveQuery = options.prefixLastTerm ? applyPrefixToLastTerm(query) : query;
-      const results: LunrSearchResult[] = this.searchIndex.search(effectiveQuery);
+      const parsed = lunrQueryToMiniSearch(effectiveQuery, INDEXED_FIELDS);
+      if (!parsed) return Promise.resolve([] as SearchResult[]);
+      const results = this.searchIndex.search(parsed, { boost: this.fieldBoosts() });
 
       // Private-page filtering uses the caller's context (isDocVisible).
       const wikiContext = options.wikiContext;
 
       const searchResults = results
         .map(result => {
-          const doc = this.documents[result.ref];
+          const doc = this.documents[String(result.id)];
           if (!doc) return null;
 
           // A private page is found only by its owner (isDocVisible).
@@ -596,7 +631,7 @@ class LunrSearchProvider extends BaseSearchProvider {
           const snippet = this.generateSnippet(doc.content, query);
 
           return {
-            name: result.ref,
+            name: String(result.id),
             title: doc.title,
             score: result.score,
             snippet: snippet,
@@ -1024,8 +1059,14 @@ class LunrSearchProvider extends BaseSearchProvider {
       return;
     }
     this.documents[pageName] = document;
-    this.rebuildLunrFromDocuments();
-    await this.persistDocuments();
+    // #1736: one document in, one out — no rebuild.
+    if (this.searchIndex) {
+      if (this.searchIndex.has(document.id)) this.searchIndex.replace(document);
+      else this.searchIndex.add(document);
+    } else {
+      this.rebuildSearchIndexFromDocuments();
+    }
+    this.schedulePersist();
     logger.debug(`[LunrSearchProvider] Incrementally updated index for page: ${pageName}`);
   }
 
@@ -1039,9 +1080,10 @@ class LunrSearchProvider extends BaseSearchProvider {
       return;
     }
 
+    const id = this.documents[pageName].id;
     delete this.documents[pageName];
-    this.rebuildLunrFromDocuments();
-    await this.persistDocuments();
+    if (this.searchIndex?.has(id)) this.searchIndex.discard(id);
+    this.schedulePersist();
   }
 
   /**
@@ -1261,6 +1303,10 @@ class LunrSearchProvider extends BaseSearchProvider {
       if (this.flushInterval) {
         clearInterval(this.flushInterval);
         this.flushInterval = null;
+      }
+      if (this.persistTimer) {
+        clearTimeout(this.persistTimer);
+        this.persistTimer = null;
       }
       await this.persistDocuments();
       this.searchIndex = null;
