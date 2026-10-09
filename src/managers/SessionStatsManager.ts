@@ -24,6 +24,11 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 export interface SessionStoreLike {
   length?(callback: (err: unknown, count?: number) => void): void;
   all?(callback: (err: unknown, sessions?: unknown) => void): void;
+  /** session-file-store: the session file names, not the sessions. */
+  list?(callback: (err: unknown, files?: string[]) => void): void;
+  get?(sid: string, callback: (err: unknown, session?: unknown) => void): void;
+  /** session-file-store keeps its file extension here (default `.json`). */
+  options?: { fileExtension?: string };
 }
 
 export interface SessionCount {
@@ -109,11 +114,42 @@ export async function listSessionUsers(store: SessionStoreLike): Promise<Session
   throw new SessionStoreUnsupportedError('listing users');
 }
 
-/** The private-store handles held by sessions still in the store (#1626). */
+/**
+ * Every session in a store that has no `all()` but can list and read
+ * (session-file-store, the default store). Each file name is turned back into
+ * its session id and read through the store's own `get`, which also removes
+ * an expired one. A session that cannot be read is left out: express-session
+ * cannot load it either, so it is not a live session.
+ */
+async function storeListAndGet(store: SessionStoreLike): Promise<Record<string, unknown>[]> {
+  const files = await new Promise<string[]>((resolve, reject) => {
+    store.list!((err, list) => (err ? reject(asError(err)) : resolve(Array.isArray(list) ? list : [])));
+  });
+  const extension = store.options?.fileExtension ?? '.json';
+  const sessions: Record<string, unknown>[] = [];
+  for (const file of files) {
+    const sid = extension && file.endsWith(extension) ? file.slice(0, -extension.length) : file;
+    const session = await new Promise<unknown>((resolve) => {
+      store.get!(sid, (err, s) => resolve(err ? null : s));
+    });
+    if (session && typeof session === 'object') sessions.push(session as Record<string, unknown>);
+  }
+  return sessions;
+}
+
+/**
+ * The private-store handles held by sessions still in the store (#1626).
+ * Uses `all()` where the store has it, else lists and reads each session:
+ * the file store has no `all()`, so the sweep failed on every run there and
+ * no orphaned key was ever dropped.
+ */
 export async function liveSessionHandles(store: SessionStoreLike): Promise<Set<string>> {
-  if (typeof store.all !== 'function') throw new SessionStoreUnsupportedError('listing sessions');
+  let sessions: Record<string, unknown>[];
+  if (typeof store.all === 'function') sessions = await storeAll(store);
+  else if (typeof store.list === 'function' && typeof store.get === 'function') sessions = await storeListAndGet(store);
+  else throw new SessionStoreUnsupportedError('listing sessions');
   const handles = new Set<string>();
-  for (const s of await storeAll(store)) {
+  for (const s of sessions) {
     if (typeof s?.privateStoreHandle === 'string' && s.privateStoreHandle) handles.add(s.privateStoreHandle);
   }
   return handles;
