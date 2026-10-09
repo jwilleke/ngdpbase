@@ -1,3 +1,4 @@
+vi.unmock('../../managers/BackgroundJobManager');
 /**
  * @file VersioningFileProvider-SoftDelete.test.ts
  * @description #947 — deleting a page must be recoverable in-app.
@@ -14,6 +15,7 @@ vi.unmock('../../providers/VersioningFileProvider');
 vi.unmock('../FileSystemProvider');
 vi.unmock('../../providers/FileSystemProvider');
 
+import BackgroundJobManager from '../../managers/BackgroundJobManager';
 import VersioningFileProvider from '../VersioningFileProvider';
 import { TEST_ACTOR, actor } from '../../test-support/actors';
 import { pendingBootActions, resetBootActions, scheduleContext, systemContext } from '../../context/bootActions';
@@ -349,55 +351,39 @@ describe('VersioningFileProvider - soft delete (#947)', () => {
     expect(tick.event.metadata).toMatchObject({ origin: 'schedule', reason: 'hourly tick (test)' });
   });
 
-  test('an hourly scheduler expires tombstones without needing a restart', async () => {
-    vi.useFakeTimers();
-    try {
-      const { uuid, title } = await seedPage();
-      await provider.deletePage(title, actor('jim'));
+  /** A real job manager on the engine, with a clock the test moves (#1721). */
+  function withJobManager(): { jobs: BackgroundJobManager; at: (iso: string) => void } {
+    let clock = Date.parse('2026-10-09T09:30:00Z');
+    const jobs = new BackgroundJobManager(engine, { now: () => new Date(clock) });
+    const base = engine.getManager.getMockImplementation();
+    engine.getManager.mockImplementation((name) => (name === 'BackgroundJobManager' ? jobs : base(name)));
+    return { jobs, at: (iso) => { clock = Date.parse(iso); } };
+  }
 
-      // Backdate past the 30-day window, then let the hourly tick fire.
-      provider['pageIndex'].deletedPages[uuid].deletedAt =
-        new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+  test('the hourly purge is a scheduled maintenance job that expires tombstones without a restart (#1721)', async () => {
+    const { jobs, at } = withJobManager();
+    provider = new VersioningFileProvider(engine);
+    await provider.initialize();
+    expect((await jobs.listScheduledJobs()).map((j) => j.id)).toContain('pages.delete-retention');
 
-      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-      vi.useRealTimers();
+    const { uuid, title } = await seedPage();
+    await provider.deletePage(title, actor('jim'));
+    provider['pageIndex'].deletedPages[uuid].deletedAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
 
-      // The tick fires synchronously but the purge itself does real fs work,
-      // which fake timers do not gate — wait for it to settle rather than
-      // asserting into a race.
-      for (let i = 0; i < 100 && provider['pageIndex'].deletedPages[uuid]; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-
-      expect(provider['pageIndex'].deletedPages[uuid]).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
+    await jobs.tick();
+    at('2026-10-09T10:00:05Z');
+    await jobs.tick();
+    await jobs.whenIdle();
+    expect(provider['pageIndex'].deletedPages[uuid]).toBeUndefined();
   });
 
-  test('the scheduler tick does not hold the process open', async () => {
+  test('retention of 0 schedules no purge', async () => {
+    const { jobs } = withJobManager();
+    provider = new VersioningFileProvider(engine);
     await provider.initialize();
-    // unref'd like BackupManager's scheduler — otherwise the server can't exit.
-    expect(provider['deletePurgeTimer']).not.toBeNull();
-    expect(typeof provider['deletePurgeTimer'].unref).toBe('function');
-  });
-
-  test('shutdown stops the retention scheduler', async () => {
-    await provider.initialize();
-    expect(provider['deletePurgeTimer']).not.toBeNull();
-
-    provider.shutdown();
-
-    expect(provider['deletePurgeTimer']).toBeNull();
-  });
-
-  test('retention of 0 starts no scheduler at all', async () => {
-    await provider.initialize();
-    provider.shutdown();
     provider['deleteRetentionDays'] = 0;
     provider['startDeletePurgeScheduler']();
-
-    expect(provider['deletePurgeTimer']).toBeNull();
+    expect((await jobs.listScheduledJobs()).map((j) => j.id)).not.toContain('pages.delete-retention');
   });
 
   test('retention of 0 keeps tombstones forever', async () => {

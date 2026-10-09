@@ -117,7 +117,8 @@ test.describe('Admin Dashboard', () => {
       await expect(page.locator('a[href="/admin/jobs"]')).toHaveCount(1);
       await page.goto('/admin/jobs');
       await expect(page.locator('h1')).toContainText('Scheduled Jobs');
-      await expect(page.locator('.alert-info')).toContainText('No scheduled jobs are registered');
+      // #1721: core's maintenance jobs are listed on every site.
+      await expect(page.locator('code', { hasText: 'sessions.key-sweep' })).toHaveCount(1);
     });
   });
 

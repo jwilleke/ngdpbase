@@ -649,3 +649,41 @@ describe('what an administrator does (#1718)', () => {
     await expect(m.retryNow('test.flaky', admin)).rejects.toMatchObject({ status: 409 });
   });
 });
+
+describe('maintenance jobs (#1721)', () => {
+  test('a success is neither audited nor notified; it runs on its cadence and is listed', async () => {
+    let runs = 0;
+    const m = manager();
+    m.registerMaintenance({ id: 'test.sweep', displayName: 'Sweep', everyMs: 10 * 60_000, run: () => { runs++; return Promise.resolve('0 dropped'); } });
+    await m.tick();
+    clock = Date.parse('2026-10-09T09:40:05Z');
+    await m.tick();
+    await settle(m);
+    expect(runs).toBe(1);
+    expect(events).toHaveLength(0);
+    const [view] = await m.listScheduledJobs();
+    expect(view).toMatchObject({ id: 'test.sweep', schedule: 'every 10m', catchUp: 'none', overlap: 'skip', persist: false, maxAttempts: 1 });
+    // Nothing kept where a restart would find it.
+    expect(await provider().getState('test.sweep')).toBeNull();
+  });
+
+  test('a failure is audited, and not retried: the next tick does the same work', async () => {
+    const m = manager();
+    m.registerMaintenance({ id: 'test.sweep', displayName: 'Sweep', everyMs: 60_000, run: () => Promise.reject(new Error('store unreachable')) });
+    await m.tick();
+    clock = Date.parse('2026-10-09T09:31:05Z');
+    await m.tick();
+    await settle(m);
+    expect(named('job-failed').length).toBeGreaterThan(0);
+    expect((await m.listScheduledJobs())[0].current).toBeNull();
+  });
+
+  test('an interval in seconds runs in whole minutes, at least one; 0 leaves it unscheduled', async () => {
+    const m = manager();
+    m.registerMaintenance({ id: 'test.fast', displayName: 'Fast', everyMs: 15_000, run: () => Promise.resolve() });
+    m.registerMaintenance({ id: 'test.off', displayName: 'Off', everyMs: 0, run: () => Promise.resolve() });
+    const views = await m.listScheduledJobs();
+    expect(views.map((v) => [v.id, v.schedule])).toEqual([['test.fast', 'every 1m']]);
+    expect(m.getRegisteredJobIds()).toContain('test.off');
+  });
+});

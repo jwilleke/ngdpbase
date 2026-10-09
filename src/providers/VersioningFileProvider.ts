@@ -7,6 +7,7 @@ import path from 'path';
 import { parsePageFrontmatter } from '../utils/pageFrontmatter.js';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import DeltaStorage, { DiffTuple } from '../utils/DeltaStorage.js';
 import PageNameMatcher from '../utils/PageNameMatcher.js';
@@ -312,7 +313,6 @@ class VersioningFileProvider extends FileSystemProvider {
   private deleteRetentionDays: number;
 
   /** Hourly tick that expires tombstones past the retention window (#947) */
-  private deletePurgeTimer: ReturnType<typeof setInterval> | null;
 
   /**
    * Create a new VersioningFileProvider
@@ -344,7 +344,6 @@ class VersioningFileProvider extends FileSystemProvider {
     this.versionCache = new Map();
     this.versionCacheSize = 50;
     this.deleteRetentionDays = 30;
-    this.deletePurgeTimer = null;
   }
 
   /**
@@ -2376,47 +2375,33 @@ class VersioningFileProvider extends FileSystemProvider {
   }
 
   /**
-   * Start the hourly tombstone-expiry tick (#947).
+   * The hourly tombstone-expiry job (#947, #1721).
    *
-   * Follows the scheduler shape BackupManager already uses: a plain
-   * `setInterval` with `unref()` so it never holds the process open. Hourly
-   * rather than BackupManager's per-minute tick because the work is
-   * time-window based, not time-of-day based — there is no specific minute it
-   * has to catch, and a page expiring up to an hour late is meaningless
-   * against a retention measured in days.
-   *
-   * Skipped entirely when retention is disabled, so a `0` config leaves no
-   * timer running at all.
+   * Hourly because the work is time-window based, not time-of-day based: a
+   * page expiring up to an hour late is meaningless against a retention
+   * measured in days. With retention 0 the job has no schedule, so nothing
+   * recurs.
    */
   private startDeletePurgeScheduler(): void {
-    this.stopDeletePurgeScheduler();
-
-    if (!this.deleteRetentionDays || this.deleteRetentionDays <= 0) {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      void this.runRetentionPurge(scheduleContext(this.engine, 'delete-retention purge (hourly): pages soft-deleted past the retention window'));
-    }, 60 * 60 * 1000);
-
-    timer.unref(); // don't prevent process exit
-    this.deletePurgeTimer = timer;
-    logger.info(`[VersioningFileProvider] Delete-retention purge scheduled hourly (${this.deleteRetentionDays}-day window)`);
-  }
-
-  /** Stop the tombstone-expiry tick (#947). */
-  private stopDeletePurgeScheduler(): void {
-    if (this.deletePurgeTimer) {
-      clearInterval(this.deletePurgeTimer);
-      this.deletePurgeTimer = null;
-    }
+    const jobs = this.engine?.getManager?.<BackgroundJobManager>('BackgroundJobManager');
+    if (!jobs) return;
+    const on = this.deleteRetentionDays > 0;
+    // #1721: a maintenance job on the scheduler. Retention 0 registers it
+    // without a schedule, so no purge recurs.
+    jobs.registerMaintenance({
+      id: 'pages.delete-retention',
+      displayName: 'Pages: purge deleted pages past retention',
+      everyMs: on ? 60 * 60 * 1000 : 0,
+      run: async (ctx) => { await this.runRetentionPurge(ctx); }
+    });
+    if (on) logger.info(`[VersioningFileProvider] Delete-retention purge scheduled hourly (${this.deleteRetentionDays}-day window)`);
   }
 
   /**
-   * Shut down the provider, stopping the retention scheduler (#947).
+   * Shut down the provider. Its retention job is stopped by
+   * BackgroundJobManager's shutdown handoff (#1721).
    */
   shutdown(): void {
-    this.stopDeletePurgeScheduler();
     super.shutdown();
   }
 

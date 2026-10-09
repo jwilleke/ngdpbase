@@ -79,6 +79,12 @@ jobManager.registerJob({
 - A hard kill (SIGKILL, a crash, power loss) reaches none of this: the run's lock expires after 60 s and the resume counts as an attempt.
 - Nothing depends on PM2, systemd, Docker or Kubernetes beyond delivering the signal.
 
+### Maintenance jobs (#1721)
+
+`registerMaintenance({ id, displayName, everyMs, run })` declares a routine tick whose next run does the same work, in place of a hand-rolled `setInterval`: every `everyMs` in whole minutes (at least one), `catchUp: 'none'`, `overlap: 'skip'`, `persist: false`, one attempt. A success is neither audited nor notified; a failure is. `everyMs` 0 leaves the job unscheduled.
+
+Core's maintenance jobs: `media.folder-scan` (`ngdpbase.media.scaninterval`), `pages.delete-retention` (hourly, when delete retention is on), `audit.archive-retention` (hourly), `tokens.maintenance` (`ngdpbase.auth.agent-token.sweep-interval-seconds`) and `sessions.key-sweep` (every 10 minutes). BackgroundJobManager starts right after DatabaseManager so every manager can register during its own initialize. The `setInterval`s left in core are write flushes, the scheduler's own tick and lock heartbeat, and a server-sent-events keep-alive — none of them scheduled work.
+
 ### Admin page and API (#1718)
 
 `/admin/jobs` (linked from the dashboard) lists every scheduled job: its schedule and time zone, next slot, last slot done, the run in hand, and its recent history with skipped and failed slots. The same list is `GET /api/admin/jobs/scheduled`. Reading needs admin read access.

@@ -12,7 +12,7 @@ Core and add-ons register jobs that run on a schedule: end of month, every day a
 - a run cut off by a shutdown is handed to the next start and resumed;
 - every slot passed over is recorded, never dropped silently.
 
-Automatic backups are a scheduled job (`backup.auto`). An add-on's jobs are named `<add-on>.<job>`.
+Automatic backups are a scheduled job (`backup.auto`). So are core's maintenance ticks — `media.folder-scan`, `pages.delete-retention`, `audit.archive-retention`, `tokens.maintenance` and `sessions.key-sweep` — which run on their usual cadence, catch nothing up, and report only failures. An add-on's jobs are named `<add-on>.<job>`.
 
 ## Admin → Scheduled Jobs
 

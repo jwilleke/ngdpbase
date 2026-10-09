@@ -22,6 +22,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import logger from '../utils/logger.js';
+import type BackgroundJobManager from './BackgroundJobManager.js';
 import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import WikiContext from '../context/WikiContext.js';
@@ -69,7 +70,6 @@ class MediaManager extends BaseManager implements CatalogSource {
   private _thumbnailDir = '';
 
   /** Handle for the periodic rescan interval timer */
-  private scanTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -149,16 +149,18 @@ class MediaManager extends BaseManager implements CatalogSource {
     // Checked now rather than at the first scan, which may be an hour away.
     this.recordFolderState(await fileSystemProvider.unreachableFolders());
 
+    // #1721: the folder rescan is a maintenance job on the scheduler — listed
+    // on Admin → Scheduled Jobs, never overlapping itself. 0 turns it off.
     const scanInterval = configManager.getProperty('ngdpbase.media.scaninterval', 3600000) as number;
-    if (scanInterval > 0) {
-      this.scanTimer = setInterval(() => {
-        void this.scanFolders();
-      }, scanInterval);
-      // Allow the Node.js process to exit even if this timer is still active
-      if (this.scanTimer.unref) {
-        this.scanTimer.unref();
+    this.engine.getManager<BackgroundJobManager>('BackgroundJobManager')?.registerMaintenance({
+      id: 'media.folder-scan',
+      displayName: 'Media: rescan folders',
+      everyMs: scanInterval,
+      run: async () => {
+        const result = await this.scanFolders();
+        return `Scanned ${result.scanned}, added ${result.added}, updated ${result.updated}`;
       }
-    }
+    });
 
     // Slice 3 of #755 (#758) — register as a CatalogSource so CatalogManager
     // can fan out cross-source queries. CatalogManager is initialised before
@@ -636,14 +638,10 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Shut down the MediaManager, clearing the rescan timer and releasing
-   * provider resources.
+   * Shut down the MediaManager, releasing provider resources. Its rescan
+   * job is stopped by BackgroundJobManager's shutdown handoff (#1721).
    */
   async shutdown(): Promise<void> {
-    if (this.scanTimer !== null) {
-      clearInterval(this.scanTimer);
-      this.scanTimer = null;
-    }
     if (this.provider) {
       await this.provider.shutdown();
       this._provider = null;

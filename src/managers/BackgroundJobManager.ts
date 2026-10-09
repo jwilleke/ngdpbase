@@ -169,6 +169,12 @@ export interface JobDefinition {
    */
   maxAttempts?: number;
   /**
+   * A routine maintenance tick (#1721): a success is neither audited nor
+   * notified — an every-minute sweep would bury both — while a failure is
+   * both, as for any job. Set by {@link BackgroundJobManager.registerMaintenance}.
+   */
+  routine?: boolean;
+  /**
    * The work to perform. Resolves with a JobResult.
    *
    * __`ctx` is mandatory (#631).__ Without it the actor this manager captured
@@ -343,6 +349,39 @@ class BackgroundJobManager extends BaseManager {
     }
     this.jobs.set(def.id, def);
     logger.debug(`[BackgroundJobManager] Registered job: ${def.id} (${def.displayName})`);
+  }
+
+  /**
+   * A routine maintenance tick (#1721): work whose next run does the same
+   * job, so a missed run costs nothing — a sweep, a retention purge, a folder
+   * rescan. One declaration for all of them, in place of a hand-rolled
+   * `setInterval`: it runs every `everyMs` (in whole minutes, at least one),
+   * catches nothing up, keeps nothing across a restart, never overlaps
+   * itself, and reports only failures. It is listed on Admin → Scheduled Jobs
+   * like any job, and can be run, paused or rescheduled from there.
+   *
+   * `everyMs` 0 or less registers the job without a schedule: it stops
+   * recurring, and can still be run by hand.
+   */
+  registerMaintenance(spec: { id: string; displayName: string; everyMs: number; run: (ctx: JobRunContext) => Promise<string | void> }): void {
+    const def: JobDefinition = {
+      id: spec.id,
+      displayName: spec.displayName,
+      routine: true,
+      run: async (_progress, ctx) => {
+        const summary = await spec.run(ctx);
+        return { success: true, summary: summary ?? undefined };
+      }
+    };
+    if (!(spec.everyMs > 0)) {
+      this.registerJob(def);
+      return;
+    }
+    const minutes = Math.max(1, Math.round(spec.everyMs / 60_000));
+    if (minutes * 60_000 !== spec.everyMs) {
+      logger.info(`[BackgroundJobManager] '${spec.id}' runs every ${minutes} minute(s): its ${spec.everyMs} ms interval, in whole minutes`);
+    }
+    this.registerJob({ ...def, schedule: `every ${minutes}m`, catchUp: 'none', overlap: 'skip', persist: false, maxAttempts: 1 });
   }
 
   private compileScheduled(def: JobDefinition): ScheduledJob {
@@ -1059,11 +1098,12 @@ class BackgroundJobManager extends BaseManager {
   ): Promise<void> {
     run.status = 'running';
     const startMs = Date.now();
-    logger.info(
+    const routine = def.routine === true;
+    (routine ? logger.debug.bind(logger) : logger.info.bind(logger))(
       `[BackgroundJobManager] job-started { jobId: "${def.id}", runId: "${run.runId}", ` +
       `displayName: "${def.displayName}", requestedBy: "${describeJobContext(run.requestedBy)}" }`
     );
-    await this.recordJobEvent(run, 'started');
+    if (!routine) await this.recordJobEvent(run, 'started');
 
     const reportProgress: ReportProgress = (message: string) => {
       run.progress = message;
@@ -1093,9 +1133,11 @@ class BackgroundJobManager extends BaseManager {
 
       if (result.success) {
         run.status = 'completed';
-        logger.info(`[BackgroundJobManager] job-completed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, summary: "${result.summary ?? ''}" }`);
-        await this.recordJobEvent(run, 'completed', result.summary);
-        await this.sendNotification('info', `${def.displayName} complete`, result.summary ?? 'Job completed successfully');
+        (routine ? logger.debug.bind(logger) : logger.info.bind(logger))(`[BackgroundJobManager] job-completed { jobId: "${def.id}", runId: "${run.runId}", durationMs: ${durationMs}, summary: "${result.summary ?? ''}" }`);
+        if (!routine) {
+          await this.recordJobEvent(run, 'completed', result.summary);
+          await this.sendNotification('info', `${def.displayName} complete`, result.summary ?? 'Job completed successfully');
+        }
       } else {
         run.status = 'failed';
         // A run stopped for shutdown is handed off, not failed (#1717): its ending is recorded as interrupted.

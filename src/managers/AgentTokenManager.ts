@@ -65,6 +65,7 @@ import type { BackupData } from './BaseManager.js';
 import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
+import type BackgroundJobManager from './BackgroundJobManager.js';
 import { FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
@@ -249,7 +250,6 @@ class AgentTokenManager extends BaseManager {
    */
   private writeQueue: Promise<void> = Promise.resolve();
 
-  private maintenanceTimer: NodeJS.Timeout | null = null;
 
   private tokenConfig: AgentTokenConfig = {
     defaultTtlHours: 24,
@@ -301,30 +301,23 @@ class AgentTokenManager extends BaseManager {
   }
 
   /**
-   * Flush buffered `lastUsedAt` stamps and purge dead records, on a timer.
+   * Flush buffered `lastUsedAt` stamps and purge dead records, every
+   * `sweep-interval-seconds` — a maintenance job on the scheduler (#1721).
    *
    * Purging used to happen only in `initialize()`, so a server up for months
    * never applied its own retention policy again — the config promised a
    * 30-day window that was only ever honoured at boot.
-   *
-   * `unref()` so this never holds the process open: a maintenance tick is not a
-   * reason for node to stay alive, and a test that forgets to shut a manager
-   * down should still exit.
    */
   private startMaintenance(): void {
-    if (this.maintenanceTimer) return;
-    const everyMs = this.tokenConfig.sweepIntervalSeconds * 1000;
-    this.maintenanceTimer = setInterval(() => {
-      void (async () => {
-        try {
-          await this.flushLastUsed();
-          await this.purgeExpired();
-        } catch (err) {
-          logger.warn('[AgentTokenManager] Maintenance tick failed:', err);
-        }
-      })();
-    }, everyMs);
-    this.maintenanceTimer.unref?.();
+    this.engine.getManager<BackgroundJobManager>('BackgroundJobManager')?.registerMaintenance({
+      id: 'tokens.maintenance',
+      displayName: 'Agent tokens: flush last use, purge expired',
+      everyMs: this.tokenConfig.sweepIntervalSeconds * 1000,
+      run: async () => {
+        await this.flushLastUsed();
+        await this.purgeExpired();
+      }
+    });
   }
 
   private async load(): Promise<void> {
@@ -681,16 +674,11 @@ class AgentTokenManager extends BaseManager {
   }
 
   /**
-   * Flush pending stamps and stop the maintenance timer.
-   *
-   * Without this, `lastUsedAt` movement since the last tick is lost on a clean
-   * shutdown — and the timer would keep a reference to a dead manager.
+   * Flush pending stamps. Without this, `lastUsedAt` movement since the
+   * last sweep is lost on a clean shutdown. The sweep job itself is stopped
+   * by BackgroundJobManager's shutdown handoff (#1721).
    */
   async shutdown(): Promise<void> {
-    if (this.maintenanceTimer) {
-      clearInterval(this.maintenanceTimer);
-      this.maintenanceTimer = null;
-    }
     try {
       await this.flushLastUsed();
     } catch (err) {

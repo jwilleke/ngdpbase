@@ -6,6 +6,7 @@ import fs from 'fs-extra';
 import fsp from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
+import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { AuditEvent } from '../types/index.js';
 import type { ProviderDurability } from './BaseProvider.js';
 import type { AuditReport } from './BaseAuditProvider.js';
@@ -81,7 +82,6 @@ const RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
 class FileAuditProvider extends BaseAuditProvider {
   /** #1122: how often retention runs after boot. Hourly is far finer than a day-scale window. */
-  private retentionTimer: NodeJS.Timeout | null = null;
 
   private auditLogs: ExtendedAuditEvent[];
   private auditQueue: ExtendedAuditEvent[];
@@ -179,12 +179,13 @@ class FileAuditProvider extends BaseAuditProvider {
     // #1122: and keep doing it. Running retention once at boot meant a
     // long-lived instance applied its own policy exactly once — the same
     // defect #1110 fixed for the token store's purgeExpired.
-    this.retentionTimer = setInterval(() => {
-      void this.cleanup(scheduleContext(this.engine, 'audit-archive retention (hourly): archives past the retention window')).catch((err: unknown) => {
-        logger.warn('[FileAuditProvider] Scheduled retention pass failed:', err);
-      });
-    }, RETENTION_INTERVAL_MS);
-    this.retentionTimer.unref?.();
+    // #1721: as a maintenance job on the scheduler, listed on Admin → Scheduled Jobs.
+    this.engine?.getManager?.<BackgroundJobManager>('BackgroundJobManager')?.registerMaintenance({
+      id: 'audit.archive-retention',
+      displayName: 'Audit: remove archives past retention',
+      everyMs: RETENTION_INTERVAL_MS,
+      run: async (ctx) => { await this.cleanup(ctx); }
+    });
 
     this.initialized = true;
 
@@ -920,13 +921,6 @@ class FileAuditProvider extends BaseAuditProvider {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
-    }
-
-    // #1122: and the retention timer, or it keeps a reference to a closed
-    // provider alive.
-    if (this.retentionTimer) {
-      clearInterval(this.retentionTimer);
-      this.retentionTimer = null;
     }
 
     this.initialized = false;

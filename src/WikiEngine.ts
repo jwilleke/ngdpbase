@@ -165,6 +165,13 @@ class WikiEngine extends Engine {
     this.registerManager('DatabaseManager', databaseManager);
     await databaseManager.initialize();
 
+    // 1a'. BackgroundJobManager (#1721) — right after the database its job
+    //      state may live in, so every manager after it can register its
+    //      recurring work as a scheduled job during its own initialize.
+    const backgroundJobManager = new BackgroundJobManager(this);
+    this.registerManager('BackgroundJobManager', backgroundJobManager);
+    await backgroundJobManager.initialize();
+
     // 1b. Initialize CatalogManager right after ConfigurationManager so all later
     //     managers (including addons) can call getManager('CatalogManager')
     const catalogManager = new CatalogManager(this);
@@ -251,10 +258,6 @@ class WikiEngine extends Engine {
     const notificationManager = new NotificationManager(this);
     this.registerManager('NotificationManager', notificationManager);
     await notificationManager.initialize();
-
-    const backgroundJobManager = new BackgroundJobManager(this);
-    this.registerManager('BackgroundJobManager', backgroundJobManager);
-    await backgroundJobManager.initialize();
 
     const pageManager = new PageManager(this);
     this.registerManager('PageManager', pageManager);

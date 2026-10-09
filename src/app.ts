@@ -53,6 +53,7 @@ import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } fr
 import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import { endSession, type SessionEndReason } from './utils/sessionEnd.js';
 import type PageManager from './managers/PageManager.js';
+import type BackgroundJobManager from './managers/BackgroundJobManager.js';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './managers/OidcManager.js';
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
 import { bearerProviderIds } from './utils/bearerProviders.js';
@@ -678,16 +679,20 @@ void (async (): Promise<void> => {
   // #1626: a session that expires in the store, or is destroyed by a path that
   // could not reach endSessionKeys, leaves its unlocked keys with no owner.
   // Sweep them: any bag whose handle no live session holds is dropped.
+  // #1721: a maintenance job on the scheduler, listed on Admin → Scheduled
+  // Jobs; a sweep that fails is audited and notified, not only logged.
   const sessionStats = engine.getManager('SessionStatsManager') as { liveHandles(): Promise<Set<string>> } | null;
   if (sessionStats) {
-    setInterval(() => {
-      void sessionStats.liveHandles()
-        .then((live) => {
-          const dropped = sweepOrphanedKeys(live);
-          if (dropped > 0) logger.info(`[SESSION] Dropped the unlocked keys of ${dropped} ended session(s) (#1626)`);
-        })
-        .catch((err: unknown) => logger.warn(`[SESSION] Could not sweep unlocked keys (#1626): ${(err as Error).message}`));
-    }, ORPHANED_KEY_SWEEP_MS).unref();
+    (engine.getManager('BackgroundJobManager') as BackgroundJobManager | null)?.registerMaintenance({
+      id: 'sessions.key-sweep',
+      displayName: 'Sessions: drop the unlocked keys of ended sessions',
+      everyMs: ORPHANED_KEY_SWEEP_MS,
+      run: async () => {
+        const dropped = sweepOrphanedKeys(await sessionStats.liveHandles());
+        if (dropped > 0) logger.info(`[SESSION] Dropped the unlocked keys of ${dropped} ended session(s) (#1626)`);
+        return `${dropped} dropped`;
+      }
+    });
   }
 
   app.use(session({
