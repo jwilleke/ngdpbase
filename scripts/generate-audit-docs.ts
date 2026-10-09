@@ -26,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { coverage } from './audit-coverage.js';
+import { coverage, gapCount } from './audit-coverage.js';
 import { auditDeclarationsFrom } from '../src/utils/auditRegistry.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -58,7 +58,7 @@ export function coverageSection(events: Record<string, Declaration> = declaratio
   const c = coverage();
   const off = Object.entries(events).filter(([, d]) => d.enabled === false).map(([n]) => n).sort();
   const critical = Object.entries(events).filter(([, d]) => d['on-failure'] === 'refuse' && d.enabled !== false).map(([n]) => n).sort();
-  const gaps = c.undeclared.length + c.unemitted.length + c.offVocabulary.length + c.unresolvedEmitters.length + c.offConvention.length;
+  const gaps = gapCount(c);
 
   const lines = [
     '#### Results',

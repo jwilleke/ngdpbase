@@ -18,7 +18,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { coverage, vocabularyTypes, registryTypes, emittedTypes } from '../audit-coverage';
+import { coverage, gapCount, vocabularyTypes, registryTypes, emittedTypes } from '../audit-coverage';
 
 describe('#1184 — the three lists are read correctly', () => {
   test('the vocabulary parses to a plausible set', () => {
@@ -71,7 +71,7 @@ describe('#1184 — what the report concludes about this tree', () => {
   });
 
   test('nothing is emitted under a name the vocabulary does not permit', () => {
-    expect(coverage().offVocabulary).toEqual([]);
+    expect(coverage().undeclared).toEqual([]);
   });
 
   test('nothing is declared required without an emitter', () => {
@@ -145,6 +145,12 @@ describe('#1638 — --addon <dir> checks one external add-on', () => {
   test('reports an emitted name the add-on never declared', () => {
     addon({ 'widget-create': { 'on-failure': 'log' } }, "addonAuditEventName('widget-create'); addonAuditEventName('widget-delete');\n");
     expect(coverage({ addonDir: dir }).undeclared).toEqual(['widget-delete']);
+  });
+
+  test('one undeclared name is one gap, not two', () => {
+    addon({ 'widget-create': { 'on-failure': 'log' } }, "addonAuditEventName('widget-create'); addonAuditEventName('widget-delete');\n");
+    const c = coverage({ addonDir: dir });
+    expect(gapCount(c)).toBe(1);
   });
 
   test('reports a declared, enabled name nothing emits; a switched-off one is a decision', () => {

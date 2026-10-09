@@ -199,8 +199,6 @@ export interface Coverage {
   undeclared: string[];
   /** Declared as required, but nothing emits it. */
   unemitted: string[];
-  /** Emitted but not a permitted name. The parity tests already cover this; belt and braces. */
-  offVocabulary: string[];
   /** Declared or emitted under a name that is not `{target}-{action}` (#1201, #1206). */
   offConvention: string[];
   /** #1638: declared both in the events map and on a permission entry of the same file. */
@@ -226,7 +224,6 @@ export function coverage(scope: Scope = REPO_SCOPE): Coverage {
     unresolvedEmitters: unresolved,
     undeclared: emitted.filter((t) => !vocabSet.has(t)),
     unemitted: [...registry.keys()].filter((t) => !emitted.includes(t)).sort(),
-    offVocabulary: emitted.filter((t) => !vocabSet.has(t)),
     offConvention: [...new Set([...vocabulary, ...emitted])].filter((t) => !AUDIT_EVENT_NAME_PATTERN.test(t)).sort(),
     declaredTwice: (scope.addonDir ? eventFiles(scope) : ['config/app-default-config.json', ...addonEventFiles()])
       .flatMap((rel) => declaredTwice(rel).map((n) => `${n} (${rel})`)),
@@ -234,6 +231,17 @@ export function coverage(scope: Scope = REPO_SCOPE): Coverage {
       .filter(([, d]) => d.enabled === false).map(([n]) => n).sort(),
     collides: eventFiles(scope).flatMap((rel) => Object.keys(eventMap(rel)).filter((n) => shipped.has(n)).map((n) => `${n} (${rel})`)).sort()
   };
+}
+
+/**
+ * How many gaps a coverage report holds: the one count the check fails on and
+ * the docs report. Each problem counts once. Since #1638 the vocabulary is the
+ * declarations, so "emitted, not in the vocabulary" is the same list as
+ * "emitted, no declaration"; it was counted twice until it was removed.
+ */
+export function gapCount(c: Coverage): number {
+  return c.undeclared.length + c.unemitted.length + c.unresolvedEmitters.length +
+    c.offConvention.length + c.declaredTwice.length + c.collides.length;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
@@ -278,11 +286,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     for (const t of c.unemitted) console.log(`   ${t}   on-failure=${c.registry.get(t)}`);
   }
 
-  if (c.offVocabulary.length) {
-    console.log(`\nEMITTED, NOT IN VOCABULARY (${c.offVocabulary.length})`);
-    for (const t of c.offVocabulary) console.log(`   ${t}`);
-  }
-
   if (c.declaredTwice.length) {
     console.log(`\nDECLARED TWICE (${c.declaredTwice.length}) — in ngdpbase.audit.events and on its permission entry (#1638)`);
     for (const t of c.declaredTwice) console.log(`   ${t}`);
@@ -302,9 +305,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   // #1206: every direction fails. Until #1200 gave every event a decision,
   // `undeclared` was reported and not failed on, because a check that fails
   // before the decision exists is one people disable. The decision exists now.
-  const failed =
-    c.undeclared.length + c.unemitted.length + c.offVocabulary.length +
-    c.unresolvedEmitters.length + c.offConvention.length + c.declaredTwice.length + c.collides.length;
+  const failed = gapCount(c);
   console.log('');
   if (!check) {
     console.log('Report only. Run with --check to fail the build on a gap.');
