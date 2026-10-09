@@ -436,6 +436,17 @@ class FileSystemMediaProvider extends BaseMediaProvider {
   }
 
   /**
+   * Every item with a year, in one pass over the index (#1741).
+   */
+  getItemCount(): Promise<number> {
+    let n = 0;
+    for (const item of Object.values(this.index)) {
+      if (item.year !== undefined && item.year !== null) n++;
+    }
+    return Promise.resolve(n);
+  }
+
+  /**
    * Retrieve a single item by id.
    */
   getItem(id: string): Promise<MediaItem | null> {

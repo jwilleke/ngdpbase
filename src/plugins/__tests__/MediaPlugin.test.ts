@@ -106,6 +106,26 @@ describe('MediaPlugin', () => {
       const result = await MediaPlugin.execute(context, {});
       expect(result).toContain('0');
     });
+
+    test('asks the manager for the count and lists nothing (#1741)', async () => {
+      const mm = { ...makeMediaManager({ years: [2023, 2024] }), count: vi.fn().mockResolvedValue(73007) };
+      const context = { engine: makeEngine(mm) };
+      const result = await MediaPlugin.execute(context, {});
+      expect(result).toContain('73,007');
+      expect(mm.count).toHaveBeenCalledTimes(1);
+      expect(mm.listByYear).not.toHaveBeenCalled();
+    });
+
+    test('a filtered count still lists that filter (#1741)', async () => {
+      const mm = {
+        ...makeMediaManager({ byYear: { 2023: [makeItem('1', 'a.jpg'), makeItem('2', 'b.jpg')] } }),
+        count: vi.fn().mockResolvedValue(99)
+      };
+      const context = { engine: makeEngine(mm) };
+      const result = await MediaPlugin.execute(context, { year: '2023' });
+      expect(result).toContain('2');
+      expect(mm.count).not.toHaveBeenCalled();
+    });
   });
 
   describe('format=list', () => {

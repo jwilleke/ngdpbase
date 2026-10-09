@@ -300,6 +300,10 @@ Returns unique years from the in-memory index, sorted descending.
 
 Returns all items where `item.year === year`, sorted by filename.
 
+### count
+
+How many items the year listing covers: every item with a year. One pass over the index, so `[{MediaPlugin}]`'s total never lists the items to count them (#1741).
+
 ### listByPage
 
 Delegates to `provider.getItemsByPage(pageName)`: the items whose EXIF/XMP keywords include the page name.
@@ -420,7 +424,8 @@ The plugin resolves parameters in this order:
 2. Else if `page=` is set: call `listByPage(pageName)` where `'current'`
    resolves to `context.pageName`
 3. Else if `year=` is set: call `listByYear(year)`
-4. Otherwise: call `getYears()` then `listByYear()` for each year and
+4. Otherwise, for `format='count'`: call `count()` and list nothing (#1741)
+5. Otherwise: call `getYears()` then `listByYear()` for each year and
    flatten the results
 
 ### format='count'
@@ -550,6 +555,10 @@ Delegates to `provider.getYears()`.
 ### `listByYear(year: number): Promise<MediaItem[]>`
 
 Delegates to `provider.getItemsByYear(year)`.
+
+### `count(): Promise<number>`
+
+Delegates to `provider.getItemCount()`.
 
 ### `listByKeyword(keyword: string): Promise<MediaItem[]>`
 

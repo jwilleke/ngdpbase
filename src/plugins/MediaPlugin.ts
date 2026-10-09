@@ -30,6 +30,7 @@ interface MediaItem {
 interface MediaManager {
   getYears(): Promise<number[]>;
   listByYear(year: number): Promise<MediaItem[]>;
+  count?(): Promise<number>;
   listByPage(pageName: string): Promise<MediaItem[]>;
   listByKeyword(keyword: string): Promise<MediaItem[]>;
 }
@@ -92,6 +93,11 @@ const MediaPlugin: SimplePlugin = {
         items = pageName ? await mediaManager.listByPage(pageName) : [];
       } else if (yearParam && !isNaN(yearParam)) {
         items = await mediaManager.listByYear(yearParam);
+      } else if (format === 'count' && mediaManager.count) {
+        // #1741: counting every item must not list them. Year by year it was a
+        // pass over the whole index per year — 1.2 s on 73k items in 109 years,
+        // paid by every LeftMenu render that carries [{MediaPlugin}].
+        return formatAsCount(await mediaManager.count());
       } else {
         const years = await mediaManager.getYears();
         const perYear = await Promise.all(years.map(y => mediaManager.listByYear(y)));

@@ -154,6 +154,18 @@ abstract class BaseMediaProvider extends BaseProvider implements AssetProvider {
   abstract getItemsByYear(year: number): Promise<MediaItem[]>;
 
   /**
+   * How many items {@link getYears} and {@link getItemsByYear} cover — every
+   * item with a year (#1741). The default asks year by year, which is correct
+   * for any provider; override it where the count is one pass, because an
+   * index with many years makes the default a pass per year.
+   */
+  async getItemCount(): Promise<number> {
+    let n = 0;
+    for (const year of await this.getYears()) n += (await this.getItemsByYear(year)).length;
+    return n;
+  }
+
+  /**
    * Return items whose capture timestamp falls within [after, before], sorted
    * ascending by capture date (#864). Either bound may be omitted. Items with
    * no capture date are excluded. Default implementation returns [] so

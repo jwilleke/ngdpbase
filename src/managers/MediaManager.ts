@@ -493,6 +493,15 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * How many items the year listing covers (#1741) — the number
+   * `getYears()` + `listByYear()` add up to, without listing them.
+   */
+  async count(): Promise<number> {
+    if (!this.provider) return 0;
+    return this.provider.getItemCount();
+  }
+
+  /**
    * List media items whose capture timestamp falls within [after, before],
    * ascending by capture date (#864 — Dawarich adapter). Items without a
    * capture date are excluded by the provider.

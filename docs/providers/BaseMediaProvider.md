@@ -41,6 +41,10 @@ abstract class BaseMediaProvider {
   /** All items for a year, in provider-defined order. */
   abstract getItemsByYear(year: number): Promise<MediaItem[]>;
 
+  /** Every item with a year (#1741). The default adds up getItemsByYear year by
+   *  year; override it with a one-pass count. */
+  getItemCount(): Promise<number>;
+
   /** Full-text search across metadata fields. */
   abstract search(query: string): Promise<MediaItem[]>;
 
