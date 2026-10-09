@@ -28,7 +28,7 @@ import BaseManager from './BaseManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type BaseDatabaseProvider from '../providers/BaseDatabaseProvider.js';
-import SqliteDatabaseProvider from '../providers/SqliteDatabaseProvider.js';
+import SqliteDatabaseProvider, { DEFAULT_BUSY_TIMEOUT_MS } from '../providers/SqliteDatabaseProvider.js';
 import DATABASE_MIGRATIONS from '../providers/databaseMigrations.js';
 import type { Migration } from '../providers/sqliteMigrations.js';
 import logger from '../utils/logger.js';
@@ -55,6 +55,7 @@ interface AddonDatabase {
 class DatabaseManager extends BaseManager {
   private provider: BaseDatabaseProvider | null = null;
   private databaseFile: string | null = null;
+  private busyTimeoutMs = DEFAULT_BUSY_TIMEOUT_MS;
   private readonly addonDatabases = new Map<string, AddonDatabase>();
 
   constructor(engine: WikiEngine) {
@@ -75,9 +76,15 @@ class DatabaseManager extends BaseManager {
       throw new Error(`ngdpbase.database.provider '${kind}' is not a database provider — use 'sqlite' or 'none' (#1536)`);
     }
 
+    const busy = configManager.getProperty('ngdpbase.database.busy-timeout-ms', DEFAULT_BUSY_TIMEOUT_MS);
+    if (typeof busy !== 'number' || !Number.isInteger(busy) || busy < 0) {
+      throw new Error(`ngdpbase.database.busy-timeout-ms must be a whole number of milliseconds, 0 or more — got ${JSON.stringify(busy)} (#1710)`);
+    }
+    this.busyTimeoutMs = busy;
+
     const file = configManager.getResolvedDataPath('ngdpbase.database.file', './data/ngdpbase.db');
     const key = process.env[DATABASE_KEY_ENV] ?? '';
-    const provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS);
+    const provider = new SqliteDatabaseProvider(file, key, DATABASE_MIGRATIONS, 'schema_migrations', { busyTimeoutMs: this.busyTimeoutMs });
     if (!provider.integrityOk()) {
       provider.close();
       throw new Error(`The application database ${file} failed its integrity check — refusing to start (#1536)`);
@@ -86,7 +93,7 @@ class DatabaseManager extends BaseManager {
     this.databaseFile = file;
 
     const { applied, skipped } = provider.migrations;
-    logger.info(`[DatabaseManager] Opened ${file} (${key ? 'encrypted' : 'NOT encrypted'}) — migrations applied ${applied.length}, already present ${skipped}`);
+    logger.info(`[DatabaseManager] Opened ${file} (${key ? 'encrypted' : 'NOT encrypted'}, lock wait ${this.busyTimeoutMs} ms) — migrations applied ${applied.length}, already present ${skipped}`);
     if (!key) {
       logger.warn(`[DatabaseManager] ${DATABASE_KEY_ENV} is not set, so the application database is stored unencrypted (#1536)`);
     }
@@ -148,7 +155,7 @@ class DatabaseManager extends BaseManager {
       throw new Error(`Add-on '${owner}' would open the application database itself (${file}) (ngdp-accounting-addons#13)`);
     }
     const key = process.env[DATABASE_KEY_ENV] ?? '';
-    const provider = new SqliteDatabaseProvider(file, key, options.migrations, options.ledgerTable);
+    const provider = new SqliteDatabaseProvider(file, key, options.migrations, options.ledgerTable, { busyTimeoutMs: this.busyTimeoutMs });
     if (!provider.integrityOk()) {
       provider.close();
       throw new Error(`Add-on database ${file} failed its integrity check (ngdp-accounting-addons#13)`);

@@ -17,6 +17,9 @@ import { refuseNetworkFilesystem } from './sqliteLocation.js';
 
 export type SqliteHandle = InstanceType<typeof Database>;
 
+/** The lock wait when none is configured: the driver's own default, stated (#1710). */
+export const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+
 class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
   protected override providerName = 'SqliteDatabaseProvider';
   protected override providerDescription = 'SQLite application database, SQLCipher-encrypted when a key is set';
@@ -31,11 +34,13 @@ class SqliteDatabaseProvider extends BaseDatabaseProvider<SqliteHandle> {
    * @param key    the SQLCipher key; '' opens the file unencrypted
    * @param ledger the migrations, strictly ascending by id
    * @param ledgerTable where applied ids are recorded; an add-on's database names its own (#13)
+   * @param options.busyTimeoutMs how long a statement waits for a lock another connection holds
+   *   (`ngdpbase.database.busy-timeout-ms`, #1710) before failing with SQLITE_BUSY
    */
-  constructor(private readonly file: string, key: string, ledger: Migration[], ledgerTable = 'schema_migrations') {
+  constructor(private readonly file: string, key: string, ledger: Migration[], ledgerTable = 'schema_migrations', options: { busyTimeoutMs?: number } = {}) {
     super();
     refuseNetworkFilesystem(file);
-    this.db = new Database(file);
+    this.db = new Database(file, { timeout: options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS });
     this.encrypted = key !== '';
     try {
       if (this.encrypted) {
