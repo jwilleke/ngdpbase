@@ -363,6 +363,51 @@ jobs:
             docker rm -f "$NAME" >/dev/null; docker volume rm -f "$VOL" >/dev/null
           done
 
+      - name: Smoke test — a root-owned data folder with a read-only mount inside, and an interrupted hand-over
+        run: |
+          # #1695: the 5.0.0 upgrade crash-looped an install whose root-owned
+          # data folder held a read-only ConfigMap file. The hand-over stopped at
+          # that file, and after one partial run it never resumed (only the top
+          # folder was checked). Started as root with PUID/PGID: (a) a root-owned
+          # tree with a 0700 users/ and a read-only file mounted inside it;
+          # (b) the same, with only the top folder already given over.
+          probe() {
+            docker exec "$1" node -e \
+              "fetch('http://localhost:3000'+process.argv[1]).then(r=>console.log(r.status)).catch(()=>console.log('000'))" "$2" 2>/dev/null || echo 000
+          }
+          mkdir -p /tmp/ro-org
+          printf '%s' '{"@context":"https://schema.org","@type":"Organization","@id":"https://example.com/","name":"Example Org","url":"https://example.com/"}' > /tmp/ro-org/example.json
+          for CASE in fresh partial; do
+            NAME="ngdpbase-smoke-handover-$CASE"
+            VOL="ngdpbase-smoke-handover-$CASE-data"
+            docker volume create "$VOL" >/dev/null
+            docker run --rm -v "$VOL:/d" alpine sh -c \
+              'mkdir -p /d/config /d/users /d/pages /d/organizations && printf "%s" "{\"ngdpbase.user.security.defaultpassword\":\"\$NGDPBASE_ADMIN_PASSWORD\"}" > /d/config/app-custom-config.json && echo x > /d/pages/a.md && chmod 700 /d/users && chown -R 0:0 /d'
+            if [ "$CASE" = "partial" ]; then docker run --rm -v "$VOL:/d" alpine chown 1000:1000 /d; fi
+            docker run -d --name "$NAME" \
+              -e HEADLESS_INSTALL=true -e NODE_ENV=production \
+              -e PUID=1000 -e PGID=1000 \
+              -e NGDPBASE_ADMIN_PASSWORD="ci-smoke-$(openssl rand -hex 12)" \
+              -v "$VOL:/app/data" \
+              -v /tmp/ro-org/example.json:/app/data/organizations/example.json:ro \
+              ${{ steps.img.outputs.ref }}
+            R=000
+            for i in $(seq 1 60); do
+              R=$(probe "$NAME" /health/readiness)
+              [ "$R" = "200" ] && break
+              if [ "$(docker inspect --format='{{.State.Running}}' "$NAME")" != "true" ]; then
+                echo "FAILED ($CASE): the image stopped:"; docker logs "$NAME"; exit 1
+              fi
+              sleep 3
+            done
+            [ "$R" = "200" ] || { echo "FAILED ($CASE): not ready after 180s"; docker logs "$NAME"; exit 1; }
+            docker logs "$NAME" 2>&1 | grep -q "example.json (EROFS)" || { echo "FAILED ($CASE): the read-only file was not reported by path and code"; docker logs "$NAME"; exit 1; }
+            LEFT=$(docker run --rm -v "$VOL:/d" alpine sh -c 'find /d ! -user 1000 ! -path /d/organizations/example.json | wc -l')
+            [ "$LEFT" = "0" ] || { echo "FAILED ($CASE): $LEFT writable entries are not 1000:1000"; exit 1; }
+            echo "($CASE) handed over in full, the read-only file reported, ready."
+            docker rm -f "$NAME" >/dev/null; docker volume rm -f "$VOL" >/dev/null
+          done
+
       - name: Smoke test — dump logs on failure
         if: failure()
         run: docker logs ngdpbase-smoke 2>&1 || true
