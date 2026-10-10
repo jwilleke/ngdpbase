@@ -38,6 +38,11 @@ export interface ValueViewer {
 /** Names that look like a secret, for keys and for fields inside object values. */
 const SECRET_NAME_PATTERN = /secret|passw(or)?d|token|credential|api[-_]?key|private[-_]?key/i;
 
+/** Whether a key or field name looks like a secret (the backstop's test; also `npm run lint:sensitive`). */
+export function looksSecret(name: string): boolean {
+  return SECRET_NAME_PATTERN.test(name);
+}
+
 /** What a hidden value is shown as. */
 export const HIDDEN = '(hidden)';
 
@@ -78,7 +83,7 @@ export function secretKeys(read: Read): string[] {
 export function levelOf(key: string, levels: Map<string, ValueLevel>, value?: unknown): ValueLevel | null {
   const declared = levels.get(key);
   if (declared) return declared;
-  return SECRET_NAME_PATTERN.test(key) && typeof value === 'string' ? 'secret' : null;
+  return looksSecret(key) && typeof value === 'string' ? 'secret' : null;
 }
 
 /** Whether the legacy list is still set (to warn at boot). */
@@ -92,7 +97,7 @@ function hideNestedSecrets(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = SECRET_NAME_PATTERN.test(k) && typeof v === 'string' && v !== '' ? HIDDEN : hideNestedSecrets(v);
+      out[k] = looksSecret(k) && typeof v === 'string' && v !== '' ? HIDDEN : hideNestedSecrets(v);
     }
     return out;
   }

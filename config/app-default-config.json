@@ -39,6 +39,8 @@
     "ngdpbase.dawarichCompat.apiKey": "secret",
     "ngdpbase.access.policies": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
+    "ngdpbase.auth.credentials.file": "sensitive",
+    "ngdpbase.auth.agent-token.directory": "sensitive",
     "ngdpbase.audit.chain-witness.destination": "sensitive",
     "ngdpbase.media.folders": "sensitive",
     "ngdpbase.server.tls.cert-file": "sensitive",
