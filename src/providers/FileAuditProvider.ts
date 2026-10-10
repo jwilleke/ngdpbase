@@ -1,3 +1,4 @@
+import { toCsv } from '../utils/csv.js';
 import BaseAuditProvider, { AuditFilters, AuditSearchResults, AuditStats, AuditBackupData } from './BaseAuditProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
@@ -558,21 +559,21 @@ class FileAuditProvider extends BaseAuditProvider {
     const logs = await this.searchAuditLogs(filters, { limit: 10000 });
 
     if (format === 'csv') {
-      const csvHeader = 'timestamp,eventType,user,resource,action,result,severity,reason\n';
-      const csvRows = logs.results.map((logEntry) => {
+      // One CSV writer for every export: quoting, and no cell a spreadsheet would run as a formula.
+      const rows = logs.results.map((logEntry) => {
         const log = logEntry as unknown as Record<string, unknown>;
-        const timestamp = log.timestamp as string;
-        const eventType = (log.eventType as string) || (log.type as string);
-        const user = (log.user as string) || (log.actor as string);
-        const resource = (log.resource as string) || (log.target as string);
-        const action = log.action as string;
-        const result = log.result as string;
-        const severity = (log.severity as string) || 'low';
-        const reason = (log.reason as string) || (log.error as string) || '';
-        return `"${timestamp}","${eventType}","${user}","${resource}","${action}","${result}","${severity}","${reason}"`;
-      }).join('\n');
-
-      return csvHeader + csvRows;
+        return [
+          log.timestamp,
+          log.eventType || log.type,
+          log.user || log.actor,
+          log.resource || log.target,
+          log.action,
+          log.result,
+          log.severity || 'low',
+          log.reason || log.error || ''
+        ];
+      });
+      return toCsv(['timestamp', 'eventType', 'user', 'resource', 'action', 'result', 'severity', 'reason'], rows);
     }
 
     return JSON.stringify(logs.results, null, 2);
