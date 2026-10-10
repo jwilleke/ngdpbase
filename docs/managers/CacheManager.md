@@ -1,7 +1,7 @@
 ---
 name: CacheManager
 description: "Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer"
-dateModified: '2026-05-14'
+dateModified: '2026-10-10'
 category: managers
 code: src/managers/CacheManager.ts
 ---
@@ -19,6 +19,8 @@ __Complete Guide:__ [CacheManager-Complete-Guide.md](CacheManager-Complete-Guide
 CacheManager provides centralized cache management for ngdpbase with pluggable cache providers, cache regions (namespaces), configurable TTL, and comprehensive statistics tracking.
 
 > __Two cache layers in ngdpbase__: this document covers the CacheManager layer — opportunistic, TTL-based memoization through pluggable providers (NodeCache, Redis-planned, Null). It is __not__ the only caching in the system. Provider-level structural caches (e.g., `FileSystemProvider.pageCache`, `LunrSearchProvider.documents`, `ThemeManager` cache) are separate in-memory data structures populated at init and write-through invalidated; they're not exposed through CacheManager. See [the full inventory in the Complete Guide](CacheManager-Complete-Guide.md#provider-level-structural-caches) and [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) for the page-access performance angle.
+>
+> __What uses it today, and the known gap__: only the markup parser's regions (rendered pages, interwiki links and styles, patterns, variables). Entries expire by TTL; nothing invalidates them on page, role or configuration changes, so a rendered page can show permission-filtered content from before a role was revoked for up to 300 s ([#1751](https://github.com/jwilleke/ngdpbase/issues/1751)). See [the Complete Guide](CacheManager-Complete-Guide.md#known-gap-the-parse-result-cache-key-1751).
 
 ## Key Features
 

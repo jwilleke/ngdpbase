@@ -3,7 +3,7 @@
 __Module:__ `src/managers/CacheManager.ts`
 __Quick Reference:__ [CacheManager.md](CacheManager.md)
 __Version:__ 2.0.0
-__Last Updated:__ 2026-05-03 (post-v3.6.0)
+__Last Updated:__ 2026-10-10 (v5.2.1)
 __Based on:__ JSPWiki caching patterns with provider architecture
 
 ---
@@ -59,8 +59,8 @@ ngdpbase has __two distinct caching layers__ that serve different purposes. Cach
 
 __Opportunistic memoization__, TTL-based, pluggable backends.
 
-- __What it caches__: result-of-computation values that benefit from temporary memoization — rendered HTML, policy decisions, ACL parses, search results, etc.
-- __Lifetime__: TTL-bounded (default 300s). Auto-evicted on expiry; explicitly invalidated on data changes.
+- __What it caches__: only the markup parser's regions use it today — `MarkupParser-ParseResults` (a page's rendered HTML), `MarkupParser-HandlerResults` (interwiki links and wiki styles), `MarkupParser-Patterns` and `MarkupParser-Variables`. Nothing caches policy decisions, ACL parses or search results here.
+- __Lifetime__: TTL-bounded (default 300s). There is no invalidation on page saves, role changes or configuration changes. The one exception is a footnote or comment change, which flushes every parse result (`WikiRoutes.flushPluginCaches`).
 - __Backend__: pluggable — `NodeCacheProvider` (in-memory, current default), `NullCacheProvider` (no-op for tests/disabled), planned `RedisCacheProvider` for multi-instance deployments.
 - __Topology__: in-process or remote.
 - __API__: `engine.getManager('CacheManager').region('foo').get/set/del/...`.
@@ -86,13 +86,22 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 |---|---|---|
 | Purpose | Opportunistic memoization | Source-of-truth in-memory copy |
 | Lifetime | TTL (default 300s) | Process lifetime |
-| Invalidation | TTL expiry + manual `clear()` | Explicit on every write (savePage / deletePage / rename) |
+| Invalidation | TTL expiry; a footnote/comment change flushes all parse results | Explicit on every write (savePage / deletePage / rename) |
 | Backend | Pluggable (`NodeCacheProvider` / `NullCacheProvider` / future `RedisCacheProvider`) | Plain JS `Map` / `Object`; sometimes disk-persisted |
 | Behavior on miss | Recompute and cache | Either impossible or fall through to a one-off disk read |
 | Topology | In-process or remote | Always in-process (ES being the exception by design) |
 | Documented here | ✅ Layer 1 sections | Inventory in [Provider-level structural caches](#provider-level-structural-caches) |
 
-> __Quick rule of thumb__: if the value would be expensive to recompute and is fine to be slightly stale (rendered HTML, policy decisions), it goes in a CacheManager region. If the value *is* the lookup table you need to serve a request synchronously (which page exists, what's its frontmatter, what tokens does it contain for search), it lives in a provider-level structural cache.
+> __Quick rule of thumb__: a cached value must be keyed by every input it was computed from. A value that depends on anything outside its key is wrong for up to the TTL after that input changes; that is a defect, not "slightly stale". If the value *is* the lookup table you need to serve a request synchronously (which page exists, what's its frontmatter, what tokens does it contain for search), it lives in a provider-level structural cache.
+
+### Known gap: the parse-result cache key ([#1751](https://github.com/jwilleke/ngdpbase/issues/1751))
+
+`MarkupParser.generateCacheKey` keys a rendered page by its text, page name, the viewer's username, the query string and the viewer's date/locale preferences. Everything else a page renders is outside the key, and can be stale for up to `ngdpbase.markup.cache.parse-results.ttl` (300 s):
+
+- __Permission-filtered content.__ The key holds the username, not the roles. After a role is revoked, an `[{Index}]` listing or a `<wiki:Include>` the person had cached still shows pages they can no longer open (confirmed on a live instance; the page itself answers 403 at once).
+- Plugins that read manager data (RecentChanges, TotalPages, Index, ReferringPages, UndefinedPages, Search, Attachments, add-on plugins such as a ledger), variables not in the text, whether a linked page exists, an included page's own edits, and configuration values a page shows.
+
+[#1751](https://github.com/jwilleke/ngdpbase/issues/1751) makes a cached render depend on every input it reads, with data versions from [#1752](https://github.com/jwilleke/ngdpbase/pull/1752).
 
 ---
 
