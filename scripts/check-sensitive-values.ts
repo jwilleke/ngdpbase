@@ -31,7 +31,7 @@ const files = [
 
 const configs = files.map((file) => ({ file, values: JSON.parse(readFileSync(join(root, file), 'utf8')) as Record<string, unknown> }));
 
-// The maps merge per entry, add-ons over core — as ConfigurationManager does.
+// The maps merge per entry, add-ons over core, as at runtime.
 const declared: Record<string, unknown> = {};
 for (const { values } of configs) Object.assign(declared, values[SENSITIVE_VALUES_KEY] ?? {});
 const legacy = configs.map(({ values }) => values[LEGACY_SECRET_KEYS_KEY]).find((v) => v !== undefined) ?? {};
