@@ -262,12 +262,11 @@ __Sign-out__ ends the session here. ngdpbase sessions are server-side, so signin
 
 __Account recovery through a connected identity__ (signing back in with Google after losing a password, which makes the outside account a recovery route) is decided on [#1545](https://github.com/jwilleke/ngdpbase/issues/1545), not here.
 
-__Still open__, on #1743:
+__No move-over of existing Google accounts is needed__ (operator, 2026-10-10: there are no Google-created accounts). It would have mattered because today's Google sign-in recognises a person by verified email and never stored Google's issuer + subject. Under the new rule an account it had created, which has no password, couldn't be recognised and its owner would be locked out.
 
-- Moving existing Google accounts over. Today's Google sign-in matches a person by verified email, among only the no-password accounts it created (`isExternal: true`), and never stores Google's subject. Suggested: on its first Google sign-in after the change, such an account is matched by verified email once, and Google's `iss` + `sub` is stored; from then on, only `iss` + `sub`. jimstest has none (4 accounts, Google sign-in off). Other deployments aren't checked from here.
 Decided (operator, 2026-10-10):
 
-- __Any number of outside identities per account__, for example Ann's Google and her Apple, so she can sign in with either.
+- __Any number of outside identities per account, from configured providers only__ (operator, 2026-10-10), for example Ann's Google and her Apple, so she can sign in with either. Only a provider the admin has configured and enabled can be connected or used to sign in. A connection to a provider that is later disabled or removed is kept but can't sign in, until the provider is enabled again.
 - __Each outside identity belongs to exactly one account.__ Connecting one that's already connected elsewhere is refused. Otherwise "Sign in with Google" couldn't tell whom to sign in.
 - __A separate admin page, "Sign-in providers"__: add, edit, enable or disable a provider (issuer, client id, the environment variable holding the secret, auto-provision), with a Test button that checks discovery answers and the settings are complete. Its own piece of work alongside #1743.
 
