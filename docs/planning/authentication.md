@@ -263,7 +263,9 @@ __Still open__, on #1743:
 
 - Moving existing Google accounts over. Today's Google sign-in matches a person by verified email, among only the no-password accounts it created (`isExternal: true`), and never stores Google's subject. Suggested: on its first Google sign-in after the change, such an account is matched by verified email once, and Google's `iss` + `sub` is stored; from then on, only `iss` + `sub`. jimstest has none (4 accounts, Google sign-in off). Other deployments aren't checked from here.
 - How many connections: suggested many per account, but each outside identity belongs to exactly one account.
-- The admin page to add a provider and test it, and the brand rules for the login-page buttons.
+- The admin page to add a provider and test it.
+
+__Login-page buttons__ (operator, 2026-10-10): each provider's own icon and button, as its brand rules ask, as long as they fit our constraints. That means a local asset, not a script or image loaded from the provider; within the CSP (#1489); readable in light and dark themes; and accessible (a text label, not an icon alone). A provider whose required button doesn't fit gets a plain button with its name.
 
 ---
 
