@@ -213,9 +213,9 @@ __One generic provider.__ The admin configures any OpenID Connect issuer, found 
 | Apple | The client secret is a JWT the server signs with an Apple key and renews within six months. The callback arrives as a POST (`form_post`), so its state cookie and CSRF handling differ. The name is sent only on the first sign-in, and the email may be a private-relay address. No groups. |
 | Microsoft | Personal Microsoft accounts only, through the `consumers` endpoint, whose issuer is fixed. No organisation tenants. No groups. |
 
-Any other OpenID Connect issuer works without a preset, for example Yahoo, LinkedIn, PayPal, Login.gov, or a self-hosted authentik. Not OpenID Connect, so not supported: Facebook on the web, X, Amazon, Discord.
+Any other OpenID Connect issuer works without a preset, for example Yahoo, LinkedIn, PayPal, Login.gov, or a self-hosted authentik. Not OpenID Connect, so not supported: Facebook on the web, X (plain OAuth 2.0 / 1.0a, no ID token; identity comes from its `/2/users/me` API), Amazon, Discord.
 
-__Creating accounts is a setting, per provider and for the whole instance.__ `auto-provision` can be set for the instance and overridden per provider. Off, an outside sign-in only signs in a person who already has an account here. On, it may create the account, through `UserManager.createUser` like every other sign-up. The precedence, and the instance default, are settled on #1743. (Today Google sign-in creates accounts: `ngdpbase.auth.google-oidc.auto-provision` is `true`.)
+__Creating accounts is a setting, per provider and for the whole instance, and the instance always overrides the provider__ (operator, 2026-10-10). `auto-provision` is set for the instance and per provider. Off, an outside sign-in only signs in a person who already has an account here. On, it may create the account, through `UserManager.createUser` like every other sign-up. Whether a provider's own setting still decides when the instance allows account creation, and the instance default, are settled on #1743. (Today Google sign-in creates accounts: `ngdpbase.auth.google-oidc.auto-provision` is `true`.)
 
 __Connecting an identity to an account:__
 
@@ -225,7 +225,9 @@ __Connecting an identity to an account:__
 - __A person can disconnect__ a provider, but not their last way to sign in.
 - __Each change is audited and told to the person__ (identity connected, disconnected, a refused external sign-in), through the account notices of #1699.
 
-__Groups are mapped to roles only by an admin, in configuration__ (per provider, the #1588 receiving-side rule):
+__External providers give no roles__ (operator, 2026-10-10). An outside sign-in says who the person is, never what they may do here. Roles are given only here, by an admin. A provider's groups or roles claims are ignored.
+
+__The one exception is a single "instance provider"__ (operator, 2026-10-10). One provider per instance may be designated as the instance's own identity provider, for example the organisation's self-hosted authentik. Only that provider's groups can give roles, through a mapping an admin writes in configuration:
 
 ```json
 "groups": { "claim": "groups", "map": { "club-board": ["board"] } }
@@ -233,7 +235,9 @@ __Groups are mapped to roles only by an admin, in configuration__ (per provider,
 
 - Groups are read only from the verified ID token. A group that isn't mapped grants nothing.
 - A mapped role is still subject to its `required-aal`.
-- Only self-hosted issuers send groups; Google, Apple and personal Microsoft accounts send none.
+- The site remembers which roles came from the instance provider, kept apart from roles an admin gave by hand. A role is removed when its group no longer comes with the person's sign-in; a hand-given role is never touched.
+- This narrows #1588's receiving side from "every incoming provider" to the instance provider alone.
+- `AuthentikBearerAuthProvider` and `CloudflareAccessAuthProvider` map groups to roles today, through `group-map`, which is empty by default. Under this rule only the instance provider may keep doing that; settled on #1743.
 
 __Sign-in level.__ An external sign-in is AAL1. It counts as more only when the admin trusts that provider's reported `amr` / `acr` (`"amr": ["trust"]`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
 
@@ -251,9 +255,8 @@ __Account recovery through a connected identity__ (signing back in with Google a
 
 __Still open__, on #1743:
 
-- Moving existing Google accounts over: the accounts today's Google sign-in created need their Google identity recorded as connected, or those people are locked out.
+- Moving existing Google accounts over. Today's Google sign-in matches a person by verified email, among only the no-password accounts it created (`isExternal: true`), and never stores Google's subject. Suggested: on its first Google sign-in after the change, such an account is matched by verified email once, and Google's `iss` + `sub` is stored; from then on, only `iss` + `sub`. jimstest has none (4 accounts, Google sign-in off). Other deployments aren't checked from here.
 - How many connections: suggested many per account, but each outside identity belongs to exactly one account.
-- Roles from mapped groups: whether they're re-applied on every sign-in, and how they're kept apart from roles an admin gave by hand.
 - The admin page to add a provider and test it, and the brand rules for the login-page buttons.
 
 ---
