@@ -31,6 +31,7 @@ import {
   parsePlacementParam,
   placementClass,
   resolveManagerFetch,
+  resolveManagerOptions,
   resolveCurrentKeyword,
   simpleSlug
 } from '../pluginFormatters';
@@ -608,6 +609,69 @@ describe('resolveManagerFetch', () => {
   test('returns no-spec when no engine is present', async () => {
     const r = await resolveManagerFetch('TestManager.toMarqueeText()', {});
     expect(r).toEqual({ status: 'no-spec' });
+  });
+
+  test('toFormOptions is not reachable through the text fetch', async () => {
+    const toFormOptions = vi.fn(async () => []);
+    const ctx = makeContext({ M: { toFormOptions } });
+    expect(await resolveManagerFetch('M.toFormOptions()', ctx)).toEqual({ status: 'refused' });
+    expect(toFormOptions).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveManagerOptions — the same convention, for form choices
+// ---------------------------------------------------------------------------
+
+describe('resolveManagerOptions', () => {
+  const makeContext = (managers: Record<string, unknown>, userContext?: unknown) => ({
+    engine: { getManager: (name: string) => managers[name] },
+    userContext
+  });
+
+  test('returns the choices a manager offers, with its args and the viewer', async () => {
+    let received: unknown[] = [];
+    const viewer = { username: 'molly', roles: ['treasurer'] };
+    const ctx = makeContext({
+      LedgerManager: {
+        async toFormOptions(o: Record<string, string>, who: unknown) {
+          received = [o, who];
+          return [{ value: 'general', label: 'General Fund' }];
+        }
+      }
+    }, viewer);
+    const r = await resolveManagerOptions('LedgerManager.toFormOptions(list=funds)', ctx);
+    expect(r).toEqual({ status: 'ok', options: [{ value: 'general', label: 'General Fund' }] });
+    expect(received).toEqual([{ list: 'funds' }, viewer]);
+  });
+
+  test('accepts plain strings and drops anything that is not a choice', async () => {
+    const ctx = makeContext({
+      M: { toFormOptions: async () => ['Cash', { value: 20, label: 'Cheque' }, { label: 'no value' }, null, 7] }
+    });
+    const r = await resolveManagerOptions('M.toFormOptions()', ctx);
+    expect(r).toEqual({ status: 'ok', options: [{ value: 'Cash', label: 'Cash' }, { value: '20', label: 'Cheque' }] });
+  });
+
+  test('a non-array answer is no choices', async () => {
+    const ctx = makeContext({ M: { toFormOptions: async () => 'oops' } });
+    expect(await resolveManagerOptions('M.toFormOptions()', ctx)).toEqual({ status: 'ok', options: [] });
+  });
+
+  test('any method other than toFormOptions is refused, and never called', async () => {
+    const toMarqueeText = vi.fn(async () => 'x');
+    const deleteAll = vi.fn(async () => []);
+    const ctx = makeContext({ M: { toMarqueeText, deleteAll } });
+    expect(await resolveManagerOptions('M.toMarqueeText()', ctx)).toEqual({ status: 'refused' });
+    expect(await resolveManagerOptions('M.deleteAll()', ctx)).toEqual({ status: 'refused' });
+    expect(toMarqueeText).not.toHaveBeenCalled();
+    expect(deleteAll).not.toHaveBeenCalled();
+  });
+
+  test('not-found and no-spec, as for the text fetch', async () => {
+    expect(await resolveManagerOptions('Nope.toFormOptions()', makeContext({}))).toEqual({ status: 'not-found' });
+    expect(await resolveManagerOptions('not a spec', makeContext({}))).toEqual({ status: 'no-spec' });
+    expect(await resolveManagerOptions(undefined, makeContext({}))).toEqual({ status: 'no-spec' });
   });
 });
 

@@ -4,8 +4,12 @@ import { ApiContext } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
 import type NotificationManager from '../../../dist/src/managers/NotificationManager.js';
-import { buildSubmissionValidator } from '../managers/FormsDataManager.js';
+import { v4 as uuidv4 } from 'uuid';
+import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataManager.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
+import type { FormSubmission } from '../managers/FormsDataManager.js';
+import { resolveChoices } from '../managers/fieldOptions.js';
+import { checkSubmitAccess } from '../managers/pageAccess.js';
 
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ok: boolean; error?: string}> };
 
@@ -27,24 +31,32 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         const form = m.getDefinition(formId);
         if (!form) { res.status(404).json({ ok: false, error: `Form '${formId}' not found` }); return; }
 
-        // ── 1. Validate submission fields ──────────────────────────────────
-        const validator = buildSubmissionValidator(form);
         const body = req.body as Record<string, unknown>;
+        const userContext = (req as Request & { userContext?: unknown }).userContext;
+
+        // ── 1. The page the form is on decides who may submit it ───────────
+        const pageName = typeof body['_page'] === 'string' ? body['_page'] : undefined;
+        const access = await checkSubmitAccess(engine, userContext, pageName, formId);
+        if (!access.ok) { res.status(access.status).json({ ok: false, error: access.error }); return; }
+
+        // ── 2. Validate fields; a dropdown value must be one it offered ────
+        const choices = await resolveChoices(engine, form.fields, userContext);
+        const validator = buildSubmissionValidator(form, choices);
         const validationResult = validator.safeParse(body);
         if (!validationResult.success) {
-          res.status(400).json({ ok: false, error: 'Validation failed', fields: validationResult.error.format() });
+          res.status(400).json({ ok: false, error: 'Please correct the marked fields', fields: fieldErrors(validationResult.error) });
           return;
         }
 
-        // ── 2. Time range check ────────────────────────────────────────────
+        // ── 3. Time range check ────────────────────────────────────────────
         const startTime = typeof body['startTime'] === 'string' ? body['startTime'] : undefined;
         const endTime   = typeof body['endTime']   === 'string' ? body['endTime']   : undefined;
         if (startTime && endTime && endTime <= startTime) {
-          res.status(400).json({ ok: false, error: 'End time must be later than start time' });
+          res.status(400).json({ ok: false, error: 'End time must be later than start time', fields: { endTime: 'End time must be later than start time' } });
           return;
         }
 
-        // ── 3. Build submission ────────────────────────────────────────────
+        // ── 4. Build submission ────────────────────────────────────────────
         const ctx = ApiContext.from(req, engine);
         const submittedBy = ctx.username ?? 'anonymous';
 
@@ -70,24 +82,29 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           }
         }
 
-        // ── 4. Save submission ─────────────────────────────────────────────
-        const submission = await m.saveSubmission({
+        const submission: FormSubmission = {
+          id: uuidv4(),
           formId,
           submittedAt: new Date().toISOString(),
           submittedBy,
           onBehalfOf,
           data: validationResult.data,
           status: 'pending'
-        });
+        };
 
-        // ── 5. Call handler ────────────────────────────────────────────────
+        // ── 5. Handler first: a refused submission leaves nothing behind ───
         const handlerResult = await addon.callHandler(formId, submission, { engine, req });
         if (!handlerResult.ok) {
-          res.status(409).json({ ok: false, error: handlerResult.error ?? 'Handler rejected submission' });
+          const { ok: _ok, error, ...rest } = handlerResult as { ok: boolean; error?: string; fields?: unknown };
+          const fields = rest.fields && typeof rest.fields === 'object' ? rest.fields : undefined;
+          res.status(409).json({ ok: false, error: error ?? 'Handler rejected submission', ...(fields ? { fields } : {}) });
           return;
         }
 
-        // ── 6. Email confirmation (fire-and-forget) ────────────────────────
+        // ── 6. Keep the submission, unless the form says the handler's record is the record
+        if (form.store !== false) await m.saveSubmission(submission);
+
+        // ── 7. Email confirmation (fire-and-forget) ────────────────────────
         const emailManager = engine.getManager<EmailManager>('EmailManager');
         const submitterEmail = typeof body['email'] === 'string'
           ? body['email']
@@ -127,7 +144,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
           emailManager.sendTo(submitterEmail, subject, text).catch(() => {});
         }
 
-        // ── 7. In-app notification (fire-and-forget) ───────────────────────
+        // ── 8. In-app notification (fire-and-forget) ───────────────────────
         const nm = engine.getManager<NotificationManager>('NotificationManager');
         if (nm) {
           nm.createNotification({

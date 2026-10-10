@@ -23,7 +23,19 @@
  *   formsAddon.registerHandler('my-form', async (submission, context) => {
  *     // ... do work ...
  *     return { ok: true };
+ *     // or refuse, with a message per field shown next to it:
+ *     // return { ok: false, error: 'Please correct the marked fields', fields: { amount: 'Too large' } };
  *   });
+ *
+ * The handler runs before the submission is stored; a refused submission leaves
+ * nothing behind. A form with "store": false keeps no submission file at all —
+ * the handler's own record is the record.
+ *
+ * Who may submit: the page the form is on (managers/pageAccess.ts). The form
+ * posts its page name; the submit needs read access to that page, the page must
+ * carry this form, and the viewer needs `form-submit` on it — the page's own
+ * `access: { form-submit: [...] }` when set, else site policy. This add-on's
+ * default policy grants `form-submit` to everyone, as before.
  */
 
 import path from 'path';
@@ -47,6 +59,8 @@ const __dirname = path.dirname(__filename);
 export interface HandlerResult {
   ok: boolean;
   error?: string;
+  /** On a refusal: one message per field name, shown next to the field. */
+  fields?: Record<string, string>;
   [key: string]: unknown;
 }
 

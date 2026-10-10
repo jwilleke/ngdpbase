@@ -3,10 +3,12 @@ import { Router, type Request, type Response } from 'express';
 import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
+import viewLocals from './viewLocals.js';
 import type { SubmissionStatus } from '../managers/FormsDataManager.js';
 
 export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router {
   const router = Router();
+  router.use(viewLocals(engine));
 
   function fdm(): FormsDataManager | undefined {
     return engine.getManager<FormsDataManager>('FormsDataManager');
