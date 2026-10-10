@@ -24,7 +24,6 @@ export interface HandlerOptions {
   description?: string;
   dependencies?: Array<string | DependencySpec>;
   throwOnError?: boolean;
-  cacheEnabled?: boolean;
 }
 
 /**
@@ -208,7 +207,6 @@ abstract class BaseSyntaxHandler {
       version: '1.0.0',
       description: '',
       dependencies: [],
-      cacheEnabled: false,
       ...options
     };
     this.pattern = this.compilePattern(pattern);

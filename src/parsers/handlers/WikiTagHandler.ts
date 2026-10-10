@@ -1,6 +1,5 @@
 import BaseSyntaxHandler, { InitializationContext } from './BaseSyntaxHandler.js';
 import ParseContext from '../context/ParseContext.js';
-import * as crypto from 'crypto';
 import logger from '../../utils/logger.js';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager.js';
 
@@ -50,8 +49,6 @@ interface WikiEngine {
  */
 interface MarkupParser {
   getHandlerConfig(name: string): HandlerConfig;
-  getCachedHandlerResult(handlerId: string, contentHash: string, contextHash: string): Promise<string | null>;
-  cacheHandlerResult(handlerId: string, contentHash: string, contextHash: string, result: string): Promise<void>;
   parse(content: string, context: Record<string, unknown>): Promise<string>;
 }
 
@@ -223,20 +220,7 @@ class WikiTagHandler extends BaseSyntaxHandler {
     // Parse tag attributes
     const attributes = this.parseTagAttributes(attributeString);
 
-    // Check cache for tag result if caching enabled
-    const contentHash = this.generateContentHash(matchInfo.fullMatch);
-    const contextHash = this.generateContextHash(context);
-
-    if (this.options.enabled) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        const cachedResult = await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
-        if (cachedResult) {
-          return cachedResult;
-        }
-      }
-    }
-
+    // No handler-level result cache (#1751): the page cache is the only render cache.
     // Route to specific tag handler
     let result: string;
     switch (tagName) {
@@ -251,14 +235,6 @@ class WikiTagHandler extends BaseSyntaxHandler {
       break;
     default:
       throw new Error(`No handler implemented for WikiTag: ${tagName}`);
-    }
-
-    // Cache the result if caching enabled
-    if (this.options.enabled && result) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        await markupParser.cacheHandlerResult(this.handlerId, contentHash, contextHash, result);
-      }
     }
 
     return result || '';
@@ -646,34 +622,6 @@ class WikiTagHandler extends BaseSyntaxHandler {
   }
 
   /**
-   * Generate content hash for caching
-   * @param content - Content to hash
-   * @returns Content hash
-   */
-  private generateContentHash(content: string): string {
-    return crypto.createHash('md5').update(content).digest('hex');
-  }
-
-  /**
-   * Generate context hash for caching
-   * @param context - Parse context
-   * @returns Context hash
-   */
-  private generateContextHash(context: WikiTagParseContext): string {
-    const contextData = {
-      pageName: context.wikiContext?.pageName,
-      userName: context.userName,
-      authenticated: context.isAuthenticated(),
-      roles: context.getUserRoles(),
-      // Include inclusion stack in hash to handle recursive includes
-      inclusionStack: (context.getMetadata('inclusionStack') as string[] | undefined) || [],
-      timeBucket: Math.floor(Date.now() / 300000) // 5-minute buckets
-    };
-
-    return crypto.createHash('md5').update(JSON.stringify(contextData)).digest('hex');
-  }
-
-  /**
    * Get supported WikiTag patterns
    * @returns Array of supported patterns
    */
@@ -725,7 +673,6 @@ class WikiTagHandler extends BaseSyntaxHandler {
         'Role and group validation',
         'Complex boolean conditions',
         'Recursive inclusion prevention',
-        'Performance caching',
         'Security validation'
       ]
     };

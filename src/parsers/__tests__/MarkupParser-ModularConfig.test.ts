@@ -39,8 +39,6 @@ class ModularConfigurationManager {
       // Cache configuration (modular)
       'ngdpbase.markup.cache.parse-results.enabled': true,
       'ngdpbase.markup.cache.parse-results.ttl': 300,
-      'ngdpbase.markup.cache.handler-results.enabled': true,
-      'ngdpbase.markup.cache.handler-results.ttl': 600,
       
       // Performance configuration (modular)
       'ngdpbase.markup.performance.monitoring': true,
@@ -287,25 +285,18 @@ describe('MarkupParser Modular Configuration System', () => {
   });
 
   describe('Cache Configuration Modularity', () => {
-    test('should configure cache strategies individually', async () => {
+    test('should configure the parse-results cache', async () => {
       const cacheConfig = {
         'ngdpbase.markup.cache.parse-results.enabled': true,
-        'ngdpbase.markup.cache.parse-results.ttl': 900,           // Custom TTL
-        'ngdpbase.markup.cache.handler-results.enabled': false,   // Disable handler cache
-        'ngdpbase.markup.cache.patterns.enabled': true,
-        'ngdpbase.markup.cache.variables.enabled': false,       // Disable variable cache
-        'ngdpbase.markup.cache.enable-warmup': false              // Disable warmup
+        'ngdpbase.markup.cache.parse-results.ttl': 900           // Custom TTL
       };
       
       const engine = new ModularMockEngine(cacheConfig);
       const parser = new MarkupParser(engine);
       await parser.initialize();
       
-      // Should have selective cache strategies
-      expect(parser.cacheStrategies).toHaveProperty('parseResults');
-      expect(parser.cacheStrategies).toHaveProperty('patterns');
-      expect(parser.cacheStrategies).not.toHaveProperty('handlerResults'); // Disabled
-      expect(parser.cacheStrategies).not.toHaveProperty('variables');      // Disabled
+      // #1751: the parse-results region is the only cache strategy
+      expect(Object.keys(parser.cacheStrategies)).toEqual(['parseResults']);
       
       // Should use custom TTL
       expect(parser.config.cache.parseResults.ttl).toBe(900);
@@ -415,8 +406,7 @@ describe('MarkupParser Modular Configuration System', () => {
         'ngdpbase.markup.handlers.form.enabled': false,      // Disable forms
         'ngdpbase.style.security.allow-inline-css': false,     // No inline CSS
         'ngdpbase.style.custom-classes.enabled': false,       // No custom classes
-        'ngdpbase.style.predefined.text': 'text-muted',      // Minimal styling
-        'ngdpbase.markup.cache.handler-results.enabled': false // No handler caching
+        'ngdpbase.style.predefined.text': 'text-muted'       // Minimal styling
       };
       
       const engine = new ModularMockEngine(securityConfig);

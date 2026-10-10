@@ -59,7 +59,7 @@ ngdpbase has __two distinct caching layers__ that serve different purposes. Cach
 
 __Opportunistic memoization__, TTL-based, pluggable backends.
 
-- __What it caches__: only the markup parser's regions use it today — `MarkupParser-ParseResults` (a page's rendered HTML), `MarkupParser-HandlerResults` (interwiki links and wiki styles), `MarkupParser-Patterns` and `MarkupParser-Variables`. Nothing caches policy decisions, ACL parses or search results here.
+- __What it caches__: only the markup parser uses it today, through one region — `MarkupParser-ParseResults` (a page's rendered HTML). The handler-results, patterns and variables regions were removed in #1751. Nothing caches policy decisions, ACL parses or search results here.
 - __Lifetime__: TTL-bounded (default 300s). The page cache also follows data versions: an entry is served only while every topic it read is unchanged, and `PageManager`, `ConfigurationManager`, `UserManager`, `AttachmentManager` and `MediaManager` bump theirs after each write (#1751).
 - __Backend__: pluggable — `NodeCacheProvider` (in-memory, current default), `NullCacheProvider` (no-op for tests/disabled), planned `RedisCacheProvider` for multi-instance deployments.
 - __Topology__: in-process or remote.

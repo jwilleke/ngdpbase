@@ -84,7 +84,7 @@ These are things you do __not__ need to build — they are fully implemented, te
 - Variable substitution (`{$pagename}`, `{$currentuser}`, etc.)
 - Link resolution with broken-link detection
 - XSS-safe output — all user content is sanitized
-- Parse result, handler result, and pattern caching (all configurable)
+- Parse result caching (configurable), invalidated by data versions
 
 ### Plugin System
 

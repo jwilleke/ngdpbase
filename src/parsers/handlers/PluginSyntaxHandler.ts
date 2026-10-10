@@ -1,5 +1,4 @@
 import BaseSyntaxHandler, { InitializationContext, ParseContext } from './BaseSyntaxHandler.js';
-import * as crypto from 'crypto';
 import logger from '../../utils/logger.js';
 
 /**
@@ -42,8 +41,6 @@ interface WikiEngine {
  */
 interface MarkupParser {
   getHandlerConfig(name: string): HandlerConfig;
-  getCachedHandlerResult(handlerId: string, contentHash: string, contextHash: string): Promise<string | null>;
-  cacheHandlerResult(handlerId: string, contentHash: string, contextHash: string, result: string): Promise<void>;
 }
 
 /**
@@ -240,7 +237,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
   }
 
   /**
-   * Handle a specific plugin match with caching support
+   * Handle a specific plugin match
    * @param matchInfo - Plugin match information
    * @param context - Parse context
    * @returns Plugin output HTML
@@ -257,19 +254,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
       throw new Error(`Invalid parameters for ${pluginName}: ${validation.errors.join(', ')}`);
     }
 
-    // Check cache for plugin result if caching enabled
-    const contentHash = this.generateContentHash(matchInfo.fullMatch);
-    const contextHash = this.generateContextHash(context);
-
-    if (this.options.enabled) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        const cachedResult = await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
-        if (cachedResult) {
-          return cachedResult;
-        }
-      }
-    }
+    // No handler-level result cache (#1751): the page cache is the only render cache.
 
     // Get PluginManager
     const pluginManager = context.getManager('PluginManager') as PluginManager | undefined;
@@ -312,42 +297,7 @@ class PluginSyntaxHandler extends BaseSyntaxHandler {
 
     const result = await Promise.race([executionPromise, timeoutPromise]) || '';
 
-    // Cache the result if caching enabled
-    if (this.options.enabled && result) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        await markupParser.cacheHandlerResult(this.handlerId, contentHash, contextHash, result);
-      }
-    }
-
     return result;
-  }
-
-  /**
-   * Generate content hash for caching
-   * @param content - Content to hash
-   * @returns Content hash
-   */
-  private generateContentHash(content: string): string {
-    return crypto.createHash('md5').update(content).digest('hex');
-  }
-
-  /**
-   * Generate context hash for caching
-   * @param context - Parse context
-   * @returns Context hash
-   */
-  private generateContextHash(context: PluginParseContext): string {
-    const contextData = {
-      pageName: context.wikiContext?.pageName,
-      userName: context.userName,
-      authenticated: context.isAuthenticated?.() ?? false,
-      roles: context.getUserRoles?.() ?? [],
-      // Round timestamp to 5-minute buckets for cache efficiency
-      timeBucket: Math.floor(Date.now() / 300000)
-    };
-
-    return crypto.createHash('md5').update(JSON.stringify(contextData)).digest('hex');
   }
 
   /**

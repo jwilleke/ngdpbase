@@ -46,13 +46,6 @@ class MockAdvancedConfigurationManager {
       'ngdpbase.markup.cache-ttl': 300,
       'ngdpbase.markup.cache.parse-results.enabled': true,
       'ngdpbase.markup.cache.parse-results.ttl': 300,
-      'ngdpbase.markup.cache.handler-results.enabled': true,
-      'ngdpbase.markup.cache.handler-results.ttl': 600,
-      'ngdpbase.markup.cache.patterns.enabled': true,
-      'ngdpbase.markup.cache.patterns.ttl': 3600,
-      'ngdpbase.markup.cache.variables.enabled': true,
-      'ngdpbase.markup.cache.variables.ttl': 900,
-      'ngdpbase.markup.cache.enable-warmup': true,
       'ngdpbase.markup.cache.metrics-enabled': true,
       'ngdpbase.markup.performance.monitoring': true,
       'ngdpbase.markup.performance.alert-thresholds.parse-time': 100,
@@ -136,39 +129,29 @@ describe('MarkupParser Advanced Caching and Performance', () => {
   });
 
   describe('Advanced Cache Initialization', () => {
-    test('should initialize multiple cache strategies', () => {
-      expect(markupParser.cacheStrategies).toHaveProperty('parseResults');
-      expect(markupParser.cacheStrategies).toHaveProperty('handlerResults');
-      expect(markupParser.cacheStrategies).toHaveProperty('patterns');
-      expect(markupParser.cacheStrategies).toHaveProperty('variables');
+    test('should initialize the one page cache region (#1751)', () => {
+      expect(Object.keys(markupParser.cacheStrategies)).toEqual(['parseResults']);
     });
 
-    test('should initialize cache metrics for each strategy', () => {
-      expect(markupParser.metrics.cacheMetrics.size).toBe(4);
+    test('should initialize cache metrics for the parse-results strategy', () => {
+      expect(markupParser.metrics.cacheMetrics.size).toBe(1);
       expect(markupParser.metrics.cacheMetrics.has('parseResults')).toBe(true);
-      expect(markupParser.metrics.cacheMetrics.has('handlerResults')).toBe(true);
-      expect(markupParser.metrics.cacheMetrics.has('patterns')).toBe(true);
-      expect(markupParser.metrics.cacheMetrics.has('variables')).toBe(true);
     });
 
-    test('should respect individual cache strategy configuration', async () => {
-      const configWithDisabledHandlers = new MockAdvancedConfigurationManager({
-        'ngdpbase.markup.cache.handler-results.enabled': false,
-        'ngdpbase.markup.cache.patterns.enabled': false
+    test('should respect parse-results cache configuration', async () => {
+      const configWithoutParseCache = new MockAdvancedConfigurationManager({
+        'ngdpbase.markup.cache.parse-results.enabled': false
       });
       
       const customEngine = new MockAdvancedWikiEngine({
-        ConfigurationManager: configWithDisabledHandlers,
+        ConfigurationManager: configWithoutParseCache,
         CacheManager: mockCacheManager
       });
       
       const customParser = new MarkupParser(customEngine);
       await customParser.initialize();
       
-      expect(customParser.cacheStrategies).toHaveProperty('parseResults');
-      expect(customParser.cacheStrategies).toHaveProperty('variables');
-      expect(customParser.cacheStrategies).not.toHaveProperty('handlerResults');
-      expect(customParser.cacheStrategies).not.toHaveProperty('patterns');
+      expect(customParser.cacheStrategies).not.toHaveProperty('parseResults');
       
       await customParser.shutdown();
     });
@@ -261,41 +244,6 @@ describe('MarkupParser Advanced Caching and Performance', () => {
     });
   });
 
-  describe('Cache Warmup', () => {
-    test('should perform cache warmup when enabled', async () => {
-      // Cache warmup happens during initialization
-      const patternsCache = markupParser.cacheStrategies.patterns;
-      const variablesCache = markupParser.cacheStrategies.variables;
-      
-      // Check that patterns were cached
-      expect(patternsCache.set).toHaveBeenCalled();
-      
-      // Check that variables were attempted to be cached
-      // Should succeed with our mock VariableManager
-      expect(variablesCache.set).toHaveBeenCalledTimes(5); // 5 common variables cached
-    });
-
-    test('should skip warmup when disabled', async () => {
-      const configWithoutWarmup = new MockAdvancedConfigurationManager({
-        'ngdpbase.markup.cache.enable-warmup': false
-      });
-      
-      const customEngine = new MockAdvancedWikiEngine({
-        ConfigurationManager: configWithoutWarmup,
-        CacheManager: new MockAdvancedCacheManager()
-      });
-      
-      const customParser = new MarkupParser(customEngine);
-      await customParser.initialize();
-      
-      // Cache should be initialized but no warmup calls
-      const patternsCache = customParser.cacheStrategies.patterns;
-      expect(patternsCache.set).not.toHaveBeenCalled();
-      
-      await customParser.shutdown();
-    });
-  });
-
   describe('Performance Alerts', () => {
     beforeEach(() => {
       // Lower thresholds for testing
@@ -357,7 +305,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
   });
 
   describe('Cache Operations', () => {
-    test('should use different TTLs for different cache strategies', async () => {
+    test('should store parse results with the parse-results TTL', async () => {
       const content = 'Test content';
       await markupParser.parse(content);
       
@@ -369,47 +317,12 @@ describe('MarkupParser Advanced Caching and Performance', () => {
         { ttl: 300 }
       );
     });
-
-    test('should provide cache methods for handler results', async () => {
-      const handlerId = 'TestHandler';
-      const contentHash = 'abc123';
-      const contextHash = 'def456';
-      const result = 'cached result';
-      
-      // Test caching handler result
-      await markupParser.cacheHandlerResult(handlerId, contentHash, contextHash, result);
-      
-      const handlerCache = markupParser.cacheStrategies.handlerResults;
-      expect(handlerCache.set).toHaveBeenCalledWith(
-        `handler:${handlerId}:${contentHash}:${contextHash}`,
-        result,
-        { ttl: 600 }
-      );
-    });
-
-    test('should retrieve cached handler results', async () => {
-      const handlerId = 'TestHandler';
-      const contentHash = 'abc123';
-      const contextHash = 'def456';
-      
-      // Mock cache to return result
-      const handlerCache = markupParser.cacheStrategies.handlerResults;
-      handlerCache.get.mockResolvedValueOnce('cached handler result');
-      
-      const result = await markupParser.getCachedHandlerResult(handlerId, contentHash, contextHash);
-      
-      expect(result).toBe('cached handler result');
-      expect(handlerCache.get).toHaveBeenCalledWith(`handler:${handlerId}:${contentHash}:${contextHash}`);
-    });
   });
 
   describe('Configuration Flexibility', () => {
     test('should work with minimal cache configuration', async () => {
       const minimalConfig = new MockAdvancedConfigurationManager({
-        'ngdpbase.markup.cache.parse-results.enabled': true,
-        'ngdpbase.markup.cache.handler-results.enabled': false,
-        'ngdpbase.markup.cache.patterns.enabled': false,
-        'ngdpbase.markup.cache.variables.enabled': false
+        'ngdpbase.markup.cache.parse-results.enabled': true
       });
       
       const customEngine = new MockAdvancedWikiEngine({
@@ -457,8 +370,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
   describe('Modular Design', () => {
     test('should allow custom cache TTL configuration', async () => {
       const customTTLConfig = new MockAdvancedConfigurationManager({
-        'ngdpbase.markup.cache.parse-results.ttl': 1800,
-        'ngdpbase.markup.cache.handler-results.ttl': 3600
+        'ngdpbase.markup.cache.parse-results.ttl': 1800
       });
       
       const customEngine = new MockAdvancedWikiEngine({
@@ -470,7 +382,6 @@ describe('MarkupParser Advanced Caching and Performance', () => {
       await customParser.initialize();
       
       expect(customParser.config.cache.parseResults.ttl).toBe(1800);
-      expect(customParser.config.cache.handlerResults.ttl).toBe(3600);
       
       await customParser.shutdown();
     });

@@ -56,14 +56,6 @@ class MockMarkupParser {
     return content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   }
   
-  getCachedHandlerResult() {
-    return null; // No cached results for testing
-  }
-  
-  cacheHandlerResult() {
-    return Promise.resolve();
-  }
-  
   getHandlerConfig(type) {
     return { enabled: true, priority: 95 };
   }
@@ -452,43 +444,6 @@ describe('WikiTagHandler', () => {
       
       expect(result).toContain('<!-- WikiTag Error: Include');
       expect(result).toContain('Access denied');
-    });
-  });
-
-  describe('Performance and Caching', () => {
-    test('should generate consistent content and context hashes', () => {
-      const content = '<wiki:If test="authenticated">content</wiki:If>';
-      
-      const hash1 = handler.generateContentHash(content);
-      const hash2 = handler.generateContentHash(content);
-      
-      expect(hash1).toBe(hash2);
-      
-      const contextHash1 = handler.generateContextHash(context);
-      const contextHash2 = handler.generateContextHash(context);
-      
-      expect(contextHash1).toBe(contextHash2);
-    });
-
-    test('should generate different hashes for different content', () => {
-      const content1 = '<wiki:If test="authenticated">content1</wiki:If>';
-      const content2 = '<wiki:If test="authenticated">content2</wiki:If>';
-      
-      const hash1 = handler.generateContentHash(content1);
-      const hash2 = handler.generateContentHash(content2);
-      
-      expect(hash1).not.toBe(hash2);
-    });
-
-    test('should include inclusion stack in context hash', () => {
-      const context1 = createMockContext();
-      const context2 = createMockContext();
-      context2.setMetadata('inclusionStack', ['ParentPage']);
-      
-      const hash1 = handler.generateContextHash(context1);
-      const hash2 = handler.generateContextHash(context2);
-      
-      expect(hash1).not.toBe(hash2);
     });
   });
 
