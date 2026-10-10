@@ -35,6 +35,7 @@
 import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
+import { valueLevels, shownValue, type ValueLevel, type ValueViewer } from '../utils/sensitiveValues.js';
 import { categorySource } from '../managers/ValidationManager.js';
 import {
   escapeHtml,
@@ -1068,7 +1069,6 @@ function displaySystemCategories(
 
 // ─── Sensitivity masking ───────────────────────────────────────────────────
 
-const SENSITIVE_KEY_PATTERNS = /secret|password|token|credential/i;
 
 /**
  * Stringify an arbitrary config value for display.
@@ -1097,15 +1097,22 @@ function safeStr(value: unknown, indent?: number): string {
   return JSON.stringify(value, null, indent) ?? '';
 }
 
-function maskIfSensitive(key: string, value: unknown, isAdmin: boolean): string {
-  if (isAdmin) {
-    return value !== undefined && value !== null && value !== '' ? safeStr(value) : '';
-  }
-  if (SENSITIVE_KEY_PATTERNS.test(key)) {
-    const v = value !== undefined && value !== null && value !== '';
-    return v ? '<em class="text-muted">[set]</em>' : '<em class="text-muted">[not set]</em>';
-  }
-  return safeStr(value);
+/**
+ * What a viewer may see of a configuration value (#1750): the declared
+ * `ngdpbase.config.sensitive-values` level, with a name-pattern backstop
+ * (`utils/sensitiveValues.ts`). The one rule for every view in this plugin.
+ */
+async function viewerOf(context: PluginContext): Promise<ValueViewer> {
+  const subject = (context as ExtendedPluginContext).userContext as never;
+  return {
+    sensitive: await subjectMayDo(context.engine, subject, 'admin-read'),
+    secret: await subjectMayDo(context.engine, subject, 'secret-reveal')
+  };
+}
+
+function maskIfSensitive(key: string, value: unknown, levels: Map<string, ValueLevel>, viewer: ValueViewer): string {
+  const shown = shownValue(key, value, levels, viewer);
+  return shown !== undefined && shown !== null && shown !== '' ? safeStr(shown) : '';
 }
 
 // ─── displayPolicies ───────────────────────────────────────────────────────
@@ -1160,7 +1167,7 @@ function displayPolicies(configManager: ConfigurationManager): string {
 
 // ─── displayAuthMethods ────────────────────────────────────────────────────
 
-function displayAuthMethods(configManager: ConfigurationManager, isAdmin: boolean): string {
+function displayAuthMethods(configManager: ConfigurationManager, levels: Map<string, ValueLevel>, viewer: ValueViewer): string {
   const all = configManager.getAllProperties();
 
   // Group keys by method name (first segment after ngdpbase.auth.)
@@ -1203,7 +1210,7 @@ function displayAuthMethods(configManager: ConfigurationManager, isAdmin: boolea
 
     for (const [subkey, value] of Object.entries(props).sort()) {
       if (subkey === 'enabled') continue; // shown in header
-      const displayVal = maskIfSensitive(subkey, value, isAdmin);
+      const displayVal = maskIfSensitive(subkey, value, levels, viewer);
       html += `        <tr><td style="width:40%"><code>${escapeHtml(subkey)}</code></td>`;
       html += `<td>${displayVal !== '' ? displayVal : '<em class="text-muted">—</em>'}</td></tr>\n`;
     }
@@ -1217,7 +1224,7 @@ function displayAuthMethods(configManager: ConfigurationManager, isAdmin: boolea
     html += '    <div class="card-header"><strong><i class="fas fa-cog me-1"></i>General</strong></div>\n';
     html += '    <div class="table-responsive"><table class="table table-sm mb-0"><tbody>\n';
     for (const [k, v] of Object.entries(topLevel).sort()) {
-      const displayVal = maskIfSensitive(k, v, isAdmin);
+      const displayVal = maskIfSensitive(k, v, levels, viewer);
       html += `      <tr><td style="width:40%"><code>${escapeHtml(k)}</code></td>`;
       html += `<td>${displayVal !== '' ? displayVal : '<em class="text-muted">—</em>'}</td></tr>\n`;
     }
@@ -1342,7 +1349,10 @@ function displayConfigValue(
   noheader = false,
   pageSize = 0,
   page = 1,
-  pageName = ''
+  pageName = '',
+  // #1750: what this viewer may see — every value below goes through shownValue.
+  levels: Map<string, ValueLevel> = new Map(),
+  viewer: ValueViewer = { sensitive: false, secret: false }
 ): string {
   if (!key) {
     return '<p class="error">Missing required parameter: key</p><p class="text-muted">Usage: [{ConfigAccessor key=\'ngdpbase.some.key\'}]</p>';
@@ -1373,7 +1383,7 @@ function displayConfigValue(
       const processedAfter = processEscapeSequences(afterStr);
 
       const items = matchingKeys.map(k => {
-        const val = allProps[k];
+        const val = shownValue(k, allProps[k], levels, viewer);
         const valStr = safeStr(val);
         return processedBefore + escapeHtml(valStr) + processedAfter;
       }).join('');
@@ -1414,7 +1424,7 @@ function displayConfigValue(
     html += '          <tbody>\n';
 
     for (const matchKey of displayKeys) {
-      const value = allProps[matchKey];
+      const value = shownValue(matchKey, allProps[matchKey], levels, viewer);
       const displayValue = safeStr(value, 2);
 
       html += '            <tr>\n';
@@ -1437,7 +1447,7 @@ function displayConfigValue(
   }
 
   // Single key lookup (no wildcard)
-  const value = configManager.getProperty(key);
+  const value = shownValue(key, configManager.getProperty(key), levels, viewer);
 
   if (value === undefined || value === null) {
     if (valueonly) {
@@ -1689,7 +1699,8 @@ const ConfigAccessorPlugin: SimplePlugin = {
 
       // If key is provided, handle config value(s)
       if (key) {
-        return displayConfigValue(configManager, key, valueonly, before, after, caption, forceTable, noheader, pageSize, page, context.pageName);
+        return displayConfigValue(configManager, key, valueonly, before, after, caption, forceTable, noheader, pageSize, page, context.pageName,
+          valueLevels((k, d) => configManager.getProperty(k, d)), await viewerOf(context));
       }
 
       // Otherwise handle type-based display (type is guaranteed non-null here due to check above)
@@ -1727,8 +1738,7 @@ const ConfigAccessorPlugin: SimplePlugin = {
 
       case 'authmethods': {
         // #1198: policy, not a role name.
-        const isAdmin = await subjectMayDo(context.engine, (context as ExtendedPluginContext).userContext as never, 'admin-system');
-        return displayAuthMethods(configManager, isAdmin);
+        return displayAuthMethods(configManager, valueLevels((k, d) => configManager.getProperty(k, d)), await viewerOf(context));
       }
 
       case 'features':

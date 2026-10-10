@@ -1,7 +1,7 @@
 ---
 name: Configuration developer guide
 description: How to add or change a configuration key — one reader, three merge layers, maps not arrays
-dateModified: 2026-09-06
+dateModified: 2026-10-10
 category: guides
 relatedModules: [ConfigurationManager]
 ---
@@ -18,7 +18,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 - Maps merge per entry. Arrays of objects merge by `id` (or `authproviderid`). A plain array replaces wholesale — do not use a plain array for a catalog an addon or operator must extend.
 - A set of names is a map of `"name": true` ([#1612](https://github.com/jwilleke/ngdpbase/issues/1612)). A later layer adds a name with `true`, removes one with `false`, or adds several with a plain list of names. Read it with `enabledEntries()` from `src/utils/configFiles.ts`, which accepts either form.
 - Environment-owned keys are declared in `ngdpbase.config.env-keys`. The admin screen must not persist edits that cannot take effect.
-- Secrets are named in `ngdpbase.config.secret-keys`. They are reported as set, never rendered.
+- Which values may be shown is declared once, in `ngdpbase.config.sensitive-values` (#1750; `ngdpbase.config.secret-keys` is still read as an alias, with a startup warning). Each key is `secret` or `sensitive`. A `secret` value is shown only to a holder of `secret-reveal` and never logged or audited. A `sensitive` value (the access policies, storage paths, outside services) is shown only to a holder of `admin-read`. An unlisted key whose name looks like a secret and whose value is a string counts as `secret`. Everything that renders configuration (ConfigAccessor, VariablesPlugin, the admin screen, log redaction, the audit log) reads this list through `utils/sensitiveValues.ts`, and hidden values are replaced on the server, so they never reach page source. An add-on declares its own entries in its `config/default-config.json`; the map merges per entry.
 
 ## How to add a key
 
@@ -26,11 +26,18 @@ How to add or change a configuration key. Config selects and parameterises; it n
 2. If it is env-owned, add it to `ngdpbase.config.env-keys` and `.env.example`.
 3. Read it with `ConfigurationManager.getProperty(key, shippedDefault)`.
 4. If it is a security-related setting the instance should report, add it to `ngdpbase.security.posture` (see [security-posture.md](../security-posture.md) D15/D16). That change is an audited event.
-5. Document it next to the module that consumes it (`docs/managers/…`), not as a second catalog.
+5. Decide who may see its value, every time, and record it in `ngdpbase.config.sensitive-values` (an add-on in its own `config/default-config.json`):
+   - `secret` — it lets someone act as the instance or a user: a password, salt, signing key, client secret, API key or token.
+   - `sensitive` — it tells how the instance is run: a storage path, an outside service's address or identifier, the access policies.
+   - neither — leave it off the list; anyone who can read a page may see it. A key whose name looks like a secret (secret, password, token, credential, api-key, private-key) cannot be "neither": rename it, or declare it.
+
+   `npm run lint:sensitive` (part of `npm run lint`) fails on a secret-looking string setting that isn't declared; the other two choices are yours to make.
+6. Document it next to the module that consumes it (`docs/managers/…`), not as a second catalog.
 
 ## How you know you are done
 
 - The key appears in `config/app-default-config.json`.
+- Its level is decided: declared in `ngdpbase.config.sensitive-values`, or deliberately left off because anyone may see it. `npm run lint:sensitive` passes.
 - No new `JSON.parse` of a config file outside `ConfigurationManager` / `src/utils/configFiles.ts`.
 - `npm test -- src/managers/__tests__/ConfigurationManager`
 

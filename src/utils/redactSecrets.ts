@@ -1,7 +1,7 @@
 /**
  * redactSecrets — keep configured secrets out of log output (#1030).
  *
- * `ngdpbase.config.secret-keys` already names the values that must never be
+ * `ngdpbase.config.sensitive-values` (its `secret` entries) already names the values that must never be
  * shown; it drives masking on `/admin/configuration`. Nothing applied that list
  * to the logs, so a secret reaching a log line was written in the clear — to
  * disk, and to `/admin/logs`, which `admin-read` can open. `app.ts` printed the
@@ -38,7 +38,7 @@
  */
 import { format } from 'winston';
 import type { Logform } from 'winston';
-import { enabledEntries } from './configFiles.js';
+import { secretKeys } from './sensitiveValues.js';
 
 /**
  * Values shorter than this are never redacted.
@@ -51,7 +51,6 @@ import { enabledEntries } from './configFiles.js';
 const MIN_SECRET_LENGTH = 8;
 
 /** The config key naming which other keys hold secrets. */
-const SECRET_KEYS_KEY = 'ngdpbase.config.secret-keys';
 
 interface Redaction {
   /** Config key the value came from — named in the replacement marker. */
@@ -126,7 +125,7 @@ export function refreshRedactedSecrets(configManager: SecretConfigReader | null 
     return { active: 0, skipped };
   }
 
-  const keys = enabledEntries(configManager.getProperty(SECRET_KEYS_KEY, []));
+  const keys = secretKeys((k, d) => configManager.getProperty(k, d));
 
   const seen = new Set<string>();
   const next: Redaction[] = [];

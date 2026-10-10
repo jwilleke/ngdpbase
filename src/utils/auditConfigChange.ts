@@ -30,7 +30,7 @@ const MAX_VALUE_CHARS = 512;
 /**
  * Is this key one the operator has declared secret?
  *
- * The list is `ngdpbase.config.secret-keys`, the same one that masks values on
+ * The list is `ngdpbase.config.sensitive-values` (its `secret` entries), the same one that masks values on
  * `/admin/configuration` and drives log redaction. It is operator-editable
  * configuration, so it can contain anything: non-string entries are ignored
  * rather than throwing, because a malformed list must not stop a config change
@@ -80,7 +80,7 @@ export interface ConfigChangeInput {
   after: unknown;
   /** Who made the change — from the context the write was handed (#1179), never guessed. */
   actor: ActorAttribution;
-  /** Whether the key is named in `ngdpbase.config.secret-keys`. */
+  /** Whether the key is named in `ngdpbase.config.sensitive-values` (its `secret` entries). */
   secret: boolean;
 }
 
@@ -89,7 +89,7 @@ export interface ConfigChangeInput {
  *
  * A secret key records __that it changed and neither value__. An entry naming
  * a key alongside its before and after values would reintroduce the disclosure
- * `ngdpbase.config.secret-keys` exists to prevent, by a different route and
+ * `ngdpbase.config.sensitive-values` (its `secret` entries) exists to prevent, by a different route and
  * into a file with a longer retention than the logs it already guards.
  *
  * Severity is uniform. Grading a security-relevant key higher would need a

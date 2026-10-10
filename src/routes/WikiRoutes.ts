@@ -29,7 +29,7 @@ import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManag
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
-import { enabledEntries } from '../utils/configFiles.js';
+import { secretKeys } from '../utils/sensitiveValues.js';
 import { createPatch } from 'diff';
 import { exec } from 'child_process';
 import { Request, Response, Application, NextFunction } from 'express';
@@ -72,7 +72,7 @@ import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
-import { safeRegistrationMessage } from '../utils/userCreateError.js';
+import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
 import {
   DEVICE_STATE_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -9749,6 +9749,10 @@ ${panes}
 
       res.redirect('/profile?success=Profile updated successfully');
     } catch (err: unknown) {
+      // #1748: one email, one account — said plainly, without naming the other account.
+      if (err instanceof UserCreateError && err.reason === 'email-taken') {
+        return res.redirect('/profile?error=' + encodeURIComponent('That email address is already used by another account. Please use another.'));
+      }
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
     }
@@ -11254,6 +11258,10 @@ ${panes}
           .json({ success: false, message: 'Failed to update user' });
       }
     } catch (err: unknown) {
+      // #1748: an admin is told which account already has the email.
+      if (err instanceof UserCreateError && err.reason === 'email-taken') {
+        return res.status(409).json({ success: false, message: err.message });
+      }
       logger.error('Error updating user:', err);
       return res.status(500).json({ success: false, message: 'Error updating user' });
     }
@@ -11675,7 +11683,7 @@ ${panes}
    */
   private getSecretConfigKeys(): Set<string> {
     const configManager = this.engine.getManager('ConfigurationManager');
-    const keys = enabledEntries(configManager?.getProperty('ngdpbase.config.secret-keys', []));
+    const keys = configManager ? secretKeys((k: string, d: unknown) => configManager.getProperty(k, d)) : [];
 
     // Trimmed and de-duplicated, but NOT lowercased: ngdpbase config keys are
     // case-sensitive and include camelCase (`ngdpbase.dawarichCompat.apiKey`),
@@ -19872,6 +19880,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'pages.reindex',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Reindex Pages',
       run: async (_reportProgress: ReportProgress) => {
         const pageManager = this.engine.getManager('PageManager');
@@ -19899,6 +19911,10 @@ ${description}
     // page from disk, so ghosts are dropped by construction.
     jobManager.registerJob({
       id: 'pages.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Pages',
       run: async (reportProgress: ReportProgress) => {
         const pageManager = this.engine.getManager('PageManager');
@@ -19929,6 +19945,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'media.rescan',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Reindex Media',
       run: async (reportProgress: ReportProgress) => {
         const mediaManager = this.engine.getManager('MediaManager');
@@ -19953,6 +19973,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'media.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Media Index',
       run: async (reportProgress: ReportProgress) => {
         const mediaManager = this.engine.getManager('MediaManager');
@@ -19973,6 +19997,10 @@ ${description}
     // Slice-5 doc-metadata fields on pre-v3.27.0 attachment records.
     jobManager.registerJob({
       id: 'attachments.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Attachment Metadata',
       run: async (reportProgress: ReportProgress) => {
         const attachmentManager = this.engine.getManager('AttachmentManager');

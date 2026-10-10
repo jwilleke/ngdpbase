@@ -10,7 +10,7 @@
  *
  * The rule this restores: **a configuration key is owned by exactly one layer,
  * never both.** Ownership is now declared in `ngdpbase.config.env-keys`,
- * mirroring the `ngdpbase.config.secret-keys` precedent — a map rather than an
+ * mirroring the `ngdpbase.config.sensitive-values` (its `secret` entries) precedent — a map rather than an
  * array, because the UI needs the variable's name to tell an operator where the
  * value actually lives.
  *

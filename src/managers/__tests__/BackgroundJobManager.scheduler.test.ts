@@ -22,12 +22,17 @@ let dir: string;
 let clock: number;
 let settings: Record<string, unknown>;
 let events: Record<string, unknown>[];
+let notes: Array<{ level: string; title: string; message: string }>;
+/** Who still holds which permission, for the PDP double (#1746). */
+let held: Record<string, string[]>;
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdpbase-1715-'));
   clock = Date.parse('2026-10-09T09:30:00Z');
   settings = { 'ngdpbase.default.timezone': 'UTC' };
   events = [];
+  notes = [];
+  held = {};
 });
 
 afterEach(() => {
@@ -44,6 +49,8 @@ function manager(state = provider(), options: { checkpointThrottleMs?: number } 
     getManager: (name: string) => {
       if (name === 'AuditManager') return { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } };
       if (name === 'ConfigurationManager') return { getProperty: (key: string, fallback: unknown) => (key in settings ? settings[key] : fallback) };
+      if (name === 'NotificationManager') return { addNotification: (n: { level: string; title: string; message: string }) => { notes.push(n); return Promise.resolve('n'); } };
+      if (name === 'PolicyDecisionPoint') return { holds: (subject: { username: string }, action: string) => Promise.resolve((held[subject.username] ?? []).includes(action)) };
       return null;
     }
   } as never;
@@ -685,5 +692,166 @@ describe('maintenance jobs (#1721)', () => {
     const views = await m.listScheduledJobs();
     expect(views.map((v) => [v.id, v.schedule])).toEqual([['test.fast', 'every 1m']]);
     expect(m.getRegisteredJobIds()).toContain('test.off');
+  });
+});
+
+describe('runs started by hand survive a restart (#1746)', () => {
+  const jim = { username: 'jim', origin: 'request' as const, requestedAt: '2026-10-09T09:00:00.000Z' };
+
+  /** An on-demand job: records what each run was handed. */
+  function handJob(overrides: Partial<JobDefinition> = {}) {
+    const contexts: JobRunContext[] = [];
+    const def: JobDefinition = {
+      id: 'test.rebuild',
+      displayName: 'Rebuild',
+      persist: true,
+      permission: 'admin-system',
+      run: (_progress, ctx) => { contexts.push(ctx); return Promise.resolve({ success: true }); },
+      ...overrides
+    };
+    return { def, contexts };
+  }
+
+  /** A run a crash left behind: recorded as running, its lock expired. */
+  async function leftRunning(state: FileJobStateProvider, attempt = 1, runId = 'run-x', startedAt = '2026-10-09T09:20:00.000Z') {
+    await state.recordRun('test.rebuild', { runId, slot: null, startedAt, attempt, status: 'running', requestedBy: jim });
+  }
+
+  test('a run started by hand is recorded, with who asked, and its ending', async () => {
+    const t = handJob();
+    const m = manager();
+    m.registerJob(t.def);
+    const runId = await m.enqueue('test.rebuild', jim);
+    await settle(m);
+    expect((await provider().listRuns('test.rebuild'))[0]).toMatchObject({ runId, slot: null, status: 'completed', requestedBy: { username: 'jim' } });
+  });
+
+  test('cut off by a crash: restarted as the person who asked, same run id, next attempt, with its checkpoint', async () => {
+    const state = provider();
+    await leftRunning(state);
+    await state.saveCheckpoint('test.rebuild', 'run-x', { done: 40 });
+    held.jim = ['admin-system'];
+    const t = handJob();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(1);
+    expect(t.contexts[0]).toMatchObject({ username: 'jim', resume: { attempt: 2, checkpoint: { done: 40 }, reason: 'the server stopped during the run' } });
+    expect(m.getStatus('run-x')?.status).toBe('completed');
+    expect(notes.some((n) => n.title === 'Rebuild restarted')).toBe(true);
+    // Looked at once per start: a later look does not run it again.
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(1);
+  });
+
+  test('a run a live server still holds is left alone, and taken up once its lock expires', async () => {
+    const state = provider();
+    await leftRunning(state);
+    await state.takeLock('test.rebuild.by-hand', '2026-10-09T09:20:00.000Z', 'other-host:1:boot', 60_000);
+    held.jim = ['admin-system'];
+    const t = handJob();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(0);
+    clock += 61_000;
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(1);
+  });
+
+  test('a job not declared safe to run again is reported, never repeated', async () => {
+    const state = provider();
+    await leftRunning(state);
+    held.jim = ['admin-system'];
+    const t = handJob({ persist: undefined });
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(0);
+    expect((await state.listRuns('test.rebuild'))[0]).toMatchObject({ runId: 'run-x', status: 'failed' });
+    expect((await state.listRuns('test.rebuild'))[0].error).toMatch(/cut off by a restart.*does not declare it is safe to run again/);
+    expect(named('job-failed')[0]).toMatchObject({ user: 'jim' });
+    expect(notes).toContainEqual(expect.objectContaining({ level: 'error', title: 'Rebuild did not finish' }));
+  });
+
+  test('a person who no longer holds the permission does not have it run again as them', async () => {
+    const state = provider();
+    await leftRunning(state);
+    const t = handJob();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(0);
+    expect((await state.listRuns('test.rebuild'))[0].error).toMatch(/jim no longer holds admin-system/);
+  });
+
+  test('a run cut off on every attempt stops at the limit', async () => {
+    const state = provider();
+    await leftRunning(state, 3);
+    held.jim = ['admin-system'];
+    const t = handJob();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(0);
+    expect((await state.listRuns('test.rebuild'))[0].error).toMatch(/3 attempt\(s\) were cut off, the limit is 3/);
+  });
+
+  test('handed off at shutdown: restarted at once at the next start, as the same attempt', async () => {
+    const state = provider();
+    held.jim = ['admin-system'];
+    const first = manager(state);
+    first.registerJob({
+      ...handJob().def,
+      run: (_progress, ctx) => new Promise((resolve) => { ctx.signal.addEventListener('abort', () => resolve({ success: false, error: 'stopped' })); })
+    });
+    const runId = await first.enqueue('test.rebuild', jim);
+    await vi.waitFor(() => { expect(first.getActiveJobs()).toHaveLength(1); });
+    settings['ngdpbase.jobs.shutdown-grace-ms'] = 200;
+    await first.shutdown();
+    expect((await state.listRuns('test.rebuild'))[0]).toMatchObject({ runId, status: 'interrupted' });
+    expect(named('job-failed')).toHaveLength(0);
+
+    const t = handJob();
+    const second = manager(state);
+    second.registerJob(t.def);
+    await second.tick();
+    await settle(second);
+    expect(t.contexts[0].resume).toMatchObject({ attempt: 1, reason: 'interrupted' });
+  });
+
+  test('of several unfinished runs, the newest is restarted and the older ones reported', async () => {
+    const state = provider();
+    await leftRunning(state, 1, 'run-old', '2026-10-09T08:00:00.000Z');
+    await leftRunning(state, 1, 'run-new', '2026-10-09T09:20:00.000Z');
+    held.jim = ['admin-system'];
+    const t = handJob();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(1);
+    expect(m.getStatus('run-new')?.status).toBe('completed');
+    expect((await state.listRuns('test.rebuild')).find((r) => r.runId === 'run-old')?.error).toMatch(/a later run of this job replaced it/);
+  });
+
+  test('a scheduled job\'s Run now, cut off, is restarted too', async () => {
+    const state = provider();
+    held.jim = ['admin-system'];
+    await state.recordRun('test.hourly', { runId: 'run-now', slot: null, startedAt: '2026-10-09T09:20:00.000Z', attempt: 1, status: 'running', requestedBy: jim });
+    const t = job();
+    const m = manager(state);
+    m.registerJob(t.def);
+    await m.tick();
+    await settle(m);
+    expect(t.contexts).toHaveLength(1);
+    expect(t.contexts[0]).toMatchObject({ username: 'jim', slot: null, resume: { attempt: 2 } });
   });
 });

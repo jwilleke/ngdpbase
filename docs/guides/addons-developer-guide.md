@@ -953,6 +953,8 @@ const runId = await jobManager.enqueue('my-addon.reindex', jobContextFromRequest
 
 `enqueue` returns at once; `getStatus(runId)` gives progress. A job enqueued again while it runs returns the run already going.
 
+__If the server restarts mid-run__ the run is never lost silently. By default it is reported: recorded as failed, audited, and an error notification tells the admins to run it again. Declare `persist: true` when running the job again does no harm — a rebuild, a reindex — and it is restarted instead, as the person who asked, with `ctx.resume` and its last checkpoint. Add `permission: '<the permission your route checks>'` and the restart happens only if that person still holds it. Leave `persist` off for work that must not repeat unchecked, such as an import that would post twice.
+
 ### A job that runs on a schedule
 
 ```javascript

@@ -62,6 +62,7 @@ Authentication work that has an issue but no code yet, as of 2026-10-04. Status 
   - Communication channels as a profile setting, with consent ([#1533](https://github.com/jwilleke/ngdpbase/issues/1533))
 - __Recovery__: account recovery for a lost password, passkey, second factor, known device or private-store keys ([#1545](https://github.com/jwilleke/ngdpbase/issues/1545)); the recovery words exist ([#1451](https://github.com/jwilleke/ngdpbase/issues/1451))
 - __Private stores and sign-in__: strong sign-ins unlock private stores, with PRF passkeys and an opt-in server-held key for AAL2 ([#1594](https://github.com/jwilleke/ngdpbase/issues/1594))
+- __External identity providers__: sign in with any OIDC provider the admin configures, with Google, Apple and Microsoft as presets ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)); decisions in [External identity providers](#external-identity-providers-decided-2026-10-10)
 - __OpenID Connect__: an opt-in `groups` scope from `/oidc`, and one group-to-role mapping for incoming providers ([#1588](https://github.com/jwilleke/ngdpbase/issues/1588))
 - __OpenID Connect, follow-ups__: an app's request for a fresh sign-in goes to the step-up confirm page instead of an error ([#1605](https://github.com/jwilleke/ngdpbase/issues/1605)); permission scopes shown by their description on the consent page ([#1604](https://github.com/jwilleke/ngdpbase/issues/1604))
 - __Consent__: consent for everything gathered, at three levels — `terms` (accepted per version at sign-up: the account, the session, sign-in security records), `explicit` (opt-in per purpose, withdrawable: known devices, communication channels), `per-use` (each app or share) — recorded like FHIR `Consent` / ISO/IEC TS 27560 ([#1603](https://github.com/jwilleke/ngdpbase/issues/1603)). Known devices wait for it
@@ -115,7 +116,7 @@ The blocked-by relations on GitHub give this order. Nothing in the first step de
 - __The authorization server__ for #1526 and #1529 is [node-oidc-provider](https://github.com/panva/node-oidc-provider), embedded through the [oidc-auth-server](https://github.com/jwilleke/oidc-auth-server) package (its own repo, so YourPHR and other apps use the same server) (operator, 2026-10-02): MIT, OpenID Certified; RFC 8628, UserInfo, refresh rotation, PKCE, dynamic registration and CIMD for MCP clients. Every sign-in and approval inside it is ours (`AuthManager`, factors, step-up, the approval page); no new service. activescott/auth's #83 hardening list is the review checklist. __How it is embedded__ (operator, 2026-10-03, option B; epic [#1578](https://github.com/jwilleke/ngdpbase/issues/1578)): an optional, config-gated core `OidcManager` mounted at `<base-url>/oidc`, so each instance that enables it is an OpenID Connect provider whose sign-in, factors, audit and storage are ngdpbase's. With `oidc-auth-server.enabled` false the package is never loaded. Not an add-on. The standalone server at oidc.example.com is the package's own epic (oidc-auth-server#31)
   - __Mounted at `<host>/oidc`__ (operator, 2026-10-03), by a config-gated core `OidcManager` — not an addon, so the security core keeps src/ invariants ([#1578](https://github.com/jwilleke/ngdpbase/issues/1578)): inside the ngdpbase process, no separate service or image, and off unless `oidc-auth-server.enabled` is set. The issuer is `ngdpbase.application.base-url` + `/oidc`, the configured host and never the request's, so it stays off until that key is set explicitly — the magic link and passkey rule ([#642](https://github.com/jwilleke/ngdpbase/issues/642)). Each instance is its own issuer, with discovery at `<base-url>/oidc/.well-known/openid-configuration`. The standalone server at `oidc.example.com` is a separate track, outside ngdpbase ([oidc-auth-server#31](https://github.com/jwilleke/oidc-auth-server/issues/31))
   - __What ngdpbase supplies__ to the package: sign-in via its `interactionUrl` (`AuthManager`, the factors, the computed `acr`, step-up when approving a device), account claims via `findAccount` (`UserManager`), audit via `recordAuditEvent` into `AuditManager`, and storage through an adapter behind a manager of its own (one door per resource). Behind a TLS-terminating proxy it sets `oidc-auth-server.trust-proxy`
-  - __`oidc-auth-server` is a reserved configuration namespace__ here (operator, 2026-10-03), for this package and anything doing the same job. Its `oidc-auth-server.*` keys sit in ngdpbase's merged configuration as they are, with the package's `config/app-default-config.json` as their defaults, the way an addon's defaults merge. Its secret keys (`oidc-auth-server.jwks`, `oidc-auth-server.cookie-keys`) are environment-only and belong in `ngdpbase.config.secret-keys` and `ngdpbase.config.env-keys` like ngdpbase's own
+  - __`oidc-auth-server` is a reserved configuration namespace__ here (operator, 2026-10-03), for this package and anything doing the same job. Its `oidc-auth-server.*` keys sit in ngdpbase's merged configuration as they are, with the package's `config/app-default-config.json` as their defaults, the way an addon's defaults merge. Its secret keys (`oidc-auth-server.jwks`, `oidc-auth-server.cookie-keys`) are environment-only and belong in `ngdpbase.config.sensitive-values` (as `secret`) and `ngdpbase.config.env-keys` like ngdpbase's own
   - __Before integrating__: three of the package's audit event names collide with this registry's (`token-revoke`, `authorization-allow`, `authorization-deny` mean other things here) and are being renamed ([oidc-auth-server#33](https://github.com/jwilleke/oidc-auth-server/issues/33)); a path-mounted issuer is getting its own tests ([oidc-auth-server#32](https://github.com/jwilleke/oidc-auth-server/issues/32))
 - __A separate epic__: [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) Account recovery
 
@@ -197,6 +198,90 @@ __Prompting and the admin default__ (operator, 2026-10-02):
 - __An account is only as strong as its weakest way in.__ A passkey protects only the passkey path; while the password alone can still sign the account in, a stolen password still works. The admin default closes that for admins, and passkeys are encouraged so their honest record is `["swk", "user"]` at `phr`
 
 Account recovery — a lost password, passkey, second factor, known device or private-store keys — is its own epic, [#1545](https://github.com/jwilleke/ngdpbase/issues/1545).
+
+### External identity providers (decided 2026-10-10)
+
+Signing in through an outside OpenID Connect provider ("external identity provider"). Operator decisions, 2026-10-10; the work is [#1743](https://github.com/jwilleke/ngdpbase/issues/1743).
+
+__What it is for.__ Signing in. It gives people another way into an account here, and is not organisation sign-in. Not in scope: GitHub (OAuth 2 only, not OpenID Connect), organisation or workforce sign-in (multi-tenant Microsoft Entra, Google Workspace groups), and SAML.
+
+__One generic provider.__ The admin configures any OpenID Connect issuer, found by discovery (`/.well-known/openid-configuration`). Presets fill in the issuer and each provider's quirks:
+
+| Preset | Notes |
+| --- | --- |
+| Google | Today's `GoogleOIDCProvider` moves onto the generic provider; its `ngdpbase.auth.google-oidc.*` keys keep working. The ID token carries no groups. |
+| Apple | The client secret is a JWT the server signs with an Apple key and renews within six months. The callback arrives as a POST (`form_post`), so its state cookie and CSRF handling differ. The name is sent only on the first sign-in, and the email may be a private-relay address. No groups. |
+| Microsoft | Personal Microsoft accounts only, through the `consumers` endpoint, whose issuer is fixed. No organisation tenants. No groups. |
+
+Any other OpenID Connect issuer works without a preset, for example Yahoo, LinkedIn, PayPal, Login.gov, or a self-hosted authentik. Not OpenID Connect, so not supported: Facebook on the web, X (plain OAuth 2.0 / 1.0a, no ID token; identity comes from its `/2/users/me` API), Amazon, Discord.
+
+__Creating accounts is a setting, per provider and for the whole instance, and the instance always overrides the provider__ (operator, 2026-10-10). `auto-provision` is set for the instance and per provider. Off, an outside sign-in only signs in a person who already has an account here. On, it may create the account, through `UserManager.createUser` like every other sign-up. Decided (operator, 2026-10-10):
+
+- __The instance setting is a ceiling.__ Instance off: no provider creates an account. Instance on: each provider's own setting still decides, so a provider can say no. For example, Google may create accounts while Apple, with its relay addresses, doesn't.
+- __The instance default is off.__ A freshly installed site creates no account from an outside sign-in until an admin allows it, for the instance and then per provider. (Today Google sign-in creates accounts: `ngdpbase.auth.google-oidc.auto-provision` is `true`.)
+
+__Connecting an identity to an account:__
+
+- __The identity is the issuer plus the subject__ (`iss` + `sub`), stored against the account. OpenID Connect Core §5.7 makes these two, together, the only claims a client can rely on as a stable identifier for the person. Only an `iss` + `sub` already connected signs a person in by itself.
+- __Email is not ignored; it finds and checks, it doesn't unlock__ (operator, 2026-10-10):
+  - __Finding the account to connect.__ An outside sign-in whose identity isn't connected yet, but whose verified email matches an account here, is asked to sign in to that account once, with a password or passkey, to connect it. From then on the identity signs them in directly. The email finds the account; the normal sign-in proves it's theirs.
+  - __No duplicate accounts.__ Where account creation is on, an outside sign-in whose verified email already belongs to an account gets the same "sign in to connect" step, not a second account.
+  - __A warning when they differ.__ Connecting an identity whose email differs from the account's says so, to catch connecting the wrong account.
+  - __Kept and refreshed.__ The provider's email is stored on the connection, updated at each sign-in, and shown in Sign-in methods. Notices go to the account's own email.
+  - __`login_hint`__ (OIDC Core §3.1.2.1). When the site knows the email, it passes it to the provider to pre-fill its sign-in.
+  - __Verified email only__, and only from a provider whose verification can be trusted: Google and Apple yes; personal Microsoft accounts need care.
+  - __Why email never signs anyone in on its own:__ whoever controls the address at the provider would get the account. That can happen with an unverified address, one the provider recycles (Yahoo reuses abandoned addresses), or a company domain that expired and was re-registered.
+- __Where accounts are not created, the person connects first.__ A registered person, already signed in, chooses Profile → Connect (provider) and signs in there. Connecting is an `account-security` change, so it asks for a fresh sign-in (step-up, #1525). An admin can also connect an identity on a person's behalf.
+- __An outside identity that isn't connected is refused__ with a neutral message that doesn't reveal whether an account exists.
+- __A person can disconnect__ a provider, but not their last way to sign in.
+- __Each change is audited and told to the person__ (identity connected, disconnected, a refused external sign-in), through the account notices of #1699.
+
+__External providers give no roles__ (operator, 2026-10-10). An outside sign-in says who the person is, never what they may do here. Roles are given only here, by an admin. A provider's groups or roles claims are ignored.
+
+__The one exception is a single "instance provider"__ (operator, 2026-10-10). One provider per instance may be designated as the instance's own identity provider, for example the organisation's self-hosted authentik. Only that provider's groups can give roles, through a mapping an admin writes in configuration:
+
+```json
+"groups": { "claim": "groups", "map": { "club-board": ["board"] } }
+```
+
+- Groups are read only from the verified ID token. A group that isn't mapped grants nothing.
+- A mapped role is still subject to its `required-aal`.
+- The site remembers which roles came from the instance provider, kept apart from roles an admin gave by hand. A role is removed when its group no longer comes with the person's sign-in; a hand-given role is never touched.
+- This narrows #1588's receiving side from "every incoming provider" to the instance provider alone.
+
+__Not login providers, so outside this design for now__ (operator, 2026-10-10). Both stay as they are:
+
+- `AuthentikBearerAuthProvider` checks an authentik access token on an API request, from an agent or script using the `client_credentials` grant. No person signs in through it. On only where configured (`ngdpbase.auth.authentik-bearer.enabled`, default off).
+- `CloudflareAccessAuthProvider` trusts the signed header Cloudflare Access adds in front of a site. Off by default (`ngdpbase.auth.cloudflare-access.enabled`).
+
+Each still finds a person by email, may create an account, and maps groups to roles with its own `group-map`. The rules above (`iss` + `sub`, no roles from outside, one instance provider) apply to login providers. If either of these ever becomes a way for people to sign in, it comes under them first.
+
+__Sign-in level.__ An external sign-in is AAL1. It counts as more only when the admin trusts that provider's reported `amr` / `acr` (`"amr": ["trust"]`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
+
+__Security.__ Keep `GoogleOIDCProvider`'s protections:
+
+- single-use state bound to an HTTP-only cookie (#1630), PKCE S256 and a nonce;
+- checks on the ID token's signature, issuer, audience and expiry;
+- refused attempts throttled like password failures;
+- client secrets and the Apple key only as environment variables;
+- no access or refresh tokens stored, since nothing needs them.
+
+__Sign-out__ ends the session here. ngdpbase sessions are server-side, so signing out ends them at once. That's the defect YourPHR has with its stateless tokens ([yourphr#814](https://github.com/jwilleke/yourphr/issues/814)), which its port of this work must not repeat. The outside provider's session is left alone: Google and Apple have no sign-out endpoint.
+
+__Account recovery through a connected identity__ (signing back in with Google after losing a password, which makes the outside account a recovery route) is decided on [#1545](https://github.com/jwilleke/ngdpbase/issues/1545), not here.
+
+__No move-over of existing Google accounts is needed__ (operator, 2026-10-10: there are no Google-created accounts). It would have mattered because today's Google sign-in recognises a person by verified email and never stored Google's issuer + subject. Under the new rule an account it had created, which has no password, couldn't be recognised and its owner would be locked out.
+
+__Later, not in #1743__ (operator, 2026-10-10): an __email-first sign-in page__. The person types their email, and the site shows the methods that apply, or goes straight to their provider. It would use an admin mapping of email domains to configured providers (for example `@example.org` → "Club login"), plus OpenID Connect issuer discovery by WebFinger (OIDC Discovery 1.0 §2, RFC 7033) for domains that support it. Google, Apple and Microsoft don't serve WebFinger for their consumer addresses.
+
+Decided (operator, 2026-10-10):
+
+- __Any number of outside identities per account, from configured providers only__ (operator, 2026-10-10), for example Ann's Google and her Apple, so she can sign in with either. Only a provider the admin has configured and enabled can be connected or used to sign in. A connection to a provider that is later disabled or removed is kept but can't sign in, until the provider is enabled again.
+- __Where connections live and how they come together__: the credentials store (#1524) keeps one signed row per way in (the password, each passkey). Each connected identity is one more row: provider, `iss` + `sub`, the provider's email, when connected and last used. An `iss` + `sub` pair is unique across the site. Nothing is merged: the account's own name and email stay as they are, and what a provider says is shown next to its connection, never copied over. The sign-in level is the level of the identity used. Profile → Sign-in methods lists them all, each with Disconnect.
+- __Each outside identity belongs to exactly one account.__ Connecting one that's already connected elsewhere is refused. Otherwise "Sign in with Google" couldn't tell whom to sign in.
+- __A separate admin page, "Sign-in providers"__: add, edit, enable or disable a provider (issuer, client id, the environment variable holding the secret, auto-provision), with a Test button that checks discovery answers and the settings are complete. Its own piece of work alongside #1743.
+
+__Login-page buttons__ (operator, 2026-10-10): each provider's own icon and button, as its brand rules ask, as long as they fit our constraints. That means a local asset, not a script or image loaded from the provider; within the CSP (#1489); readable in light and dark themes; and accessible (a text label, not an icon alone). A provider whose required button doesn't fit gets a plain button with its name.
 
 ---
 

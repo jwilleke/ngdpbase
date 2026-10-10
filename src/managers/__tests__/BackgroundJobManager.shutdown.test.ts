@@ -46,6 +46,8 @@ function manager(state = provider()): BackgroundJobManager {
     getManager: (name: string) => {
       if (name === 'AuditManager') return { logAuditEvent: (e: Record<string, unknown>) => { events.push(e); return Promise.resolve('id'); } };
       if (name === 'ConfigurationManager') return { getProperty: (key: string, fallback: unknown) => (key in settings ? settings[key] : fallback) };
+      // #1746: jim still holds the permission the hand-started job declares.
+      if (name === 'PolicyDecisionPoint') return { holds: (subject: { username: string }, action: string) => Promise.resolve(subject.username === 'jim' && action === 'admin-system') };
       return null;
     }
   } as never;
@@ -158,9 +160,9 @@ describe('handOff, in one process', () => {
 });
 
 describe('a real process, ended by a signal', () => {
-  function startProcess(mode: 'cooperative' | 'stubborn'): Promise<ChildProcess> {
+  function startProcess(mode: 'cooperative' | 'stubborn', started: 'slot' | 'hand' = 'slot'): Promise<ChildProcess> {
     return new Promise((resolve, reject) => {
-      const child = spawn(TSX, [FIXTURE, dir, mode], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(TSX, [FIXTURE, dir, mode, started], { stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       child.stdout?.on('data', (chunk: Buffer) => {
         out += chunk.toString();
@@ -212,4 +214,45 @@ describe('a real process, ended by a signal', () => {
     const seen = await nextStart(state);
     expect(seen[0].resume).toEqual({ attempt: 2, checkpoint: { doneThrough: 311 }, reason: 'the server stopped during the run' });
   }, 30_000);
+
+  describe('a job started by hand (#1746)', () => {
+    /** The next start of an on-demand job, as declared in the fixture. */
+    async function nextHandStart(state: FileJobStateProvider) {
+      const seen: JobRunContext[] = [];
+      const m = manager(state);
+      m.registerJob({
+        id: 'test.close', displayName: 'Close', persist: true, permission: 'admin-system',
+        run: (_p, ctx) => { seen.push(ctx); return Promise.resolve({ success: true }); }
+      });
+      await m.tick();
+      await m.whenIdle();
+      return seen;
+    }
+
+    test('SIGTERM: handed off, restarted at once as the same attempt, from its checkpoint', async () => {
+      const child = await startProcess('cooperative', 'hand');
+      const gone = exited(child);
+      child.kill('SIGTERM');
+      await gone;
+      const state = provider();
+      clock = Date.parse('2026-10-09T10:00:06Z');
+      expect((await state.listRuns('test.close'))[0]).toMatchObject({ status: 'interrupted', attempt: 1 });
+      const seen = await nextHandStart(state);
+      expect(seen[0]).toMatchObject({ username: 'jim', resume: { attempt: 1, checkpoint: { doneThrough: 311 }, reason: 'interrupted' } });
+    }, 30_000);
+
+    test('SIGKILL: left alone while its lock lasts, then restarted as the next attempt', async () => {
+      const child = await startProcess('cooperative', 'hand');
+      const gone = exited(child);
+      child.kill('SIGKILL');
+      await gone;
+      const state = provider();
+      clock = Date.parse('2026-10-09T10:00:06Z');
+      expect((await state.listRuns('test.close'))[0].status).toBe('running');
+      expect(await nextHandStart(state)).toHaveLength(0);
+      clock += 61_000;
+      const seen = await nextHandStart(state);
+      expect(seen[0]).toMatchObject({ username: 'jim', resume: { attempt: 2, checkpoint: { doneThrough: 311 }, reason: 'the server stopped during the run' } });
+    }, 30_000);
+  });
 });

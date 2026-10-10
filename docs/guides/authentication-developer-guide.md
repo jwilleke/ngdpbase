@@ -1,7 +1,7 @@
 ---
 name: Authentication developer guide
 description: How sign-in works and how to change it — AuthManager as the one door, sign-in factors and levels (AAL), per-role required levels and what happens when one cannot be reached, step-up, sessions ending, and adding a sign-in provider
-dateModified: 2026-10-08
+dateModified: 2026-10-10
 category: guides
 relatedModules: [AuthManager, UserManager, PolicyDecisionPoint, OidcManager]
 ---
@@ -17,8 +17,9 @@ What a developer has to know to change how people sign in. Who may do what once 
 - __The session records how it signed in.__ Every sign-in path writes `req.session.signIn` (`signInRecord()`): the provider, each factor with its time, and `amr` / `aal` / `acr`. Step-up and UserInfo read it there. A delegated credential (agent token, share, app token) never starts a session and never satisfies step-up.
 - __What is required is per role.__ Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3). A person must meet the highest among their roles. `admin` and `user-admin` ship at 2; every other role at 1; `anonymous` has none.
 - __A role above the sign-in steps down; nobody is locked out.__ In a session signed in below a role's level, the person acts without that role (`rolesAtSignIn`) and a banner says how to get it back. `profile-manage` and `account-security` stay, so the profile, where a passkey is added, is always reachable. When the level cannot be reached at all, see the next section.
-- __Sensitive actions ask for a fresh sign-in.__ A permission entry marked `"step-up": true` needs a factor satisfied within `ngdpbase.auth.step-up.max-age-minutes` (5) at the level the person's roles require. The PDP decides it inside `hasPermission`; a control's visibility asks `holdsPermission`, which leaves step-up out ([#1635](https://github.com/jwilleke/ngdpbase/issues/1635)).
+- __Sensitive actions ask for a fresh sign-in.__ A permission entry marked `"step-up": true` needs a factor satisfied within `ngdpbase.auth.step-up.max-age-minutes` (5) at the level the person's roles require. The PDP decides it inside `hasPermission`; a control's visibility asks `holdsPermission`, which leaves step-up out ([#1635](https://github.com/jwilleke/ngdpbase/issues/1635)). An add-on marks its own permission the same way, in its `config/default-config.json`: permission definitions merge per entry, so it neither touches core's list nor another add-on's.
 - __Every way a session ends goes through one door:__ `endSession()` in `src/utils/sessionEnd.ts` drops the session's private-store keys and records `authentication-logout` with the reason ([#1670](https://github.com/jwilleke/ngdpbase/issues/1670)).
+- __One email, one account__ ([#1748](https://github.com/jwilleke/ngdpbase/issues/1748)). `UserManager` refuses to save an email another account already has, on create and on change, on every path (registration, profile, admin, outside sign-in). It's not a setting. Emails are compared trimmed and in any case, with no provider rules: `smiths+alice@gmail.com` and `smiths+bob@gmail.com` are different addresses. Accounts without an email are allowed. `getUserByEmail` returns nobody for an email two accounts already share (saved before the rule), and the startup check reports any such pair (manager degraded, log, admin notification) until an admin gives each account its own. The failure reason is `email-taken`; registration shows its safe message, and the profile page never names the other account.
 - __Passwords:__ scrypt at N=2^17, hashed off the request path (async), and re-hashed at the current cost on the next sign-in ([#1632](https://github.com/jwilleke/ngdpbase/issues/1632)). The minimum length is `ngdpbase.user.security.password-min-length` (6).
 
 ## When a role's level cannot be reached
@@ -59,7 +60,9 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 
 ## Known gaps
 
-- [#1522](https://github.com/jwilleke/ngdpbase/issues/1522) — multi-factor epic: TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421)), more than one credential per account ([#1524](https://github.com/jwilleke/ngdpbase/issues/1524)), device authorization ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526)), link-based second factor ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
+- [#1745](https://github.com/jwilleke/ngdpbase/issues/1745) — an add-on route that refuses a step-up permission answers a bare 403 (`ApiContext.requirePermission`), with no way to re-authenticate as core routes give
+- [#1522](https://github.com/jwilleke/ngdpbase/issues/1522) — multi-factor epic: TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421)), device authorization ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526)), link-based second factor ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
+- [#1743](https://github.com/jwilleke/ngdpbase/issues/1743) — sign-in through any OpenID Connect provider; Google is the only outside login provider today (Cloudflare Access and the authentik bearer are not login providers; see the planning doc). The decided design is in [planning/authentication.md](../planning/authentication.md#external-identity-providers-decided-2026-10-10)
 - [#1545](https://github.com/jwilleke/ngdpbase/issues/1545) — account recovery
 - [#1594](https://github.com/jwilleke/ngdpbase/issues/1594) — strong sign-ins unlock private stores
 - [#1633](https://github.com/jwilleke/ngdpbase/issues/1633) — an outside provider's own second factor counts toward AAL2

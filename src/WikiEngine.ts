@@ -1,3 +1,4 @@
+import { usesLegacyName } from './utils/sensitiveValues.js';
 import Engine from './core/Engine.js';
 import logger, { reconfigureLogger, setLoggingProvider, resolveLoggingProvider } from './utils/logger.js';
 import { refreshRedactedSecrets } from './utils/redactSecrets.js';
@@ -144,7 +145,7 @@ class WikiEngine extends Engine {
 
     // #1030: fill the log-redaction table now that config is resolved. The
     // logger bootstraps before ConfigurationManager exists, so it cannot read
-    // `ngdpbase.config.secret-keys` itself — the values are pushed in here
+    // `ngdpbase.config.sensitive-values` (its `secret` entries) itself — the values are pushed in here
     // instead. Until this line runs nothing is redacted, which is safe because
     // nothing has read a config secret yet.
     //
@@ -156,6 +157,11 @@ class WikiEngine extends Engine {
     for (const { key, reason } of redaction.skipped) {
       if (reason === 'unset' || reason === 'env-ref') continue; // ordinary, not worth a line
       logger.warn(`[redact] ${key} will NOT be redacted from logs (${reason})`);
+    }
+    // #1750: the list was renamed. The old name is still read, so nothing is
+    // unmasked, but it should be moved.
+    if (usesLegacyName((k, d) => configManager.getProperty(k, d))) {
+      logger.warn('[config] ngdpbase.config.secret-keys is still set — rename it to ngdpbase.config.sensitive-values, each entry "secret" (#1750). It is still honoured.');
     }
 
     // 1a. DatabaseManager (#1536) — the one door to the application database,
