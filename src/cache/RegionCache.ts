@@ -1,5 +1,6 @@
 import type ICacheAdapter from './ICacheAdapter.js';
 import type { CacheStats } from './ICacheAdapter.js';
+import CacheDependencies, { type VersionLookup } from './CacheDependencies.js';
 
 /**
  * Cache set options
@@ -26,6 +27,65 @@ export interface RegionStats {
  */
 export type CacheFactory<T> = () => Promise<T>;
 
+/** Options for getOrSetVersioned. */
+export interface VersionedSetOptions extends CacheSetOptions {
+  /** Told whether the value came from the cache (true) or was computed (false); for hit/miss metrics. */
+  onResult?: (hit: boolean) => void;
+}
+
+/** What getOrSetVersioned stores: the value and the versions it was built from. */
+interface VersionedEntry<T> {
+  __versioned: true;
+  value: T;
+  versions: Record<string, string>;
+}
+
+const isVersionedEntry = <T>(v: unknown): v is VersionedEntry<T> =>
+  Boolean(v && typeof v === 'object' && (v as { __versioned?: unknown }).__versioned === true);
+
+/** The two calls the read-through needs from a store. */
+export interface VersionedStore {
+  get<T = unknown>(key: string): Promise<T | undefined | null>;
+  set(key: string, value: unknown, options?: CacheSetOptions): Promise<unknown>;
+}
+
+/**
+ * Read-through with data versions (#1751), over any store with get and set.
+ * Returns the stored value while every topic it was built from still has the
+ * version it had then; otherwise computes it again with `factory`, stores it
+ * with the versions it read (unless the render marked itself volatile), and
+ * returns it. RegionCache.getOrSetVersioned is this over a region.
+ */
+export async function readThroughVersioned<T>(
+  store: VersionedStore,
+  versionOf: VersionLookup,
+  key: string,
+  factory: (deps: CacheDependencies) => Promise<T>,
+  options: VersionedSetOptions = {}
+): Promise<T> {
+  const entry = await store.get<unknown>(key);
+  if (isVersionedEntry<T>(entry) && await stillCurrent(versionOf, entry.versions)) {
+    options.onResult?.(true);
+    return entry.value;
+  }
+
+  const deps = new CacheDependencies(versionOf);
+  const value = await factory(deps);
+  options.onResult?.(false);
+  if (value !== undefined && !deps.isVolatile()) {
+    const stored: VersionedEntry<T> = { __versioned: true, value, versions: await deps.resolved() };
+    await store.set(key, stored, { ttl: options.ttl });
+  }
+  return value;
+}
+
+async function stillCurrent(versionOf: VersionLookup, versions: Record<string, string>): Promise<boolean> {
+  for (const [topic, version] of Object.entries(versions)) {
+    if (await versionOf(topic) !== version) return false;
+  }
+  return true;
+}
+
 /**
  * RegionCache - Cache wrapper that provides namespaced access to a cache adapter
  *
@@ -36,11 +96,18 @@ class RegionCache {
   private readonly adapter: ICacheAdapter;
   private readonly region: string;
   private readonly prefix: string;
+  private readonly versionOf: VersionLookup;
 
-  constructor(adapter: ICacheAdapter, region: string) {
+  /**
+   * @param versionOf How to read a data topic's current version (CacheManager.version).
+   *                  Without it every topic reads as version 0, so only a
+   *                  volatile render or the TTL ends an entry.
+   */
+  constructor(adapter: ICacheAdapter, region: string, versionOf?: VersionLookup) {
     this.adapter = adapter;
     this.region = region;
     this.prefix = `${region}:`;
+    this.versionOf = versionOf ?? (async () => '0');
   }
 
   /**
@@ -181,6 +248,22 @@ class RegionCache {
     }
 
     return value;
+  }
+
+  /**
+   * Read-through with data versions (#1751). Returns the stored value while
+   * every topic it was built from still has the version it had then;
+   * otherwise computes it again with `factory`, stores it with the versions it
+   * read (unless the render marked itself volatile), and returns it.
+   *
+   * The factory declares what it reads: `deps.dependsOn('LedgerManager')`.
+   */
+  async getOrSetVersioned<T>(
+    key: string,
+    factory: (deps: CacheDependencies) => Promise<T>,
+    options: VersionedSetOptions = {}
+  ): Promise<T> {
+    return readThroughVersioned(this, this.versionOf, key, factory, options);
   }
 
   /**

@@ -954,3 +954,24 @@ describe('formatAsList carries badges, actions and classes (#1306)', () => {
     expect(formatAsList(links)).toBe('<ul>\n<li><a href="/view/A">A</a></li>\n<li><a href="/view/B">B</a></li>\n</ul>');
   });
 });
+
+// #1751: a fetch makes the render depend on the manager's data.
+describe('resolveManagerFetch and the page cache', () => {
+  test('records the manager as a dependency before calling it', async () => {
+    const order: string[] = [];
+    const ctx = {
+      engine: { getManager: () => ({ toMarqueeText: async () => { order.push('called'); return 'x'; } }) },
+      dependsOn: (topic: string) => order.push(`depends:${topic}`)
+    };
+    await resolveManagerFetch('LedgerManager.toMarqueeText()', ctx);
+    expect(order).toEqual(['depends:LedgerManager', 'called']);
+  });
+
+  test('a refused or missing method records nothing', async () => {
+    const seen: string[] = [];
+    const ctx = { engine: { getManager: () => ({}) }, dependsOn: (t: string) => seen.push(t) };
+    await resolveManagerFetch('M.rebuildIndex()', ctx);
+    await resolveManagerFetch('M.toMarqueeText()', ctx);
+    expect(seen).toEqual([]);
+  });
+});

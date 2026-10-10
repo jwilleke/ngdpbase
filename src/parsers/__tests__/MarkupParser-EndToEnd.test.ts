@@ -10,6 +10,7 @@
  */
 
 import MarkupParser from '../MarkupParser';
+import { readThroughVersioned } from '../../cache/RegionCache';
 
 // Comprehensive mock engine with all managers
 class ComprehensiveMockEngine {
@@ -84,10 +85,11 @@ class ComprehensiveMockEngine {
   createCacheManager() {
     return {
       isInitialized: () => true,
-      region: (name) => ({
-        get: vi.fn().mockResolvedValue(null),
-        set: vi.fn().mockResolvedValue(true)
-      })
+      region: (name) => {
+        const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue(true) };
+        // #1751: the parse cache reads through with data versions.
+        return { ...store, getOrSetVersioned: (key, factory, options) => readThroughVersioned(store, async () => '0', key, factory, options) };
+      }
     };
   }
   

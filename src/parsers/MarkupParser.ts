@@ -891,84 +891,33 @@ class MarkupParser extends BaseManager {
       // a page that does not resolve for the anonymous subject is not cacheable.
       const cacheable = this.isSharedIndexable(context);
 
-      // Check cache first
+      // #1751: read-through. A cached page is served while the data its
+      // plugins read is unchanged; a manager's bump re-renders it, and a
+      // volatile plugin keeps it out of the cache.
       const cacheKey = this.generateCacheKey(content, context);
-      if (cacheable && this.cacheStrategies.parseResults) {
-        const cached = await this.getCachedParseResult(cacheKey);
-        if (cached) {
-          this.updateCacheMetrics('parseResults', 'hit');
+      const parseResults = cacheable ? this.cacheStrategies.parseResults : null;
+      if (parseResults) {
+        let hit = false;
+        const html = await parseResults.getOrSetVersioned(
+          cacheKey,
+          (deps) => this.renderUncached(content, { ...context, cacheDependencies: deps }, startTime),
+          {
+            ttl: this.config.cache.parseResults.ttl,
+            onResult: (fromCache) => { hit = fromCache; }
+          }
+        );
+        this.updateCacheMetrics('parseResults', hit ? 'hit' : 'miss');
+        if (hit) {
           this.metrics.cacheHits++;
           this.updatePerformanceMetrics(Date.now() - startTime, true);
           logger.debug(`✅ Cache hit for extraction pipeline (${Date.now() - startTime}ms)`);
-          return cached;
+        } else {
+          this.metrics.cacheMisses++;
+          this.updateCacheMetrics('parseResults', 'set');
         }
-        this.updateCacheMetrics('parseResults', 'miss');
-        this.metrics.cacheMisses++;
+        return html;
       }
-
-      // Expand ${pagename} / ${username} context variables before DOM extraction.
-      // These are template-style variables (not JSPWiki [{$var}] syntax) that are
-      // replaced with values from the parse context. Code blocks are protected by
-      // the extraction pipeline; variables in code blocks will not be expanded.
-      //
-      // Context may arrive nested (view path: { pageContext: { pageName, ... }, engine })
-      // or flat (preview path: { pageName, userName, ... }). Normalize before reading.
-      const pageCtxData = ((context.pageContext ?? context) as Record<string, unknown>);
-      const resolvedPageName = (pageCtxData.pageName ?? context.pageName) as string | undefined;
-      const resolvedUserCtx = (pageCtxData.userContext ?? context.userContext) as Record<string, unknown> | undefined;
-      const resolvedUserName = (resolvedUserCtx?.username ?? resolvedUserCtx?.userName ?? pageCtxData.userName ?? context.userName) as string | undefined;
-      if (resolvedPageName !== undefined) {
-        content = content.replace(/\$\{pagename\}/gi, String(resolvedPageName));
-        // ${pageslug} — the current page's slug (keyword/URL form). Bridges the
-        // name-vs-slug gap: keywords follow slug convention ("2026-trip-west")
-        // while ${pagename} yields the display name ("2026 trip west"), so
-        // self-scoping plugins like [{Search user-keywords='${pageslug}'}] and
-        // [{MediaPlugin keyword='${pageslug}'}] match. Authoritative (stored
-        // slug) with generateSlug fallback; only looked up when the token is
-        // actually present (hot path).
-        if (/\$\{pageslug\}/i.test(content)) {
-          let slug = '';
-          try {
-            const pm = this.engine.getManager<{ getPageMetadata?: (id: string) => Promise<{ slug?: string } | null> }>('PageManager');
-            const meta = pm?.getPageMetadata ? await pm.getPageMetadata(String(resolvedPageName)) : null;
-            if (meta?.slug) slug = meta.slug;
-          } catch { /* fall through to derived slug */ }
-          if (!slug) {
-            const vm = this.engine.getManager<{ generateSlug?: (t: string) => string }>('ValidationManager');
-            slug = vm?.generateSlug
-              ? vm.generateSlug(String(resolvedPageName))
-              : String(resolvedPageName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-          }
-          content = content.replace(/\$\{pageslug\}/gi, slug);
-        }
-      }
-      if (resolvedUserName !== undefined) {
-        content = content.replace(/\$\{username\}/gi, String(resolvedUserName));
-      }
-
-      // Parse using extraction pipeline
-      const result = await this.parseWithDOMExtraction(content, context);
-
-      // Cache the result — never a sealed page's (#1423).
-      if (cacheable) await this.cacheParseResult(cacheKey, result);
-
-      // Update metrics
-      const processingTime = Date.now() - startTime;
-      this.metrics.totalParseTime += processingTime;
-      this.updatePerformanceMetrics(processingTime, false);
-
-      logger.debug(`✅ Extraction pipeline completed (${processingTime}ms)`);
-
-      // Warn if parse time is slow
-      if (processingTime > 100) {
-        const slowPageCtx = ((context.pageContext ?? context) as Record<string, unknown>);
-        const rawPageName = slowPageCtx.pageName ?? context.pageName;
-        const slowPageName = typeof rawPageName === 'string' ? rawPageName : 'unknown';
-        logger.warn(`⚠️  Slow parse: ${processingTime}ms for page ${slowPageName}`);
-      }
-
-      return result;
-
+      return await this.renderUncached(content, context, startTime);
     } catch (error) {
       logger.error('❌ Extraction pipeline error:', error);
       this.metrics.errorCount++;
@@ -977,6 +926,74 @@ class MarkupParser extends BaseManager {
       // because this is author source reaching the page without markdown-it (#1623).
       return filterAuthorHtml(content, asHtmlPolicy(this.configuredHtmlPolicy()));
     }
+  }
+
+  /**
+   * Render without the page cache: expand the template variables, run the
+   * extraction pipeline, record the timing. #1751 split this out of parse()
+   * so the read-through calls it; parse() still owns the error fallback.
+   */
+  private async renderUncached(content: string, context: Record<string, unknown>, startTime: number): Promise<string> {
+    // Expand ${pagename} / ${username} context variables before DOM extraction.
+    // These are template-style variables (not JSPWiki [{$var}] syntax) that are
+    // replaced with values from the parse context. Code blocks are protected by
+    // the extraction pipeline; variables in code blocks will not be expanded.
+    //
+    // Context may arrive nested (view path: { pageContext: { pageName, ... }, engine })
+    // or flat (preview path: { pageName, userName, ... }). Normalize before reading.
+    const pageCtxData = ((context.pageContext ?? context) as Record<string, unknown>);
+    const resolvedPageName = (pageCtxData.pageName ?? context.pageName) as string | undefined;
+    const resolvedUserCtx = (pageCtxData.userContext ?? context.userContext) as Record<string, unknown> | undefined;
+    const resolvedUserName = (resolvedUserCtx?.username ?? resolvedUserCtx?.userName ?? pageCtxData.userName ?? context.userName) as string | undefined;
+    if (resolvedPageName !== undefined) {
+      content = content.replace(/\$\{pagename\}/gi, String(resolvedPageName));
+      // ${pageslug} — the current page's slug (keyword/URL form). Bridges the
+      // name-vs-slug gap: keywords follow slug convention ("2026-trip-west")
+      // while ${pagename} yields the display name ("2026 trip west"), so
+      // self-scoping plugins like [{Search user-keywords='${pageslug}'}] and
+      // [{MediaPlugin keyword='${pageslug}'}] match. Authoritative (stored
+      // slug) with generateSlug fallback; only looked up when the token is
+      // actually present (hot path).
+      if (/\$\{pageslug\}/i.test(content)) {
+        let slug = '';
+        try {
+          const pm = this.engine.getManager<{ getPageMetadata?: (id: string) => Promise<{ slug?: string } | null> }>('PageManager');
+          const meta = pm?.getPageMetadata ? await pm.getPageMetadata(String(resolvedPageName)) : null;
+          if (meta?.slug) slug = meta.slug;
+        } catch { /* fall through to derived slug */ }
+        if (!slug) {
+          const vm = this.engine.getManager<{ generateSlug?: (t: string) => string }>('ValidationManager');
+          slug = vm?.generateSlug
+            ? vm.generateSlug(String(resolvedPageName))
+            : String(resolvedPageName).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        }
+        content = content.replace(/\$\{pageslug\}/gi, slug);
+      }
+    }
+    if (resolvedUserName !== undefined) {
+      content = content.replace(/\$\{username\}/gi, String(resolvedUserName));
+    }
+
+    // Parse using extraction pipeline
+    const result = await this.parseWithDOMExtraction(content, context);
+
+
+    // Update metrics
+    const processingTime = Date.now() - startTime;
+    this.metrics.totalParseTime += processingTime;
+    this.updatePerformanceMetrics(processingTime, false);
+
+    logger.debug(`✅ Extraction pipeline completed (${processingTime}ms)`);
+
+    // Warn if parse time is slow
+    if (processingTime > 100) {
+      const slowPageCtx = ((context.pageContext ?? context) as Record<string, unknown>);
+      const rawPageName = slowPageCtx.pageName ?? context.pageName;
+      const slowPageName = typeof rawPageName === 'string' ? rawPageName : 'unknown';
+      logger.warn(`⚠️  Slow parse: ${processingTime}ms for page ${slowPageName}`);
+    }
+
+    return result;
   }
 
   /**

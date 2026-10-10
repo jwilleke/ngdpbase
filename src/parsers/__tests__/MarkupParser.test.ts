@@ -1,6 +1,7 @@
 import MarkupParser from '../MarkupParser';
 import ParseContext from '../context/ParseContext';
 import BaseSyntaxHandlerModule from '../handlers/BaseSyntaxHandler';
+import { readThroughVersioned } from '../../cache/RegionCache';
 const BaseSyntaxHandler = (BaseSyntaxHandlerModule as any).BaseSyntaxHandler ?? BaseSyntaxHandlerModule;
 
 // Mock handler class that properly extends BaseSyntaxHandler for testing
@@ -42,12 +43,14 @@ class MockCacheManager {
   }
   
   region(regionName) {
-    return {
+    const store = {
       get: async (key) => this.cache.get(key),
       set: async (key, value, options) => {
         this.cache.set(key, value);
       }
     };
+    // #1751: the parse cache reads through with data versions.
+    return { ...store, getOrSetVersioned: (key, factory, options) => readThroughVersioned(store, async () => '0', key, factory, options) };
   }
 }
 

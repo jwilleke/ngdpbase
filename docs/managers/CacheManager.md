@@ -94,6 +94,32 @@ await region.clear();
 const stats = await region.stats();
 ```
 
+## Read-Through with Data Versions (#1751)
+
+A cached value built from a manager's data stays current without guessing a TTL.
+The manager names its data with a __topic__ (by convention its own name, such as
+`LedgerManager`) and bumps it after every write. A read-through entry remembers the
+version of each topic it read, and is served only while those versions are unchanged.
+
+```javascript
+// The manager, at its one write door:
+await cacheManager.bump('LedgerManager');
+
+// A reader:
+const html = await cacheManager.region('pages').getOrSetVersioned('Ledger', async (deps) => {
+  deps.dependsOn('LedgerManager');      // declare before reading
+  return renderBalances();
+});
+```
+
+- `version(topic)` is `'0'` until the topic is first bumped. Versions never expire, and each
+  bump is a new unique value, so instances sharing a cache can't collide on a count.
+- A render whose output changes with nothing written (a clock) calls `deps.markVolatile()`.
+  It is returned but never stored.
+- The page cache (`MarkupParser-ParseResults`) reads through this way. Plugins reach the
+  collector as `context.dependsOn(topic)`, and `resolveManagerFetch` records the manager it
+  calls, so a Marquee `fetch=` follows that manager's bumps.
+
 ## Set Options
 
 ```javascript

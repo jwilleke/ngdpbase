@@ -836,10 +836,13 @@ export const FETCHABLE_METHOD = 'toMarqueeText';
  *
  * The raw `{k: v}` args object is passed as the first argument (the manager
  * owns its own option parsing via `managerUtils.ts`), the viewer second.
+ *
+ * #1751: the render depends on the manager's data, so the page cache
+ * re-renders once that manager bumps its topic (its own name).
  */
 export async function resolveManagerFetch(
   spec: string | undefined,
-  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown; dependsOn?: (topic: string) => void }
 ): Promise<ManagerFetchResult> {
   if (!spec || !context.engine) return { status: 'no-spec' };
 
@@ -860,6 +863,7 @@ export async function resolveManagerFetch(
   const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
   const method = manager?.[FETCHABLE_METHOD];
   if (typeof method !== 'function') return { status: 'not-found' };
+  context.dependsOn?.(managerName);
   const text = String(await (method as (o: Record<string, string>, viewer: unknown) => unknown).call(manager, fetchArgs, context.userContext));
   return { status: 'ok', text };
 }

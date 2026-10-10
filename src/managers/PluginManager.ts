@@ -1,3 +1,4 @@
+import CacheDependencies from '../cache/CacheDependencies.js';
 import BaseManager from './BaseManager.js';
 import fs from 'fs-extra';
 import path from 'path';
@@ -26,6 +27,13 @@ export interface PluginObject {
   initialize?: (engine: WikiEngine) => Promise<void> | void;
   fetch?:      (engine: WikiEngine) => Promise<void> | void;
   execute: (context: PluginContext, params: PluginParams) => Promise<string> | string;
+  /**
+   * Its output changes with nothing written (a clock): a page that runs it is
+   * not kept in the page cache (#1751). Data a plugin reads from a manager is
+   * declared with `context.dependsOn(topic)` instead, which keeps the page
+   * cached until that data changes.
+   */
+  volatile?: boolean;
 }
 
 /**
@@ -48,6 +56,17 @@ function isPlugin(obj: unknown): obj is Plugin {
 }
 
 /**
+ * The render's dependency collector (#1751): on the parse context the plugin
+ * handlers pass as `wikiContext`, or on the context itself.
+ */
+function cacheDependenciesOf(context: Record<string, unknown>): CacheDependencies | undefined {
+  const own = context.cacheDependencies;
+  if (own instanceof CacheDependencies) return own;
+  const parse = (context.wikiContext as { cacheDependencies?: unknown } | undefined)?.cacheDependencies;
+  return parse instanceof CacheDependencies ? parse : undefined;
+}
+
+/**
  * Type guard to check if a module export has a default export
  */
 function hasDefaultExport(obj: unknown): obj is { default: unknown } {
@@ -61,6 +80,14 @@ export interface PluginContext {
   engine: WikiEngine;
   pageName: string;
   linkGraph: Record<string, unknown>;
+  /**
+   * #1751: this render reads `topic`'s data (by convention the owning
+   * manager's name, e.g. 'LedgerManager'). Call before reading; the cached
+   * page is re-rendered once the manager bumps that topic.
+   */
+  dependsOn?: (topic: string) => void;
+  /** #1751: this render's output changes on its own; do not cache the page. */
+  markVolatile?: () => void;
   [key: string]: unknown;
 }
 
@@ -334,11 +361,16 @@ class PluginManager extends BaseManager {
     try {
       // Pass the full context through to plugins
       // Plugins expect the full ParseContext/WikiContext with all properties
+      // #1751: what this render reads, for the page cache's read-through.
+      const deps = cacheDependenciesOf(context);
+      if (isPluginObject(plugin) && plugin.volatile) deps?.markVolatile();
       const pluginContext: PluginContext = {
         ...context, // Spread all context properties
         engine: this.engine, // Always use the manager's engine instance
         pageName: pageName,
-        linkGraph: (context.linkGraph as Record<string, unknown>) || {}
+        linkGraph: (context.linkGraph as Record<string, unknown>) || {},
+        dependsOn: (topic: string) => deps?.dependsOn(topic),
+        markVolatile: () => deps?.markVolatile()
       };
 
       // Check if it's a new-style plugin with execute method

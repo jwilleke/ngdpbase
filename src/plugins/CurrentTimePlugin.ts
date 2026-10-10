@@ -229,6 +229,8 @@ const CurrentTimePlugin: SimplePlugin = {
   description: 'Displays current date and time with user locale/timezone preferences',
   author: 'ngdpbase',
   version: '1.0.0',
+  // #1751: the time changes with nothing written, so a page showing it is not kept in the page cache.
+  volatile: true,
 
   /**
    * Execute the plugin

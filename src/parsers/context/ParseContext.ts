@@ -7,6 +7,7 @@
  * Related Issue: #55 - Core Infrastructure and Phase System
  */
 
+import CacheDependencies from '../../cache/CacheDependencies.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../../managers/UserManager.js';
 import { BaseContext } from '../../context/BaseContext.js';
 
@@ -297,6 +298,13 @@ class ParseContext {
   metadata: Record<string, unknown>;
 
   // Performance tracking
+  /**
+   * #1751: the page cache's record of what this render reads. Plugins reach it
+   * through `context.dependsOn(topic)` (PluginManager.execute). Null when the
+   * page is not being cached.
+   */
+  readonly cacheDependencies: CacheDependencies | null;
+
   private startTime: number;
   private phaseTimings: Map<string, number>;
 
@@ -323,6 +331,10 @@ class ParseContext {
       this.wikiContext = pageContextToWikiContextLike(directContext, engine, content);
       this.requestInfo = directContext.requestInfo ?? null;
     }
+
+    // #1751: what this render reads, when the page cache is collecting it.
+    const deps = (context as { cacheDependencies?: unknown }).cacheDependencies;
+    this.cacheDependencies = deps instanceof CacheDependencies ? deps : null;
 
     // Processing state
     this.privateLinkTitles = null;
