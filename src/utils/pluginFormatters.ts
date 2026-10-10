@@ -292,6 +292,10 @@ export interface TableOptions {
    * Receives the cell's row data AND the 0-based row index within `rows`.
    */
   cellDataSort?: Record<number, (row: string[], rowIndex: number) => string>;
+  /** Shown instead of the table when there are no rows (plain text). Default: "No pages found." */
+  emptyMessage?: string;
+  /** A totals row in `<tfoot>`; cells may contain raw HTML, like body cells. */
+  footer?: string[];
 }
 
 /**
@@ -304,11 +308,11 @@ export interface TableOptions {
  * @param options - Optional table rendering options (sortable, pagination hints, etc.)
  */
 export function formatAsTable(headers: string[], rows: string[][], options?: TableOptions): string {
+  const opts = options ?? {};
   if (rows.length === 0) {
-    return '<p><em>No pages found.</em></p>';
+    return `<p><em>${escapeHtml(opts.emptyMessage ?? 'No pages found.')}</em></p>`;
   }
 
-  const opts = options ?? {};
   const classes = ['plugin-table'];
   if (opts.sortable) classes.push('sortable');
 
@@ -334,8 +338,31 @@ export function formatAsTable(headers: string[], rows: string[][], options?: Tab
     '<tbody>',
     rowsHtml,
     '</tbody>',
+    ...(opts.footer ? [`<tfoot><tr>${opts.footer.map(cell => `<td>${cell}</td>`).join('')}</tr></tfoot>`] : []),
     '</table>'
   ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Money
+// ---------------------------------------------------------------------------
+
+/**
+ * Show an amount kept as whole minor units (cents) in its currency:
+ * `formatMoney(125050, 'USD')` is `$1,250.50`. The number of decimals is the
+ * currency's own (JPY 0, KWD 3); an unlisted code gets two. A malformed code
+ * never throws: it is shown after the number. Plain text: escape it when
+ * putting it in HTML.
+ */
+export function formatMoney(minorUnits: number, currency: string, locale = 'en-US'): string {
+  try {
+    const format = new Intl.NumberFormat(locale, { style: 'currency', currency });
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+    return format.format(minorUnits / 10 ** digits);
+  } catch {
+    const number = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(minorUnits / 100);
+    return `${number} ${currency}`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -841,13 +868,77 @@ export async function resolveManagerFetch(
   spec: string | undefined,
   context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
 ): Promise<ManagerFetchResult> {
+  const call = await callManagerMethod(spec, context, FETCHABLE_METHOD);
+  if (call.status !== 'ok') return call;
+  return { status: 'ok', text: String(call.value) };
+}
+
+/** One choice in a form's dropdown: the value submitted, and the text shown. */
+export interface FormOption {
+  value: string;
+  label: string;
+}
+
+/** Outcome of resolveManagerOptions; the statuses mean what they mean for resolveManagerFetch. */
+export type ManagerOptionsResult =
+  | { status: 'ok'; options: FormOption[] }
+  | { status: 'not-found' }
+  | { status: 'refused' }
+  | { status: 'no-spec' };
+
+/** The one manager method a form's `optionsSource: "fetch:..."` may reach. */
+export const FORM_OPTIONS_METHOD = 'toFormOptions';
+
+/**
+ * Resolve `ManagerName.toFormOptions(k=v,...)` to the choices of a form
+ * dropdown, under the same two rules as resolveManagerFetch: only
+ * `toFormOptions` is reachable, and the viewer's context goes with the call,
+ * so the manager offers that viewer only what they may see.
+ *
+ * The manager may answer strings or `{ value, label }` objects; anything
+ * else is dropped, and every value comes back as a string.
+ */
+export async function resolveManagerOptions(
+  spec: string | undefined,
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
+): Promise<ManagerOptionsResult> {
+  const call = await callManagerMethod(spec, context, FORM_OPTIONS_METHOD);
+  if (call.status !== 'ok') return call;
+  return { status: 'ok', options: toFormOptionList(call.value) };
+}
+
+function toFormOptionList(value: unknown): FormOption[] {
+  if (!Array.isArray(value)) return [];
+  const options: FormOption[] = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      options.push({ value: item, label: item });
+    } else if (item && typeof item === 'object') {
+      const { value: v, label } = item as { value?: unknown; label?: unknown };
+      if ((typeof v === 'string' || typeof v === 'number') && String(v) !== '') {
+        options.push({ value: String(v), label: typeof label === 'string' && label !== '' ? label : String(v) });
+      }
+    }
+  }
+  return options;
+}
+
+/**
+ * Parse `Manager.method(k=v,...)` and call it with the args and the viewer,
+ * but only when `method` is the one `allowed` method (#1556).
+ */
+async function callManagerMethod(
+  spec: string | undefined,
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown },
+  allowed: string
+): Promise<{ status: 'ok'; value: unknown } | { status: 'not-found' } | { status: 'refused' } | { status: 'no-spec' }> {
   if (!spec || !context.engine) return { status: 'no-spec' };
 
   const match = String(spec).trim().match(/^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\(([^)]*)\)$/);
   if (!match) return { status: 'no-spec' };
 
   const [, managerName, methodName, argsStr] = match;
-  if (methodName !== FETCHABLE_METHOD) return { status: 'refused' };
+  if (methodName !== allowed) return { status: 'refused' };
 
   const fetchArgs: Record<string, string> = {};
   if (argsStr) {
@@ -858,8 +949,8 @@ export async function resolveManagerFetch(
   }
 
   const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
-  const method = manager?.[FETCHABLE_METHOD];
+  const method = manager?.[allowed];
   if (typeof method !== 'function') return { status: 'not-found' };
-  const text = String(await (method as (o: Record<string, string>, viewer: unknown) => unknown).call(manager, fetchArgs, context.userContext));
-  return { status: 'ok', text };
+  const value = await (method as (o: Record<string, string>, viewer: unknown) => unknown).call(manager, fetchArgs, context.userContext);
+  return { status: 'ok', value };
 }

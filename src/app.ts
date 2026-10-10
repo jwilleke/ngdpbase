@@ -1187,6 +1187,8 @@ void (async (): Promise<void> => {
   });
 
   const wikiRoutes = new WikiRoutes(engine);
+  // #1749: add-on views get core's template data through the engine — one path.
+  engine.templateData = async (req) => ({ ...(await wikiRoutes.getCommonTemplateData(req)) });
   // #1572: the OpenID Connect sign-in bridge, ahead of the wiki routes so no
   // page route claims /oidc/interaction/*. Only when the provider is serving.
   if (oidcHandler && oidcManager) {

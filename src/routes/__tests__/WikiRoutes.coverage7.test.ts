@@ -51,7 +51,7 @@ vi.mock('../../context/WikiContext', async () => {
   return { default: MockWikiContext };
 });
 
-vi.mock('../../context/ApiContext', () => ({
+vi.mock('../../context/ApiContext', async () => ({
   default: {
     from: vi.fn().mockReturnValue({
       requireAuthenticated: vi.fn(),
@@ -59,10 +59,8 @@ vi.mock('../../context/ApiContext', () => ({
       hasPermission: vi.fn().mockReturnValue(true)
     })
   },
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(msg: string, status = 500) { super(msg); this.status = status; }
-  }
+  sendApiError: (await vi.importActual<typeof import('../../context/ApiContext')>('../../context/ApiContext')).sendApiError,
+  ApiError: (await vi.importActual<typeof import('../../context/ApiContext')>('../../context/ApiContext')).ApiError
 }));
 
 // ── mock manager objects ──────────────────────────────────────────────────────

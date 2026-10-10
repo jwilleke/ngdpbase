@@ -1,6 +1,6 @@
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type { CalendarConfig } from '../managers/CalendarConfig.js';
@@ -52,16 +52,15 @@ export default function adminRoutes(
           };
         });
 
-      res.render('admin-calendar', {
+      res.render('admin-calendar', { ...(await engine.templateData?.(req)),
         currentUser:      req.userContext,
         calendarSections,
-        csrfToken:        req.session?.csrfToken,
         successMessage:   req.query['success'] ?? null,
         errorMessage:     req.query['error']   ?? null
       });
     } catch (err) {
       if (err instanceof ApiError) {
-        res.status(err.status).send(err.message);
+        sendApiError(res, err, 'text');
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);

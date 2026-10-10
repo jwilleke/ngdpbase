@@ -19,6 +19,7 @@ import logger from '../utils/logger.js';
 import { checkConfiguredPath, type PathPreflightResult, type PathPreflightOptions } from '../utils/PathPreflight.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ManagerFetchOptions } from '../utils/managerUtils.js';
+import type { FormOption } from '../utils/pluginFormatters.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -444,6 +445,24 @@ abstract class BaseManager {
    */
   async toMarqueeText(_options: ManagerFetchOptions = {}, _viewer?: unknown): Promise<string> {
     return '';
+  }
+
+  /**
+   * Return the choices for a form dropdown, for the forms add-on's
+   * `"optionsSource": "fetch:ManagerName.toFormOptions(list=funds)"`.
+   *
+   * The same convention and the same safety rules as `toMarqueeText()`: it is
+   * the one other method page content may reach (`resolveManagerOptions`), it
+   * runs on every render for every viewer, and it must have no side effect.
+   * Offer only what `_viewer` may see. The forms add-on calls it again when the
+   * form is submitted and refuses a value that is not among the choices.
+   *
+   * @param _options  Parsed args from the spec, as raw `{ key: value }` strings.
+   * @param _viewer   The viewer's context.
+   * @returns `{ value, label }` choices (plain strings are accepted too), or `[]`.
+   */
+  async toFormOptions(_options: Record<string, string> = {}, _viewer?: unknown): Promise<FormOption[]> {
+    return [];
   }
 
   /**

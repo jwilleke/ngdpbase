@@ -1,6 +1,6 @@
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type CalendarDataManager from '../managers/CalendarDataManager.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
@@ -134,7 +134,7 @@ export default function reservationRoutes(
       res.status(201).json(m.toFullCalendar(event, viewer));
     } catch (err) {
       if (err instanceof ApiError) {
-        res.status(err.status).json({ error: err.message });
+        sendApiError(res, err);
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);
@@ -163,7 +163,7 @@ export default function reservationRoutes(
       res.status(204).end();
     } catch (err) {
       if (err instanceof ApiError) {
-        res.status(err.status).json({ error: err.message });
+        sendApiError(res, err);
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);

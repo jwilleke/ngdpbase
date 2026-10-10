@@ -63,6 +63,7 @@
               </a>
               <form method="POST" action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete" style="display:inline"
                 onsubmit="return confirm('Delete form &quot;<%= form.id %>&quot;?\n\nDeletion is blocked if submissions exist.')">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button type="submit" class="btn btn-sm btn-outline-danger">
                   <i class="fas fa-trash me-1"></i>Delete
                 </button>

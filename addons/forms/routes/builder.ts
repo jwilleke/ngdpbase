@@ -1,6 +1,6 @@
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import { FormDefinitionSchema, type FormField } from '../managers/FormsDataManager.js';
@@ -36,7 +36,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
 
   function handleAuthError(err: unknown, res: Response): boolean {
     if (err instanceof ApiError) {
-      res.status(err.status).send(err.message);
+      sendApiError(res, err, 'text');
       return true;
     }
     return false;
@@ -52,7 +52,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
     try {
       const ctx = ApiContext.from(req, engine);
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
-      res.render('forms-builder', { currentUser: req.userContext, form: null, isNew: true, errors: [] });
+      res.render('forms-builder', { ...(await engine.templateData?.(req)), currentUser: req.userContext, form: null, isNew: true, errors: [] });
     } catch (err) {
       if (handleAuthError(err, res)) return;
       res.status(500).send(String(err));
@@ -66,7 +66,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
       await ctx.requirePermission('admin-system'); // #1198: policy, not a role name
       const form = fdm()?.getDefinition(String(req.params['formId']));
       if (!form) { res.status(404).send('Form not found'); return; }
-      res.render('forms-builder', { currentUser: req.userContext, form, isNew: false, errors: [] });
+      res.render('forms-builder', { ...(await engine.templateData?.(req)), currentUser: req.userContext, form, isNew: false, errors: [] });
     } catch (err) {
       if (handleAuthError(err, res)) return;
       res.status(500).send(String(err));
@@ -85,7 +85,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         const fields = parseFields(body['fieldsJson']);
 
         if (!fields) {
-          res.status(400).render('forms-builder', {
+          res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form: { ...assemblePayload(body, rawId), fields: [] },
             isNew: true,
@@ -98,7 +98,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         if (!m) { res.status(503).send('Forms addon not available'); return; }
 
         if (m.getDefinition(rawId)) {
-          res.status(409).render('forms-builder', {
+          res.status(409).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form: { ...assemblePayload(body, rawId), fields },
             isNew: true,
@@ -110,7 +110,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         const payload = { ...assemblePayload(body, rawId), fields };
         const result = FormDefinitionSchema.safeParse(payload);
         if (!result.success) {
-          res.status(400).render('forms-builder', {
+          res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form: payload,
             isNew: true,
@@ -144,7 +144,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         const fields = parseFields(body['fieldsJson']);
 
         if (!fields) {
-          res.status(400).render('forms-builder', {
+          res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form: { ...assemblePayload(body, formId), fields: [] },
             isNew: false,
@@ -156,7 +156,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
         const payload = { ...assemblePayload(body, formId), fields };
         const result = FormDefinitionSchema.safeParse(payload);
         if (!result.success) {
-          res.status(400).render('forms-builder', {
+          res.status(400).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form: payload,
             isNew: false,
@@ -190,7 +190,7 @@ export default function builderRoutes(engine: WikiEngine): Router {
 
         const count = await m.getSubmissionCount(formId);
         if (count > 0) {
-          res.status(409).render('forms-builder', {
+          res.status(409).render('forms-builder', { ...(await engine.templateData?.(req)),
             currentUser: req.userContext,
             form,
             isNew: false,

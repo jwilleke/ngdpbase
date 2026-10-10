@@ -1,7 +1,6 @@
 
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
-import type RenderingManager from '../../../dist/src/managers/RenderingManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
 import type ValidationManager from '../../../dist/src/managers/ValidationManager.js';
@@ -11,7 +10,6 @@ import { formatPrivatePageName, privateStoreLayoutFromConfig } from '../../../di
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError } from '../../../dist/src/context/ApiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
-import { formatLeftMenuContent } from '../../../dist/src/utils/leftMenuNav.js';
 
 /**
  * Title and slug of a user's journal entry for a date (#1329).
@@ -170,24 +168,3 @@ export async function createJournalEntry(
   return name;
 }
 
-
-export async function getLeftMenu(
-  engine: WikiEngine,
-  userContext: import('../../../dist/src/context/WikiContext.js').UserContext | null
-): Promise<string | null> {
-  try {
-    const pm = engine.getManager<PageManager>('PageManager');
-    const rm = engine.getManager<RenderingManager>('RenderingManager');
-    if (!pm || !rm) return null;
-
-    // #1622: the host's one chrome reader — the same left menu every core page
-    // shows, honouring ngdpbase.chrome.left-menu-page. It reports a missing page.
-    const page = await pm.readChromePage('left-menu');
-    if (!page) return null;
-
-    const rendered = await rm.renderMarkdown(page.content ?? '', 'LeftMenu', userContext, null);
-    return formatLeftMenuContent(rendered);
-  } catch {
-    return null;
-  }
-}

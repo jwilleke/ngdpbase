@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 export const FieldSchema = z.object({
   name:          z.string(),
-  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section']),
+  type:          z.enum(['text', 'email', 'tel', 'textarea', 'date', 'time', 'dropdown', 'checkbox', 'hidden', 'section', 'amount']),
   label:         z.string(),
   required:      z.boolean().default(false),
   description:   z.string().optional(),
@@ -26,6 +26,8 @@ export const FormDefinitionSchema = z.object({
   proxySubmission: z.boolean().default(false),
   notifyRole:      z.string().default('admin'),
   confirmationUrl: z.string().optional(),
+  // false: the handler's answer is the record, and no submission file is kept
+  store:           z.boolean().default(true),
   fields:          z.array(FieldSchema).min(1)
 });
 
@@ -54,7 +56,28 @@ export type SubmissionStatus = 'pending' | 'processed' | 'rejected';
 
 // ── Validator builder ─────────────────────────────────────────────────────────
 
-export function buildSubmissionValidator(form: FormDefinition): z.ZodObject<Record<string, z.ZodTypeAny>> {
+/**
+ * Parse a typed amount to whole minor units (cents): `1250`, `1,250.5`,
+ * `$1,250.50`. Returns null for anything else, including more than two
+ * decimals, a sign, or zero.
+ */
+export function parseAmount(raw: string): number | null {
+  const text = raw.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  const [whole, frac = ''] = text.split('.');
+  const cents = Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+/**
+ * Build the submission validator. `choices` holds the options each dropdown
+ * offered this viewer (resolved again at submit time); a dropdown value not
+ * among them is refused. An amount comes out as whole cents.
+ */
+export function buildSubmissionValidator(
+  form: FormDefinition,
+  choices: Map<string, string[]> = new Map()
+): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const field of form.fields) {
     if (field.type === 'hidden' || field.type === 'section') continue;
@@ -65,15 +88,37 @@ export function buildSubmissionValidator(form: FormDefinition): z.ZodObject<Reco
       rule = z.string().min(7, `${field.label} must be at least 7 characters`);
     } else if (field.type === 'checkbox') {
       rule = z.union([z.literal('on'), z.literal('true'), z.literal('1')]);
+    } else if (field.type === 'amount') {
+      rule = z.string().transform((value, ctx) => {
+        const cents = parseAmount(value);
+        if (cents === null) {
+          ctx.addIssue({ code: 'custom', message: `${field.label}: enter an amount such as 125.50` });
+          return z.NEVER;
+        }
+        return cents;
+      });
+    } else if (field.type === 'dropdown' && choices.has(field.name)) {
+      const allowed = choices.get(field.name) ?? [];
+      rule = z.string().refine(v => allowed.includes(v), `${field.label}: choose one of the listed options`);
     } else {
       rule = field.required
         ? z.string().min(1, `${field.label} is required`)
         : z.string();
     }
-    if (!field.required) rule = rule.optional().or(z.literal(''));
+    if (!field.required) rule = z.literal('').or(rule.optional());
     shape[field.name] = rule;
   }
   return z.object(shape);
+}
+
+/** Flatten validation issues to one message per field, for showing next to it. */
+export function fieldErrors(error: z.ZodError): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const issue of error.issues) {
+    const name = String(issue.path[0] ?? '');
+    if (name && !(name in out)) out[name] = issue.message;
+  }
+  return out;
 }
 
 // ── FormsDataManager ──────────────────────────────────────────────────────────
