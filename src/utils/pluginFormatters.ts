@@ -292,6 +292,10 @@ export interface TableOptions {
    * Receives the cell's row data AND the 0-based row index within `rows`.
    */
   cellDataSort?: Record<number, (row: string[], rowIndex: number) => string>;
+  /** Shown instead of the table when there are no rows (plain text). Default: "No pages found." */
+  emptyMessage?: string;
+  /** A totals row in `<tfoot>`; cells may contain raw HTML, like body cells. */
+  footer?: string[];
 }
 
 /**
@@ -304,11 +308,11 @@ export interface TableOptions {
  * @param options - Optional table rendering options (sortable, pagination hints, etc.)
  */
 export function formatAsTable(headers: string[], rows: string[][], options?: TableOptions): string {
+  const opts = options ?? {};
   if (rows.length === 0) {
-    return '<p><em>No pages found.</em></p>';
+    return `<p><em>${escapeHtml(opts.emptyMessage ?? 'No pages found.')}</em></p>`;
   }
 
-  const opts = options ?? {};
   const classes = ['plugin-table'];
   if (opts.sortable) classes.push('sortable');
 
@@ -334,8 +338,31 @@ export function formatAsTable(headers: string[], rows: string[][], options?: Tab
     '<tbody>',
     rowsHtml,
     '</tbody>',
+    ...(opts.footer ? [`<tfoot><tr>${opts.footer.map(cell => `<td>${cell}</td>`).join('')}</tr></tfoot>`] : []),
     '</table>'
   ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Money
+// ---------------------------------------------------------------------------
+
+/**
+ * Show an amount kept as whole minor units (cents) in its currency:
+ * `formatMoney(125050, 'USD')` is `$1,250.50`. The number of decimals is the
+ * currency's own (JPY 0, KWD 3); an unlisted code gets two. A malformed code
+ * never throws: it is shown after the number. Plain text: escape it when
+ * putting it in HTML.
+ */
+export function formatMoney(minorUnits: number, currency: string, locale = 'en-US'): string {
+  try {
+    const format = new Intl.NumberFormat(locale, { style: 'currency', currency });
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+    return format.format(minorUnits / 10 ** digits);
+  } catch {
+    const number = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(minorUnits / 100);
+    return `${number} ${currency}`;
+  }
 }
 
 // ---------------------------------------------------------------------------

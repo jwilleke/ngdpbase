@@ -33,6 +33,7 @@ import {
   resolveManagerFetch,
   resolveManagerOptions,
   resolveCurrentKeyword,
+  formatMoney,
   simpleSlug
 } from '../pluginFormatters';
 
@@ -305,6 +306,16 @@ describe('formatAsTable', () => {
 
   test('returns empty message for no rows', () => {
     expect(formatAsTable(headers, [])).toBe('<p><em>No pages found.</em></p>');
+  });
+
+  test('the empty message can be the caller\'s, escaped', () => {
+    expect(formatAsTable(headers, [], { emptyMessage: 'No funds <yet>.' })).toBe('<p><em>No funds &lt;yet&gt;.</em></p>');
+  });
+
+  test('a footer row goes in <tfoot>, its cells raw like body cells', () => {
+    const html = formatAsTable(headers, rows, { footer: ['<strong>Total</strong>', '1.6'] });
+    expect(html).toContain('<tfoot><tr><td><strong>Total</strong></td><td>1.6</td></tr></tfoot>');
+    expect(html.indexOf('</tbody>')).toBeLessThan(html.indexOf('<tfoot>'));
   });
 
   test('renders <table> with headers and rows', () => {
@@ -1016,5 +1027,34 @@ describe('formatAsList carries badges, actions and classes (#1306)', () => {
   test('none of it changes a plain list', () => {
     // The eight plugins already calling this must render exactly as before.
     expect(formatAsList(links)).toBe('<ul>\n<li><a href="/view/A">A</a></li>\n<li><a href="/view/B">B</a></li>\n</ul>');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatMoney — whole minor units (cents) for display
+// ---------------------------------------------------------------------------
+
+describe('formatMoney', () => {
+  test.each([
+    [125050, 'USD', '$1,250.50'],
+    [5, 'USD', '$0.05'],
+    [0, 'USD', '$0.00'],
+    [-12550, 'USD', '-$125.50'],
+    [1250, 'JPY', '¥1,250'],
+    [1250, 'KWD', 'KWD 1.250']
+  ])('%d %s is %s', (minor, currency, shown) => {
+    expect(formatMoney(minor, currency).replace(/\u00a0/g, ' ')).toBe(shown);
+  });
+
+  test('another locale', () => {
+    expect(formatMoney(125050, 'EUR', 'de-DE').replace(/\u00a0/g, ' ')).toBe('1.250,50 €');
+  });
+
+  test('an unlisted but well-formed code is shown with two decimals and the code', () => {
+    expect(formatMoney(125050, 'XXQ').replace(/\u00a0/g, ' ')).toBe('XXQ 1,250.50');
+  });
+
+  test('a malformed code falls back to two decimals and the code, never throws', () => {
+    expect(formatMoney(125050, 'dollars')).toBe('1,250.50 dollars');
   });
 });
