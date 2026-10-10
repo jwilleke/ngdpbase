@@ -79,6 +79,17 @@ jobManager.registerJob({
 - A hard kill (SIGKILL, a crash, power loss) reaches none of this: the run's lock expires after 60 s and the resume counts as an attempt.
 - Nothing depends on PM2, systemd, Docker or Kubernetes beyond delivering the signal.
 
+### Runs started by hand survive a restart (#1746)
+
+A run started by `enqueue()` or Run now is recorded like a scheduled run: who asked, when, the attempt, and `running`, under a lock with a heartbeat (kept apart from slot locks, under `<jobId>.by-hand`). On the next start every registered job is looked at once for a run a restart cut off:
+
+- __The job declares `persist: true`__ (safe to run again): the run is restarted as the person who asked — same run id, `ctx.resume` with its last checkpoint, an info notification. If the job declares a `permission`, the person must still hold it (by policy, `pdp.holds`); a crash counts as an attempt, up to `maxAttempts`.
+- __It does not__ (the default for a job that is only enqueued, since running it twice could do harm): the run is recorded as failed, audited (`job-failed`, as the person), and posted to admins as an error notification asking them to run it again. Never silent.
+- At shutdown a resumable run is handed off as `interrupted` and restarted at once, without counting an attempt; any other is aborted and recorded as failed.
+- A run whose lock a live server still holds (a rolling update) is left alone and looked at again later. Of several unfinished runs of one job, the newest is restarted and the older ones reported.
+
+Core's five admin maintenance jobs (`pages.reindex`, `pages.rebuild`, `media.rescan`, `media.rebuild`, `attachments.rebuild`) declare `persist: true` and `permission: 'admin-system'`: each rebuilds from source. A scheduled job's Run now follows its own `persist` (default `true`).
+
 ### Maintenance jobs (#1721)
 
 `registerMaintenance({ id, displayName, everyMs, run })` declares a routine tick whose next run does the same work, in place of a hand-rolled `setInterval`: every `everyMs` in whole minutes (at least one), `catchUp: 'none'`, `overlap: 'skip'`, `persist: false`, one attempt. A success is neither audited nor notified; a failure is. `everyMs` 0 leaves the job unscheduled.

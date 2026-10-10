@@ -5,7 +5,10 @@
  * ever (`stubborn`). SIGTERM and SIGINT shut it down the way app.ts does:
  * `shutdown()`, then exit.
  *
- * Usage: tsx scheduledJobProcess.ts <state dir> <cooperative|stubborn>
+ * Usage: tsx scheduledJobProcess.ts <state dir> <cooperative|stubborn> [hand]
+ *
+ * With `hand` (#1746) the job has no schedule: it is started by hand, by
+ * `enqueue`, as jim, and declares itself safe to run again (`persist: true`).
  *
  * The clock is fixed, and shared with the test through the state's times, so
  * the parent can carry on the same timeline after this process is gone.
@@ -13,7 +16,8 @@
 import BackgroundJobManager from '../../BackgroundJobManager.js';
 import FileJobStateProvider from '../../../providers/FileJobStateProvider.js';
 
-const [stateDir, mode] = process.argv.slice(2);
+const [stateDir, mode, started] = process.argv.slice(2);
+const byHand = started === 'hand';
 let clock = Date.parse('2026-10-09T09:30:00Z');
 const now = (): number => clock;
 
@@ -33,7 +37,7 @@ const manager = new BackgroundJobManager(engine, {
 manager.registerJob({
   id: 'test.close',
   displayName: 'Close',
-  schedule: 'hourly',
+  ...(byHand ? { persist: true, permission: 'admin-system' } : { schedule: 'hourly' }),
   run: (_progress, ctx) => new Promise((resolve) => {
     ctx.checkpoint({ doneThrough: 311 });
     process.stdout.write('RUNNING\n');
@@ -50,8 +54,13 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   });
 }
 
-await manager.tick();
-clock = Date.parse('2026-10-09T10:00:05Z');
-await manager.tick();
+if (byHand) {
+  clock = Date.parse('2026-10-09T10:00:05Z');
+  await manager.enqueue('test.close', { username: 'jim', origin: 'request', requestedAt: '2026-10-09T10:00:05.000Z' });
+} else {
+  await manager.tick();
+  clock = Date.parse('2026-10-09T10:00:05Z');
+  await manager.tick();
+}
 // Keep the process alive until a signal ends it.
 setInterval(() => undefined, 60_000);

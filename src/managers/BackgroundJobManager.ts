@@ -4,7 +4,7 @@ import BaseManager from './BaseManager.js';
 import logger from '../utils/logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
-import { describeJobContext, type JobContext } from '../context/JobContext.js';
+import { describeJobContext, toPermissionSubject, type JobContext } from '../context/JobContext.js';
 import { scheduleContext } from '../context/bootActions.js';
 import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
 import { selectSlots, CATCH_UP_ALL_CAP, type CatchUp, type Overlap } from '../utils/jobSlots.js';
@@ -156,11 +156,24 @@ export interface JobDefinition {
    */
   timeout?: number;
   /**
-   * Keep slots, history and locks where a restart finds them (default `true`
-   * for a scheduled job). `false` keeps them in memory: no catch-up after a
+   * For a scheduled job: keep slots, history and locks where a restart finds
+   * them (default `true`). `false` keeps them in memory: no catch-up after a
    * restart and no lock, so only for harmless maintenance ticks.
+   *
+   * For a run started by hand (`enqueue`, Run now) (#1746): `true` declares
+   * the job safe to run again, so a run a restart cut off is restarted, as the
+   * person who asked. Default `false` for a job that is only enqueued — a run
+   * of it that a restart cut off is reported, never repeated, because running
+   * it twice could do harm (an import posting twice). A scheduled job's Run
+   * now follows its `persist`.
    */
   persist?: boolean;
+  /**
+   * The permission a person needs to start this job (#1746), as the route
+   * that enqueues it checks. Before a cut-off run is restarted as them, they
+   * must still hold it; if they do not, the run is reported, not restarted.
+   */
+  permission?: string;
   /**
    * Attempts a scheduled slot gets (default 3, #1716). A failed attempt — an
    * error, a timeout, a failure result, or the server stopping mid-run — is
@@ -277,6 +290,8 @@ class BackgroundJobManager extends BaseManager {
   private ticking = false;
   /** Scheduled runs in progress, so a caller can wait for them. */
   private drains: Set<Promise<void>> = new Set();
+  /** Jobs whose runs a restart cut off have been looked for, since this start (#1746). */
+  private recovered: Set<string> = new Set();
   /** Set once shutdown begins: no slot starts after it (#1717). */
   private stopping = false;
   private handedOff: Promise<void> | null = null;
@@ -485,6 +500,7 @@ class BackgroundJobManager extends BaseManager {
     if (this.ticking || this.stopping) return;
     this.ticking = true;
     try {
+      await this.recoverHandRuns();
       for (const job of this.scheduled.values()) {
         try {
           await this.look(job);
@@ -589,7 +605,7 @@ class BackgroundJobManager extends BaseManager {
     await this.saveState(job, { ...state, current: null, nextSlot: this.nextSlotAfter(job, state.nextSlot, record.slot) });
     await provider?.recordRun(job.def.id, final);
     logger.error(`[BackgroundJobManager] '${job.def.id}' slot ${record.slot} failed after ${record.attempt} attempt(s): ${error}`);
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: record.runId, slot: record.slot, attempt: record.attempt, maxAttempts: job.maxAttempts }, final.error as string, this.schedulerContext(job));
+    await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: record.runId, slot: record.slot, attempt: record.attempt, maxAttempts: job.maxAttempts }, final.error as string, this.schedulerContext(job));
     return false;
   }
 
@@ -662,44 +678,15 @@ class BackgroundJobManager extends BaseManager {
 
   /**
    * Run a scheduled job now, outside its schedule (#1611 §9). As the person
-   * who asked, with their permissions. It is no slot: it marks no slot done,
-   * catches nothing up, and is not retried. Slots that come due while it runs
-   * follow the job's overlap rule, as for any run. Returns the run id.
+   * who asked, with their permissions. It is no slot: it marks no slot done
+   * and catches nothing up. Slots that come due while it runs follow the job's
+   * overlap rule, as for any run. A restart that cuts it off restarts it, as
+   * for any run started by hand (#1746). Returns the run id.
    */
   async runNow(jobId: string, requestedBy: JobContext): Promise<string> {
     const job = this.scheduledOrThrow(jobId);
     await this.assertIdle(job);
-    const runId = randomUUID();
-    const run: JobRun = { runId, jobId, displayName: job.def.displayName, requestedBy, status: 'pending', startedAt: this.clock() };
-    this.runs.set(runId, run);
-    this.activeByJobId.set(jobId, runId);
-    const provider = job.persist ? this.stateProvider : null;
-    const record: JobRunRecord = { runId, slot: null, startedAt: run.startedAt.toISOString(), attempt: 1, status: 'running' };
-    await provider?.recordRun(jobId, record);
-
-    job.draining = true;
-    const maxBytes = this.checkpointMaxBytes();
-    const done: Promise<void> = this.executeJob(job.def, run, {
-      slot: null,
-      timeoutMs: job.timeoutMs,
-      resume: null,
-      checkpoint: (data) => { checkpointJson(data, maxBytes); }
-    }).then(async () => {
-      await provider?.recordRun(jobId, {
-        ...record,
-        status: run.status === 'completed' ? 'completed' : 'failed',
-        completedAt: (run.completedAt ?? this.clock()).toISOString(),
-        ...(run.status === 'completed' ? {} : { error: run.result?.error ?? 'failed' })
-      });
-    }).catch((err: unknown) => {
-      logger.error(`[BackgroundJobManager] '${jobId}' run now ${runId} failed outside its own handler:`, err);
-    }).finally(() => {
-      job.draining = false;
-      job.busyUntil = this.clock();
-      this.drains.delete(done);
-    });
-    this.drains.add(done);
-    return runId;
+    return this.startHandRun(job.def, requestedBy, null);
   }
 
   /**
@@ -735,7 +722,7 @@ class BackgroundJobManager extends BaseManager {
       throw new JobActionError(`'${jobId}' has no run waiting for a retry`, 409);
     }
     await this.saveState(job, { ...state, current: { ...current, retryAt: this.clock().toISOString() } });
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_RETRY, 'job-retry', { runId: current.runId, slot: current.slot, attempt: current.attempt + 1 }, `retried now by ${requestedBy.username}`, requestedBy);
+    await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_RETRY, 'job-retry', { runId: current.runId, slot: current.slot, attempt: current.attempt + 1 }, `retried now by ${requestedBy.username}`, requestedBy);
     void this.tick();
   }
 
@@ -793,7 +780,8 @@ class BackgroundJobManager extends BaseManager {
     this.runs.set(runId, run);
     this.activeByJobId.set(job.def.id, runId);
 
-    const record: JobRunRecord = { runId, slot: slotIso, startedAt: run.startedAt.toISOString(), attempt, status: 'running' };
+    // A slot runs as the system principal (null); a slot an administrator reran, as them (#1718).
+    const record: JobRunRecord = { runId, slot: slotIso, startedAt: run.startedAt.toISOString(), attempt, status: 'running', requestedBy: rerun?.requestedBy ?? null };
     const before = await this.loadState(job);
     await this.saveState(job, { ...(before ?? emptyState(job, ruleKey(job.schedule))), current: record });
     await provider?.recordRun(job.def.id, record);
@@ -818,7 +806,7 @@ class BackgroundJobManager extends BaseManager {
       await provider?.recordRun(job.def.id, interrupted);
       await provider?.releaseLock(job.def.id, slotIso, LOCK_OWNER);
       logger.info(`[BackgroundJobManager] '${job.def.id}' slot ${slotIso} handed off at shutdown (attempt ${attempt}); the next start resumes it`);
-      await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId, slot: slotIso, attempt }, `slot ${slotIso} interrupted by shutdown`, this.schedulerContext(job));
+      await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId, slot: slotIso, attempt }, `slot ${slotIso} interrupted by shutdown`, this.schedulerContext(job));
     };
     this.handoffs.set(runId, handOffRun);
 
@@ -929,12 +917,12 @@ class BackgroundJobManager extends BaseManager {
     const provider = job.persist ? this.stateProvider : null;
     const now = this.clock().toISOString();
     for (const slot of slots.slice(-CATCH_UP_ALL_CAP)) {
-      await provider?.recordRun(job.def.id, { runId: randomUUID(), slot: slot.toISOString(), startedAt: now, completedAt: now, attempt: 0, status: 'skipped' });
+      await provider?.recordRun(job.def.id, { runId: randomUUID(), slot: slot.toISOString(), startedAt: now, completedAt: now, attempt: 0, status: 'skipped', requestedBy: null });
     }
     const detail = `${slots.length} slot(s) skipped (${reason}; catchUp ${job.catchUp}, overlap ${job.overlap}): ` +
       `${slots[0].toISOString()}${slots.length > 1 ? ` … ${slots[slots.length - 1].toISOString()}` : ''}`;
     logger.warn(`[BackgroundJobManager] '${job.def.id}' ${detail}`);
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_SKIPPED, 'job-skipped', {
+    await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_SKIPPED, 'job-skipped', {
       count: slots.length,
       first: slots[0].toISOString(),
       last: slots[slots.length - 1].toISOString(),
@@ -951,11 +939,11 @@ class BackgroundJobManager extends BaseManager {
 
   private async recordScheduleChange(job: ScheduledJob, from: string, to: string): Promise<void> {
     logger.info(`[BackgroundJobManager] '${job.def.id}' schedule changed: ${from} → ${to}; next slots counted from now, none caught up`);
-    await this.recordSchedulerEvent(job, AUDIT_EVENT.JOB_SCHEDULE_CHANGE, 'job-schedule-change', { from, to }, `${from} → ${to}`, this.schedulerContext(job));
+    await this.recordSchedulerEvent(job.def, AUDIT_EVENT.JOB_SCHEDULE_CHANGE, 'job-schedule-change', { from, to }, `${from} → ${to}`, this.schedulerContext(job));
   }
 
   private async recordSchedulerEvent(
-    job: ScheduledJob,
+    def: JobDefinition,
     eventType: AuditEventName,
     action: string,
     fields: Record<string, unknown>,
@@ -971,7 +959,7 @@ class BackgroundJobManager extends BaseManager {
       action,
       result: 'success',
       severity: 'low',
-      metadata: { jobId: job.def.id, displayName: job.def.displayName, origin: by.origin, ...fields, detail }
+      metadata: { jobId: def.id, displayName: def.displayName, origin: by.origin, ...fields, detail }
     });
   }
 
@@ -1036,32 +1024,218 @@ class BackgroundJobManager extends BaseManager {
       throw new Error(`BackgroundJobManager: unknown job '${jobId}'`);
     }
 
-    const runId = randomUUID();
+    return this.startHandRun(def, requestedBy, null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Runs started by hand (#1746): saved like scheduled runs, so a restart that
+  // cuts one off is never silent — it is restarted when the job is safe to
+  // run again, and reported when it is not.
+  // ---------------------------------------------------------------------------
+
+  /** Whether a cut-off run of this job may be run again: its declaration (see `persist`). */
+  private resumable(def: JobDefinition): boolean {
+    const job = this.scheduled.get(def.id);
+    return job ? job.persist : def.persist === true;
+  }
+
+  /** Start a run by hand, or a cut-off one again. Returns its run id at once; the work runs in the background. */
+  private startHandRun(def: JobDefinition, requestedBy: JobContext, resume: Resume | null): string {
+    const runId = resume?.runId ?? randomUUID();
     const run: JobRun = {
-      runId,
-      jobId,
-      displayName: def.displayName,
-      requestedBy,
-      status: 'pending',
-      startedAt: new Date()
+      runId, jobId: def.id, displayName: def.displayName, requestedBy, status: 'pending', startedAt: this.clock(),
+      ...(resume ? { attempt: resume.attempt, resumeReason: resume.reason } : {})
     };
     this.runs.set(runId, run);
-    this.activeByJobId.set(jobId, runId);
-
-    // Fire and forget — caller polls via getStatus(). #1238: with a catch, so
-    // nothing a job does can become an unhandled rejection in the host.
-    // A job that is only ever enqueued has no time limit unless it declares one (#1715).
-    const timeoutMs = def.timeout === undefined ? 0 : this.timeoutFor(def, 0);
-    const maxBytes = this.checkpointMaxBytes();
-    this.executeJob(def, run, { slot: null, timeoutMs, resume: null, checkpoint: (data) => { checkpointJson(data, maxBytes); } }).catch((err: unknown) => {
+    this.activeByJobId.set(def.id, runId);
+    const job = this.scheduled.get(def.id);
+    if (job) job.draining = true;
+    // #1238: with a catch, so nothing a job does can become an unhandled rejection in the host.
+    const done: Promise<void> = this.runByHand(def, run, resume).catch((err: unknown) => {
       run.status = 'failed';
       run.result = { success: false, error: err instanceof Error ? err.message : String(err) };
       run.completedAt = new Date();
-      if (this.activeByJobId.get(jobId) === runId) this.activeByJobId.delete(jobId);
-      logger.error(`[BackgroundJobManager] job '${jobId}' run ${runId} failed outside its own handler:`, err);
+      if (this.activeByJobId.get(def.id) === runId) this.activeByJobId.delete(def.id);
+      logger.error(`[BackgroundJobManager] job '${def.id}' run ${runId} failed outside its own handler:`, err);
+    }).finally(() => {
+      if (job) {
+        job.draining = false;
+        job.busyUntil = this.clock();
+      }
+      this.drains.delete(done);
     });
-
+    this.drains.add(done);
     return runId;
+  }
+
+  /**
+   * One run started by hand. Its record — who asked, when, attempt, running —
+   * is written before the work starts and held under a lock with a heartbeat,
+   * so the next start can tell a run that a restart cut off from one a live
+   * server is still running. With no job state open it runs unrecorded, as
+   * before.
+   */
+  private async runByHand(def: JobDefinition, run: JobRun, resume: Resume | null): Promise<void> {
+    const provider = this.stateProvider && isFileSafeJobId(def.id) ? this.stateProvider : null;
+    const job = this.scheduled.get(def.id);
+    const canResume = this.resumable(def);
+    const attempt = resume?.attempt ?? 1;
+    const lockKey = run.startedAt.toISOString();
+    const record: JobRunRecord = { runId: run.runId, slot: null, startedAt: lockKey, attempt, status: 'running', requestedBy: run.requestedBy };
+
+    let held = false;
+    try {
+      if (provider) {
+        held = await provider.takeLock(handLockId(def.id), lockKey, LOCK_OWNER, LOCK_TTL_MS);
+        await provider.recordRun(def.id, record);
+      }
+    } catch (err) {
+      logger.error(`[BackgroundJobManager] '${def.id}' run ${run.runId} could not be recorded; a restart would cut it off unreported:`, err);
+    }
+    const heartbeat = provider && held
+      ? setInterval(() => { void provider.renewLock(handLockId(def.id), lockKey, LOCK_OWNER, LOCK_TTL_MS); }, LOCK_RENEW_MS)
+      : null;
+    heartbeat?.unref();
+
+    const checkpoint = resume && provider && canResume ? await provider.loadCheckpoint(def.id, run.runId) : null;
+    const writer = this.checkpointWriter(canResume ? provider : null, def.id, run.runId);
+
+    // At shutdown a resumable run is handed to the next start (#1717), not failed.
+    let settled = false;
+    const handOffRun = async (): Promise<void> => {
+      if (settled) return;
+      settled = true;
+      if (heartbeat) clearInterval(heartbeat);
+      await writer.flush();
+      await provider?.recordRun(def.id, { ...record, status: 'interrupted', completedAt: this.clock().toISOString() });
+      if (held) await provider?.releaseLock(handLockId(def.id), lockKey, LOCK_OWNER);
+      logger.info(`[BackgroundJobManager] '${def.id}' run ${run.runId} handed off at shutdown; the next start restarts it`);
+      await this.recordSchedulerEvent(def, AUDIT_EVENT.JOB_INTERRUPTED, 'job-interrupted', { runId: run.runId, attempt }, 'run started by hand, interrupted by shutdown', run.requestedBy);
+    };
+    if (canResume && provider) this.handoffs.set(run.runId, handOffRun);
+
+    const timeoutMs = job ? job.timeoutMs : (def.timeout === undefined ? 0 : this.timeoutFor(def, 0));
+    try {
+      await this.executeJob(def, run, {
+        slot: null,
+        timeoutMs,
+        resume: resume ? { attempt, checkpoint: checkpoint ?? null, reason: resume.reason } : null,
+        checkpoint: writer.checkpoint
+      });
+    } finally {
+      this.handoffs.delete(run.runId);
+      if (settled || (run.interrupted && run.status !== 'completed')) {
+        await handOffRun();
+      } else {
+        settled = true;
+        if (heartbeat) clearInterval(heartbeat);
+        await writer.flush();
+        const completedAt = (run.completedAt ?? this.clock()).toISOString();
+        await provider?.recordRun(def.id, {
+          ...record,
+          status: run.status === 'completed' ? 'completed' : 'failed',
+          completedAt,
+          ...(run.status === 'completed' ? {} : { error: run.result?.error ?? 'failed' })
+        });
+        if (run.status === 'completed') await provider?.clearCheckpoint(def.id, run.runId);
+        if (held) await provider?.releaseLock(handLockId(def.id), lockKey, LOCK_OWNER);
+      }
+    }
+  }
+
+  /**
+   * Look once, per job, for runs started by hand that a restart cut off
+   * (#1746). Called from every look until each registered job has been seen,
+   * so an add-on's job is looked at once it has registered. A job running
+   * here, or whose run another live server still holds, is looked at again
+   * next time.
+   */
+  private async recoverHandRuns(): Promise<void> {
+    const provider = this.stateProvider;
+    if (!provider) return;
+    for (const def of this.jobs.values()) {
+      if (this.recovered.has(def.id) || this.stopping) continue;
+      if (!isFileSafeJobId(def.id)) {
+        this.recovered.add(def.id);
+        continue;
+      }
+      if (this.activeByJobId.has(def.id) || this.scheduled.get(def.id)?.draining) continue;
+      try {
+        if (await this.recoverHandRunsOf(def, provider)) this.recovered.add(def.id);
+      } catch (err) {
+        logger.error(`[BackgroundJobManager] Looking for cut-off runs of '${def.id}' failed:`, err);
+        this.recovered.add(def.id);
+      }
+    }
+  }
+
+  /** False when a live server still holds one of the job's runs: look again later. */
+  private async recoverHandRunsOf(def: JobDefinition, provider: JobStateProvider): Promise<boolean> {
+    const unfinished = (await provider.listRuns(def.id)).filter((r) => r.slot === null && (r.status === 'running' || r.status === 'interrupted'));
+    if (unfinished.length === 0) return true;
+    for (const r of unfinished) {
+      if (r.status !== 'running') continue;
+      if (!(await provider.takeLock(handLockId(def.id), r.startedAt, LOCK_OWNER, LOCK_TTL_MS))) return false;
+      await provider.releaseLock(handLockId(def.id), r.startedAt, LOCK_OWNER);
+    }
+    // Newest first: the newest is restarted when it may be; any older one was
+    // already superseded, and is reported.
+    const [latest, ...older] = unfinished;
+    for (const r of older) await this.reportCutOff(def, r, 'a later run of this job replaced it');
+    await this.recoverOne(def, latest);
+    return true;
+  }
+
+  private async recoverOne(def: JobDefinition, r: JobRunRecord): Promise<void> {
+    const interrupted = r.status === 'interrupted';
+    const reason = interrupted ? 'interrupted' : 'the server stopped during the run';
+    // A handoff at shutdown is not an attempt; a crash is.
+    const attempt = interrupted ? r.attempt : r.attempt + 1;
+    const maxAttempts = this.scheduled.get(def.id)?.maxAttempts ?? def.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+
+    if (!this.resumable(def)) {
+      await this.reportCutOff(def, r, 'it is not restarted, because the job does not declare it is safe to run again — run it again');
+      return;
+    }
+    if (attempt > maxAttempts) {
+      await this.reportCutOff(def, r, `it is not restarted: ${r.attempt} attempt(s) were cut off, the limit is ${maxAttempts} — run it again once the cause is fixed`);
+      return;
+    }
+    if (!r.requestedBy) {
+      await this.reportCutOff(def, r, 'it is not restarted: the record does not say who asked — run it again');
+      return;
+    }
+    if (def.permission && !(await this.stillHolds(r.requestedBy, def.permission))) {
+      await this.reportCutOff(def, r, `it is not restarted: ${r.requestedBy.username} no longer holds ${def.permission}`);
+      return;
+    }
+    logger.info(`[BackgroundJobManager] '${def.id}' run ${r.runId} (${reason}) restarted as ${r.requestedBy.username}, attempt ${attempt}`);
+    await this.sendNotification('info', `${def.displayName} restarted`,
+      `It was ${interrupted ? 'interrupted by a shutdown' : 'cut off by a restart'} at ${r.startedAt} and has been restarted (attempt ${attempt}).`);
+    this.startHandRun(def, { ...r.requestedBy, reason: `${r.requestedBy.reason ?? 'started by hand'} — restarted (${reason})` }, { runId: r.runId, attempt, reason });
+  }
+
+  /** Whether the person who started a run still holds the job's permission — by policy, as at the time it is asked (P2). */
+  private async stillHolds(ctx: JobContext, permission: string): Promise<boolean> {
+    const pdp = this.engine?.getManager?.<{ holds(subject: unknown, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (!pdp) return false;
+    try {
+      return await pdp.holds(toPermissionSubject(ctx), permission);
+    } catch {
+      return false;
+    }
+  }
+
+  /** A run a restart cut off and that is not run again: recorded as failed, audited, and told to the admins. Never silent. */
+  private async reportCutOff(def: JobDefinition, r: JobRunRecord, why: string): Promise<void> {
+    const when = r.startedAt;
+    const error = `cut off by a restart (started ${when}); ${why}`;
+    await this.stateProvider?.recordRun(def.id, { ...r, status: 'failed', completedAt: this.clock().toISOString(), error });
+    logger.error(`[BackgroundJobManager] '${def.id}' run ${r.runId} ${error}`);
+    const by = r.requestedBy ?? scheduleContext(this.engine, `recovering ${def.id}`);
+    await this.recordSchedulerEvent(def, AUDIT_EVENT.JOB_FAILED, 'job-failed', { runId: r.runId, attempt: r.attempt, startedAt: when }, error, by);
+    await this.sendNotification('error', `${def.displayName} did not finish`,
+      `It was started${r.requestedBy ? ` by ${r.requestedBy.username}` : ''} at ${when} and cut off by a server restart; ${why}.`);
   }
 
   /**
@@ -1286,6 +1460,25 @@ class BackgroundJobManager extends BaseManager {
       logger.warn(`[BackgroundJobManager] Shutting down with ${active.length} job(s) still active`);
     }
     await super.shutdown();
+  }
+}
+
+/**
+ * Where a run started by hand keeps its lock, keyed by its start (#1746):
+ * apart from the job's slot locks, so a hand run that starts in a slot's
+ * first second can never be taken for that slot.
+ */
+function handLockId(jobId: string): string {
+  return `${jobId}.by-hand`;
+}
+
+/** Whether a job id can name state files and rows (see `assertJobId`); a job whose id cannot runs unrecorded. */
+function isFileSafeJobId(jobId: string): boolean {
+  try {
+    assertJobId(handLockId(jobId));
+    return true;
+  } catch {
+    return false;
   }
 }
 

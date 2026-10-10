@@ -19,6 +19,8 @@
  * @module providers/jobState
  */
 
+import type { JobContext } from '../context/JobContext.js';
+
 /** One run of a job. Times are ISO 8601 instants. */
 export interface JobRunRecord {
   runId: string;
@@ -33,6 +35,13 @@ export interface JobRunRecord {
   error?: string;
   /** A failed attempt with attempts left: when it is tried again (#1716). */
   retryAt?: string;
+  /**
+   * Who asked, for a run started by hand (#1746): the run is restarted as
+   * them after a restart, or reported to them. `null` for a scheduled slot,
+   * which runs as the system principal — said on purpose (#1399), never left
+   * out. A record written before this field existed reads as having none.
+   */
+  requestedBy: JobContext | null;
 }
 
 export interface JobState {

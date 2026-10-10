@@ -19903,6 +19903,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'pages.reindex',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Reindex Pages',
       run: async (_reportProgress: ReportProgress) => {
         const pageManager = this.engine.getManager('PageManager');
@@ -19930,6 +19934,10 @@ ${description}
     // page from disk, so ghosts are dropped by construction.
     jobManager.registerJob({
       id: 'pages.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Pages',
       run: async (reportProgress: ReportProgress) => {
         const pageManager = this.engine.getManager('PageManager');
@@ -19960,6 +19968,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'media.rescan',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Reindex Media',
       run: async (reportProgress: ReportProgress) => {
         const mediaManager = this.engine.getManager('MediaManager');
@@ -19984,6 +19996,10 @@ ${description}
 
     jobManager.registerJob({
       id: 'media.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Media Index',
       run: async (reportProgress: ReportProgress) => {
         const mediaManager = this.engine.getManager('MediaManager');
@@ -20004,6 +20020,10 @@ ${description}
     // Slice-5 doc-metadata fields on pre-v3.27.0 attachment records.
     jobManager.registerJob({
       id: 'attachments.rebuild',
+      // #1746: rebuilt from source, so safe to run again — a restart that cuts
+      // it off restarts it, as the admin who asked, if they still hold admin-system.
+      persist: true,
+      permission: 'admin-system',
       displayName: 'Rebuild Attachment Metadata',
       run: async (reportProgress: ReportProgress) => {
         const attachmentManager = this.engine.getManager('AttachmentManager');
