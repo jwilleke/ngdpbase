@@ -11,7 +11,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { UserContext } from '../../../dist/src/context/WikiContext.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
@@ -19,7 +19,7 @@ import type RenderingManager from '../../../dist/src/managers/RenderingManager.j
 import type AttachmentManager from '../../../dist/src/managers/AttachmentManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
-import { getLeftMenu, mayOnEntry } from './helpers.js';
+import { mayOnEntry } from './helpers.js';
 
 export default function publicRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
   const router = Router();
@@ -44,7 +44,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
 
   function handleError(err: unknown, res: Response): void {
     if (err instanceof ApiError) {
-      res.status(err.status).send(err.message);
+      sendApiError(res, err, 'text');
       return;
     }
     res.status(500).send(err instanceof Error ? err.message : String(err));
@@ -80,11 +80,10 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const total    = m ? await m.countByAuthor(username, req.userContext) : 0;
         const entries  = m ? await m.listByAuthor(username, req.userContext, { limit, offset }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
-        const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
         const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
         const onThisDay = m ? await m.getOnThisDay(username, req.userContext) : [];
 
-        res.render('journal-home', {
+        res.render('journal-home', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           entries,
           total,
@@ -95,8 +94,7 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           sidebar,
           activeFilter: null,
           activeValue:  null,
-          onThisDay,
-          leftMenu
+          onThisDay
         });
       } catch (err) {
         handleError(err, res);
@@ -117,16 +115,14 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const tag      = sp(req.params['tag']);
         const entries  = m ? await m.listByAuthor(username, req.userContext, { tag }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
-        const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
         const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
 
-        res.render('journal-by-tag', {
+        res.render('journal-by-tag', { ...(await engine.templateData?.(req)),
           currentUser:  req.userContext,
           entries,
           tag,
           total:        entries.length,
-          sidebar,
-          leftMenu
+          sidebar
         });
       } catch (err) {
         handleError(err, res);
@@ -147,16 +143,14 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const mood     = sp(req.params['mood']);
         const entries  = m ? await m.listByAuthor(username, req.userContext, { mood }) : [];
         const streakVisible = await getUserPref<boolean>(username, 'journal.streakVisible', true);
-        const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
         const sidebar  = await buildSidebarData(username, req.userContext, streakVisible);
 
-        res.render('journal-by-mood', {
+        res.render('journal-by-mood', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           entries,
           mood,
           total:       entries.length,
-          sidebar,
-          leftMenu
+          sidebar
         });
       } catch (err) {
         handleError(err, res);
@@ -210,18 +204,15 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
         const attachments = am ? await am.getAttachmentsForPage(entry.name, req.userContext) : [];
 
         const streakVisible = await getUserPref<boolean>(entry.author, 'journal.streakVisible', true);
-        const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
         const sidebar  = await buildSidebarData(entry.author, req.userContext, streakVisible);
 
-        res.render('journal-entry', {
+        res.render('journal-entry', { ...(await engine.templateData?.(req)),
           currentUser:     req.userContext,
           entry,
           renderedContent,
           attachments,
           sidebar,
-          canEdit:         await mayOnEntry(engine, req.userContext, entry.name, 'edit'),   // #1539: the page door
-          csrfToken:       req.session?.csrfToken,
-          leftMenu
+          canEdit:         await mayOnEntry(engine, req.userContext, entry.name, 'edit')   // #1539: the page door
         });
       } catch (err) {
         handleError(err, res);

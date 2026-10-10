@@ -9,7 +9,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import { journalPrivacy } from './helpers.js';
@@ -48,7 +48,7 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
           userStats.sort((a, b) => b.count - a.count);
         }
 
-        res.render('admin-journal', {
+        res.render('admin-journal', { ...(await engine.templateData?.(req)),
           currentUser:      req.userContext,
           config: {
             // #1504: the journal system-category's defaultPrivate — true, false or 'choice'.
@@ -68,13 +68,12 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
           },
           userStats,
           totalEntries:     m ? await m.count(req.userContext) : 0,
-          csrfToken:        req.session?.csrfToken,
           successMessage:   req.query['success'] ?? null,
           errorMessage:     req.query['error']   ?? null
         });
       } catch (err) {
         if (err instanceof ApiError) {
-          res.status(err.status).send(err.message);
+          sendApiError(res, err, 'text');
           return;
         }
         const msg = err instanceof Error ? err.message : String(err);
@@ -94,7 +93,7 @@ export default function adminRoutes(engine: WikiEngine, config: Record<string, u
       res.redirect('/addons/journal?success=Settings+saved+(restart+required+for+config+changes)');
     } catch (err) {
       if (err instanceof ApiError) {
-        res.status(err.status).send(err.message);
+        sendApiError(res, err, 'text');
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);

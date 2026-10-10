@@ -19,14 +19,14 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import { jobContextFromRequest } from '../../../dist/src/context/JobContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
 import type JournalDataManager from '../managers/JournalDataManager.js';
 import { pageUrl } from '../../../dist/src/utils/pageUrl.js';
-import { getLeftMenu, findJournalEntryName, createJournalEntry, journalPrivacy, mayOnEntry } from './helpers.js';
+import { findJournalEntryName, createJournalEntry, journalPrivacy, mayOnEntry } from './helpers.js';
 
 export default function editorRoutes(engine: WikiEngine, config: Record<string, unknown>): Router {
   const router = Router();
@@ -53,7 +53,7 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
 
   function handleError(err: unknown, res: Response): void {
     if (err instanceof ApiError) {
-      res.status(err.status).send(err.message);
+      sendApiError(res, err, 'text');
       return;
     }
     res.status(500).send(err instanceof Error ? err.message : String(err));
@@ -70,10 +70,9 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
         const userManager = um();
         const freshUser = userManager ? await userManager.getUser(ctx.username!) : null;
         const prefs = (freshUser?.preferences ?? {}) as Record<string, unknown>;
-        const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
         const privacy = journalPrivacy(engine, prefs);
 
-        res.render('journal-settings', {
+        res.render('journal-settings', { ...(await engine.templateData?.(req)),
           currentUser:      req.userContext,
           prefs: {
             voiceToText:      prefs['journal.voiceToText']      !== false,
@@ -85,10 +84,8 @@ export default function editorRoutes(engine: WikiEngine, config: Record<string, 
           },
           offerDefaultPrivate: privacy.offer,
           adminVoiceEnabled: enableVoiceToText(),
-          csrfToken:         req.session?.csrfToken,
           successMessage:    req.query['success'] ?? null,
-          errorMessage:      req.query['error']   ?? null,
-          leftMenu
+          errorMessage:      req.query['error']   ?? null
         });
       } catch (err) {
         handleError(err, res);

@@ -8,7 +8,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type { Sist2AssetProvider } from '../src/Sist2AssetProvider.js';
 
@@ -42,14 +42,14 @@ export default function adminRoutes(
         const healthy = detail.healthy;
         const message = detail.message;
 
-        res.render('admin-elasticsearch', {
+        res.render('admin-elasticsearch', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           healthy,
           message,
           config
         });
       } catch (err) {
-        if (err instanceof ApiError) { res.status(err.status).send(err.message); return; }
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
       }
     })();

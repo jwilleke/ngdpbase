@@ -185,7 +185,7 @@ import type ValidationManager from '../managers/ValidationManager.js';
 import { categorySource } from '../managers/ValidationManager.js';
 import { acceptedSystemCategory } from '../utils/acceptedSystemCategory.js';
 import type VariableManager from '../managers/VariableManager.js';
-import { ApiContext, ApiError } from '../context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { auditReauth, freshSignInAnswer } from '../security/freshSignIn.js';
 import { stripAclMarkup } from '../parsers/aclMarkup.js';
@@ -2198,10 +2198,7 @@ class WikiRoutes {
         : 'You do not have permission to do this');
       return;
     }
-    const status = anonymous ? 401 : 403;
-    const error = anonymous ? 'Authentication required' : 'Access denied';
-    if (mode === 'text') res.status(status).send(error);
-    else res.status(status).json({ success: false, error });
+    sendApiError(res, anonymous ? new ApiError(401, 'Authentication required') : new ApiError(403, 'Access denied'), mode);
   }
 
   /**
@@ -2339,13 +2336,8 @@ class WikiRoutes {
     mode: 'json' | 'page' | 'text'
   ): Promise<void> {
     const answer = await freshSignInAnswer(this.engine, req, wikiContext.userContext, permission, mode);
-    if (!answer.reauth) {
-      res.status(403).json({ success: false, error: answer.error, stepUp: permission });
-      return;
-    }
-    if (mode === 'page') res.redirect(answer.reauth);
-    else if (mode === 'text') res.status(403).send('A fresh sign-in is needed: ' + answer.reauth);
-    else res.status(403).json({ success: false, error: answer.error, reauth: answer.reauth });
+    if (mode === 'page' && answer.reauth) { res.redirect(answer.reauth); return; }
+    sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' ? 'json' : mode);
   }
 
   private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
@@ -7478,7 +7470,7 @@ ${panes}
 
       res.json({ results: payload, total: payload.length });
     } catch (err: unknown) {
-      if (err instanceof ApiError) { res.status(err.status).json({ error: err.message }); return; }
+      if (err instanceof ApiError) { sendApiError(res, err); return; }
       res.status(500).json({ error: getErrorMessage(err) });
     }
   }

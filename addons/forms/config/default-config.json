@@ -2,7 +2,7 @@
   "_comment": "Default configuration for the forms addon. Override any key in app-custom-config.json.",
   "ngdpbase.addons.forms.dataPath": "",
   "ngdpbase.addons.forms.notifyRole": "admin",
-  "_comment_form_submit": "Who may submit a form is decided by the page it is on: the page's front matter `access: { form-submit: [...] }` when it states one, else site policy. This policy grants form-submit to every built-in role, anonymous included, which keeps forms open as they always were. A deployment narrows it in app-custom-config.json, adds its own roles, or sets a rule per page. Code never names a role.",
+  "_comment_form_submit": "Submitting a form needs form-submit, asked through ApiContext.requirePermission like every add-on route (#1749), so refusals, step-up and audit come from core. This policy grants it to every built-in role, anonymous included, which keeps forms open as they always were. A deployment narrows it in app-custom-config.json or adds its own roles; who sees a form is the page's audience, and an add-on that receives a form checks its own permission. Code never names a role.",
   "ngdpbase.permissions.definitions": {
     "form-submit": {
       "description": "Submit a form on a page; the page's own access rules can narrow it",

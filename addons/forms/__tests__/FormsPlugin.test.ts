@@ -21,7 +21,6 @@ beforeAll(async () => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Every form carries its page name; the prefill tests look at the fields only. */
-const withoutPageInput = (html: string) => html.replace(/<input type="hidden" name="_page"[^>]*>/, '');
 
 const UNITS = [
   { id: 'unit-43', parcel: '66-09960.043', address: '43 Fairways Drive', phone: '' }
@@ -98,13 +97,13 @@ describe('FormsPlugin — prefill with anonymous user', () => {
     const html = await FormsPlugin.execute(ctx, { id: 'test-form' });
     // Fields should exist but have no value attribute
     expect(html).toContain('name="name"');
-    expect(withoutPageInput(html)).not.toContain('value="');
+    expect(html).not.toContain('value="');
   });
 
   test('fields render empty when userContext is anonymous (no displayName)', async () => {
     const ctx = makeContext({ username: 'Anonymous', roles: ['Anonymous'] });
     const html = await FormsPlugin.execute(ctx, { id: 'test-form' });
-    expect(withoutPageInput(html)).not.toContain('value="');
+    expect(html).not.toContain('value="');
   });
 });
 
@@ -205,7 +204,7 @@ describe('FormsPlugin — user.unit.* prefill', () => {
       pageName: 'test'
     };
     const html = await FormsPlugin.execute(ctx, { id: 'test-form' });
-    expect(withoutPageInput(html)).not.toContain('value="');
+    expect(html).not.toContain('value="');
   });
 
   test('renders empty address when units.json read fails', async () => {
@@ -216,7 +215,7 @@ describe('FormsPlugin — user.unit.* prefill', () => {
       pageName: 'test'
     };
     const html = await FormsPlugin.execute(ctx, { id: 'test-form' });
-    expect(withoutPageInput(html)).not.toContain('value="');
+    expect(html).not.toContain('value="');
     expect(html).toContain('name="address"');
   });
 
@@ -418,9 +417,9 @@ describe('FormsPlugin — fetch options, amount, page name', () => {
     expect(html).toMatch(/<input type="text" inputmode="decimal"[^>]*name="amount"/);
   });
 
-  test('the form carries its page name, escaped, and an error slot per field', async () => {
+  test('the form carries an error slot per field, and no page name (#1749)', async () => {
     const html = await FormsPlugin.execute(ctxWith(async () => []), { id: 'test-form' });
-    expect(html).toContain('<input type="hidden" name="_page" value="Treasurer &lt;Books&gt;">');
+    expect(html).not.toContain('name="_page"');
     expect(html).toContain('data-field-error="fund"');
     expect(html).toContain('data-field-error="amount"');
   });

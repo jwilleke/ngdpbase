@@ -31,11 +31,11 @@
  * nothing behind. A form with "store": false keeps no submission file at all —
  * the handler's own record is the record.
  *
- * Who may submit: the page the form is on (managers/pageAccess.ts). The form
- * posts its page name; the submit needs read access to that page, the page must
- * carry this form, and the viewer needs `form-submit` on it — the page's own
- * `access: { form-submit: [...] }` when set, else site policy. This add-on's
- * default policy grants `form-submit` to everyone, as before.
+ * Who may submit: `form-submit`, asked through ApiContext.requirePermission like
+ * every add-on route (#1749), so refusals, step-up and audit come from core. A
+ * handler's own manager still asks its own permission; an ApiError it throws is
+ * sent the same way. This add-on's default policy grants `form-submit` to
+ * everyone, as before.
  */
 
 import path from 'path';
@@ -62,10 +62,6 @@ export interface HandlerResult {
   error?: string;
   /** On a refusal: one message per field name, shown next to the field. */
   fields?: Record<string, string>;
-  /** On a refusal: the HTTP status to answer with (default 409). */
-  status?: number;
-  /** On a step-up refusal: where to re-authenticate (ApiError.reauth, #1745). */
-  reauth?: string;
   [key: string]: unknown;
 }
 
@@ -100,10 +96,8 @@ const formsAddon = {
     try {
       return await handler(submission, context);
     } catch (err) {
-      // The handler's own permission check refused: answer as any add-on route would.
-      if (err instanceof ApiError) {
-        return { ok: false, status: err.status, error: err.message, ...(err.reauth ? { reauth: err.reauth } : {}) };
-      }
+      // The handler's own permission check refused: the route sends it, as any add-on route would.
+      if (err instanceof ApiError) throw err;
       console.error(`[FormsAddon] Handler error for form ${formId}:`, err);
       return { ok: false, error: 'Handler threw an unexpected error' };
     }

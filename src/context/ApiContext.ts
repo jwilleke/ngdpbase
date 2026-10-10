@@ -8,7 +8,7 @@
  * scattered access to `req.userContext`, `req.session`, and engine managers.
  *
  * Usage:
- *   import { ApiContext, ApiError } from '../../../src/context/ApiContext';
+ *   import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
  *
  *   router.post('/reservations', async (req, res) => {
  *     try {
@@ -17,15 +17,13 @@
  *       const username = ctx.actingUsername();
  *       // ...
  *     } catch (err) {
- *       if (err instanceof ApiError) {
- *         return res.status(err.status).json({ error: err.message });
- *       }
+ *       if (err instanceof ApiError) return sendApiError(res, err);
  *       res.status(500).json({ error: String(err) });
  *     }
  *   });
  */
 
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 // #1665: the Request augmentation (req.userContext, req.session). Imported here so the
 // emitted ApiContext.d.ts carries it to every add-on that typechecks against dist/.
 import '../types/express.js';
@@ -33,7 +31,7 @@ import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
-import { freshSignInAnswer } from '../security/freshSignIn.js';
+import { freshSignInAnswer, type ReauthMode } from '../security/freshSignIn.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -55,6 +53,22 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/**
+ * Send a refusal — the one way it reaches the client, from core routes and
+ * every add-on route alike (#1749). JSON is `{ success: false, error, reauth? }`;
+ * text is the message, then where to sign in again for a step-up refusal. A
+ * route never writes its own refusal: the step-up `reauth` is easy to drop.
+ */
+export function sendApiError(res: Response, err: ApiError, mode: Exclude<ReauthMode, 'page'> = 'json'): void {
+  // Only this site's re-authenticate page: an add-on's ApiError cannot send the person elsewhere.
+  const reauth = typeof err.reauth === 'string' && err.reauth.startsWith('/auth/reauth?') ? err.reauth : undefined;
+  if (mode === 'text') {
+    res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : err.message);
+    return;
+  }
+  res.status(err.status).json({ success: false, error: err.message, ...(reauth ? { reauth } : {}) });
 }
 
 /**

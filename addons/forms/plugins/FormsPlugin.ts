@@ -114,7 +114,7 @@ function renderGroups(resolvedFields: ResolvedField[]): string {
   }).join('\n');
 }
 
-function renderForm(form: FormDefinition, resolvedFields: ResolvedField[], pageName: string): string {
+function renderForm(form: FormDefinition, resolvedFields: ResolvedField[]): string {
   const proxyBlock = form.proxySubmission ? renderFieldset('For Another Occupant', `
       <p class="text-muted small mb-3">Complete this section only if submitting on behalf of another resident. Leave blank if submitting for yourself.</p>
       <div class="mb-3">
@@ -140,7 +140,6 @@ function renderForm(form: FormDefinition, resolvedFields: ResolvedField[], pageN
     ${form.description ? `<p class="text-muted mb-3">${escHtml(form.description)}</p>` : ''}
     <div id="form-result-${escHtml(form.id)}"></div>
     <form data-ngdp-form="${escHtml(form.id)}" novalidate>
-      <input type="hidden" name="_page" value="${escHtml(pageName)}">
       ${renderGroups(resolvedFields)}
       ${proxyBlock}
       <button type="submit" class="btn btn-primary">Submit</button>
@@ -199,7 +198,7 @@ const FormsPlugin = {
       return base;
     }));
 
-    return renderForm(form, resolvedFields, String(context.pageName ?? ''));
+    return renderForm(form, resolvedFields);
   }
 };
 

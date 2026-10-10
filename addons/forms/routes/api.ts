@@ -1,6 +1,6 @@
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type EmailManager from '../../../dist/src/managers/EmailManager.js';
 import type NotificationManager from '../../../dist/src/managers/NotificationManager.js';
@@ -9,7 +9,6 @@ import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataMana
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
 import { resolveChoices } from '../managers/fieldOptions.js';
-import { checkSubmitAccess } from '../managers/pageAccess.js';
 
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
@@ -34,10 +33,9 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         const body = req.body as Record<string, unknown>;
         const userContext = (req as Request & { userContext?: unknown }).userContext;
 
-        // ── 1. The page the form is on decides who may submit it ───────────
-        const pageName = typeof body['_page'] === 'string' ? body['_page'] : undefined;
-        const access = await checkSubmitAccess(engine, userContext, pageName, formId);
-        if (!access.ok) { res.status(access.status).json({ ok: false, error: access.error }); return; }
+        // ── 1. Who may submit: asked like every add-on route (#1749) ───────
+        const ctx = ApiContext.from(req, engine);
+        await ctx.requirePermission('form-submit');
 
         // ── 2. Validate fields; a dropdown value must be one it offered ────
         const choices = await resolveChoices(engine, form.fields, userContext);
@@ -57,7 +55,6 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         }
 
         // ── 4. Build submission ────────────────────────────────────────────
-        const ctx = ApiContext.from(req, engine);
         const submittedBy = ctx.username ?? 'anonymous';
 
         let onBehalfOf: Record<string, string | undefined> | undefined;
@@ -95,15 +92,11 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         // ── 5. Handler first: a refused submission leaves nothing behind ───
         const handlerResult = await addon.callHandler(formId, submission, { engine, req });
         if (!handlerResult.ok) {
-          const { error, fields, status, reauth } = handlerResult as { error?: string; fields?: unknown; status?: unknown; reauth?: unknown };
-          const code = typeof status === 'number' && status >= 400 && status < 500 ? status : 409;
-          // Only this site's re-authenticate page: a handler cannot send the person elsewhere.
-          const safeReauth = typeof reauth === 'string' && reauth.startsWith('/auth/reauth?') ? reauth : undefined;
-          res.status(code).json({
+          const { error, fields } = handlerResult as { error?: string; fields?: unknown };
+          res.status(409).json({
             ok: false,
             error: error ?? 'Handler rejected submission',
-            ...(fields && typeof fields === 'object' ? { fields } : {}),
-            ...(safeReauth ? { reauth: safeReauth } : {})
+            ...(fields && typeof fields === 'object' ? { fields } : {})
           });
           return;
         }
@@ -164,6 +157,7 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
 
         res.status(201).json({ ok: true, submissionId: submission.id });
       } catch (err) {
+        if (err instanceof ApiError) { sendApiError(res, err); return; }
         console.error('[forms] submit error:', err);
         res.status(500).json({ ok: false, error: 'Internal server error' });
       }
