@@ -222,7 +222,15 @@ __Creating accounts is a setting, per provider and for the whole instance, and t
 
 __Connecting an identity to an account:__
 
-- __The identity is the issuer plus the subject__ (`iss` + `sub`), stored against the account. It is __never matched by email__: an email that matches an account never connects anyone or signs anyone in, which closes off account takeover. The email is kept for display only.
+- __The identity is the issuer plus the subject__ (`iss` + `sub`), stored against the account. OpenID Connect Core §5.7 makes these two, together, the only claims a client can rely on as a stable identifier for the person. Only an `iss` + `sub` already connected signs a person in by itself.
+- __Email is not ignored; it finds and checks, it doesn't unlock__ (operator, 2026-10-10):
+  - __Finding the account to connect.__ An outside sign-in whose identity isn't connected yet, but whose verified email matches an account here, is asked to sign in to that account once, with a password or passkey, to connect it. From then on the identity signs them in directly. The email finds the account; the normal sign-in proves it's theirs.
+  - __No duplicate accounts.__ Where account creation is on, an outside sign-in whose verified email already belongs to an account gets the same "sign in to connect" step, not a second account.
+  - __A warning when they differ.__ Connecting an identity whose email differs from the account's says so, to catch connecting the wrong account.
+  - __Kept and refreshed.__ The provider's email is stored on the connection, updated at each sign-in, and shown in Sign-in methods. Notices go to the account's own email.
+  - __`login_hint`__ (OIDC Core §3.1.2.1). When the site knows the email, it passes it to the provider to pre-fill its sign-in.
+  - __Verified email only__, and only from a provider whose verification can be trusted: Google and Apple yes; personal Microsoft accounts need care.
+  - __Why email never signs anyone in on its own:__ whoever controls the address at the provider would get the account. That can happen with an unverified address, one the provider recycles (Yahoo reuses abandoned addresses), or a company domain that expired and was re-registered.
 - __Where accounts are not created, the person connects first.__ A registered person, already signed in, chooses Profile → Connect (provider) and signs in there. Connecting is an `account-security` change, so it asks for a fresh sign-in (step-up, #1525). An admin can also connect an identity on a person's behalf.
 - __An outside identity that isn't connected is refused__ with a neutral message that doesn't reveal whether an account exists.
 - __A person can disconnect__ a provider, but not their last way to sign in.
@@ -264,9 +272,12 @@ __Account recovery through a connected identity__ (signing back in with Google a
 
 __No move-over of existing Google accounts is needed__ (operator, 2026-10-10: there are no Google-created accounts). It would have mattered because today's Google sign-in recognises a person by verified email and never stored Google's issuer + subject. Under the new rule an account it had created, which has no password, couldn't be recognised and its owner would be locked out.
 
+__Later, not in #1743__ (operator, 2026-10-10): an __email-first sign-in page__. The person types their email, and the site shows the methods that apply, or goes straight to their provider. It would use an admin mapping of email domains to configured providers (for example `@example.org` → "Club login"), plus OpenID Connect issuer discovery by WebFinger (OIDC Discovery 1.0 §2, RFC 7033) for domains that support it. Google, Apple and Microsoft don't serve WebFinger for their consumer addresses.
+
 Decided (operator, 2026-10-10):
 
 - __Any number of outside identities per account, from configured providers only__ (operator, 2026-10-10), for example Ann's Google and her Apple, so she can sign in with either. Only a provider the admin has configured and enabled can be connected or used to sign in. A connection to a provider that is later disabled or removed is kept but can't sign in, until the provider is enabled again.
+- __Where connections live and how they come together__: the credentials store (#1524) keeps one signed row per way in (the password, each passkey). Each connected identity is one more row: provider, `iss` + `sub`, the provider's email, when connected and last used. An `iss` + `sub` pair is unique across the site. Nothing is merged: the account's own name and email stay as they are, and what a provider says is shown next to its connection, never copied over. The sign-in level is the level of the identity used. Profile → Sign-in methods lists them all, each with Disconnect.
 - __Each outside identity belongs to exactly one account.__ Connecting one that's already connected elsewhere is refused. Otherwise "Sign in with Google" couldn't tell whom to sign in.
 - __A separate admin page, "Sign-in providers"__: add, edit, enable or disable a provider (issuer, client id, the environment variable holding the secret, auto-provision), with a Test button that checks discovery answers and the settings are complete. Its own piece of work alongside #1743.
 
