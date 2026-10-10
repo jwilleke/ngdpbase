@@ -1,7 +1,6 @@
 import BaseSyntaxHandler, { InitializationContext, ParseContext } from './BaseSyntaxHandler.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import logger from '../../utils/logger.js';
 
 /**
@@ -56,8 +55,6 @@ interface WikiEngine {
  */
 interface MarkupParser {
   getHandlerConfig(name: string): HandlerConfig;
-  getCachedHandlerResult(handlerId: string, contentHash: string, contextHash: string): Promise<string | null>;
-  cacheHandlerResult(handlerId: string, contentHash: string, contextHash: string, result: string): Promise<void>;
 }
 
 /**
@@ -295,25 +292,13 @@ class InterWikiLinkHandler extends BaseSyntaxHandler {
   /**
    * Handle a specific InterWiki link match
    * @param matchInfo - InterWiki link match information
-   * @param context - Parse context
+   * @param _context - Parse context
    * @returns InterWiki link HTML
    */
-  private async handleInterWikiLink(matchInfo: InterWikiMatch, context: ParseContext): Promise<string> {
+  private async handleInterWikiLink(matchInfo: InterWikiMatch, _context: ParseContext): Promise<string> {
     const { wikiName, pageName, displayText } = matchInfo;
 
-    // Check cache for link result if caching enabled
-    const contentHash = this.generateContentHash(matchInfo.fullMatch);
-    const contextHash = this.generateContextHash(context);
-
-    if (this.options.enabled) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        const cachedResult = await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
-        if (cachedResult) {
-          return cachedResult;
-        }
-      }
-    }
+    // No handler-level result cache (#1751): the page cache is the only render cache.
 
     // Find the InterWiki site configuration
     const siteConfig = this.findInterWikiSite(wikiName);
@@ -335,14 +320,6 @@ class InterWikiLinkHandler extends BaseSyntaxHandler {
 
     // Generate link HTML
     const linkHtml = this.generateLinkHtml(externalUrl, effectiveDisplay || `${wikiName}:${pageName}`, siteConfig, wikiName);
-
-    // Cache the result if caching enabled
-    if (this.options.enabled && linkHtml) {
-      const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-      if (markupParser) {
-        await markupParser.cacheHandlerResult(this.handlerId, contentHash, contextHash, linkHtml);
-      }
-    }
 
     return linkHtml;
   }
@@ -444,31 +421,6 @@ class InterWikiLinkHandler extends BaseSyntaxHandler {
     linkHtml += '</a>';
 
     return linkHtml;
-  }
-
-  /**
-   * Generate content hash for caching
-   * @param content - Content to hash
-   * @returns Content hash
-   */
-  private generateContentHash(content: string): string {
-    return crypto.createHash('md5').update(content).digest('hex');
-  }
-
-  /**
-   * Generate context hash for caching
-   * @param context - Parse context
-   * @returns Context hash
-   */
-  private generateContextHash(context: ParseContext): string {
-    const contextData = {
-      pageName: context.wikiContext?.pageName,
-      userName: context.userName,
-      // InterWiki links are generally context-independent, so minimal hash
-      timeBucket: Math.floor(Date.now() / 3600000) // 1-hour buckets
-    };
-
-    return crypto.createHash('md5').update(JSON.stringify(contextData)).digest('hex');
   }
 
   /**
@@ -591,13 +543,11 @@ class InterWikiLinkHandler extends BaseSyntaxHandler {
         'Configurable site definitions',
         'Icon support for visual indicators',
         'New window/tab control',
-        'Hot-reload configuration',
-        'Performance caching'
+        'Hot-reload configuration'
       ],
       configuration: {
         sitesLoaded: this.interWikiSites.size,
-        configSource: this.interWikiConfig ? 'config/interwiki.json' : 'main configuration',
-        cacheEnabled: this.options.enabled
+        configSource: this.interWikiConfig ? 'config/interwiki.json' : 'main configuration'
       }
     };
   }

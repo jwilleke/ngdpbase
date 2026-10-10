@@ -90,14 +90,6 @@ export interface HandlerConfig {
 export interface CacheConfig {
   /** Parse results cache strategy */
   parseResults: CacheStrategyConfig;
-  /** Handler results cache strategy */
-  handlerResults: CacheStrategyConfig;
-  /** Patterns cache strategy */
-  patterns: CacheStrategyConfig;
-  /** Variables cache strategy */
-  variables: CacheStrategyConfig;
-  /** Whether to enable cache warmup */
-  enableWarmup: boolean;
   /** Whether to enable metrics */
   metricsEnabled: boolean;
 }
@@ -202,11 +194,6 @@ interface ConfigurationManagerInterface {
 interface CacheManagerInterface {
   isInitialized(): boolean;
   region(name: string): RegionCache;
-}
-
-/** Variable manager interface for type safety */
-interface VariableManagerInterface {
-  expandVariables(content: string, context: Record<string, unknown>): Promise<string>;
 }
 
 /** Rendering manager interface for type safety */
@@ -618,10 +605,6 @@ class MarkupParser extends BaseManager {
       // #1117: filter configuration moved to FilterManager with the chain.
       cache: {
         parseResults: { enabled: true, ttl: 300, maxSize: 1000 },
-        handlerResults: { enabled: true, ttl: 600, maxSize: 2000 },
-        patterns: { enabled: true, ttl: 3600, maxSize: 100 },
-        variables: { enabled: true, ttl: 900, maxSize: 500 },
-        enableWarmup: true,
         metricsEnabled: true
       },
       performance: {
@@ -642,12 +625,9 @@ class MarkupParser extends BaseManager {
         this.config.enabled = configManager.getProperty('ngdpbase.markup.enabled', this.config.enabled);
         this.config.caching = configManager.getProperty('ngdpbase.markup.caching', this.config.caching);
         this.config.cacheTTL = configManager.getProperty('ngdpbase.markup.cache-ttl', this.config.cacheTTL);
-        // Propagate global cache-ttl as default for all strategy TTLs;
-        // strategy-specific keys (read below) will override per-strategy.
+        // Propagate global cache-ttl as the parse-results TTL default;
+        // the strategy-specific key (read below) overrides it.
         this.config.cache.parseResults.ttl = this.config.cacheTTL;
-        this.config.cache.handlerResults.ttl = this.config.cacheTTL;
-        this.config.cache.patterns.ttl = this.config.cacheTTL;
-        this.config.cache.variables.ttl = this.config.cacheTTL;
 
         // Handler registry configuration
         this.config.handlerRegistry.maxHandlers = configManager.getProperty('ngdpbase.markup.handler-registry.max-handlers', this.config.handlerRegistry.maxHandlers);
@@ -667,14 +647,6 @@ class MarkupParser extends BaseManager {
         this.config.cache.parseResults.enabled = configManager.getProperty('ngdpbase.markup.cache.parse-results.enabled', this.config.cache.parseResults.enabled);
         this.config.cache.parseResults.ttl = configManager.getProperty('ngdpbase.markup.cache.parse-results.ttl', this.config.cache.parseResults.ttl);
         this.config.cache.parseResults.maxSize = configManager.getProperty('ngdpbase.markup.cache.parse-results.max-size', this.config.cache.parseResults.maxSize);
-        this.config.cache.handlerResults.enabled = configManager.getProperty('ngdpbase.markup.cache.handler-results.enabled', this.config.cache.handlerResults.enabled);
-        this.config.cache.handlerResults.ttl = configManager.getProperty('ngdpbase.markup.cache.handler-results.ttl', this.config.cache.handlerResults.ttl);
-        this.config.cache.handlerResults.maxSize = configManager.getProperty('ngdpbase.markup.cache.handler-results.max-size', this.config.cache.handlerResults.maxSize);
-        this.config.cache.patterns.enabled = configManager.getProperty('ngdpbase.markup.cache.patterns.enabled', this.config.cache.patterns.enabled);
-        this.config.cache.patterns.ttl = configManager.getProperty('ngdpbase.markup.cache.patterns.ttl', this.config.cache.patterns.ttl);
-        this.config.cache.variables.enabled = configManager.getProperty('ngdpbase.markup.cache.variables.enabled', this.config.cache.variables.enabled);
-        this.config.cache.variables.ttl = configManager.getProperty('ngdpbase.markup.cache.variables.ttl', this.config.cache.variables.ttl);
-        this.config.cache.enableWarmup = configManager.getProperty('ngdpbase.markup.cache.enable-warmup', this.config.cache.enableWarmup);
         this.config.cache.metricsEnabled = configManager.getProperty('ngdpbase.markup.cache.metrics-enabled', this.config.cache.metricsEnabled);
         
         // Performance monitoring configuration
@@ -730,35 +702,15 @@ class MarkupParser extends BaseManager {
       this.metrics.cacheMetrics.set('parseResults', { hits: 0, misses: 0, sets: 0 });
     }
 
-    // Handler Results Cache - Individual handler outputs
-    if (this.config.cache.handlerResults.enabled) {
-      this.cacheStrategies.handlerResults = cacheManager.region('MarkupParser-HandlerResults');
-      this.metrics.cacheMetrics.set('handlerResults', { hits: 0, misses: 0, sets: 0 });
-    }
-
-    // Pattern Compilation Cache - Pre-compiled regex patterns
-    if (this.config.cache.patterns.enabled) {
-      this.cacheStrategies.patterns = cacheManager.region('MarkupParser-Patterns');
-      this.metrics.cacheMetrics.set('patterns', { hits: 0, misses: 0, sets: 0 });
-    }
-
-    // Variable Resolution Cache - System variable lookups
-    if (this.config.cache.variables.enabled) {
-      this.cacheStrategies.variables = cacheManager.region('MarkupParser-Variables');
-      this.metrics.cacheMetrics.set('variables', { hits: 0, misses: 0, sets: 0 });
-    }
+    // No handler-results, patterns or variables regions (#1751): the parse-results
+    // region is the one page cache.
 
     // Set legacy cache reference for backward compatibility
     this.cache = this.cacheStrategies.parseResults || null;
 
     const strategiesCount = Object.keys(this.cacheStrategies).length;
     logger.debug(`🗄️  MarkupParser advanced caching initialized with ${strategiesCount} strategies`);
-    logger.debug(`📊 Cache TTLs: parse=${this.config.cache.parseResults.ttl}s, handlers=${this.config.cache.handlerResults.ttl}s, patterns=${this.config.cache.patterns.ttl}s`);
-
-    // Perform cache warmup if enabled
-    if (this.config.cache.enableWarmup) {
-      await this.performCacheWarmup();
-    }
+    logger.debug(`📊 Cache TTL: parse=${this.config.cache.parseResults.ttl}s`);
   }
 
   /**
@@ -781,74 +733,6 @@ class MarkupParser extends BaseManager {
     };
 
     logger.debug('📊 Performance monitoring initialized with alert thresholds:', this.config.performance.alertThresholds);
-  }
-
-  /**
-   * Perform cache warmup for frequently accessed content
-   */
-  async performCacheWarmup(): Promise<void> {
-    logger.debug('🔥 Starting MarkupParser cache warmup...');
-    
-    try {
-      // Warm up common patterns
-      const commonPatterns = [
-        /\[\{(\w+)\s*([^}]*)\}\]/g, // Plugin syntax
-        /\$\{(\w+)\}/g, // Variable syntax
-        /\[\w+:\w+\]/g, // InterWiki syntax
-        /<wiki:(\w+)/g // WikiTag syntax
-      ];
-
-      for (const pattern of commonPatterns) {
-        if (this.cacheStrategies.patterns) {
-          const cacheKey = `pattern:${pattern.source}`;
-          await this.cacheStrategies.patterns.set(cacheKey, pattern, { ttl: this.config.cache.patterns.ttl });
-        }
-      }
-
-      // Warm up common variables
-      const commonVariables = ['pagename', 'username', 'applicationname', 'version', 'totalpages'];
-      if (this.cacheStrategies.variables) {
-        const variableManager = this.engine.getManager<VariableManagerInterface>('VariableManager');
-        if (variableManager) {
-          for (const varName of commonVariables) {
-            try {
-              const cacheKey = `var:${varName}:default`;
-              const value = await this.resolveSystemVariable(varName, {});
-              await this.cacheStrategies.variables.set(cacheKey, value, { ttl: this.config.cache.variables.ttl });
-            } catch {
-              // Skip variables that can't be resolved without context
-            }
-          }
-        }
-      }
-
-      logger.debug('🔥 Cache warmup completed');
-      
-    } catch (error) {
-      logger.warn('⚠️  Cache warmup failed:', getErrorMessage(error));
-    }
-  }
-
-  /**
-   * Resolve system variable for cache warmup
-   * @param varName - Variable name
-   * @param context - Context object
-   * @returns Variable value
-   */
-  async resolveSystemVariable(varName: string, context: Record<string, unknown>): Promise<string> {
-    const variableManager = this.engine.getManager<VariableManagerInterface>('VariableManager');
-    if (!variableManager) {
-      throw new Error('VariableManager not available');
-    }
-
-    // Create minimal context for system variables
-    const minimalContext = {
-      pageName: 'warmup',
-      userName: 'system',
-      ...context
-    };
-
-    return variableManager.expandVariables(`\${${varName}}`, minimalContext);
   }
 
   /** The configured `ngdpbase.markup.html-policy`, read when it is needed (#1623). */
@@ -3110,76 +2994,6 @@ class MarkupParser extends BaseManager {
       this.updateCacheMetrics('parseResults', 'set');
     } catch (error) {
       logger.warn('⚠️  Cache set failed:', getErrorMessage(error));
-    }
-  }
-
-  /**
-   * Get cached handler result
-   * @param handlerId - Handler ID
-   * @param contentHash - Content hash
-   * @param contextHash - Context hash
-   * @returns Cached result or null
-   */
-  async getCachedHandlerResult(handlerId: string, contentHash: string, contextHash: string): Promise<string | null> {
-    if (!this.cacheStrategies.handlerResults) {
-      return null;
-    }
-    
-    try {
-      const cacheKey = `handler:${handlerId}:${contentHash}:${contextHash}`;
-      const result = await this.cacheStrategies.handlerResults.get(cacheKey);
-
-      if (result) {
-        this.updateCacheMetrics('handlerResults', 'hit');
-        return result as string;
-      } else {
-        this.updateCacheMetrics('handlerResults', 'miss');
-        return null;
-      }
-    } catch (error) {
-      logger.warn('⚠️  Handler cache get failed:', getErrorMessage(error));
-      return null;
-    }
-  }
-
-  /**
-   * Cache handler result
-   * @param handlerId - Handler ID
-   * @param contentHash - Content hash
-   * @param contextHash - Context hash
-   * @param result - Result to cache
-   */
-  async cacheHandlerResult(handlerId: string, contentHash: string, contextHash: string, result: string): Promise<void> {
-    if (!this.cacheStrategies.handlerResults) {
-      return;
-    }
-    
-    try {
-      const cacheKey = `handler:${handlerId}:${contentHash}:${contextHash}`;
-      await this.cacheStrategies.handlerResults.set(cacheKey, result, { 
-        ttl: this.config.cache.handlerResults.ttl 
-      });
-      this.updateCacheMetrics('handlerResults', 'set');
-    } catch (error) {
-      logger.warn('⚠️  Handler cache set failed:', getErrorMessage(error));
-    }
-  }
-
-  /**
-   * Flush the handler-results cache.
-   * Call this whenever the set of known pages changes (page created or deleted) so
-   * that cached RED-LINK resolutions are discarded and the next render re-evaluates
-   * link targets against the updated page inventory.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  async invalidateHandlerCache(): Promise<void> {
-    if (this.cacheStrategies.handlerResults) {
-      try {
-        await this.cacheStrategies.handlerResults.clear();
-        logger.debug('🗑️  MarkupParser handler-results cache flushed (page inventory changed)');
-      } catch (error) {
-        logger.warn('⚠️  Failed to flush handler-results cache:', getErrorMessage(error));
-      }
     }
   }
 

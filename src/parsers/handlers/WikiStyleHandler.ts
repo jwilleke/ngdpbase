@@ -1,5 +1,4 @@
 import BaseSyntaxHandler, { InitializationContext, ParseContext } from './BaseSyntaxHandler.js';
-import * as crypto from 'crypto';
 import logger from '../../utils/logger.js';
 
 /**
@@ -21,7 +20,6 @@ interface StyleConfig {
   bootstrap: boolean;
   allowInlineCSS: boolean;
   securityValidation: boolean;
-  cacheStyles: boolean;
 }
 
 /**
@@ -51,8 +49,6 @@ interface ConfigManager {
  */
 interface MarkupParser {
   getHandlerConfig(name: string): HandlerConfig;
-  getCachedHandlerResult(handlerId: string, contentHash: string, contextHash: string): Promise<string | null>;
-  cacheHandlerResult(handlerId: string, contentHash: string, contextHash: string, result: string): Promise<void>;
 }
 
 /**
@@ -83,8 +79,7 @@ class WikiStyleHandler extends BaseSyntaxHandler {
         description: 'JSPWiki-style CSS class and inline styling handler with security validation',
         version: '1.0.0',
         dependencies: ['ConfigurationManager'],
-        timeout: 3000,
-        cacheEnabled: true
+        timeout: 3000
       }
     );
     this.handlerId = 'WikiStyleHandler';
@@ -94,8 +89,7 @@ class WikiStyleHandler extends BaseSyntaxHandler {
       customClasses: true,
       bootstrap: true,
       allowInlineCSS: false,
-      securityValidation: true,
-      cacheStyles: true
+      securityValidation: true
     };
     this.predefinedClasses = new Set();
     this.allowedCSSProperties = new Set();
@@ -327,19 +321,13 @@ class WikiStyleHandler extends BaseSyntaxHandler {
   /**
    * Handle a specific WikiStyle match with modular processing
    * @param matchInfo - Style match information
-   * @param context - Parse context
+   * @param _context - Parse context
    * @returns Styled content HTML
    */
-  private async handleStyle(matchInfo: StyleMatch, context: ParseContext): Promise<string> {
+  private async handleStyle(matchInfo: StyleMatch, _context: ParseContext): Promise<string> {
     const { styleInfo, textContent } = matchInfo;
 
-    // Check cache for style result if caching enabled
-    if (this.options.cacheEnabled) {
-      const cachedResult = await this.getCachedStyleResult(matchInfo, context);
-      if (cachedResult) {
-        return cachedResult;
-      }
-    }
+    // No handler-level result cache (#1751): the page cache is the only render cache.
 
     let styledHtml: string;
 
@@ -350,11 +338,6 @@ class WikiStyleHandler extends BaseSyntaxHandler {
     } else {
       // CSS class assignment: %%class1 class2 content /%
       styledHtml = this.processCSSClasses(styleInfo, textContent);
-    }
-
-    // Cache the result if caching enabled
-    if (this.options.cacheEnabled && styledHtml) {
-      await this.cacheStyleResult(matchInfo, context, styledHtml);
     }
 
     return styledHtml;
@@ -589,66 +572,6 @@ class WikiStyleHandler extends BaseSyntaxHandler {
   }
 
   /**
-   * Get cached style result
-   * @param matchInfo - Style match information
-   * @param context - Parse context
-   * @returns Cached result or null
-   */
-  private async getCachedStyleResult(matchInfo: StyleMatch, context: ParseContext): Promise<string | null> {
-    const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-    if (!markupParser) {
-      return null;
-    }
-
-    const contentHash = this.generateContentHash(matchInfo.fullMatch);
-    const contextHash = this.generateContextHash(context);
-
-    return await markupParser.getCachedHandlerResult(this.handlerId, contentHash, contextHash);
-  }
-
-  /**
-   * Cache style result
-   * @param matchInfo - Style match information
-   * @param context - Parse context
-   * @param result - HTML result to cache
-   */
-  private async cacheStyleResult(matchInfo: StyleMatch, context: ParseContext, result: string): Promise<void> {
-    const markupParser = this.engine?.getManager('MarkupParser') as MarkupParser | undefined;
-    if (!markupParser) {
-      return;
-    }
-
-    const contentHash = this.generateContentHash(matchInfo.fullMatch);
-    const contextHash = this.generateContextHash(context);
-
-    await markupParser.cacheHandlerResult(this.handlerId, contentHash, contextHash, result);
-  }
-
-  /**
-   * Generate content hash for caching (modular caching)
-   * @param content - Content to hash
-   * @returns Content hash
-   */
-  private generateContentHash(content: string): string {
-    return crypto.createHash('md5').update(content).digest('hex');
-  }
-
-  /**
-   * Generate context hash for caching (modular caching)
-   * @param _context - Parse context
-   * @returns Context hash
-   */
-  private generateContextHash(_context: ParseContext): string {
-    const contextData = {
-      // Style processing is generally context-independent
-      // But include basic context for cache variation
-      timeBucket: Math.floor(Date.now() / 3600000) // 1-hour buckets
-    };
-
-    return crypto.createHash('md5').update(JSON.stringify(contextData)).digest('hex');
-  }
-
-  /**
    * Escape HTML to prevent XSS (modular security)
    * @param text - Text to escape
    * @returns Escaped text
@@ -674,8 +597,7 @@ class WikiStyleHandler extends BaseSyntaxHandler {
     return {
       handler: {
         enabled: this.config?.enabled || false,
-        priority: this.priority,
-        cacheEnabled: Boolean(this.options.cacheEnabled)
+        priority: this.priority
       },
       features: {
         customClasses: this.styleConfig?.customClasses || false,
@@ -786,8 +708,7 @@ class WikiStyleHandler extends BaseSyntaxHandler {
         'Security validation',
         'XSS prevention',
         'Modular configuration system',
-        'Hot-reload configuration',
-        'Performance caching'
+        'Hot-reload configuration'
       ],
       security: [
         'CSS injection prevention',

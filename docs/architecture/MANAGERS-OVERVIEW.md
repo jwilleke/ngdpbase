@@ -301,7 +301,6 @@ __Key API:__
 | `buildLinkGraph()` | Full scan of all pages |
 | `updatePageInLinkGraph(name, content)` | Incremental update after save |
 | `getReferringPages(name)` | Backlinks |
-| `invalidateHandlerCache()` | Flush MarkupParser render cache |
 | `textToHTML(ctx, content)` | Render via `WikiContext.renderMarkdown` |
 | `renderPreview(content, name, ctx)` | Unsaved preview |
 

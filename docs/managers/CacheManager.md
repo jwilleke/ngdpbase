@@ -20,7 +20,7 @@ CacheManager provides centralized cache management for ngdpbase with pluggable c
 
 > __Two cache layers in ngdpbase__: this document covers the CacheManager layer — opportunistic, TTL-based memoization through pluggable providers (NodeCache, Redis-planned, Null). It is __not__ the only caching in the system. Provider-level structural caches (e.g., `FileSystemProvider.pageCache`, `LunrSearchProvider.documents`, `ThemeManager` cache) are separate in-memory data structures populated at init and write-through invalidated; they're not exposed through CacheManager. See [the full inventory in the Complete Guide](CacheManager-Complete-Guide.md#provider-level-structural-caches) and [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) for the page-access performance angle.
 >
-> __What uses it today__: only the markup parser's regions (the page cache, interwiki links and styles, patterns, variables). The page cache is keyed by the viewer and their roles and follows the data each render read through data versions ([caching-developer-guide.md](../guides/caching-developer-guide.md), #1751).
+> __What uses it today__: only the markup parser, through one region: the page cache `MarkupParser-ParseResults` (its handler-results, patterns and variables regions were removed in #1751). The page cache is keyed by the viewer and their roles and follows the data each render read through data versions ([caching-developer-guide.md](../guides/caching-developer-guide.md), #1751).
 
 ## Key Features
 
@@ -168,16 +168,13 @@ await cacheManager.set('key', value, {
 | `RedisCacheProvider` | 🔮 Planned | Distributed cache via Redis |
 | `MemcachedProvider` | 🔮 Planned | Distributed cache via Memcached |
 
-## Common Cache Regions
+## Cache Regions in Use
 
 | Region | Used By | TTL | Description |
 | -------- | --------- | ----- | ------------- |
-| `pages` | PageManager | 3600 | Rendered page content |
-| `users` | UserManager | 1800 | User session data |
-| `search` | SearchManager | 600 | Search results |
-| `metadata` | PageManager | 7200 | Page metadata |
-| `permissions` | PolicyInformationPoint | 900 | Permission checks |
-| `plugins` | PluginManager | 3600 | Plugin output |
+| `MarkupParser-ParseResults` | MarkupParser | `ngdpbase.markup.cache.parse-results.ttl` (300) | The one page cache: rendered page HTML, read through with data versions ([caching-developer-guide.md](../guides/caching-developer-guide.md)) |
+
+No other region is created today. Earlier versions of this page listed `pages`, `users`, `search`, `metadata`, `permissions` and `plugins`; nothing creates them.
 
 ## Pattern Matching
 

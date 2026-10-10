@@ -563,29 +563,6 @@ describe('RenderingManager', () => {
     });
   });
 
-  describe('invalidateHandlerCache()', () => {
-    test('does not throw when MarkupParser is unavailable', () => {
-      expect(() => renderingManager.invalidateHandlerCache()).not.toThrow();
-    });
-
-    test('calls markupParser.invalidateHandlerCache when available', () => {
-      const mockMarkupParser = {
-        invalidateHandlerCache: vi.fn().mockResolvedValue(undefined)
-      };
-      const engineWithParser = {
-        ...mockEngine,
-        getManager: vi.fn((name: string) => {
-          if (name === 'MarkupParser') return mockMarkupParser;
-          if (name === 'ConfigurationManager') return mockConfigurationManager;
-          if (name === 'PageManager') return mockPageManager;
-          return null;
-        })
-      } as unknown as WikiEngine;
-      const mgr = new RenderingManager(engineWithParser);
-      expect(() => mgr.invalidateHandlerCache()).not.toThrow();
-    });
-  });
-
   describe('parseTableParameters()', () => {
     test('parses empty string to default params', () => {
       const params = renderingManager.parseTableParameters('');
@@ -771,7 +748,6 @@ describe('RenderingManager', () => {
     let mgrWithMP: RenderingManager;
     let mockMarkupParser: {
       domLinkHandler: { addPageName: ReturnType<typeof vi.fn>; removePageName: ReturnType<typeof vi.fn> };
-      invalidateHandlerCache: ReturnType<typeof vi.fn>;
     };
 
     beforeEach(async () => {
@@ -779,8 +755,7 @@ describe('RenderingManager', () => {
         domLinkHandler: {
           addPageName: vi.fn(),
           removePageName: vi.fn()
-        },
-        invalidateHandlerCache: vi.fn().mockResolvedValue(undefined)
+        }
       };
 
       const engineWithMP = {
@@ -797,11 +772,10 @@ describe('RenderingManager', () => {
       await mgrWithMP.initialize();
     });
 
-    test('addPageToCache() calls domLinkHandler.addPageName and invalidateHandlerCache', () => {
+    test('addPageToCache() calls domLinkHandler.addPageName', () => {
       mgrWithMP.addPageToCache('NewPage');
 
       expect(mockMarkupParser.domLinkHandler.addPageName).toHaveBeenCalledWith('NewPage');
-      expect(mockMarkupParser.invalidateHandlerCache).toHaveBeenCalled();
     });
 
     test('addPageToCache() does not duplicate existing page names', () => {
@@ -812,16 +786,14 @@ describe('RenderingManager', () => {
       expect(cached.filter((n: string) => n === 'NewPage').length).toBe(1);
     });
 
-    test('removePageFromLinkGraph() calls domLinkHandler.removePageName and invalidateHandlerCache', () => {
+    test('removePageFromLinkGraph() calls domLinkHandler.removePageName', () => {
       // Add the page first so it is in cachedPageNames
       mgrWithMP.addPageToCache('OldPage');
       mockMarkupParser.domLinkHandler.removePageName.mockClear();
-      mockMarkupParser.invalidateHandlerCache.mockClear();
 
       mgrWithMP.removePageFromLinkGraph('OldPage');
 
       expect(mockMarkupParser.domLinkHandler.removePageName).toHaveBeenCalledWith('OldPage');
-      expect(mockMarkupParser.invalidateHandlerCache).toHaveBeenCalled();
     });
 
     test('removePageFromLinkGraph() removes page from cachedPageNames', () => {

@@ -16,23 +16,31 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
   let balance: number;
   let renders: number;
   let nextEvent: string;
+  let included: string;
+  let regionNames: string[];
 
   beforeEach(async () => {
     adapter = new NodeCacheAdapter({ stdTTL: 300, checkperiod: 0, maxKeys: 100 });
     versions = new Map();
     const regions = new Map<string, RegionCache>();
+    regionNames = [];
     const region = (name: string) => {
+      regionNames.push(name);
       if (!regions.has(name)) regions.set(name, new RegionCache(adapter as never, name, async (t) => versions.get(t) ?? '0'));
       return regions.get(name);
     };
     balance = 100;
     renders = 0;
     nextEvent = 'Board meeting';
+    included = 'Old footer';
 
     const managers: Record<string, unknown> = {
       ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getAllProperties: () => ({}) },
       CacheManager: { isInitialized: () => true, region },
-      PageManager: { isSharedIndexable: () => true },
+      PageManager: {
+        isSharedIndexable: () => true,
+        readPage: async () => ({ ok: true, value: { content: included } })
+      },
       RenderingManager: { converter: { makeHtml: (t: string) => t } }
     };
     const engine = { getManager: (name: string) => managers[name] ?? null, logger: { info() {}, warn() {}, debug() {}, error() {} } };
@@ -63,6 +71,7 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     });
 
     parser = new MarkupParser(engine);
+    managers.MarkupParser = parser; // WikiTagHandler renders an included page through it
     await parser.initialize?.();
   });
 
@@ -111,6 +120,25 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     const spy = vi.spyOn(parser as unknown as { renderUncached: () => Promise<string> }, 'renderUncached');
     await parser.parse('Just text', plain);
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  test('an included page shows its new content once PageManager bumps — no handler cache in between', async () => {
+    const page = 'Top <wiki:Include page="Footer" />';
+    expect(await parser.parse(page, { pageName: 'Home' })).toContain('Old footer');
+    included = 'New footer'; // written, but not yet announced
+    expect(await parser.parse(page, { pageName: 'Home' })).toContain('Old footer');
+
+    versions.set('PageManager', 'v2'); // PageManager bumps after its write
+    const html = await parser.parse(page, { pageName: 'Home' });
+    expect(html).toContain('New footer');
+    expect(html).not.toContain('Old footer');
+  });
+
+  test('the parse-results region is the only render cache (#1751)', () => {
+    expect(regionNames).toContain('MarkupParser-ParseResults');
+    expect(regionNames).not.toContain('MarkupParser-HandlerResults');
+    expect(regionNames).not.toContain('MarkupParser-Patterns');
+    expect(regionNames).not.toContain('MarkupParser-Variables');
   });
 
   test('a revoked role is not served the render made before the revoke', async () => {

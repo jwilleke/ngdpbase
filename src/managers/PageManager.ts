@@ -1219,10 +1219,6 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   invalidatePageCache(identifier: string): string | null {
     const resolvedTitle = this.provider?.invalidatePageCache?.(identifier) ?? null;
-    const renderingManager = this.engine.getManager<{ invalidateHandlerCache(): void }>('RenderingManager');
-    if (renderingManager) {
-      renderingManager.invalidateHandlerCache();
-    }
     // #1751: a page written outside savePage still re-renders every page that read it.
     this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(PAGE_DATA_TOPIC).catch(() => {});
     return resolvedTitle;
