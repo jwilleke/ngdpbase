@@ -71,9 +71,14 @@ const E2E_PASSKEY_LABEL = 'e2e-virtual';
 
 /** Remove every passkey this suite enrolled — leftovers from a crashed run, or this run's. */
 async function removeE2EPasskeys(page: Page): Promise<void> {
-  for (let i = 0; i < 10; i++) {
+  // The label is an editable input since passkeys could be renamed (#1591); a
+  // cell-text match found nothing from then on, so every run's passkey stayed
+  // until the account passed WebAuthn's 64-entry excludeCredentials limit and
+  // enrolment failed. Matched on the input's value. The bound clears a
+  // backlog, not just one leftover.
+  for (let i = 0; i < 100; i++) {
     await page.goto('/profile');
-    const row = page.locator('tr', { has: page.locator(`td:text-is("${E2E_PASSKEY_LABEL}")`) }).first();
+    const row = page.locator('tr', { has: page.locator(`input[name="label"][value="${E2E_PASSKEY_LABEL}"]`) }).first();
     if ((await row.count()) === 0) return;
     await row.getByRole('button', { name: 'Remove' }).click();
     await page.waitForURL(/\/profile\?/);
