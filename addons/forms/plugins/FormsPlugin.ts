@@ -13,7 +13,7 @@ import type ConfigurationManager from '../../../dist/src/managers/ConfigurationM
 import { escapeHtml as escHtml, type FormOption } from '../../../dist/src/utils/pluginFormatters.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
-import { resolveFieldOptions } from '../managers/fieldOptions.js';
+import { loadsChoices, resolveFieldOptions } from '../managers/fieldOptions.js';
 
 type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string };
 
@@ -49,6 +49,11 @@ function renderField(field: ResolvedField): string {
 
   if (field.type === 'textarea') {
     control = `<textarea name="${escHtml(field.name)}" class="form-control"${placeholder}${required} rows="4">${escHtml(pv)}</textarea>`;
+  } else if (loadsChoices(field)) {
+    // Choices from a manager load when the page opens (forms-submit.js), so the
+    // cached page never holds them and a new choice shows at once.
+    const selected = pv ? ` data-selected="${escHtml(pv)}"` : '';
+    control = `<select name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-select"${required} data-options-field="${escHtml(field.name)}"${selected}><option value="">— loading —</option></select>`;
   } else if (field.type === 'dropdown') {
     const opts = (field.resolvedOptions ?? [])
       .map(o => {
@@ -190,7 +195,7 @@ const FormsPlugin = {
     // Resolve optionsSource and prefill for each field
     const resolvedFields: ResolvedField[] = await Promise.all(form.fields.map(async field => {
       const base: ResolvedField = { ...field };
-      if (field.type === 'dropdown') {
+      if (field.type === 'dropdown' && !loadsChoices(field)) {
         base.resolvedOptions = await resolveFieldOptions(context.engine, field, context.userContext);
       }
       if (field.prefill && userCtx) {

@@ -35,6 +35,11 @@ export async function resolveFieldOptions(
   return (field.options ?? []).map(o => ({ value: o, label: o }));
 }
 
+/** A dropdown whose choices come from a manager: they load when the page opens, never into the cached page. */
+export function loadsChoices(field: FormField): boolean {
+  return field.type === 'dropdown' && (field.optionsSource ?? '').startsWith('fetch:');
+}
+
 /** Every dropdown's allowed values, keyed by field name. */
 export async function resolveChoices(
   engine: EngineLike,

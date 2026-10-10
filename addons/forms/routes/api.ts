@@ -8,8 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataManager.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
-import { resolveChoices } from '../managers/fieldOptions.js';
-import { checkSubmitAccess } from '../managers/pageAccess.js';
+import { loadsChoices, resolveChoices, resolveFieldOptions } from '../managers/fieldOptions.js';
+import { checkFormOnPage, checkSubmitAccess } from '../managers/pageAccess.js';
 
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
@@ -165,6 +165,34 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         res.status(201).json({ ok: true, submissionId: submission.id });
       } catch (err) {
         console.error('[forms] submit error:', err);
+        res.status(500).json({ ok: false, error: 'Internal server error' });
+      }
+    })();
+  });
+
+  // ── GET /api/forms/options/:formId?page=<page> ────────────────────────────
+  // The choices a manager offers this reader, for each dropdown fed by one.
+  // The page holds only an empty dropdown (cached for everyone); its script
+  // asks here when it opens, as the calendar loads its events.
+  router.get('/options/:formId', (req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const formId = String(req.params['formId']);
+        const form = fdm()?.getDefinition(formId);
+        if (!form) { res.status(404).json({ ok: false, error: 'Form not found' }); return; }
+        const userContext = (req as Request & { userContext?: unknown }).userContext;
+        const pageName = typeof req.query['page'] === 'string' ? req.query['page'] : undefined;
+        const onPage = await checkFormOnPage(engine, userContext, pageName, formId);
+        if (!onPage.ok) { res.status(onPage.status).json({ ok: false, error: onPage.error }); return; }
+
+        const options: Record<string, { value: string; label: string }[]> = {};
+        for (const field of form.fields.filter(loadsChoices)) {
+          options[field.name] = await resolveFieldOptions(engine, field, userContext);
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ok: true, options });
+      } catch (err) {
+        console.error('[forms] options error:', err);
         res.status(500).json({ ok: false, error: 'Internal server error' });
       }
     })();

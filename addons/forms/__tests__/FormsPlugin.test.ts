@@ -406,11 +406,11 @@ describe('FormsPlugin — fetch options, amount, page name', () => {
     };
   }
 
-  test('dropdown choices come from the manager, asked with the viewer', async () => {
-    let viewer: unknown;
-    const html = await FormsPlugin.execute(ctxWith(async (_o, v) => { viewer = v; return [{ value: 'general', label: 'General <Fund>' }]; }), { id: 'test-form' });
-    expect(html).toContain('<option value="general">General &lt;Fund&gt;</option>');
-    expect(viewer).toEqual({ username: 'molly', roles: ['treasurer'] });
+  test('a dropdown fed by a manager is drawn empty and loads its choices when the page opens', async () => {
+    let asked = false;
+    const html = await FormsPlugin.execute(ctxWith(async () => { asked = true; return [{ value: 'general', label: 'General' }]; }), { id: 'test-form' });
+    expect(asked).toBe(false); // the cached page never holds the choices
+    expect(html).toMatch(/<select name="fund" id="field-fund" class="form-select" required data-options-field="fund"><option value="">— loading —<\/option><\/select>/);
   });
 
   test('an amount field is a decimal text input', async () => {

@@ -319,3 +319,50 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     expect(saved).toEqual([]);
   });
 });
+
+
+// ── Choices from a manager load when the page opens (the calendar's method) ───
+
+describe('GET /api/forms/options/:formId', () => {
+  const form = {
+    id: 'test-form', title: 'T', proxySubmission: false, store: true,
+    fields: [
+      { name: 'fund', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      { name: 'size', type: 'dropdown', label: 'Size', required: false, options: ['S', 'L'] },
+      { name: 'amount', type: 'amount', label: 'Amount', required: true }
+    ]
+  };
+  function optionsApp(overrides: Record<string, unknown> = {}) {
+    const asked: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => form, saveSubmission: async (s: object) => s },
+      LedgerManager: { toFormOptions: async (o: unknown, viewer: unknown) => { asked.push(o, viewer); return [{ value: 'general', label: 'General' }]; } },
+      ...overrides
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'tess' }; next(); });
+    app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+    return { app, asked };
+  }
+
+  test('answers the fetched choices of each such dropdown, asked with the viewer', async () => {
+    const { app, asked } = optionsApp();
+    const res = await request(app).get('/api/forms/options/test-form?page=Books');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, options: { fund: [{ value: 'general', label: 'General' }] } });
+    expect(asked).toEqual([{ list: 'funds' }, { username: 'tess' }]);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  test('404 when the page does not carry the form, or the reader may not read it', async () => {
+    const elsewhere = optionsApp({ PageManager: { readPage: async (name: string) => ({ ok: true, name, metadata: {}, value: { content: "[{Form id='other'}]" } }) } });
+    expect((await request(elsewhere.app).get('/api/forms/options/test-form?page=Public')).status).toBe(404);
+    const hidden = optionsApp({ PageManager: { readPage: async () => ({ ok: false, refusal: 'denied' }) } });
+    expect((await request(hidden.app).get('/api/forms/options/test-form?page=Books')).status).toBe(404);
+  });
+
+  test('400 without a page', async () => {
+    expect((await request(optionsApp().app).get('/api/forms/options/test-form')).status).toBe(400);
+  });
+});

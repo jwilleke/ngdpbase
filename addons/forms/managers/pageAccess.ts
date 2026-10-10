@@ -39,22 +39,43 @@ export function pageCarriesForm(content: string, formId: string): boolean {
   return re.test(content);
 }
 
+export type FormOnPage =
+  | { ok: true; name: string; metadata: Record<string, unknown> }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Steps 1 and 2: the reader may read the page, and the page carries this form.
+ * Seeing a form is reading its page; loading its choices asks this, and
+ * submitting asks this and then `form-submit`.
+ */
+export async function checkFormOnPage(
+  engine: WikiEngine,
+  userContext: unknown,
+  pageName: string | undefined,
+  formId: string
+): Promise<FormOnPage> {
+  if (!pageName) return { ok: false, status: 400, error: 'The form did not say which page it is on' };
+
+  const pages = engine.getManager<PageReader>('PageManager');
+  if (!pages) return { ok: false, status: 503, error: 'Page access is not available' };
+
+  const read = await pages.readPage(pageName, userContext);
+  if (!read.ok) return { ok: false, status: 404, error: 'Form not found' };
+  if (!pageCarriesForm(read.value.content ?? '', formId)) return { ok: false, status: 404, error: 'Form not found' };
+  return { ok: true, name: read.name, metadata: read.metadata };
+}
+
 export async function checkSubmitAccess(
   engine: WikiEngine,
   userContext: unknown,
   pageName: string | undefined,
   formId: string
 ): Promise<SubmitAccess> {
-  if (!pageName) return { ok: false, status: 400, error: 'The form did not say which page it is on' };
+  const onPage = await checkFormOnPage(engine, userContext, pageName, formId);
+  if (!onPage.ok) return onPage;
 
-  const pages = engine.getManager<PageReader>('PageManager');
   const pip = engine.getManager<PageAccessPoint>('PolicyInformationPoint');
-  if (!pages || !pip) return { ok: false, status: 503, error: 'Page access is not available' };
-
-  const read = await pages.readPage(pageName, userContext);
-  if (!read.ok) return { ok: false, status: 404, error: 'Form not found' };
-  if (!pageCarriesForm(read.value.content ?? '', formId)) return { ok: false, status: 404, error: 'Form not found' };
-
-  const allowed = await pip.canUserAccessPage(userContext, read.name, SUBMIT_ACTION, read.metadata);
+  if (!pip) return { ok: false, status: 503, error: 'Page access is not available' };
+  const allowed = await pip.canUserAccessPage(userContext, onPage.name, SUBMIT_ACTION, onPage.metadata);
   return allowed ? { ok: true } : { ok: false, status: 403, error: 'You may not submit this form' };
 }
