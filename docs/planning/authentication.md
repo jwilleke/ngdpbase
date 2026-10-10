@@ -237,7 +237,13 @@ __The one exception is a single "instance provider"__ (operator, 2026-10-10). On
 - A mapped role is still subject to its `required-aal`.
 - The site remembers which roles came from the instance provider, kept apart from roles an admin gave by hand. A role is removed when its group no longer comes with the person's sign-in; a hand-given role is never touched.
 - This narrows #1588's receiving side from "every incoming provider" to the instance provider alone.
-- `AuthentikBearerAuthProvider` and `CloudflareAccessAuthProvider` map groups to roles today, through `group-map`, which is empty by default. Under this rule only the instance provider may keep doing that; settled on #1743.
+
+__Not login providers, so outside this design for now__ (operator, 2026-10-10). Both stay as they are:
+
+- `AuthentikBearerAuthProvider` checks an authentik access token on an API request, from an agent or script using the `client_credentials` grant. No person signs in through it. On only where configured (`ngdpbase.auth.authentik-bearer.enabled`, default off).
+- `CloudflareAccessAuthProvider` trusts the signed header Cloudflare Access adds in front of a site. Off by default (`ngdpbase.auth.cloudflare-access.enabled`).
+
+Each still finds a person by email, may create an account, and maps groups to roles with its own `group-map`. The rules above (`iss` + `sub`, no roles from outside, one instance provider) apply to login providers. If either of these ever becomes a way for people to sign in, it comes under them first.
 
 __Sign-in level.__ An external sign-in is AAL1. It counts as more only when the admin trusts that provider's reported `amr` / `acr` (`"amr": ["trust"]`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
 
