@@ -215,7 +215,10 @@ __One generic provider.__ The admin configures any OpenID Connect issuer, found 
 
 Any other OpenID Connect issuer works without a preset, for example Yahoo, LinkedIn, PayPal, Login.gov, or a self-hosted authentik. Not OpenID Connect, so not supported: Facebook on the web, X (plain OAuth 2.0 / 1.0a, no ID token; identity comes from its `/2/users/me` API), Amazon, Discord.
 
-__Creating accounts is a setting, per provider and for the whole instance, and the instance always overrides the provider__ (operator, 2026-10-10). `auto-provision` is set for the instance and per provider. Off, an outside sign-in only signs in a person who already has an account here. On, it may create the account, through `UserManager.createUser` like every other sign-up. Whether a provider's own setting still decides when the instance allows account creation, and the instance default, are settled on #1743. (Today Google sign-in creates accounts: `ngdpbase.auth.google-oidc.auto-provision` is `true`.)
+__Creating accounts is a setting, per provider and for the whole instance, and the instance always overrides the provider__ (operator, 2026-10-10). `auto-provision` is set for the instance and per provider. Off, an outside sign-in only signs in a person who already has an account here. On, it may create the account, through `UserManager.createUser` like every other sign-up. Decided (operator, 2026-10-10):
+
+- __The instance setting is a ceiling.__ Instance off: no provider creates an account. Instance on: each provider's own setting still decides, so a provider can say no. For example, Google may create accounts while Apple, with its relay addresses, doesn't.
+- __The instance default is off.__ A freshly installed site creates no account from an outside sign-in until an admin allows it, for the instance and then per provider. (Today Google sign-in creates accounts: `ngdpbase.auth.google-oidc.auto-provision` is `true`.)
 
 __Connecting an identity to an account:__
 
@@ -262,8 +265,11 @@ __Account recovery through a connected identity__ (signing back in with Google a
 __Still open__, on #1743:
 
 - Moving existing Google accounts over. Today's Google sign-in matches a person by verified email, among only the no-password accounts it created (`isExternal: true`), and never stores Google's subject. Suggested: on its first Google sign-in after the change, such an account is matched by verified email once, and Google's `iss` + `sub` is stored; from then on, only `iss` + `sub`. jimstest has none (4 accounts, Google sign-in off). Other deployments aren't checked from here.
-- How many connections: suggested many per account, but each outside identity belongs to exactly one account.
-- The admin page to add a provider and test it.
+Decided (operator, 2026-10-10):
+
+- __Any number of outside identities per account__, for example Ann's Google and her Apple, so she can sign in with either.
+- __Each outside identity belongs to exactly one account.__ Connecting one that's already connected elsewhere is refused. Otherwise "Sign in with Google" couldn't tell whom to sign in.
+- __A separate admin page, "Sign-in providers"__: add, edit, enable or disable a provider (issuer, client id, the environment variable holding the secret, auto-provision), with a Test button that checks discovery answers and the settings are complete. Its own piece of work alongside #1743.
 
 __Login-page buttons__ (operator, 2026-10-10): each provider's own icon and button, as its brand rules ask, as long as they fit our constraints. That means a local asset, not a script or image loaded from the provider; within the CSP (#1489); readable in light and dark themes; and accessible (a text label, not an icon alone). A provider whose required button doesn't fit gets a plain button with its name.
 
