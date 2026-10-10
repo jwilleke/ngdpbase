@@ -28,6 +28,8 @@ interface SessionStats {
 
 const SessionsPlugin: SimplePlugin = {
   name: 'SessionsPlugin',
+  // #1751: who is signed in changes with nothing written, so a page showing it is not kept in the page cache.
+  volatile: true,
   description: 'Shows active session count or list of authenticated users',
   author: 'ngdpbase',
   version: '3.0.0',

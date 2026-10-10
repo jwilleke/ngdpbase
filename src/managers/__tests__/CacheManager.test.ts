@@ -13,6 +13,11 @@
  */
 
 import CacheManager from '../CacheManager';
+
+// vitest.setup.ts mocks every cache provider with one that stores nothing. The
+// data-version tests (#1751) need a cache that keeps what it is given; every
+// other test here configures the null provider, which stays mocked.
+vi.unmock('../../providers/NodeCacheProvider');
 import type { WikiEngine } from '../../types/WikiEngine';
 
 const mockConfigManager = {
@@ -215,6 +220,47 @@ describe('CacheManager', () => {
       const config = cm.getConfig();
       expect(config.defaultTTL).toBe(300);
       expect(config.maxKeys).toBe(1000);
+    });
+  });
+
+  describe('data versions (#1751)', () => {
+    // Versions live in the cache, so these use the in-memory provider, not the null one.
+    beforeEach(async () => {
+      mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
+        const config: Record<string, unknown> = {
+          'ngdpbase.cache.enabled': true,
+          'ngdpbase.cache.provider': 'nodecacheprovider',
+          'ngdpbase.cache.defaultttl': 300,
+          'ngdpbase.cache.maxkeys': 1000,
+          'ngdpbase.cache.checkperiod': 120
+        };
+        return config[key] !== undefined ? config[key] : defaultValue;
+      });
+      await cm.shutdown();
+      cm = new CacheManager(mockEngine);
+      await cm.initialize();
+    });
+
+    test('a topic never bumped is version 0', async () => {
+      expect(await cm.version('LedgerManager')).toBe('0');
+    });
+
+    test('bump gives the topic a new version, and each bump differs', async () => {
+      const a = await cm.bump('LedgerManager');
+      expect(await cm.version('LedgerManager')).toBe(a);
+      const b = await cm.bump('LedgerManager');
+      expect(b).not.toBe(a);
+      expect(await cm.version('LedgerManager')).toBe(b);
+    });
+
+    test('a region reads through against those versions', async () => {
+      const region = cm.region('pages');
+      let n = 0;
+      const render = async (deps: { dependsOn(t: string): void }) => { deps.dependsOn('LedgerManager'); return ++n; };
+      expect(await region.getOrSetVersioned('Ledger', render)).toBe(1);
+      expect(await region.getOrSetVersioned('Ledger', render)).toBe(1);
+      await cm.bump('LedgerManager');
+      expect(await region.getOrSetVersioned('Ledger', render)).toBe(2);
     });
   });
 

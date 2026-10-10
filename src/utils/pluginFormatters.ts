@@ -863,6 +863,9 @@ export const FETCHABLE_METHOD = 'toMarqueeText';
  *
  * The raw `{k: v}` args object is passed as the first argument (the manager
  * owns its own option parsing via `managerUtils.ts`), the viewer second.
+ *
+ * #1751: the render depends on the manager's data, so the page cache
+ * re-renders once that manager bumps its topic (its own name).
  */
 export async function resolveManagerFetch(
   spec: string | undefined,

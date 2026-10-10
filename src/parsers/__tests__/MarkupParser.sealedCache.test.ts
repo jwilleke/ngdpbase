@@ -9,6 +9,7 @@
  */
 
 import MarkupParser from '../MarkupParser';
+import { readThroughVersioned } from '../../cache/RegionCache';
 
 type CacheRegion = {
   get: ReturnType<typeof vi.fn>;
@@ -17,12 +18,18 @@ type CacheRegion = {
   clear: ReturnType<typeof vi.fn>;
 };
 
-const newRegion = (): CacheRegion => ({
-  get: vi.fn(async () => null),
-  set: vi.fn(async () => true),
-  del: vi.fn(async () => true),
-  clear: vi.fn(async () => true)
-});
+const newRegion = (): CacheRegion => {
+  const region = {
+    get: vi.fn(async () => null),
+    set: vi.fn(async () => true),
+    del: vi.fn(async () => true),
+    clear: vi.fn(async () => true)
+  };
+  // #1751: the parse cache reads through with data versions, over the spies above.
+  return Object.assign(region, {
+    getOrSetVersioned: (key: string, factory: never, options: never) => readThroughVersioned(region, async () => '0', key, factory, options)
+  });
+};
 
 describe('MarkupParser parse-results cache and sealed pages (#1423)', () => {
   let regions: Record<string, CacheRegion>;

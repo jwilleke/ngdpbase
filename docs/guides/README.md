@@ -1,7 +1,7 @@
 ---
 name: Developer guides
 description: Index of area developer guides — the door for how to change this codebase
-dateModified: 2026-09-06
+dateModified: 2026-10-10
 category: guides
 ---
 
@@ -15,6 +15,7 @@ Each file is the door for one area: standing rules, a checklist, pointers, and o
 | Authentication | [authentication-developer-guide.md](authentication-developer-guide.md) |
 | Audit | [audit-developer-guide.md](audit-developer-guide.md) |
 | Configuration | [configuration-developer-guide.md](configuration-developer-guide.md) |
+| Caching | [caching-developer-guide.md](caching-developer-guide.md) |
 | Bootstrap | [bootstrap-developer-guide.md](bootstrap-developer-guide.md) |
 | Testing | [testing-developer-guide.md](testing-developer-guide.md) |
 | Managers and providers | [managers-developer-guide.md](managers-developer-guide.md) |

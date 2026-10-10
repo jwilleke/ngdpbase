@@ -100,6 +100,8 @@ function section(title: string, pages: string[], hrefBase: string, max: number):
 
 const AppHealthPlugin: SimplePlugin = {
   name: 'AppHealthPlugin',
+  // #1751: the instance's health changes with nothing written, so a page showing it is not kept in the page cache.
+  volatile: true,
   description: 'Deterministic app-health audit: orphan pages, broken links, stale pages',
   author: 'ngdpbase',
   version: '1.0.0',

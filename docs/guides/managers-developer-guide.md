@@ -1,7 +1,7 @@
 ---
 name: Managers and providers developer guide
 description: How to add a manager or provider — one door per resource, config selects the implementation
-dateModified: 2026-09-06
+dateModified: 2026-10-10
 category: guides
 relatedModules: [BaseManager, BaseProvider]
 ---
@@ -18,6 +18,7 @@ How to add a manager or a provider. The invariant is in [guiding-framework.md](.
 - Configuration selects the provider (`ngdpbase.<capability>.provider`) and parameterises it. It does not contain logic.
 - A capability that can be left unconfigured must still work (Null, console, or an in-process default). Log the resolved provider at boot.
 - Authorization and audit happen at the manager door, with an `ActorContext`. See [security-developer-guide.md](security-developer-guide.md) and [audit-developer-guide.md](audit-developer-guide.md).
+- A manager whose data can appear on a page bumps its cache topic after every write, through one write helper at its door (`CacheManager.bump`). See [caching-developer-guide.md](caching-developer-guide.md).
 
 ## How to add a manager
 

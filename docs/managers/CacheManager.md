@@ -20,7 +20,7 @@ CacheManager provides centralized cache management for ngdpbase with pluggable c
 
 > __Two cache layers in ngdpbase__: this document covers the CacheManager layer — opportunistic, TTL-based memoization through pluggable providers (NodeCache, Redis-planned, Null). It is __not__ the only caching in the system. Provider-level structural caches (e.g., `FileSystemProvider.pageCache`, `LunrSearchProvider.documents`, `ThemeManager` cache) are separate in-memory data structures populated at init and write-through invalidated; they're not exposed through CacheManager. See [the full inventory in the Complete Guide](CacheManager-Complete-Guide.md#provider-level-structural-caches) and [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) for the page-access performance angle.
 >
-> __What uses it today, and the known gap__: only the markup parser's regions (rendered pages, interwiki links and styles, patterns, variables). Entries expire by TTL; nothing invalidates them on page, role or configuration changes, so a rendered page can show permission-filtered content from before a role was revoked for up to 300 s ([#1751](https://github.com/jwilleke/ngdpbase/issues/1751)). See [the Complete Guide](CacheManager-Complete-Guide.md#known-gap-the-parse-result-cache-key-1751).
+> __What uses it today__: only the markup parser's regions (the page cache, interwiki links and styles, patterns, variables). The page cache is keyed by the viewer and their roles and follows the data each render read through data versions ([caching-developer-guide.md](../guides/caching-developer-guide.md), #1751).
 
 ## Key Features
 
@@ -95,6 +95,33 @@ await region.clear();
 // Get statistics
 const stats = await region.stats();
 ```
+
+## Read-Through with Data Versions (#1751)
+
+A cached value built from a manager's data stays current without guessing a TTL.
+The manager names its data with a __topic__ (by convention its own name, such as
+`LedgerManager`) and bumps it after every write. A read-through entry remembers the
+version of each topic it read, and is served only while those versions are unchanged.
+
+```javascript
+// The manager, at its one write door:
+await cacheManager.bump('LedgerManager');
+
+// A reader:
+const html = await cacheManager.region('pages').getOrSetVersioned('Ledger', async (deps) => {
+  deps.dependsOn('LedgerManager');      // declare before reading
+  return renderBalances();
+});
+```
+
+- `version(topic)` is `'0'` until the topic is first bumped. Versions never expire, and each
+  bump is a new unique value, so instances sharing a cache can't collide on a count.
+- A render whose output changes with nothing written (a clock) calls `deps.markVolatile()`.
+  It is returned but never stored.
+- The page cache (`MarkupParser-ParseResults`) reads through this way, and is the only page
+  cache. Every render depends on `PageManager`, `ConfigurationManager` and `UserManager`;
+  each manager a plugin fetches is recorded too. See
+  [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## Set Options
 

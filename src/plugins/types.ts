@@ -26,6 +26,14 @@ export interface PluginContext {
   linkGraph: Record<string, unknown>;
   /** Query-string parameters from the current HTTP request (e.g. { page: '2' }) */
   query?: Record<string, string>;
+  /**
+   * #1751: this render reads `topic`'s data (by convention the owning
+   * manager's name, e.g. 'LedgerManager'). Call before reading; the cached
+   * page is re-rendered once the manager bumps that topic.
+   */
+  dependsOn?: (topic: string) => void;
+  /** #1751: this render's output changes on its own; do not cache the page. */
+  markVolatile?: () => void;
   [key: string]: unknown;
 }
 
@@ -48,6 +56,13 @@ export interface SimplePlugin {
   initialize?: (engine: unknown) => Promise<void> | void;
   fetch?:      (engine: unknown) => Promise<void> | void;
   execute?: (context: PluginContext, params: PluginParams) => Promise<string> | string;
+  /**
+   * Its output changes with nothing written (a clock): a page that runs it is
+   * not kept in the page cache (#1751). Data a plugin reads from a manager is
+   * declared with `context.dependsOn(topic)` instead, which keeps the page
+   * cached until that data changes.
+   */
+  volatile?: boolean;
 }
 
 /**

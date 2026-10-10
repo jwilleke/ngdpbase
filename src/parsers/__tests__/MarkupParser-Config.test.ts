@@ -1,5 +1,6 @@
 import MarkupParser from '../MarkupParser';
 import PluginSyntaxHandler from '../handlers/PluginSyntaxHandler';
+import { readThroughVersioned } from '../../cache/RegionCache';
 
 // Mock ConfigurationManager
 class MockConfigurationManager {
@@ -36,10 +37,9 @@ class MockCacheManager {
   }
   
   region(regionName) {
-    return {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(true)
-    };
+    const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue(true) };
+    // #1751: the parse cache reads through with data versions.
+    return { ...store, getOrSetVersioned: (key, factory, options) => readThroughVersioned(store, async () => '0', key, factory, options) };
   }
 }
 
@@ -203,7 +203,7 @@ describe('MarkupParser Configuration Integration', () => {
         // Check that set was called with correct TTL
         expect(mockCache.set).toHaveBeenCalledWith(
           expect.any(String),
-          expect.any(String),
+          expect.objectContaining({ __versioned: true, value: expect.any(String) }), // #1751: the HTML and the versions it was built from
           { ttl: 900 }
         );
       }

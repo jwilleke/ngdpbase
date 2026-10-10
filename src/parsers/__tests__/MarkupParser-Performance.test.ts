@@ -1,5 +1,6 @@
 import MarkupParser from '../MarkupParser';
 import { type MockInstance } from 'vitest';
+import { readThroughVersioned } from '../../cache/RegionCache';
 
 // Enhanced Mock CacheManager with multiple regions
 class MockAdvancedCacheManager {
@@ -27,6 +28,9 @@ class MockAdvancedCacheManager {
           region.cache.set(key, value);
         })
       });
+      // #1751: the parse cache reads through with data versions, over the spies above.
+      const region = this.regions.get(regionName);
+      Object.assign(region, { getOrSetVersioned: (key, factory, options) => readThroughVersioned(region, async () => '0', key, factory, options) });
     }
     return this.regions.get(regionName);
   }
@@ -216,7 +220,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
       const parseResultsCache = markupParser.cacheStrategies.parseResults;
       expect(parseResultsCache.set).toHaveBeenCalledWith(
         expect.any(String),
-        expect.any(String),
+        expect.objectContaining({ __versioned: true, value: expect.any(String) }), // #1751: the HTML and the versions it was built from
         { ttl: 300 }
       );
     });
@@ -233,7 +237,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
       
       // Mock cache to return result for second parse
       const parseResultsCache = markupParser.cacheStrategies.parseResults;
-      parseResultsCache.get.mockResolvedValueOnce('cached result');
+      parseResultsCache.get.mockResolvedValueOnce({ __versioned: true, value: 'cached result', versions: {} }); // #1751: a stored entry
       
       // Second parse - cache hit
       await markupParser.parse(content);
@@ -361,7 +365,7 @@ describe('MarkupParser Advanced Caching and Performance', () => {
       const parseResultsCache = markupParser.cacheStrategies.parseResults;
       expect(parseResultsCache.set).toHaveBeenCalledWith(
         expect.any(String),
-        expect.any(String),
+        expect.objectContaining({ __versioned: true, value: expect.any(String) }), // #1751: the HTML and the versions it was built from
         { ttl: 300 }
       );
     });

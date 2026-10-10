@@ -26,7 +26,7 @@ function makeDoor(existing: Record<string, StoredPage> = {}, links: Record<strin
   const search = { updatePageInIndex: vi.fn(async () => {}), removePageFromIndex: vi.fn(async () => {}) };
   const attachments = { syncPageMentions: vi.fn(async () => {}) };
   const assets = { syncPageAssets: vi.fn(async () => {}) };
-  const cache = { isInitialized: () => true, clear: vi.fn(async () => {}) };
+  const cache = { isInitialized: () => true, bump: vi.fn(async () => 'v2') };
 
   const provider = {
     // As the provider answers: title and uuid on the page, and in its frontmatter.
@@ -54,8 +54,8 @@ function makeDoor(existing: Record<string, StoredPage> = {}, links: Record<strin
   const pm = new PageManager({ getManager: vi.fn((name: string) => managers[name] ?? null) });
   (pm as unknown as { provider: unknown }).provider = provider;
   const jim = { username: 'jim', isAuthenticated: true } as never;
-  const cleared = () => cache.clear.mock.calls.map((c: unknown[]) => c[1]).sort();
-  return { pm, provider, rendering, search, attachments, assets, cache, jim, cleared };
+  const bumped = () => cache.bump.mock.calls.map((c: unknown[]) => c[0]);
+  return { pm, provider, rendering, search, attachments, assets, cache, jim, bumped };
 }
 
 describe('PageManager — the page door keeps the shared indexes (#1462)', () => {
@@ -73,7 +73,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.assets.syncPageAssets).toHaveBeenCalledWith('New Page', 'see [Beta]');
     expect(d.rendering.removePageFromLinkGraph).not.toHaveBeenCalled();
     expect(d.search.removePageFromIndex).not.toHaveBeenCalled();
-    expect(d.cleared()).toEqual(['rendered-pages:uuid-alpha:*', 'rendered-pages:uuid-new:*']);
+    expect(d.bumped()).toEqual(['PageManager']);
   });
 
   it('an edit reindexes the page under its name without re-adding it', async () => {
@@ -101,10 +101,10 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.rendering.addPageToCache).toHaveBeenCalledWith('New Title');
     expect(d.search.updatePageInIndex).toHaveBeenCalledWith('New Title', expect.objectContaining({ name: 'New Title' }));
     // The page and every page that linked to the old title.
-    expect(d.cleared()).toEqual(['rendered-pages:uuid-alpha:*', 'rendered-pages:uuid-beta:*', 'rendered-pages:uuid-doc:*']);
+    expect(d.bumped()).toEqual(['PageManager']);
   });
 
-  it('a private page is kept out of every shared index; only its own rendered page is cleared', async () => {
+  it('a private page is kept out of every shared index; the page-data version is still bumped (#1751)', async () => {
     const d = makeDoor();
     d.provider.savePage.mockResolvedValueOnce({ name: 'vaults/jim/default/Diary', uuid: 'uuid-diary' });
     const saved = await d.pm.savePage('vaults/jim/default/Diary', 'secret', { title: 'Diary', uuid: 'uuid-diary', private: true }, d.jim);
@@ -114,7 +114,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
       d.search.updatePageInIndex, d.search.removePageFromIndex, d.attachments.syncPageMentions, d.assets.syncPageAssets]) {
       expect(fn).not.toHaveBeenCalled();
     }
-    expect(d.cleared()).toEqual(['rendered-pages:uuid-diary:*']);
+    expect(d.bumped()).toEqual(['PageManager']);
   });
 
   it('a public page moved into a store leaves the shared indexes under its old name', async () => {
@@ -126,7 +126,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.search.removePageFromIndex).toHaveBeenCalledWith('Doc');
     expect(d.search.updatePageInIndex).not.toHaveBeenCalled();
     expect(d.rendering.addPageToCache).not.toHaveBeenCalled();
-    expect(d.cleared()).toEqual(['rendered-pages:uuid-doc:*', 'rendered-pages:uuid-gamma:*']);
+    expect(d.bumped()).toEqual(['PageManager']);
   });
 
   it('a delete takes the page out of the shared indexes and clears its referrers\' rendered pages', async () => {
@@ -137,7 +137,7 @@ describe('PageManager — the page door keeps the shared indexes (#1462)', () =>
     expect(d.rendering.removePageFromLinkGraph).toHaveBeenCalledWith('Doc');
     expect(d.search.removePageFromIndex).toHaveBeenCalledWith('Doc');
     expect(d.search.updatePageInIndex).not.toHaveBeenCalled();
-    expect(d.cleared()).toEqual(['rendered-pages:uuid-alpha:*', 'rendered-pages:uuid-doc:*']);
+    expect(d.bumped()).toEqual(['PageManager']);
   });
 
   it('a system write — import, addon and shipped-page seeding — indexes too', async () => {

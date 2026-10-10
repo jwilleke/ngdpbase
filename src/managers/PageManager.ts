@@ -49,6 +49,7 @@ import {
 } from '../utils/storeSearchIndex.js';
 import { rewriteToPrivateLinks } from '../utils/privateLinkRewrite.js';
 import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from '../utils/privateStoreMigrations.js';
+import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
@@ -1213,23 +1214,18 @@ class PageManager extends BaseManager implements CatalogSource {
   }
 
   /**
-   * Evict a page's cached content and rendered output. `ctx` is who changed
-   * it (#1418): a sealed page is in no process cache, so its UUID — the
-   * rendered-pages key — resolves only through the owner's context.
+   * Evict a page's cached content, and bump the page-data version so every
+   * cached render re-renders (#1751).
    */
-  invalidatePageCache(identifier: string, ctx: ActorContext): void {
+  invalidatePageCache(identifier: string): string | null {
     const resolvedTitle = this.provider?.invalidatePageCache?.(identifier) ?? null;
     const renderingManager = this.engine.getManager<{ invalidateHandlerCache(): void }>('RenderingManager');
     if (renderingManager) {
       renderingManager.invalidateHandlerCache();
     }
-    const uuid = this.provider?.getPageUUID?.(resolvedTitle ?? identifier, ctx) ?? resolvedTitle;
-    if (uuid) {
-      const cacheManager = this.engine.getManager<{ clear(region: string | undefined, pattern?: string): Promise<void> }>('CacheManager');
-      if (cacheManager) {
-        cacheManager.clear(undefined, `rendered-pages:${uuid}:*`).catch(() => {});
-      }
-    }
+    // #1751: a page written outside savePage still re-renders every page that read it.
+    this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(PAGE_DATA_TOPIC).catch(() => {});
+    return resolvedTitle;
   }
 
   // ============================================================================
@@ -2738,13 +2734,9 @@ class PageManager extends BaseManager implements CatalogSource {
       (rendering?.getReferringPages(name) ?? []).forEach((r) => referrers.add(r));
     }
 
-    // The rendered page, and every page whose links to it changed colour or target.
-    if (cache?.isInitialized?.()) {
-      const uuids = new Set<string>();
-      if (change.uuid) uuids.add(change.uuid);
-      for (const r of referrers) uuids.add(this.getPageUUID(r, change.ctx) ?? r);
-      for (const uuid of uuids) await step('rendered cache', () => cache.clear(undefined, `rendered-pages:${uuid}:*`));
-    }
+    // #1751: every cached render depends on page data (its own text, the pages
+    // it links, lists or includes, their audiences), so one bump re-renders them.
+    await step('page cache version', () => cache?.bump(PAGE_DATA_TOPIC));
     return previousReferrers;
   }
 

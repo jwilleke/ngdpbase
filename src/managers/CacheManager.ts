@@ -81,6 +81,9 @@ interface BaseCacheProvider {
  * const region = cacheManager.getRegion('pages');
  * region.set('Main', pageData, 3600);
  */
+/** Where data-topic versions are kept, beside the regions (#1751). */
+const VERSION_PREFIX = 'cache-version:';
+
 class CacheManager extends BaseManager {
   private provider: BaseCacheProvider | null;
   private providerClass: string | null;
@@ -230,9 +233,40 @@ class CacheManager extends BaseManager {
    */
   region(region: string): RegionCache {
     if (!this.regions.has(region)) {
-      this.regions.set(region, new RegionCache(this.provider as unknown as ICacheAdapter, region));
+      this.regions.set(region, new RegionCache(this.provider as unknown as ICacheAdapter, region, (topic) => this.version(topic)));
     }
-    return this.regions.get(region) ?? new RegionCache(this.provider as unknown as ICacheAdapter, region);
+    return this.regions.get(region) ?? new RegionCache(this.provider as unknown as ICacheAdapter, region, (topic) => this.version(topic));
+  }
+
+  // ── Data versions (#1751) ──────────────────────────────────────────────
+
+  /**
+   * The current version of a data topic: by convention a manager's name
+   * (`LedgerManager`). A cached render built from the topic is served only
+   * while this is unchanged (`RegionCache.getOrSetVersioned`). `'0'` until
+   * the topic is first bumped.
+   */
+  async version(topic: string): Promise<string> {
+    if (!this.provider) return '0';
+    const value = await this.provider.get(`${VERSION_PREFIX}${topic}`);
+    return typeof value === 'string' ? value : '0';
+  }
+
+  /**
+   * Say that a topic's data changed: every cached render that read it is
+   * re-rendered on its next read. A manager calls this after each write, at
+   * its one door. Versions never expire (TTL 0); each bump is a new unique
+   * value, so two instances sharing a cache cannot collide on a count.
+   */
+  async bump(topic: string): Promise<string> {
+    const version = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    if (!this.provider) return version;
+    try {
+      await this.provider.set(`${VERSION_PREFIX}${topic}`, version, 0);
+    } catch (error) {
+      logger.warn(`🗄️  CacheManager: could not bump '${topic}'; renders that read it may stay stale until their TTL`, error);
+    }
+    return version;
   }
 
   /**

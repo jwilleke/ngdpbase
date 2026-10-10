@@ -6,6 +6,7 @@
  */
 
 import MarkupParser from '../MarkupParser';
+import { readThroughVersioned } from '../../cache/RegionCache';
 
 // Minimal mock engine sufficient for emoji tests (mirrors ComprehensiveMockEngine pattern)
 class MockEngine {
@@ -21,10 +22,11 @@ class MockEngine {
       }],
       ['CacheManager', {
         isInitialized: () => true,
-        region: () => ({
-          get: vi.fn().mockResolvedValue(null),
-          set: vi.fn().mockResolvedValue(true)
-        })
+        region: () => {
+          const store = { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue(true) };
+          // #1751: the parse cache reads through with data versions.
+          return { ...store, getOrSetVersioned: (key, factory, options) => readThroughVersioned(store, async () => '0', key, factory, options) };
+        }
       }],
       ['PluginManager', {
         execute: async (name) => `<div class="plugin-${name.toLowerCase()}"></div>`

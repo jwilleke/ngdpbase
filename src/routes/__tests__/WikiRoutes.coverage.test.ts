@@ -414,15 +414,14 @@ describe('WikiRoutes — additional coverage', () => {
       expect(res.status).toBe(404);
     });
 
-    test('renders page on cache MISS and populates cache', async () => {
-      mockCacheManager.get.mockResolvedValue(null);
+    test('renders through the one page cache: the parser, never an outer rendered-pages entry (#1751)', async () => {
       mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
 
       const res = await request(app).get('/view/TestPage');
 
       expect(res.status).toBe(200);
       expect(mockRenderingManager.textToHTML).toHaveBeenCalled();
-      expect(mockCacheManager.set).toHaveBeenCalled();
+      expect(mockCacheManager.set.mock.calls.filter(([key]) => String(key).startsWith('rendered-pages:'))).toHaveLength(0);
     });
   });
 
