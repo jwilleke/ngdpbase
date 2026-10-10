@@ -354,6 +354,65 @@ class UserManager extends BaseManager {
 
     const userCount = this.provider ? (await this.provider.getAllUsers()).size : 0;
     logger.info(`👤 UserManager initialized with ${userCount} users`);
+    await this.reportDuplicateEmails();
+  }
+
+  /** An email as accounts are compared on it (#1748): trimmed, any case. No provider rules (Gmail dots, plus addressing, aliases). */
+  private static emailKey(email: unknown): string {
+    return typeof email === 'string' ? email.trim().toLowerCase() : '';
+  }
+
+  /** The accounts holding this email, by username. Empty for no email. */
+  private async accountsWithEmail(email: unknown): Promise<string[]> {
+    const key = UserManager.emailKey(email);
+    if (!key || !this.provider) return [];
+    const all = await this.provider.getAllUsers();
+    return Array.from(all.values())
+      .filter((u): u is User => u != null && UserManager.emailKey(u.email) === key)
+      .map((u) => u.username);
+  }
+
+  /**
+   * One email, one account (#1748): refuse to save an email another account
+   * already has. Not a setting. Thrown as `email-taken`, so registration shows
+   * its safe message and other routes their own.
+   */
+  private async assertEmailFree(email: unknown, ownUsername: string | null): Promise<void> {
+    const holders = (await this.accountsWithEmail(email)).filter((u) => u !== ownUsername);
+    if (holders.length > 0) {
+      throw new UserCreateError('email-taken', `Email address is already used by another account (${holders.join(', ')})`);
+    }
+  }
+
+  /**
+   * Accounts that share an email, saved before #1748 refused it. They are not
+   * changed — an admin decides — but they are never silent: the manager is
+   * degraded (dashboard, `manager-state-change` audit), the log says which,
+   * and admins get a notification. Until resolved, a lookup by that email
+   * refuses (see `getUserByEmail`).
+   */
+  private async reportDuplicateEmails(): Promise<void> {
+    if (!this.provider) return;
+    const byEmail = new Map<string, string[]>();
+    for (const u of (await this.provider.getAllUsers()).values()) {
+      const key = UserManager.emailKey(u?.email);
+      if (!key) continue;
+      byEmail.set(key, [...(byEmail.get(key) ?? []), u.username]);
+    }
+    const shared = [...byEmail.entries()].filter(([, names]) => names.length > 1);
+    if (shared.length === 0) return;
+    const detail = shared.map(([email, names]) => `${email}: ${names.join(', ')}`).join('; ');
+    const reason = `${shared.length} email address(es) are shared by more than one account — give each account its own (Admin → Users). Sign-in by email refuses them until then (#1748)`;
+    logger.error(`👤 ${reason}. ${detail}`);
+    if (this.markDegraded(reason)) {
+      try {
+        await this.engine.getManager<{ addNotification(n: object): Promise<string> }>('NotificationManager')?.addNotification({
+          type: 'system', level: 'error', title: 'Accounts share an email address', message: `${reason}. ${detail}`
+        });
+      } catch (err) {
+        logger.warn('👤 Could not post the shared-email notification:', err);
+      }
+    }
   }
 
   /**
@@ -841,6 +900,8 @@ class UserManager extends BaseManager {
       throw new UserCreateError('username-taken', `Username already exists: "${username}"`);
     }
 
+    await this.assertEmailFree(email, null);
+
     const finalDisplayName = displayName || username;
     const hasPageConflict = await this.checkDisplayNamePageConflict(finalDisplayName);
     if (hasPageConflict) {
@@ -1001,6 +1062,11 @@ class UserManager extends BaseManager {
     // The password is not copied: setPassword() is the one definition of a
     // change (#1592) — hash, end every other session (#1482; the session that
     // made the change is re-stamped by its route), and record when.
+    // #1748: one email, one account — a change to another account's email is refused.
+    if (updates.email !== undefined && UserManager.emailKey(updates.email) !== UserManager.emailKey(user.email)) {
+      await this.assertEmailFree(updates.email, username);
+    }
+
     const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
@@ -1134,11 +1200,19 @@ class UserManager extends BaseManager {
       throw new Error('Provider not initialized');
     }
     const allUsers = await this.provider.getAllUsers();
-    const normalizedEmail = email.trim().toLowerCase();
-    const found = Array.from(allUsers.values()).find(
-      (u): u is User => u != null && typeof u.email === 'string' &&
-        u.email.toLowerCase() === normalizedEmail
+    const normalizedEmail = UserManager.emailKey(email);
+    if (!normalizedEmail) return undefined;
+    const matches = Array.from(allUsers.values()).filter(
+      (u): u is User => u != null && UserManager.emailKey(u.email) === normalizedEmail
     );
+    // #1748: an email two accounts share (saved before it was refused) finds
+    // nobody, rather than whichever account came first — a magic link must
+    // never sign into another person's account.
+    if (matches.length > 1) {
+      logger.warn(`👤 getUserByEmail: ${matches.length} accounts share this address — refusing to pick one (#1748)`);
+      return undefined;
+    }
+    const found = matches[0];
     if (!found) return undefined;
     const { password: _pwd, ...userWithoutPassword } = found;
     return userWithoutPassword;

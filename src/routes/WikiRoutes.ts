@@ -72,7 +72,7 @@ import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
 import { resolveRange } from '../utils/httpRange.js';
-import { safeRegistrationMessage } from '../utils/userCreateError.js';
+import { safeRegistrationMessage, UserCreateError } from '../utils/userCreateError.js';
 import {
   DEVICE_STATE_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -9780,6 +9780,10 @@ ${panes}
 
       res.redirect('/profile?success=Profile updated successfully');
     } catch (err: unknown) {
+      // #1748: one email, one account — said plainly, without naming the other account.
+      if (err instanceof UserCreateError && err.reason === 'email-taken') {
+        return res.redirect('/profile?error=' + encodeURIComponent('That email address is already used by another account. Please use another.'));
+      }
       logger.error('Error updating profile:', err);
       res.redirect('/profile?error=Failed to update profile');
     }
@@ -11285,6 +11289,10 @@ ${panes}
           .json({ success: false, message: 'Failed to update user' });
       }
     } catch (err: unknown) {
+      // #1748: an admin is told which account already has the email.
+      if (err instanceof UserCreateError && err.reason === 'email-taken') {
+        return res.status(409).json({ success: false, message: err.message });
+      }
       logger.error('Error updating user:', err);
       return res.status(500).json({ success: false, message: 'Error updating user' });
     }
