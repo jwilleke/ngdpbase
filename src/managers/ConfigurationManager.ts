@@ -18,6 +18,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
 import { secretKeys } from '../utils/sensitiveValues.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { CONFIG_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /** The config key naming which other keys hold secrets (#1030). */
 import {
@@ -820,6 +821,8 @@ class ConfigurationManager extends BaseManager {
     };
 
     await fs.writeJson(this.customConfigPath, configToSave, { spaces: 2 });
+    // #1751: cached renders that read configuration (policies, roles, values shown) re-render.
+    await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(CONFIG_DATA_TOPIC);
   }
 
   /**

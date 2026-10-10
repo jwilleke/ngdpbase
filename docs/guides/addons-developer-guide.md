@@ -791,26 +791,13 @@ Invoked in wiki markup: `[{MyPlugin id='42' style='compact'}]`
 
 ### Plugins and the page cache
 
-A rendered page is cached per reader (`ngdpbase.markup.cache.parse-results.ttl`). A plugin
-that shows a manager's data keeps that cache honest in two lines (#1751):
-
-```javascript
-execute(context, params) {
-  context.dependsOn?.('MyDataManager');   // before reading: re-render when this data changes
-  const record = context.engine.getManager('MyDataManager')?.getById(params.id);
-  ...
-}
-```
-
-and the manager announces each write once, at the door every write goes through:
+A rendered page is cached once, keyed by the viewer and their roles, and re-rendered when any data it read changes ([caching-developer-guide.md](caching-developer-guide.md), #1751). A plugin declares nothing: every manager it fetches through `context.engine.getManager(name)` is recorded as data the page read. Your add-on's manager announces each write once, at the door every write goes through:
 
 ```javascript
 await engine.getManager('CacheManager')?.bump('MyDataManager');
 ```
 
-The page then stays cached while nothing changes and is re-rendered on the next read after a
-write. A plugin whose output changes on its own (a clock) sets `volatile: true` on the plugin
-object instead; a page that runs it is not cached.
+The page then stays cached while nothing changes and is re-rendered on the next read after a write. A plugin whose output changes on its own (a clock) sets `volatile: true` on the plugin object; a page that runs it is not cached. Keep no reference to a manager from `initialize`: only fetches through `context.engine` are tracked.
 
 ---
 

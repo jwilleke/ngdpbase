@@ -195,6 +195,7 @@ import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
 import { untrustedFileHeaders } from '../utils/securityHeaders.js';
+import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
  * Ceiling on how many referring pages one rename may rewrite (#1094).
@@ -451,11 +452,11 @@ interface IPageManager {
   refreshPageList(): Promise<void>;
   rebuildPageIndex(): Promise<{ pages: number; changed: number; removed: string[]; keptUnscanned: number; historyInRequiredPages: number } | null>;
   /**
-   * Evict one page from the provider content cache, the rendered-pages region
-   * and the rendering handler cache. Needed by any path that writes page files
+   * Evict one page from the provider content cache and the rendering handler
+   * cache, and bump the page-data version so cached renders follow (#1751). Needed by any path that writes page files
    * without going through savePage (#1040).
    */
-  invalidatePageCache(identifier: string, ctx: ActorContext): void;
+  invalidatePageCache(identifier: string): string | null;
 }
 
 interface IPolicyInformationPoint {
@@ -2824,76 +2825,24 @@ ${panes}
       // Check if user can edit this page
       const canEdit = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
 
-      // Rendered-pages cache — keyed by UUID + sorted role set (#588)
-      const cacheManager = this.engine.getManager('CacheManager');
-      const renderCacheEnabled = configManager?.getProperty('ngdpbase.cache.rendered-pages.enabled', true) as boolean;
-      const roleKey = (userContext?.roles ?? []).slice().sort().join(',');
-      const pageUUID = (metadata as { uuid?: string } | null)?.uuid ?? pageName;
-      const renderCacheKey = `rendered-pages:${pageUUID}:${roleKey}`;
-      type RenderCacheEntry = { html: string; tabSectionHtml: string };
-
-      // #1307: the key holds no query string, so caching a query-bearing view
-      // would serve it back for every other query on the same page — which is
-      // exactly what left paginated plugins stuck on page 1.
-      //
-      // The fix is to skip the cache for these requests rather than to key on
-      // the query. A plugin reads `context.query` freely and may read any key,
-      // including one an addon invented, so no whitelist of render-affecting
-      // parameters can be complete. Keying on the raw query would be complete
-      // and unbounded: anything appending `?x=<random>` mints a cache entry
-      // per request, which is a memory-exhaustion lever rather than a cache.
-      //
-      // The cost is that a link carrying tracking parameters renders uncached.
-      // That is a minority of page views, and correctness is not negotiable
-      // against it.
-      const hasQueryParams = Object.keys(req.query ?? {}).length > 0;
-
-      // #1423: rendered-pages is one region every reader of this process
-      // shares, and an entry outlives the session that made it — so a sealed
-      // page's HTML would still be in memory (and in any external cache
-      // backend) after its owner logs out. A page in an encrypted store
-      // resolves only through the owner's unlocked session, which is what
-      // isSharedIndexable asks (#1419).
-      const cacheableForEveryone = pageManager.isSharedIndexable?.(pageName) ?? true;
-      const useRenderCache = renderCacheEnabled && !hasQueryParams && cacheableForEveryone;
-
-      let html: string;
+      // #1751: one page cache — the markup parser's read-through, keyed by the
+      // viewer and their roles and following the data each render read.
       let tabSectionHtml = '';
+      // Render page content
+      const html = await renderingManager.textToHTML(wikiContext, markdown);
 
-      const cachedRender = useRenderCache && cacheManager?.isInitialized?.()
-        ? (await cacheManager.get(renderCacheKey) as RenderCacheEntry | undefined) ?? null
-        : null;
-
-      if (cachedRender) {
-        html = cachedRender.html;
-        tabSectionHtml = cachedRender.tabSectionHtml;
-        logger.debug(`[VIEW] render cache HIT: ${renderCacheKey}`);
-      } else {
-        // Render page content
-        html = await renderingManager.textToHTML(wikiContext, markdown);
-
-        // Auto-inject Template:PageTabs tab section for all pages (#551)
-        // Excluded pages are configured in ngdpbase.page.notabs.
-        // Rendered separately from page content so each tab's plugins execute cleanly.
-        const tabsEnabled = configManager?.getProperty('ngdpbase.tab.pagetabs', true) as boolean;
-        if (tabsEnabled) {
-          const noTabsList = (configManager?.getProperty('ngdpbase.page.notabs', []) as string[]);
-          if (!noTabsList.includes(pageName)) {
-            // #1622: chrome, read by the one chrome reader (ngdpbase.tab.pagetabs.template).
-            const tabTemplateContent = (await pageManager.readChromePage('page-tabs').catch(() => null))?.content ?? null;
-            if (tabTemplateContent) {
-              tabSectionHtml = await this.buildPageTabsHtml(tabTemplateContent, wikiContext, renderingManager, configManager);
-            }
+      // Auto-inject Template:PageTabs tab section for all pages (#551)
+      // Excluded pages are configured in ngdpbase.page.notabs.
+      // Rendered separately from page content so each tab's plugins execute cleanly.
+      const tabsEnabled = configManager?.getProperty('ngdpbase.tab.pagetabs', true) as boolean;
+      if (tabsEnabled) {
+        const noTabsList = (configManager?.getProperty('ngdpbase.page.notabs', []) as string[]);
+        if (!noTabsList.includes(pageName)) {
+          // #1622: chrome, read by the one chrome reader (ngdpbase.tab.pagetabs.template).
+          const tabTemplateContent = (await pageManager.readChromePage('page-tabs').catch(() => null))?.content ?? null;
+          if (tabTemplateContent) {
+            tabSectionHtml = await this.buildPageTabsHtml(tabTemplateContent, wikiContext, renderingManager, configManager);
           }
-        }
-
-        // Store rendered output in cache (invalidated on save/delete/rename).
-        // Not written for a query-bearing view: that HTML is one page number's,
-        // and the key cannot say so (#1307).
-        if (useRenderCache && cacheManager?.isInitialized?.()) {
-          const ttl = configManager?.getProperty('ngdpbase.cache.rendered-pages.ttl', 0) as number;
-          await cacheManager.set(renderCacheKey, { html, tabSectionHtml }, ttl ? { ttl } : {}).catch(() => { /* non-fatal */ });
-          logger.debug(`[VIEW] render cache SET: ${renderCacheKey}`);
         }
       }
 
@@ -10067,7 +10016,6 @@ ${panes}
 
       // #1232: the subject goes to the door; the manager reads author and display name from it and records the write.
       const comment = await commentManager.addComment(pageUuid, currentUser, content.trim());
-      await this.flushPluginCaches();
       return res.json({ success: true, comment });
     } catch (err: unknown) {
       logger.error('Error adding comment:', err);
@@ -10446,7 +10394,6 @@ ${panes}
       }
 
       await commentManager.deleteComment(pageUuid, commentId, currentUser);
-      await this.flushPluginCaches();
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting comment:', err);
@@ -10567,7 +10514,6 @@ ${panes}
         pageUuid, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
         currentUser
       );
-      await this.flushPluginCaches();
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
       logger.error('Error adding footnote:', err);
@@ -10601,7 +10547,6 @@ ${panes}
         pageUuid, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
       );
       if (!footnote) return res.status(404).json({ success: false, error: 'Footnote not found' });
-      await this.flushPluginCaches();
       return res.json({ success: true, footnote });
     } catch (err: unknown) {
       logger.error('Error updating footnote:', err);
@@ -10609,21 +10554,6 @@ ${panes}
       const reason = err instanceof Error ? err.message : String(err);
       return res.status(500).json({ success: false, error: `Failed to update footnote: ${reason}` });
     }
-  }
-
-  private async flushPluginCaches(): Promise<void> {
-    const markupParser = this.engine.getManager<{ invalidateHandlerCache(): Promise<void> }>('MarkupParser');
-    const cacheManager = this.engine.getManager<{ clear(r: string | undefined, p?: string): Promise<void> }>('CacheManager');
-    const tasks: Promise<void>[] = [];
-    if (markupParser) tasks.push(markupParser.invalidateHandlerCache().catch(() => {}));
-    if (cacheManager) {
-      // Clear both the outer rendered-pages cache and the MarkupParser parseResults cache.
-      // parseResults is keyed by page markdown content — it doesn't know about footnote/comment
-      // sidecar data, so it returns stale HTML after a mutation unless explicitly cleared.
-      tasks.push(cacheManager.clear(undefined, 'rendered-pages:*').catch(() => {}));
-      tasks.push(cacheManager.clear('MarkupParser-ParseResults').catch(() => {}));
-    }
-    await Promise.all(tasks);
   }
 
   async deleteFootnote(req: Request, res: Response) {
@@ -10652,7 +10582,6 @@ ${panes}
       }
 
       await footnoteManager.deleteFootnote(pageUuid, footnoteId, currentUser);
-      await this.flushPluginCaches();
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting footnote:', err);
@@ -13122,7 +13051,7 @@ ${panes}
       // touched page here keeps that fixed whichever path wrote it.
       //
       // refreshPageList() above rebuilds the page LIST; it does not touch the
-      // per-page content cache or the rendered-pages region. invalidatePageCache
+      // per-page content cache or the page-data version. invalidatePageCache
       // covers both, plus the rendering handler cache.
       //
       // Old UUIDs from reconcile/adopt are included: their files were removed,
@@ -13132,7 +13061,7 @@ ${panes}
       for (const { liveUuid } of reconcileItems) touched.add(liveUuid);
       for (const identifier of touched) {
         try {
-          pageManager.invalidatePageCache(identifier, req.userContext);
+          pageManager.invalidatePageCache(identifier);
         } catch (err: unknown) {
           // Best-effort: a page that cannot be evicted must not fail the sync
           // that already wrote it to disk.
@@ -16099,8 +16028,8 @@ ${panes}
   /**
    * Admin clear single-page cache API endpoint
    * POST /api/admin/cache/clear/page/:identifier
-   * Evicts one page (by UUID, slug, or title) from the provider content cache
-   * and the rendered-pages CacheManager region without a full restart.
+   * Evicts one page (by UUID, slug, or title) from the provider content cache,
+   * and re-renders cached pages that read it (#1751), without a full restart.
    */
   async adminClearPageCache(req: Request, res: Response) {
     try {
@@ -16114,15 +16043,8 @@ ${panes}
       if (!identifier) return res.status(400).json({ error: 'identifier parameter required' });
 
       const pageManager = this.engine.getManager('PageManager');
-      const provider = pageManager?.getCurrentPageProvider?.();
-      const evicted = provider?.invalidatePageCache?.(identifier) ?? null;
-
-      // Also evict from the rendered-pages CacheManager region if available
-      const cacheManager = this.engine.getManager('CacheManager');
-      if (cacheManager?.isInitialized?.()) {
-        const resolvedUUID = pageManager?.getPageUUID?.(identifier, req.userContext) ?? identifier;
-        try { await cacheManager.clear(undefined, `rendered-pages:${resolvedUUID}:*`); } catch { /* non-fatal */ }
-      }
+      // #1751: the one eviction path — content cache, and cached renders re-render.
+      const evicted = pageManager?.invalidatePageCache?.(identifier) ?? null;
 
       logger.info(`[AdminAPI] Page cache evicted for '${identifier}' by ${currentUser.username}`);
       return res.json({ success: true, evicted, identifier });
@@ -19888,7 +19810,7 @@ ${description}
         await searchManager.rebuildIndex();
         const searchStats = await searchManager.getStatistics();
         await renderingManager.rebuildLinkGraph();
-        await cacheManager.clear(undefined, 'rendered-pages:*');
+        await cacheManager.bump(PAGE_DATA_TOPIC);
 
         const docs = searchStats.totalDocuments || 0;
         return { success: true, summary: `${pageCount} pages, ${docs} search documents` };
@@ -19925,7 +19847,7 @@ ${description}
         const pageCount = (await pageManager.getAllPages()).length;
         const searchStats = await searchManager.getStatistics();
         await renderingManager.rebuildLinkGraph();
-        await cacheManager.clear(undefined, 'rendered-pages:*');
+        await cacheManager.bump(PAGE_DATA_TOPIC);
 
         const docs = searchStats.totalDocuments || 0;
         const indexNote = indexResult

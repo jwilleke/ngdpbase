@@ -112,7 +112,7 @@ export default class FootnoteManager extends BaseManager {
 
     map[nextId] = footnote;
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid, ctx);
+    this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('add', pageUuid, ctx, { footnoteId: nextId });
     return footnote;
   }
@@ -152,7 +152,7 @@ export default class FootnoteManager extends BaseManager {
       createdAt: new Date().toISOString()
     };
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid, ctx);
+    this.invalidateHandlerCache(pageUuid);
     return true;
   }
 
@@ -219,7 +219,7 @@ export default class FootnoteManager extends BaseManager {
       note: data.note.trim()
     };
     this.writeMap(pageUuid, map);
-    this.invalidateHandlerCache(pageUuid, ctx);
+    this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('update', pageUuid, ctx, { footnoteId: id });
     return map[id];
   }
@@ -238,7 +238,7 @@ export default class FootnoteManager extends BaseManager {
     } else {
       this.writeMap(pageUuid, map);
     }
-    this.invalidateHandlerCache(pageUuid, ctx);
+    this.invalidateHandlerCache(pageUuid);
     await this.recordEdit('delete', pageUuid, ctx, { footnoteId: id, createdBy, ownFootnote: createdBy === ctx.username });
     return true;
   }

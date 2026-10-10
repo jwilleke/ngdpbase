@@ -40,6 +40,7 @@ import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import type { AssetQuery, AssetRecord } from '../types/Asset.js';
 import type { StoreFileEntry, StoreFileLocation } from '../types/Provider.js';
 import { resolveUploadMime } from '../utils/sniffMime.js';
+import { ATTACHMENT_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
  * Minimal interface for MediaManager — avoids a circular import.
@@ -567,6 +568,17 @@ class AttachmentManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Every attachment write goes through here (#1751): it writes, then bumps
+   * the attachment-data version, so cached renders that list or show
+   * attachments re-render.
+   */
+  private async writeAttachments<T>(write: Promise<T>): Promise<T> {
+    const result = await write;
+    await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(ATTACHMENT_DATA_TOPIC);
+    return result;
+  }
+
+  /**
    * Upload an attachment
    *
    * @param {Buffer} fileBuffer - File data
@@ -671,7 +683,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
         // match a PUBLIC attachment lands here rather than returning the
         // public record.
         const io = await storeFileIO(ctx, { pagesDirectory, owner: pageCreator, store: pageStore, layout });
-        const entry = await this.attachmentProvider.storeFileInStore(
+        const entry = await this.writeAttachments(this.attachmentProvider.storeFileInStore(
           { owner: pageCreator, store: pageStore, io },
           fileBuffer,
           {
@@ -681,7 +693,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
             author: user.name,
             ...(pageName ? { pageName } : {})
           }
-        );
+        ));
         // #1461: a private file is logged by id — never by its filename.
         logger.info(`📎 Uploaded a file into ${pageCreator}'s private store '${pageStore}' (${entry.id})`);
         await this.recordAttachmentEvent('upload', ctx, {
@@ -709,7 +721,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     };
 
     // Store attachment via provider
-    const attachmentMetadata = await this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user);
+    const attachmentMetadata = await this.writeAttachments(this.attachmentProvider.storeAttachment(fileBuffer, fileInfo, metadata, user));
 
     logger.info(`📎 Uploaded attachment: ${fileInfo.originalName} (${attachmentMetadata.identifier})${isPrivatePage ? ` [private, creator: ${pageCreator ?? 'unknown'}, store: ${pageStore ?? ''}]` : ''}`);
 
@@ -744,7 +756,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // the context that owns the container.
     const own = await this.findOwnStoreFile(ctx, attachmentId, 'edit');
     if (own) {
-      return await this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, true);
+      return await this.writeAttachments(this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, true));
     }
 
     const metadata = await this.attachmentProvider.getAttachmentMetadata(attachmentId);
@@ -767,7 +779,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       url: `/view/${encodeURIComponent(pageName)}`
     });
 
-    await this.attachmentProvider.updateAttachmentMetadata(attachmentId, { mentions });
+    await this.writeAttachments(this.attachmentProvider.updateAttachmentMetadata(attachmentId, { mentions }));
 
     logger.info(`📎 Attached ${attachmentId} to page ${pageName}`);
     return true;
@@ -789,7 +801,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     // #1460: as in attachToPage — a private store's file keeps its own mentions.
     const own = await this.findOwnStoreFile(ctx, attachmentId, 'edit');
     if (own) {
-      return await this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, false);
+      return await this.writeAttachments(this.attachmentProvider.setFileMentionInStore(own.location, attachmentId, pageName, false));
     }
 
     const metadata = await this.attachmentProvider.getAttachmentMetadata(attachmentId);
@@ -799,7 +811,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
 
     // Remove page from mentions
     const mentions = (metadata.mentions || []).filter((m) => m.name !== pageName);
-    await this.attachmentProvider.updateAttachmentMetadata(attachmentId, { mentions });
+    await this.writeAttachments(this.attachmentProvider.updateAttachmentMetadata(attachmentId, { mentions }));
 
     logger.info(`📎 Detached ${attachmentId} from page ${pageName}`);
     return true;
@@ -1209,7 +1221,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
           logger.info(`📎 Leaving a private file in place: ${owner}'s store '${storeId}' is encrypted and this job holds no key (${record.id})`);
           continue;
         }
-        if (await this.attachmentProvider.adoptRecordIntoStore({ owner, store: storeId, io }, record.id)) moved++;
+        if (await this.writeAttachments(this.attachmentProvider.adoptRecordIntoStore({ owner, store: storeId, io }, record.id))) moved++;
       } catch (err) {
         logger.warn(`📎 Could not move a private file into ${owner}'s store '${storeId}' (${record.id}): ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1377,7 +1389,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
           filename: own.entry.name,
           sizeBytes: own.entry.contentSize
         }, wikiContext);
-        return (await this.attachmentProvider.deleteFileInStore(own.location, attachmentId)) !== null;
+        return (await this.writeAttachments(this.attachmentProvider.deleteFileInStore(own.location, attachmentId))) !== null;
       }
     }
 
@@ -1396,7 +1408,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const sizeBytes = typeof meta?.size === 'number' ? meta.size : null;
     await this.recordAttachmentEvent('delete', context, { attachmentId, filename, sizeBytes }, wikiContext);
 
-    return await this.attachmentProvider.deleteAttachment(attachmentId);
+    return await this.writeAttachments(this.attachmentProvider.deleteAttachment(attachmentId));
   }
 
   /**
@@ -1505,7 +1517,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       email: (context as { email?: string }).email || undefined
     };
 
-    const ok = await this.attachmentProvider.updateAttachmentMetadata(attachmentId, updates);
+    const ok = await this.writeAttachments(this.attachmentProvider.updateAttachmentMetadata(attachmentId, updates));
     if (ok) await this.recordAssetEdit(attachmentId, fields, context);
     return ok;
   }
@@ -2088,7 +2100,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       return;
     }
 
-    await this.attachmentProvider.refreshAttachmentList();
+    await this.writeAttachments(this.attachmentProvider.refreshAttachmentList());
     logger.info('📎 Attachment list refreshed');
   }
 
@@ -2140,7 +2152,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     }
 
     if (backupData.providerBackup) {
-      await this.attachmentProvider.restore(backupData.providerBackup);
+      await this.writeAttachments(this.attachmentProvider.restore(backupData.providerBackup));
       logger.info('📎 AttachmentManager restored from backup');
     }
   }

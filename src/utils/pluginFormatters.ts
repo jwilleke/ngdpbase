@@ -869,7 +869,7 @@ export const FETCHABLE_METHOD = 'toMarqueeText';
  */
 export async function resolveManagerFetch(
   spec: string | undefined,
-  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown; dependsOn?: (topic: string) => void }
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
 ): Promise<ManagerFetchResult> {
   const call = await callManagerMethod(spec, context, FETCHABLE_METHOD);
   if (call.status !== 'ok') return call;
@@ -903,7 +903,7 @@ export const FORM_OPTIONS_METHOD = 'toFormOptions';
  */
 export async function resolveManagerOptions(
   spec: string | undefined,
-  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown; dependsOn?: (topic: string) => void }
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown }
 ): Promise<ManagerOptionsResult> {
   const call = await callManagerMethod(spec, context, FORM_OPTIONS_METHOD);
   if (call.status !== 'ok') return call;
@@ -932,7 +932,7 @@ function toFormOptionList(value: unknown): FormOption[] {
  */
 async function callManagerMethod(
   spec: string | undefined,
-  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown; dependsOn?: (topic: string) => void },
+  context: { engine?: { getManager(name: string): unknown }; userContext?: unknown },
   allowed: string
 ): Promise<{ status: 'ok'; value: unknown } | { status: 'not-found' } | { status: 'refused' } | { status: 'no-spec' }> {
   if (!spec || !context.engine) return { status: 'no-spec' };
@@ -954,8 +954,6 @@ async function callManagerMethod(
   const manager = context.engine.getManager(managerName) as Record<string, unknown> | undefined;
   const method = manager?.[allowed];
   if (typeof method !== 'function') return { status: 'not-found' };
-  // #1751: the render now depends on this manager's data; its version is snapshotted before the read.
-  context.dependsOn?.(managerName);
   const value = await (method as (o: Record<string, string>, viewer: unknown) => unknown).call(manager, fetchArgs, context.userContext);
   return { status: 'ok', value };
 }

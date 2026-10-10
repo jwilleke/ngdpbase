@@ -93,6 +93,8 @@ function parseBoolean(value: unknown, defaultValue: boolean): boolean {
 
 const CounterPlugin = {
   name: 'CounterPlugin',
+  // #1751: each render counts again, so a page showing it is not kept in the page cache.
+  volatile: true,
   description: 'Maintains page-specific counters for numbering and tracking',
   author: 'ngdpbase',
   version: '1.0.0',

@@ -27,6 +27,7 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import { resetPasswordWrapWithMnemonic, rewrapUserKeysOnPasswordChange } from '../utils/privateStoreUnlock.js';
+import { USER_DATA_TOPIC } from '../cache/CacheDependencies.js';
 
 // #1179: the account writes below take an `ActorContext` — the request's
 // subject or a JobContext — mandatory and positional. `AuditActor`, the
@@ -641,7 +642,7 @@ class UserManager extends BaseManager {
       preferences: {}
     };
 
-    await this.provider.createUser(adminUser);
+    await this.writeAccounts(this.provider.createUser(adminUser));
     // #1197: the bootstrap ACTS — an account now exists. Recorded under the
     // system principal, origin boot; deferred until the audit sink is up.
     void recordSystemAction(this.engine, systemContext(this.engine, 'create the bootstrap admin account at first boot'), {
@@ -702,7 +703,7 @@ class UserManager extends BaseManager {
     // Update login stats
     user.lastLogin = new Date().toISOString();
     user.loginCount = (user.loginCount || 0) + 1;
-    await this.provider.updateUser(username, user);
+    await this.writeAccounts(this.provider.updateUser(username, user));
 
     // CRITICAL FIX: Return a user object that is ready to be placed in the session.
     // It must include the `isAuthenticated` flag.
@@ -858,6 +859,17 @@ class UserManager extends BaseManager {
   }
 
   /**
+   * Every account write goes through here (#1751): it writes, then bumps the
+   * account-data version, so cached renders that show names or decide by
+   * roles re-render.
+   */
+  private async writeAccounts<T>(write: Promise<T>): Promise<T> {
+    const result = await write;
+    await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(USER_DATA_TOPIC);
+    return result;
+  }
+
+  /**
    * Create new user
    * @param {UserCreateInput} userData - User data
    * @returns {Promise<Omit<User, 'password'>>} Created user (without password)
@@ -944,7 +956,7 @@ class UserManager extends BaseManager {
       }
     };
 
-    await this.provider.createUser(user);
+    await this.writeAccounts(this.provider.createUser(user));
 
     await this.syncPersonOnCreate(user);
     await this.roleManager().applyRoleDiff(username, [], roles);
@@ -972,7 +984,7 @@ class UserManager extends BaseManager {
       const pageCreated = await this.createUserPage(user, ctx);
       if (pageCreated) {
         user.profilePage = user.displayName;
-        await this.provider.updateUser(username, user);
+        await this.writeAccounts(this.provider.updateUser(username, user));
       }
     } catch (error) {
       logger.warn(`⚠️  Failed to create user page for ${username}:`, error instanceof Error ? error.message : String(error));
@@ -1071,7 +1083,7 @@ class UserManager extends BaseManager {
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     Object.assign(user, userFieldUpdates);
     if (passwordChange !== undefined) await setPassword(user, passwordChange);
-    await this.provider.updateUser(username, user);
+    await this.writeAccounts(this.provider.updateUser(username, user));
 
     await this.syncPersonOnUpdate(username, updates);
     if (incomingRoles) {
@@ -1144,7 +1156,7 @@ class UserManager extends BaseManager {
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-delete of ${username}:`, err));
     }
 
-    await this.provider.deleteUser(username);
+    await this.writeAccounts(this.provider.deleteUser(username));
 
     // Order matters: clear role memberships while the Person record still
     // exists, then delete the Person.

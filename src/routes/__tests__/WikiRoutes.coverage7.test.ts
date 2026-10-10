@@ -415,76 +415,18 @@ describe('WikiRoutes — coverage batch 7', () => {
       expect(res.status).toBe(403);
     });
 
-    test('renders 200 with cache enabled and cache hit', async () => {
-      mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
-        if (key === 'ngdpbase.cache.rendered-pages.enabled') return true;
-        const map: Record<string, unknown> = {
-          'ngdpbase.front-page': 'Welcome', 'ngdpbase.theme.active': 'default',
-          'ngdpbase.application-name': 'ngdpbase', 'ngdpbase.tab.pagetabs': false,
-          'ngdpbase.page.nofooter': [], 'ngdpbase.page.notabs': [],
-          'ngdpbase.system-category': { general: { label: 'general', source: 'site', enabled: true } },
-          'ngdpbase.roles.definitions': {}, 'ngdpbase.maximum.user-keywords': 5,
-          'ngdpbase.timezones': []
-        };
-        return key in map ? map[key] : defaultValue;
-      });
+    // #1751: one page cache. The view route renders through the parser's
+    // read-through (keyed by viewer and roles, following its data); there is
+    // no outer rendered-pages entry to read or write — a sealed page included,
+    // which the parser never caches (MarkupParser.sealedCache.test.ts).
+    test('a view renders through the parser and never reads or writes a rendered-pages entry (#1751)', async () => {
       mockCacheManager.isInitialized.mockReturnValue(true);
-      mockCacheManager.get.mockResolvedValue({ html: '<p>cached</p>', tabSectionHtml: '' });
+      mockCacheManager.get.mockResolvedValue({ html: '<p>stale</p>', tabSectionHtml: '' });
       const res = await request(app).get('/view/TestPage');
       expect(res.status).toBe(200);
-      expect(mockCacheManager.get).toHaveBeenCalled();
-    });
-
-    // #1423: rendered-pages outlives the session that filled it, so a sealed
-    // page's HTML must never go in — it would still be in memory, and in any
-    // external cache backend, after its owner logs out.
-    describe('a sealed page and the rendered-pages cache (#1423)', () => {
-      const enableRenderCache = () => {
-        mockConfigManager.getProperty.mockImplementation((key: string, defaultValue: unknown) => {
-          if (key === 'ngdpbase.cache.rendered-pages.enabled') return true;
-          const map: Record<string, unknown> = {
-            'ngdpbase.front-page': 'Welcome', 'ngdpbase.theme.active': 'default',
-            'ngdpbase.application-name': 'ngdpbase', 'ngdpbase.tab.pagetabs': false,
-            'ngdpbase.page.nofooter': [], 'ngdpbase.page.notabs': [],
-            'ngdpbase.system-category': { general: { label: 'general', source: 'site', enabled: true } },
-            'ngdpbase.roles.definitions': {}, 'ngdpbase.maximum.user-keywords': 5,
-            'ngdpbase.timezones': []
-          };
-          return key in map ? map[key] : defaultValue;
-        });
-        mockCacheManager.isInitialized.mockReturnValue(true);
-        mockCacheManager.get.mockResolvedValue(null);
-      };
-
-      const renderCacheWrites = () =>
-        mockCacheManager.set.mock.calls.filter(([key]) => String(key).startsWith('rendered-pages:'));
-
-      test('an ordinary page is still cached', async () => {
-        enableRenderCache();
-        const res = await request(app).get('/view/TestPage');
-        expect(res.status).toBe(200);
-        expect(renderCacheWrites()).toHaveLength(1);
-      });
-
-      test('a sealed page renders but is never written to the cache', async () => {
-        enableRenderCache();
-        mockPageManager.isSharedIndexable.mockReturnValue(false);
-        const res = await request(app).get('/view/TestPage');
-        expect(res.status).toBe(200);
-        expect(renderCacheWrites()).toHaveLength(0);
-      });
-
-      test('a sealed page is not read from the cache either — an entry left by an earlier build is never served back', async () => {
-        enableRenderCache();
-        mockPageManager.isSharedIndexable.mockReturnValue(false);
-        mockCacheManager.get.mockResolvedValue({ html: '<p>stale sealed</p>', tabSectionHtml: '' });
-        const res = await request(app).get('/view/TestPage');
-        expect(res.status).toBe(200);
-        const renderCacheReads = mockCacheManager.get.mock.calls
-          .filter(([key]) => String(key).startsWith('rendered-pages:'));
-        expect(renderCacheReads).toHaveLength(0);
-        expect(mockRenderingManager.textToHTML).toHaveBeenCalled();
-      });
+      expect(res.text).not.toContain('<p>stale</p>');
+      const touched = [...mockCacheManager.get.mock.calls, ...mockCacheManager.set.mock.calls].filter(([key]) => String(key).startsWith('rendered-pages:'));
+      expect(touched).toHaveLength(0);
     });
 
     test('returns 200 with unauthenticated user when ACL allows', async () => {

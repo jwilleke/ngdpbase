@@ -38,7 +38,7 @@ function indexSpies() {
     search: { updatePageInIndex: vi.fn(async () => {}), removePageFromIndex: vi.fn(async () => {}) },
     attachments: { syncPageMentions: vi.fn(async () => {}) },
     assets: { syncPageAssets: vi.fn(async () => {}) },
-    cache: { isInitialized: () => true, clear: vi.fn(async () => {}) }
+    cache: { isInitialized: () => true, bump: vi.fn(async () => 'v2') }
   };
 }
 
@@ -147,7 +147,7 @@ describe('PageManager.saveRawPageWithAdminOverride() — the raw editor goes thr
     );
     expect(d.attachments.syncPageMentions).toHaveBeenCalledWith('Broken', '\nrepaired body', ADMIN);
     expect(d.assets.syncPageAssets).toHaveBeenCalledWith('Broken', '\nrepaired body');
-    expect(d.cache.clear).toHaveBeenCalledWith(undefined, 'rendered-pages:uuid-broken:*');
+    expect(d.cache.bump).toHaveBeenCalledWith('PageManager');
   });
 
   test('is audited, naming the admin who wrote it', async () => {
@@ -325,7 +325,7 @@ describe('PageManager.restoreVersion() — a restore is a save (#1462 slice 3)',
     );
     expect(live.rendering.updatePageInLinkGraph).toHaveBeenCalledWith('Trashed', 'body of the page\n');
     expect(live.rendering.addPageToCache).toHaveBeenCalledWith('Trashed');
-    expect(live.cache.clear).toHaveBeenCalledWith(undefined, 'rendered-pages:trash-1:*');
+    expect(live.cache.bump).toHaveBeenCalledWith('PageManager');
   });
 
   test('a trash restore that the provider refuses changes no index', async () => {

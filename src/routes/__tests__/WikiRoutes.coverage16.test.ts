@@ -797,10 +797,7 @@ describe('WikiRoutes — coverage batch 16', () => {
     });
 
     test('returns 200 with eviction result (with provider)', async () => {
-      mockPageManager.getCurrentPageProvider.mockReturnValue({
-        invalidatePageCache: vi.fn().mockReturnValue(true)
-      });
-      mockCacheManager.isInitialized.mockReturnValue(false);
+      mockPageManager.invalidatePageCache = vi.fn().mockReturnValue(true);
       const res = await request(app)
         .post('/api/admin/cache/clear/page/TestPage')
         .set('x-csrf-token', 'test-csrf-token')

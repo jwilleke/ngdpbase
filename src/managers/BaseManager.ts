@@ -22,7 +22,6 @@ import type { ManagerFetchOptions } from '../utils/managerUtils.js';
 import type { FormOption } from '../utils/pluginFormatters.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
-import type { ActorContext } from '../context/ActorContext.js';
 
 /**
  * Backup data structure returned by backup() method
@@ -200,11 +199,9 @@ abstract class BaseManager {
     return this.engine;
   }
 
-  protected invalidateHandlerCache(pageUuid: string, ctx: ActorContext): void {
-    const pm = this.engine.getManager<{ invalidatePageCache(id: string, ctx: ActorContext): void }>('PageManager');
-    if (pm) {
-      pm.invalidatePageCache(pageUuid, ctx);
-    }
+  /** A page's data changed outside savePage: its cached content goes, and every cached render re-renders (#1751). */
+  protected invalidateHandlerCache(pageUuid: string): void {
+    this.engine.getManager<{ invalidatePageCache(id: string): void }>('PageManager')?.invalidatePageCache(pageUuid);
   }
 
   /**

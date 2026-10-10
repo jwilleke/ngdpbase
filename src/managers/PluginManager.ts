@@ -59,6 +59,27 @@ function isPlugin(obj: unknown): obj is Plugin {
  * The render's dependency collector (#1751): on the parse context the plugin
  * handlers pass as `wikiContext`, or on the context itself.
  */
+/**
+ * The engine a plugin sees while its render is being cached (#1751): each
+ * `getManager(name)` also records `name` as data this render read, so the page
+ * re-renders when that manager bumps its topic. One path for every plugin,
+ * core or add-on — none declares what it reads.
+ */
+function trackedEngine(engine: WikiEngine, deps: CacheDependencies): WikiEngine {
+  return new Proxy(engine, {
+    get(target, prop) {
+      if (prop === 'getManager') {
+        return (name: string) => {
+          deps.dependsOn(name);
+          return target.getManager(name);
+        };
+      }
+      const value: unknown = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    }
+  });
+}
+
 function cacheDependenciesOf(context: Record<string, unknown>): CacheDependencies | undefined {
   const own = context.cacheDependencies;
   if (own instanceof CacheDependencies) return own;
@@ -366,7 +387,9 @@ class PluginManager extends BaseManager {
       if (isPluginObject(plugin) && plugin.volatile) deps?.markVolatile();
       const pluginContext: PluginContext = {
         ...context, // Spread all context properties
-        engine: this.engine, // Always use the manager's engine instance
+        // Always the manager's engine; while the page cache is collecting, every
+        // manager the plugin fetches is recorded as data this render read (#1751).
+        engine: deps ? trackedEngine(this.engine, deps) : this.engine,
         pageName: pageName,
         linkGraph: (context.linkGraph as Record<string, unknown>) || {},
         dependsOn: (topic: string) => deps?.dependsOn(topic),

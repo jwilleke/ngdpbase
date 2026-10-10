@@ -15,6 +15,7 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
   let parser: MarkupParser;
   let balance: number;
   let renders: number;
+  let nextEvent: string;
 
   beforeEach(async () => {
     adapter = new NodeCacheAdapter({ stdTTL: 300, checkperiod: 0, maxKeys: 100 });
@@ -26,6 +27,7 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     };
     balance = 100;
     renders = 0;
+    nextEvent = 'Board meeting';
 
     const managers: Record<string, unknown> = {
       ConfigurationManager: { getProperty: (_k: string, d: unknown) => d, getAllProperties: () => ({}) },
@@ -44,6 +46,21 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
       }
     });
     await plugins.registerPlugin('Clock', { volatile: true, execute: () => { renders++; return `<span class="clock">${renders}</span>`; } });
+    // Declares nothing: fetching the manager is what records the dependency.
+    managers.CalendarDataManager = { nextEvent: () => nextEvent };
+    await plugins.registerPlugin('NextEvent', {
+      execute: (context: { engine: { getManager(n: string): { nextEvent(): string } } }) => {
+        renders++;
+        return `<span class="event">${context.engine.getManager('CalendarDataManager').nextEvent()}</span>`;
+      }
+    });
+    // What the viewer may see depends on their roles.
+    await plugins.registerPlugin('EditorsOnly', {
+      execute: (context: { userContext?: { roles?: string[] } }) => {
+        renders++;
+        return context.userContext?.roles?.includes('editor') ? '<span>secret</span>' : '<span>nothing</span>';
+      }
+    });
 
     parser = new MarkupParser(engine);
     await parser.initialize?.();
@@ -75,5 +92,30 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     await parser.parse('[{Clock}]', { pageName: 'Home' });
     await parser.parse('[{Clock}]', { pageName: 'Home' });
     expect(renders).toBe(2);
+  });
+
+  test('a plugin that only fetches a manager re-renders when that manager bumps — nothing declared', async () => {
+    expect(await parser.parse('[{NextEvent}]', { pageName: 'Home' })).toContain('Board meeting');
+    nextEvent = 'Annual picnic';
+    versions.set('CalendarDataManager', 'v2');
+    expect(await parser.parse('[{NextEvent}]', { pageName: 'Home' })).toContain('Annual picnic');
+    expect(renders).toBe(2);
+  });
+
+  test('every render depends on page data: a page change re-renders a page with no plugins', async () => {
+    const plain = { pageName: 'Plain' };
+    const first = await parser.parse('Just text', plain);
+    expect(await parser.parse('Just text', plain)).toBe(first);
+    versions.set('PageManager', 'v2');
+    // Re-rendered (same text, so the same HTML) — what matters is the cache was not trusted.
+    const spy = vi.spyOn(parser as unknown as { renderUncached: () => Promise<string> }, 'renderUncached');
+    await parser.parse('Just text', plain);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  test('a revoked role is not served the render made before the revoke', async () => {
+    const as = (roles: string[]) => ({ pageName: 'Books', userContext: { username: 'molly', roles } });
+    expect(await parser.parse('[{EditorsOnly}]', as(['reader', 'editor']))).toContain('secret');
+    expect(await parser.parse('[{EditorsOnly}]', as(['reader']))).toContain('nothing');
   });
 });

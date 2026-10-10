@@ -33,6 +33,7 @@ import { enabledEntries } from '../utils/configFiles.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PolicyInformationPoint from '../security/PolicyInformationPoint.js';
 import type CatalogManager from './CatalogManager.js';
+import { MEDIA_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import type {
   CatalogSource,
   CatalogQuery,
@@ -251,6 +252,16 @@ class MediaManager extends BaseManager implements CatalogSource {
   }
 
   /**
+   * Every media-index write goes through here (#1751): it writes, then bumps
+   * the media-data version, so cached renders that show media re-render.
+   */
+  private async writeMedia<T>(write: Promise<T>): Promise<T> {
+    const result = await write;
+    await this.engine.getManager<{ bump(topic: string): Promise<string> }>('CacheManager')?.bump(MEDIA_DATA_TOPIC);
+    return result;
+  }
+
+  /**
    * Rebuild the media index from scratch.
    *
    * Clears the in-memory index, deletes the persisted index file, then runs a
@@ -265,7 +276,7 @@ class MediaManager extends BaseManager implements CatalogSource {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
     logger.info('[MediaManager] rebuildIndex() — full media index rebuild');
-    const result = await this.provider.rebuild(onProgress);
+    const result = await this.writeMedia(this.provider.rebuild(onProgress));
     logger.info(
       `[MediaManager] Rebuild complete: scanned=${result.scanned} added=${result.added} ` +
         `updated=${result.updated} errors=${result.errors} removed=${result.removed ?? 0} excluded=${result.excluded ?? 0} ` +
@@ -378,7 +389,7 @@ class MediaManager extends BaseManager implements CatalogSource {
       return { scanned: 0, added: 0, updated: 0, errors: 0 };
     }
     logger.info(`[MediaManager] scanFolders(force=${force ?? false})`);
-    const result = await this.provider.scan(force, onProgress);
+    const result = await this.writeMedia(this.provider.scan(force, onProgress));
     logger.info(
       `[MediaManager] Scan complete: scanned=${result.scanned} added=${result.added} ` +
         `updated=${result.updated} errors=${result.errors} removed=${result.removed ?? 0} excluded=${result.excluded ?? 0} ` +
@@ -441,7 +452,7 @@ class MediaManager extends BaseManager implements CatalogSource {
     if (!this.provider.capabilities.includes('edit')) {
       throw new Error(`Provider ${this.provider.id} does not support metadata editing`);
     }
-    return this.provider.updateItemMetadata(id, patch);
+    return this.writeMedia(this.provider.updateItemMetadata(id, patch));
   }
 
   /**

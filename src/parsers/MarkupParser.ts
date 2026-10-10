@@ -33,6 +33,7 @@ import WikiDocument from './dom/WikiDocument.js';
 import type { LinkedomElement, LinkedomNode } from './dom/WikiDocument.js';
 import { convertEmojiShortcodes } from './data/emoji-map.js';
 import type RegionCache from '../cache/RegionCache.js';
+import { BASE_RENDER_TOPICS } from '../cache/CacheDependencies.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import { mayContainPrivateLink, parsePrivatePageName } from '../utils/privateStorePath.js';
@@ -900,7 +901,10 @@ class MarkupParser extends BaseManager {
         let hit = false;
         const html = await parseResults.getOrSetVersioned(
           cacheKey,
-          (deps) => this.renderUncached(content, { ...context, cacheDependencies: deps }, startTime),
+          (deps) => {
+            for (const topic of BASE_RENDER_TOPICS) deps.dependsOn(topic);
+            return this.renderUncached(content, { ...context, cacheDependencies: deps }, startTime);
+          },
           {
             ttl: this.config.cache.parseResults.ttl,
             onResult: (fromCache) => { hit = fromCache; }
@@ -1276,6 +1280,9 @@ class MarkupParser extends BaseManager {
       .update(JSON.stringify({
         pageName: pageCtx.pageName ?? context.pageName,
         userName,
+        // #1751: what the viewer may see is decided by their roles, which change
+        // without the username changing (a role revoked, a weaker sign-in).
+        roles: Array.isArray(userCtx?.['roles']) ? [...(userCtx['roles'] as string[])].sort() : [],
         query,
         // Preferences affecting date/time variable rendering (#341)
         userLocale: (prefs?.['locale'] ?? userCtx?.['locale']),
