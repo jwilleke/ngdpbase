@@ -45,6 +45,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
+import { ApiError } from '../../dist/src/context/ApiContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
 import FormsPlugin from './plugins/FormsPlugin.js';
@@ -61,6 +62,10 @@ export interface HandlerResult {
   error?: string;
   /** On a refusal: one message per field name, shown next to the field. */
   fields?: Record<string, string>;
+  /** On a refusal: the HTTP status to answer with (default 409). */
+  status?: number;
+  /** On a step-up refusal: where to re-authenticate (ApiError.reauth, #1745). */
+  reauth?: string;
   [key: string]: unknown;
 }
 
@@ -95,6 +100,10 @@ const formsAddon = {
     try {
       return await handler(submission, context);
     } catch (err) {
+      // The handler's own permission check refused: answer as any add-on route would.
+      if (err instanceof ApiError) {
+        return { ok: false, status: err.status, error: err.message, ...(err.reauth ? { reauth: err.reauth } : {}) };
+      }
       console.error(`[FormsAddon] Handler error for form ${formId}:`, err);
       return { ok: false, error: 'Handler threw an unexpected error' };
     }

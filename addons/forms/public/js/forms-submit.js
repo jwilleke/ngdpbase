@@ -2,13 +2,21 @@
 
 (function () {
   // Messages are set as text, never as HTML: a handler's error may echo what was typed.
-  function showAlert(result, kind, icon, message) {
+  function showAlert(result, kind, icon, message, reauth) {
     result.replaceChildren();
     const box = document.createElement('div');
     box.className = 'alert alert-' + kind;
     const i = document.createElement('i');
     i.className = 'fas ' + icon + ' me-2';
     box.append(i, document.createTextNode(message));
+    // A step-up refusal (#1745): the way to re-authenticate, back to this page.
+    if (typeof reauth === 'string' && reauth.startsWith('/auth/reauth?')) {
+      const link = document.createElement('a');
+      link.href = reauth;
+      link.className = 'alert-link ms-2';
+      link.textContent = 'Sign in again';
+      box.append(link);
+    }
     result.append(box);
   }
 
@@ -79,7 +87,7 @@
         } else {
           // What was typed stays in the form; each field's message goes next to it.
           showFieldErrors(form, json.fields);
-          showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.');
+          showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.', json.reauth);
           if (btn) btn.disabled = false;
         }
       } catch {

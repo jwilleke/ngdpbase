@@ -11,7 +11,7 @@ import type { FormSubmission } from '../managers/FormsDataManager.js';
 import { resolveChoices } from '../managers/fieldOptions.js';
 import { checkSubmitAccess } from '../managers/pageAccess.js';
 
-type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ok: boolean; error?: string}> };
+type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
 export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
   const router = Router();
@@ -95,9 +95,16 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
         // ── 5. Handler first: a refused submission leaves nothing behind ───
         const handlerResult = await addon.callHandler(formId, submission, { engine, req });
         if (!handlerResult.ok) {
-          const { ok: _ok, error, ...rest } = handlerResult as { ok: boolean; error?: string; fields?: unknown };
-          const fields = rest.fields && typeof rest.fields === 'object' ? rest.fields : undefined;
-          res.status(409).json({ ok: false, error: error ?? 'Handler rejected submission', ...(fields ? { fields } : {}) });
+          const { error, fields, status, reauth } = handlerResult as { error?: string; fields?: unknown; status?: unknown; reauth?: unknown };
+          const code = typeof status === 'number' && status >= 400 && status < 500 ? status : 409;
+          // Only this site's re-authenticate page: a handler cannot send the person elsewhere.
+          const safeReauth = typeof reauth === 'string' && reauth.startsWith('/auth/reauth?') ? reauth : undefined;
+          res.status(code).json({
+            ok: false,
+            error: error ?? 'Handler rejected submission',
+            ...(fields && typeof fields === 'object' ? { fields } : {}),
+            ...(safeReauth ? { reauth: safeReauth } : {})
+          });
           return;
         }
 

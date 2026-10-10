@@ -301,6 +301,17 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     expect(res.body.submissionId).toBe(handlerId);
   });
 
+  test('a refusal keeps the handler\'s status, and only a same-site /auth/reauth link passes', async () => {
+    const refuses = (reauth: string) => ledgerApp({ handler: async () => ({ ok: false, status: 403, error: 'A fresh sign-in is needed', reauth }) }).app;
+    const good = await request(refuses('/auth/reauth?next=%2Fview%2FBooks')).post('/api/forms/submit/test-form').send({ _page: 'Books', fund: 'general', amount: '5' });
+    expect(good.status).toBe(403);
+    expect(good.body).toEqual({ ok: false, error: 'A fresh sign-in is needed', reauth: '/auth/reauth?next=%2Fview%2FBooks' });
+    for (const bad of ['https://evil.example/auth/reauth', '//evil.example/auth/reauth', '/logout', 'javascript:alert(1)']) {
+      const res = await request(refuses(bad)).post('/api/forms/submit/test-form').send({ _page: 'Books', fund: 'general', amount: '5' });
+      expect(res.body.reauth).toBeUndefined();
+    }
+  });
+
   test('store: false keeps no submission file', async () => {
     const { app, saved } = ledgerApp({ store: false });
     const res = await request(app).post('/api/forms/submit/test-form').send({ _page: 'Books', fund: 'general', amount: '5' });
