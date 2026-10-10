@@ -20,6 +20,8 @@ beforeAll(async () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Every form carries its page name; the prefill tests look at the fields only. */
+
 const UNITS = [
   { id: 'unit-43', parcel: '66-09960.043', address: '43 Fairways Drive', phone: '' }
 ];
@@ -378,5 +380,47 @@ describe('FormsPlugin — HTML escaping', () => {
     const html = await FormsPlugin.execute(ctx, { id: 'test-form' });
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+// ── Choices from a manager, amount field, page name, error slots ──────────────
+
+describe('FormsPlugin — fetch options, amount, page name', () => {
+  const form = makeForm([
+    { name: 'fund', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+    { name: 'amount', type: 'amount', label: 'Amount', required: true }
+  ]);
+
+  function ctxWith(toFormOptions: (o: unknown, viewer: unknown) => Promise<unknown>) {
+    return {
+      engine: {
+        getManager: (name: string) => {
+          if (name === 'FormsDataManager') return { getDefinition: () => form };
+          if (name === 'LedgerManager') return { toFormOptions };
+          return undefined;
+        }
+      },
+      pageName: 'Treasurer <Books>',
+      userContext: { username: 'molly', roles: ['treasurer'] }
+    };
+  }
+
+  test('dropdown choices come from the manager, asked with the viewer', async () => {
+    let viewer: unknown;
+    const html = await FormsPlugin.execute(ctxWith(async (_o, v) => { viewer = v; return [{ value: 'general', label: 'General <Fund>' }]; }), { id: 'test-form' });
+    expect(html).toContain('<option value="general">General &lt;Fund&gt;</option>');
+    expect(viewer).toEqual({ username: 'molly', roles: ['treasurer'] });
+  });
+
+  test('an amount field is a decimal text input', async () => {
+    const html = await FormsPlugin.execute(ctxWith(async () => []), { id: 'test-form' });
+    expect(html).toMatch(/<input type="text" inputmode="decimal"[^>]*name="amount"/);
+  });
+
+  test('the form carries an error slot per field, and no page name (#1749)', async () => {
+    const html = await FormsPlugin.execute(ctxWith(async () => []), { id: 'test-form' });
+    expect(html).not.toContain('name="_page"');
+    expect(html).toContain('data-field-error="fund"');
+    expect(html).toContain('data-field-error="amount"');
   });
 });

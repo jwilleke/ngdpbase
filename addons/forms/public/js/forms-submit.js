@@ -1,6 +1,40 @@
 'use strict';
 
 (function () {
+  // Messages are set as text, never as HTML: a handler's error may echo what was typed.
+  function showAlert(result, kind, icon, message, reauth) {
+    result.replaceChildren();
+    const box = document.createElement('div');
+    box.className = 'alert alert-' + kind;
+    const i = document.createElement('i');
+    i.className = 'fas ' + icon + ' me-2';
+    box.append(i, document.createTextNode(message));
+    // A step-up refusal (#1745): the way to re-authenticate, back to this page.
+    if (typeof reauth === 'string' && reauth.startsWith('/auth/reauth?')) {
+      const link = document.createElement('a');
+      link.href = reauth;
+      link.className = 'alert-link ms-2';
+      link.textContent = 'Sign in again';
+      box.append(link);
+    }
+    result.append(box);
+  }
+
+  function clearFieldErrors(form) {
+    form.querySelectorAll('[data-field-error]').forEach((el) => { el.textContent = ''; });
+    form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+  }
+
+  function showFieldErrors(form, fields) {
+    if (!fields || typeof fields !== 'object') return;
+    for (const [name, message] of Object.entries(fields)) {
+      const slot = Array.from(form.querySelectorAll('[data-field-error]')).find((el) => el.dataset.fieldError === name);
+      if (slot) slot.textContent = String(message);
+      const input = form.elements.namedItem(name);
+      if (input && input.classList) input.classList.add('is-invalid');
+    }
+  }
+
   function initForm(formWrapper) {
     const formId = formWrapper.dataset.ngdpForm;
     const form   = formWrapper.closest('.ngdp-form')?.querySelector('form') ?? formWrapper.querySelector('form');
@@ -30,6 +64,7 @@
         }
       }
 
+      clearFieldErrors(form);
       const btn = form.querySelector('[type=submit]');
       if (btn) btn.disabled = true;
       result.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Submitting…</div>';
@@ -48,14 +83,15 @@
         if (json.ok) {
           form.reset();
           form.classList.add('d-none');
-          result.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i>Your submission was received. Thank you!</div>';
+          showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
         } else {
-          result.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>' +
-            (json.error || 'Submission failed. Please try again.') + '</div>';
+          // What was typed stays in the form; each field's message goes next to it.
+          showFieldErrors(form, json.fields);
+          showAlert(result, 'danger', 'fa-exclamation-circle', json.error || 'Submission failed. Please try again.', json.reauth);
           if (btn) btn.disabled = false;
         }
       } catch {
-        result.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-circle me-2"></i>Network error — please try again.</div>';
+        showAlert(result, 'danger', 'fa-exclamation-circle', 'Network error — please try again.');
         if (btn) btn.disabled = false;
       }
     });

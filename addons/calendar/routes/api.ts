@@ -2,7 +2,7 @@
 import { Router, type Request, type Response } from 'express';
 import { generateIcsCalendar } from 'ts-ics';
 import type { IcsEvent } from 'ts-ics';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { CalendarViewer } from '../managers/CalendarDataManager.js';
 
 /**
@@ -50,7 +50,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
   /** Centralised ApiError handler — keeps route handlers DRY. */
   function handleError(err: unknown, res: Response): void {
     if (err instanceof ApiError) {
-      res.status(err.status).json({ error: err.message });
+      sendApiError(res, err);
       return;
     }
     const msg = err instanceof Error ? err.message : String(err);

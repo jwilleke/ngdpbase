@@ -8,7 +8,7 @@
  * scattered access to `req.userContext`, `req.session`, and engine managers.
  *
  * Usage:
- *   import { ApiContext, ApiError } from '../../../src/context/ApiContext';
+ *   import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
  *
  *   router.post('/reservations', async (req, res) => {
  *     try {
@@ -17,15 +17,13 @@
  *       const username = ctx.actingUsername();
  *       // ...
  *     } catch (err) {
- *       if (err instanceof ApiError) {
- *         return res.status(err.status).json({ error: err.message });
- *       }
+ *       if (err instanceof ApiError) return sendApiError(res, err);
  *       res.status(500).json({ error: String(err) });
  *     }
  *   });
  */
 
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 // #1665: the Request augmentation (req.userContext, req.session). Imported here so the
 // emitted ApiContext.d.ts carries it to every add-on that typechecks against dist/.
 import '../types/express.js';
@@ -33,6 +31,7 @@ import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
+import { freshSignInAnswer, type ReauthMode } from '../security/freshSignIn.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -43,11 +42,33 @@ import type { ShareGrant } from '../types/Share.js';
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    /**
+     * For a step-up refusal (#1745): where the person re-authenticates,
+     * returning to the page they were on. Send it with the 403 so the page can
+     * offer the way forward, as core routes do (`{ error, reauth }`).
+     */
+    public readonly reauth?: string
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/**
+ * Send a refusal — the one way it reaches the client, from core routes and
+ * every add-on route alike (#1749). JSON is `{ success: false, error, reauth? }`;
+ * text is the message, then where to sign in again for a step-up refusal. A
+ * route never writes its own refusal: the step-up `reauth` is easy to drop.
+ */
+export function sendApiError(res: Response, err: ApiError, mode: Exclude<ReauthMode, 'page'> = 'json'): void {
+  // Only this site's re-authenticate page: an add-on's ApiError cannot send the person elsewhere.
+  const reauth = typeof err.reauth === 'string' && err.reauth.startsWith('/auth/reauth?') ? err.reauth : undefined;
+  if (mode === 'text') {
+    res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : err.message);
+    return;
+  }
+  res.status(err.status).json({ success: false, error: err.message, ...(reauth ? { reauth } : {}) });
 }
 
 /**
@@ -133,7 +154,8 @@ export class ApiContext extends BaseContext {
     roles: string[],
     viaToken?: AgentTokenGrant,
     viaShare?: ShareGrant,
-    subject: PermissionSubject | null = null
+    subject: PermissionSubject | null = null,
+    request: Request | null = null
   ) {
     // #1399: the subject goes to BaseContext as given. The flattened fields
     // below are a convenience copy for route code to READ; nothing may build a
@@ -148,7 +170,11 @@ export class ApiContext extends BaseContext {
     this.viaToken = viaToken;
     this.viaShare = viaShare;
     this.subject = subject;
+    this.request = request;
   }
+
+  /** The request this context was built from; the step-up answer needs its return page (#1745). */
+  private readonly request: Request | null;
 
   /**
    * Build an ApiContext from an Express request and engine reference.
@@ -177,7 +203,8 @@ export class ApiContext extends BaseContext {
       uc.viaToken,
       uc.viaShare,
       // #1399: forward the subject the middleware wrote, as it wrote it.
-      subjectOf(req)
+      subjectOf(req),
+      req
     );
   }
 
@@ -242,11 +269,20 @@ export class ApiContext extends BaseContext {
    * every route paired `requireAuthenticated()` with this call to get the 401,
    * which read as though authentication were half the gate.
    *
+   * #1745: a refusal for someone who HOLDS the permission is the step-up one
+   * (#1635) — their sign-in is not fresh enough. It carries `reauth`, built
+   * where core routes build it (security/freshSignIn.ts), and the prompt is
+   * audited there; a delegated credential gets no `reauth`.
+   *
    * @example
    * await ctx.requirePermission('search-user'); // → 401 anonymous, 403 signed in
    */
   async requirePermission(permission: string): Promise<void> {
     if (await this.hasPermission(permission)) return;
+    if (this.request && await this.holdsPermission(permission)) {
+      const answer = await freshSignInAnswer(this.engine, this.request, this.request.userContext, permission, 'json');
+      throw new ApiError(403, answer.error, answer.reauth);
+    }
     throw this.isAuthenticated
       ? new ApiError(403, 'Forbidden')
       : new ApiError(401, 'Authentication required');

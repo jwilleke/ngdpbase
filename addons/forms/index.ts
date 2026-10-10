@@ -23,7 +23,19 @@
  *   formsAddon.registerHandler('my-form', async (submission, context) => {
  *     // ... do work ...
  *     return { ok: true };
+ *     // or refuse, with a message per field shown next to it:
+ *     // return { ok: false, error: 'Please correct the marked fields', fields: { amount: 'Too large' } };
  *   });
+ *
+ * The handler runs before the submission is stored; a refused submission leaves
+ * nothing behind. A form with "store": false keeps no submission file at all —
+ * the handler's own record is the record.
+ *
+ * Who may submit: `form-submit`, asked through ApiContext.requirePermission like
+ * every add-on route (#1749), so refusals, step-up and audit come from core. A
+ * handler's own manager still asks its own permission; an ApiError it throws is
+ * sent the same way. This add-on's default policy grants `form-submit` to
+ * everyone, as before.
  */
 
 import path from 'path';
@@ -33,6 +45,7 @@ import type { AddonStatusDetails } from '../../dist/src/managers/AddonsManager.j
 import type PluginManager from '../../dist/src/managers/PluginManager.js';
 import type AddonsManager from '../../dist/src/managers/AddonsManager.js';
 import type ConfigurationManager from '../../dist/src/managers/ConfigurationManager.js';
+import { ApiError } from '../../dist/src/context/ApiContext.js';
 import FormsDataManager from './managers/FormsDataManager.js';
 import type { FormSubmission } from './managers/FormsDataManager.js';
 import FormsPlugin from './plugins/FormsPlugin.js';
@@ -47,6 +60,8 @@ const __dirname = path.dirname(__filename);
 export interface HandlerResult {
   ok: boolean;
   error?: string;
+  /** On a refusal: one message per field name, shown next to the field. */
+  fields?: Record<string, string>;
   [key: string]: unknown;
 }
 
@@ -81,6 +96,8 @@ const formsAddon = {
     try {
       return await handler(submission, context);
     } catch (err) {
+      // The handler's own permission check refused: the route sends it, as any add-on route would.
+      if (err instanceof ApiError) throw err;
       console.error(`[FormsAddon] Handler error for form ${formId}:`, err);
       return { ok: false, error: 'Handler threw an unexpected error' };
     }

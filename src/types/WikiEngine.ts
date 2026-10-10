@@ -7,7 +7,7 @@
 
 import { WikiConfig } from './Config.js';
 import type { Logger } from 'winston';
-import type { Application } from 'express';
+import type { Application, Request } from 'express';
 
 /**
  * All known manager names as a union type
@@ -73,6 +73,16 @@ export interface WikiEngine {
    * initialises (#359).
    */
   app?: Application;
+
+  /**
+   * The data every page view gets — the header, the left menu, the CSRF token,
+   * the signed-in user — exactly as core's own views get it
+   * (WikiRoutes.getCommonTemplateData). An add-on route that renders a view
+   * spreads it first: `res.render(view, { ...(await engine.templateData?.(req)), ... })`.
+   * One path (#1749): no add-on builds its own. Set by app.ts once the routes
+   * exist; add-ons call it per request.
+   */
+  templateData?: (req: Request) => Promise<Record<string, unknown>>;
 
   /**
    * Initialize the wiki engine

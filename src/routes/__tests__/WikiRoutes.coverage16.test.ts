@@ -63,7 +63,7 @@ vi.mock('../../context/WikiContext', async () => {
   return { default: MockWikiContext };
 });
 
-vi.mock('../../context/ApiContext', () => {
+vi.mock('../../context/ApiContext', async () => {
   class MockApiError extends Error {
     constructor(public readonly status: number, message: string) {
       super(message);
@@ -86,6 +86,7 @@ vi.mock('../../context/ApiContext', () => {
         hasPermission: vi.fn().mockReturnValue(true)
       }))
     },
+    sendApiError: (await vi.importActual<typeof import('../../context/ApiContext')>('../../context/ApiContext')).sendApiError,
     ApiError: MockApiError
   };
 });

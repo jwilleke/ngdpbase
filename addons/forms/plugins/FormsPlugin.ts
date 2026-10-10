@@ -10,18 +10,12 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import type { PluginContext, PluginParams } from '../../../dist/src/managers/PluginManager.js';
 import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
+import { escapeHtml as escHtml, type FormOption } from '../../../dist/src/utils/pluginFormatters.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
+import { resolveFieldOptions } from '../managers/fieldOptions.js';
 
-function escHtml(str: string): string {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-type ResolvedField = FormField & { resolvedOptions?: string[]; prefillValue?: string };
+type ResolvedField = FormField & { resolvedOptions?: FormOption[]; prefillValue?: string };
 
 function resolvePrefill(
   dotPath: string,
@@ -48,24 +42,34 @@ function renderField(field: ResolvedField): string {
     : '';
   const requiredBadge = field.required ? ' <span class="text-danger">*</span>' : '';
   const pv = field.prefillValue ?? '';
+  // The submit answers one message per field; forms-submit.js puts it here.
+  const errorSlot = `<div class="invalid-feedback d-block" data-field-error="${escHtml(field.name)}"></div>`;
 
   let control: string;
 
   if (field.type === 'textarea') {
     control = `<textarea name="${escHtml(field.name)}" class="form-control"${placeholder}${required} rows="4">${escHtml(pv)}</textarea>`;
   } else if (field.type === 'dropdown') {
-    const opts = (field.resolvedOptions ?? field.options ?? [])
+    const opts = (field.resolvedOptions ?? [])
       .map(o => {
-        const sel = pv && o === pv ? ' selected' : '';
-        return `<option value="${escHtml(o)}"${sel}>${escHtml(o)}</option>`;
+        const sel = pv && o.value === pv ? ' selected' : '';
+        return `<option value="${escHtml(o.value)}"${sel}>${escHtml(o.label)}</option>`;
       })
       .join('');
-    control = `<select name="${escHtml(field.name)}" class="form-select"${required}><option value="">— select —</option>${opts}</select>`;
+    control = `<select name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-select"${required}><option value="">— select —</option>${opts}</select>`;
+  } else if (field.type === 'amount') {
+    // Text, not type=number: people type "$1,250.50", and the server converts it to cents.
+    const valueAttr = pv ? ` value="${escHtml(pv)}"` : '';
+    control = `<div class="input-group">
+      <span class="input-group-text">$</span>
+      <input type="text" inputmode="decimal" autocomplete="off" name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-control"${placeholder}${required}${valueAttr}>
+    </div>`;
   } else if (field.type === 'checkbox') {
     return `<div class="mb-3 form-check">
       <input type="checkbox" name="${escHtml(field.name)}" id="field-${escHtml(field.name)}" class="form-check-input"${required}>
       <label class="form-check-label" for="field-${escHtml(field.name)}">${escHtml(field.label)}${requiredBadge}</label>
       ${desc}
+      ${errorSlot}
     </div>`;
   } else if (field.type === 'hidden') {
     return `<input type="hidden" name="${escHtml(field.name)}">`;
@@ -78,6 +82,7 @@ function renderField(field: ResolvedField): string {
     <label class="form-label" for="field-${escHtml(field.name)}">${escHtml(field.label)}${requiredBadge}</label>
     ${control}
     ${desc}
+    ${errorSlot}
   </div>`;
 }
 
@@ -182,20 +187,16 @@ const FormsPlugin = {
     }
 
     // Resolve optionsSource and prefill for each field
-    const resolvedFields: ResolvedField[] = form.fields.map(field => {
-      let base: ResolvedField;
-      if (field.type === 'dropdown' && field.optionsSource?.startsWith('config:') && cm) {
-        const key = field.optionsSource.slice(7);
-        const opts = cm.getProperty(key, []) as string[];
-        base = { ...field, resolvedOptions: opts };
-      } else {
-        base = { ...field, resolvedOptions: field.options };
+    const resolvedFields: ResolvedField[] = await Promise.all(form.fields.map(async field => {
+      const base: ResolvedField = { ...field };
+      if (field.type === 'dropdown') {
+        base.resolvedOptions = await resolveFieldOptions(context.engine, field, context.userContext);
       }
       if (field.prefill && userCtx) {
         base.prefillValue = resolvePrefill(field.prefill, userCtx, unitRecord);
       }
       return base;
-    });
+    }));
 
     return renderForm(form, resolvedFields);
   }

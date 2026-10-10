@@ -185,8 +185,9 @@ import type ValidationManager from '../managers/ValidationManager.js';
 import { categorySource } from '../managers/ValidationManager.js';
 import { acceptedSystemCategory } from '../utils/acceptedSystemCategory.js';
 import type VariableManager from '../managers/VariableManager.js';
-import { ApiContext, ApiError } from '../context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
+import { auditReauth, freshSignInAnswer } from '../security/freshSignIn.js';
 import { stripAclMarkup } from '../parsers/aclMarkup.js';
 import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
@@ -2197,10 +2198,7 @@ class WikiRoutes {
         : 'You do not have permission to do this');
       return;
     }
-    const status = anonymous ? 401 : 403;
-    const error = anonymous ? 'Authentication required' : 'Access denied';
-    if (mode === 'text') res.status(status).send(error);
-    else res.status(status).json({ success: false, error });
+    sendApiError(res, anonymous ? new ApiError(401, 'Authentication required') : new ApiError(403, 'Access denied'), mode);
   }
 
   /**
@@ -2326,8 +2324,9 @@ class WikiRoutes {
   /**
    * The step-up answer (#1525, #1635): the PDP refused a permission the
    * person holds because their sign-in is not fresh enough. A page goes to
-   * /auth/reauth and comes back; JSON is told where it is. A delegated
-   * credential can never give a fresh factor, so it is refused outright.
+   * /auth/reauth and comes back; JSON is told where it is. The answer itself
+   * is built in one place for core and add-on routes alike (#1745,
+   * security/freshSignIn.ts); this only sends it.
    */
   private async askForFreshSignIn(
     wikiContext: { userContext: unknown },
@@ -2336,51 +2335,13 @@ class WikiRoutes {
     res: Response,
     mode: 'json' | 'page' | 'text'
   ): Promise<void> {
-    const user = (wikiContext.userContext ?? {}) as { viaToken?: unknown; viaShare?: unknown };
-    const delegated = Boolean(user.viaToken || user.viaShare);
-    await this.auditReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
-    if (delegated) {
-      res.status(403).json({ success: false, error: 'This needs a fresh sign-in by the person; a token cannot give one', stepUp: permission });
-      return;
-    }
-    const reauth = `/auth/reauth?next=${encodeURIComponent(this.reauthReturnTo(req, mode))}`;
-    if (mode === 'page') res.redirect(reauth);
-    else if (mode === 'text') res.status(403).send('A fresh sign-in is needed: ' + reauth);
-    else res.status(403).json({ success: false, error: 'A fresh sign-in is needed', reauth });
+    const answer = await freshSignInAnswer(this.engine, req, wikiContext.userContext, permission, mode);
+    if (mode === 'page' && answer.reauth) { res.redirect(answer.reauth); return; }
+    sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' ? 'json' : mode);
   }
 
-  /**
-   * Where to return after re-authenticating: this page for a page GET, and
-   * the page the person was on for anything else — a POST (the form is
-   * filled in again; a POST body is not replayed) or a script's request for
-   * data (#1738: returning to `/auth/passkey/register/options` showed the
-   * person raw JSON). Always a path on this site.
-   */
-  private reauthReturnTo(req: Request, mode: 'json' | 'page' | 'text' = 'page'): string {
-    if (req.method === 'GET' && mode === 'page') return safeRedirect(req.originalUrl || '/');
-    const referer = req.get('referer');
-    if (!referer) return '/';
-    try {
-      const url = new URL(referer);
-      return safeRedirect(url.pathname + url.search);
-    } catch {
-      return '/';
-    }
-  }
-
-  /** One step-up audit record (#1525): never a password, never a credential's secret. */
   private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
-    await recordAuditEvent(this.auditSink(), {
-      eventType,
-      user: typeof req.session?.username === 'string' ? req.session.username : 'anonymous',
-      ipAddress: req.ip,
-      action: eventType,
-      result,
-      severity: eventType === AUDIT_EVENT.REAUTH_FAILURE ? 'medium' : 'low',
-      resource: permission,
-      resourceType: 'permission',
-      metadata: { detail }
-    }, (err) => logger.warn(`[step-up] audit record failed for ${eventType}:`, err));
+    await auditReauth(this.engine, req, eventType, result, permission, detail);
   }
 
   async renderError(req: Request, res: Response, status: number, title: string, message: string) {
@@ -7509,7 +7470,7 @@ ${panes}
 
       res.json({ results: payload, total: payload.length });
     } catch (err: unknown) {
-      if (err instanceof ApiError) { res.status(err.status).json({ error: err.message }); return; }
+      if (err instanceof ApiError) { sendApiError(res, err); return; }
       res.status(500).json({ error: getErrorMessage(err) });
     }
   }

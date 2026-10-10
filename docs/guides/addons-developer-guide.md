@@ -724,44 +724,42 @@ What is not built is the add-on declaring that entry in its manifest and core pe
 
 ---
 
-## 4b. Populating `leftMenu` in Add-on Route Views
+## 4b. Add-on Route Views and Refusals: Core's Path, Never a Copy
 
-Add-on route handlers that call `res.render()` must pass `leftMenu` explicitly — the core `getCommonTemplateData()` method is only available inside `WikiRoutes` and is not accessible to addon routes.
+One code path for what every page shows and for every refusal ([#1749](https://github.com/jwilleke/ngdpbase/issues/1749)). An add-on never builds its own.
 
-Read the menu through the host's one chrome reader, `PageManager.readChromePage('left-menu')`, and format it with the shared `formatLeftMenuContent`. Both are the host's: the reader honours `ngdpbase.chrome.left-menu-page` and reports a missing page, and the formatter is the one core uses, so do not copy either ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)). `addons/journal/routes/helpers.ts` is the reference:
-
-```typescript
-// addons/my-addon/routes/helpers.ts
-import type { WikiEngine } from '../../../dist/src/types/WikiEngine';
-import type PageManager from '../../../dist/src/managers/PageManager';
-import type RenderingManager from '../../../dist/src/managers/RenderingManager';
-import { formatLeftMenuContent } from '../../../dist/src/utils/leftMenuNav.js';
-
-export async function getLeftMenu(engine: WikiEngine, userContext: unknown): Promise<string | null> {
-  const pm = engine.getManager<PageManager>('PageManager');
-  const rm = engine.getManager<RenderingManager>('RenderingManager');
-  if (!pm || !rm) return null;
-  const page = await pm.readChromePage('left-menu');
-  if (!page) return null;
-  const rendered = await rm.renderMarkdown(page.content ?? '', 'LeftMenu', userContext, null);
-  return formatLeftMenuContent(rendered);
-}
-```
-
-Then pass it to every `res.render()` call in that router:
+__View data.__ A route that calls `res.render()` spreads core's template data first. It is exactly what core's own views get (`WikiRoutes.getCommonTemplateData`): the header, the left menu (through `PageManager.readChromePage`, honouring `ngdpbase.chrome.left-menu-page`), the CSRF token, the signed-in user. Then add the view's own fields:
 
 ```typescript
-import { getLeftMenu } from './helpers';
-
 router.get('/', (req, res) => {
   void (async () => {
-    const leftMenu = await getLeftMenu(engine, req.userContext ?? null);
-    res.render('my-view', { currentUser: req.userContext, leftMenu, /* ... */ });
+    res.render('my-view', { ...(await engine.templateData?.(req)), currentUser: req.userContext, /* ... */ });
   })();
 });
 ```
 
-If `leftMenu` is `null` or `undefined`, `header.ejs` renders the sidebar empty. There is no hardcoded fallback.
+Do not read the left menu or `req.session.csrfToken` yourself; a missing key makes the sidebar empty or every POST a CSRF 403.
+
+__Who may act.__ Ask through `ApiContext`, as core's routes do. A refusal comes back as an `ApiError`; send it with `sendApiError`, never with your own `res.status(...)`. It sends the status, the message and, for a step-up, the way to sign in again (only this site's `/auth/reauth?` page), as JSON or, for a page route, as text:
+
+```typescript
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
+
+router.post('/thing', (req, res) => {
+  void (async () => {
+    try {
+      const ctx = ApiContext.from(req, engine);
+      await ctx.requirePermission('my-permission');
+      // ...
+    } catch (err) {
+      if (err instanceof ApiError) { sendApiError(res, err); return; }   // 'text' for a page route
+      res.status(500).json({ error: String(err) });
+    }
+  })();
+});
+```
+
+Decisions, step-up and the step-up audit record all come from core this way. Do not call `PolicyInformationPoint` or `PolicyDecisionPoint` from a route to make your own gate.
 
 ---
 

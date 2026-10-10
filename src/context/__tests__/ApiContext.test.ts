@@ -258,6 +258,57 @@ describe('ApiContext#requirePermission()', () => {
   });
 });
 
+// ── #1745: the step-up answer, the same one core routes give ─────────────────
+
+describe('#1745 ApiContext#requirePermission() answers step-up with the way to re-authenticate', () => {
+  function engineWith({ permits, holds, audit = [] as unknown[] }: { permits: boolean; holds: boolean; audit?: unknown[] }) {
+    return {
+      audit,
+      getManager: vi.fn((name: string) => {
+        if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(permits), holds: vi.fn().mockResolvedValue(holds) };
+        if (name === 'AuditManager') return { logAuditEvent: vi.fn(async (e: unknown) => { audit.push(e); }) };
+        return null;
+      })
+    };
+  }
+  function postFrom(page: string, userContext: Record<string, unknown> = { username: 'tess', roles: ['treasurer'], isAuthenticated: true }) {
+    return {
+      userContext, session: { username: 'tess' }, method: 'POST', ip: '203.0.113.7', originalUrl: '/api/forms/submit/x',
+      get: (h: string) => (h.toLowerCase() === 'referer' ? `http://localhost${page}` : undefined)
+    } as unknown as Request;
+  }
+
+  test('a person who holds the permission but is not fresh gets 403 with reauth back to their page, audited', async () => {
+    const engine = engineWith({ permits: false, holds: true });
+    const ctx = ApiContext.from(postFrom('/view/Books'), engine);
+    const err = await ctx.requirePermission('ledger-adjust').catch((e: unknown) => e) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(403);
+    expect(err.reauth).toBe('/auth/reauth?next=%2Fview%2FBooks');
+    expect(err.message).toBe('A fresh sign-in is needed');
+    expect(engine.audit).toHaveLength(1);
+    expect(engine.audit[0]).toMatchObject({ eventType: 'reauth-prompt', resource: 'ledger-adjust' });
+  });
+
+  test('a delegated credential is refused outright: no reauth', async () => {
+    const engine = engineWith({ permits: false, holds: true });
+    const ctx = ApiContext.from(postFrom('/view/Books', { username: 'tess', roles: ['treasurer'], isAuthenticated: true, viaToken: { id: 't1' } }), engine);
+    const err = await ctx.requirePermission('ledger-adjust').catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.reauth).toBeUndefined();
+  });
+
+  test('someone who does not hold it gets the plain refusal, with no prompt recorded', async () => {
+    const engine = engineWith({ permits: false, holds: false });
+    const ctx = ApiContext.from(postFrom('/view/Books'), engine);
+    const err = await ctx.requirePermission('ledger-adjust').catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.message).toBe('Forbidden');
+    expect(err.reauth).toBeUndefined();
+    expect(engine.audit).toHaveLength(0);
+  });
+});
+
 // ── requireRole() ─────────────────────────────────────────────────────────────
 
 // #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).

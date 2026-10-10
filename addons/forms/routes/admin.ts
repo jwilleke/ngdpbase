@@ -1,6 +1,6 @@
 
 import { Router, type Request, type Response } from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { SubmissionStatus } from '../managers/FormsDataManager.js';
@@ -29,13 +29,13 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
           }))
         );
 
-        res.render('forms-admin', {
+        res.render('forms-admin', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           forms: formsWithCounts,
           query: req.query
         });
       } catch (err) {
-        if (err instanceof ApiError) { res.status(err.status).send(err.message); return; }
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
       }
     })();
@@ -56,14 +56,14 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         let submissions = await m!.getSubmissions(String(req.params['formId']));
         if (status) submissions = submissions.filter(s => s.status === status);
 
-        res.render('forms-submissions', {
+        res.render('forms-submissions', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           form,
           submissions,
           filterStatus: status ?? 'all'
         });
       } catch (err) {
-        if (err instanceof ApiError) { res.status(err.status).send(err.message); return; }
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
       }
     })();
@@ -84,13 +84,13 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         const submission = submissions.find(s => s.id === String(req.params['submissionId']));
         if (!submission) { res.status(404).send('Submission not found'); return; }
 
-        res.render('forms-submission-detail', {
+        res.render('forms-submission-detail', { ...(await engine.templateData?.(req)),
           currentUser: req.userContext,
           form,
           submission
         });
       } catch (err) {
-        if (err instanceof ApiError) { res.status(err.status).send(err.message); return; }
+        if (err instanceof ApiError) { sendApiError(res, err, 'text'); return; }
         res.status(500).send(String(err));
       }
     })();
@@ -117,7 +117,7 @@ export default function adminRoutes(engine: WikiEngine, _addon: unknown): Router
         if (!updated) { res.status(404).json({ ok: false, error: 'Submission not found' }); return; }
         res.json({ ok: true });
       } catch (err) {
-        if (err instanceof ApiError) { res.status(err.status).json({ ok: false, error: err.message }); return; }
+        if (err instanceof ApiError) { sendApiError(res, err); return; }
         res.status(500).json({ ok: false, error: String(err) });
       }
     })();

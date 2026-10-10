@@ -32,6 +32,7 @@ const PREFILL_PATHS = [
   <% } %>
 
   <form method="POST" action="<%= isNew ? '/addons/forms/builder' : '/addons/forms/builder/' + encodeURIComponent(form.id) %>" id="builder-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
     <%/* ── Form Metadata ──────────────────────────────────────────────── */%>
     <div class="card mb-4">
@@ -133,7 +134,7 @@ const PREFILL_PATHS = [
   <% if (!isNew) { %>
     <form id="delete-form" method="POST"
       action="/addons/forms/builder/<%= encodeURIComponent(form.id) %>/delete"
-      style="display:none"></form>
+      style="display:none"><input type="hidden" name="_csrf" value="<%= csrfToken %>"></form>
   <% } %>
 </div>
 
@@ -142,7 +143,7 @@ const PREFILL_PATHS = [
 </datalist>
 
 <script nonce="<%= locals.cspNonce %>">
-var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section'];
+var FIELD_TYPES = ['text','email','tel','textarea','date','time','dropdown','checkbox','hidden','section', 'amount'];
 var fields = <%- jsonForScript(form?.fields ?? []) %>.map(function(f) { return Object.assign({}, f); });
 
 function escAttr(s) {

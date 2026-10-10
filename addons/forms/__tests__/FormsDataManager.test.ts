@@ -2,7 +2,7 @@
  * Tests for FormsDataManager — schema validation and buildSubmissionValidator
  */
 
-import { FieldSchema, FormDefinitionSchema, buildSubmissionValidator } from '../managers/FormsDataManager';
+import { FieldSchema, FormDefinitionSchema, buildSubmissionValidator, parseAmount } from '../managers/FormsDataManager';
 
 // ── FieldSchema ───────────────────────────────────────────────────────────────
 
@@ -169,5 +169,19 @@ describe('buildSubmissionValidator', () => {
     expect('sec2' in v.shape).toBe(false);
     expect('date' in v.shape).toBe(true);
     expect('email' in v.shape).toBe(true);
+  });
+});
+
+// ── parseAmount ───────────────────────────────────────────────────────────────
+
+describe('parseAmount', () => {
+  test.each([
+    ['125.50', 12550], ['125.5', 12550], ['1250', 125000], ['$1,250.00', 125000], [' 0.01 ', 1]
+  ])('%j is %d cents', (raw, cents) => {
+    expect(parseAmount(raw)).toBe(cents);
+  });
+
+  test.each([['0'], ['0.00'], ['-5'], ['12.345'], ['abc'], [''], ['1e3'], ['$'], ['1.2.3']])('%j is refused', (raw) => {
+    expect(parseAmount(raw)).toBeNull();
   });
 });

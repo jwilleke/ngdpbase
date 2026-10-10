@@ -1,5 +1,70 @@
 {
   "_comment": "Default configuration for the forms addon. Override any key in app-custom-config.json.",
   "ngdpbase.addons.forms.dataPath": "",
-  "ngdpbase.addons.forms.notifyRole": "admin"
+  "ngdpbase.addons.forms.notifyRole": "admin",
+  "_comment_form_submit": "Submitting a form needs form-submit, asked through ApiContext.requirePermission like every add-on route (#1749), so refusals, step-up and audit come from core. This policy grants it to every built-in role, anonymous included, which keeps forms open as they always were. A deployment narrows it in app-custom-config.json or adds its own roles; who sees a form is the page's audience, and an add-on that receives a form checks its own permission. Code never names a role.",
+  "ngdpbase.permissions.definitions": {
+    "form-submit": {
+      "description": "Submit a form on a page; the page's own access rules can narrow it",
+      "icon": "paper-plane",
+      "color": "#198754",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Form submitted"
+      }
+    }
+  },
+  "ngdpbase.access.policies": [
+    {
+      "id": "forms-submit-access",
+      "name": "Submit forms",
+      "description": "Anyone may submit a form, unless the page it is on says otherwise",
+      "priority": 50,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "anonymous"
+        },
+        {
+          "type": "role",
+          "value": "reader"
+        },
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        },
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "user-admin"
+        },
+        {
+          "type": "role",
+          "value": "vault-owner"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "page",
+          "pattern": "*"
+        }
+      ],
+      "actions": [
+        "form-submit"
+      ]
+    }
+  ]
 }
