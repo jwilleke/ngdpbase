@@ -160,11 +160,13 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
     expect(enabledEntries(stepUp.permissions)).toEqual(['account-security', 'ledger-close']);
   });
 
-  test('the shipped secret-keys survive an addon and an operator layer', () => {
+  test('the shipped sensitive values survive an addon and an operator layer (#1750, renamed from secret-keys)', () => {
+    const SENSITIVE = 'ngdpbase.config.sensitive-values';
     const shippedFile = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../config/app-default-config.json'), 'utf8')) as Record<string, unknown>;
-    const core = enabledEntries(shippedFile[SET]);
-    expect(core).toContain('ngdpbase.session.secret');
-    const merged = mergeWithAddonLayer(shippedFile, [layer('a', { [SET]: ['a.key'] })], { [SET]: ['my.secret'] });
-    expect(enabledEntries(merged[SET])).toEqual([...core, 'a.key', 'my.secret']);
+    const core = shippedFile[SENSITIVE] as Record<string, string>;
+    expect(core['ngdpbase.session.secret']).toBe('secret');
+    expect(core['ngdpbase.access.policies']).toBe('sensitive');
+    const merged = mergeWithAddonLayer(shippedFile, [layer('a', { [SENSITIVE]: { 'a.url': 'sensitive' } })], { [SENSITIVE]: { 'my.secret': 'secret' } });
+    expect(merged[SENSITIVE]).toEqual({ ...core, 'a.url': 'sensitive', 'my.secret': 'secret' });
   });
 });

@@ -32,7 +32,7 @@ export type FlatPosture = Record<string, unknown>;
  *
  * A secret records that it is __set__ and never what it is set to. An entry
  * naming a key alongside its value would reintroduce the disclosure
- * `ngdpbase.config.secret-keys` exists to prevent, by a different route and
+ * `ngdpbase.config.sensitive-values` (its `secret` entries) exists to prevent, by a different route and
  * into a file with longer retention than the logs it already guards.
  */
 export function flattenPosture(groups: readonly PostureGroup[]): FlatPosture {

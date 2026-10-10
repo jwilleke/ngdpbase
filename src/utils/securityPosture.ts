@@ -19,13 +19,12 @@
  * See docs/security-posture.md.
  */
 
-import { enabledEntries } from './configFiles.js';
+import { secretKeys } from './sensitiveValues.js';
 
 /** The shape of `ConfigurationManager.getProperty`. */
 export type ConfigReader = (key: string, fallback?: unknown) => unknown;
 
 export const POSTURE_KEY = 'ngdpbase.security.posture';
-const SECRET_KEYS_KEY = 'ngdpbase.config.secret-keys';
 
 /** Where an ingredient with no declared group is shown. */
 const UNGROUPED = 'Other';
@@ -37,7 +36,7 @@ export interface PostureItem {
   /** Whether a change takes effect only after a restart (D6). */
   restart: boolean;
   /**
-   * True when the key is named in `ngdpbase.config.secret-keys`.
+   * True when the key is named in `ngdpbase.config.sensitive-values` (its `secret` entries).
    *
    * Reported as present but masked rather than dropped: an operator who added
    * it deserves to know it is set, and silently omitting it would make the
@@ -85,8 +84,7 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
   const declared = read(POSTURE_KEY, null);
   if (!isPlainObject(declared)) return [];
 
-  const secretKeys = read(SECRET_KEYS_KEY, []);
-  const secrets = new Set(enabledEntries(secretKeys));
+  const secrets = new Set(secretKeys(read));
 
   const byGroup = new Map<string, PostureItem[]>();
 
@@ -107,7 +105,7 @@ export function resolvePosture(read: ConfigReader): PostureGroup[] {
     };
     // Never read a secret's value into the view. The section would otherwise
     // reintroduce, through a different route, the disclosure that
-    // ngdpbase.config.secret-keys exists to prevent (D15).
+    // ngdpbase.config.sensitive-values exists to prevent (D15).
     if (!secret) item.value = read(key, undefined);
     const note = NOTES[key]?.(read);
     if (note) item.note = note;

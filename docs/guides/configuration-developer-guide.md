@@ -18,7 +18,7 @@ How to add or change a configuration key. Config selects and parameterises; it n
 - Maps merge per entry. Arrays of objects merge by `id` (or `authproviderid`). A plain array replaces wholesale — do not use a plain array for a catalog an addon or operator must extend.
 - A set of names is a map of `"name": true` ([#1612](https://github.com/jwilleke/ngdpbase/issues/1612)). A later layer adds a name with `true`, removes one with `false`, or adds several with a plain list of names. Read it with `enabledEntries()` from `src/utils/configFiles.ts`, which accepts either form.
 - Environment-owned keys are declared in `ngdpbase.config.env-keys`. The admin screen must not persist edits that cannot take effect.
-- Secrets are named in `ngdpbase.config.secret-keys`. They are reported as set, never rendered.
+- Which values may be shown is declared once, in `ngdpbase.config.sensitive-values` (#1750; `ngdpbase.config.secret-keys` is still read as an alias, with a startup warning). Each key is `secret` or `sensitive`. A `secret` value is shown only to a holder of `secret-reveal` and never logged or audited. A `sensitive` value (the access policies, storage paths, outside services) is shown only to a holder of `admin-read`. An unlisted key whose name looks like a secret and whose value is a string counts as `secret`. Everything that renders configuration (ConfigAccessor, VariablesPlugin, the admin screen, log redaction, the audit log) reads this list through `utils/sensitiveValues.ts`, and hidden values are replaced on the server, so they never reach page source. An add-on declares its own entries in its `config/default-config.json`; the map merges per entry.
 
 ## How to add a key
 

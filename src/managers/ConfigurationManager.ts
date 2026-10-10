@@ -16,10 +16,10 @@ import { mergeConfigWithAddons, mergeWithAddonLayer } from '../utils/addonConfig
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { buildConfigChangeAuditEvent, isSecretKey } from '../utils/auditConfigChange.js';
+import { secretKeys } from '../utils/sensitiveValues.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 
 /** The config key naming which other keys hold secrets (#1030). */
-const SECRET_KEYS_KEY = 'ngdpbase.config.secret-keys';
 import {
   NPM_ADDON_PREFIX,
   splitAddonsPath,
@@ -783,7 +783,7 @@ class ConfigurationManager extends BaseManager {
       before,
       after,
       actor: actorOf(ctx),
-      secret: isSecretKey(key, this.getProperty(SECRET_KEYS_KEY, []))
+      secret: isSecretKey(key, secretKeys((k, d) => this.getProperty(k, d)))
     }));
   }
 
