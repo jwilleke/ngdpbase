@@ -640,6 +640,53 @@ class AuthManager extends BaseManager {
     return removed;
   }
 
+  /**
+   * The one deactivation step (#1765): "this account can no longer sign in".
+   * Disable and delete both come through here, from UserManager, so nothing
+   * an account holds is left reachable by one path and not the other.
+   *
+   * - Both: every session of the account ends.
+   * - Disable: its agent tokens, app grants and shares are suspended by the
+   *   live owner-is-active checks that refuse them, and its credentials stay,
+   *   so turning the account back on restores them.
+   * - Delete: its agent tokens, app grants and shares are revoked, and its
+   *   credentials-store rows (passkeys, verified addresses, devices) are
+   *   removed. A row names its account by username, so a row left behind
+   *   would sign in to a new account later created with the same name.
+   *
+   * The account change itself is audited by UserManager (user-delete, or the
+   * isActive change); each revocation is audited by its owner, and each removed
+   * credential here (`credential-remove`). Proxy grants join when proxy-access
+   * (#1762) exists. The encrypted store is left to survivorship (#1545).
+   */
+  async closeAccess(username: string, mode: 'disable' | 'delete', ctx: PermissionSubject): Promise<void> {
+    const step = async (what: string, run: () => Promise<unknown>): Promise<void> => {
+      try { await run(); } catch (err) { logger.error(`[AuthManager] closeAccess(${username}, ${mode}): ${what} failed:`, err); }
+    };
+    await step('sessions', async () => this.engine.getManager<{ deleteUserSessions(u: string): Promise<void> }>('UserManager')?.deleteUserSessions(username));
+    if (mode !== 'delete') return;
+
+    const by = ctx.username ?? 'system';
+    await step('agent tokens', async () => {
+      const tokens = this.engine.getManager<{ listForOwner(o: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('AgentTokenManager');
+      for (const t of tokens?.listForOwner(username) ?? []) if (!t.revokedAt) await tokens?.revoke(t.id, by);
+    });
+    await step('app grants', async () => {
+      const oidc = this.engine.getManager<{ listGrants(u: string): Promise<Array<{ grantId: string }>>; revokeGrant(u: string, g: string): Promise<boolean> }>('OidcManager');
+      for (const g of (await oidc?.listGrants(username)) ?? []) await oidc?.revokeGrant(username, g.grantId);
+    });
+    await step('shares', async () => {
+      const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
+      for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, by);
+    });
+    await step('credentials', async () => {
+      if (!this.credentials) return;
+      for (const row of this.credentials.list(username)) {
+        if (await this.credentials.remove(row.id)) this.auditCredentialChange(ctx, username, 'credential-remove', row);
+      }
+    });
+  }
+
   /** Rename one of `username`'s credentials. The name is required, as at enrolment. */
   async renameCredential(ctx: PermissionSubject, username: string, id: string, label: unknown): Promise<boolean> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');

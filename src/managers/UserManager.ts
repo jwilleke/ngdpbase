@@ -1081,9 +1081,12 @@ class UserManager extends BaseManager {
 
     const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
+    const disabling = user.isActive !== false && updates.isActive === false;
     Object.assign(user, userFieldUpdates);
     if (passwordChange !== undefined) await setPassword(user, passwordChange);
     await this.writeAccounts(this.provider.updateUser(username, user));
+    // #1765: turning an account off goes through the one deactivation step.
+    if (disabling) await this.closeAccess(username, 'disable', ctx);
 
     await this.syncPersonOnUpdate(username, updates);
     if (incomingRoles) {
@@ -1157,6 +1160,8 @@ class UserManager extends BaseManager {
     }
 
     await this.writeAccounts(this.provider.deleteUser(username));
+    // #1765: the one deactivation step — sessions, tokens, app grants, shares, credentials.
+    await this.closeAccess(username, 'delete', ctx);
 
     // Order matters: clear role memberships while the Person record still
     // exists, then delete the Person.
@@ -1165,6 +1170,12 @@ class UserManager extends BaseManager {
 
     logger.info(`👤 Deleted user: ${username}`);
     return true;
+  }
+
+  /** Hand the account to AuthManager's one deactivation step (#1765); a failure there is logged, never thrown. */
+  private async closeAccess(username: string, mode: 'disable' | 'delete', ctx: ActorContext): Promise<void> {
+    await this.engine.getManager<{ closeAccess(u: string, m: 'disable' | 'delete', c: ActorContext): Promise<void> }>('AuthManager')
+      ?.closeAccess(username, mode, ctx).catch((err: unknown) => logger.error(`[UserManager] closeAccess(${username}, ${mode}) failed:`, err));
   }
 
   async getUsers(): Promise<Omit<User, 'password'>[]> {
