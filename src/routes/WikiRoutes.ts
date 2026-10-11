@@ -39,7 +39,6 @@ import {
   REQUIRED_SOURCE_HASH_KEY,
   type SeededAddonPageStatus
 } from '../utils/addonPageSync.js';
-import { sessionGenerationOf } from '../utils/sessionGeneration.js';
 import { idleRemainingMs, IDLE_STATUS_PATH, warnBeforeMs } from '../utils/sessionIdle.js';
 import { isStrayFormField } from '../utils/strayFormFields.js';
 import logger from '../utils/logger.js';
@@ -190,7 +189,6 @@ import { safeRedirect } from '../utils/safeRedirect.js';
 import { auditReauth, freshSignInAnswer } from '../security/freshSignIn.js';
 import { stripAclMarkup } from '../parsers/aclMarkup.js';
 import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
-import { generateCsrfToken } from '../middleware/csrf.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
 import { resolveMaintenanceState, MAINTENANCE_ENABLED_KEY } from '../utils/maintenanceState.js';
 import { resolvePosture, POSTURE_KEY } from '../utils/securityPosture.js';
@@ -6372,52 +6370,6 @@ ${panes}
     }
   }
 
-  private regenerateSession(req: Request): Promise<void> {
-    // #1626, #1670: signing in again on a session that was signed in ends that
-    // session (its keys, and a record that it ended); a pending sign-in's
-    // handle is never on the session, so is untouched.
-    endSession(this.engine, req.session, 'superseded', { ipAddress: req.ip, userAgent: req.get?.('user-agent') });
-    return new Promise((resolve) => {
-      if (typeof req.session?.regenerate !== 'function') {
-        resolve();
-        return;
-      }
-      req.session.regenerate((err) => {
-        if (err) {
-          logger.error('Error regenerating session on login (#1043):', err);
-        } else {
-          req.session.csrfToken = generateCsrfToken();
-        }
-        resolve();
-      });
-    });
-  }
-
-  /**
-   * Stamp the session with the account's password-change generation (#1482):
-   * at every sign-in, and on the session that changed the password, so that
-   * one stays signed in while every other session of the account ends.
-   */
-  private async stampSessionGeneration(req: Request, username = req.session?.username): Promise<void> {
-    if (!req.session || !username) return;
-    const userManager = this.engine.getManager<IUserManager>('UserManager');
-    const account = (await userManager?.getUser(username)) as { sessionGeneration?: number } | null | undefined;
-    req.session.sessionGeneration = sessionGenerationOf(account);
-  }
-
-  /**
-   * Record on the session how it signed in (#1523): provider, factors with
-   * their times, and the amr / aal / acr they amount to. Every sign-in path
-   * calls this right after setting `isAuthenticated`, so none can forget it.
-   */
-  private stampSignIn(req: Request, result: AuthenticateResult): void {
-    if (!req.session) return;
-    const authManager = this.engine.getManager<AuthManager>('AuthManager');
-    const record = authManager?.signInRecord?.(result) ?? null;
-    if (record) req.session.signIn = record;
-    else delete req.session.signIn;
-  }
-
   /**
    * Where this session stands against its idle limit (#1546). `limited: false`
    * when no limit applies; a signed-out caller is told so, so the page can go
@@ -6623,11 +6575,7 @@ ${panes}
       res.status(401).json({ error: 'Sign-in with that passkey failed' });
       return;
     }
-    await this.regenerateSession(req); // #1043
-    req.session.username = result.username;
-    req.session.isAuthenticated = true;
-    this.stampSignIn(req, result);
-    await this.stampSessionGeneration(req);
+    await authManager.completeSignIn(req, result, { method: 'passkey' }); // #1758: the one completion step
     logger.info(`👤 User logged in with a passkey: ${result.username}`);
     req.session.save((err) => {
       if (err) {
@@ -6776,13 +6724,8 @@ ${panes}
     const done = pending ? authManager.completeTwoStep(pending.handle, pending.binding) : null;
     if (!done) { res.redirect('/login/second-factor'); return; }
     const redirect = safeRedirect(req.session.pendingRedirect);
-    await this.regenerateSession(req); // #1043
-    req.session.username = done.result.username;
-    req.session.isAuthenticated = true;
-    this.stampSignIn(req, done.result);
-    await this.stampSessionGeneration(req);
-    if (done.privateStoreHandle) req.session.privateStoreHandle = done.privateStoreHandle;
-    await this.auditAuthentication(req, done.result.username, 'success', 'password and email link');
+    // #1758: the one completion step; the stores were unlocked at the password.
+    await authManager.completeSignIn(req, done.result, { method: 'password and email link', privateStoreHandle: done.privateStoreHandle });
     logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     req.session.save((err) => {
@@ -6954,9 +6897,9 @@ ${panes}
           binding,
           ip: req.ip,
           userAgent: req.get('user-agent'),
-          privateStoreHandle: typeof password === 'string' && password ? await this.unlockStoresWithPassword(signedInAs, password) : undefined
+          privateStoreHandle: typeof password === 'string' && password ? await authManager.unlockVaults(signedInAs, password) : undefined
         });
-        await this.auditAuthentication(req, signedInAs, 'success', 'password; waiting for a second factor');
+        // #1758: not yet a sign-in — it is recorded when the second factor completes it.
         res.cookie(TWO_STEP_COOKIE, binding, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60_000, path: '/login' });
         req.session.pendingSignIn = handle;
         req.session.pendingRedirect = redirect;
@@ -6968,21 +6911,14 @@ ${panes}
       // "did the attacker eventually get in", which is the question that
       // matters after a run of them.
 
-      // #1043: new session ID before the identity lands on it.
-      await this.regenerateSession(req);
-
-      // Store username in express-session
-      req.session.username = result.username || username;
-      req.session.isAuthenticated = true;
-      this.stampSignIn(req, result);
-      await this.stampSessionGeneration(req);
-
-      // #1391: KEK/DEK live in the process bag, keyed by a random handle — never
-      // the session id, never express-session JSON, never on PageManager. The
-      // handle rides on the session and on the request subject (#1382).
-      if (typeof password === 'string' && password) {
-        req.session.privateStoreHandle = await this.unlockStoresWithPassword(result.username || username, password);
-      }
+      // #1758: the one completion step — a new session (#1043), the identity,
+      // how it signed in, and the stores unlocked with the password. KEK/DEK
+      // live in the process bag keyed by a random handle (#1391), never in
+      // the session JSON.
+      await authManager.completeSignIn(req, { ...result, username: result.username || username }, {
+        method: 'password',
+        ...(typeof password === 'string' && password ? { unlockWith: { password } } : {})
+      });
 
       logger.info(`👤 User logged in: ${result.username || username}`);
 
@@ -7086,7 +7022,7 @@ ${panes}
         return res.redirect('/login?error=Invalid+link');
       }
 
-      const result = await authManager.authenticate('magic-link', { token });
+      const result = await authManager.authenticate('magic-link', { token }, this.attemptFrom(req, 'sign-in'));
       if (!result.success) {
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
@@ -7141,7 +7077,7 @@ ${panes}
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
 
-      const result = await authManager.authenticate('magic-link', { token });
+      const result = await authManager.authenticate('magic-link', { token }, this.attemptFrom(req, 'sign-in'));
       if (!result.success) {
         return res.redirect('/login?error=Link+expired+or+already+used');
       }
@@ -7195,13 +7131,7 @@ ${panes}
         return res.redirect('/login?error=This+link+must+be+opened+on+the+device+that+requested+it');
       }
 
-      await this.regenerateSession(req); // #1043
-
-      req.session.username = result.username;
-      req.session.isAuthenticated = true;
-
-      this.stampSignIn(req, result);
-      await this.stampSessionGeneration(req);
+      await authManager.completeSignIn(req, result, { method: 'magic-link' }); // #1758: the one completion step
 
       logger.info(`👤 User logged in via magic link: ${result.username}`);
 
@@ -7262,7 +7192,7 @@ ${panes}
 
       const deviceState = (req.cookies as Record<string, string> | undefined)?.[OAUTH_STATE_COOKIE];
       res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
-      const result = await authManager.authenticate('google-oidc', { token: code, state, deviceState });
+      const result = await authManager.authenticate('google-oidc', { token: code, state, deviceState }, this.attemptFrom(req, 'sign-in'));
 
       if (!result.success) {
         const configManager = this.engine.getManager('ConfigurationManager');
@@ -7281,13 +7211,7 @@ ${panes}
         return res.redirect('/login?error=Sign-in+link+already+used');
       }
 
-      await this.regenerateSession(req); // #1043
-
-      req.session.username = result.username;
-      req.session.isAuthenticated = true;
-
-      this.stampSignIn(req, result);
-      await this.stampSessionGeneration(req);
+      await authManager.completeSignIn(req, result, { method: 'google-oidc' }); // #1758: the one completion step
 
       logger.info(`👤 User logged in via Google: ${result.username}`);
 
@@ -9639,7 +9563,7 @@ ${panes}
 
       await userManager.updateUser(currentUser.username, updates, currentUser);
       // #1482: a new password ends the account's other sessions, not this one.
-      if (updates.password) await this.stampSessionGeneration(req, currentUser.username);
+      if (updates.password) await this.engine.getManager<AuthManager>('AuthManager')?.stampSessionGeneration(req, currentUser.username);
 
       // Rename profile page if requested
       const oldPageName = (originalProfilePage as string || '').trim();
@@ -11172,7 +11096,7 @@ ${panes}
       const success = await userManager.updateUser(username, updates, currentUser);
       // #1482: an administrator who sets their own password stays signed in here.
       if (success && updates.password && username === currentUser.username) {
-        await this.stampSessionGeneration(req, username);
+        await this.engine.getManager<AuthManager>('AuthManager')?.stampSessionGeneration(req, username);
       }
 
       if (success) {
@@ -15190,6 +15114,8 @@ ${panes}
    * @param {Express} app - Express application instance
    */
   registerRoutes(app: Application) {
+    // #1758: the vault code's unlocker, handed to AuthManager's sign-in completion step.
+    this.engine.getManager<AuthManager>('AuthManager')?.setVaultUnlocker?.((username, password) => this.unlockStoresWithPassword(username, password));
     // API routes first to prevent conflicts
     logger.debug('ROUTES DEBUG: Registering /api/preview route');
     app.post('/api/preview', (req: Request, res: Response) => this.previewPage(req, res));

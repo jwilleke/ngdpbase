@@ -68,6 +68,10 @@ import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.j
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
+import type { Request } from 'express';
+import { endSession } from '../utils/sessionEnd.js';
+import { generateCsrfToken } from '../middleware/csrf.js';
+import { sessionGenerationOf } from '../utils/sessionGeneration.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -810,9 +814,10 @@ class AuthManager extends BaseManager {
   /**
    * Authenticate using the specified provider — the one door (#1758).
    *
-   * A sign-in method (a provider listed in `ngdpbase.auth.factors`) has every
-   * check audited here, success and failure, with where it came from; a
-   * successful sign-in (not a re-check) counts on the account. A request
+   * A sign-in method (a provider listed in `ngdpbase.auth.factors`) has its
+   * failures and its re-checks audited here, with where they came from; a
+   * successful sign-in is recorded, and counted on the account, when it
+   * completes (`completeSignIn`), once with every factor it took. A request
    * credential (agent token, app token, gateway header) is checked on every
    * API request and is not audited per request.
    */
@@ -849,17 +854,9 @@ class AuthManager extends BaseManager {
         ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
         : [];
 
-      if (factor) {
-        await this.auditCheck(attempt, result.username, providerId, 'success', purpose === 're-check' ? `re-check: ${providerId}` : providerId);
-        if (purpose === 'sign-in') {
-          try {
-            await this.engine.getManager<{ recordSignIn?(username: string): Promise<void> }>('UserManager')?.recordSignIn?.(result.username);
-          } catch (err) {
-            // A sign-in that succeeded stays a success; only the count is lost.
-            logger.warn(`[AuthManager] could not count the sign-in for ${result.username}:`, err);
-          }
-        }
-      }
+      // A re-check's success is recorded here; a sign-in's when it completes
+      // (completeSignIn), once, with every factor it took.
+      if (factor && purpose === 're-check') await this.auditCheck(attempt, result.username, providerId, 'success', `re-check: ${providerId}`);
 
       // #946: pass through a token provider's viaToken detail, if any.
       // #1048: read directly — `AuthResult` now declares the field, so the
@@ -1029,6 +1026,95 @@ class AuthManager extends BaseManager {
   /** Whether `username` has enrolled a credential of `kind` — for the step-down banner (#448). */
   hasCredential(username: string, kind: CredentialKind): boolean {
     return Boolean(this.credentials?.list(username).some(c => c.kind === kind));
+  }
+
+  /**
+   * The one sign-in completion step (#1758): every way a person finishes
+   * signing in — a password, a passkey, a second factor, an email link, an
+   * outside provider — ends here, so none can forget a part.
+   *
+   * - A new session (#1043; a session already signed in on it ends, #1626).
+   * - The person, `isAuthenticated`, how they signed in (`session.signIn`,
+   *   #1523) and the account's password-change generation (#1482).
+   * - Their private stores: a handle already unlocked (a two-step sign-in
+   *   unlocked at the password), or the password handed to the vault code
+   *   through the registered unlocker (#1594 adds a passkey's PRF output).
+   * - One audit record of the completed sign-in, naming how, and the count on
+   *   the account. `authenticate()` records failures and re-checks; a
+   *   successful sign-in is recorded here, once, when it is complete.
+   *
+   * The route saves the session and answers.
+   */
+  async completeSignIn(
+    req: Request,
+    result: AuthenticateResult,
+    how: { method: string; unlockWith?: { password: string }; privateStoreHandle?: string }
+  ): Promise<void> {
+    const username = result.username;
+    if (!username) throw new Error('completeSignIn needs a signed-in username');
+    await this.regenerate(req);
+    req.session.username = username;
+    req.session.isAuthenticated = true;
+    const record = this.signInRecord(result);
+    if (record) req.session.signIn = record; else delete req.session.signIn;
+    await this.stampSessionGeneration(req, username);
+    if (how.unlockWith && !this.vaultUnlocker && !this.warnedNoUnlocker) {
+      // Never silent: a sign-in that should open the person's stores and can't.
+      this.warnedNoUnlocker = true;
+      logger.warn('[AuthManager] a sign-in brought unlock material but no vault unlocker is registered; private stores stay locked (#1758)');
+    }
+    const handle = how.privateStoreHandle
+      ?? (how.unlockWith && this.vaultUnlocker ? await this.vaultUnlocker(username, how.unlockWith.password) : undefined);
+    if (handle) req.session.privateStoreHandle = handle;
+    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`);
+    try {
+      await this.engine.getManager<{ recordSignIn?(u: string): Promise<void> }>('UserManager')?.recordSignIn?.(username);
+    } catch (err) {
+      logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
+    }
+  }
+
+  /**
+   * Stamp the session with the account's password-change generation (#1482):
+   * at every sign-in, and on the session that changed the password, so that
+   * one stays signed in while every other session of the account ends.
+   */
+  async stampSessionGeneration(req: Request, username: string): Promise<void> {
+    if (!req.session) return;
+    const account = await this.engine.getManager<{ getUser(u: string): Promise<unknown> }>('UserManager')?.getUser(username) as { sessionGeneration?: number } | null | undefined;
+    req.session.sessionGeneration = sessionGenerationOf(account);
+  }
+
+  /**
+   * The vault code's unlocker (#1758, #1594): given who signed in and their
+   * password, unlock their private stores and return the session's handle.
+   * Registered by whoever owns the vault code (today the routes, #1382);
+   * sign-in completion and a two-step sign-in hand it the material, so no
+   * route unlocks stores itself.
+   */
+  setVaultUnlocker(unlock: (username: string, password: string) => Promise<string>): void {
+    this.vaultUnlocker = unlock;
+  }
+
+  /** Unlock `username`'s stores with their password through the registered unlocker, or none. */
+  async unlockVaults(username: string, password: string): Promise<string | undefined> {
+    return this.vaultUnlocker ? this.vaultUnlocker(username, password) : undefined;
+  }
+
+  private vaultUnlocker: ((username: string, password: string) => Promise<string>) | null = null;
+  private warnedNoUnlocker = false;
+
+  /** A fresh session for a sign-in (#1043); the one already on it ends first (#1626, #1670). */
+  private regenerate(req: Request): Promise<void> {
+    endSession(this.engine, req.session, 'superseded', { ipAddress: req.ip, userAgent: req.get?.('user-agent') });
+    return new Promise((resolve) => {
+      if (typeof req.session?.regenerate !== 'function') { resolve(); return; }
+      req.session.regenerate((err) => {
+        if (err) logger.error('Error regenerating session on sign-in (#1043):', err);
+        else req.session.csrfToken = generateCsrfToken();
+        resolve();
+      });
+    });
   }
 
   /**
