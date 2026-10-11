@@ -162,7 +162,7 @@ import type AssetService from '../managers/AssetService.js';
 import type AttachmentManager from '../managers/AttachmentManager.js';
 import { AUDIT_WRITE_FAILED } from '../managers/AttachmentManager.js';
 import type AuthManager from '../managers/AuthManager.js';
-import type { AuthenticateResult } from '../managers/AuthManager.js';
+import type { AuthenticateResult, AuthAttempt } from '../managers/AuthManager.js';
 import type BackgroundJobManager from '../managers/BackgroundJobManager.js';
 import { JobActionError } from '../managers/BackgroundJobManager.js';
 import type BackupManager from '../managers/BackupManager.js';
@@ -307,7 +307,6 @@ interface IUserManager {
   createUser(data: unknown, ctx: ActorContext): Promise<unknown>;
   updateUser(username: string, data: unknown, ctx: ActorContext): Promise<unknown>;
   deleteUser(username: string, ctx: ActorContext): Promise<unknown>;
-  authenticateUser(username: string, password: string): Promise<unknown>;
   /** #1452: a forgotten password, reset with the recovery words. */
   resetPasswordWithRecoveryWords(username: string, words: string, newPassword: string, ctx: ActorContext): Promise<boolean>;
   getSession(req: Request): Promise<unknown>;
@@ -6540,9 +6539,9 @@ ${panes}
       await this.renderReauth(req, res, { error: 'Too many attempts. Wait a few minutes and try again.' });
       return;
     }
-    const result = password && authManager ? await authManager.authenticate('password', { username, password }) : { success: false };
+    const result = password && authManager ? await authManager.authenticate('password', { username, password }, this.attemptFrom(req, 're-check')) : { success: false };
     if (!result.success || result.username !== username) {
-      await this.recordFailedSecret(req, username, 'invalid password at step-up');
+      this.countFailedSecret(req, username); // #1758: AuthManager audits the check
       await this.auditReauth(req, AUDIT_EVENT.REAUTH_FAILURE, 'failure', 'password', 'wrong password');
       await this.renderReauth(req, res, { error: 'That password is not correct.' });
       return;
@@ -6619,9 +6618,8 @@ ${panes}
     }
     const body = req.body as { response?: unknown; redirect?: unknown };
     const authManager = this.engine.getManager('AuthManager');
-    const result = await authManager.authenticate('passkey', { webauthn: { response: body.response, expectedChallenge: challenge } });
+    const result = await authManager.authenticate('passkey', { webauthn: { response: body.response, expectedChallenge: challenge } }, this.attemptFrom(req, 'sign-in'));
     if (!result.success || !result.username) {
-      await this.auditAuthentication(req, undefined, 'failure', 'passkey');
       res.status(401).json({ error: 'Sign-in with that passkey failed' });
       return;
     }
@@ -6630,7 +6628,6 @@ ${panes}
     req.session.isAuthenticated = true;
     this.stampSignIn(req, result);
     await this.stampSessionGeneration(req);
-    await this.auditAuthentication(req, result.username, 'success', 'passkey');
     logger.info(`👤 User logged in with a passkey: ${result.username}`);
     req.session.save((err) => {
       if (err) {
@@ -6873,7 +6870,6 @@ ${panes}
       // #1041: constrain once, here — both the failure redirect below and the
       // success redirect at the end embed this value.
       const redirect = safeRedirect((req.body as Record<string, unknown>).redirect);
-      const userManager = this.engine.getManager('UserManager');
       const configManager = this.engine.getManager('ConfigurationManager');
       const debugLogin = configManager.getProperty(
         'ngdpbase.logging.debug.login',
@@ -6903,10 +6899,11 @@ ${panes}
         }
       }
 
+      // #1758: the one door — AuthManager checks the password and audits it.
       const authManager = this.engine.getManager('AuthManager');
       const result = authManager
-        ? await authManager.authenticate('password', { username, password })
-        : { success: await userManager.authenticateUser(username, password).then(Boolean), username };
+        ? await authManager.authenticate('password', { username, password }, this.attemptFrom(req, 'sign-in'))
+        : { success: false };
 
       if (!result.success) {
         if (debugLogin)
@@ -6936,7 +6933,6 @@ ${panes}
         // by the frameworks docs/planning/Security-auditing.md scores against —
         // HIPAA 164.312(b), SOC 2 CC7 — and "several failures then a success"
         // is a pattern that only exists if the failures were recorded.
-        await this.auditAuthentication(req, username, 'failure', 'invalid username or password');
 
         return res.redirect(
           '/login?error=Invalid username or password&redirect=' +
@@ -6971,7 +6967,6 @@ ${panes}
       // #1115: the success half. A trail with only failures cannot answer
       // "did the attacker eventually get in", which is the question that
       // matters after a run of them.
-      await this.auditAuthentication(req, result.username || username, 'success', 'password');
 
       // #1043: new session ID before the identity lands on it.
       await this.regenerateSession(req);
@@ -8587,7 +8582,7 @@ ${panes}
       }
 
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (!(await this.verifyDoorPassword(req, username, password))) {
+      if (!(await this.verifyPasswordAgain(req, username, password))) {
         return await this.renderStoreDoor(req, res, kind, { step: 'intro-sealed', needsPassword: true,
           error: 'That password is not correct.' });
       }
@@ -8613,18 +8608,19 @@ ${panes}
    * throttle and the same failed-attempt record as the sign-in form: the door
    * must not be a second place to guess a password.
    */
-  private async verifyDoorPassword(req: Request, username: string, password: string): Promise<boolean> {
+  private async verifyPasswordAgain(req: Request, username: string, password: string): Promise<boolean> {
     if (!password) return false;
     if (this.secretCheckBlocked(req, username)) return false;
+    // #1758: the one door — AuthManager checks the password and audits it as a re-check.
     const authManager = this.engine.getManager('AuthManager');
-    const userManager = this.engine.getManager('UserManager');
     const result = authManager
-      ? await authManager.authenticate('password', { username, password })
-      : { success: await userManager.authenticateUser(username, password).then(Boolean) };
-    if (result.success) return true;
-    await this.recordFailedSecret(req, username, 'invalid password at a private store door');
+      ? await authManager.authenticate('password', { username, password }, this.attemptFrom(req, 're-check'))
+      : { success: false };
+    if (result.success && result.username === username) return true;
+    this.countFailedSecret(req, username);
     return false;
   }
+
 
   /**
    * Whether the sign-in throttle has this user or address blocked. Every check
@@ -8639,9 +8635,19 @@ ${panes}
 
   /** A failed secret: counted by the throttle and recorded, never with the secret itself. */
   private async recordFailedSecret(req: Request, username: string, detail: string): Promise<void> {
+    this.countFailedSecret(req, username);
+    await this.auditAuthentication(req, username, 'failure', detail);
+  }
+
+  /** Count a failed secret against the throttle only; for a check AuthManager already audited (#1758). */
+  private countFailedSecret(req: Request, username: string): void {
     const throttle = this.getLoginThrottle();
     if (throttle) for (const key of this.throttleKeys(req, username)) throttle.recordFailure(key);
-    await this.auditAuthentication(req, username, 'failure', detail);
+  }
+
+  /** Where an authentication attempt came from, for AuthManager's own audit record (#1758). */
+  private attemptFrom(req: Request, purpose: 'sign-in' | 're-check'): AuthAttempt {
+    return { ipAddress: req.ip, userAgent: req.get('user-agent'), purpose };
   }
 
   /**
@@ -8768,7 +8774,7 @@ ${panes}
   /**
    * POST /private-store/unlock (#1448).
    *
-   * The password is checked by {@link verifyDoorPassword} — the same
+   * The password is checked by {@link verifyPasswordAgain} — the same
    * verification, throttle and failed-attempt record as the sign-in form —
    * because an unlock prompt IS a password check, and a second, unthrottled
    * one would be a way to guess passwords.
@@ -8808,7 +8814,7 @@ ${panes}
       }
 
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (!(await this.verifyDoorPassword(req, state.username, password))) {
+      if (!(await this.verifyPasswordAgain(req, state.username, password))) {
         return await this.renderPrivateStoreUnlock(req, res, { next, error: 'That password is not correct.' });
       }
 
@@ -9617,10 +9623,8 @@ ${panes}
         }
 
         // Verify current password
-        const isValidPassword = await userManager.authenticateUser(
-          currentUser.username ?? '',
-          currentPassword
-        );
+        // #1758: through AuthManager, throttled like every other re-check.
+        const isValidPassword = await this.verifyPasswordAgain(req, currentUser.username ?? '', currentPassword);
         if (!isValidPassword) {
           return res.redirect('/profile?error=Current password is incorrect');
         }

@@ -593,7 +593,8 @@ describe('WikiRoutes — coverage batch 2', () => {
     });
 
     test('redirects with error when current password is wrong', async () => {
-      mockUserManager.authenticateUser.mockResolvedValue(null);
+      // #1758: the current password is checked through AuthManager, the one door.
+      mockAuthManager.authenticate.mockResolvedValue({ success: false });
 
       const res = await request(app)
         .post('/profile')
@@ -601,6 +602,54 @@ describe('WikiRoutes — coverage batch 2', () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).toMatch(/error/);
+      expect(mockUserManager.updateUser).not.toHaveBeenCalled();
+    });
+
+    test('the current password is checked through AuthManager as a re-check (#1758)', async () => {
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser' });
+
+      const res = await request(app)
+        .post('/profile')
+        .set('User-Agent', 'ProfileTest/1.0')
+        .send({ currentPassword: 'oldpass', newPassword: 'newpass123', confirmPassword: 'newpass123', _csrf: csrf });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).not.toMatch(/error/);
+      expect(mockAuthManager.authenticate).toHaveBeenCalledWith(
+        'password',
+        { username: 'testuser', password: 'oldpass' },
+        expect.objectContaining({ purpose: 're-check', userAgent: 'ProfileTest/1.0' })
+      );
+    });
+
+    test('a password from a different account than the caller is refused (#1758)', async () => {
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'someoneelse' });
+
+      const res = await request(app)
+        .post('/profile')
+        .send({ currentPassword: 'oldpass', newPassword: 'newpass123', confirmPassword: 'newpass123', _csrf: csrf });
+
+      expect(res.headers.location).toMatch(/error/);
+      expect(mockUserManager.updateUser).not.toHaveBeenCalled();
+    });
+
+    test('a throttled caller is refused without the password being checked (#1758)', async () => {
+      // Previously the profile form checked the password unthrottled — a way to
+      // guess around the sign-in form's limits. It now shares the throttle.
+      const blocked = vi.spyOn(WikiRoutes.prototype as unknown as { secretCheckBlocked: () => boolean }, 'secretCheckBlocked').mockReturnValue(true);
+      try {
+        const res = await request(app)
+          .post('/profile')
+          .send({ currentPassword: 'oldpass', newPassword: 'newpass123', confirmPassword: 'newpass123', _csrf: csrf });
+
+        expect(res.status).toBe(302);
+        expect(res.headers.location).toMatch(/error/);
+        expect(blocked).toHaveBeenCalled();
+        expect(mockAuthManager.authenticate).not.toHaveBeenCalled();
+        expect(mockUserManager.updateUser).not.toHaveBeenCalled();
+      } finally {
+        blocked.mockRestore();
+      }
     });
 
     test('redirects with error when external user tries to change password', async () => {

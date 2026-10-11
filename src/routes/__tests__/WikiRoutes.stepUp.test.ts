@@ -107,6 +107,9 @@ describe('re-authentication with the password (#1525)', () => {
     const s = session();
     const out = res();
     await r.reauthWithPassword(req(s, { body: { password: 'right', next: '/profile' } }), out);
+    // #1758: checked (and audited) by AuthManager as a re-check, never counted as a sign-in.
+    expect(authManager.authenticate).toHaveBeenCalledWith('password', { username: 'molly', password: 'right' },
+      { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 're-check' });
     expect(authManager.reauthenticated).toHaveBeenCalled();
     expect(s.signIn).toEqual(expect.objectContaining({ at: 'now' }));
     expect(out.redirect).toHaveBeenCalledWith('/profile');
