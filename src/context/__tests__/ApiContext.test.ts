@@ -3,6 +3,7 @@
 import { ApiContext, ApiError } from '../ApiContext';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import type { Request } from 'express';
+import AuthManager from '../../managers/AuthManager';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -262,14 +263,23 @@ describe('ApiContext#requirePermission()', () => {
 
 describe('#1745 ApiContext#requirePermission() answers step-up with the way to re-authenticate', () => {
   function engineWith({ permits, holds, audit = [] as unknown[] }: { permits: boolean; holds: boolean; audit?: unknown[] }) {
-    return {
+    // #1758: step-up's answer and record are AuthManager's; the real ones, on a double.
+    const authManager = {
+      engine: null as unknown,
+      askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
+      recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); }
+    };
+    const engine = {
       audit,
       getManager: vi.fn((name: string) => {
         if (name === 'PolicyDecisionPoint') return { permits: vi.fn().mockResolvedValue(permits), holds: vi.fn().mockResolvedValue(holds) };
         if (name === 'AuditManager') return { logAuditEvent: vi.fn(async (e: unknown) => { audit.push(e); }) };
+        if (name === 'AuthManager') return authManager;
         return null;
       })
     };
+    authManager.engine = engine;
+    return engine;
   }
   function postFrom(page: string, userContext: Record<string, unknown> = { username: 'tess', roles: ['treasurer'], isAuthenticated: true }) {
     return {

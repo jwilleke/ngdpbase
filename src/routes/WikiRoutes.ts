@@ -186,7 +186,6 @@ import { acceptedSystemCategory } from '../utils/acceptedSystemCategory.js';
 import type VariableManager from '../managers/VariableManager.js';
 import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
-import { auditReauth, freshSignInAnswer } from '../security/freshSignIn.js';
 import { stripAclMarkup } from '../parsers/aclMarkup.js';
 import { privateStoreLockedFor } from '../utils/privateStoreLock.js';
 import { LoginThrottle } from '../utils/LoginThrottle.js';
@@ -2324,7 +2323,7 @@ class WikiRoutes {
    * person holds because their sign-in is not fresh enough. A page goes to
    * /auth/reauth and comes back; JSON is told where it is. The answer itself
    * is built in one place for core and add-on routes alike (#1745,
-   * security/freshSignIn.ts); this only sends it.
+   * AuthManager.askForFreshSignIn, #1758); this only sends it.
    */
   private async askForFreshSignIn(
     wikiContext: { userContext: unknown },
@@ -2333,14 +2332,18 @@ class WikiRoutes {
     res: Response,
     mode: 'json' | 'page' | 'text'
   ): Promise<void> {
-    const answer = await freshSignInAnswer(this.engine, req, wikiContext.userContext, permission, mode);
+    // #1758: step-up is AuthManager's; without it the refusal carries no way to re-authenticate.
+    const answer = await this.engine.getManager<AuthManager>('AuthManager')?.askForFreshSignIn(req, wikiContext.userContext, permission, mode)
+      ?? { permission, delegated: false, error: 'A fresh sign-in is needed' };
     // A delegated credential gets no reauth; in page mode it is answered as JSON, as before.
     sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' && !answer.reauth ? 'json' : mode);
   }
 
   private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
-    await auditReauth(this.engine, req, eventType, result, permission, detail);
+    // #1758: the step-up record is AuthManager's.
+    await this.engine.getManager<AuthManager>('AuthManager')?.recordReauth(req, eventType, result, permission, detail);
   }
+
 
   async renderError(req: Request, res: Response, status: number, title: string, message: string) {
     try {
@@ -6536,15 +6539,14 @@ ${panes}
 
   /** Record the fresh factor on the session's sign-in, audit it, and answer. */
   private async completeReauth(req: Request, res: Response, result: AuthenticateResult, method: string, answer: () => void): Promise<void> {
-    const authManager = this.engine.getManager<AuthManager>('AuthManager');
-    const record = authManager?.reauthenticated(req.session.signIn, result) ?? null;
-    if (record) req.session.signIn = record;
-    await this.auditReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', method, `re-authenticated with ${method}; acr ${record?.acr ?? 'unknown'}`);
+    // #1758: re-authentication completes in AuthManager; the route saves and answers.
+    await this.engine.getManager<AuthManager>('AuthManager')?.completeReauth(req, result, method);
     req.session.save((err) => {
       if (err) { res.status(500).send('Session save failed'); return; }
       answer();
     });
   }
+
 
   /** GET /auth/passkey/authenticate/options — anyone may start a passkey sign-in (#448). */
   async passkeyAuthenticateOptions(req: Request, res: Response): Promise<void> {

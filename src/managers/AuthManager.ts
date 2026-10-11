@@ -66,12 +66,13 @@ import {
 } from '../providers/BaseCredentialsProvider.js';
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
-import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { safeRedirect } from '../utils/safeRedirect.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -215,6 +216,39 @@ export interface SignInRecord extends Assurance {
   factors: SatisfiedFactor[];
   /** When the sign-in completed, RFC 3339. */
   at: string;
+}
+
+/** How a refused request wants its answer: a page to redirect, JSON, or plain text (#1745). */
+export type ReauthMode = 'json' | 'page' | 'text';
+
+/** The step-up answer (#1525, #1635), for the caller to send in its own form. */
+export interface FreshSignInAnswer {
+  /** The refused permission. */
+  permission: string;
+  /** An agent token or share link: it can never give a fresh sign-in, so there is no `reauth`. */
+  delegated: boolean;
+  /** What to tell the person. */
+  error: string;
+  /** Where to re-authenticate, returning to the page they were on. Absent for a delegated credential. */
+  reauth?: string;
+}
+
+/**
+ * Where to return after re-authenticating: this page for a page GET, and the
+ * page the person was on for anything else — a POST (the form is filled in
+ * again; a POST body is not replayed) or a script's request for data (#1738).
+ * Always a path on this site.
+ */
+export function reauthReturnTo(req: Request, mode: ReauthMode = 'page'): string {
+  if (req.method === 'GET' && mode === 'page') return safeRedirect(req.originalUrl || '/');
+  const referer = req.get('referer');
+  if (!referer) return '/';
+  try {
+    const url = new URL(referer);
+    return safeRedirect(url.pathname + url.search);
+  } catch {
+    return '/';
+  }
 }
 
 /**
@@ -1026,6 +1060,55 @@ class AuthManager extends BaseManager {
   /** Whether `username` has enrolled a credential of `kind` — for the step-down banner (#448). */
   hasCredential(username: string, kind: CredentialKind): boolean {
     return Boolean(this.credentials?.list(username).some(c => c.kind === kind));
+  }
+
+  /**
+   * Step-up is AuthManager's (#1758, decided 2026-10-11): the freshness rule
+   * (`stepUpNeeded`), the answer to a refused request, re-authentication and
+   * its audit. The PDP stays the decider and asks `stepUpNeeded`.
+   *
+   * The answer for a person who holds `permission` but whose sign-in is not
+   * fresh enough, with the `reauth-prompt` recorded. A delegated credential is
+   * refused outright: it can never give a fresh factor.
+   */
+  async askForFreshSignIn(req: Request, userContext: unknown, permission: string, mode: ReauthMode): Promise<FreshSignInAnswer> {
+    const user = (userContext ?? {}) as { viaToken?: unknown; viaShare?: unknown };
+    const delegated = Boolean(user.viaToken || user.viaShare);
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_PROMPT, 'failure', permission, delegated ? 'delegated credential cannot re-authenticate' : 'fresh sign-in asked for');
+    if (delegated) return { permission, delegated, error: 'This needs a fresh sign-in by the person; a token cannot give one' };
+    return {
+      permission,
+      delegated,
+      error: 'A fresh sign-in is needed',
+      reauth: `/auth/reauth?next=${encodeURIComponent(reauthReturnTo(req, mode))}`
+    };
+  }
+
+  /** Record a step-up event: a prompt, a success or a failure (#1525). */
+  async recordReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType,
+      user: typeof req.session?.username === 'string' ? req.session.username : 'anonymous',
+      ipAddress: req.ip,
+      action: eventType,
+      result,
+      severity: eventType === AUDIT_EVENT.REAUTH_FAILURE ? 'medium' : 'low',
+      resource: permission,
+      resourceType: 'permission',
+      metadata: { detail }
+    }, (err) => logger.warn(`[step-up] audit record failed for ${eventType}:`, err));
+  }
+
+  /**
+   * A re-authentication completes (#1525, #1758): the session's sign-in record
+   * gains the fresh factor, and the success is recorded. The route saves the
+   * session and answers.
+   */
+  async completeReauth(req: Request, result: AuthenticateResult, method: string): Promise<SignInRecord | null> {
+    const record = this.reauthenticated(req.session.signIn, result);
+    if (record) req.session.signIn = record;
+    await this.recordReauth(req, AUDIT_EVENT.REAUTH_SUCCESS, 'success', method, `re-authenticated with ${method}; acr ${record?.acr ?? 'unknown'}`);
+    return record;
   }
 
   /**
