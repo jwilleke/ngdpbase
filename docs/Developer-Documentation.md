@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 41 | 46 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 45 | 46 | Storage and service providers |
+| [Providers](#providers) | 45 | 47 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -188,12 +188,13 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileSystemMediaProvider | ✅ [doc](providers/FileSystemMediaProvider.md) | Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend |
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
 | FileUserProvider | 📘 [doc](providers/FileUserProvider.md) + [guide](providers/FileUserProvider-Complete-Guide.md) | JSON-file user, role, and session storage — the default UserManager backend |
-| OidcAuthProvider | ✅ [doc](providers/OidcAuthProvider.md) | Sign-in through any outside OpenID Connect provider (Google by preset), by an identity connected to the account (#1743); replaces GoogleOIDCProvider |
+| GoogleOIDCProvider | ✅ [doc](providers/GoogleOIDCProvider.md) | Retired — Google sign-in is now the generic OidcAuthProvider with the google preset |
 | LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory full-text search index (MiniSearch, Lunr query syntax and stemming) — default backend for SearchManager |
 | MagicLinkAuthProvider | ✅ [doc](providers/MagicLinkAuthProvider.md) | Email-based passwordless authentication — user gets a single-use verification link |
 | NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |
 | NullAuditProvider | ✅ [doc](providers/NullAuditProvider.md) | Discards all audit events — for tests and minimal-config deployments where auditing is off |
 | NullCacheProvider | ✅ [doc](providers/NullCacheProvider.md) | No-op cache — every get is a miss; every set is discarded |
+| OidcAuthProvider | ✅ [doc](providers/OidcAuthProvider.md) | Sign-in through any outside OpenID Connect provider, by an identity connected to the account |
 | OidcBearerAuthProvider | ✅ [doc](providers/OidcBearerAuthProvider.md) | Accepts access tokens from this instance's own OpenID Connect provider on ngdpbase's API, as a delegation from the person (#1576) |
 | PasskeyAuthProvider | ✅ [doc](providers/PasskeyAuthProvider.md) | Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a person in at AAL2, phishing-resistant, tied to the base-url host (#448) |
 | PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
