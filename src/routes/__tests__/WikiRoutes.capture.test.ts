@@ -563,7 +563,9 @@ describe('WikiRoutes capture (#881)', () => {
 
     test('redirects anonymous callers to login', async () => {
       const res = createMockRes();
-      await capturesRoutes().myCapturesPage(myReq(ANONYMOUS_SUBJECT), res);
+      const req = myReq(ANONYMOUS_SUBJECT);
+      Object.assign(res, { req }); // as Express does: the refusal reads the return page from res.req
+      await capturesRoutes().myCapturesPage(req, res);
       expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/my/captures'));
       expect(mockGetPagesByCreator).not.toHaveBeenCalled();
     });

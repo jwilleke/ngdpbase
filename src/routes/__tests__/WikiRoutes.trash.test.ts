@@ -96,7 +96,9 @@ describe('GET /admin/trash — authorisation (#969)', () => {
     // The API answers 401 JSON; a browser tab needs somewhere to go.
     const res = createMockRes();
     // #1198: policy refuses the anonymous subject; the refusal is the redirect.
-    await makeRoutes({ permits: false }).adminTrash(createMockReq(ANONYMOUS_SUBJECT), res);
+    const req = createMockReq(ANONYMOUS_SUBJECT);
+    Object.assign(res, { req }); // as Express does: the refusal reads the return page from res.req
+    await makeRoutes({ permits: false }).adminTrash(req, res);
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=' + encodeURIComponent('/admin/trash'));
     expect(res.render).not.toHaveBeenCalled();
   });

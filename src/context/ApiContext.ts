@@ -58,12 +58,21 @@ export class ApiError extends Error {
 /**
  * Send a refusal — the one way it reaches the client, from core routes and
  * every add-on route alike (#1749). JSON is `{ success: false, error, reauth? }`;
- * text is the message, then where to sign in again for a step-up refusal. A
- * route never writes its own refusal: the step-up `reauth` is easy to drop.
+ * text is the message, then where to sign in again for a step-up refusal.
+ * `page` is for a link the person followed in the browser: a step-up refusal
+ * redirects to the re-authenticate page, a 401 to sign-in (returning here),
+ * anything else is the message as text. A route never writes its own refusal:
+ * the step-up `reauth` is easy to drop.
  */
-export function sendApiError(res: Response, err: ApiError, mode: Exclude<ReauthMode, 'page'> = 'json'): void {
+export function sendApiError(res: Response, err: ApiError, mode: ReauthMode = 'json'): void {
   // Only this site's re-authenticate page: an add-on's ApiError cannot send the person elsewhere.
   const reauth = typeof err.reauth === 'string' && err.reauth.startsWith('/auth/reauth?') ? err.reauth : undefined;
+  if (mode === 'page') {
+    if (reauth) { res.redirect(reauth); return; }
+    if (err.status === 401) { res.redirect('/login?redirect=' + encodeURIComponent(res.req?.originalUrl || '/')); return; }
+    res.status(err.status).send(err.message);
+    return;
+  }
   if (mode === 'text') {
     res.status(err.status).send(reauth ? `${err.message}: ${reauth}` : err.message);
     return;

@@ -2193,7 +2193,7 @@ class WikiRoutes {
   ): Promise<void> {
     const anonymous = !wikiContext.userContext?.isAuthenticated;
     if (mode === 'page') {
-      if (anonymous) { res.redirect('/login?redirect=' + encodeURIComponent(req.originalUrl || '/')); return; }
+      if (anonymous) { sendApiError(res, new ApiError(401, 'Authentication required'), 'page'); return; }
       await this.renderError(req, res, 403, 'Access Denied', permission
         ? `You do not have permission to do this (${permission})`
         : 'You do not have permission to do this');
@@ -2337,8 +2337,8 @@ class WikiRoutes {
     mode: 'json' | 'page' | 'text'
   ): Promise<void> {
     const answer = await freshSignInAnswer(this.engine, req, wikiContext.userContext, permission, mode);
-    if (mode === 'page' && answer.reauth) { res.redirect(answer.reauth); return; }
-    sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' ? 'json' : mode);
+    // A delegated credential gets no reauth; in page mode it is answered as JSON, as before.
+    sendApiError(res, new ApiError(403, answer.error, answer.reauth), mode === 'page' && !answer.reauth ? 'json' : mode);
   }
 
   private async auditReauth(req: Request, eventType: AuditEventName, result: 'success' | 'failure', permission: string, detail: string): Promise<void> {

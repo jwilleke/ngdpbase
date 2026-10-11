@@ -118,7 +118,9 @@ describe('store door routes (#1414)', () => {
       holdsPermission: async () => false // #1635
     }) as never);
     const res = newRes();
-    await routes.storeDoorEnter({ ...(req('default', {}, anonymous) as object), originalUrl: '/stores/default' }, res);
+    const request = { ...(req('default', {}, anonymous) as object), originalUrl: '/stores/default' };
+    Object.assign(res, { req: request }); // as Express does: the refusal reads the return page from res.req
+    await routes.storeDoorEnter(request, res);
 
     expect(res.redirect).toHaveBeenCalledWith('/login?redirect=%2Fstores%2Fdefault');
     expect(audit.logAuditEvent).not.toHaveBeenCalled();
