@@ -83,6 +83,8 @@ interface FlowState {
   oidcNonce: string;
   /** The account an identity is being connected to; absent for a sign-in. */
   connectFor?: string;
+  /** A sign-in's verified identity that no account has connected (#1743 slice 3), for AuthManager's email step. */
+  unconnected?: OidcIdentity;
 }
 
 interface Discovery {
@@ -178,7 +180,9 @@ export class OidcAuthProvider implements AuthProvider {
   /**
    * Finish a sign-in: the account whose connected identity this is, or null.
    * A flow started to connect never signs in. An identity connected to no
-   * account is refused; nothing here says whether an account exists.
+   * account is refused, and kept on the flow until it is consumed, so
+   * AuthManager can decide what happens next (`unconnectedIdentity`);
+   * nothing here says whether an account exists.
    */
   async verify(credentials: AuthVerifyCredentials): Promise<AuthResult | null> {
     const identity = await this.redeem(credentials, null);
@@ -186,6 +190,8 @@ export class OidcAuthProvider implements AuthProvider {
     const row = this.identities.find(identity.subject);
     if (!row) {
       logger.info(`[OidcAuthProvider:${this.config.name}] an identity connected to no account was refused`);
+      const flow = credentials.state ? this.flows.get(credentials.state) : undefined;
+      if (flow) flow.unconnected = identity;
       return null;
     }
     try {
@@ -202,6 +208,14 @@ export class OidcAuthProvider implements AuthProvider {
    */
   async verifyIdentity(credentials: AuthVerifyCredentials, username: string): Promise<OidcIdentity | null> {
     return this.redeem(credentials, username);
+  }
+
+  /**
+   * The verified identity a refused sign-in brought that no account has
+   * connected, or null; read before `consumeToken` (#1743 slice 3).
+   */
+  unconnectedIdentity(state: string): OidcIdentity | null {
+    return this.flows.get(state)?.unconnected ?? null;
   }
 
   /** Spend the flow's state; true only for the caller that did (#1021). */

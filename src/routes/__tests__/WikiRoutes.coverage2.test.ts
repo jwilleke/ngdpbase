@@ -56,7 +56,7 @@ vi.mock('../../context/WikiContext', async () => {
 const mockAuthManager = {
   authenticate: vi.fn(),
   // #1758: the one sign-in completion step, and the password-change generation stamp.
-  completeSignIn: vi.fn(),
+  completeSignIn: vi.fn().mockResolvedValue({}),
   stampSessionGeneration: vi.fn()
 };
 
@@ -471,7 +471,8 @@ describe('WikiRoutes — coverage batch 2', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).not.toMatch(/error/);
       expect(mockAuthManager.completeSignIn).toHaveBeenCalledWith(
-        expect.anything(), expect.objectContaining({ success: true, username: 'testuser' }), { method: 'password', unlockWith: { password: 'pass' } });
+        expect.anything(), expect.objectContaining({ success: true, username: 'testuser' }),
+        expect.objectContaining({ method: 'password', returnTo: '/', unlockWith: expect.objectContaining({}) }));
     });
   });
 

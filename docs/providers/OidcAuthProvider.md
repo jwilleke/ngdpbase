@@ -12,15 +12,18 @@ Signs people in through an outside OpenID Connect provider (Google, a self-hoste
 
 ## What an outside sign-in may do
 
-- __Only a connected identity signs in.__ The identity is the issuer plus the subject (`iss` + `sub`, OIDC Core §5.7), kept as a credentials-store row of kind `identity` (subject `${issuer}#${sub}`, label the provider's name, secret the provider's verified email or `''`). A sign-in whose identity is connected to no account is refused, with a message that does not say whether an account exists.
+- __Only a connected identity signs in.__ The identity is the issuer plus the subject (`iss` + `sub`, OIDC Core §5.7), kept as a credentials-store row of kind `identity` (subject `${issuer}#${sub}`, label the provider's name, secret the provider's verified email or `''`). A sign-in whose identity is connected to no account signs nobody in: the provider keeps the verified identity on the flow (`unconnectedIdentity`) and AuthManager decides what happens next (below).
 - __Email never signs anyone in__ and never finds an account. Only an address the provider reports verified (`email_verified === true`) is kept on the row, and it is refreshed at each sign-in.
 - __No roles.__ Groups and roles claims are never read.
-- __No account is created.__ Account creation (`auto-provision`) and the email step are still to be built; until then a person connects the identity from their profile first.
+- __The email step.__ An identity connected to no account is held in the session as a pending connection for 5 minutes (one at a time), and the sign-in page says "Sign in to connect your *Provider* account (*email*)", with __Don't connect it__ to cancel. After the person's next sign-in, by any method, they are asked whether that account is theirs (`/login/connect/confirm`). Only __Connect__ connects it, after checking again that it has not expired or been connected to another account meanwhile; the profile says what happened. A sign-in never connects it alone: on a shared computer it may be the previous person's. Declined or ignored, nothing is connected; signing out drops it. Nothing is looked up by email, so the page is the same whether or not an account has that address.
+- __Account creation__ only when `ngdpbase.auth.oidc.auto-provision`, the entry's own `auto-provision` and `ngdpbase.application.registration` are all true, and only for an email the provider verified. The account is made as magic-link auto-provisioning makes one: a username from the email, no password, registration's default roles (the provider gives none). The identity is then connected and the person signed in; if it cannot be connected, the new account is deleted again and nobody is signed in. An email that already belongs to an account creates nothing: the person gets the email step with the email-taken message. Without a verified email, the email step.
 - __No tokens are kept.__ The access token in the token response is discarded; there is no refresh token.
 
 ## Flows
 
-- __Sign in__: `POST /auth/oauth/<name>` → `AuthManager.startFlow` → the provider's authorization endpoint → `GET /auth/oauth/<name>/callback` → `AuthManager.authenticate('oidc:<name>', …)` → `completeSignIn(req, result, { method: 'oidc:<name>' })`. Google's URLs are these with `<name>` = `google`.
+- __Sign in__: `POST /auth/oauth/<name>` → `AuthManager.startFlow` → the provider's authorization endpoint → `GET /auth/oauth/<name>/callback` → `AuthManager.finishOutsideSignIn`, which runs `authenticate('oidc:<name>', …)` and then `completeSignIn(req, result, { method: 'oidc:<name>' })` for a connected identity, creates the account first where allowed, or holds the identity for the email step. Google's URLs are these with `<name>` = `google`.
+- __Cancel the email step__: `POST /login/connect/cancel` drops the pending connection.
+- __Confirm after the sign-in__: `GET /login/connect/confirm` asks; `POST /login/connect/confirm` with `answer=connect` → `AuthManager.confirmPendingConnection`, anything else → `declinePendingConnection`.
 - __Connect__ (Profile → Sign-in methods → Connect *Provider*): `POST /auth/oauth/<name>/connect`, an `account-security` change, so step-up applies → `AuthManager.startConnect` → the provider → the same callback → `AuthManager.connectIdentity`, which refuses an identity already connected to any account (`connected-elsewhere`) and adds the row otherwise.
 - __Disconnect__: the profile's credential-removal route, `POST /profile/credentials/:id/remove` → `AuthManager.removeCredential`, refused when it is the account's last way in. An identity counts as a way in only while its provider is enabled.
 
@@ -38,7 +41,7 @@ Discovery, the key set and the token exchange go through `guardedFetch` (#1133),
 ## Configuration
 
 - `ngdpbase.auth.oidc.providers` — map of name → `{ preset, issuer, client-id, client-secret, enabled, display-name, auto-provision }`. `preset: "google"` fills the issuer and name. `client-secret` must be an environment reference (`$NAME`); an entry with a literal secret is not registered. The callback is `<base-url>/auth/oauth/<name>/callback`, so `ngdpbase.application.base-url` must be set explicitly.
-- `ngdpbase.auth.oidc.auto-provision` — the instance ceiling for account creation, `false`; not acted on yet.
+- `ngdpbase.auth.oidc.auto-provision` — the instance ceiling for account creation, `false`. An entry's own `auto-provision` (default off) and `ngdpbase.application.registration` must also be true.
 - The old `ngdpbase.auth.google-oidc.*` keys are read as the `google` entry when enabled and the map has none (its `callback-url` is used when set). Their `auto-provision`, `default-roles`, `hd` and `deny-redirect` are no longer acted on. A factors entry or an account's `allowedAuthMethods` naming `google-oidc` still applies to `oidc:google`.
 - A provider with no `ngdpbase.auth.factors` entry is offered as a primary sign-in method at AAL1.
 

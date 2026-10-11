@@ -62,6 +62,7 @@ describe('two-step sign-in routes (#1523)', () => {
       completeSignIn: vi.fn(async (q: { session: Record<string, unknown> }, result: { username: string }) => {
         q.session.username = result.username;
         q.session.isAuthenticated = true;
+        return {};
       })
     });
     const s = session();
@@ -76,7 +77,7 @@ describe('two-step sign-in routes (#1523)', () => {
     // handle) and its one success audit are AuthManager.completeSignIn's,
     // tested in AuthManager.completeSignIn.test.ts.
     const done = { result: { success: true, username: 'molly', provider: 'password', factors: [{ provider: 'password' }, { provider: 'email-link' }] }, privateStoreHandle: 'psh' };
-    const completeSignIn = vi.fn().mockResolvedValue(undefined);
+    const completeSignIn = vi.fn().mockResolvedValue({});
     const { r, authLog } = routes({
       pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1', username: 'molly' })),
       completeTwoStep: vi.fn(() => done),
@@ -89,7 +90,7 @@ describe('two-step sign-in routes (#1523)', () => {
     const q = req(s, { cookies: { ngdp_two_step: 'b1' } });
     await r.secondFactorComplete(q, out);
     expect(completeSignIn).toHaveBeenCalledTimes(1);
-    expect(completeSignIn).toHaveBeenCalledWith(q, done.result, { method: 'password and email link', privateStoreHandle: 'psh' });
+    expect(completeSignIn).toHaveBeenCalledWith(q, done.result, { method: 'password and email link', privateStoreHandle: 'psh', returnTo: expect.any(String) });
     expect(out.clearCookie).toHaveBeenCalledWith('ngdp_two_step', { path: '/login' });
     expect(out.redirect).toHaveBeenCalledWith('/view/Home');
     // The route writes no audit of its own.

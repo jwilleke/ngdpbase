@@ -45,7 +45,7 @@ Registration is a master policy with one toggle per mechanism beneath it. The ma
 master : application.registration             = true
   ├ password form : registration.password     = true
   ├ magic link    : auth.magic-link.auto-provision = false
-  └ outside sign-in: auth.oidc.auto-provision (instance ceiling; not acted on yet, #1743)
+  └ outside sign-in: auth.oidc.auto-provision (instance ceiling) and each provider's own auto-provision in auth.oidc.providers (#1743)
 ```
 
 With the master `false`, every mechanism below it is off regardless of its own setting.

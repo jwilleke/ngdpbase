@@ -68,6 +68,7 @@ function makeRoutes(authSucceeds = true) {
     completeSignIn: vi.fn(async (req: { session: Record<string, unknown> }, result: { username: string }) => {
       req.session.username = result.username;
       req.session.isAuthenticated = true;
+      return {};
     })
   };
   const engine = {
@@ -143,7 +144,7 @@ describe('login completes through AuthManager.completeSignIn (#1043, #1758)', ()
     expect(authManager.completeSignIn).toHaveBeenCalledWith(
       req,
       expect.objectContaining({ success: true, username: 'admin' }),
-      { method: 'password', unlockWith: { password: 'pw' } }
+      expect.objectContaining({ method: 'password', unlockWith: { password: req.body.password } })
     );
   });
 

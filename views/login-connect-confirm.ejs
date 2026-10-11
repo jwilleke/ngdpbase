@@ -1,0 +1,30 @@
+<%- include('header', { pageName: '' }) %>
+
+<%
+// #1743 — after a sign-in, an outside identity was waiting in this browser.
+// It is connected only when the signed-in person says it is theirs: on a
+// shared computer it may belong to whoever used the browser before them.
+%>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card mt-5">
+                <div class="card-header text-center">
+                    <h4>Connect an account?</h4>
+                </div>
+                <div class="card-body">
+                    <p>Connect the <%= pending.displayName %> account<% if (pending.email) { %> (<%= pending.email %>)<% } %> to your account <strong><%= username %></strong>?</p>
+                    <p class="text-muted small">Only do this if that <%= pending.displayName %> account is yours. Anyone who can sign in to it will be able to sign in here as you.</p>
+                    <form action="/login/connect/confirm" method="POST" class="d-flex gap-2">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" name="answer" value="connect" class="btn btn-primary flex-fill">Connect</button>
+                        <button type="submit" name="answer" value="decline" class="btn btn-outline-secondary flex-fill">Don't connect</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

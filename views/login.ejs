@@ -20,6 +20,17 @@
                         </div>
                     <% } %>
                     
+                    <%# #1743: an outside identity waiting to be connected. Shown the same whether or not an account has that email. %>
+                    <% if (typeof pendingConnection !== 'undefined' && pendingConnection) { %>
+                        <div class="alert alert-info" data-pending-connection>
+                            <p class="mb-2">Sign in to connect your <%= pendingConnection.displayName %> account<% if (pendingConnection.email) { %> (<%= pendingConnection.email %>)<% } %>.</p>
+                            <form action="/login/connect/cancel" method="POST" class="mb-0">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Don't connect it</button>
+                            </form>
+                        </div>
+                    <% } %>
+
                     <%# #1743: one button per enabled outside sign-in provider. %>
                     <% const outside = typeof outsideProviders !== 'undefined' ? outsideProviders : []; %>
                     <% outside.forEach(function (p) { %>
