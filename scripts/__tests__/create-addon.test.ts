@@ -156,7 +156,8 @@ describe('generated addon', () => {
   test('package.json carries the authoritative ngdpbase manifest block', async () => {
     await scaffoldAddon(opts());
     const pkg = await fs.readJson(path.join(tmp, 'volcano-watch', 'package.json'));
-    expect(pkg.ngdpbase).toEqual({ slug: 'volcano-watch', type: 'additive' });
+    // #1757: generated against this core, so this core is the oldest it is known to run on.
+    expect(pkg.ngdpbase).toEqual({ slug: 'volcano-watch', type: 'additive', minVersion: ngdpbaseVersion() });
     expect(pkg.type).toBe('module');
     expect(pkg.name).toBe('@ngdpbase/volcano-watch');
   });

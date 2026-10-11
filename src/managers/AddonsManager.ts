@@ -40,6 +40,7 @@ import {
   type StoreOwnerState
 } from '../utils/privateStoreDoor.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
+import { isAtLeast } from '../utils/version.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -237,6 +238,13 @@ export interface AddonManifest {
   /** 'domain' = this addon IS the site identity; 'additive' = augments an existing wiki */
   type?: 'domain' | 'additive';
   /**
+   * The oldest ngdpbase release this addon runs on (`x.y.z`). Checked before
+   * the addon is imported: on an older core it is not loaded, and its status
+   * says which release it needs, instead of failing at import with a missing
+   * module.
+   */
+  minVersion?: string;
+  /**
    * Config keys this addon wants applied by default at load time.
    * Each key is only set if the operator has not already explicitly
    * set it in custom config. Values are ephemeral (merged config only,
@@ -286,6 +294,9 @@ interface AddonEntry {
 
   /** Parsed ngdpbase key from the add-on's package.json, or null if absent */
   manifest: AddonManifest | null;
+
+  /** Why it is never loaded on this core (its `minVersion` is newer), or null. */
+  incompatible: string | null;
 
 }
 
@@ -523,6 +534,38 @@ class AddonsManager extends BaseManager {
     }
 
     try {
+      let manifest: AddonManifest | null = null;
+      let packageVersion: string | undefined;
+      const pkgPath = path.join(addonPath, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+          manifest = (pkg.ngdpbase as AddonManifest) ?? null;
+          packageVersion = typeof pkg.version === 'string' ? pkg.version : undefined;
+        } catch {
+          logger.warn(`[AddonsManager] Could not parse package.json for ${folderName}`);
+        }
+      }
+
+      // #1757: an addon that needs a newer core is never imported — its imports
+      // of core modules this release lacks would fail with no reason given.
+      const incompatible = this.incompatibility(manifest);
+      if (incompatible) {
+        const canonicalId = resolveAddonSlug(addonPath, source);
+        if (this.addons.has(canonicalId)) return;
+        this.addons.set(canonicalId, {
+          path: addonPath,
+          module: { name: canonicalId, version: packageVersion, register: () => Promise.resolve() } as AddonModule,
+          enabled: this.isEnabled(canonicalId),
+          loaded: false,
+          error: incompatible,
+          manifest,
+          incompatible
+        });
+        logger.error(`[AddonsManager] Add-on ${canonicalId} not loaded: ${incompatible}`);
+        return;
+      }
+
       const modulePath = fs.existsSync(indexPath) ? indexPath : indexTsPath;
       const rawModule = (await import(modulePath)) as AddonModule | { default: AddonModule };
       const addonModule: AddonModule = 'default' in rawModule ? rawModule.default : rawModule;
@@ -534,17 +577,6 @@ class AddonsManager extends BaseManager {
       if (typeof addonModule.register !== 'function') {
         logger.error(`Add-on ${addonModule.name} missing required register() function, skipping`);
         return;
-      }
-
-      let manifest: AddonManifest | null = null;
-      const pkgPath = path.join(addonPath, 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
-          manifest = (pkg.ngdpbase as AddonManifest) ?? null;
-        } catch {
-          logger.warn(`[AddonsManager] Could not parse package.json for ${folderName}`);
-        }
       }
 
       // #927: canonical identity is the statically-declared slug (resolved the
@@ -578,7 +610,8 @@ class AddonsManager extends BaseManager {
         enabled,
         loaded: false,
         error: null,
-        manifest
+        manifest,
+        incompatible: null
       });
       this.warnOldProfileHook(canonicalId, addonModule);
 
@@ -589,6 +622,21 @@ class AddonsManager extends BaseManager {
       );
     } catch (err) {
       logger.error(`Failed to load add-on from ${folderName} (${sourceLabel}):`, err);
+    }
+  }
+
+  /**
+   * Why an addon cannot run on this core (#1757): its manifest's `minVersion`
+   * is newer than this release. Null when it can, or when it states none.
+   */
+  private incompatibility(manifest: AddonManifest | null): string | null {
+    const minimum = manifest?.minVersion;
+    if (!minimum) return null;
+    const core = this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.version', '') as string;
+    try {
+      return isAtLeast(core, minimum) ? null : `needs ngdpbase ${minimum} or later; this is ${core || 'an unknown version'}`;
+    } catch {
+      return `declares minVersion '${minimum}', which is not x.y.z, or this core's version '${core}' is unreadable`;
     }
   }
 
@@ -1303,6 +1351,10 @@ class AddonsManager extends BaseManager {
 
     if (addon.loaded) {
       return; // Already loaded
+    }
+
+    if (addon.incompatible) {
+      return; // #1757: needs a newer core; its status says which
     }
 
     try {

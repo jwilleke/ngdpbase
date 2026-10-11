@@ -196,6 +196,20 @@ export function parseVersion(version: string): VersionComponents {
 }
 
 /**
+ * Whether `version` is `minimum` or later (both `x.y.z`). An add-on states the
+ * core release it needs this way (#1757: `ngdpbase.minVersion`).
+ *
+ * @throws {Error} If either version format is invalid
+ */
+export function isAtLeast(version: string, minimum: string): boolean {
+  const v = parseVersion(version);
+  const m = parseVersion(minimum);
+  if (v.major !== m.major) return v.major > m.major;
+  if (v.minor !== m.minor) return v.minor > m.minor;
+  return v.patch >= m.patch;
+}
+
+/**
  * Format version components into string
  *
  * @param {number} major - Major version

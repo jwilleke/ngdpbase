@@ -121,7 +121,9 @@ function packageJson(o: ScaffoldOptions): string {
     // what makes the slug authoritative before any code runs (#927).
     ngdpbase: {
       slug: o.id,
-      type: o.type
+      type: o.type,
+      // #1757: the core it was generated from is the oldest it is known to run on.
+      minVersion: ngdpbaseVersion()
     }
   }, null, 2) + '\n';
 }
