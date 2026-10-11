@@ -770,15 +770,15 @@ describe('AuthManager', () => {
       const cm = makeConfigManager();
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
-      expect(() => manager.startFlow('google-oidc', { redirect: '/' }))
-        .toThrow(/cannot start a redirect flow/);
+      await expect(manager.startFlow('oidc:google', { redirect: '/' }))
+        .rejects.toThrow(/cannot start a redirect flow/);
     });
 
     test('throws when a registered provider has no startFlow', async () => {
       const cm = makeConfigManager();
       const manager = new AuthManager(makeEngine(cm));
       await manager.initialize();
-      expect(() => manager.startFlow('password', {})).toThrow(/cannot start a redirect flow/);
+      await expect(manager.startFlow('password', {})).rejects.toThrow(/cannot start a redirect flow/);
     });
 
     test('returns the provider URL and passes the context through', async () => {
@@ -790,8 +790,9 @@ describe('AuthManager', () => {
         id: 'stub-flow', displayName: 'Stub Flow', verify: vi.fn(), startFlow
       });
 
-      expect(manager.startFlow('stub-flow', { redirect: '/dashboard' }))
+      expect(await manager.startFlow('stub-flow', { redirect: '/dashboard', connectFor: 'mallory' }))
         .toBe('https://idp.example/authorize');
+      // #1743: a sign-in flow never connects; connecting is startConnect's.
       expect(startFlow).toHaveBeenCalledWith({ redirect: '/dashboard' });
     });
   });

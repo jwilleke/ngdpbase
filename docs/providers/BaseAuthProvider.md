@@ -17,7 +17,7 @@ Pattern mirrors `BasePageProvider` / `BaseAttachmentProvider` / `BaseMediaProvid
 - [PasswordAuthProvider](PasswordAuthProvider.md) — username + bcrypt password
 - [MagicLinkAuthProvider](MagicLinkAuthProvider.md) — emailed verify link
 - [CloudflareAccessAuthProvider](CloudflareAccessAuthProvider.md) — trust the `cf-access-jwt-assertion` header
-- [GoogleOIDCProvider](GoogleOIDCProvider.md) — OIDC via Google
+- [OidcAuthProvider](OidcAuthProvider.md) — any outside OpenID Connect provider, Google by preset
 
 ## Contract
 

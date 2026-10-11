@@ -241,7 +241,11 @@
 
                     <!-- #448 / #1524: Sign-in methods — the password and every credential -->
                     <% const signInWithPassword = typeof hasPassword !== 'undefined' && hasPassword; %>
-                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0) || (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
+                    <%# #1743: outside identities are listed on their own rows, with the provider's email and Disconnect. %>
+                    <% const ownCredentials = typeof credentials !== 'undefined' ? credentials.filter(function (c) { return c.kind !== 'identity'; }) : []; %>
+                    <% const identities = typeof connectedIdentities !== 'undefined' ? connectedIdentities : []; %>
+                    <% const connectable = typeof connectableProviders !== 'undefined' ? connectableProviders : []; %>
+                    <% if ((typeof passkeyHost !== 'undefined' && passkeyHost) || signInWithPassword || ownCredentials.length > 0 || identities.length > 0 || connectable.length > 0 || (typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
                     <div class="row mb-4" id="sign-in-methods">
                         <div class="col-12">
                             <div class="card">
@@ -253,7 +257,7 @@
                                     <%# #1738: never show a list that could not be read as an empty one. %>
                                     <div class="alert alert-warning small" role="alert">Your passkeys and other sign-in methods could not be loaded just now. They have not been removed. Reload the page; if this keeps happening, sign out and back in.</div>
                                     <% } %>
-                                    <% if (signInWithPassword || (typeof credentials !== 'undefined' && credentials.length > 0)) { %>
+                                    <% if (signInWithPassword || ownCredentials.length > 0 || identities.length > 0) { %>
                                     <table class="table table-sm align-middle mb-3">
                                         <thead><tr><th>Name</th><th>Kind</th><th>Added</th><th>Last used</th><th></th></tr></thead>
                                         <tbody>
@@ -266,7 +270,7 @@
                                                 <td class="text-end"><a href="#change-password" class="btn btn-sm btn-outline-secondary">Change</a></td>
                                             </tr>
                                             <% } %>
-                                            <% credentials.forEach(function (c) { %>
+                                            <% ownCredentials.forEach(function (c) { %>
                                             <tr>
                                                 <td>
                                                     <form action="/profile/credentials/<%= encodeURIComponent(c.id) %>/rename" method="POST" class="input-group input-group-sm" style="max-width: 18rem;">
@@ -286,12 +290,40 @@
                                                 </td>
                                             </tr>
                                             <% }) %>
+                                            <% identities.forEach(function (i) { %>
+                                            <tr>
+                                                <td>
+                                                    <%= i.label %><% if (i.email) { %> <span class="small text-muted">(<%= i.email %>)</span><% } %>
+                                                    <% if (!i.provider) { %><div class="small text-muted">This provider is turned off here, so it cannot sign you in for now.</div><% } %>
+                                                </td>
+                                                <td>outside sign-in</td>
+                                                <td class="small text-muted"><%= (i.createdAt || '').slice(0, 16).replace('T', ' ') %> UTC</td>
+                                                <td class="small text-muted"><%= i.lastUsedAt ? i.lastUsedAt.slice(0, 16).replace('T', ' ') + ' UTC' : 'never' %></td>
+                                                <td class="text-end">
+                                                    <form action="/profile/credentials/<%= encodeURIComponent(i.id) %>/remove" method="POST" class="d-inline">
+                                                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                            <% }) %>
                                         </tbody>
                                     </table>
                                     <% } else { %>
                                     <% if (!(typeof credentialsUnavailable !== 'undefined' && credentialsUnavailable)) { %>
                                     <p class="text-muted small">No sign-in methods are set up for this account here.</p>
                                     <% } %>
+                                    <% } %>
+                                    <% if (connectable.length > 0) { %>
+                                    <p class="small text-muted mb-1">Connect an account you have elsewhere, then use it to sign in here.</p>
+                                    <div class="mb-3">
+                                        <% connectable.forEach(function (p) { %>
+                                        <form method="POST" action="/auth/oauth/<%= encodeURIComponent(p.name) %>/connect" class="d-inline">
+                                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">Connect <%= p.displayName %></button>
+                                        </form>
+                                        <% }) %>
+                                    </div>
                                     <% } %>
                                     <% if (typeof offerEmailSecondFactor !== 'undefined' && offerEmailSecondFactor) { %>
                                     <%# #1523: a second factor for password sign-ins — the email approves each one. %>

@@ -17,16 +17,21 @@ import BaseProvider from './BaseProvider.js';
 /** The environment variable holding the signing and encryption key. */
 export const CREDENTIALS_KEY_ENV = 'NGDPBASE_CREDENTIALS_KEY';
 
-export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device';
+/**
+ * `identity` (#1743): an outside OpenID Connect identity connected to the
+ * account — subject `${iss}#${sub}`, label the provider's name, secret the
+ * provider's verified email ('' when none).
+ */
+export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device' | 'identity';
 
-export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device'];
+export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device', 'identity'];
 
 /** One credential, as stored. */
 export interface CredentialRecord {
   id: string;
   username: string;
   kind: CredentialKind;
-  /** What identifies it within its kind: a passkey's credential id, an address, a device token's hash. */
+  /** What identifies it within its kind: a passkey's credential id, an address, a device token's hash, an outside identity's `iss#sub`. */
   subject: string;
   /** Kind-specific: a public key and counter, or empty (an encrypted TOTP seed once #421 is built). */
   secret: string;

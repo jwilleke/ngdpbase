@@ -226,3 +226,22 @@ describe('guardedFetch — the first hop', () => {
     expect(res.chain).toEqual(['https://a.example.com/x']);
   });
 });
+
+describe('guardedFetch — a POST body (#1743)', () => {
+  it('sends the body with its length, and never follows a redirect with it', async () => {
+    const seen: TransportInit[] = [];
+    const transport: Transport = async (url, init) => {
+      seen.push(init);
+      await connectThroughAgent(url, init);
+      return { status: 307, headers: { location: 'https://elsewhere.example.com/' }, body: chunks('') };
+    };
+    const res = await guardedFetch('https://a.example.com/token', {
+      policy: CLOSED, resolver: PUBLIC, transport, method: 'POST', body: 'a=1&b=2',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    expect(res.status).toBe(307);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].body?.toString()).toBe('a=1&b=2');
+    expect(seen[0].headers).toEqual({ 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': '7' });
+  });
+});

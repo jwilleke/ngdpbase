@@ -30,6 +30,12 @@ export interface AuthInitiateContext {
    * redeeming browser can be compared against the requesting one.
    */
   deviceState?: string;
+  /**
+   * #1743: the signed-in account an outside identity is being connected to.
+   * Absent for a sign-in. A flow started to connect never signs anyone in,
+   * and a sign-in flow never connects.
+   */
+  connectFor?: string;
 }
 
 /**
@@ -42,7 +48,7 @@ export interface AuthVerifyCredentials {
   password?: string;
   /** One-time token — used by MagicLinkAuthProvider */
   token?: string;
-  /** OAuth `state` from the callback — used by GoogleOIDCProvider */
+  /** OAuth `state` from the callback — used by OidcAuthProvider */
   state?: string;
   /** The browser-binding value from the caller's cookie (#1022 magic link, #1630 OAuth) */
   deviceState?: string;
@@ -176,8 +182,11 @@ export interface AuthProvider {
    * Throws rather than returning a fallback when the flow cannot be started:
    * there is no sensible substitute for "where should the browser go", and an
    * empty string would send it nowhere with no error to explain why.
+   *
+   * May answer asynchronously: an OpenID Connect provider reads its issuer's
+   * discovery document before it knows where to send the browser (#1743).
    */
-  startFlow?(context: AuthInitiateContext): string;
+  startFlow?(context: AuthInitiateContext): string | Promise<string>;
 
   /**
    * Where the user was headed before this flow began, keyed by the flow's own
