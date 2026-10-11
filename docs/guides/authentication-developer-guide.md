@@ -1,7 +1,7 @@
 ---
 name: Authentication developer guide
 description: How sign-in works and how to change it — AuthManager as the one door, sign-in factors and levels (AAL), per-role required levels and what happens when one cannot be reached, step-up, sessions ending, and adding a sign-in provider
-dateModified: 2026-10-10
+dateModified: 2026-10-11
 category: guides
 relatedModules: [AuthManager, UserManager, PolicyDecisionPoint, OidcManager]
 ---
@@ -12,7 +12,7 @@ What a developer has to know to change how people sign in. Who may do what once 
 
 ## Standing rules
 
-- __AuthManager is the one door.__ Routes call `AuthManager`, never a provider. Every sign-in method is a registered `AuthProvider` (`registerProvider`), so a new method is a provider, not a route.
+- __AuthManager is the one door.__ Routes call `AuthManager`, never a provider. Every sign-in method is a registered `AuthProvider` (`registerProvider`), so a new method is a provider, not a route. This covers every check of a secret, not only a sign-in: re-checking a password before a change, an API key, a token. The provider is the connection to its method and owns the check; where the method's data lives (the password hash on the user record) is the storing manager's (operator, 2026-10-11).
 - __What is offered is configuration.__ `ngdpbase.auth.factors` lists the methods a site offers, one entry per provider: `authproviderid`, `primary` (can start a sign-in), `amr` / `aal` / `acr`, `enabled`. Configuration may lower what a provider's code declares, never raise it. `getFactors()` is what is available; `assess(factors)` what a set of satisfied factors amounts to, by NIST SP 800-63B: an email link never lifts a sign-in above AAL1, and only WebAuthn is phishing-resistant.
 - __The session records how it signed in.__ Every sign-in path writes `req.session.signIn` (`signInRecord()`): the provider, each factor with its time, and `amr` / `aal` / `acr`. Step-up and UserInfo read it there. A delegated credential (agent token, share, app token) never starts a session and never satisfies step-up.
 - __What is required is per role.__ Each role in `ngdpbase.roles.definitions` may carry `required-aal` (1–3). A person must meet the highest among their roles. `admin` and `user-admin` ship at 2; every other role at 1; `anonymous` has none.
@@ -60,6 +60,7 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 
 ## Known gaps
 
+- [#1758](https://github.com/jwilleke/ngdpbase/issues/1758) — four paths check a secret outside AuthManager: the profile password re-check, the login and store-door fallbacks, and the Dawarich API key
 - [#1745](https://github.com/jwilleke/ngdpbase/issues/1745) — an add-on route that refuses a step-up permission answers a bare 403 (`ApiContext.requirePermission`), with no way to re-authenticate as core routes give
 - [#1522](https://github.com/jwilleke/ngdpbase/issues/1522) — multi-factor epic: TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421)), device authorization ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526)), link-based second factor ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
 - [#1743](https://github.com/jwilleke/ngdpbase/issues/1743) — sign-in through any OpenID Connect provider; Google is the only outside login provider today (Cloudflare Access and the authentik bearer are not login providers; see the planning doc). The decided design is in [planning/authentication.md](../planning/authentication.md#external-identity-providers-decided-2026-10-10)
