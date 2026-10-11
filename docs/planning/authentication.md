@@ -311,6 +311,7 @@ AuthManager — the one door. Routes call authenticate(method, …); nothing els
 - __No separate API-key provider.__ A key an outside client presents is an agent token: a person delegates it, it is scoped, revocable and audited. The Dawarich shared key (`ngdpbase.dawarichCompat.apiKey`) becomes one (#1759).
 - __An outside client never runs as the system user.__ The system principal is the server acting for itself (boot, jobs); a key on a phone or another server with that authority would bypass every check. Something "with no person behind it" gets a person: the one who created the token.
 - __#1743's provider is a registered sign-in provider like the others.__ `/auth/oauth/<name>` and its callback call `authManager.authenticate(...)`; a connected identity is one more credentials-store row. Account creation, the email step and the instance provider's roles are decided inside it.
+- __AuthManager writes the authentication audit record itself__ (operator, 2026-10-11), inside `authenticate()`: provider, method, success or failure, user and IP, for every provider, every time. Step-up's records (today in `src/security/freshSignIn.ts`) move in too. Routes write none; today WikiRoutes writes them in 11 places, so a new path could forget. AuditManager stays the store. Part of #1758.
 - __Order:__ #1758 and #1759 first, so #1743 builds onto a clean door.
 
 ## What YourPHR needs
