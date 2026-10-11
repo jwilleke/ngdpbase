@@ -17,7 +17,7 @@ A cached value is never "fine to be slightly stale". It is keyed by every input 
 - __Everything else is a data version.__ A data source is a __topic__, by convention the name of the manager that owns it. The owner bumps its topic after every write, at the one door its writes go through (`CacheManager.bump(topic)`). A cached entry remembers the version of each topic it read and is served only while they are all unchanged.
 - __Every render reads page, configuration and account data.__ Any page can link, list or include pages, show configuration and name people, so the parser makes every render depend on `PageManager`, `ConfigurationManager` and `UserManager` (`BASE_RENDER_TOPICS` in `src/cache/CacheDependencies.ts`). Those three managers bump after every page change, saved configuration change and account change.
 - __Plugins declare nothing.__ While a page is being cached, a plugin's `context.engine` records each manager it fetches with `getManager(name)` as data the render read (`PluginManager`). A plugin reaching data that isn't a manager calls `context.dependsOn(topic)`.
-- __Output that changes with nothing written is volatile.__ A plugin like a clock or a session count sets `volatile: true` on the plugin object (or calls `context.markVolatile()`). A page that runs one is rendered but never stored.
+- __Time is a data source too.__ `CLOCK_TOPIC` (`'Clock'`) has the current minute as its version, so nothing writes it. A plugin whose output drifts with time (the time to the minute, uptime, who is signed in, health) calls `context.dependsOn(CLOCK_TOPIC)` and its page re-renders at most once a minute. Only output that differs on every request (seconds, a per-render counter) sets `volatile: true` or calls `context.markVolatile()`: that page is rendered on every request, so keep it off pages everyone sees, such as the left menu.
 - __Sealed pages are never cached.__ A page in an encrypted store resolves only through its owner's session, so its render stays out of the shared cache (`PageManager.isSharedIndexable`, #1423).
 
 ## How to add a manager whose data appears on pages
@@ -29,7 +29,7 @@ A cached value is never "fine to be slightly stale". It is keyed by every input 
 ## How to add a plugin
 
 - Fetch managers through `context.engine.getManager(name)`. A reference kept from `initialize` is not tracked.
-- If the output changes on its own, set `volatile: true`.
+- If the output drifts with time, call `context.dependsOn(CLOCK_TOPIC)`. Set `volatile: true` only if it differs on every request.
 
 ## How you know you are done
 

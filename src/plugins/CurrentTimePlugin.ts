@@ -16,6 +16,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 interface UserPreferences {
   locale?: string;
@@ -229,8 +230,6 @@ const CurrentTimePlugin: SimplePlugin = {
   description: 'Displays current date and time with user locale/timezone preferences',
   author: 'ngdpbase',
   version: '1.0.0',
-  // #1751: the time changes with nothing written, so a page showing it is not kept in the page cache.
-  volatile: true,
 
   /**
    * Execute the plugin
@@ -242,6 +241,13 @@ const CurrentTimePlugin: SimplePlugin = {
     try {
       const ctx = context as CurrentTimeContext;
       const opts = params as CurrentTimeParams;
+
+      // #1751: shown to the minute, the page re-renders once a minute. With
+      // seconds (the default display, or a format with `s`) it changes on every
+      // request, so that page is not cached.
+      const showsSeconds = !opts.format || /s/.test(String(opts.format).replace(/'[^']*'/g, ''));
+      if (showsSeconds) context.markVolatile?.();
+      else context.dependsOn?.(CLOCK_TOPIC);
 
       // Get user preferences from context
       const userPrefs = ctx?.userContext?.preferences || {};

@@ -19,6 +19,7 @@
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
 import type { SessionCount, SessionUsers } from '../managers/SessionStatsManager.js';
+import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 interface SessionStats {
   hasStore(): boolean;
@@ -28,13 +29,13 @@ interface SessionStats {
 
 const SessionsPlugin: SimplePlugin = {
   name: 'SessionsPlugin',
-  // #1751: who is signed in changes with nothing written, so a page showing it is not kept in the page cache.
-  volatile: true,
   description: 'Shows active session count or list of authenticated users',
   author: 'ngdpbase',
   version: '3.0.0',
 
   async execute(context: PluginContext, params: PluginParams = {}): Promise<string> {
+    // #1751: changes with the time, not on a write: re-rendered at most once a minute.
+    context.dependsOn?.(CLOCK_TOPIC);
     const property = String(params.property || 'count').toLowerCase();
     try {
       const stats = context.engine?.getManager?.('SessionStatsManager') as SessionStats | null | undefined;

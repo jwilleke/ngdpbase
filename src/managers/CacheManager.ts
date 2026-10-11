@@ -5,6 +5,7 @@ import logger from '../utils/logger.js';
 import NullCacheProvider from '../providers/NullCacheProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 /**
  * Cache options for set operations
@@ -247,6 +248,8 @@ class CacheManager extends BaseManager {
    * the topic is first bumped.
    */
   async version(topic: string): Promise<string> {
+    // The clock's version is the minute itself: no write, no timer, the same on every instance.
+    if (topic === CLOCK_TOPIC) return String(Math.floor(Date.now() / 60_000));
     if (!this.provider) return '0';
     const value = await this.provider.get(`${VERSION_PREFIX}${topic}`);
     return typeof value === 'string' ? value : '0';

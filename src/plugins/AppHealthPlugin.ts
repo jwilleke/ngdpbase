@@ -30,6 +30,7 @@
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { parseMaxParam, escapeHtml, formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
+import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 interface AppHealthParams extends PluginParams {
   checks?:    string;
@@ -100,13 +101,13 @@ function section(title: string, pages: string[], hrefBase: string, max: number):
 
 const AppHealthPlugin: SimplePlugin = {
   name: 'AppHealthPlugin',
-  // #1751: the instance's health changes with nothing written, so a page showing it is not kept in the page cache.
-  volatile: true,
   description: 'Deterministic app-health audit: orphan pages, broken links, stale pages',
   author: 'ngdpbase',
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    // #1751: changes with the time, not on a write: re-rendered at most once a minute.
+    context.dependsOn?.(CLOCK_TOPIC);
     const opts = (params ?? {}) as AppHealthParams;
     try {
       const pageManager = context.engine?.getManager?.('PageManager') as PageManager | undefined;

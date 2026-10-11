@@ -146,4 +146,17 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     expect(await parser.parse('[{EditorsOnly}]', as(['reader', 'editor']))).toContain('secret');
     expect(await parser.parse('[{EditorsOnly}]', as(['reader']))).toContain('nothing');
   });
+
+  test('a plugin that depends on the clock re-renders once the minute changes, not on every read', async () => {
+    let shown = 0;
+    const plugins = (parser as unknown as { engine: { getManager(n: string): { registerPlugin(n: string, p: unknown): Promise<void> } } }).engine.getManager('PluginManager');
+    await plugins.registerPlugin('Uptime', { execute: (context: { dependsOn?: (t: string) => void }) => { context.dependsOn?.('Clock'); shown++; return `<span>${shown}</span>`; } });
+    versions.set('Clock', 'minute-1');
+    await parser.parse('[{Uptime}]', { pageName: 'Home' });
+    await parser.parse('[{Uptime}]', { pageName: 'Home' });
+    expect(shown).toBe(1);
+    versions.set('Clock', 'minute-2');
+    await parser.parse('[{Uptime}]', { pageName: 'Home' });
+    expect(shown).toBe(2);
+  });
 });

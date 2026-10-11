@@ -245,6 +245,19 @@ describe('CacheManager', () => {
       expect(await cm.version('LedgerManager')).toBe('0');
     });
 
+    test('the clock topic is the current minute: it changes with time, with nothing written', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-11T10:00:30Z') });
+      try {
+        const first = await cm.version('Clock');
+        vi.setSystemTime(new Date('2026-10-11T10:00:59Z'));
+        expect(await cm.version('Clock')).toBe(first);
+        vi.setSystemTime(new Date('2026-10-11T10:01:00Z'));
+        expect(await cm.version('Clock')).not.toBe(first);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     test('bump gives the topic a new version, and each bump differs', async () => {
       const a = await cm.bump('LedgerManager');
       expect(await cm.version('LedgerManager')).toBe(a);

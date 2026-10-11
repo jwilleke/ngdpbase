@@ -26,6 +26,14 @@ export const ATTACHMENT_DATA_TOPIC = 'AttachmentManager';
 export const MEDIA_DATA_TOPIC = 'MediaManager';
 
 /**
+ * The time, to the minute: its version is the current minute, so nothing has
+ * to write it. A plugin that shows the time, an uptime or a count that drifts
+ * on its own depends on it and is re-rendered at most once a minute, where
+ * `volatile` would re-render the whole page on every request.
+ */
+export const CLOCK_TOPIC = 'Clock';
+
+/**
  * What every cached page render reads (#1751): any page can link, list or
  * include pages, show configuration and name people, so each render depends
  * on these. A plugin adds its own data with `context.dependsOn(topic)`.
