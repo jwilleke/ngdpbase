@@ -24,7 +24,7 @@ import session from 'express-session';
 import sessionFileStore from 'session-file-store';
 import fs from 'fs-extra';
 import { constants as fsConstants } from 'fs';
-import { runReadinessChecks, buildReadinessReport, instanceDataFolderWritable } from './utils/healthChecks.js';
+import { runReadinessChecks, buildReadinessReport, instanceDataFolderWritable, type ReadinessReport } from './utils/healthChecks.js';
 import { resolveListenPort } from './utils/resolveListenPort.js';
 import { loadMergedConfigSync } from './utils/addonConfigLayer.js';
 
@@ -283,7 +283,7 @@ void (async (): Promise<void> => {
     // while serving nobody is the defect #1079 removed.
     if (blockedReasons.length > 0) {
       res.status(503).json({
-        status: 'not_ready',
+        status: 'not-ready' satisfies ReadinessReport['status'],
         checks: { configuration: { ok: false, detail: blockedReasons } }
       });
       return;
