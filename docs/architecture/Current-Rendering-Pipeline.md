@@ -19,7 +19,10 @@ WikiContext (request encapsulation; lazy theme resolution post-v3.6.0)
     │
     ▼
 RenderingManager.renderMarkdown()
-    │  cache check → MarkupParser.parse()
+    │
+    ▼
+MarkupParser.parse()  — page cache (MarkupParser-ParseResults), read-through
+    │  miss or stale ↓
     ▼
 MarkupParser.parseWithDOMExtraction()   ← primary path
     │
@@ -186,14 +189,19 @@ __Tracked in__: [#596 — FilterChain configured but filterChain.execute() never
 
 ## Caching
 
-`MarkupParser.parse()` checks and populates a parse-result cache before calling `parseWithDOMExtraction()`:
+`MarkupParser.parse()` is the one page cache. It reads through the `MarkupParser-ParseResults` region with `RegionCache.getOrSetVersioned` before calling `parseWithDOMExtraction()`; the view route keeps no cache of its own, and syntax handlers, patterns and variables are not cached separately.
 
 ```
-cache key = hash(content + context)
-cache TTL = ngdpbase.markup.cache-ttl (default: 300s)
+cache key = hash(page text) + hash(page name, viewer username, viewer roles,
+            query string, date/locale preferences, 5-minute time bucket)
+cache TTL = ngdpbase.markup.cache.parse-results.ttl (default: 300s;
+            ngdpbase.markup.cache-ttl is the fallback)
 ```
 
-Cache hits skip the entire pipeline and return stored HTML directly.
+- An entry also records the version of every data topic the render read, and is served only while those versions are unchanged. Every render reads the `PageManager`, `ConfigurationManager` and `UserManager` topics; each manager a plugin asks for during the render is added. A manager bumps its topic after a write, so the next read re-renders.
+- A plugin whose output drifts with time depends on `CLOCK_TOPIC`, whose version is the current minute. A plugin whose output differs on every request marks the render volatile, and the result is returned but not stored.
+- A page that is not shared-indexable (a sealed private-store page) is never cached.
+- Cache hits skip the entire pipeline and return stored HTML directly. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ---
 
@@ -205,7 +213,8 @@ Key config properties controlling the rendering pipeline:
 |---|---|---|
 | `ngdpbase.markup.enabled` | `true` | Enable MarkupParser; falls back to markdown-it alone (the `page` profile, no wiki syntax) if false |
 | `ngdpbase.markup.caching` | `true` | Enable parse-result caching |
-| `ngdpbase.markup.cache-ttl` | `300` | Cache TTL in seconds |
+| `ngdpbase.markup.cache-ttl` | `300` | Fallback cache TTL in seconds |
+| `ngdpbase.markup.cache.parse-results.ttl` | `300` | Page cache TTL in seconds (overrides `cache-ttl`) |
 | `ngdpbase.filters.enabled` | `true` | Global filter switch (has no effect until #596 is fixed) |
 | `ngdpbase.filters.validation.enabled` | `true` | Enable ValidationFilter (has no effect until #596 is fixed) |
 | `ngdpbase.markup.html-policy` | *(lists)* | The raw HTML an author may write; held at render inside markdown-it and at save — see [the HTML policy](../html-policy.md) |

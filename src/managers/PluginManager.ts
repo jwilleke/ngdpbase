@@ -399,7 +399,8 @@ class PluginManager extends BaseManager {
       // Check if it's a new-style plugin with execute method
       if (isPluginObject(plugin)) {
         if (typeof plugin.fetch === 'function') {
-          await plugin.fetch(this.engine);
+          // #1751: fetch reads data for this render, so it sees the same tracked engine.
+          await plugin.fetch(pluginContext.engine);
         }
         const result = await plugin.execute(pluginContext, params);
         return result;

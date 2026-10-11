@@ -8,7 +8,7 @@ user-keywords:
   - Sequential
 uuid: ff2c3a6d-fdfc-479f-90e3-585dc2b3abd0
 slug: using-counterplugin
-lastModified: '2026-04-23T00:00:00.000Z'
+lastModified: '2026-10-11T00:00:00.000Z'
 author: system
 ---
 # Using CounterPlugin
@@ -18,6 +18,8 @@ The __CounterPlugin__ maintains page-level counters that increment each time the
 ## Description
 
 Counters reset on every page load. Each page view starts fresh, and different users see independent counters. This makes CounterPlugin suitable for numbering items within a page, not for tracking visits across sessions. See [Plugins] for a complete list of available plugins.
+
+A page that uses a counter is built fresh on every view and is not kept ready in memory, so use counters on pages where that cost does not matter.
 
 ## Syntax
 

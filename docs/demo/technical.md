@@ -103,15 +103,15 @@ Raw Markup
    ```
 
 3. View the rendered page. Point out:
-   - `[{UptimePlugin}]` executed at Phase 4 — the value is live, not cached
+   - `[{UptimePlugin}]` executed at Phase 4 — it depends on the clock topic, so the page re-renders at most once a minute to keep it current
    - `[{ConfigAccessor key='ngdpbase.server.*'}]` renders a live table from the running config — no separate API call from the browser
    - The config table is rendered server-side and included in the page HTML
 
 4. __Show the cache__ (talk track):
 
-   > "Rendered HTML is cached in `CacheManager` under the key `rendered-pages:<pageName>:<sortedRoles>`. The role-set in the key ensures users with different access levels never see each other's cached output. On a cache hit the entire rendering pipeline — textToHTML, tab sections, all plugin execution — is skipped entirely. Cache is invalidated automatically on every save, rename, or delete."
+   > "Rendered HTML is cached in one place, the markup parser's `MarkupParser-ParseResults` region. The key holds the page text, the viewer's username and roles, the query string and their date/locale preferences, so users with different access never see each other's cached output. Each entry also records the version of every data topic its render read — pages, configuration, accounts, and every manager a plugin fetched — and is served only while those are unchanged. A save, rename or delete bumps the page topic, so every page that links, lists or includes it re-renders on its next view."
 
-   Point to [`src/routes/WikiRoutes.ts`](../../src/routes/WikiRoutes.ts) → `viewPage()` for the read-through, and to `CacheManager` regions for the storage layer.
+   Point to [`src/parsers/MarkupParser.ts`](../../src/parsers/MarkupParser.ts) → `parse()` for the read-through, and to [caching-developer-guide.md](../guides/caching-developer-guide.md) for the rules.
 
 ### Plugin execution
 

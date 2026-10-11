@@ -1,7 +1,7 @@
 ---
 name: SessionsPlugin
 description: Shows the number of active sessions
-dateModified: '2025-12-18'
+dateModified: '2026-10-11'
 category: plugins
 code: src/plugins/SessionsPlugin.ts
 relatedModules:
@@ -122,6 +122,10 @@ The plugin reads the session store in-process through [SessionStatsManager](../m
 ### Configuration
 
 None. `ngdpbase.server.host` and `ngdpbase.server.port` no longer affect the plugin.
+
+## Page Caching
+
+The session count drifts with time rather than with a write, so the plugin depends on the clock topic (`CLOCK_TOPIC`): a page that shows it stays in the page cache and is re-rendered at most once a minute. Data it reads from managers is tracked as well, so a write to that data re-renders the page at once. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## JSPWiki Compatibility
 

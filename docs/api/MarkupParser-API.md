@@ -1,7 +1,7 @@
 # MarkupParser API Documentation
 
 __Version:__ 1.3.2 (Phase 6 Complete)
-__Last Updated:__ 2025-10-13
+__Last Updated:__ 2026-10-11
 __Related Issues:__ #114-#120
 
 ## Overview
@@ -337,7 +337,7 @@ __Properties:__
 ```json
 {
   "ngdpbase.markup.cache.parse-results.enabled": true,
-  "ngdpbase.markup.cache.parse-results.ttl": 300000,
+  "ngdpbase.markup.cache.parse-results.ttl": 300,
   "ngdpbase.markup.cache.parse-results.max-size": 1000
 }
 ```
@@ -438,12 +438,15 @@ __Scaling:__
 
 ### Cache Integration
 
-The parser integrates with ngdpbase's cache system:
+`parse()` is the one page cache. It reads through the `MarkupParser-ParseResults` region (`RegionCache.getOrSetVersioned`); there are no separate handler-result, pattern or variable caches.
 
-- __Parse Results Cache__: Caches final HTML output
-- __TTL__: 5 minutes (configurable)
-- __Max Size__: 1000 entries (configurable)
-- __Hit Ratio__: Typically 70-90% on production sites
+- __Key__: the page text, page name, the viewer's username and roles, the query string and the viewer's date/locale preferences, plus a 5-minute time bucket
+- __TTL__: `ngdpbase.markup.cache.parse-results.ttl` in seconds (default 300)
+- __Freshness__: an entry records the version of each data topic its render read (always `PageManager`, `ConfigurationManager`, `UserManager`, plus every manager a plugin asked for) and re-renders once any of them is bumped. A plugin may add `context.dependsOn(topic)`; time-driven output uses `CLOCK_TOPIC`, per-request output marks the render volatile and is not stored
+- __Not cached__: a page that is not shared-indexable (a sealed private-store page)
+- `ngdpbase.markup.cache.parse-results.max-size` is read but not currently enforced
+
+See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ---
 
@@ -678,6 +681,6 @@ See [Phase 5 Manual QA Plan](../testing/Phase5-Manual-QA-Plan.md) for comprehens
 
 ---
 
-__Last Updated:__ 2025-10-13
+__Last Updated:__ 2026-10-11
 __Maintainer:__ ngdpbase Team
 __Status:__ Production Ready

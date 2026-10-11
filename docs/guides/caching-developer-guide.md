@@ -1,7 +1,7 @@
 ---
 name: Caching developer guide
 description: One page cache, keyed by the viewer and their roles, that follows every input it renders through data versions
-dateModified: 2026-10-10
+dateModified: 2026-10-11
 category: guides
 relatedModules: [CacheManager, MarkupParser, PluginManager, PageManager]
 ---
@@ -13,7 +13,7 @@ A cached value is never "fine to be slightly stale". It is keyed by every input 
 ## Standing rules
 
 - __One page cache.__ A rendered page is cached in one place: the markup parser's `MarkupParser-ParseResults` region, read through `RegionCache.getOrSetVersioned`. No route, plugin or add-on keeps its own copy of rendered HTML. (The view route's separate `rendered-pages` cache was removed in #1751: it sat in front of the parser and served renders the parser had already invalidated.) Syntax handlers do not cache their own output: the `MarkupParser-HandlerResults` region was removed in #1751, because Include/If/UserCheck, plugin syntax, interwiki and style output was cached for 600 s outside the data versions, so a page including an edited page kept showing the old text.
-- __The key holds who is looking.__ The parse-result key covers the page text, page name, the viewer's username __and roles__, the query string and the viewer's date/locale preferences. Roles are in the key because they change without the username changing: a role revoked, or a session signed in below a role's required level.
+- __The key holds who is looking.__ The parse-result key covers the page text, page name, the viewer's username __and roles__, the query string and the viewer's date/locale preferences, plus a 5-minute time bucket. Roles are in the key because they change without the username changing: a role revoked, or a session signed in below a role's required level.
 - __Everything else is a data version.__ A data source is a __topic__, by convention the name of the manager that owns it. The owner bumps its topic after every write, at the one door its writes go through (`CacheManager.bump(topic)`). A cached entry remembers the version of each topic it read and is served only while they are all unchanged.
 - __Every render reads page, configuration and account data.__ Any page can link, list or include pages, show configuration and name people, so the parser makes every render depend on `PageManager`, `ConfigurationManager` and `UserManager` (`BASE_RENDER_TOPICS` in `src/cache/CacheDependencies.ts`). Those three managers bump after every page change, saved configuration change and account change.
 - __Plugins declare nothing.__ While a page is being cached, a plugin's `context.engine` records each manager it fetches with `getManager(name)` as data the render read (`PluginManager`). A plugin reaching data that isn't a manager calls `context.dependsOn(topic)`.
@@ -28,7 +28,7 @@ A cached value is never "fine to be slightly stale". It is keyed by every input 
 
 ## How to add a plugin
 
-- Fetch managers through `context.engine.getManager(name)`. A reference kept from `initialize` is not tracked.
+- Fetch managers through the engine you are given for this render: `context.engine` in `execute`, or the engine passed to `fetch(engine)`. A reference kept from `initialize` is not tracked.
 - If the output drifts with time, call `context.dependsOn(CLOCK_TOPIC)`. Set `volatile: true` only if it differs on every request.
 
 ## How you know you are done

@@ -1,7 +1,7 @@
 ---
 name: AppHealthPlugin
 description: "Deterministic app-health audit — lists orphan pages, broken/undefined links, and stale pages"
-dateModified: '2026-05-16'
+dateModified: '2026-10-11'
 category: plugins
 code: src/plugins/AppHealthPlugin.ts
 ---
@@ -67,6 +67,10 @@ Renders e.g. `Orphans: 1405 · Broken links: 18806 · Stale: 0`.
 - __`staleDays` is threshold-sensitive.__ On instances whose corpus was recently re-stamped by a migration, every page's `lastModified` may be within the last year, so the default `staleDays=365` legitimately reports `0`. Lower the threshold (e.g. `staleDays=30`) for a meaningful stale view on such instances.
 - The stale check requests an explicit large limit from `getRecentChanges` — its default limit is 50 and `includeAll` only widens the privacy filter, not the count, so without the explicit limit the check would only ever see the 50 freshest pages.
 - All checks are scan-on-demand. No sidecar index is written or maintained, so there is no consistency state to drift.
+
+## Page Caching
+
+The report (stale pages are measured against the current time) drifts with time rather than with a write, so the plugin depends on the clock topic (`CLOCK_TOPIC`): a page that shows it stays in the page cache and is re-rendered at most once a minute. Data it reads from managers is tracked as well, so a write to that data re-renders the page at once. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## Related
 

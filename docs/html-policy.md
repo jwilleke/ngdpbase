@@ -62,7 +62,7 @@ Each list is a set kept as `name: true` (the convention from [#1612](https://git
 }
 ```
 
-The renderer reads the policy on every render, so a change applies without a restart; a page already in the parse cache shows it when its entry expires (`ngdpbase.markup.cache.parse-results.ttl`). A missing or malformed value allows no author HTML at all — the failure is closed.
+The renderer reads the policy on every render, so a change applies without a restart. Every cached page depends on configuration, and saving the configuration bumps it, so a page already in the parse cache is re-rendered with the new policy on its next view. A missing or malformed value allows no author HTML at all — the failure is closed.
 
 ## Admin raw save
 

@@ -1,9 +1,9 @@
 ---
 name: "CalendarPlugin"
 description: "Event calendar widget powered by FullCalendar — requires the calendar add-on"
-dateModified: "2026-04-05"
+dateModified: "2026-10-11"
 category: "plugins"
-code: addons/calendar/plugins/CalendarPlugin.js
+code: addons/calendar/plugins/CalendarPlugin.ts
 relatedModules: ["AddonsManager", "CalendarDataManager"]
 version: "1.0.0"
 addon: "calendar"

@@ -1,7 +1,7 @@
 ---
 name: CacheManager
 description: "Centralized cache facade with pluggable backends (NodeCache, Redis, Null) and named regions per consumer"
-dateModified: '2026-10-10'
+dateModified: '2026-10-11'
 category: managers
 code: src/managers/CacheManager.ts
 ---
@@ -24,7 +24,7 @@ CacheManager provides centralized cache management for ngdpbase with pluggable c
 
 ## Key Features
 
-- __Pluggable Providers__ - Support for multiple backends (NodeCache, Redis, Memcached)
+- __Pluggable Providers__ - NodeCache and Null backends (a Redis provider is stubbed)
 - __Cache Regions__ - Namespace isolation for different managers
 - __Provider Fallback__ - Automatic failover to NullCacheProvider on failure
 - __Health Monitoring__ - Automatic health checks with recovery
@@ -116,8 +116,11 @@ const html = await cacheManager.region('pages').getOrSetVersioned('Ledger', asyn
 
 - `version(topic)` is `'0'` until the topic is first bumped. Versions never expire, and each
   bump is a new unique value, so instances sharing a cache can't collide on a count.
-- A render whose output changes with nothing written (a clock) calls `deps.markVolatile()`.
-  It is returned but never stored.
+- `CLOCK_TOPIC` (`'Clock'`) is a topic nobody writes: its version is the current minute.
+  A render whose output drifts with time (a clock to the minute, an uptime) depends on it
+  and is re-rendered at most once a minute.
+- Only a render whose output differs on every request (a clock showing seconds, a counter)
+  calls `deps.markVolatile()`. It is returned but never stored.
 - The page cache (`MarkupParser-ParseResults`) reads through this way, and is the only page
   cache. Every render depends on `PageManager`, `ConfigurationManager` and `UserManager`;
   each manager a plugin fetches is recorded too. See
@@ -165,7 +168,7 @@ await cacheManager.set('key', value, {
 | ---------- | -------- | ------------- |
 | `NodeCacheProvider` | ✅ Production | In-memory cache (single server) |
 | `NullCacheProvider` | ✅ Production | No-op cache (for testing/disabled) |
-| `RedisCacheProvider` | 🔮 Planned | Distributed cache via Redis |
+| `RedisCacheProvider` | 🔮 Stub | Class exists and is selectable, but its methods are not implemented |
 | `MemcachedProvider` | 🔮 Planned | Distributed cache via Memcached |
 
 ## Cache Regions in Use
@@ -212,38 +215,6 @@ console.log('Features:', config.features);
 4. __Clear on Updates__: Invalidate cache when data changes
 5. __Test Without Cache__: Use NullCacheProvider for testing
 
-## Example: PageManager Integration
-
-```javascript
-class PageManager extends BaseManager {
-  async getPage(identifier) {
-    const cacheManager = this.engine.getManager('CacheManager');
-    const cache = cacheManager.region('pages');
-
-    // Try cache first
-    const cached = await cache.get(identifier);
-    if (cached) return cached;
-
-    // Cache miss, load from storage
-    const page = await this.provider.getPage(identifier);
-
-    // Store in cache for 1 hour
-    await cache.set(identifier, page, 3600);
-
-    return page;
-  }
-
-  async savePage(name, content, metadata) {
-    // Save to storage
-    await this.provider.savePage(name, content, metadata);
-
-    // Invalidate cache
-    const cache = this.engine.getManager('CacheManager').region('pages');
-    await cache.del(name);
-  }
-}
-```
-
 ## Disabling Cache
 
 ```json
@@ -262,17 +233,17 @@ CacheManager regions are exposed via REST endpoints (admin-only). Provider-level
 | --- | --- |
 | `GET /api/admin/cache/stats` | Returns global + per-region hit/miss/keys/config |
 | `POST /api/admin/cache/clear` | Clears all CacheManager regions |
-| `POST /api/admin/cache/clear/:region` | Clears one region (e.g., `RenderingManager`) |
+| `POST /api/admin/cache/clear/page/:identifier` | Evicts one page from the provider content cache and bumps the page-data version, so cached renders re-render |
+| `POST /api/admin/cache/clear/:region` | Clears one region (e.g., `MarkupParser-ParseResults`) |
 
-Both `clear` endpoints require `admin-system` permission and a valid CSRF token. See [CacheManager-Complete-Guide.md § Admin API](CacheManager-Complete-Guide.md#admin-api) for response shape and examples.
+All three `clear` endpoints require `admin-system` permission and a valid CSRF token. See [CacheManager-Complete-Guide.md § Admin API](CacheManager-Complete-Guide.md#admin-api) for response shape and examples.
 
 ## Related Documentation
 
 - [CacheManager-Complete-Guide.md](CacheManager-Complete-Guide.md) — full provider architecture, all regions, admin API, provider-level structural caches inventory
 - [ConfigurationManager](ConfigurationManager.md) — cache configuration loader
-- [PageManager](PageManager.md) — uses both CacheManager regions and provider-level structural caches
-- [UserManager](UserManager.md) — user session caching
-- [SearchManager](SearchManager.md) — search result caching (separate from search-provider-level indexed documents)
+- [PageManager](PageManager.md) — bumps the page-data topic after every page change; its provider keeps a provider-level structural cache
+- [UserManager](UserManager.md) — bumps the account-data topic after every account write
 - [Access-Control.md](../architecture/Access-Control.md#performance-characteristics) — how the two cache layers affect access-check performance
 - [WikiContext-Complete-Guide.md](../WikiContext-Complete-Guide.md#lazy-theme-resolution-v360) — engine-wide ThemeManager cache (provider-level)
 - [Current-Rendering-Pipeline.md](../architecture/Current-Rendering-Pipeline.md#caching) — MarkupParser parse-result cache

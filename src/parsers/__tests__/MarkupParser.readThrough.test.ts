@@ -159,4 +159,21 @@ describe('MarkupParser parse cache: read-through with data versions (#1751)', ()
     await parser.parse('[{Uptime}]', { pageName: 'Home' });
     expect(shown).toBe(2);
   });
+
+  test('a manager read in fetch(engine) is tracked like one read in execute', async () => {
+    let loaded = '';
+    let runs = 0;
+    const engine = (parser as unknown as { engine: { getManager(n: string): unknown } }).engine;
+    const plugins = engine.getManager('PluginManager') as { registerPlugin(n: string, p: unknown): Promise<void> };
+    await plugins.registerPlugin('Preloaded', {
+      fetch: (e: { getManager(n: string): unknown }) => { e.getManager('BudgetManager'); loaded = `v${versions.get('BudgetManager') ?? '0'}`; },
+      execute: () => { runs++; return `<span>${loaded}</span>`; }
+    });
+    await parser.parse('[{Preloaded}]', { pageName: 'Budget' });
+    await parser.parse('[{Preloaded}]', { pageName: 'Budget' });
+    expect(runs).toBe(1);
+    versions.set('BudgetManager', 'v2');
+    expect(await parser.parse('[{Preloaded}]', { pageName: 'Budget' })).toContain('vv2');
+    expect(runs).toBe(2);
+  });
 });

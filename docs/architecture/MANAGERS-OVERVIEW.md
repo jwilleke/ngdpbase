@@ -56,7 +56,7 @@ Reads `config/*.properties` and env overrides. All other managers query it for t
 
 ### CacheManager
 
-Centralised cache with a pluggable provider (`NodeCacheProvider` default, Redis optional, Null fallback).
+Centralised cache with a pluggable provider (`NodeCacheProvider` default, Null fallback; `RedisCacheProvider` is a stub). Its one region in use is `MarkupParser-ParseResults`, the page cache.
 
 __Providers:__ resolved by `ngdpbase.cache.provider`; falls back to `NullCacheProvider` if health check fails.
 
@@ -68,16 +68,20 @@ __Key API:__
 | `get(key)` | Read from cache |
 | `set(key, value, options?)` | Write with optional TTL |
 | `del(keys)` | Invalidate one or more keys |
+| `bump(topic)` | New version for a data topic (a manager's name), after a write |
+| `version(topic)` | Current version of a topic; `CLOCK_TOPIC` is the current minute |
 | `clear(region?, pattern?)` | Flush region or matching keys |
 | `stats(region?)` | Hit/miss counts |
 | `static getCacheForManager(engine, region)` | Convenience for managers |
 
-__Flow — cache invalidation on page save:__
+__Flow — page cache after a page save:__
 
 ```
 PageManager.savePage()
-  → CacheManager.del('rendered-pages:<name>:*')
-  → CacheManager.del('page:<name>')
+  → (provider write, link graph, search index, ...)
+  → CacheManager.bump('PageManager')
+      every cached render depends on 'PageManager',
+      so each re-renders on its next read
 ```
 
 ---
@@ -168,11 +172,11 @@ __Flow — page save cascade:__
 ```
 savePage(doc)
   → FileSystemProvider.write()
-  → CacheManager.del(rendered-pages + page keys)
-  → SearchManager.updatePageInIndex(name, doc)
   → RenderingManager.updatePageInLinkGraph(name, content)
+  → SearchManager.updatePageInIndex(name, doc)
   → AttachmentManager.syncPageMentions(name, content)
   → AssetManager.syncPageAssets(name, content)
+  → CacheManager.bump('PageManager')   (page-data version)
   → MetricsManager.recordPageSave(ms)
 ```
 
@@ -304,26 +308,21 @@ __Key API:__
 | `textToHTML(ctx, content)` | Render via `WikiContext.renderMarkdown` |
 | `renderPreview(content, name, ctx)` | Unsaved preview |
 
-__Flow — page view (cache miss):__
+__Flow — page view:__
 
 ```
 GET /view/:page
-  → CacheManager.get(rendered-pages:<name>:<roles>)  → miss
   → PolicyInformationPoint.check(view, page, userContext)
   → RenderingManager.textToHTML(wikiContext, content)
-      → MarkupParser phases 1-7
-          → PluginManager.execute() per plugin token
-          → VariableManager.expand() per variable
-  → CacheManager.set(rendered-pages:<name>:<roles>, html)
+      → MarkupParser.parse()
+          → region('MarkupParser-ParseResults').getOrSetVersioned(key)
+              key: page text, name, viewer + roles, query, prefs
+              hit, every recorded topic version unchanged → cached HTML
+              miss or stale → MarkupParser phases
+                  → PluginManager.execute() per plugin token
+                      (each getManager(name) recorded as a dependency)
+                  → VariableManager.expand() per variable
   → respond with HTML
-```
-
-__Flow — page view (cache hit):__
-
-```
-GET /view/:page
-  → CacheManager.get(rendered-pages:<name>:<roles>)  → hit
-  → respond with cached HTML  (pipeline skipped entirely)
 ```
 
 ---
@@ -539,8 +538,8 @@ GET /view/:page
 WikiRoutes.viewPage()
   → PolicyInformationPoint.isAllowed(view, page, userContext)
   → PageManager.getPage(name)
-  → CacheManager.get(rendered-pages:<name>:<roleSet>)   → miss
   → RenderingManager.textToHTML(ctx, content)
+      → MarkupParser.parse()  — page cache read-through (hit → skip to template)
       → MarkupParser.parseWithDOMExtraction()
           → Phase 1: extractJSPWikiSyntax()
           → Phase 2: WikiDocument DOM node creation
@@ -549,7 +548,7 @@ WikiRoutes.viewPage()
           → Phase 2.6: handlers (plugins, wiki links, variables)
           → Phase 3: markdown-it markdown → HTML
           → Phase 4: DOM placeholder restoration
-  → CacheManager.set(rendered-pages:<name>:<roleSet>, html, ttl)
+  → (stored with the topic versions it read, unless volatile)
   → MetricsManager.recordPageView(ms)
   → render EJS template with html
 ```
@@ -573,7 +572,7 @@ WikiRoutes.savePage()
       → [7] provider.savePage()  →  disk write
   → RenderingManager.updatePageInLinkGraph(name, content)
   → SearchManager.updatePageInIndex(name, data)
-  → CacheManager  (cache invalidation)
+  → CacheManager.bump('PageManager')  (cached renders re-render)
   → redirect → view page
 ```
 
@@ -662,14 +661,20 @@ const pageManager = this.engine.getManager('PageManager') as PageManager;
 
 Managers never import each other directly; all coupling goes through `WikiEngine.getManager()`.
 
-### Cache key conventions
+### Page cache and data topics
 
-| Key pattern | Owner | Invalidated by |
-|---|---|---|
-| `rendered-pages:<name>:<roleSet>` | RenderingManager | page save, rename, delete |
-| `page:<name>` | PageManager | page save, rename, delete |
-| `search-index` | SearchManager | full rebuild |
-| `link-graph` | RenderingManager | page save, delete |
+The only CacheManager region in use is `MarkupParser-ParseResults`. Its key is `parse:<hash of page text>:<hash of page name, viewer username and roles, query string, date/locale preferences, 5-minute bucket>`. Freshness comes from data topics, not key deletion:
+
+| Topic | Bumped by |
+|---|---|
+| `PageManager` | every page change (save, rename, delete), `invalidatePageCache` (footnotes, comments, admin evict), reindex |
+| `ConfigurationManager` | `saveCustomConfiguration` |
+| `UserManager` | `writeAccounts` |
+| `AttachmentManager` | `writeAttachments` |
+| `MediaManager` | `writeMedia` |
+| `Clock` (`CLOCK_TOPIC`) | nobody — its version is the current minute |
+
+The search index and link graph are provider/manager structures, not CacheManager keys. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ### Backup / restore lifecycle
 

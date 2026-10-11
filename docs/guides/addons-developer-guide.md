@@ -797,7 +797,7 @@ A rendered page is cached once, keyed by the viewer and their roles, and re-rend
 await engine.getManager('CacheManager')?.bump('MyDataManager');
 ```
 
-The page then stays cached while nothing changes and is re-rendered on the next read after a write. A plugin whose output changes on its own (a clock) sets `volatile: true` on the plugin object; a page that runs it is not cached. Keep no reference to a manager from `initialize`: only fetches through `context.engine` are tracked.
+The page then stays cached while nothing changes and is re-rendered on the next read after a write. A plugin whose output drifts with time (the time to the minute, an uptime) calls `context.dependsOn(CLOCK_TOPIC)` — the topic `'Clock'`, whose version is the current minute — so its page re-renders at most once a minute. Data that does not come through a manager is declared with `context.dependsOn(topic)`. Only output that differs on every request (seconds, a per-render counter) sets `volatile: true` on the plugin object or calls `context.markVolatile()`; a page that runs it is rendered on every request and never cached. Keep no reference to a manager from `initialize`: fetch managers through the engine you are given for this render, `context.engine` in `execute` or the engine passed to `fetch(engine)`.
 
 ---
 
@@ -874,7 +874,7 @@ router.get('/feed.ics', async (req, res) => {
 ```typescript
 // routes/api.ts
 import express from 'express';
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext.js';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 import type { WikiEngine } from '../../../dist/src/types/WikiEngine.js';
 
 export default function apiRoutes(engine: WikiEngine, _config: Record<string, unknown>) {
@@ -890,7 +890,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       // Optionally filter results with await ctx.hasPermission('my-addon-read') — never ctx.roles
       res.json({ results });
     } catch (err) {
-      if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
+      if (err instanceof ApiError) return sendApiError(res, err);
       res.status(500).json({ error: String(err) });
     }
   });
@@ -906,7 +906,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
       const item = await mgr.create(req.body, username);
       res.status(201).json(item);
     } catch (err) {
-      if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
+      if (err instanceof ApiError) return sendApiError(res, err);
       res.status(500).json({ error: String(err) });
     }
   });
@@ -929,7 +929,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ctx.actingUsername()` | The signed-in username a per-person feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |
 | `ctx.engine` | Reference to the engine |
 
-`ApiError` carries a `status` number — catch it and forward to `res.status(err.status)`.
+`ApiError` carries a `status` number and, for a step-up refusal, a `reauth` link. Catch it and send it with `sendApiError(res, err, mode)` from `ApiContext.js` — `mode` is `'json'` (default: `{ success: false, error, reauth? }`) or `'text'` (the message, then the re-authenticate link). Never write the refusal yourself with `res.status(err.status)`: the `reauth` link is easy to drop.
 
 There is no `hasRole` / `requireRole`, and no `requireAuthenticated`: a role name, or being signed in, skips the policy evaluator, deny policies and the agent-token ceiling ([security-developer-guide.md](security-developer-guide.md)). Declare the permission and grant it as in [Permissions](#permissions), then ask for it. The journal and calendar addons are worked examples:
 

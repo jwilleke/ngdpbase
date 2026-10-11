@@ -3,7 +3,7 @@
 __Module:__ `src/managers/PageManager.js`
 __Quick Reference:__ [PageManager.md](PageManager.md)
 __Version:__ 1.3.2
-__Last Updated:__ 2025-12-20
+__Last Updated:__ 2026-10-11
 __Status:__ Production Ready
 
 ---
@@ -1212,25 +1212,7 @@ backupManager.registerManager('PageManager', {
 
 ### CacheManager
 
-PageManager can use CacheManager for performance optimization:
-
-```javascript
-const pageManager = engine.getManager('PageManager');
-const cacheManager = engine.getManager('CacheManager');
-
-// Cache frequently accessed pages
-async function getCachedPage(pageName) {
-  const cacheKey = `page:${pageName}`;
-
-  let page = cacheManager.get(cacheKey);
-  if (!page) {
-    page = await pageManager.getPage(pageName);
-    cacheManager.set(cacheKey, page, 300); // Cache for 5 minutes
-  }
-
-  return page;
-}
-```
+PageManager does not cache pages in CacheManager; its provider already holds every page in memory. PageManager's part in the page cache is to bump the page-data topic (`CacheManager.bump('PageManager')`) after every page change (save, rename, delete) and from `invalidatePageCache(identifier)`, which also drops the provider's cached content for that page. Every cached render depends on that topic, so each page re-renders on its next read. Code that changes page data outside `savePage` (footnotes, comments) calls `invalidatePageCache`. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ---
 
@@ -1316,16 +1298,7 @@ async function getCachedPage(pageName) {
 
 ### Performance
 
-1. __Use Caching for Frequently Accessed Pages__:
-
-   ```javascript
-   const cacheKey = `page:${pageName}`;
-   let page = cache.get(cacheKey);
-   if (!page) {
-     page = await pageManager.getPage(pageName);
-     cache.set(cacheKey, page, 300);
-   }
-   ```
+1. __Do Not Cache Page Data Yourself__: the provider keeps every page in memory, and a TTL copy of a page goes stale on the next save. Rendered pages are cached by the parser, kept current by data versions.
 
 2. __Batch Operations When Possible__:
 

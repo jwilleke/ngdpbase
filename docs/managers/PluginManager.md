@@ -1,7 +1,7 @@
 ---
 name: PluginManager
 description: "Plugin discovery, registration, and execution; resolves `[{PluginName ...}]` markup to handler output"
-dateModified: '2026-05-14'
+dateModified: '2026-10-11'
 category: managers
 code: src/managers/PluginManager.ts
 ---
@@ -77,21 +77,27 @@ Each plugin invocation follows this sequence:
 
 1. `initialize(engine)` — called __once at startup__ if present
 2. `fetch(engine)` — called __before each `execute()`__ if present; use to pre-load data from managers
-3. `execute(context, params)` — called __each render__; returns HTML string
+3. `execute(context, params)` — called __each render__ that is not served from the page cache; returns HTML string
+
+## Plugins and the Page Cache
+
+A rendered page is cached by the markup parser and re-rendered when data it read changes ([caching-developer-guide.md](../guides/caching-developer-guide.md)). A plugin declares nothing for the managers it uses:
+
+- While a page is being cached, `context.engine` is a tracked engine: every `getManager(name)` records `name` as data the render read, so the page re-renders after that manager bumps its topic.
+- The engine passed to `initialize(engine)` is not tracked; keep no manager reference from it. `fetch(engine)` and `execute` get the tracked engine for this render.
+- `context.dependsOn(topic)` declares data that is not reached through a manager.
+- Output that drifts with time calls `context.dependsOn(CLOCK_TOPIC)` (`'Clock'`, from `src/cache/CacheDependencies.ts`): the page re-renders at most once a minute. `CurrentTime` (to the minute), `Uptime`, `Sessions` and `AppHealth` do this.
+- Only output that differs on every request sets `volatile: true` on the plugin object (as `Counter` does) or calls `context.markVolatile()` (as `CurrentTime` does when it shows seconds). That page is rendered on every request and never stored.
 
 ```ts
-// Example plugin using fetch() to pre-load data
 module.exports = {
   name: 'MyPlugin',
-  _data: [],
-
-  async fetch(engine) {
-    const mgr = engine.getManager('MyDataManager');
-    this._data = mgr ? mgr.getItems() : [];
-  },
 
   execute(context, params) {
-    return this._data.map(d => `<li>${d.title}</li>`).join('');
+    // Tracked: the page re-renders after MyDataManager bumps its topic.
+    const mgr = context.engine.getManager('MyDataManager');
+    const items = mgr ? mgr.getItems() : [];
+    return items.map(d => `<li>${d.title}</li>`).join('');
   }
 };
 ```

@@ -1,7 +1,7 @@
 ---
 name: UptimePlugin
 description: Shows the server uptime in human-readable format
-dateModified: '2025-12-18'
+dateModified: '2026-10-11'
 category: plugins
 code: src/plugins/UptimePlugin.ts
 relatedModules:
@@ -123,6 +123,10 @@ formatUptime(seconds) {
 ### Context Usage
 
 - `context.engine.startTime` - Server start timestamp
+
+## Page Caching
+
+Uptime drifts with time rather than with a write, so the plugin depends on the clock topic (`CLOCK_TOPIC`): a page that shows it stays in the page cache and is re-rendered at most once a minute. Data it reads from managers is tracked as well, so a write to that data re-renders the page at once. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## JSPWiki Compatibility
 

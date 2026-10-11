@@ -301,16 +301,15 @@ add-ons is a separate, __unimplemented__ design discussion — see #444.
 Use `ApiContext` for all route authentication — the same pattern used by core wiki routes:
 
 ```typescript
-import { ApiContext, ApiError } from '../../../dist/src/context/ApiContext';
+import { ApiContext, ApiError, sendApiError } from '../../../dist/src/context/ApiContext.js';
 
 router.get('/resource', async (req, res) => {
   try {
     const ctx = ApiContext.from(req, engine);   // always succeeds
-    ctx.requireAuthenticated();                  // throws ApiError(401) if not logged in
-    await ctx.requirePermission('my-addon-read'); // throws ApiError(403) unless a policy grants it
+    await ctx.requirePermission('my-addon-read'); // throws ApiError(401) anonymous, ApiError(403) signed in, unless a policy grants it
     // ctx.username, ctx.roles, ctx.isAuthenticated available
   } catch (err) {
-    if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof ApiError) return sendApiError(res, err); // the one refusal shape, reauth link included
     res.status(500).json({ error: String(err) });
   }
 });

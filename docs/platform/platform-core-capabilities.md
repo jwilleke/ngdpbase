@@ -84,7 +84,7 @@ These are things you do __not__ need to build — they are fully implemented, te
 - Variable substitution (`{$pagename}`, `{$currentuser}`, etc.)
 - Link resolution with broken-link detection
 - XSS-safe output — all user content is sanitized
-- Parse result caching (configurable), invalidated by data versions
+- Parse result caching (configurable), kept current by data versions
 
 ### Plugin System
 
@@ -230,9 +230,8 @@ __Adding plugins:__
 
 ### Caching
 
-- `CacheManager` — in-memory cache with TTL, available to all managers
-- Page render caching *(configurable)*
-- Search result caching *(configurable TTL)*
+- `CacheManager` — regioned in-memory cache with TTL, available to all managers
+- Page render caching *(enabled by default)* — one cache of rendered pages, kept current by data versions: a manager bumps its topic after a write and every cached page that read it re-renders on next view; time-driven plugins re-render at most once a minute
 
 ### Notifications
 

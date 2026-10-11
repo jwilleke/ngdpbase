@@ -53,12 +53,11 @@ if (!(await context.canAccess('edit'))) return '';
 
 ### `ApiContext` — `/api/*` route-scoped
 
-`src/context/ApiContext.ts`. Built by `ApiContext.from(req, engine)`. Slimmer shape than WikiContext — just the user fields + engine + `requireAuthenticated` / `requirePermission` guards that throw `ApiError(401|403)` for clean JSON-error handling.
+`src/context/ApiContext.ts`. Built by `ApiContext.from(req, engine)`. Slimmer shape than WikiContext — just the user fields + engine + the `requirePermission` guard (and `actingUsername()`), which throw `ApiError(401|403)`. A route sends a caught `ApiError` with `sendApiError(res, err, mode)`, the one refusal shape (`{ success: false, error, reauth? }`).
 
 ```ts
 const ctx = ApiContext.from(req, engine);
-ctx.requireAuthenticated();              // throws ApiError(401) if not
-await ctx.requirePermission('user-edit'); // async — throws ApiError(403) if denied
+await ctx.requirePermission('user-edit'); // async — ApiError(401) if anonymous, ApiError(403) if denied
 ```
 
 ---
@@ -241,12 +240,11 @@ async function execute(context: PluginContext, params: PluginParams): Promise<st
 async apiUsersSearch(req: Request, res: Response): Promise<void> {
   try {
     const ctx = ApiContext.from(req, this.engine);
-    ctx.requireAuthenticated();              // throws ApiError(401) if anonymous
-    await ctx.requirePermission('search-user'); // throws ApiError(403) if denied
+    await ctx.requirePermission('search-user'); // ApiError(401) if anonymous, ApiError(403) if denied
     // ... handler body
   } catch (err) {
-    if (err instanceof ApiError) return res.status(err.status).json({ error: err.message });
-    return res.status(500).json({ error: 'Internal' });
+    if (err instanceof ApiError) { sendApiError(res, err); return; }
+    res.status(500).json({ error: 'Internal' });
   }
 }
 ```

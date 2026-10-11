@@ -7,7 +7,7 @@ user-keywords:
   - Uptime
   - Server
 slug: using-uptimeplugin
-lastModified: '2026-04-23T00:00:00.000Z'
+lastModified: '2026-10-11T00:00:00.000Z'
 author: system
 ---
 # Using UptimePlugin
@@ -40,3 +40,7 @@ Server uptime: [{UptimePlugin}]
 | Hours only | `5h 30m` |
 | Minutes only | `15m` |
 /%
+
+## How Often It Updates
+
+Pages are kept ready in memory between views. A page that shows the uptime is brought up to date at most once a minute, so the value can be up to a minute behind.

@@ -1,7 +1,7 @@
 ---
 name: CounterPlugin
 description: "Page-render-scoped counters: increment in place to number items or track invocations within a single render"
-dateModified: '2026-05-14'
+dateModified: '2026-10-11'
 category: plugins
 code: src/plugins/CounterPlugin.ts
 ---
@@ -298,6 +298,10 @@ __Why per-render?__ This matches JSPWiki behavior and is designed for:
 2. If `start` is not specified, `increment` is applied to current value
 3. `showResult` controls output but doesn't affect counter value
 4. All parameters can be combined except `start` overrides increment logic
+
+## Page Caching
+
+`CounterPlugin` is declared `volatile: true`: each render counts again, so a page that uses it is rendered on every request and is never kept in the page cache. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## JSPWiki Compatibility
 

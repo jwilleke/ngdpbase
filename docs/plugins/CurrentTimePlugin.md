@@ -1,7 +1,7 @@
 ---
 name: CurrentTimePlugin
 description: Displays current date/time with customizable formatting
-dateModified: '2025-12-18'
+dateModified: '2026-10-11'
 category: plugins
 code: src/plugins/CurrentTimePlugin.ts
 relatedModules:
@@ -148,6 +148,13 @@ execute(context, params) {
 ### Context Usage
 
 - `context.userContext.preferences` - User's locale/timezone settings
+
+## Page Caching
+
+- With a `format` that has no seconds (for example `format='HH:mm'` or a date-only format), the plugin depends on the clock topic (`CLOCK_TOPIC`): the page stays in the page cache and is re-rendered at most once a minute.
+- With no `format` (the default display includes seconds) or a format containing `s`, the output differs on every request, so the plugin marks the render volatile and the page is rendered on every request and never cached. Avoid that on pages everyone sees, such as the left menu.
+
+See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ## JSPWiki Compatibility
 

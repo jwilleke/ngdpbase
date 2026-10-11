@@ -330,6 +330,19 @@ Key handlers (from `src/parsers/handlers/`):
 | `WikiFormHandler` | — | wiki form syntax |
 | `InterWikiLinkHandler` | — | cross-wiki links |
 
+### Parse-Results Cache
+
+Preferred: __parse-results cache__ or __render cache__
+Avoid: "page cache" (that is the provider's page map, above), "rendered-pages cache", "handler cache"
+
+The one cache of rendered page HTML: the `MarkupParser-ParseResults` region, read through `RegionCache.getOrSetVersioned` in `MarkupParser.parse()`. No route, handler or plugin keeps its own copy of rendered output. An entry is served while every data topic its render read is at the same version; see Data Topic.
+
+### Data Topic
+
+Preferred: __data topic__ (or __topic__)
+
+A name whose version a cached render records — by convention the manager that owns the data (`PageManager`, `ConfigurationManager`, `UserManager`, `AttachmentManager`, `MediaManager`, ...). The manager calls `CacheManager.bump(topic)` after a write, and every cached render that read the topic re-renders on its next read. `CLOCK_TOPIC` (`'Clock'`) is the exception: its version is the current minute, so nothing writes it. Defined in `src/cache/CacheDependencies.ts`.
+
 ### Legacy Renderer
 
 Preferred: __legacy renderer__ or __markdown-it fallback__

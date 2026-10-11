@@ -281,12 +281,12 @@ The rendering pipeline is configured through `app-default-config.json` and can b
 
 ### Caching System
 
-The pipeline includes multi-level caching:
+A rendered page is cached in one place: the `MarkupParser-ParseResults` region (`ngdpbase.markup.cache.parse-results.ttl`, default 300s). Syntax handlers, patterns and variables are not cached separately.
 
-- __Parse Results Cache__: TTL 300s
-- __Handler Results Cache__: TTL 600s
-- __Pattern Cache__: TTL 3600s
-- __Variable Cache__: TTL 300s
+- The cache key covers the page text, page name, the viewer's username and roles, the query string and the viewer's date/locale preferences, plus a 5-minute time bucket.
+- An entry is read through `RegionCache.getOrSetVersioned` and is served only while the data it read is unchanged. Every render depends on the `PageManager`, `ConfigurationManager` and `UserManager` topics; each manager a plugin asks for during the render is added as a dependency. A manager bumps its topic after a write, and the next read re-renders.
+- Output that changes with time depends on `CLOCK_TOPIC` (re-rendered at most once a minute); output that differs on every request marks itself volatile and is never stored.
+- See [caching-developer-guide.md](guides/caching-developer-guide.md).
 
 ### Performance Monitoring
 

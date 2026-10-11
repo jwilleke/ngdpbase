@@ -47,7 +47,7 @@ RenderingManager.updatePageInLinkGraph(pageName, content)
 SearchManager.updatePageInIndex(pageName, pageData)
     │  update full-text search index
     ▼
-CacheManager  (cache invalidation for this page)
+CacheManager.bump('PageManager')  (page-data version: every cached render re-renders on next read)
     │
     ▼
 HTTP redirect → view page  (or JSON response for API callers)
@@ -141,7 +141,7 @@ After the provider write succeeds:
 
 2. __Search index__ — `SearchManager.updatePageInIndex()` re-indexes the page content for full-text search.
 
-3. __Cache invalidation__ — The parse-result cache entry for this page is invalidated so the next view request re-renders from the new content.
+3. __Cache version__ — `PageManager` bumps its data topic (`CacheManager.bump('PageManager')`) after every page change. Every cached render depends on that topic (a page can link, list or include other pages), so each cached page is re-rendered on its next read rather than one entry being evicted. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 ---
 

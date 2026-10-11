@@ -3,7 +3,7 @@
 __Module:__ `src/managers/RenderingManager.js`
 __Quick Reference:__ [RenderingManager.md](RenderingManager.md)
 __Version:__ 1.4.0
-__Last Updated:__ 2026-09-12
+__Last Updated:__ 2026-10-11
 __Status:__ Production Ready
 
 ---
@@ -1009,7 +1009,9 @@ __Solution:__
    }
    ```
 
-3. Optimize content:
+3. Check for per-request plugins: a page that runs a volatile plugin (`[{Counter}]`, `[{CurrentTime}]` showing seconds) is rendered on every request and never cached. Time-driven plugins (uptime, sessions, health, the time to the minute) re-render at most once a minute. See [caching-developer-guide.md](../guides/caching-developer-guide.md).
+
+4. Optimize content:
    - Reduce plugin usage
    - Minimize complex tables
    - Split large pages
@@ -1039,6 +1041,6 @@ __Solution:__
 
 ---
 
-__Last Updated:__ 2026-09-12
+__Last Updated:__ 2026-10-11
 __Maintained By:__ ngdpbase Development Team
 __Status:__ Production Ready ✅

@@ -3,7 +3,7 @@
 __Module:__ `src/managers/CacheManager.ts`
 __Quick Reference:__ [CacheManager.md](CacheManager.md)
 __Version:__ 2.0.0
-__Last Updated:__ 2026-10-10 (v5.2.1)
+__Last Updated:__ 2026-10-11
 __Based on:__ JSPWiki caching patterns with provider architecture
 
 ---
@@ -96,7 +96,7 @@ The full inventory is in [Provider-level structural caches](#provider-level-stru
 
 ### The page cache ([#1751](https://github.com/jwilleke/ngdpbase/issues/1751))
 
-`MarkupParser-ParseResults` is the only page cache. Its key covers the page text, page name, the viewer's username and roles, the query string and the viewer's date/locale preferences. Everything else a page renders is a data version: every render depends on `PageManager`, `ConfigurationManager` and `UserManager`, and each manager a plugin fetches is recorded as well. A volatile plugin keeps its page out of the cache. The rules are in [caching-developer-guide.md](../guides/caching-developer-guide.md).
+`MarkupParser-ParseResults` is the only page cache. Its key covers the page text, page name, the viewer's username and roles, the query string and the viewer's date/locale preferences. Everything else a page renders is a data version: every render depends on `PageManager`, `ConfigurationManager` and `UserManager`, and each manager a plugin fetches is recorded as well. A plugin whose output drifts with time depends on `CLOCK_TOPIC`, whose version is the current minute, so its page re-renders at most once a minute; only a plugin whose output differs on every request (a clock showing seconds, a counter) is volatile and keeps its page out of the cache. The rules are in [caching-developer-guide.md](../guides/caching-developer-guide.md).
 
 Before #1751 the key held the username but not the roles, and the view route kept a second `rendered-pages` cache in front of the parser. After a role was revoked, a cached `[{Index}]` or `<wiki:Include>` still showed pages the person could no longer open, for up to the TTL. That was confirmed on a live instance and is covered by `MarkupParser.readThrough.test.ts`.
 
@@ -796,9 +796,7 @@ Response shape:
 {
   "global": { "hits": 12345, "misses": 678, "hitRate": 0.948, "keys": 412 },
   "regions": {
-    "PageManager":   { "hits": 8000, "misses": 200, "hitRate": 0.976, "keys": 104 },
-    "RenderingManager": { "hits": 3200, "misses": 350, "hitRate": 0.901, "keys": 87 },
-    "PolicyInformationPoint":    { "hits": 800,  "misses": 80,  "hitRate": 0.909, "keys": 24 }
+    "MarkupParser-ParseResults": { "hits": 8000, "misses": 200, "hitRate": 0.976, "keys": 104 }
   },
   "config": { "provider": "NodeCacheProvider", "defaultTTL": 300, "maxKeys": 1000 }
 }
@@ -819,10 +817,19 @@ Clear a specific region.
 
 ```bash
 curl -X POST -H "Cookie: ngdpbase.sid=<session>" -H "x-csrf-token: <token>" \
-  http://localhost:3000/api/admin/cache/clear/RenderingManager
+  http://localhost:3000/api/admin/cache/clear/MarkupParser-ParseResults
 ```
 
-Both clear endpoints require `admin-system` permission and a valid CSRF token. Both affect only __CacheManager-managed regions__ — provider-level structural caches (page metadata, search index) are not cleared.
+### `POST /api/admin/cache/clear/page/:identifier`
+
+Evict one page (by UUID, slug or title) through `PageManager.invalidatePageCache`: the provider's cached content for that page is dropped and the page-data topic is bumped, so every cached render re-renders on its next read.
+
+```bash
+curl -X POST -H "Cookie: ngdpbase.sid=<session>" -H "x-csrf-token: <token>" \
+  http://localhost:3000/api/admin/cache/clear/page/Welcome
+```
+
+All clear endpoints require `admin-system` permission and a valid CSRF token. `clear` and `clear/:region` affect only __CacheManager-managed regions__ — provider-level structural caches (page metadata, search index) are not cleared.
 
 ---
 
@@ -876,16 +883,6 @@ __File__: `src/providers/ElasticsearchSearchProvider.ts`
 
 Topology: out-of-process. ngdpbase indexes documents into ES at indexing time and queries via the ES HTTP API at search time. ES handles its own caching, persistence, and clustering. Indexed document shape: `{ title, content, systemCategory, systemKeywords, userKeywords, lastModified, isPrivate, audience }`. Same denormalization rule as Lunr — fields not in the indexed shape can't be filtered. See open issue [#628](https://github.com/jwilleke/ngdpbase/issues/628) (AuthorLocked not indexed).
 
-### `MarkupParser` — parse-result cache
-
-__File__: `src/parsers/MarkupParser.ts`
-
-| Cache | Type | Persisted? |
-|---|---|---|
-| Parse result cache | TTL-based, keyed by `hash(content + context)` | No — in-process, lost on restart |
-
-This one straddles the two layers: it's TTL-based like a CacheManager region but lives inside MarkupParser with its own implementation. See [Current-Rendering-Pipeline.md](../architecture/Current-Rendering-Pipeline.md#caching). Configured via `ngdpbase.markup.cache-ttl` (default 300s). Invalidated on save through the rendering pipeline. Could be migrated to a `CacheManager.region('MarkupParser')` if cross-instance invalidation becomes important.
-
 ### Engine-wide ThemeManager cache (#625)
 
 __File__: `src/managers/ThemeManager.ts`
@@ -906,7 +903,6 @@ These have their own in-memory user / role records loaded at init from JSON file
 
 - __Configuration__: `ConfigurationManager` holds the merged config in memory; `getProperty` is a Map lookup.
 - __Policies__: `PolicyManager` keeps the loaded policy file in memory; `PolicyEvaluator.evaluateAccess` iterates them in-process.
-- __Plugin output cache__: `MarkupParser`'s handler-result cache (separate from parse-result cache).
 
 None of these are CacheManager regions; all are in-process structural caches.
 
@@ -916,15 +912,12 @@ None of these are CacheManager regions; all are in-process structural caches.
                                      ┌─────────────────────────────────────────┐
                                      │  Layer 1 — CacheManager regions (TTL)   │
                                      │                                         │
-                                     │  PageManager:rendered-html              │
-                                     │  RenderingManager:parsed-content        │
-                                     │  PolicyInformationPoint:permission-decisions        │
-                                     │  PolicyManager:evaluation-results       │
-                                     │  ...                                    │
+                                     │  MarkupParser-ParseResults (the one     │
+                                     │  page cache, kept by data versions)     │
                                      │                                         │
                                      │  Backend: NodeCacheProvider (default)   │
                                      │           NullCacheProvider (disabled)  │
-                                     │           RedisCacheProvider (planned)  │
+                                     │           RedisCacheProvider (stub)     │
                                      └─────────────────────────────────────────┘
 
    ┌──────────────────────────────┐  ┌──────────────────────────────┐  ┌──────────────────────┐
