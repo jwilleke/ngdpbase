@@ -64,7 +64,8 @@ describe('passkeys end to end (#448)', () => {
         getBaseURL: () => baseUrl
       },
       PolicyDecisionPoint: { permits: () => Promise.resolve(true) },
-      UserManager: { getUser: () => Promise.resolve({ username: 'molly', password: 'scrypt$x' }) },
+      // #1758: AuthManager counts a completed sign-in on the account.
+      UserManager: { getUser: () => Promise.resolve({ username: 'molly', password: 'scrypt$x' }), recordSignIn: () => Promise.resolve() },
       AuditManager: { logAuditEvent: () => Promise.resolve('a') }
     };
     const am = new AuthManager({ getManager: (n: string) => managers[n] ?? null });

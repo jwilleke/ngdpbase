@@ -46,7 +46,7 @@ describe('store door routes (#1414)', () => {
   let ownerState: string;
 
   const req = (kind: string, body: Record<string, unknown> = {}, userContext: Record<string, unknown> = subject) =>
-    ({ params: { kind }, body: { _csrf: 't', ...body }, userContext, ip: '203.0.113.7', session: {} }) as never;
+    ({ params: { kind }, body: { _csrf: 't', ...body }, userContext, ip: '203.0.113.7', get: () => undefined, session: {} }) as never;
 
   const renderedStep = (res: Res) => (res.render.mock.calls.at(-1)?.[1] as { step?: string } | undefined)?.step;
   const renderedWords = (res: Res) => (res.render.mock.calls.at(-1)?.[1] as { words?: string[] } | undefined)?.words ?? [];
@@ -65,7 +65,8 @@ describe('store door routes (#1414)', () => {
       AddonsManager: {
         storeOwnerState: () => ownerState
       },
-      AuthManager: { authenticate: vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' })) }
+      // #1758: AuthManager names the account it checked; the door accepts only the caller's own.
+      AuthManager: { authenticate: vi.fn(async (_m: string, c: { username: string; password: string }) => (c.password === 'right-pw' ? { success: true, username: c.username } : { success: false })) }
     };
     routes = new WikiRoutes({ getManager: (name: string) => managers[name] ?? null });
     vi.spyOn(routes, 'createWikiContext').mockImplementation(() => ({ hasPermission: async () => true }) as never);

@@ -56,7 +56,8 @@ describe('private store unlock door (#1448)', () => {
       query: opts.query ?? {},
       userContext: opts.userContext ?? owner,
       session: opts.session ?? { privateStoreHandle: 'h1' },
-      ip: '203.0.113.7'
+      ip: '203.0.113.7',
+      get: (h: string) => (h.toLowerCase() === 'user-agent' ? 'TestAgent/1.0' : undefined)
     }) as never;
 
   async function giveMollyKeys(): Promise<void> {
@@ -71,7 +72,9 @@ describe('private store unlock door (#1448)', () => {
     pagesDir = path.join(testDir, 'pages');
     await fs.ensureDir(pagesDir);
     clearUnlockedPrivateStores();
-    authenticate = vi.fn(async (_m: string, c: { password: string }) => ({ success: c.password === 'right-pw' }));
+    // #1758: AuthManager names the account it checked; the door accepts only the caller's own.
+    authenticate = vi.fn(async (_m: string, c: { username: string; password: string }) =>
+      (c.password === 'right-pw' ? { success: true, username: c.username } : { success: false }));
     adoptUserPageCatalog = vi.fn(async () => 0);
     migratePrivateLinks = vi.fn(async () => 0);
     buildMissingStoreSearchIndexes = vi.fn(async () => 0);
@@ -125,6 +128,9 @@ describe('private store unlock door (#1448)', () => {
     // The session's existing handle was reused — the restart case.
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
     expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked');
+    // #1758: the password went through AuthManager, the one door, as a re-check from this request.
+    expect(authenticate).toHaveBeenCalledWith('password', { username: 'molly', password: 'right-pw' },
+      { ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', purpose: 're-check' });
     // The owner's sealed pages are adopted as the owner, through the unlocked session.
     expect(adoptUserPageCatalog).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
     // #1457: and their links are migrated here, for the same reason — an
@@ -166,6 +172,8 @@ describe('private store unlock door (#1448)', () => {
     throttle = { check: vi.fn(() => ({ blocked: false })), recordFailure: vi.fn() };
     await routes.privateStoreUnlock(req({ body: { password: 'wrong', next: '/' } }), newRes());
     expect(throttle.recordFailure).toHaveBeenCalled();
+    // #1758: the audit record of the check is AuthManager's; the route writes no second one.
+    expect(auditAuthentication).not.toHaveBeenCalledWith(expect.anything(), 'molly', 'failure', expect.anything());
   });
 
   test.each([
