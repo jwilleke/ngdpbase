@@ -60,7 +60,8 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 
 ## Known gaps
 
-- [#1758](https://github.com/jwilleke/ngdpbase/issues/1758) — four paths check a secret outside AuthManager: the profile password re-check, the login and store-door fallbacks, and the Dawarich API key
+- [#1758](https://github.com/jwilleke/ngdpbase/issues/1758) — paths that check a secret outside AuthManager: the profile password re-check and the login and store-door fallbacks; the password check moves into `PasswordAuthProvider`
+- [#1759](https://github.com/jwilleke/ngdpbase/issues/1759) — the Dawarich routes take a shared key with no person behind it; it becomes an agent token through AuthManager
 - [#1745](https://github.com/jwilleke/ngdpbase/issues/1745) — an add-on route that refuses a step-up permission answers a bare 403 (`ApiContext.requirePermission`), with no way to re-authenticate as core routes give
 - [#1522](https://github.com/jwilleke/ngdpbase/issues/1522) — multi-factor epic: TOTP ([#421](https://github.com/jwilleke/ngdpbase/issues/421)), device authorization ([#1526](https://github.com/jwilleke/ngdpbase/issues/1526)), link-based second factor ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532))
 - [#1743](https://github.com/jwilleke/ngdpbase/issues/1743) — sign-in through any OpenID Connect provider; Google is the only outside login provider today (Cloudflare Access and the authentik bearer are not login providers; see the planning doc). The decided design is in [planning/authentication.md](../planning/authentication.md#external-identity-providers-decided-2026-10-10)

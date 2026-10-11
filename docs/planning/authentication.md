@@ -285,6 +285,34 @@ __Login-page buttons__ (operator, 2026-10-10): each provider's own icon and butt
 
 ---
 
+### AuthManager layout (decided 2026-10-11)
+
+Operator, 2026-10-11: __all auth goes through AuthManager; each provider is the connection to its auth method.__ It covers every check of a secret, not only sign-in: re-checking a password before a change, an API key, a token. The rule is in the [authentication guide](../guides/authentication-developer-guide.md); the paths that break it are [#1758](https://github.com/jwilleke/ngdpbase/issues/1758) and [#1759](https://github.com/jwilleke/ngdpbase/issues/1759).
+
+```text
+AuthManager — the one door. Routes call authenticate(method, …); nothing else checks a secret.
+├─ Sign-in providers: start a session, write session.signIn
+│   ├─ PasswordAuthProvider   owns the check; the hash stays on the user record (UserManager)
+│   ├─ PasskeyAuthProvider    credentials store
+│   ├─ MagicLinkAuthProvider  credentials store (verified email)
+│   └─ OidcAuthProvider       #1743: one class, one registered instance per configured issuer
+│                             (google, apple, microsoft presets; authentik by discovery)
+├─ Request credentials: no session, a delegated subject for one request
+│   ├─ AgentTokenAuthProvider    person-delegated, scoped tokens; also the Dawarich key (#1759)
+│   ├─ OidcBearerAuthProvider    tokens our own /oidc issued to apps
+│   ├─ AuthentikBearerAuthProvider  not a login provider (parked, 2026-10-10)
+│   └─ CloudflareAccessAuthProvider not a login provider (parked, 2026-10-10)
+└─ Stores, read through, owned elsewhere: UserManager (account, password hash),
+   the credentials store (passkeys, emails, devices, #1743 connected identities iss+sub),
+   environment (client secrets, keys)
+```
+
+- __Where a method's data lives stays with the manager that stores it__ (the password hash on the user record, UserManager); __the check is the provider's.__ This restates the 2026-09-21 Manager-SOT line that listed "password hashing" under UserManager.
+- __No separate API-key provider.__ A key an outside client presents is an agent token: a person delegates it, it is scoped, revocable and audited. The Dawarich shared key (`ngdpbase.dawarichCompat.apiKey`) becomes one (#1759).
+- __An outside client never runs as the system user.__ The system principal is the server acting for itself (boot, jobs); a key on a phone or another server with that authority would bypass every check. Something "with no person behind it" gets a person: the one who created the token.
+- __#1743's provider is a registered sign-in provider like the others.__ `/auth/oauth/<name>` and its callback call `authManager.authenticate(...)`; a connected identity is one more credentials-store row. Account creation, the email step and the instance provider's roles are decided inside it.
+- __Order:__ #1758 and #1759 first, so #1743 builds onto a clean door.
+
 ## What YourPHR needs
 
 From YourPHR's [authorization-framework.md](https://github.com/jwilleke/yourphr/blob/main/docs/planning/authorization-framework.md) (read 2026-10-01). Each belongs on the ngdpbase issue named; none is there yet.
