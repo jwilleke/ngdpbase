@@ -9,6 +9,11 @@
 import { createHash } from 'crypto';
 import { PasswordAuthProvider } from '../PasswordAuthProvider';
 import { hashPassword } from '../../utils/passwordHash';
+import { randomUUID } from 'node:crypto';
+// Test passwords are made when the test runs, never written in the source:
+// a literal reads to a secret scanner as a hardcoded credential (#1758).
+const RIGHT_PW = `pw-${randomUUID()}`;
+const WRONG_PW = `pw-${randomUUID()}`;
 
 const legacyHash = (password: string, salt = 'amdwiki-salt'): string =>
   createHash('sha256').update(password + salt).digest('hex');
@@ -28,24 +33,24 @@ function setup(stored: string | null, salt?: string) {
 }
 
 let currentHash: string;
-beforeAll(async () => { currentHash = await hashPassword('right-pw'); });
+beforeAll(async () => { currentHash = await hashPassword(RIGHT_PW); });
 
 describe('PasswordAuthProvider (#1758)', () => {
   test('the right password names the account', async () => {
     const { provider, userManager } = setup(currentHash);
-    expect(await provider.verify({ username: 'molly', password: 'right-pw' })).toEqual({ username: 'molly' });
+    expect(await provider.verify({ username: 'molly', password: RIGHT_PW })).toEqual({ username: 'molly' });
     expect(userManager.storedPasswordHash).toHaveBeenCalledWith('molly');
   });
 
   test('a current hash is not rewritten', async () => {
     const { provider, userManager } = setup(currentHash);
-    await provider.verify({ username: 'molly', password: 'right-pw' });
+    await provider.verify({ username: 'molly', password: RIGHT_PW });
     expect(userManager.upgradePasswordHash).not.toHaveBeenCalled();
   });
 
   test('a wrong password is refused, and nothing is rewritten', async () => {
     const { provider, userManager } = setup(currentHash);
-    expect(await provider.verify({ username: 'molly', password: 'wrong' })).toBeNull();
+    expect(await provider.verify({ username: 'molly', password: WRONG_PW })).toBeNull();
     expect(userManager.upgradePasswordHash).not.toHaveBeenCalled();
   });
 
@@ -58,29 +63,29 @@ describe('PasswordAuthProvider (#1758)', () => {
   test('a missing username or password is refused without asking for the hash', async () => {
     const { provider, userManager } = setup(currentHash);
     expect(await provider.verify({ username: 'molly', password: '' })).toBeNull();
-    expect(await provider.verify({ username: '', password: 'right-pw' })).toBeNull();
+    expect(await provider.verify({ username: '', password: RIGHT_PW })).toBeNull();
     expect(userManager.storedPasswordHash).not.toHaveBeenCalled();
   });
 
   test('a legacy hash verifies and is upgraded, marked legacy, to a hash of the same password', async () => {
-    const { provider, userManager } = setup(legacyHash('right-pw'));
-    expect(await provider.verify({ username: 'molly', password: 'right-pw' })).toEqual({ username: 'molly' });
+    const { provider, userManager } = setup(legacyHash(RIGHT_PW));
+    expect(await provider.verify({ username: 'molly', password: RIGHT_PW })).toEqual({ username: 'molly' });
     expect(userManager.upgradePasswordHash).toHaveBeenCalledWith('molly', expect.stringMatching(/^scrypt\$/), true);
     // The new hash verifies the same password — the account is not bricked.
     const upgraded = userManager.upgradePasswordHash.mock.calls[0][1] as string;
     const again = setup(upgraded);
-    expect(await again.provider.verify({ username: 'molly', password: 'right-pw' })).toEqual({ username: 'molly' });
+    expect(await again.provider.verify({ username: 'molly', password: RIGHT_PW })).toEqual({ username: 'molly' });
   });
 
   test('a legacy hash made with an instance\'s own salt is checked with that salt', async () => {
-    const { provider } = setup(legacyHash('right-pw', 'custom-salt'), 'custom-salt');
-    expect(await provider.verify({ username: 'molly', password: 'right-pw' })).toEqual({ username: 'molly' });
-    const defaultSalt = setup(legacyHash('right-pw', 'custom-salt'));
-    expect(await defaultSalt.provider.verify({ username: 'molly', password: 'right-pw' })).toBeNull();
+    const { provider } = setup(legacyHash(RIGHT_PW, 'custom-salt'), 'custom-salt');
+    expect(await provider.verify({ username: 'molly', password: RIGHT_PW })).toEqual({ username: 'molly' });
+    const defaultSalt = setup(legacyHash(RIGHT_PW, 'custom-salt'));
+    expect(await defaultSalt.provider.verify({ username: 'molly', password: RIGHT_PW })).toBeNull();
   });
 
   test('with no UserManager there is nothing to check against', async () => {
     const provider = new PasswordAuthProvider({ getManager: () => null });
-    expect(await provider.verify({ username: 'molly', password: 'right-pw' })).toBeNull();
+    expect(await provider.verify({ username: 'molly', password: RIGHT_PW })).toBeNull();
   });
 });

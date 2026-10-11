@@ -15,6 +15,11 @@ import WikiRoutes from '../WikiRoutes';
 import { TEST_PRIVATE_STORE_KDF, createUserKeys } from '../../utils/privateStoreCrypto';
 import { privateUserKeysPath } from '../../utils/privateStorePath';
 import { clearUnlockedPrivateStores, hasUnlockedKey } from '../../utils/privateStoreUnlock';
+import { randomUUID } from 'node:crypto';
+// Test passwords are made when the test runs, never written in the source:
+// a literal reads to a secret scanner as a hardcoded credential (#1758).
+const RIGHT_PW = `pw-${randomUUID()}`;
+const WRONG_PW = `pw-${randomUUID()}`;
 
 type Res = {
   render: ReturnType<typeof vi.fn>;
@@ -61,7 +66,7 @@ describe('private store unlock door (#1448)', () => {
     }) as never;
 
   async function giveMollyKeys(): Promise<void> {
-    const { envelope } = await createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
+    const { envelope } = await createUserKeys(RIGHT_PW, { kdf: TEST_PRIVATE_STORE_KDF });
     const keysPath = privateUserKeysPath(pagesDir, 'molly');
     await fs.ensureDir(path.dirname(keysPath));
     await fs.writeJson(keysPath, envelope);
@@ -74,7 +79,7 @@ describe('private store unlock door (#1448)', () => {
     clearUnlockedPrivateStores();
     // #1758: AuthManager names the account it checked; the door accepts only the caller's own.
     authenticate = vi.fn(async (_m: string, c: { username: string; password: string }) =>
-      (c.password === 'right-pw' ? { success: true, username: c.username } : { success: false }));
+      (c.password === RIGHT_PW ? { success: true, username: c.username } : { success: false }));
     adoptUserPageCatalog = vi.fn(async () => 0);
     migratePrivateLinks = vi.fn(async () => 0);
     buildMissingStoreSearchIndexes = vi.fn(async () => 0);
@@ -123,13 +128,13 @@ describe('private store unlock door (#1448)', () => {
   test('the right password unlocks the store and returns to the page', async () => {
     await giveMollyKeys();
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'right-pw', next: '/view/Journal' } }), res);
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/view/Journal' } }), res);
     expect(res.redirect).toHaveBeenCalledWith('/view/Journal');
     // The session's existing handle was reused — the restart case.
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(true);
     expect(auditAuthentication).toHaveBeenCalledWith(expect.anything(), 'molly', 'success', 'private store unlocked');
     // #1758: the password went through AuthManager, the one door, as a re-check from this request.
-    expect(authenticate).toHaveBeenCalledWith('password', { username: 'molly', password: 'right-pw' },
+    expect(authenticate).toHaveBeenCalledWith('password', { username: 'molly', password: RIGHT_PW },
       { ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', purpose: 're-check' });
     // The owner's sealed pages are adopted as the owner, through the unlocked session.
     expect(adoptUserPageCatalog).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly', privateStoreHandle: 'h1' }));
@@ -150,7 +155,7 @@ describe('private store unlock door (#1448)', () => {
   test('a wrong password leaves it locked and says so', async () => {
     await giveMollyKeys();
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'wrong', next: '/view/Journal' } }), res);
+    await routes.privateStoreUnlock(req({ body: { password: WRONG_PW, next: '/view/Journal' } }), res);
     expect(res.redirect).not.toHaveBeenCalled();
     expect(res.render).toHaveBeenCalledWith('private-store-unlock', expect.objectContaining({ error: 'That password is not correct.' }));
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
@@ -162,7 +167,7 @@ describe('private store unlock door (#1448)', () => {
     await giveMollyKeys();
     throttle = { check: vi.fn(() => ({ blocked: true })), recordFailure: vi.fn() };
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'right-pw', next: '/' } }), res);
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/' } }), res);
     expect(authenticate).not.toHaveBeenCalled();
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
   });
@@ -170,7 +175,7 @@ describe('private store unlock door (#1448)', () => {
   test('a failed attempt is recorded against the throttle', async () => {
     await giveMollyKeys();
     throttle = { check: vi.fn(() => ({ blocked: false })), recordFailure: vi.fn() };
-    await routes.privateStoreUnlock(req({ body: { password: 'wrong', next: '/' } }), newRes());
+    await routes.privateStoreUnlock(req({ body: { password: WRONG_PW, next: '/' } }), newRes());
     expect(throttle.recordFailure).toHaveBeenCalled();
     // #1758: the audit record of the check is AuthManager's; the route writes no second one.
     expect(auditAuthentication).not.toHaveBeenCalledWith(expect.anything(), 'molly', 'failure', expect.anything());
@@ -184,7 +189,7 @@ describe('private store unlock door (#1448)', () => {
   ])('an off-site return address %s is refused — it is not an open redirect', async (next) => {
     await giveMollyKeys();
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'right-pw', next } }), res);
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next } }), res);
     const target = res.redirect.mock.calls.at(-1)?.[0] as string;
     expect(target.startsWith('/')).toBe(true);
     expect(target.startsWith('//')).toBe(false);
@@ -196,7 +201,7 @@ describe('private store unlock door (#1448)', () => {
     const session: Record<string, unknown> = {};
     const res = newRes();
     await routes.privateStoreUnlock(
-      req({ body: { password: 'right-pw', next: '/' }, userContext: { ...owner, privateStoreHandle: undefined }, session }),
+      req({ body: { password: RIGHT_PW, next: '/' }, userContext: { ...owner, privateStoreHandle: undefined }, session }),
       res
     );
     expect(typeof session.privateStoreHandle).toBe('string');
@@ -214,7 +219,7 @@ describe('private store unlock door (#1448)', () => {
     await giveMollyKeys();
     const anonymous = { username: 'Anonymous', roles: ['anonymous'], isAuthenticated: false };
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'right-pw', next: '/' }, userContext: anonymous, session: {} }), res);
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/' }, userContext: anonymous, session: {} }), res);
     expect(res.redirect).toHaveBeenCalledWith('/');
     expect(authenticate).not.toHaveBeenCalled();
   });
@@ -226,7 +231,7 @@ describe('private store unlock door (#1448)', () => {
     await giveMollyKeys();
     const root = { username: 'root', roles: ['admin'], isAuthenticated: true, privateStoreHandle: 'h2' };
     const res = newRes();
-    await routes.privateStoreUnlock(req({ body: { password: 'right-pw', next: '/' }, userContext: root, session: { privateStoreHandle: 'h2' } }), res);
+    await routes.privateStoreUnlock(req({ body: { password: RIGHT_PW, next: '/' }, userContext: root, session: { privateStoreHandle: 'h2' } }), res);
     expect(authenticate).not.toHaveBeenCalled();
     expect(hasUnlockedKey({ privateStoreHandle: 'h2' })).toBe(false);
     expect(hasUnlockedKey({ privateStoreHandle: 'h1' })).toBe(false);
@@ -235,7 +240,7 @@ describe('private store unlock door (#1448)', () => {
   describe('with the 12 recovery words (#1453)', () => {
     /** Molly's keys, returning the words that also open them. */
     async function giveMollyKeysWithWords(): Promise<string> {
-      const { envelope, mnemonic } = await createUserKeys('right-pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const { envelope, mnemonic } = await createUserKeys(RIGHT_PW, { kdf: TEST_PRIVATE_STORE_KDF });
       await fs.outputJson(privateUserKeysPath(pagesDir, 'molly'), envelope);
       return mnemonic;
     }

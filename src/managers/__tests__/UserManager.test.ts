@@ -10,6 +10,7 @@ import UserManager from '../UserManager';
 import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import PolicyInformationPoint from '../../security/PolicyInformationPoint';
 import type { WikiEngine } from '../../types/WikiEngine';
+import { randomUUID } from 'node:crypto';
 /** #1179: the account writes take the actor's context — a request subject here. */
 const ACTOR = { username: 'root', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.7' };
 
@@ -231,12 +232,15 @@ describe('UserManager', () => {
     });
 
     test('upgradePasswordHash() replaces the stored hash', async () => {
-      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: 'old', isActive: true });
+      // Made when the test runs, never a literal: a secret scanner reads one as a credential.
+      const oldHash = `old-${randomUUID()}`;
+      const newHash = `scrypt$${randomUUID()}`;
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: oldHash, isActive: true });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      await userManager.upgradePasswordHash('test', 'scrypt$new', true);
+      await userManager.upgradePasswordHash('test', newHash, true);
 
-      expect(userManager.provider.updateUser).toHaveBeenCalledWith('test', expect.objectContaining({ password: 'scrypt$new' }));
+      expect(userManager.provider.updateUser).toHaveBeenCalledWith('test', expect.objectContaining({ password: newHash }));
     });
   });
 
