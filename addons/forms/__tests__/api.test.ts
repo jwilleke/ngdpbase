@@ -306,3 +306,41 @@ describe('POST /api/forms/submit/:formId — choices, amounts and the handler', 
     expect(saved).toEqual([]);
   });
 });
+
+
+// ── Choices from a manager load when the page opens (the calendar's method) ───
+
+describe('GET /api/forms/options/:formId', () => {
+  const form = {
+    id: 'test-form', title: 'T', proxySubmission: false, store: true,
+    fields: [
+      { name: 'fund', type: 'dropdown', label: 'Fund', required: true, optionsSource: 'fetch:LedgerManager.toFormOptions(list=funds)' },
+      { name: 'size', type: 'dropdown', label: 'Size', required: false, options: ['S', 'L'] },
+      { name: 'amount', type: 'amount', label: 'Amount', required: true }
+    ]
+  };
+  function optionsApp(definition: unknown = form) {
+    const asked: unknown[] = [];
+    const engine = makeEngine({
+      FormsDataManager: { getDefinition: () => definition, saveSubmission: async (s: object) => s },
+      LedgerManager: { toFormOptions: async (o: unknown, viewer: unknown) => { asked.push(o, viewer); return [{ value: 'general', label: 'General' }]; } }
+    });
+    const app = express();
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = { username: 'jim' }; next(); });
+    app.use('/api/forms', apiRoutes(engine as never, noopAddon));
+    return { app, asked };
+  }
+
+  test('answers each manager-fed dropdown\'s choices, asked as the viewer, never cached', async () => {
+    const { app, asked } = optionsApp();
+    const res = await request(app).get('/api/forms/options/test-form');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, options: { fund: [{ value: 'general', label: 'General' }] } });
+    expect(asked).toEqual([{ list: 'funds' }, { username: 'jim' }]);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  test('404 for a form that does not exist', async () => {
+    expect((await request(optionsApp(null).app).get('/api/forms/options/nope')).status).toBe(404);
+  });
+});

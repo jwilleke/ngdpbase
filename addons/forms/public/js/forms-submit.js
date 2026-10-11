@@ -35,11 +35,44 @@
     }
   }
 
+  // Dropdowns fed by a manager load their choices now, for this reader: the
+  // saved page holds them empty (the calendar's method). Choices are text, never HTML.
+  async function loadChoices(form, formId) {
+    const selects = Array.from(form.querySelectorAll('select[data-options-field]'));
+    if (selects.length === 0) return;
+    let options = {};
+    try {
+      const res = await fetch('/api/forms/options/' + encodeURIComponent(formId), { credentials: 'same-origin' });
+      const json = await res.json();
+      if (json.ok) options = json.options || {};
+    } catch { /* left empty; the submit says what is wrong */ }
+    for (const select of selects) {
+      const choices = options[select.dataset.optionsField] || [];
+      const first = document.createElement('option');
+      first.value = '';
+      first.textContent = choices.length ? '— select —' : '— none available —';
+      select.replaceChildren(first);
+      for (const choice of choices) {
+        const option = document.createElement('option');
+        option.value = choice.value;
+        option.textContent = choice.label;
+        if (select.dataset.selected && select.dataset.selected === choice.value) option.selected = true;
+        select.append(option);
+      }
+    }
+  }
+
+  // After a change, every form on the page shows the current choices (a new fund, say).
+  function reloadAllChoices() {
+    document.querySelectorAll('form[data-ngdp-form]').forEach((f) => { void loadChoices(f, f.dataset.ngdpForm); });
+  }
+
   function initForm(formWrapper) {
     const formId = formWrapper.dataset.ngdpForm;
     const form   = formWrapper.closest('.ngdp-form')?.querySelector('form') ?? formWrapper.querySelector('form');
     const result = document.getElementById('form-result-' + formId);
     if (!form || !result) return;
+    void loadChoices(form, formId);
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -82,6 +115,7 @@
 
         if (json.ok) {
           form.reset();
+          reloadAllChoices();
           form.classList.add('d-none');
           showAlert(result, 'success', 'fa-check-circle', 'Your submission was received. Thank you!');
         } else {

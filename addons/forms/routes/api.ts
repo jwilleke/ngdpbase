@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { buildSubmissionValidator, fieldErrors } from '../managers/FormsDataManager.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormSubmission } from '../managers/FormsDataManager.js';
-import { resolveChoices } from '../managers/fieldOptions.js';
+import { loadsChoices, resolveChoices, resolveFieldOptions } from '../managers/fieldOptions.js';
 
 type AddonRef = { callHandler(formId: string, submission: unknown, ctx: unknown): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> };
 
@@ -159,6 +159,30 @@ export default function apiRoutes(engine: WikiEngine, addon: AddonRef): Router {
       } catch (err) {
         if (err instanceof ApiError) { sendApiError(res, err); return; }
         console.error('[forms] submit error:', err);
+        res.status(500).json({ ok: false, error: 'Internal server error' });
+      }
+    })();
+  });
+
+  // ── GET /api/forms/options/:formId ────────────────────────────────────────
+  // The choices of each dropdown fed by a manager, for this reader: the
+  // manager is asked with the reader's context and offers what they may see.
+  // The page holds the dropdown empty; forms-submit.js asks here when it opens.
+  router.get('/options/:formId', (req: Request, res: Response) => {
+    void (async () => {
+      try {
+        const form = fdm()?.getDefinition(String(req.params['formId']));
+        if (!form) { res.status(404).json({ ok: false, error: 'Form not found' }); return; }
+        const userContext = (req as Request & { userContext?: unknown }).userContext;
+        const options: Record<string, { value: string; label: string }[]> = {};
+        for (const field of form.fields.filter(loadsChoices)) {
+          options[field.name] = await resolveFieldOptions(engine, field, userContext);
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ok: true, options });
+      } catch (err) {
+        if (err instanceof ApiError) { sendApiError(res, err); return; }
+        console.error('[forms] options error:', err);
         res.status(500).json({ ok: false, error: 'Internal server error' });
       }
     })();
