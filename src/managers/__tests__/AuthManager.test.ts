@@ -1,5 +1,7 @@
 'use strict';
 
+import { hashPassword } from '../../utils/passwordHash';
+
 describe('AuthManager', () => {
   let AuthManager;
   let mockEngine;
@@ -431,7 +433,11 @@ describe('AuthManager', () => {
     });
 
     test('a successful sign-in reports its provider and the factor satisfied, with its time', async () => {
-      const userManager = { authenticateUser: vi.fn().mockResolvedValue({ username: 'alice' }), getUser: vi.fn().mockResolvedValue({ username: 'alice' }) };
+      const userManager = {
+        storedPasswordHash: vi.fn().mockResolvedValue(await hashPassword('secret')),
+        recordSignIn: vi.fn().mockResolvedValue(undefined),
+        getUser: vi.fn().mockResolvedValue({ username: 'alice' })
+      };
       const manager = new AuthManager(makeEngine(makeConfigManager(), { UserManager: userManager }));
       await manager.initialize();
       const result = await manager.authenticate('password', { username: 'alice', password: 'secret' });
@@ -452,8 +458,10 @@ describe('AuthManager', () => {
     });
 
     test('delegates password auth to PasswordAuthProvider', async () => {
+      // #1758: the provider checks the password itself, against the hash UserManager keeps.
       const mockUserManager = {
-        authenticateUser: vi.fn().mockResolvedValue({ username: 'alice' }),
+        storedPasswordHash: vi.fn().mockResolvedValue(await hashPassword('secret')),
+        recordSignIn: vi.fn().mockResolvedValue(undefined),
         getUser: vi.fn().mockResolvedValue({ username: 'alice' })
       };
       const cm = makeConfigManager();
@@ -462,12 +470,12 @@ describe('AuthManager', () => {
 
       const result = await manager.authenticate('password', { username: 'alice', password: 'secret' });
       expect(result).toMatchObject({ success: true, username: 'alice' });
-      expect(mockUserManager.authenticateUser).toHaveBeenCalledWith('alice', 'secret');
+      expect(mockUserManager.storedPasswordHash).toHaveBeenCalledWith('alice');
     });
 
     test('returns { success: false } on bad password', async () => {
       const mockUserManager = {
-        authenticateUser: vi.fn().mockResolvedValue(null)
+        storedPasswordHash: vi.fn().mockResolvedValue(await hashPassword('secret'))
       };
       const cm = makeConfigManager();
       const manager = new AuthManager(makeEngine(cm, { UserManager: mockUserManager }));
@@ -585,6 +593,84 @@ describe('AuthManager', () => {
       // We can't know the token from outside, but we can verify that an unknown token fails
       const result = await manager.authenticate('magic-link', { token: 'notavalidtoken' });
       expect(result).toEqual({ success: false });
+    });
+  });
+
+  // #1758: AuthManager is the one door for every check of a secret, and writes
+  // the audit record of a sign-in method's check itself; routes write none.
+  describe('authenticate() audits a sign-in method (#1758)', () => {
+    const attempt = { ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0' };
+
+    const setup = async (verifyResult: unknown) => {
+      const audit = { logAuthentication: vi.fn().mockResolvedValue('a1') };
+      const userManager = {
+        getUser: vi.fn().mockResolvedValue({ username: 'alice' }),
+        recordSignIn: vi.fn().mockResolvedValue(undefined)
+      };
+      const manager = new AuthManager(makeEngine(makeConfigManager(), { UserManager: userManager, AuditManager: audit }));
+      await manager.initialize();
+      // The password provider has a factor entry (a sign-in method); its check is stubbed here.
+      vi.spyOn(manager.providers.get('password'), 'verify').mockResolvedValue(verifyResult);
+      manager.providers.set('stub-token', { id: 'stub-token', displayName: 'Stub Token', verify: vi.fn().mockResolvedValue(verifyResult) });
+      return { manager, audit, userManager };
+    };
+
+    test('a successful sign-in is audited with where it came from, and counted on the account', async () => {
+      const { manager, audit, userManager } = await setup({ username: 'alice' });
+
+      const result = await manager.authenticate('password', { username: 'alice', password: 'pw' }, { ...attempt, purpose: 'sign-in' });
+
+      expect(result.success).toBe(true);
+      expect(audit.logAuthentication).toHaveBeenCalledTimes(1);
+      expect(audit.logAuthentication).toHaveBeenCalledWith(
+        { username: 'alice', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'password' }, 'success', 'password');
+      expect(userManager.recordSignIn).toHaveBeenCalledWith('alice');
+    });
+
+    test('purpose defaults to sign-in', async () => {
+      const { manager, userManager } = await setup({ username: 'alice' });
+      await manager.authenticate('password', { username: 'alice', password: 'pw' });
+      expect(userManager.recordSignIn).toHaveBeenCalledWith('alice');
+    });
+
+    test('a refused sign-in is audited as a failure, named by the username tried, and not counted', async () => {
+      const { manager, audit, userManager } = await setup(null);
+
+      const result = await manager.authenticate('password', { username: 'alice', password: 'wrong' }, { ...attempt, purpose: 'sign-in' });
+
+      expect(result).toEqual({ success: false });
+      expect(audit.logAuthentication).toHaveBeenCalledWith(
+        { username: 'alice', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'password' }, 'failure', 'password refused');
+      expect(userManager.recordSignIn).not.toHaveBeenCalled();
+    });
+
+    test('a re-check is audited as one, success and failure, and is never counted as a sign-in', async () => {
+      const ok = await setup({ username: 'alice' });
+      await ok.manager.authenticate('password', { username: 'alice', password: 'pw' }, { ...attempt, purpose: 're-check' });
+      expect(ok.audit.logAuthentication).toHaveBeenCalledWith(expect.objectContaining({ username: 'alice', loginMethod: 'password' }), 'success', 're-check: password');
+      expect(ok.userManager.recordSignIn).not.toHaveBeenCalled();
+
+      const bad = await setup(null);
+      await bad.manager.authenticate('password', { username: 'alice', password: 'wrong' }, { ...attempt, purpose: 're-check' });
+      expect(bad.audit.logAuthentication).toHaveBeenCalledWith(expect.objectContaining({ username: 'alice', loginMethod: 'password' }), 'failure', 're-check: password refused');
+      expect(bad.userManager.recordSignIn).not.toHaveBeenCalled();
+    });
+
+    test('a request credential with no factor entry is not audited and not counted', async () => {
+      const ok = await setup({ username: 'alice' });
+      expect((await ok.manager.authenticate('stub-token', { token: 't' }, attempt)).success).toBe(true);
+      expect(ok.audit.logAuthentication).not.toHaveBeenCalled();
+      expect(ok.userManager.recordSignIn).not.toHaveBeenCalled();
+
+      const bad = await setup(null);
+      expect((await bad.manager.authenticate('stub-token', { token: 't' }, attempt)).success).toBe(false);
+      expect(bad.audit.logAuthentication).not.toHaveBeenCalled();
+    });
+
+    test('a failing audit write does not change the outcome of the check', async () => {
+      const { manager, audit } = await setup({ username: 'alice' });
+      audit.logAuthentication.mockRejectedValue(new Error('disk full'));
+      expect((await manager.authenticate('password', { username: 'alice', password: 'pw' }, attempt)).success).toBe(true);
     });
   });
 

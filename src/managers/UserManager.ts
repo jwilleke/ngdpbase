@@ -6,7 +6,7 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import crypto from 'crypto';
 import logger from '../utils/logger.js';
 import { isReservedUsername } from '../utils/username.js';
-import { hashPassword, verifyPassword, needsRehash, isLegacyHash } from '../utils/passwordHash.js';
+import { hashPassword, verifyPassword } from '../utils/passwordHash.js';
 import LocaleUtils from '../utils/LocaleUtils.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import { UserProvider, ProviderInfo } from '../types/Provider.js';
@@ -232,7 +232,7 @@ interface UserUpdateInput {
  *
  * @example
  * const userManager = engine.getManager('UserManager');
- * const user = await userManager.authenticateUser('admin', 'password');
+ * const ok = await authManager.authenticate('password', { username: 'admin', password: 'password' });
  * if (user) logger.info('Logged in:', user.username);
  */
 class UserManager extends BaseManager {
@@ -492,7 +492,7 @@ class UserManager extends BaseManager {
    *
    * Pre-#1042 hashes keep verifying against the instance-wide salt — the
    * plaintext is not recoverable, so they cannot be converted in bulk. They are
-   * upgraded individually by `authenticateUser` on the next successful login.
+   * upgraded individually by `PasswordAuthProvider` on the next successful check (#1758).
    *
    * @param {string} password - Plain text password
    * @param {string} hash - Stored hash, either scheme
@@ -667,52 +667,42 @@ class UserManager extends BaseManager {
   }
 
   /**
-   * Authenticate user with username/password
-   * @param {string} username - Username
-   * @param {string} password - Password
-   * @returns {Promise<(Omit<User, 'password'> & { isAuthenticated: boolean }) | null>} User object if authenticated
+   * The stored password hash of an active local account, or null (#1758).
+   * The password check is `PasswordAuthProvider`'s, through AuthManager — the
+   * one door for every check of a secret; this manager keeps the hash on the
+   * account and hands it only to that check. `getUser()` still strips it.
    */
-  async authenticateUser(username: string, password: string): Promise<(Omit<User, 'password'> & { isAuthenticated: boolean }) | null> {
-    if (!this.provider) {
-      throw new Error('Provider not initialized');
-    }
-
+  async storedPasswordHash(username: string): Promise<string | null> {
+    if (!this.provider) throw new Error('Provider not initialized');
     const user = await this.provider.getUser(username);
-    if (!user || !user.isActive) {
-      return null;
-    }
+    if (!user || !user.isActive || typeof user.password !== 'string' || user.password === '') return null;
+    return user.password;
+  }
 
-    const isValid = await this.verifyPassword(password, user.password);
-    if (!isValid) {
-      return null;
-    }
+  /**
+   * Replace a stored hash with one at the current cost, after a successful
+   * check (#1042): the only moment it can be done, since the old digest can't
+   * be converted. Called by `PasswordAuthProvider` (#1758).
+   */
+  async upgradePasswordHash(username: string, newHash: string, legacy: boolean): Promise<void> {
+    if (!this.provider) throw new Error('Provider not initialized');
+    const user = await this.provider.getUser(username);
+    if (!user) return;
+    user.password = newHash;
+    await this.writeAccounts(this.provider.updateUser(username, user));
+    logger.info(`🔐 Upgraded stored password hash for "${username}" (${legacy ? 'legacy SHA-256 → scrypt' : 'scrypt parameters raised'}) (#1042)`);
+  }
 
-    // #1042: upgrade the stored hash in place, now that we hold the plaintext
-    // and know it is correct — the only moment a rehash is possible, since the
-    // old digest cannot be converted. The store ages over as people sign in;
-    // nobody is locked out and no reset mail is needed.
-    if (needsRehash(user.password)) {
-      const wasLegacy = isLegacyHash(user.password);
-      user.password = await hashPassword(password);
-      logger.info(
-        `🔐 Upgraded stored password hash for "${username}" ` +
-        `(${wasLegacy ? 'legacy SHA-256 → scrypt' : 'scrypt parameters raised'}) (#1042)`
-      );
-    }
-
-    // Update login stats
+  /** Count a completed sign-in on the account: last sign-in and sign-in count (#1758; AuthManager calls it for a sign-in, never a re-check). */
+  async recordSignIn(username: string): Promise<void> {
+    if (!this.provider) throw new Error('Provider not initialized');
+    const user = await this.provider.getUser(username);
+    if (!user) return;
     user.lastLogin = new Date().toISOString();
     user.loginCount = (user.loginCount || 0) + 1;
     await this.writeAccounts(this.provider.updateUser(username, user));
-
-    // CRITICAL FIX: Return a user object that is ready to be placed in the session.
-    // It must include the `isAuthenticated` flag.
-    const { password: _pwd, ...userWithoutPassword } = user;
-    return {
-      ...userWithoutPassword,
-      isAuthenticated: true
-    };
   }
+
 
   /**
    * Check if a display name conflicts with existing page names or other users

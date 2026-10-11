@@ -100,6 +100,13 @@ const mockCacheManager = {
   stats: vi.fn()
 };
 
+// #1758: every check of a secret goes through AuthManager; with none, sign-in fails closed.
+// Present only where a test opts in (POST /login); the other routes here run without one.
+const mockAuthManager = {
+  authenticate: vi.fn()
+};
+let authManagerPresent = false;
+
 const mockUserManager = {
   getUser: vi.fn(),
   getUsers: vi.fn(),
@@ -206,6 +213,7 @@ vi.mock('../../WikiEngine', () => {
           PolicyInformationPoint: mockPolicyInformationPoint,
           CacheManager: mockCacheManager,
           UserManager: mockUserManager,
+          AuthManager: authManagerPresent ? mockAuthManager : null,
           PolicyDecisionPoint: mockPolicyDecisionPoint,
           // Who holds which role is RoleManager's (#1431 step 12).
           RoleManager: { resolveUserRoles: vi.fn().mockResolvedValue([]) },
@@ -314,6 +322,7 @@ function resetMocks() {
   mockUserManager.searchUsers.mockResolvedValue([{ username: 'testuser', displayName: 'Test' }]);
   mockUserManager.createSession.mockResolvedValue('sid');
   mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
+  mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser', provider: 'password', factors: [] });
   mockUserManager.updateUser.mockResolvedValue(true);
   mockUserManager.destroySession.mockResolvedValue(true);
   mockUserManager.getSession.mockResolvedValue(null);
@@ -439,20 +448,30 @@ describe('WikiRoutes — coverage batch 4', () => {
   // ── POST /login ──────────────────────────────────────────────────────────────
 
   describe('POST /login', () => {
+    beforeEach(() => { authManagerPresent = true; });
+    afterEach(() => { authManagerPresent = false; });
+
     test('redirects to / on successful authentication', async () => {
       mockUserContext = null;
-      mockUserManager.authenticateUser.mockResolvedValue({ username: 'testuser', isAuthenticated: true });
+      mockAuthManager.authenticate.mockResolvedValue({ success: true, username: 'testuser', provider: 'password', factors: [] });
       const res = await request(app)
         .post('/login')
         .set('x-csrf-token', 'test-csrf-token')
+        .set('User-Agent', 'LoginTest/1.0')
         .send({ username: 'testuser', password: 'password123', redirect: '/' });
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/');
+      // #1758: the one door — checked (and audited) by AuthManager as a sign-in.
+      expect(mockAuthManager.authenticate).toHaveBeenCalledWith(
+        'password',
+        { username: 'testuser', password: 'password123' },
+        expect.objectContaining({ purpose: 'sign-in', userAgent: 'LoginTest/1.0' })
+      );
     });
 
     test('redirects to /login on failed authentication', async () => {
       mockUserContext = null;
-      mockUserManager.authenticateUser.mockResolvedValue(null);
+      mockAuthManager.authenticate.mockResolvedValue({ success: false });
       const res = await request(app)
         .post('/login')
         .set('x-csrf-token', 'test-csrf-token')
@@ -460,6 +479,19 @@ describe('WikiRoutes — coverage batch 4', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/login');
       expect(res.headers.location).toContain('error=');
+    });
+
+    test('with no AuthManager the sign-in fails closed — there is no second door (#1758)', async () => {
+      mockUserContext = null;
+      authManagerPresent = false;
+      const res = await request(app)
+        .post('/login')
+        .set('x-csrf-token', 'test-csrf-token')
+        .send({ username: 'testuser', password: 'password123', redirect: '/' });
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login');
+      expect(res.headers.location).toContain('error=');
+      expect(mockUserManager.authenticateUser).not.toHaveBeenCalled();
     });
   });
 

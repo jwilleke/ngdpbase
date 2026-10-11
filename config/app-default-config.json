@@ -36,7 +36,6 @@
     "ngdpbase.addons.demo.admin-account.password": "secret",
     "ngdpbase.mail.provider.smtp.pass": "secret",
     "ngdpbase.auth.google-oidc.client-secret": "secret",
-    "ngdpbase.dawarichCompat.apiKey": "secret",
     "ngdpbase.access.policies": "sensitive",
     "ngdpbase.backup.directory": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
@@ -2711,7 +2710,6 @@
     ".ts"
   ],
   "ngdpbase.dawarichCompat.enabled": false,
-  "ngdpbase.dawarichCompat.apiKey": "",
   "ngdpbase.dawarichCompat.thumbnailSize": "500x500",
   "ngdpbase.media.extensions": {
     "jpg": true,

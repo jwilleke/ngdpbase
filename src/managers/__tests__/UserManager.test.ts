@@ -196,52 +196,47 @@ describe('UserManager', () => {
   });
 
   describe('Authentication', () => {
-    test('authenticateUser() should validate and return user with isAuthenticated flag', async () => {
+    // #1758: the password check moved to PasswordAuthProvider (through
+    // AuthManager, the one door). UserManager keeps the hash and hands it only
+    // to that check, rewrites it on upgrade, and counts a completed sign-in.
+    test('storedPasswordHash() returns the hash of an active local account', async () => {
       const hashedPassword = await userManager.hashPassword('password');
-      const mockUser = {
-        username: 'test',
-        email: 'test@example.com',
-        password: hashedPassword,
-        isActive: true,
-        loginCount: 0
-      };
-      userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: hashedPassword, isActive: true });
+
+      expect(await userManager.storedPasswordHash('test')).toBe(hashedPassword);
+      expect(userManager.provider.getUser).toHaveBeenCalledWith('test');
+    });
+
+    test('storedPasswordHash() returns null for an unknown user or one with no password', async () => {
+      userManager.provider.getUser = vi.fn().mockResolvedValue(null);
+      expect(await userManager.storedPasswordHash('nobody')).toBeNull();
+
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'ext', password: '', isActive: true, isExternal: true });
+      expect(await userManager.storedPasswordHash('ext')).toBeNull();
+    });
+
+    test('storedPasswordHash() returns null for an inactive user', async () => {
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: 'hashed:test-fixture', isActive: false });
+
+      expect(await userManager.storedPasswordHash('test')).toBeNull();
+    });
+
+    test('recordSignIn() counts the sign-in: lastLogin and loginCount', async () => {
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: 'x', isActive: true, loginCount: 2 });
       userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      const result = await userManager.authenticateUser('test', 'password');
+      await userManager.recordSignIn('test');
 
-      expect(userManager.provider.getUser).toHaveBeenCalledWith('test');
-      expect(result).toBeTruthy();
-      expect(result.username).toBe('test');
-      expect(result.isAuthenticated).toBe(true);
-      expect(result.password).toBeUndefined();
+      expect(userManager.provider.updateUser).toHaveBeenCalledWith('test', expect.objectContaining({ loginCount: 3, lastLogin: expect.any(String) }));
     });
 
-    test('authenticateUser() should return null for invalid password', async () => {
-      const hashedPassword = await userManager.hashPassword('correctpass');
-      const mockUser = {
-        username: 'test',
-        password: hashedPassword,
-        isActive: true
-      };
-      userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
+    test('upgradePasswordHash() replaces the stored hash', async () => {
+      userManager.provider.getUser = vi.fn().mockResolvedValue({ username: 'test', password: 'old', isActive: true });
+      userManager.provider.updateUser = vi.fn().mockResolvedValue(undefined);
 
-      const result = await userManager.authenticateUser('test', 'wrongpass');
+      await userManager.upgradePasswordHash('test', 'scrypt$new', true);
 
-      expect(result).toBeNull();
-    });
-
-    test('authenticateUser() should return null for inactive user', async () => {
-      const mockUser = {
-        username: 'test',
-        password: 'hashed:test-fixture',
-        isActive: false
-      };
-      userManager.provider.getUser = vi.fn().mockResolvedValue(mockUser);
-
-      const result = await userManager.authenticateUser('test', 'password');
-
-      expect(result).toBeNull();
+      expect(userManager.provider.updateUser).toHaveBeenCalledWith('test', expect.objectContaining({ password: 'scrypt$new' }));
     });
   });
 

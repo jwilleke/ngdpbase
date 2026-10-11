@@ -88,3 +88,45 @@ describe('toImmichAsset (#864)', () => {
     expect(a.type).toBe('VIDEO');
   });
 });
+
+// #1759: the Dawarich key is an agent token through AuthManager, never a shared key.
+describe('Dawarich routes take an agent token, through the media door (#1759)', () => {
+  it('only its two routes may present a token in x-api-key', async () => {
+    const { isDawarichApiKeyPath } = await import('../DawarichCompatRoutes.js');
+    expect(isDawarichApiKeyPath('POST', '/api/search/metadata')).toBe(true);
+    expect(isDawarichApiKeyPath('GET', '/api/assets/abc-123/thumbnail')).toBe(true);
+    expect(isDawarichApiKeyPath('GET', '/api/search/metadata')).toBe(false);
+    expect(isDawarichApiKeyPath('POST', '/api/page/ingest')).toBe(false);
+    expect(isDawarichApiKeyPath('GET', '/api/assets/abc/thumbnail/../x')).toBe(false);
+  });
+
+  async function appWith(permits: boolean, userContext: Record<string, unknown>) {
+    const express = (await import('express')).default;
+    const { registerDawarichCompatRoutes } = await import('../DawarichCompatRoutes.js');
+    const managers: Record<string, unknown> = {
+      ConfigurationManager: { getProperty: (k: string, d: unknown) => (k === 'ngdpbase.dawarichCompat.enabled' ? true : d) },
+      PolicyDecisionPoint: { permits: async () => permits, holds: async () => false },
+      MediaManager: { listByDateRange: async () => [], getThumbnailBuffer: async () => null }
+    };
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { (req as unknown as { userContext: unknown }).userContext = userContext; next(); });
+    registerDawarichCompatRoutes(app, { getManager: <T>(n: string) => (managers[n] ?? null) as T | null });
+    return app;
+  }
+
+  it('a caller without media-read is refused, in core\'s refusal shape', async () => {
+    const request = (await import('supertest')).default;
+    const app = await appWith(false, { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false });
+    const res = await request(app).post('/api/search/metadata').set('x-api-key', 'not-a-token').send({});
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ success: false, error: 'Authentication required' });
+  });
+
+  it('the person behind the token, holding media-read, gets the feed', async () => {
+    const request = (await import('supertest')).default;
+    const app = await appWith(true, { username: 'jim', roles: ['reader'], isAuthenticated: true, viaToken: { id: 't1', name: 'Dawarich', scopes: ['media-read'] } });
+    const res = await request(app).post('/api/search/metadata').send({});
+    expect(res.status).toBe(200);
+  });
+});

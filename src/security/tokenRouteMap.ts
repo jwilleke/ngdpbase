@@ -71,6 +71,18 @@ export interface TokenRoute {
 export const TOKEN_ROUTE_MAP: readonly TokenRoute[] = Object.freeze([
   {
     method: 'POST',
+    pattern: '/api/search/metadata',
+    scopes: ['media-read'],
+    note: 'Dawarich photo overlay, Immich-compatible search (#864); its key is an agent token (#1759)'
+  },
+  {
+    method: 'GET',
+    pattern: '/api/assets/:id/thumbnail',
+    scopes: ['media-read'],
+    note: 'Dawarich photo overlay, Immich-compatible thumbnail (#864); its key is an agent token (#1759)'
+  },
+  {
+    method: 'POST',
     pattern: '/api/page/ingest',
     scopes: ['page-create', 'page-edit'],
     note: 'the documented agent ingest surface — docs/Agent-Ingest-API.md'
