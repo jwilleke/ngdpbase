@@ -31,7 +31,7 @@ import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
-import { freshSignInAnswer, type ReauthMode } from '../security/freshSignIn.js';
+import type { ReauthMode, FreshSignInAnswer } from '../managers/AuthManager.js';
 
 // ── ApiError ────────────────────────────────────────────────────────────────
 
@@ -280,7 +280,7 @@ export class ApiContext extends BaseContext {
    *
    * #1745: a refusal for someone who HOLDS the permission is the step-up one
    * (#1635) — their sign-in is not fresh enough. It carries `reauth`, built
-   * where core routes build it (security/freshSignIn.ts), and the prompt is
+   * where core routes build it (AuthManager.askForFreshSignIn, #1758), and the prompt is
    * audited there; a delegated credential gets no `reauth`.
    *
    * @example
@@ -289,7 +289,11 @@ export class ApiContext extends BaseContext {
   async requirePermission(permission: string): Promise<void> {
     if (await this.hasPermission(permission)) return;
     if (this.request && await this.holdsPermission(permission)) {
-      const answer = await freshSignInAnswer(this.engine, this.request, this.request.userContext, permission, 'json');
+      // #1758: step-up is AuthManager's — the answer and its reauth-prompt record.
+      const authManager = this.engine.getManager<{ askForFreshSignIn(req: Request, u: unknown, p: string, m: ReauthMode): Promise<FreshSignInAnswer> }>('AuthManager');
+      const answer = authManager
+        ? await authManager.askForFreshSignIn(this.request, this.request.userContext, permission, 'json')
+        : { permission, delegated: false, error: 'A fresh sign-in is needed' };
       throw new ApiError(403, answer.error, answer.reauth);
     }
     throw this.isAuthenticated

@@ -6,6 +6,7 @@
  * throttled, audited, and stamps the session's sign-in.
  */
 import WikiRoutes from '../WikiRoutes';
+import AuthManager from '../../managers/AuthManager';
 
 const res = () => ({
   status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), redirect: vi.fn().mockReturnThis(),
@@ -24,7 +25,12 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     reauthenticated: vi.fn(() => ({ provider: 'password', factors: [], amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false, at: 'now' })),
     requiredAalFor: vi.fn(() => 1),
     passkeyRelyingParty: vi.fn(() => null),
-    hasCredential: vi.fn(() => false)
+    hasCredential: vi.fn(() => false),
+    // #1758: step-up is AuthManager's — the real answer, record and completion, on this double.
+    engine: null as unknown,
+    askForFreshSignIn(...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this as never, a); },
+    recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); },
+    completeReauth(...a: Parameters<AuthManager['completeReauth']>) { return AuthManager.prototype.completeReauth.apply(this as never, a); }
   };
   const oidc = { revokeGrant: vi.fn().mockResolvedValue(true) };
   const managers: Record<string, unknown> = {
@@ -43,6 +49,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
     ConfigurationManager: { getProperty: (_k: string, d: unknown) => d }
   };
   const engine = { getManager: vi.fn((n: string) => managers[n] ?? null) };
+  authManager.engine = engine;
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>> & { getCommonTemplateData: unknown };
   (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({ csrfToken: 't' });
   return { r, authManager, audit, oidc };
