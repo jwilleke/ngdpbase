@@ -8,10 +8,14 @@
  *   POST /api/search/metadata          — paginated date-window asset search
  *   GET  /api/assets/:id/thumbnail     — preview JPEG bytes
  *
- * Auth (#864 Gap 3, decided): static shared-secret `x-api-key` header checked
- * with a constant-time comparison (`ngdpbase.dawarichCompat.apiKey`), plus a
- * deployment-level rule that these routes are NOT exposed on the public
- * tunnel hostname (LAN/Tailscale only) — the key alone is not sufficient.
+ * Auth (#1759, decided 2026-10-11): an agent token, never a shared key. A
+ * person mints a token scoped to `media-read`; Dawarich presents it in
+ * `x-api-key`, as Immich clients do. The request-credential middleware reads
+ * that header on these two routes only (`isDawarichApiKeyPath`) and checks it
+ * through AuthManager like any agent token, so the request runs as that
+ * person, within the token's scope, through the media door (`media-read`,
+ * #1485). Deployment rule unchanged: these routes stay off the public tunnel
+ * hostname (LAN/Tailscale only).
  *
  * Strict per-type date policy (#864, decided): photos require the literal
  * `DateTimeOriginal` tag; videos require one of the container-creation tags
@@ -24,9 +28,10 @@
  */
 
 import type { Application, Request, Response } from 'express';
-import crypto from 'crypto';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import logger from '../utils/logger.js';
+import { ApiContext, ApiError, sendApiError } from '../context/ApiContext.js';
+import type { WikiEngine } from '../types/WikiEngine.js';
 
 /** Minimal engine surface this module needs (avoids the full WikiEngine type). */
 interface EngineLike {
@@ -42,6 +47,16 @@ interface MediaManagerLike {
   getThumbnailBuffer(id: string, size: string): Promise<Buffer | null>;
 }
 
+/**
+ * The two Immich-compatible routes, where an agent token may arrive in
+ * `x-api-key` (#1759). The request-credential middleware asks this, so no
+ * other route accepts a token from that header.
+ */
+export function isDawarichApiKeyPath(method: string, path: string): boolean {
+  return (method === 'POST' && path === '/api/search/metadata')
+    || (method === 'GET' && /^\/api\/assets\/[^/]+\/thumbnail$/.test(path));
+}
+
 const VIDEO_DATE_FIELDS = new Set(['CreateDate', 'MediaCreateDate', 'CreationDate']);
 
 /** Result-window cache: Dawarich re-posts the same (takenAfter, takenBefore) for every page. */
@@ -53,12 +68,6 @@ const WINDOW_CACHE_TTL_MS = 60_000;
  *  localDateTime for display only). */
 function toIso(d: string): string {
   return d.replace(' ', 'T') + '.000Z';
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  const ha = crypto.createHash('sha256').update(a).digest();
-  const hb = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(ha, hb);
 }
 
 /** Apply the strict per-type capture-date policy. Returns kept items and drop count. */
@@ -106,26 +115,27 @@ export function toImmichAsset(item: MediaItem): Record<string, unknown> {
  * disabled and 401 on a missing/wrong API key.
  */
 export function registerDawarichCompatRoutes(app: Application, engine: EngineLike): void {
-  const gate = (req: Request, res: Response): boolean => {
+  const gate = async (req: Request, res: Response): Promise<boolean> => {
     const cfg = engine.getManager<ConfigLike>('ConfigurationManager');
     const enabled = cfg?.getProperty('ngdpbase.dawarichCompat.enabled', false) === true;
     if (!enabled) {
       res.status(503).json({ error: 'Dawarich compat layer not enabled' });
       return false;
     }
-    const rawKey = cfg?.getProperty('ngdpbase.dawarichCompat.apiKey', '');
-    const apiKey = typeof rawKey === 'string' ? rawKey : '';
-    const presented = String(req.headers['x-api-key'] ?? '');
-    if (!apiKey || !presented || !constantTimeEqual(apiKey, presented)) {
-      res.status(401).json({ error: 'Invalid API key' });
-      return false;
+    // #1759: the person behind the agent token, through the media door (#1485).
+    try {
+      await ApiContext.from(req, engine as unknown as WikiEngine).requirePermission('media-read');
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError) { sendApiError(res, err); return false; }
+      throw err;
     }
-    return true;
   };
+
 
   app.post('/api/search/metadata', (req: Request, res: Response) => {
     void (async () => {
-      if (!gate(req, res)) return;
+      if (!(await gate(req, res))) return;
       const mediaManager = engine.getManager<MediaManagerLike>('MediaManager');
       if (!mediaManager) {
         return res.status(503).json({ error: 'Media manager not enabled' });
@@ -167,7 +177,7 @@ export function registerDawarichCompatRoutes(app: Application, engine: EngineLik
 
   app.get('/api/assets/:id/thumbnail', (req: Request, res: Response) => {
     void (async () => {
-      if (!gate(req, res)) return;
+      if (!(await gate(req, res))) return;
       const mediaManager = engine.getManager<MediaManagerLike>('MediaManager');
       if (!mediaManager) {
         return res.status(503).json({ error: 'Media manager not enabled' });

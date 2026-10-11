@@ -72,21 +72,12 @@ function continueAfterSave(req: Request, res: Response, next: NextFunction): voi
     return;
   }
 
-  // #818 — bearer-authenticated API requests are exempt. The Authentik bearer
-  // middleware sets `req.bearerAuth` after verifying the token; such requests
+  // #818 — token-authenticated API requests are exempt. The request-credential
+  // middleware sets `req.bearerAuth` after AuthManager verifies the token
+  // (a Bearer header, or Dawarich's agent token in x-api-key, #1759); such requests
   // carry no session cookie, so CSRF (a cookie-confused-deputy defense) does
   // not apply. Cookie/session-authenticated POSTs still require the token.
   if ((req as Request & { bearerAuth?: boolean }).bearerAuth === true) {
-    next();
-    return;
-  }
-
-  // #864 — the Dawarich Immich-compat routes authenticate via a custom
-  // x-api-key header (server-to-server, no session cookie). A cross-site
-  // forged request cannot attach a custom header without a CORS preflight,
-  // so the cookie-confused-deputy attack CSRF defends against cannot occur;
-  // the route's own gate still constant-time-verifies the key.
-  if (req.path === '/api/search/metadata' && typeof req.headers['x-api-key'] === 'string') {
     next();
     return;
   }

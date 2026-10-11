@@ -58,6 +58,7 @@ import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from './manager
 import { registerOidcRoutes } from './routes/OidcRoutes.js';
 import { bearerProviderIds } from './utils/bearerProviders.js';
 import { pidLockPath } from './utils/pidLock.js';
+import { isDawarichApiKeyPath } from './routes/DawarichCompatRoutes.js';
 
 // Project root — reliable because PM2/server.sh always run from the project directory.
 // __dirname would resolve to dist/src/ after compilation, so it cannot be used for
@@ -914,7 +915,12 @@ void (async (): Promise<void> => {
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const header = req.headers['authorization'];
-      if (!header || typeof header !== 'string' || !header.startsWith('Bearer ')) { next(); return; }
+      const bearer = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+      // #1759: Dawarich (an Immich client) presents its agent token in x-api-key,
+      // accepted on its two routes only; everywhere else a token is a Bearer.
+      const apiKey = req.headers['x-api-key'];
+      const keyToken = !bearer && typeof apiKey === 'string' && isDawarichApiKeyPath(req.method, req.path) ? apiKey.trim() : '';
+      if (!bearer && !keyToken) { next(); return; }
       const authManager = engine.getManager('AuthManager') as {
         authenticate?: (id: string, creds: { token?: string }) => Promise<{
           success: boolean;
@@ -927,7 +933,7 @@ void (async (): Promise<void> => {
         aalCapFor?: (username: string) => Promise<1 | 2 | 3 | 0>;
       } | null;
       const candidates = bearerProviderIds(authManager?.getProviders?.() ?? []);
-      const token = header.slice('Bearer '.length).trim();
+      const token = bearer || keyToken;
 
       // #981: an ngdp_at_ token is unambiguously an agent token. If it cannot
       // be authenticated — feature disabled, provider unregistered, token

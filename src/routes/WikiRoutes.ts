@@ -11611,7 +11611,7 @@ ${panes}
     const keys = configManager ? secretKeys((k: string, d: unknown) => configManager.getProperty(k, d)) : [];
 
     // Trimmed and de-duplicated, but NOT lowercased: ngdpbase config keys are
-    // case-sensitive and include camelCase (`ngdpbase.dawarichCompat.apiKey`),
+    // case-sensitive and include camelCase (`ngdpbase.dawarichCompat.thumbnailSize`),
     // so normalising case here would silently stop matching them.
     return new Set(
       keys
