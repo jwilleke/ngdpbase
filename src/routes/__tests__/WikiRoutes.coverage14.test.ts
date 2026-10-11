@@ -161,7 +161,9 @@ const mockAuthManager = {
   // the routes gate session creation on it. A mock returning undefined reads
   // as "another request got there first" and blocks every sign-in.
   consumeToken: vi.fn().mockReturnValue(true),
-  startFlow: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth')
+  startFlow: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/auth'),
+  // #1758: the one sign-in completion step (tested in AuthManager.completeSignIn.test.ts).
+  completeSignIn: vi.fn().mockResolvedValue(undefined)
 };
 
 let includeAuthManager = true;
@@ -709,6 +711,8 @@ describe('WikiRoutes — coverage batch 14', () => {
         .set('x-csrf-token', 'test-csrf-token')
         .send({ token: 'valid-token' });
       expect(second.headers.location).toBe('/login?error=Link+expired+or+already+used');
+      // One session, not two: only the winning submit is completed.
+      expect(mockAuthManager.completeSignIn).toHaveBeenCalledTimes(1);
 
       mockAuthManager.consumeToken.mockImplementation(() => true);
     });
@@ -759,6 +763,8 @@ describe('WikiRoutes — coverage batch 14', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/dashboard');
       expect(mockAuthManager.consumeToken).toHaveBeenCalledWith('magic-link', 'valid-token');
+      expect(mockAuthManager.completeSignIn).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ success: true, username: 'testuser' }), { method: 'magic-link' });
     });
   });
 

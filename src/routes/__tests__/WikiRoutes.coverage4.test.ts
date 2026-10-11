@@ -103,7 +103,8 @@ const mockCacheManager = {
 // #1758: every check of a secret goes through AuthManager; with none, sign-in fails closed.
 // Present only where a test opts in (POST /login); the other routes here run without one.
 const mockAuthManager = {
-  authenticate: vi.fn()
+  authenticate: vi.fn(),
+  completeSignIn: vi.fn() // #1758: the one sign-in completion step
 };
 let authManagerPresent = false;
 
@@ -466,6 +467,12 @@ describe('WikiRoutes — coverage batch 4', () => {
         'password',
         { username: 'testuser', password: 'password123' },
         expect.objectContaining({ purpose: 'sign-in', userAgent: 'LoginTest/1.0' })
+      );
+      // #1758: and completed — and its success audited — by AuthManager's one completion step.
+      expect(mockAuthManager.completeSignIn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ success: true, username: 'testuser' }),
+        { method: 'password', unlockWith: { password: 'password123' } }
       );
     });
 

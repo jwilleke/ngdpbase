@@ -58,7 +58,11 @@ describe('two-step sign-in routes (#1523)', () => {
     const { r } = routes({
       authenticate: vi.fn().mockResolvedValue({ success: true, username: 'molly', provider: 'password', factors: [] }),
       secondFactorsFor: vi.fn(() => []),
-      signInRecord: vi.fn(() => ({ provider: 'password', factors: [], amr: ['pwd'], aal: 1, acr: 'aal1', mfa: false, at: 'now' }))
+      // #1758: completeSignIn owns the session work (AuthManager.completeSignIn.test.ts).
+      completeSignIn: vi.fn(async (q: { session: Record<string, unknown> }, result: { username: string }) => {
+        q.session.username = result.username;
+        q.session.isAuthenticated = true;
+      })
     });
     const s = session();
     const out = res();
@@ -67,21 +71,29 @@ describe('two-step sign-in routes (#1523)', () => {
     expect(out.redirect).toHaveBeenCalledWith('/view/Home');
   });
 
-  test('completion: the approved sign-in becomes a session with both factors and its held keys', async () => {
+  test('completion: the approved sign-in is completed once, with both factors and its held keys', async () => {
+    // #1758: what completion puts on the session (identity, signIn, the held
+    // handle) and its one success audit are AuthManager.completeSignIn's,
+    // tested in AuthManager.completeSignIn.test.ts.
+    const done = { result: { success: true, username: 'molly', provider: 'password', factors: [{ provider: 'password' }, { provider: 'email-link' }] }, privateStoreHandle: 'psh' };
+    const completeSignIn = vi.fn().mockResolvedValue(undefined);
     const { r, authLog } = routes({
       pendingSignIn: vi.fn(() => ({ handle: 'h1', binding: 'b1', username: 'molly' })),
-      completeTwoStep: vi.fn(() => ({ result: { success: true, username: 'molly', provider: 'password', factors: [{ provider: 'password' }, { provider: 'email-link' }] }, privateStoreHandle: 'psh' })),
-      signInRecord: vi.fn((r: { factors: unknown[] }) => ({ provider: 'password', factors: r.factors, amr: ['pwd', 'email'], aal: 1, acr: 'aal1', mfa: true, at: 'now' }))
+      completeTwoStep: vi.fn(() => done),
+      completeSignIn
     });
     const s = session();
     s.pendingSignIn = 'h1';
     s.pendingRedirect = '/view/Home';
     const out = res();
-    await r.secondFactorComplete(req(s, { cookies: { ngdp_two_step: 'b1' } }), out);
-    expect(s).toEqual(expect.objectContaining({ username: 'molly', isAuthenticated: true, privateStoreHandle: 'psh', signIn: expect.objectContaining({ amr: ['pwd', 'email'] }) }));
+    const q = req(s, { cookies: { ngdp_two_step: 'b1' } });
+    await r.secondFactorComplete(q, out);
+    expect(completeSignIn).toHaveBeenCalledTimes(1);
+    expect(completeSignIn).toHaveBeenCalledWith(q, done.result, { method: 'password and email link', privateStoreHandle: 'psh' });
     expect(out.clearCookie).toHaveBeenCalledWith('ngdp_two_step', { path: '/login' });
     expect(out.redirect).toHaveBeenCalledWith('/view/Home');
-    expect(authLog.some((a) => a[1] === 'success' && a[2] === 'password and email link')).toBe(true);
+    // The route writes no audit of its own.
+    expect(authLog).toHaveLength(0);
   });
 
   test('completion before approval goes back to the waiting page', async () => {

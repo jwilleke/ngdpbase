@@ -56,16 +56,23 @@ const createMockReq = (body: Record<string, unknown>, session: Record<string, un
   userContext: null
 });
 
+let authManager: { authenticate: ReturnType<typeof vi.fn>; completeSignIn: ReturnType<typeof vi.fn> };
+
 function makeRoutes(authSucceeds = true) {
+  // #1758: the session work of a sign-in is AuthManager.completeSignIn's
+  // (tested in AuthManager.completeSignIn.test.ts); here it only signs in.
+  authManager = {
+    authenticate: vi.fn().mockResolvedValue(
+      authSucceeds ? { success: true, username: 'admin' } : { success: false }
+    ),
+    completeSignIn: vi.fn(async (req: { session: Record<string, unknown> }, result: { username: string }) => {
+      req.session.username = result.username;
+      req.session.isAuthenticated = true;
+    })
+  };
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'AuthManager') {
-        return {
-          authenticate: vi.fn().mockResolvedValue(
-            authSucceeds ? { success: true, username: 'admin' } : { success: false }
-          )
-        };
-      }
+      if (name === 'AuthManager') return authManager;
       if (name === 'ConfigurationManager') {
         return { getProperty: vi.fn((_k: string, d: unknown) => d) };
       }
@@ -123,70 +130,28 @@ describe('login refuses an off-site redirect (#1041)', () => {
   });
 });
 
-describe('login regenerates the session (#1043)', () => {
-  test('the pre-login session ID does not survive authentication', async () => {
-    const session = createMockSession('attacker-planted-id');
-    await makeRoutes().processLogin(
-      createMockReq({ username: 'admin', password: 'pw' }, session),
-      createMockRes()
-    );
+// #1043: the regeneration itself (new id, identity written after it, a fresh
+// CSRF token, a store that cannot regenerate) is AuthManager.completeSignIn's,
+// and is tested there; the route hands every successful password sign-in to it.
+describe('login completes through AuthManager.completeSignIn (#1043, #1758)', () => {
+  test('a successful password sign-in is completed once, with the result and the password to unlock with', async () => {
+    const session = createMockSession();
+    const req = createMockReq({ username: 'admin', password: 'pw' }, session);
+    await makeRoutes().processLogin(req, createMockRes());
 
-    expect(session.regenerate).toHaveBeenCalled();
-    expect(session.id).toBe('regenerated-id');
+    expect(authManager.completeSignIn).toHaveBeenCalledTimes(1);
+    expect(authManager.completeSignIn).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({ success: true, username: 'admin' }),
+      { method: 'password', unlockWith: { password: 'pw' } }
+    );
   });
 
-  test('the identity is written AFTER regeneration, not before', async () => {
-    // Ordering is the whole fix. Regenerating after the write would throw the
-    // authenticated identity away and log nobody in; regenerating before it is
-    // what closes fixation.
-    const order: string[] = [];
-    const session = createMockSession();
-    // Deliberately does NOT delete `username` here: the accessor defined below
-    // is what records the write, and deleting the property would remove the
-    // accessor with it — the observation would vanish rather than the ordering
-    // being wrong.
-    session.regenerate = vi.fn((cb: (err?: unknown) => void) => {
-      order.push('regenerate');
-      cb();
-    });
-    Object.defineProperty(session, 'username', {
-      configurable: true,
-      set() { order.push('write-identity'); },
-      get() { return 'admin'; }
-    });
-
-    await makeRoutes().processLogin(
-      createMockReq({ username: 'admin', password: 'pw' }, session),
+  test('a refused sign-in is never completed', async () => {
+    await makeRoutes(false).processLogin(
+      createMockReq({ username: 'admin', password: 'wrong' }, createMockSession()),
       createMockRes()
     );
-
-    expect(order).toEqual(['regenerate', 'write-identity']);
-  });
-
-  test('a fresh CSRF token is minted, since regenerate() discards the old one', async () => {
-    const session = createMockSession();
-    await makeRoutes().processLogin(
-      createMockReq({ username: 'admin', password: 'pw' }, session),
-      createMockRes()
-    );
-
-    expect(session.csrfToken).toBeTruthy();
-    expect(session.csrfToken).not.toBe('pre-login-token');
-  });
-
-  test('a store that cannot regenerate still logs the user in', async () => {
-    // Best-effort by design: failing the sign-in outright would turn a
-    // hardening measure into an outage.
-    const session = createMockSession();
-    session.regenerate = vi.fn((cb: (err?: unknown) => void) => cb(new Error('store down')));
-    const res = createMockRes();
-
-    await makeRoutes().processLogin(
-      createMockReq({ username: 'admin', password: 'pw', redirect: '/view/Welcome' }, session),
-      res
-    );
-
-    expect(session.isAuthenticated).toBe(true);
-    expect(res.redirect).toHaveBeenCalledWith('/view/Welcome');
+    expect(authManager.completeSignIn).not.toHaveBeenCalled();
   });
 });

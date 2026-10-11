@@ -11,6 +11,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import AuthManager from '../../managers/AuthManager';
 import logger from '../../utils/logger';
 import {
   TEST_PRIVATE_STORE_KDF,
@@ -73,17 +74,12 @@ function makeRoutes(opts: {
   audit?: { payload?: unknown };
 }) {
   const username = opts.username ?? 'molly';
+  // #1758: the real AuthManager completes the sign-in (and unlocks the stores
+  // through the routes' registered vault unlocker); only the check is stubbed.
+  let authManager: unknown = null;
   const engine = {
     getManager: vi.fn((name: string) => {
-      if (name === 'AuthManager') {
-        return {
-          authenticate: vi.fn().mockResolvedValue(
-            opts.authSucceeds === false
-              ? { success: false }
-              : { success: true, username }
-          )
-        };
-      }
+      if (name === 'AuthManager') return authManager;
       if (name === 'ConfigurationManager') {
         return {
           getProperty: vi.fn((_k: string, d: unknown) => d),
@@ -105,10 +101,19 @@ function makeRoutes(opts: {
       return null;
     })
   };
-  return new WikiRoutes(engine) as unknown as {
+  const am = new AuthManager(engine);
+  authManager = am;
+  vi.spyOn(am, 'authenticate').mockResolvedValue(
+    opts.authSucceeds === false ? { success: false } : { success: true, username }
+  );
+  const routes = new WikiRoutes(engine) as unknown as {
     processLogin(req: unknown, res: unknown): Promise<void>;
     processLogout(req: unknown, res: unknown): void;
+    unlockStoresWithPassword(username: string, password: string): Promise<string>;
   };
+  // What registerRoutes does: hand AuthManager the vault code's unlocker.
+  am.setVaultUnlocker((u: string, p: string) => routes.unlockStoresWithPassword(u, p));
+  return routes;
 }
 
 describe('private store session bag (#1391, #1392)', () => {

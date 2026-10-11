@@ -1,8 +1,8 @@
 /**
  * #1523 — a password sign-in records on the session how it signed in: the
  * provider, the factors with their times, and what they amount to. A failed
- * sign-in records nothing. Uses the real AuthManager.signInRecord over a
- * mocked authenticate().
+ * sign-in records nothing. Uses the real AuthManager.completeSignIn (#1758)
+ * over a mocked authenticate().
  */
 import fs from 'fs-extra';
 import os from 'os';
@@ -40,7 +40,9 @@ describe('sign-in recorded on the session (#1523)', () => {
     const real = new AuthManager({ getManager: () => null });
     const authManager = {
       authenticate: vi.fn().mockResolvedValue(authResult),
-      signInRecord: (r: never) => real.signInRecord(r)
+      signInRecord: (r: never) => real.signInRecord(r),
+      // #1758: the route completes through the real completion step.
+      completeSignIn: (q: never, r: never, how: never) => real.completeSignIn(q, r, how)
     };
     const engine = {
       getManager: vi.fn((name: string) => {

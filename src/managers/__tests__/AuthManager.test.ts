@@ -597,7 +597,8 @@ describe('AuthManager', () => {
   });
 
   // #1758: AuthManager is the one door for every check of a secret, and writes
-  // the audit record of a sign-in method's check itself; routes write none.
+  // the audit record of a sign-in method's failures and re-checks itself;
+  // routes write none. A successful sign-in is recorded by completeSignIn.
   describe('authenticate() audits a sign-in method (#1758)', () => {
     const attempt = { ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0' };
 
@@ -615,22 +616,25 @@ describe('AuthManager', () => {
       return { manager, audit, userManager };
     };
 
-    test('a successful sign-in is audited with where it came from, and counted on the account', async () => {
+    test('a successful sign-in check writes no audit and no count: completeSignIn records it, once', async () => {
       const { manager, audit, userManager } = await setup({ username: 'alice' });
 
       const result = await manager.authenticate('password', { username: 'alice', password: 'pw' }, { ...attempt, purpose: 'sign-in' });
 
       expect(result.success).toBe(true);
-      expect(audit.logAuthentication).toHaveBeenCalledTimes(1);
-      expect(audit.logAuthentication).toHaveBeenCalledWith(
-        { username: 'alice', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'password' }, 'success', 'password');
-      expect(userManager.recordSignIn).toHaveBeenCalledWith('alice');
+      expect(audit.logAuthentication).not.toHaveBeenCalled();
+      expect(userManager.recordSignIn).not.toHaveBeenCalled();
     });
 
-    test('purpose defaults to sign-in', async () => {
-      const { manager, userManager } = await setup({ username: 'alice' });
-      await manager.authenticate('password', { username: 'alice', password: 'pw' });
-      expect(userManager.recordSignIn).toHaveBeenCalledWith('alice');
+    test('purpose defaults to sign-in: a success is not audited, a failure is', async () => {
+      const ok = await setup({ username: 'alice' });
+      await ok.manager.authenticate('password', { username: 'alice', password: 'pw' });
+      expect(ok.audit.logAuthentication).not.toHaveBeenCalled();
+      expect(ok.userManager.recordSignIn).not.toHaveBeenCalled();
+
+      const bad = await setup(null);
+      await bad.manager.authenticate('password', { username: 'alice', password: 'wrong' });
+      expect(bad.audit.logAuthentication).toHaveBeenCalledWith(expect.objectContaining({ username: 'alice', loginMethod: 'password' }), 'failure', 'password refused');
     });
 
     test('a refused sign-in is audited as a failure, named by the username tried, and not counted', async () => {
@@ -670,7 +674,8 @@ describe('AuthManager', () => {
     test('a failing audit write does not change the outcome of the check', async () => {
       const { manager, audit } = await setup({ username: 'alice' });
       audit.logAuthentication.mockRejectedValue(new Error('disk full'));
-      expect((await manager.authenticate('password', { username: 'alice', password: 'pw' }, attempt)).success).toBe(true);
+      expect((await manager.authenticate('password', { username: 'alice', password: 'pw' }, { ...attempt, purpose: 're-check' })).success).toBe(true);
+      expect(audit.logAuthentication).toHaveBeenCalled();
     });
   });
 

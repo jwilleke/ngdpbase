@@ -19,7 +19,8 @@ function routes(authenticate: (id: string, c: unknown) => Promise<unknown>) {
   const authManager = {
     passkeyAuthenticationOptions: vi.fn().mockResolvedValue({ challenge: 'chal-1', rpId: 'wiki.example.com' }),
     authenticate: vi.fn(authenticate),
-    signInRecord: vi.fn(() => ({ provider: 'passkey', factors: [], amr: ['swk', 'user'], aal: 2, acr: 'phr', mfa: false, at: 't' }))
+    // #1758: the session work of a sign-in is completeSignIn's (AuthManager.completeSignIn.test.ts).
+    completeSignIn: vi.fn().mockResolvedValue(undefined)
   };
   const engine = {
     getManager: vi.fn((n: string) => (n === 'AuthManager' ? authManager
@@ -40,15 +41,19 @@ describe('passkey routes (#448)', () => {
     expect(s.passkeyChallenge).toEqual(expect.objectContaining({ value: 'chal-1', purpose: 'authenticate' }));
   });
 
-  test('a successful sign-in: the kept challenge is used once, and the session is established like every other path', async () => {
-    const { r, authManager } = routes(() => Promise.resolve({ success: true, username: 'molly', provider: 'passkey', factors: [] }));
+  test('a successful sign-in: the kept challenge is used once, and the session is completed like every other path', async () => {
+    const result = { success: true, username: 'molly', provider: 'passkey', factors: [] };
+    const { r, authManager } = routes(() => Promise.resolve(result));
     const s = session();
     await r.passkeyAuthenticateOptions(req(s), res());
     const out = res();
-    await r.passkeyAuthenticateVerify(req(s, { response: { id: 'cred' }, redirect: '/view/Home' }), out);
+    const q = req(s, { response: { id: 'cred' }, redirect: '/view/Home' });
+    await r.passkeyAuthenticateVerify(q, out);
     expect(authManager.authenticate).toHaveBeenCalledWith('passkey', { webauthn: { response: { id: 'cred' }, expectedChallenge: 'chal-1' } },
       { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 'sign-in' });
-    expect(s).toEqual(expect.objectContaining({ username: 'molly', isAuthenticated: true, sessionGeneration: 3, signIn: expect.objectContaining({ provider: 'passkey', aal: 2 }) }));
+    // #1758: the one completion step — the same one every sign-in path takes.
+    expect(authManager.completeSignIn).toHaveBeenCalledTimes(1);
+    expect(authManager.completeSignIn).toHaveBeenCalledWith(q, result, { method: 'passkey' });
     expect(s.passkeyChallenge).toBeUndefined();
     expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/view/Home' });
   });
@@ -87,6 +92,7 @@ describe('passkey routes (#448)', () => {
     await r.passkeyAuthenticateVerify(req(s, { response: { id: 'x' } }), out);
     expect(out.status).toHaveBeenCalledWith(401);
     expect(s.isAuthenticated).toBeUndefined();
+    expect(authManager.completeSignIn).not.toHaveBeenCalled();
     // #1758: audited by AuthManager, which is told where the attempt came from; no second record from the route.
     expect(authManager.authenticate).toHaveBeenCalledWith('passkey', expect.anything(), { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 'sign-in' });
     expect(audit).not.toHaveBeenCalled();

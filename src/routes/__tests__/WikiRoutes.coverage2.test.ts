@@ -54,7 +54,10 @@ vi.mock('../../context/WikiContext', async () => {
 // ── mock manager objects (implementations reset in beforeEach) ────────────────
 
 const mockAuthManager = {
-  authenticate: vi.fn()
+  authenticate: vi.fn(),
+  // #1758: the one sign-in completion step, and the password-change generation stamp.
+  completeSignIn: vi.fn(),
+  stampSessionGeneration: vi.fn()
 };
 
 const mockCommentManager = {
@@ -467,6 +470,8 @@ describe('WikiRoutes — coverage batch 2', () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).not.toMatch(/error/);
+      expect(mockAuthManager.completeSignIn).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ success: true, username: 'testuser' }), { method: 'password', unlockWith: { password: 'pass' } });
     });
   });
 
@@ -620,6 +625,8 @@ describe('WikiRoutes — coverage batch 2', () => {
         { username: 'testuser', password: 'oldpass' },
         expect.objectContaining({ purpose: 're-check', userAgent: 'ProfileTest/1.0' })
       );
+      // #1482: this session stays signed in after the change; the stamp is AuthManager's (#1758).
+      expect(mockAuthManager.stampSessionGeneration).toHaveBeenCalledWith(expect.anything(), 'testuser');
     });
 
     test('a password from a different account than the caller is refused (#1758)', async () => {
