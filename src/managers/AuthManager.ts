@@ -213,6 +213,20 @@ export interface SignInRecord extends Assurance {
   at: string;
 }
 
+/**
+ * Where an authentication attempt came from, and why (#1758). AuthManager is
+ * the one door for every check of a secret, and writes the audit record of a
+ * sign-in method's check itself; routes write none.
+ * - `sign-in` (default): a person signing in; a success counts on the account.
+ * - `re-check`: proving it again before a change (a password re-entered on the
+ *   profile, a store door); audited, never counted as a sign-in.
+ */
+export interface AuthAttempt {
+  ipAddress?: string;
+  userAgent?: string;
+  purpose?: 'sign-in' | 're-check';
+}
+
 export interface AuthenticateResult {
   success: boolean;
   username?: string;
@@ -747,34 +761,58 @@ class AuthManager extends BaseManager {
   }
 
   /**
-   * Authenticate using the specified provider.
-   * Returns { success, username } — routes need nothing else.
+   * Authenticate using the specified provider — the one door (#1758).
+   *
+   * A sign-in method (a provider listed in `ngdpbase.auth.factors`) has every
+   * check audited here, success and failure, with where it came from; a
+   * successful sign-in (not a re-check) counts on the account. A request
+   * credential (agent token, app token, gateway header) is checked on every
+   * API request and is not audited per request.
    */
   async authenticate(
     providerId: string,
-    credentials: AuthVerifyCredentials
+    credentials: AuthVerifyCredentials,
+    attempt: AuthAttempt = {}
   ): Promise<AuthenticateResult> {
     const provider = this.providers.get(providerId);
     if (!provider) {
       logger.debug(`[AuthManager] Unknown provider: ${providerId}`);
       return { success: false };
     }
+    // #1523: a sign-in method has a factor entry; a delegated credential has none.
+    const factor = this.getFactors().find(f => f.provider === providerId);
+    const purpose = attempt.purpose ?? 'sign-in';
+    const refused = async (username: string | undefined): Promise<AuthenticateResult> => {
+      if (factor) await this.auditCheck(attempt, username, providerId, 'failure', `${purpose === 're-check' ? 're-check: ' : ''}${providerId} refused`);
+      return { success: false };
+    };
 
     try {
       const result = await provider.verify(credentials);
-      if (!result) return { success: false };
+      if (!result) return await refused(typeof credentials.username === 'string' ? credentials.username : undefined);
 
       if (!(await this.userMayUseProvider(result.username, providerId))) {
         logger.warn(`[AuthManager] User ${result.username} not allowed to use provider: ${providerId}`);
-        return { success: false };
+        return await refused(result.username);
       }
 
       // #1523: say how — the provider, and the factor it satisfied with its
       // time. A delegated credential is never a factor, so it records none.
-      const factor = this.getFactors().find(f => f.provider === providerId);
       const factors: SatisfiedFactor[] = factor
         ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
         : [];
+
+      if (factor) {
+        await this.auditCheck(attempt, result.username, providerId, 'success', purpose === 're-check' ? `re-check: ${providerId}` : providerId);
+        if (purpose === 'sign-in') {
+          try {
+            await this.engine.getManager<{ recordSignIn?(username: string): Promise<void> }>('UserManager')?.recordSignIn?.(result.username);
+          } catch (err) {
+            // A sign-in that succeeded stays a success; only the count is lost.
+            logger.warn(`[AuthManager] could not count the sign-in for ${result.username}:`, err);
+          }
+        }
+      }
 
       // #946: pass through a token provider's viaToken detail, if any.
       // #1048: read directly — `AuthResult` now declares the field, so the
@@ -790,7 +828,17 @@ class AuthManager extends BaseManager {
       };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
-      return { success: false };
+      return await refused(typeof credentials.username === 'string' ? credentials.username : undefined);
+    }
+  }
+
+  /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
+  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string): Promise<void> {
+    try {
+      const audit = this.engine.getManager<{ logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<string> }>('AuditManager');
+      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method }, result, reason);
+    } catch (err) {
+      logger.warn('[AuthManager] audit record failed for an authentication check:', err);
     }
   }
 

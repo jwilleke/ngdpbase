@@ -2,6 +2,9 @@
  * #448 — the passkey routes: the challenge is single-use, short-lived and tied
  * to its purpose; a successful sign-in takes the same steps as every other
  * path; a failed one is audited and starts no session.
+ *
+ * #1758: the audit record of the check is AuthManager's (the one door); the
+ * route hands it where the attempt came from and writes none itself.
  */
 import WikiRoutes from '../WikiRoutes';
 
@@ -43,7 +46,8 @@ describe('passkey routes (#448)', () => {
     await r.passkeyAuthenticateOptions(req(s), res());
     const out = res();
     await r.passkeyAuthenticateVerify(req(s, { response: { id: 'cred' }, redirect: '/view/Home' }), out);
-    expect(authManager.authenticate).toHaveBeenCalledWith('passkey', { webauthn: { response: { id: 'cred' }, expectedChallenge: 'chal-1' } });
+    expect(authManager.authenticate).toHaveBeenCalledWith('passkey', { webauthn: { response: { id: 'cred' }, expectedChallenge: 'chal-1' } },
+      { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 'sign-in' });
     expect(s).toEqual(expect.objectContaining({ username: 'molly', isAuthenticated: true, sessionGeneration: 3, signIn: expect.objectContaining({ provider: 'passkey', aal: 2 }) }));
     expect(s.passkeyChallenge).toBeUndefined();
     expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/view/Home' });
@@ -76,13 +80,15 @@ describe('passkey routes (#448)', () => {
   });
 
   test('a failed sign-in is audited and starts no session', async () => {
-    const { r, audit } = routes(() => Promise.resolve({ success: false }));
+    const { r, audit, authManager } = routes(() => Promise.resolve({ success: false }));
     const s = session();
     await r.passkeyAuthenticateOptions(req(s), res());
     const out = res();
     await r.passkeyAuthenticateVerify(req(s, { response: { id: 'x' } }), out);
     expect(out.status).toHaveBeenCalledWith(401);
     expect(s.isAuthenticated).toBeUndefined();
-    expect(audit).toHaveBeenCalledWith(expect.anything(), 'failure', 'passkey');
+    // #1758: audited by AuthManager, which is told where the attempt came from; no second record from the route.
+    expect(authManager.authenticate).toHaveBeenCalledWith('passkey', expect.anything(), { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 'sign-in' });
+    expect(audit).not.toHaveBeenCalled();
   });
 });
