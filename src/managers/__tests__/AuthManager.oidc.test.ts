@@ -20,6 +20,9 @@ import { CREDENTIALS_KEY_ENV } from '../../providers/BaseCredentialsProvider';
 import { guardedFetch } from '../../http/guardedFetch.js';
 import { fakeIssuer, flowFrom, type FakeIssuer } from '../../providers/__tests__/__fixtures__/fakeOidcIssuer';
 
+/** A client-secret value written straight into config (not a $NAME reference), made up per run. */
+const NOT_AN_ENV_REFERENCE = `literal-${crypto.randomUUID()}`;
+
 const BROWSER = 'browser-a';
 const SECRET_ENV = 'NGDPBASE_TEST_OIDC_CLIENT_SECRET';
 const subject = (username: string) => ({ username, roles: ['reader'], isAuthenticated: true }) as never;
@@ -29,7 +32,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
   let file: string;
   let idp: FakeIssuer;
   let config: Record<string, unknown>;
-  let users: Record<string, { password?: string; allowedAuthMethods?: string[] }>;
+  let users: Record<string, { passwordSet?: boolean; allowedAuthMethods?: string[] }>;
   let authAudit: Array<{ ctx: Record<string, unknown>; result: string; reason: string }>;
   let stale: boolean;
   const saved = { key: process.env[CREDENTIALS_KEY_ENV], secret: process.env[SECRET_ENV] };
@@ -48,8 +51,8 @@ describe('AuthManager outside sign-in (#1743)', () => {
         holds: (_s: unknown, action: string) => Promise.resolve(action === 'account-security')
       },
       UserManager: {
-        getUser: (u: string) => Promise.resolve(users[u] ? { ...users[u], password: undefined } : null),
-        hasPassword: (u: string) => Promise.resolve(Boolean(users[u]?.password))
+        getUser: (u: string) => Promise.resolve(users[u] ? { ...users[u] } : null),
+        hasPassword: (u: string) => Promise.resolve(Boolean(users[u]?.passwordSet))
       },
       AuditManager: {
         logAuditEvent: () => Promise.resolve('evt'),
@@ -81,7 +84,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
     vi.mocked(guardedFetch).mockReset();
     vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
     config = { 'ngdpbase.auth.oidc.providers': { idp: provider() } };
-    users = { ann: { password: `scrypt$${crypto.randomUUID()}` }, sam: {} };
+    users = { ann: { passwordSet: true }, sam: {} };
     authAudit = [];
     stale = false;
   });
@@ -108,7 +111,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
     });
 
     test.each([
-      ['a literal secret', { 'client-secret': `literal-${crypto.randomUUID()}` }],
+      ['a literal secret', { 'client-secret': NOT_AN_ENV_REFERENCE }],
       ['a secret whose variable is not set', { 'client-secret': '$NGDPBASE_TEST_UNSET_VARIABLE' }],
       ['no issuer and no preset', { issuer: undefined }],
       ['a preset not available yet', { issuer: undefined, preset: 'apple' }],
