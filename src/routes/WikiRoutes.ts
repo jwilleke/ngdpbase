@@ -6205,7 +6205,7 @@ ${panes}
         redirect: req.query.redirect,
         magicLinkEnabled: authManager?.isEnabled('magic-link') ?? false,
         passkeyEnabled: authManager?.isEnabled('passkey') ?? false, // #448
-        googleOIDCEnabled: authManager?.isEnabled('google-oidc') ?? false,
+        outsideProviders: authManager?.outsideProviders?.() ?? [], // #1743
         passwordAuthEnabled: authManager?.isEnabled('password') ?? true,
         csrfToken: req.session?.csrfToken || ''
       });
@@ -6235,7 +6235,7 @@ ${panes}
         magic: undefined,
         redirect: req.query.redirect || '/admin',
         magicLinkEnabled: false,
-        googleOIDCEnabled: false,
+        outsideProviders: [],
         passwordAuthEnabled: true,
         csrfToken: req.session?.csrfToken || ''
       });
@@ -7150,83 +7150,121 @@ ${panes}
     }
   }
 
+  /** The outside provider's id for a `:name` in its URLs, or null for a name that cannot be one (#1743). */
+  private outsideProviderId(req: Request): string | null {
+    const name = typeof req.params?.name === 'string' ? req.params.name : '';
+    return /^[a-z0-9][a-z0-9-]*$/.test(name) ? `oidc:${name}` : null;
+  }
+
+  /** #1630: a fresh browser binding for an outside flow, in its HTTP-only cookie; the callback must present it. */
+  private bindOutsideFlow(res: Response): string {
+    const deviceState = newDeviceState();
+    const cookieSecure = Boolean(this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.session.secure', false));
+    res.cookie(OAUTH_STATE_COOKIE, deviceState, deviceStateCookieOptions(10 * 60_000, cookieSecure));
+    return deviceState;
+  }
+
   /**
-   * Initiate Google OIDC sign-in — POST /auth/oauth/google
+   * POST /auth/oauth/:name — sign in with an outside provider (#1743; Google's
+   * `/auth/oauth/google` is this route). Sends the browser to the provider.
    */
-  initiateGoogleOIDC(req: Request, res: Response) {
+  async startOutsideSignIn(req: Request, res: Response): Promise<void> {
     try {
-      const authManager = this.engine.getManager('AuthManager');
-      if (!authManager?.isEnabled('google-oidc')) {
-        return res.redirect('/login?error=Google+sign-in+not+enabled');
+      const authManager = this.engine.getManager<AuthManager>('AuthManager');
+      const providerId = this.outsideProviderId(req);
+      if (!authManager || !providerId || !authManager.outsideProviders().some(p => p.id === providerId)) {
+        return res.redirect('/login?error=' + encodeURIComponent('That sign-in method is not available'));
       }
-      const redirect = (req.body.redirect as string) || '/';
-      // #1630: the callback must return to this browser — the same opaque
-      // value goes into an HTTP-only cookie and alongside the OAuth state.
-      const deviceState = newDeviceState();
-      const cookieSecure = Boolean(this.engine.getManager('ConfigurationManager')?.getProperty('ngdpbase.session.secure', false));
-      res.cookie(OAUTH_STATE_COOKIE, deviceState, deviceStateCookieOptions(10 * 60_000, cookieSecure));
-      const authUrl = authManager.startFlow('google-oidc', { redirect, deviceState });
-      res.redirect(authUrl);
+      const deviceState = this.bindOutsideFlow(res);
+      const redirect = safeRedirect((req.body as Record<string, unknown> | undefined)?.redirect);
+      res.redirect(await authManager.startFlow(providerId, { redirect, deviceState }));
     } catch (err: unknown) {
-      logger.error('Error initiating Google OIDC:', err);
-      res.redirect('/login?error=Google+sign-in+failed');
+      logger.error('Error starting an outside sign-in:', err);
+      res.redirect('/login?error=' + encodeURIComponent('That sign-in could not be started; try again later'));
     }
   }
 
   /**
-   * Handle Google OIDC callback — GET /auth/oauth/google/callback
+   * POST /auth/oauth/:name/connect — connect an outside identity to your own
+   * account (#1743). `account-security`, so it asks for a fresh sign-in first.
    */
-  async verifyGoogleOIDCCallback(req: Request, res: Response) {
+  async startOutsideConnect(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
     try {
-      const code  = req.query.code  as string | undefined;
-      const state = req.query.state as string | undefined;
-      const error = req.query.error as string | undefined;
+      const user = wikiContext.userContext;
+      const providerId = this.outsideProviderId(req);
+      const authManager = this.engine.getManager<AuthManager>('AuthManager');
+      if (!providerId || !authManager) return res.redirect('/profile?error=' + encodeURIComponent('That sign-in provider is not available'));
+      const deviceState = this.bindOutsideFlow(res);
+      res.redirect(await authManager.startConnect(user, String(user.username), providerId, { redirect: '/profile', deviceState }));
+    } catch (err: unknown) {
+      res.redirect('/profile?error=' + encodeURIComponent((err as Error).message));
+    }
+  }
 
-      const authManager = this.engine.getManager('AuthManager');
+  /**
+   * GET /auth/oauth/:name/callback — the provider sends the browser back
+   * (#1743). A sign-in signs in only an identity already connected to an
+   * account, and is refused without saying whether an account exists; a
+   * connection joins the identity to the signed-in account and returns to
+   * the profile.
+   */
+  async finishOutsideFlow(req: Request, res: Response): Promise<void> {
+    const refusedSignIn = '/login?error=' + encodeURIComponent('That sign-in did not work. If you have an account here, sign in another way, then connect it from your profile.');
+    try {
+      const code = typeof req.query.code === 'string' ? req.query.code : undefined;
+      const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+      const authManager = this.engine.getManager<AuthManager>('AuthManager');
+      const providerId = this.outsideProviderId(req);
+      const connectFor = authManager && providerId && state ? authManager.flowConnectsFor(providerId, state) : null;
 
-      if (error || !code || !state || !authManager) {
-        logger.warn(`[GoogleOIDC] Callback error: ${error ?? 'missing code/state'}`);
-        return res.redirect('/login?error=Google+sign-in+cancelled');
+      if (req.query.error || !code || !state || !authManager || !providerId) {
+        logger.warn(`[outside sign-in] callback without a code: ${typeof req.query.error === 'string' ? req.query.error : 'missing code/state'}`);
+        return res.redirect(connectFor ? '/profile?error=' + encodeURIComponent('Connecting was cancelled') : '/login?error=' + encodeURIComponent('Sign-in was cancelled'));
       }
-
-      // Get redirect URL before consuming state (state deleted in consumeToken)
-      const redirect = authManager.getFlowRedirect('google-oidc', state);
 
       const deviceState = (req.cookies as Record<string, string> | undefined)?.[OAUTH_STATE_COOKIE];
       res.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
-      const result = await authManager.authenticate('google-oidc', { token: code, state, deviceState }, this.attemptFrom(req, 'sign-in'));
 
-      if (!result.success) {
-        const configManager = this.engine.getManager('ConfigurationManager');
-        const denyRedirect = configManager
-          ? (configManager.getProperty('ngdpbase.auth.google-oidc.deny-redirect', '/login?error=Access+denied'))
-          : '/login?error=Access+denied';
-        return res.redirect(denyRedirect);
+      if (connectFor) {
+        const user = this.createWikiContext(req).userContext;
+        const outcome = await authManager.connectIdentity(user, String(user.username), providerId, { token: code, state, deviceState }, this.attemptFrom(req, 're-check'))
+          .catch((err: unknown) => {
+            logger.warn(`[outside sign-in] connecting for ${connectFor} failed: ${(err as Error).message}`);
+            return 'refused' as const;
+          });
+        const message = {
+          connected: 'success=' + encodeURIComponent('Connected. You can now sign in with it.'),
+          'already-yours': 'success=' + encodeURIComponent('That account was already connected.'),
+          'connected-elsewhere': 'error=' + encodeURIComponent('That account is already connected to another account here.'),
+          refused: 'error=' + encodeURIComponent('Connecting did not work; try again.')
+        }[outcome];
+        return res.redirect(`/profile?${message}`);
       }
 
-      // #1021: same single-use gate as the magic-link path. A state nonce is
-      // good for exactly one sign-in, and the `await` above is a real
-      // suspension point, so a replayed callback — the user refreshing the
-      // redirect, or a retry — could otherwise establish a second session.
-      if (!authManager.consumeToken('google-oidc', state)) {
-        logger.warn('🔁 OIDC state already consumed by a concurrent request — refusing duplicate session');
-        return res.redirect('/login?error=Sign-in+link+already+used');
+      const redirect = authManager.getFlowRedirect(providerId, state);
+      const result = await authManager.authenticate(providerId, { token: code, state, deviceState }, this.attemptFrom(req, 'sign-in'));
+      if (!result.success) return res.redirect(refusedSignIn);
+
+      // #1021: the state is good for one sign-in; a replayed callback must not open a second session.
+      if (!authManager.consumeToken(providerId, state)) {
+        logger.warn('🔁 Outside sign-in state already used by a concurrent request — refusing a duplicate session');
+        return res.redirect('/login?error=' + encodeURIComponent('Sign-in link already used'));
       }
 
-      await authManager.completeSignIn(req, result, { method: 'google-oidc' }); // #1758: the one completion step
-
-      logger.info(`👤 User logged in via Google: ${result.username}`);
-
+      await authManager.completeSignIn(req, result, { method: providerId }); // #1758: the one completion step
+      logger.info(`👤 User signed in via ${providerId}: ${result.username}`);
       req.session.save((err) => {
         if (err) {
-          logger.error('Error saving session after Google login:', err);
+          logger.error('Error saving session after an outside sign-in:', err);
           return res.redirect('/login?error=Session+save+failed');
         }
         res.redirect(safeRedirect(redirect)); // #1041
       });
     } catch (err: unknown) {
-      logger.error('Error in Google OIDC callback:', err);
-      res.redirect('/login?error=Google+sign-in+failed');
+      logger.error('Error finishing an outside sign-in:', err);
+      res.redirect(refusedSignIn);
     }
   }
 
@@ -7703,7 +7741,7 @@ ${panes}
   /**
    * Whether the password `/register` form is available (#1026).
    *
-   * Two layers, mirroring the model `GoogleOIDCProvider` already uses:
+   * Two layers:
    * `ngdpbase.application.registration` is the master policy — when it is
    * false, no path may create an account. Below it,
    * `ngdpbase.application.registration.password` turns off *this mechanism*
@@ -8030,6 +8068,15 @@ ${panes}
       const offerEmailSecondFactor = Boolean(currentUser?.username
         && authManagerForProfile?.emailLinksAvailable?.()
         && !authManagerForProfile.secondFactorsFor?.(currentUser.username).some((f: { id: string }) => f.id === 'email-link'));
+      // #1743: connected outside identities, and the enabled providers this account may still connect.
+      const connectedIdentities = currentUser?.username && !credentialsUnavailable
+        ? await authManagerForProfile?.connectedIdentities?.(currentUser as never, currentUser.username).catch(() => []) ?? []
+        : [];
+      const connectableProviders: Array<{ id: string; name: string; displayName: string }> = [];
+      for (const p of currentUser?.username ? authManagerForProfile?.outsideProviders?.() ?? [] : []) {
+        if (connectedIdentities.some((i: { provider: { id: string } | null }) => i.provider?.id === p.id)) continue;
+        if (await authManagerForProfile.userMayUseProvider(String(currentUser.username), p.id)) connectableProviders.push(p);
+      }
       // The password is a sign-in method too; the card lists it beside the credentials.
       const hasPassword = currentUser?.username
         ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
@@ -8040,6 +8087,8 @@ ${panes}
         title: 'Profile',
         credentials, // #1524
         credentialsUnavailable, // #1738
+        connectedIdentities, // #1743
+        connectableProviders, // #1743
         passkeyHost, // #448
         approvedApps, // #1601
         offerEmailSecondFactor, // #1523
@@ -15257,8 +15306,10 @@ ${panes}
     // scanner's pre-fetch from burning the link.
     app.get('/auth/magic-link/verify', (req: Request, res: Response) => this.verifyMagicLink(req, res));
     app.post('/auth/magic-link/verify', (req: Request, res: Response) => this.completeMagicLink(req, res));
-    app.post('/auth/oauth/google', (req: Request, res: Response) => void this.initiateGoogleOIDC(req, res));
-    app.get('/auth/oauth/google/callback', (req: Request, res: Response) => void this.verifyGoogleOIDCCallback(req, res));
+    // #1743: outside OpenID Connect providers; Google's URLs are these with :name = google.
+    app.post('/auth/oauth/:name', (req: Request, res: Response) => void this.startOutsideSignIn(req, res));
+    app.post('/auth/oauth/:name/connect', (req: Request, res: Response) => void this.startOutsideConnect(req, res));
+    app.get('/auth/oauth/:name/callback', (req: Request, res: Response) => void this.finishOutsideFlow(req, res));
     app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));

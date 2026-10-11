@@ -188,7 +188,7 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileSystemMediaProvider | ✅ [doc](providers/FileSystemMediaProvider.md) | Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend |
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
 | FileUserProvider | 📘 [doc](providers/FileUserProvider.md) + [guide](providers/FileUserProvider-Complete-Guide.md) | JSON-file user, role, and session storage — the default UserManager backend |
-| GoogleOIDCProvider | ✅ [doc](providers/GoogleOIDCProvider.md) | OIDC authentication via Google as the identity provider |
+| OidcAuthProvider | ✅ [doc](providers/OidcAuthProvider.md) | Sign-in through any outside OpenID Connect provider (Google by preset), by an identity connected to the account (#1743); replaces GoogleOIDCProvider |
 | LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory full-text search index (MiniSearch, Lunr query syntax and stemming) — default backend for SearchManager |
 | MagicLinkAuthProvider | ✅ [doc](providers/MagicLinkAuthProvider.md) | Email-based passwordless authentication — user gets a single-use verification link |
 | NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |

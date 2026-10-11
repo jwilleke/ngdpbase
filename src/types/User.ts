@@ -168,7 +168,7 @@ export interface User {
   /**
    * Allowed authentication methods for this user.
    * If absent, the user may use any method enabled at the system level.
-   * If present, only the listed provider IDs are accepted (e.g. ["google-oidc", "password"]).
+   * If present, only the listed provider IDs are accepted (e.g. ["oidc:google", "password"]).
    * Useful for ensuring admin accounts can always use password as an emergency fallback.
    */
   allowedAuthMethods?: string[];

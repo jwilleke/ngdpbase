@@ -15,14 +15,14 @@ takes effect on the next request after a config reload (or restart).
 
 | Setting | Effect |
 |---|---|
-| `ngdpbase.application.registration: true` (default) | `/register` form available; header shows a __Register__ button; OIDC providers may auto-provision new users (subject to each provider's own toggle). |
-| `ngdpbase.application.registration: false` | `/register` returns __404__ (both `GET` and `POST`); header button changes to __Request access__ linking to a configurable wiki page; OIDC providers reject sign-ins from email addresses that don't already have an account. |
+| `ngdpbase.application.registration: true` (default) | `/register` form available; header shows a __Register__ button. Outside sign-in providers create no accounts yet: they sign in only identities connected from the profile (#1743). |
+| `ngdpbase.application.registration: false` | `/register` returns __404__ (both `GET` and `POST`); header button changes to __Request access__ linking to a configurable wiki page. |
 
 What is __not__ affected when the flag is `false`:
 
 - __Login__ — every login path works normally for accounts that already exist (password, magic-link, OIDC for known users).
 - __Admin-created users__ — admins can still create accounts manually via the admin UI / `UserManager` API.
-- __Existing OIDC users__ — anyone who signed in via Google OIDC before the flag was turned off keeps logging in normally; only __new__ OIDC sign-ins are rejected.
+- __Connected outside identities__ — a person who connected a Google (or other outside) identity keeps signing in with it.
 
 ---
 
@@ -45,7 +45,7 @@ Registration is a master policy with one toggle per mechanism beneath it. The ma
 master : application.registration             = true
   ├ password form : registration.password     = true
   ├ magic link    : auth.magic-link.auto-provision = false
-  └ google oidc   : auth.google-oidc.auto-provision
+  └ outside sign-in: auth.oidc.auto-provision (instance ceiling; not acted on yet, #1743)
 ```
 
 With the master `false`, every mechanism below it is off regardless of its own setting.
@@ -203,8 +203,8 @@ restarting the instance), check each surface:
 | `POST /register` | HTTP 404 (defence in depth — direct posts also rejected) |
 | Header button (logged out, on any page) | Reads __Request access__, links to `/view/<redirect-page>` |
 | Header button (logged in) | Unchanged — register/request-access button is hidden when authenticated |
-| Google OIDC sign-in by an existing user | Works normally |
-| Google OIDC sign-in by a new email | Rejected at the provider with a log line: `[GoogleOIDCProvider] Registration disabled — rejecting new OIDC user: <email>` |
+| Outside sign-in with a connected identity | Works normally |
+| Outside sign-in with an identity connected to no account | Refused, as it is whatever this flag says (#1743) |
 | Login form (`/login`) | Works normally |
 | Magic-link sign-in for an existing user | Works normally |
 | Admin "Add user" UI | Works normally |
@@ -225,4 +225,4 @@ the custom file should be edited on a deployed instance.
 - `required-pages/c0a01d19-4558-482d-a485-a94ed3ff1729.md` — the seeded `contact-us` page source.
 - `src/routes/WikiRoutes.ts` (`registerPage`, `processRegister`) — registration-form handlers that 404 when the flag is off.
 - `src/routes/WikiRoutes.ts` (`contactPage`, `processContact`) — the `/contact` route handlers (state matrix described above).
-- `src/providers/GoogleOIDCProvider.ts` (`authenticate`) — OIDC auto-provisioning path that defers to the registration flag as an override.
+- `src/providers/OidcAuthProvider.ts` — outside sign-in; it creates no account (#1743).

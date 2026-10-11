@@ -15,7 +15,8 @@
  * through the public {@link AuthManager.registerProvider} (#1050):
  *   - PasswordAuthProvider          (unless ngdpbase.auth.password.enabled is false)
  *   - MagicLinkAuthProvider         (ngdpbase.auth.magic-link.enabled)
- *   - GoogleOIDCProvider            (ngdpbase.auth.google-oidc.enabled)
+ *   - OidcAuthProvider, one per entry (ngdpbase.auth.oidc.providers; the old
+ *     ngdpbase.auth.google-oidc.* keys are read as the `google` entry, #1743)
  *   - CloudflareAccessAuthProvider  (ngdpbase.auth.cloudflare-access.enabled)
  *   - AuthentikBearerAuthProvider   (ngdpbase.auth.authentik-bearer.enabled)
  *   - AgentTokenAuthProvider        (ngdpbase.auth.agent-token.enabled)
@@ -48,7 +49,8 @@ import type {
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider, EMAIL_FACTOR } from '../providers/MagicLinkAuthProvider.js';
 import { lockPrivateStores } from '../utils/privateStoreUnlock.js';
-import { GoogleOIDCProvider } from '../providers/GoogleOIDCProvider.js';
+import { OidcAuthProvider } from '../providers/OidcAuthProvider.js';
+import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
 import { OidcBearerAuthProvider } from '../providers/OidcBearerAuthProvider.js';
@@ -203,8 +205,51 @@ export function maskEmail(address: string): string {
   return `${local.slice(0, 1)}***@${domain}`;
 }
 
-/** Kinds that can start a sign-in on their own — what "a way in" counts (#1524). */
-const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email']);
+/** Kinds that can start a sign-in on their own — what "a way in" counts (#1524, #1743). */
+const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email', 'identity']);
+
+/** Presets fill what a well-known provider always has (#1743). Apple and Microsoft come with their quirks later. */
+const OIDC_PRESETS: Readonly<Record<string, { issuer: string; displayName: string }>> = {
+  google: { issuer: 'https://accounts.google.com', displayName: 'Google' }
+};
+
+/** An entry of `ngdpbase.auth.oidc.providers`, as written in configuration (#1743). */
+interface OidcProviderEntry {
+  preset?: string;
+  issuer?: string;
+  'client-id'?: string;
+  /** An environment reference, `$NAME`; never the secret itself. */
+  'client-secret'?: string;
+  enabled?: boolean;
+  'display-name'?: string;
+  'auto-provision'?: boolean;
+}
+
+/** An outside sign-in provider as offered: on the login page, and to connect on the profile (#1743). */
+export interface OutsideProvider {
+  /** `oidc:<name>` */
+  id: string;
+  /** The `<name>` in its URLs. */
+  name: string;
+  displayName: string;
+}
+
+/** An outside identity connected to an account, as shown to its owner (#1743). */
+export interface ConnectedIdentity {
+  /** The credential row's id — what Disconnect removes. */
+  id: string;
+  /** What the provider was called when it was connected. */
+  label: string;
+  /** The provider's verified email, '' when it gave none. */
+  email: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  /** The provider it came from, while it is configured and enabled; null when it is not, and it cannot sign in. */
+  provider: OutsideProvider | null;
+}
+
+/** How connecting an outside identity ended (#1743). */
+export type ConnectOutcome = 'connected' | 'refused' | 'already-yours' | 'connected-elsewhere';
 
 /**
  * How a session signed in (#1523): kept on the session so step-up (#1525) can
@@ -340,19 +385,6 @@ class AuthManager extends BaseManager {
       }
     }
 
-    // Register Google OIDC provider if enabled
-    if (configManager?.getProperty('ngdpbase.auth.google-oidc.enabled', false)) {
-      const googleConfig = {
-        clientId:      configManager.getProperty('ngdpbase.auth.google-oidc.client-id', '') as string,
-        clientSecret:  configManager.getProperty('ngdpbase.auth.google-oidc.client-secret', '') as string,
-        redirectUri:   configManager.getProperty('ngdpbase.auth.google-oidc.callback-url', '') as string,
-        autoProvision: configManager.getProperty('ngdpbase.auth.google-oidc.auto-provision', true) as boolean,
-        defaultRoles:  configManager.getProperty('ngdpbase.auth.google-oidc.default-roles', ['reader']) as string[],
-        hostedDomain:  configManager.getProperty('ngdpbase.auth.google-oidc.hd', '') as string || undefined
-      };
-      this.registerProvider(new GoogleOIDCProvider(this.engine, googleConfig));
-    }
-
     // Register Cloudflare Access provider if enabled (#649)
     if (configManager?.getProperty('ngdpbase.auth.cloudflare-access.enabled', false)) {
       const teamDomain = configManager.getProperty('ngdpbase.auth.cloudflare-access.team-domain', '') as string;
@@ -421,6 +453,7 @@ class AuthManager extends BaseManager {
 
     await this.openCredentialsStore(configManager);
     this.registerPasskeys(configManager);
+    this.registerOidcProviders(configManager);
 
     logger.info(`[AuthManager] Initialized — factors: [${this.factorEntries.map(e => e.authproviderid).join(', ')}]`);
   }
@@ -449,8 +482,172 @@ class AuthManager extends BaseManager {
       logger.error('[AuthManager] ngdpbase.auth.factors is not a list — offering password only. (#1523)');
       return [{ authproviderid: 'password' }];
     }
-    return entries.filter((e): e is FactorEntry =>
-      typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string');
+    return entries
+      .filter((e): e is FactorEntry => typeof e === 'object' && e !== null && typeof (e as FactorEntry).authproviderid === 'string')
+      // #1743: Google's provider is now `oidc:google`; an entry under its old id still governs it.
+      .map(e => (e.authproviderid === 'google-oidc' ? { ...e, authproviderid: 'oidc:google' } : e));
+  }
+
+  /**
+   * The outside OpenID Connect providers (#1743): one `OidcAuthProvider` per
+   * enabled entry of `ngdpbase.auth.oidc.providers`, plus the old
+   * `ngdpbase.auth.google-oidc.*` keys as the `google` entry when the map has
+   * none. Connected identities live in the credentials store, so without it
+   * no outside sign-in can work and none is registered. An entry that cannot
+   * work (no issuer, no client id, a secret that is not an environment
+   * reference, nowhere to come back to) is refused with the reason.
+   */
+  private registerOidcProviders(configManager: ConfigurationManager | null | undefined): void {
+    if (!configManager) return;
+    const raw = configManager.getProperty('ngdpbase.auth.oidc.providers', {});
+    const entries: Record<string, OidcProviderEntry> =
+      raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, OidcProviderEntry>) } : {};
+    // The old keys: their secret is read through the configuration, which resolves a `$NAME` reference itself.
+    let legacy: { secret: string; callbackUrl: string } | null = null;
+    if (configManager.getProperty('ngdpbase.auth.google-oidc.enabled', false) === true) {
+      if (entries.google) {
+        logger.warn('[AuthManager] ngdpbase.auth.google-oidc.* is ignored: ngdpbase.auth.oidc.providers has a google entry (#1743)');
+      } else {
+        entries.google = { preset: 'google', 'client-id': configManager.getProperty('ngdpbase.auth.google-oidc.client-id', '') as string, enabled: true };
+        legacy = {
+          secret: configManager.getProperty('ngdpbase.auth.google-oidc.client-secret', '') as string,
+          callbackUrl: configManager.getProperty('ngdpbase.auth.google-oidc.callback-url', '') as string
+        };
+      }
+    }
+    const enabled = Object.entries(entries).filter(([, e]) => e && typeof e === 'object' && e.enabled === true);
+    if (enabled.length === 0) return;
+    if (!this.credentials) {
+      logger.warn('[AuthManager] Outside sign-in providers NOT registered: the credentials store, which keeps connected identities, is not available (#1743)');
+      return;
+    }
+    const egress = resolveEgressPolicy((key, fallback) => configManager.getProperty(key, fallback));
+    for (const [name, entry] of enabled) {
+      const refuse = (why: string): void => { logger.error(`[AuthManager] Outside sign-in provider '${name}' NOT registered: ${why} (#1743)`); };
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) { refuse('its name must be lowercase letters, digits and hyphens, as it is part of a URL'); continue; }
+      const preset = entry.preset && entry.preset !== 'none' ? OIDC_PRESETS[entry.preset] : undefined;
+      if (entry.preset && entry.preset !== 'none' && !preset) { refuse(`preset '${entry.preset}' is not available yet`); continue; }
+      const issuer = entry.issuer || preset?.issuer;
+      if (!issuer) { refuse('set its issuer, or a preset'); continue; }
+      const clientId = entry['client-id'];
+      if (!clientId) { refuse('set its client-id'); continue; }
+      const fromLegacy = name === 'google' ? legacy : null;
+      const clientSecret = fromLegacy ? fromLegacy.secret : this.secretFromEnvironment(entry['client-secret'], refuse);
+      if (!clientSecret) { if (fromLegacy) refuse('set ngdpbase.auth.google-oidc.client-secret'); continue; }
+      const redirectUri = fromLegacy?.callbackUrl || (configManager.isBaseUrlExplicit()
+        ? `${configManager.getBaseURL().replace(/\/$/, '')}/auth/oauth/${name}/callback`
+        : '');
+      if (!redirectUri) { refuse('ngdpbase.application.base-url is not set explicitly, so there is no address for the provider to send people back to'); continue; }
+      const store = this.credentials;
+      this.registerProvider(new OidcAuthProvider(
+        { name, displayName: entry['display-name'] || preset?.displayName || name, issuer, clientId, clientSecret, redirectUri, policy: egress.policy },
+        {
+          find: (subject) => store.findBySubject('identity', subject),
+          used: (id, at, email) => store.touch(id, at, email || undefined)
+        }
+      ));
+      logger.info(`[AuthManager] outside sign-in '${name}' issuer=${issuer}`);
+    }
+  }
+
+  /** A client secret from its environment reference (`$NAME`); never the secret written into configuration. */
+  private secretFromEnvironment(ref: unknown, refuse: (why: string) => void): string {
+    const match = typeof ref === 'string' ? /^\$([A-Z_][A-Z0-9_]*)$/.exec(ref) : null;
+    if (!match) {
+      refuse('client-secret must be an environment reference ($NAME), never the secret itself');
+      return '';
+    }
+    const value = process.env[match[1]] ?? '';
+    if (!value) refuse(`the environment variable ${match[1]} named by its client-secret is not set`);
+    return value;
+  }
+
+  private outsideProvider(providerId: string): OidcAuthProvider | null {
+    const p = this.providers.get(providerId);
+    return p instanceof OidcAuthProvider ? p : null;
+  }
+
+  /** The outside sign-in providers configured and enabled now, in registration order (#1743). */
+  outsideProviders(): OutsideProvider[] {
+    return [...this.providers.values()]
+      .filter((p): p is OidcAuthProvider => p instanceof OidcAuthProvider)
+      .map(p => ({ id: p.id, name: p.name, displayName: p.displayName }));
+  }
+
+  /** The enabled provider an identity row came from, by its issuer; null when none is. */
+  private providerOfIdentity(subject: string): OidcAuthProvider | null {
+    for (const p of this.providers.values()) {
+      if (p instanceof OidcAuthProvider && subject.startsWith(`${p.issuer}#`)) return p;
+    }
+    return null;
+  }
+
+  /** Whether a credential row can start a sign-in now: an outside identity only while its provider is enabled. */
+  private isWayIn(row: CredentialRecord): boolean {
+    return WAY_IN_KINDS.has(row.kind) && (row.kind !== 'identity' || this.providerOfIdentity(row.subject) !== null);
+  }
+
+  /**
+   * `username`'s connected outside identities (#1743), for its owner: each
+   * with the provider's email and whether that provider can sign in now.
+   */
+  async connectedIdentities(ctx: PermissionSubject, username: string): Promise<ConnectedIdentity[]> {
+    if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
+    return this.requireCredentialsStore().list(username).filter(r => r.kind === 'identity').map(r => {
+      const p = this.providerOfIdentity(r.subject);
+      return {
+        id: r.id,
+        label: r.label,
+        email: r.secret,
+        createdAt: r.createdAt,
+        ...(r.lastUsedAt ? { lastUsedAt: r.lastUsedAt } : {}),
+        provider: p ? { id: p.id, name: p.name, displayName: p.displayName } : null
+      };
+    });
+  }
+
+  /**
+   * Begin connecting an outside identity to the signed-in person's own
+   * account (#1743): an `account-security` change, so step-up applies.
+   * Returns the provider's URL to send the browser to.
+   */
+  async startConnect(ctx: PermissionSubject, username: string, providerId: string, flow: { redirect?: string; deviceState: string }): Promise<string> {
+    if (ctx.username !== username || !(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const provider = this.outsideProvider(providerId);
+    if (!provider) throw new Error('That sign-in provider is not available');
+    if (!(await this.userMayUseProvider(username, providerId))) throw new Error('This account cannot sign in with that provider');
+    return provider.startFlow({ redirect: flow.redirect ?? '/profile', deviceState: flow.deviceState, connectFor: username });
+  }
+
+  /** The account a flow is connecting an identity to, or null for a sign-in (or an unknown flow) (#1743). */
+  flowConnectsFor(providerId: string, state: string): string | null {
+    return this.outsideProvider(providerId)?.getFlowConnectFor(state) ?? null;
+  }
+
+  /**
+   * Finish connecting an outside identity to `username` (#1743). The flow
+   * must be the one this person started to connect; the identity is the
+   * issuer plus subject, and belongs to exactly one account, so one already
+   * connected elsewhere is refused. Audited as a credential added.
+   */
+  async connectIdentity(ctx: PermissionSubject, username: string, providerId: string, credentials: AuthVerifyCredentials, attempt: AuthAttempt = {}): Promise<ConnectOutcome> {
+    if (ctx.username !== username || !(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    const provider = this.outsideProvider(providerId);
+    if (!provider) return 'refused';
+    const identity = await provider.verifyIdentity(credentials, username);
+    if (!identity || !credentials.state || !provider.consumeToken(credentials.state)) {
+      await this.auditCheck(attempt, username, providerId, 'failure', `connect: ${providerId} refused`);
+      return 'refused';
+    }
+    const store = this.requireCredentialsStore();
+    const existing = store.findBySubject('identity', identity.subject);
+    if (existing) {
+      if (existing.username === username) return 'already-yours';
+      await this.auditCheck(attempt, username, providerId, 'failure', `connect: ${providerId} identity is connected to another account`);
+      return 'connected-elsewhere';
+    }
+    await this.addCredential(ctx, username, { kind: 'identity', subject: identity.subject, secret: identity.email, label: credentialLabel(provider.displayName) });
+    return 'connected';
   }
 
   /**
@@ -526,7 +723,8 @@ class AuthManager extends BaseManager {
   async userMayUseProvider(username: string, providerId: string): Promise<boolean> {
     const user = await this.engine.getManager<UserManager>('UserManager')?.getUser(username);
     const allowed = user?.allowedAuthMethods;
-    return !allowed || allowed.length === 0 || allowed.includes(providerId);
+    // #1743: Google's provider was `google-oidc`; an account limited to it keeps it as `oidc:google`.
+    return !allowed || allowed.length === 0 || allowed.includes(providerId) || (providerId === 'oidc:google' && allowed.includes('google-oidc'));
   }
 
   async passkeyRegistrationOptions(ctx: PermissionSubject, username: string, displayName: string): Promise<unknown> {
@@ -682,7 +880,7 @@ class AuthManager extends BaseManager {
     const row = store.get(id);
     if (!row || row.username !== username) return false;
     if (WAY_IN_KINDS.has(row.kind)) {
-      const others = store.list(username).filter(r => r.id !== id && WAY_IN_KINDS.has(r.kind)).length;
+      const others = store.list(username).filter(r => r.id !== id && this.isWayIn(r)).length;
       if (others === 0 && !(await this.hasPassword(username))) {
         throw new Error('This is the last way into the account; add another before removing it');
       }
@@ -787,6 +985,12 @@ class AuthManager extends BaseManager {
       const declared = this.providers.get(entry.authproviderid)?.factor;
       if (!declared) continue;
       factors.push(this.lowered(entry, declared));
+    }
+    // #1743: an outside provider with no entry is still a sign-in method, at what its code declares (AAL1).
+    for (const p of this.providers.values()) {
+      if (p instanceof OidcAuthProvider && !this.factorEntries.some(e => e.authproviderid === p.id)) {
+        factors.push(this.lowered({ authproviderid: p.id }, p.factor));
+      }
     }
     this.factorCache = factors;
     return factors;
@@ -1568,12 +1772,15 @@ class AuthManager extends BaseManager {
    * to the page they just left with no error to explain it, which reads as the
    * button being broken. Callers guard with `isEnabled()` first.
    */
-  startFlow(providerId: string, context: AuthInitiateContext = {}): string {
+  async startFlow(providerId: string, context: AuthInitiateContext = {}): Promise<string> {
     const provider = this.providers.get(providerId);
     if (!provider?.startFlow) {
       throw new Error(`Auth provider '${providerId}' cannot start a redirect flow`);
     }
-    return provider.startFlow(context);
+    // #1743: a sign-in flow never connects; connecting is startConnect's.
+    const signIn = { ...context };
+    delete signIn.connectFor;
+    return provider.startFlow(signIn);
   }
 
   /**

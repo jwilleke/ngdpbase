@@ -16,7 +16,7 @@ Registers one or more `AuthProvider` instances and delegates authenticate/initia
 
 - __PasswordAuthProvider__ — always registered.
 - __MagicLinkAuthProvider__ — registered when `ngdpbase.auth.magic-link.enabled`.
-- __GoogleOIDCProvider__ — when `ngdpbase.auth.google-oidc.enabled`.
+- __OidcAuthProvider__ — one per enabled entry of `ngdpbase.auth.oidc.providers` (`oidc:<name>`), and the old `ngdpbase.auth.google-oidc.*` keys as the `google` entry (#1743). `outsideProviders()` lists them; `startConnect` / `flowConnectsFor` / `connectIdentity` connect an outside identity to the signed-in account; `connectedIdentities` lists them for the profile.
 - __CloudflareAccessAuthProvider__ — when `ngdpbase.auth.cloudflare-access.enabled`.
 - __AuthentikBearerAuthProvider__ — when `ngdpbase.auth.authentik-bearer.enabled`; bearer JWTs for agent ingest.
 - __AgentTokenAuthProvider__ — when `ngdpbase.auth.agent-token.enabled`; user-delegated agent tokens (#946).
@@ -31,7 +31,7 @@ Multi-factor sign-in, step-up and device authorization are epic #1522; the order
 
 - Issue #396 — original AuthManager design
 - [BaseAuthProvider](../providers/BaseAuthProvider.md) — the abstract contract
-- [PasswordAuthProvider](../providers/PasswordAuthProvider.md), [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md), [CloudflareAccessAuthProvider](../providers/CloudflareAccessAuthProvider.md), [GoogleOIDCProvider](../providers/GoogleOIDCProvider.md)
+- [PasswordAuthProvider](../providers/PasswordAuthProvider.md), [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md), [CloudflareAccessAuthProvider](../providers/CloudflareAccessAuthProvider.md), [OidcAuthProvider](../providers/OidcAuthProvider.md)
 
 ## Required assurance level per role (#1523, #448)
 

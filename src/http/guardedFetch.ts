@@ -40,6 +40,8 @@ export interface TransportInit {
   headers: Record<string, string>;
   agent: HttpAgent | HttpsAgent;
   timeoutMs: number;
+  /** A request body (a POST's form), sent as given. */
+  body?: Buffer;
 }
 
 /**
@@ -59,7 +61,14 @@ export interface GuardedFetchOptions {
   maxBytes?: number;
   timeoutMs?: number;
   headers?: Record<string, string>;
-  method?: 'GET' | 'HEAD';
+  method?: 'GET' | 'HEAD' | 'POST';
+  /**
+   * A POST body (#1743: an OpenID Connect token request). A request that
+   * carries one is never redirected: a redirect answer is returned as it is,
+   * so a body (a code, a client secret) is never re-sent to a host the caller
+   * did not name.
+   */
+  body?: string | Buffer;
   /** Test seam — see `Transport`. */
   transport?: Transport;
   /** Test seam — see `Resolver`. */
@@ -98,7 +107,7 @@ const nodeTransport: Transport = (url, init) =>
     );
     req.on('timeout', () => req.destroy(new Error(`timed out after ${init.timeoutMs}ms`)));
     req.on('error', reject);
-    req.end();
+    req.end(init.body);
   });
 
 /** Read chunks up to `maxBytes`, refusing — and stopping — rather than buffering past it. */
@@ -132,6 +141,7 @@ export async function guardedFetch(target: string, options: GuardedFetchOptions)
   const maxBytes = options.maxBytes ?? DEFAULTS.maxBytes;
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
   const transport = options.transport ?? nodeTransport;
+  const body = options.body === undefined ? undefined : Buffer.from(options.body);
 
   // keepAlive: false is load-bearing. A pooled connection skips resolution on
   // reuse, so the guard would run for the first request to a host and never
@@ -152,13 +162,14 @@ export async function guardedFetch(target: string, options: GuardedFetchOptions)
 
     const res = await transport(url, {
       method: options.method ?? 'GET',
-      headers: options.headers ?? {},
+      headers: body ? { ...options.headers, 'Content-Length': String(body.length) } : (options.headers ?? {}),
       agent: url.protocol === 'https:' ? agents.https : agents.http,
-      timeoutMs
+      timeoutMs,
+      ...(body ? { body } : {})
     });
 
     const location = headerValue(res.headers['location']);
-    if (!REDIRECT_STATUSES.has(res.status) || !location) {
+    if (!REDIRECT_STATUSES.has(res.status) || !location || body) {
       return {
         status: res.status,
         headers: res.headers,
