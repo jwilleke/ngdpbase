@@ -200,6 +200,47 @@ Log in via the ingress hostname as `admin`, using the password supplied in `NGDP
 
 If the boot log is missing one of those lines, you've probably hit §1, §2, or §3 from the gotchas doc. The cleanup recipe in §2 re-triggers `createDefaultAdmin` cleanly without destroying pages or attachments.
 
+## Health probes
+
+ngdpbase answers two health routes. They need no session and no sign-in, and a page cannot take their paths. Use them for probes, not `/`.
+
+| Route | Answers | Use it for |
+| --- | --- | --- |
+| `/health/liveness` | `200 {"status":"ok"}` whenever the process can answer — including during startup. Checks nothing. | `livenessProbe` only. A failure means the process is wedged, the one thing a restart fixes. |
+| `/health/readiness` | `200` when the instance can serve; `503` while the engine is still starting (first boot seeds and indexes pages), when the configuration blocks startup, or when the data folder is not writable. | `readinessProbe`, the Service and Ingress, uptime monitors, and any script that waits for "up". |
+
+A 503 from readiness takes the pod out of rotation without restarting it. Pointing the liveness probe at readiness would restart a pod that is only busy indexing, so keep them apart. The starter manifest already does:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/liveness
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /health/readiness
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+```
+
+A large page set on slow storage can take minutes to index on first boot. That is fine: readiness stays 503 and liveness stays 200 until it is done. If you add a `startupProbe`, point it at `/health/liveness`.
+
+The readiness body names each check, for example `{"status":"ok","checks":{"pageProvider":true,"dataDirWritable":true}}`. A `false` tells you which one failed. Decide on the HTTP status, not the `status` string.
+
+To check by hand:
+
+```bash
+kubectl exec -n <your-namespace> deploy/ngdpbase -- \
+  node -e "require('http').get('http://localhost:3000/health/readiness',r=>{let b='';r.on('data',d=>b+=d);r.on('end',()=>console.log(r.statusCode,b))})"
+```
+
 ## GitOps and image automation
 
 ngdpbase doesn't ship GitOps manifests, but the project's own reference cluster uses these patterns successfully. They're documented here as "this worked for us," not as a blessed recipe.

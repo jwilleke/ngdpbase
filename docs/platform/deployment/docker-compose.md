@@ -89,6 +89,16 @@ First boot pulls `ghcr.io/jwilleke/ngdpbase:latest` (or whatever tag the compose
 docker compose logs -f
 ```
 
+Then wait until it is ready to serve:
+
+```bash
+until curl -fs http://localhost:${HOST_PORT:-3000}/health/readiness; do sleep 3; done
+```
+
+`/health/readiness` answers `503` while the engine is still starting — the first boot seeds and indexes pages, which can take minutes on a large page set — and `200` once it can serve, with a body such as `{"status":"ok","checks":{"pageProvider":true,"dataDirWritable":true}}`.
+
+The image `HEALTHCHECK` probes `/health/liveness`, which answers `200` whenever the process can answer, including during startup. So `docker ps` showing __healthy__ means "running", not "ready". Point anything that decides whether to send traffic — a reverse proxy, a load balancer, an uptime monitor, a deploy script — at `/health/readiness`. Leave the `HEALTHCHECK` on liveness: on readiness, a long first boot would be marked unhealthy and could be restarted mid-index.
+
 ### 5. Open the wiki
 
 - Plain variant: `http://localhost:${HOST_PORT}` (`http://localhost:3000` by default).

@@ -503,7 +503,7 @@ CMD ["node", "app.js"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD node -e "require('http').get('http://localhost:3000/health/liveness', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 ```
 
 __Docker Compose:__
@@ -593,7 +593,7 @@ spec:
             cpu: "1000m"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /health/liveness
             port: 3000
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -601,7 +601,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
+            path: /health/readiness
             port: 3000
           initialDelaySeconds: 10
           periodSeconds: 5
