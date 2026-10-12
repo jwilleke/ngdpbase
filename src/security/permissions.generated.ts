@@ -67,7 +67,7 @@ export type CorePermission =
   | 'store-create'
   /** Extend your own live agent tokens instead of minting new ones, to at most max-ttl-hours from now; the token and its scopes stay the same (#1734). Admin only by default. A token can never carry this scope */
   | 'token-extend'
-  /** Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role; never anonymous (#1734). A token can never carry this scope */
+  /** Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role except demo-admin; never anonymous (#1734). A token can never carry this scope */
   | 'token-mint'
   /** Create user accounts */
   | 'user-create'

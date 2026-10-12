@@ -33,7 +33,7 @@ Handing over a password gives up all four.
 
 Tokens are __off by default__. If you do not see the __New token__ button in the __My tokens and devices__ section described below, an administrator needs to enable them first — see [Server Management].
 
-Once they are on, anyone who can sign in may create tokens. Creating one asks you to confirm your sign-in if you have not signed in recently.
+Once they are on, anyone who can sign in may create tokens, except on a demo administrator account. Creating one asks you to confirm your sign-in if you have not signed in recently.
 
 ## Creating a token
 

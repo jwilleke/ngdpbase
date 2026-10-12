@@ -1,6 +1,7 @@
 /**
  * #1734 (operator, 2026-10-09; approved 2026-10-12) — the shipped catalog:
- * every signed-in role may mint an agent token; extending one is
+ * every signed-in role except demo-admin may mint an agent token (demo-admin
+ * excluded by operator decision 2026-10-12); extending one is
  * `token-extend`, held by admin only, grantable, step-up and audited.
  * Asked of the real PDP over the SHIPPED policies.
  *
@@ -34,10 +35,11 @@ const as = (role: string) => ({ username: 'u', roles: [role], isAuthenticated: r
 
 // vault-owner grants only inside the person's own vaults (and self-service); it is
 // never an account's only role except while a site role has stepped down.
-const signedInRoles = roles.filter((r) => r !== 'anonymous' && r !== 'vault-owner');
+// demo-admin may not mint (operator, 2026-10-12): a demo visitor changes nothing lasting.
+const signedInRoles = roles.filter((r) => r !== 'anonymous' && r !== 'vault-owner' && r !== 'demo-admin');
 
 describe('agent-token permissions as shipped (#1734)', () => {
-  test('every signed-in role may mint', async () => {
+  test('every signed-in role except demo-admin may mint', async () => {
     const lacking: string[] = [];
     for (const role of signedInRoles) if (!(await pdp.permits(as(role), 'token-mint'))) lacking.push(role);
     expect(lacking).toEqual([]);
@@ -45,6 +47,11 @@ describe('agent-token permissions as shipped (#1734)', () => {
 
   test('anonymous may not mint', async () => {
     expect(await pdp.permits(as('anonymous'), 'token-mint')).toBe(false);
+  });
+
+  test('demo-admin may not mint', async () => {
+    expect(roles).toContain('demo-admin');
+    expect(await pdp.permits(as('demo-admin'), 'token-mint')).toBe(false);
   });
 
   test('token-extend is held by admin only', async () => {

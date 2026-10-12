@@ -96,6 +96,7 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 ### Mint-time rules
 
+- __Who may mint:__ `token-mint` ships in every signed-in role's policy except `demo-admin`, never to `anonymous` ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734); demo-admin excluded by operator decision 2026-10-12). It is step-up, and a token can never carry it.
 - An __unscoped token is rejected__, never treated as unrestricted.
 - __`admin-*` scopes are refused outright__ — a token can never carry them, however privileged its owner. This is a refusal, not a warning: warnings get clicked through.
 - TTL above `max-ttl-hours` is rejected; the max defaults equal to the default so nothing longer-lived can be minted without an operator raising the ceiling.

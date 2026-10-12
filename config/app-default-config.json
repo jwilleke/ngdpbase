@@ -1827,7 +1827,7 @@
       }
     },
     "token-mint": {
-      "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role; never anonymous (#1734). A token can never carry this scope",
+      "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role except demo-admin; never anonymous (#1734). A token can never carry this scope",
       "label": "Make and revoke your own agent tokens",
       "icon": "key",
       "color": "#fd7e14",
@@ -2452,7 +2452,6 @@
         "asset-upload",
         "search-page",
         "admin-read",
-        "token-mint",
         "profile-manage",
         "account-security",
         "comment-create",
