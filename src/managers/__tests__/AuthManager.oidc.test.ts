@@ -688,6 +688,30 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(am.stepUpNeeded('account-security', signIn, ['admin'], false)).toBe(true);
     });
 
+    test('trusted and reporting a hardware key with a PIN: AAL3 and phishing-resistant, so a role at AAL3 is kept', async () => {
+      trust(true);
+      roleLevels = { admin: 3, reader: 1 };
+      const { am, signIn } = await signInWith({ amr: ['hwk', 'pin'] });
+      expect(signIn.aal).toBe(3);
+      expect(signIn.acr).toBe('phrh');
+      expect(signIn.factors).toEqual([expect.objectContaining({ provider: 'oidc:idp', amr: ['hwk', 'pin'], aal: 3, acr: 'phrh' })]);
+      expect(am.rolesAtSignIn(['admin', 'reader'], signIn.aal)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
+    });
+
+    test('trusted and reporting the AAL3 acr: AAL3, not phishing-resistant', async () => {
+      trust(true);
+      const { signIn } = await signInWith({ amr: ['pwd'], acr: 'http://idmanagement.gov/ns/assurance/aal/3' });
+      expect(signIn.aal).toBe(3);
+      expect(signIn.acr).toBe('aal3');
+    });
+
+    test('untrusted and reporting a hardware key with a PIN: AAL1', async () => {
+      trust(false);
+      const { signIn } = await signInWith({ amr: ['hwk', 'pin'] });
+      expect(signIn.aal).toBe(1);
+      expect(signIn.acr).toBe('aal1');
+    });
+
     test('trusted, a password alone is AAL1', async () => {
       trust(true);
       const { signIn } = await signInWith({ amr: ['pwd'] });
@@ -722,21 +746,29 @@ describe('AuthManager outside sign-in (#1743)', () => {
         (await started()).outsideLevel({ amr: amr as string[], ...(acr ? { acr } : {}), trusted });
 
       test.each([
-        [['mfa'], 2],
-        [['pwd', 'otp'], 2],
-        [['pwd', 'hwk'], 2],
-        [['swk', 'pin'], 2],
-        [['hwk', 'fpt'], 2],
-        [['pwd', 'sms'], 2],
-        [['pwd'], 1],
-        [['otp'], 1],
-        [['hwk', 'user'], 1],
-        [['pwd', 'kba'], 1],
-        [['pwd', 'email'], 1],
-        [['pwd', 'push'], 1],
-        [[], 1]
-      ])('amr %j is AAL%i', async (amr, aal) => {
-        expect((await level(amr)).aal).toBe(aal);
+        [['hwk', 'pin'], 3, 'phrh'],
+        [['hwk', 'fpt'], 3, 'phrh'],
+        [['hwk', 'face'], 3, 'phrh'],
+        [['hwk', 'user'], 3, 'phrh'],
+        [['hwk', 'mfa'], 3, 'phrh'],
+        [['pwd', 'hwk'], 3, 'phrh'],
+        [['mfa'], 2, undefined],
+        [['pwd', 'otp'], 2, undefined],
+        [['swk', 'pin'], 2, undefined],
+        [['swk', 'user'], 1, undefined],
+        [['pwd', 'sms'], 2, undefined],
+        [['hwk'], 1, undefined],
+        [['hwk', 'otp'], 1, undefined],
+        [['pwd'], 1, undefined],
+        [['otp'], 1, undefined],
+        [['pwd', 'kba'], 1, undefined],
+        [['pwd', 'email'], 1, undefined],
+        [['pwd', 'push'], 1, undefined],
+        [[], 1, undefined]
+      ])('amr %j is AAL%i, phishing resistance %s', async (amr, aal, acr) => {
+        const got = await level(amr);
+        expect(got.aal).toBe(aal);
+        expect(got.acr).toBe(acr);
       });
 
       test('only RFC 8176 values are kept as the factor\'s amr', async () => {
@@ -745,16 +777,25 @@ describe('AuthManager outside sign-in (#1743)', () => {
 
       test.each([
         ['http://idmanagement.gov/ns/assurance/aal/2', 2],
-        ['http://idmanagement.gov/ns/assurance/aal/3', 2],
+        ['http://idmanagement.gov/ns/assurance/aal/3', 3],
         ['http://idmanagement.gov/ns/assurance/aal/1', 1],
         ['phr', 1],
         ['urn:example:aal2', 1]
-      ])('acr %s is AAL%i, never above 2', async (acr, aal) => {
-        expect((await level(['pwd'], acr)).aal).toBe(aal);
+      ])('acr %s is AAL%i, as reported, and never phishing resistance', async (acr, aal) => {
+        const got = await level(['pwd'], acr);
+        expect(got.aal).toBe(aal);
+        expect(got.acr).toBeUndefined();
       });
 
-      test('untrusted, nothing counts', async () => {
-        expect(await level(['pwd', 'mfa'], 'http://idmanagement.gov/ns/assurance/aal/3', false)).toEqual({ amr: [], aal: 1 });
+      test('a lower acr never lowers what the amr shows', async () => {
+        expect(await level(['hwk', 'pin'], 'http://idmanagement.gov/ns/assurance/aal/2')).toEqual({ amr: ['hwk', 'pin'], aal: 3, acr: 'phrh' });
+      });
+
+      test.each([
+        [['pwd', 'mfa'], 'http://idmanagement.gov/ns/assurance/aal/3'],
+        [['hwk', 'pin'], undefined]
+      ])('untrusted, nothing counts: amr %j, acr %s', async (amr, acr) => {
+        expect(await level(amr, acr, false)).toEqual({ amr: [], aal: 1 });
       });
     });
 

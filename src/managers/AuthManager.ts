@@ -156,14 +156,13 @@ const RFC8176_AMR: ReadonlySet<string> = new Set([
 
 /**
  * Outside `acr` values that state AAL2 or higher by NIST SP 800-63B (#1633):
- * the identifiers SP 800-63C §6 assigns. Whatever they say, an outside
- * sign-in counts for at most AAL2: this site cannot check how the provider
- * met AAL3 (hardware, verifier-impersonation resistance).
+ * the identifiers SP 800-63C §6 assigns, and the level each states. A trusted
+ * provider's report is taken as given, so `…/aal/3` is AAL3.
  */
-const AAL2_ACR: ReadonlySet<string> = new Set([
-  'http://idmanagement.gov/ns/assurance/aal/2',
-  'http://idmanagement.gov/ns/assurance/aal/3'
-]);
+const OUTSIDE_ACR_AAL: Readonly<Record<string, Aal>> = {
+  'http://idmanagement.gov/ns/assurance/aal/2': 2,
+  'http://idmanagement.gov/ns/assurance/aal/3': 3
+};
 
 /** Bounds on what an outside report may put in an audit record. */
 const REPORTED_MAX_AMR = 16;
@@ -307,7 +306,7 @@ interface OidcProviderEntry {
   'auto-provision'?: boolean;
   /**
    * Trust this provider's own second factor (#1633): its reported `amr` / `acr`
-   * count toward the sign-in level, up to AAL2 (`outsideLevel`). Off by default.
+   * count toward the sign-in level, to any level they show (`outsideLevel`). Off by default.
    */
   'trust-mfa'?: boolean;
 }
@@ -1633,26 +1632,38 @@ class AuthManager extends BaseManager {
   private satisfiedFactors(providerId: string, reported?: ReportedValues): SatisfiedFactor[] {
     const factor = this.getFactors().find(f => f.provider === providerId);
     if (!factor) return [];
-    const { amr, aal } = reported?.trusted ? this.outsideLevel(reported) : factor;
-    return [{ provider: providerId, amr, aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }];
+    const { amr, aal, acr } = reported?.trusted ? this.outsideLevel(reported) : factor;
+    return [{ provider: providerId, amr, aal, ...(acr ? { acr } : {}), at: new Date().toISOString() }];
   }
 
   /**
    * What an outside provider's own sign-in counts for here (#1633) — the one
    * mapping, for every outside provider, by NIST SP 800-63B and RFC 8176.
-   * Untrusted: AAL1 with no `amr`, whatever was reported. Trusted: the
-   * reported RFC 8176 `amr` values, at AAL2 when they say multi-factor (`mfa`,
-   * or two factor types by the same rule `assess` applies to this site's own
-   * factors, so `pwd` + `otp` but not `hwk` + `user`) or the `acr` is an
-   * SP 800-63C AAL2 or AAL3 identifier; AAL1 otherwise. Never above AAL2 and
-   * never phishing-resistant: this site cannot check either claim.
+   * Untrusted: AAL1 with no `amr`, whatever was reported. Trusted (operator,
+   * 2026-10-12): the report is taken as given, to whatever level it shows.
+   * The reported RFC 8176 `amr` values count:
+   *
+   * - AAL3, phishing-resistant on hardware (`phrh`): a hardware-bound key
+   *   (`hwk`) with a second factor or user verification — `mfa`, `user`, or a
+   *   second factor type by the same rule `assess` applies to this site's own
+   *   factors (`hwk` + `pin`, `hwk` + `fpt`, `hwk` + `pwd`; not `hwk` + `otp`).
+   *   This site's passkey is phishing-resistant the same way, through its
+   *   factor's `acr`, which `assess` carries to the sign-in.
+   * - AAL2: multi-factor — `mfa`, or two factor types by `assess`.
+   * - The `acr`, when it is an SP 800-63C identifier, raises the level to the
+   *   one it states (`…/aal/2`, `…/aal/3`); it is never phishing resistance.
+   * - AAL1 otherwise.
    */
-  outsideLevel(reported: ReportedValues | undefined): { amr: string[]; aal: Aal } {
+  outsideLevel(reported: ReportedValues | undefined): Pick<Factor, 'amr' | 'aal' | 'acr'> {
     if (!reported?.trusted) return { amr: [], aal: 1 };
     const amr = [...new Set(reported.amr.filter(v => RFC8176_AMR.has(v)))];
-    const multiFactor = amr.includes('mfa') || this.assess([{ amr, aal: 1 }]).aal >= 2;
-    const aal2Acr = reported.acr !== undefined && AAL2_ACR.has(reported.acr);
-    return { amr, aal: multiFactor || aal2Acr ? 2 : 1 };
+    const types = this.assess([{ amr, aal: 1 }]);
+    const multiFactor = amr.includes('mfa') || types.aal >= 2;
+    const hardwareVerified = amr.includes('hwk') && (amr.includes('mfa') || amr.includes('user') || types.mfa);
+    const fromAmr: Aal = hardwareVerified ? 3 : multiFactor ? 2 : 1;
+    const fromAcr = (reported.acr !== undefined ? OUTSIDE_ACR_AAL[reported.acr] : undefined) ?? 1;
+    const aal = fromAmr > fromAcr ? fromAmr : fromAcr;
+    return hardwareVerified ? { amr, aal, acr: 'phrh' } : { amr, aal };
   }
 
   /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
