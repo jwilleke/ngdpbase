@@ -19,7 +19,7 @@ import type RenderingManager from '../../../dist/src/managers/RenderingManager.j
 import type AttachmentManager from '../../../dist/src/managers/AttachmentManager.js';
 import type PageManager from '../../../dist/src/managers/PageManager.js';
 import type UserManager from '../../../dist/src/managers/UserManager.js';
-import { mayOnEntry } from './helpers.js';
+import { mayOnEntry, mayShowOnEntry } from './helpers.js';
 
 export default function publicRoutes(engine: WikiEngine, _config: Record<string, unknown>): Router {
   const router = Router();
@@ -212,7 +212,8 @@ export default function publicRoutes(engine: WikiEngine, _config: Record<string,
           renderedContent,
           attachments,
           sidebar,
-          canEdit:         await mayOnEntry(engine, req.userContext, entry.name, 'edit')   // #1539: the page door
+          // #1668: whether to show the Edit link — an affordance, not the door; records nothing.
+          canEdit:         await mayShowOnEntry(engine, req.userContext, entry.name, 'edit')
         });
       } catch (err) {
         handleError(err, res);

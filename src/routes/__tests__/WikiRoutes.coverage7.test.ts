@@ -113,6 +113,7 @@ const mockPolicyInformationPoint = {
   currentSubject: vi.fn(),
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
+  pageAffordance: vi.fn(),
   removeACLMarkup: vi.fn(),
   parseACL: vi.fn()
 };
@@ -268,6 +269,7 @@ function resetMocks() {
   
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.pageAffordance.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
   mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 
@@ -441,6 +443,18 @@ describe('WikiRoutes — coverage batch 7', () => {
       const res = await request(app).get('/view/TestPage');
       expect(res.status).toBe(500);
     });
+
+    // #1668: the Edit control is an affordance. The view asks pageAffordance,
+    // which records nothing; it never asks the recording door about `edit`,
+    // which wrote an authorization-deny for every anonymous view.
+    test('an anonymous view asks the edit affordance, never the recording edit door (#1668)', async () => {
+      mockPolicyInformationPoint.pageAffordance.mockResolvedValue(false);
+      const res = await request(app).get('/view/TestPage');
+      expect(res.status).toBe(200);
+      expect(mockPolicyInformationPoint.pageAffordance).toHaveBeenCalledWith(expect.anything(), 'edit');
+      const editDoor = mockPolicyInformationPoint.checkPagePermissionWithContext.mock.calls.filter(([, action]) => action === 'edit');
+      expect(editDoor).toHaveLength(0);
+    });
   });
 
   // ── GET /edit/:page (editPage) ───────────────────────────────────────────────
@@ -463,6 +477,10 @@ describe('WikiRoutes — coverage batch 7', () => {
       mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(false);
       const res = await request(app).get('/edit/TestPage');
       expect(res.status).toBe(403);
+      // #1668: opening the editor is an action — it asks the recording door,
+      // never the affordance, so the refusal is audited.
+      expect(mockPolicyInformationPoint.checkPagePermissionWithContext).toHaveBeenCalledWith(expect.anything(), 'edit');
+      expect(mockPolicyInformationPoint.pageAffordance).not.toHaveBeenCalledWith(expect.anything(), 'edit');
     });
 
     test('renders 200 for new page (getPage returns null)', async () => {

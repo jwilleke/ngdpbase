@@ -245,6 +245,7 @@ vi.mock('../../WikiEngine', () => {
     }),
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+    pageAffordance: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content without ACL markup'),
     parseACL: vi.fn().mockReturnValue({ permissions: [] })
   };
@@ -553,6 +554,7 @@ describe('WikiRoutes - Comprehensive Route Testing', () => {
     // reset it to the same default per test so tests that flip it for denial
     // don't bleed state into later tests.
     mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+    mockPolicyInformationPoint.pageAffordance.mockResolvedValue(true);
     mockPolicyInformationPoint.removeACLMarkup.mockReturnValue('Content without ACL markup');
     mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
     mockNotificationManager.getNotifications.mockResolvedValue([]);

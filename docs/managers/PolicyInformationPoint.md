@@ -1,7 +1,7 @@
 ---
 name: PolicyInformationPoint
 description: What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager)
-dateModified: '2026-09-21'
+dateModified: '2026-10-12'
 category: managers
 code: src/security/PolicyInformationPoint.ts
 ---
@@ -43,12 +43,16 @@ A page decision without the page's metadata refuses, except for `create`. A page
 | --- | --- |
 | `checkPagePermissionWithContext(ctx, action)` | one page, from a request that already holds it |
 | `evaluatePagePermission(ctx, action)` | the same, returning the reason (e.g. `author_lock_deny`) |
+| `pageAffordance(ctx, action)` | the same evaluator, asked only to decide whether to show a control — the view's Edit button. Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
 | `canUserAccessPage(subject, page, action)` | another page, loaded as this subject — inserts, includes, attachments |
+| `pageAffordanceFor(subject, page, action)` | the cross-page check as an affordance — the journal entry view's Edit link. Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
 | `filterAccessiblePages(subject, action, candidates)` | many pages over the index; no disk read, log line or audit record per page; agrees with the single-page answer in both directions ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
 | `canUserAccessMediaItem(subject, item)` | media, including a share's media cover |
 | `canAccessPrivateContainer(subject, owner, resource, action)` | a private store's files |
 
-Every single-page decision is recorded by `logAccessDecision`, and a refusal reaches the audit log as `authorization-deny`.
+Every single-page decision at a door is recorded by `logAccessDecision`, and a refusal reaches the audit log as `authorization-deny`, carrying the request's `ipAddress` from the subject (the session and bearer middleware put it there). One method, `auditDenial`, builds that record for page, media and private-container refusals alike.
+
+An affordance is not a door. `pageAffordance` and `pageAffordanceFor` walk the same tiers through the same `_runEvaluator`, so each always agrees with its door (`checkPagePermissionWithContext`, `canUserAccessPage`) on allow and deny, but writes no audit record and logs its trace at debug, not info. Showing a control is not an attempt: before [#1668](https://github.com/jwilleke/ngdpbase/issues/1668) the view asked the door for its Edit button, and every anonymous view wrote an `authorization-deny`. Acting on the control — `GET /edit`, `POST /save` — asks the door, and a refusal there is recorded.
 
 ## The subject
 

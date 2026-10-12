@@ -117,6 +117,23 @@ export async function mayOnEntry(
 }
 
 /**
+ * Would {@link mayOnEntry} allow `action` — asked only to decide whether to
+ * SHOW a control, such as the entry view's Edit link (#1668). The same
+ * evaluator through the PIP's affordance form, which records nothing: an
+ * anonymous visitor reading a public entry is not refused anything. Acting on
+ * the control asks `mayOnEntry`, which records a refusal.
+ */
+export async function mayShowOnEntry(
+  engine: WikiEngine,
+  userContext: UserContext,
+  entryName: string,
+  action: 'edit' | 'delete'
+): Promise<boolean> {
+  const pip = engine.getManager<{ pageAffordanceFor(subject: unknown, pageName: string, action: string): Promise<boolean> }>('PolicyInformationPoint');
+  return !!pip && await pip.pageAffordanceFor(userContext, entryName, action);
+}
+
+/**
  * Create the user's empty entry for a date and return its page name (#540).
  *
  * Visibility (#1504): the journal system-category's `defaultPrivate` — with
