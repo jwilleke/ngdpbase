@@ -6625,16 +6625,27 @@ ${panes}
   }
 
   /**
-   * POST /profile/apps/:grantId/revoke — end an app's or device's access to
-   * your account (#1601). account-security, so it asks for step-up (#1525),
-   * and a token can never do it.
+   * POST /profile/tokens/:kind/:id/revoke — revoke one row of your own
+   * "My tokens and devices" list, an agent token or an approved app (#1764).
+   * account-security, so it asks for step-up (#1525), and a token can never
+   * do it. AuthManager decides and revokes; the route only answers.
    */
+  async revokeOwnDelegation(req: Request, res: Response): Promise<void> {
+    const kind = req.params.kind === 'token' || req.params.kind === 'app' ? req.params.kind : null;
+    await this.revokeOwn(req, res, kind, req.params.id);
+  }
+
+  /** POST /profile/apps/:grantId/revoke — the #1601 form of the above for an app; same door. */
   async revokeOwnApp(req: Request, res: Response): Promise<void> {
+    await this.revokeOwn(req, res, 'app', req.params.grantId);
+  }
+
+  private async revokeOwn(req: Request, res: Response, kind: 'token' | 'app' | null, id: string): Promise<void> {
     const wikiContext = this.createWikiContext(req);
     if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
-    const username = wikiContext.userContext.username;
-    const revoked = typeof username === 'string'
-      && await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, req.params.grantId);
+    const user = wikiContext.userContext;
+    const revoked = kind !== null && typeof user.username === 'string'
+      && await this.engine.getManager('AuthManager').revokeDelegation(user, user.username, kind, id).catch(() => false);
     res.redirect(`/profile?${revoked ? 'success=Access+revoked' : 'error=Not+found'}`);
   }
 
@@ -6649,7 +6660,8 @@ ${panes}
     const wikiContext = this.createWikiContext(req);
     if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
     const username = req.params.username;
-    const revoked = await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, req.params.grantId);
+    // #1764: the same door as the person's own Revoke; it asks user-edit for someone else's.
+    const revoked = await this.engine.getManager('AuthManager').revokeDelegation(wikiContext.userContext, username, 'app', req.params.grantId).catch(() => false);
     res.redirect(`/admin/users/${encodeURIComponent(username)}/edit?${revoked ? 'success=Access+revoked' : 'error=Not+found'}`);
   }
 
@@ -8117,6 +8129,14 @@ ${panes}
         : null;
       // #1601: the apps and devices approved through /oidc; null when the provider is off.
       const approvedApps = currentUser?.username ? await this.approvedAppsFor(currentUser.username) : null;
+      // #1764: one "My tokens and devices" list over agent tokens and those apps,
+      // shown while either is on. Null when it could not be read (#1738): not an empty list.
+      const delegations = currentUser?.username && (agentTokensEnabled || approvedApps !== null)
+        ? await authManagerForProfile?.listDelegations?.(currentUser as never, currentUser.username).catch((err: unknown) => {
+          logger.warn(`[profile] Could not list the tokens and devices of ${currentUser.username}: ${(err as Error).message}`);
+          return null;
+        }) ?? null
+        : undefined;
       // #1523: offer the email second factor where it can work and is not enrolled yet.
       const offerEmailSecondFactor = Boolean(currentUser?.username
         && authManagerForProfile?.emailLinksAvailable?.()
@@ -8144,6 +8164,7 @@ ${panes}
         connectableProviders, // #1743
         passkeyHost, // #448
         approvedApps, // #1601
+        delegations, // #1764: undefined hides the card; null means it could not be read
         offerEmailSecondFactor, // #1523
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
@@ -10193,7 +10214,8 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Token not found' });
       }
 
-      const revoked = await manager.revoke(id, user.username);
+      // #1764: every Revoke goes through AuthManager's one door, which decides and audits.
+      const revoked = await this.engine.getManager('AuthManager').revokeDelegation(wikiContext.userContext, record.owner, 'token', id);
       if (!revoked) {
         return res.status(409).json({ success: false, error: 'Token is already revoked' });
       }
@@ -15353,6 +15375,7 @@ ${panes}
     app.post('/profile/credentials/:id/rename', (req: Request, res: Response) => { void this.renameOwnCredential(req, res); });
     // #1601: approved apps and devices.
     app.post('/profile/apps/:grantId/revoke', (req: Request, res: Response) => { void this.revokeOwnApp(req, res); });
+    app.post('/profile/tokens/:kind/:id/revoke', (req: Request, res: Response) => { void this.revokeOwnDelegation(req, res); });
     app.post('/admin/users/:username/apps/:grantId/revoke', (req: Request, res: Response) => { void this.adminRevokeUserApp(req, res); });
     // #1019: GET renders a confirmation interstitial and consumes nothing;
     // POST is where the token is spent. Splitting them is what stops an email

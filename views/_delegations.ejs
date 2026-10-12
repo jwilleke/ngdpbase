@@ -1,0 +1,54 @@
+<%# #1764 — "My tokens and devices": the signed-in person's agent tokens and the apps and
+    devices they approved, as one list (AuthManager.listDelegations). Each row says how it
+    is renewed, in plain words, and has one Revoke that goes through AuthManager's door.
+    Locals: items (Delegation[]), csrfToken. %>
+<%
+  const when = function (iso) { return iso ? iso.slice(0, 16).replace('T', ' ') + ' UTC' : ''; };
+  const typeOf = function (d) { return d.kind === 'token' ? 'Agent token' : (d.device ? 'Device' : 'App'); };
+%>
+<% if (items.length === 0) { %>
+  <p class="text-muted small mb-0">You have no tokens, apps or devices.</p>
+<% } else { %>
+  <p class="small text-muted mb-2">
+    <span class="badge bg-secondary">Fixed</span> stops working on its end date; you make a new one when you need it.
+    <span class="badge bg-info text-dark ms-2">Refreshable</span> renews itself automatically, with a new key each time.
+  </p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Name</th><th>What it is</th><th>Kind</th><th>Can do</th><th>Ends or renewed</th><th></th></tr></thead>
+      <tbody>
+        <% items.forEach(function (d) { %>
+        <tr data-delegation="<%= d.kind %>">
+          <td><%= d.name %></td>
+          <td class="small"><%= typeOf(d) %></td>
+          <td>
+            <% if (d.renewal === 'refreshable') { %><span class="badge bg-info text-dark">Refreshable</span>
+            <% } else { %><span class="badge bg-secondary">Fixed</span><% } %>
+          </td>
+          <td class="small text-muted"><%= d.scopes.join(', ') %></td>
+          <td class="small">
+            <% if (d.renewal === 'refreshable') { %>
+              <%= d.renewedAt ? 'Last renewed ' + when(d.renewedAt) : 'Not renewed yet' %>
+              <% if (d.expiresAt) { %><div class="text-muted"><%= 'Ends ' + when(d.expiresAt) %></div><% } %>
+            <% } else { %>
+              <%= d.expiresAt ? 'Ends ' + when(d.expiresAt) : 'Ends when you revoke it' %>
+            <% } %>
+            <% if (d.kind === 'token') { %>
+              <div class="text-muted"><%= d.lastUsedAt ? 'Last used ' + when(d.lastUsedAt) : 'Never used' %></div>
+            <% } %>
+          </td>
+          <td class="text-end">
+            <%# The name rides in a data attribute, HTML-escaped — never built into a script string. %>
+            <form action="/profile/tokens/<%= d.kind %>/<%= encodeURIComponent(d.id) %>/revoke" method="POST" class="d-inline"
+                  data-confirm="<%= d.kind === 'token' ? 'Revoke ' + d.name + '? Anything using it stops working immediately.' : 'Revoke access for ' + d.name + '? It will need approving again.' %>"
+                  onsubmit="return confirm(this.dataset.confirm)">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>

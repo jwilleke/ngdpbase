@@ -61,6 +61,10 @@ describe('OIDC sign-in bridge (#1572)', () => {
       }, {
         client_id: 'tv', client_name: 'Living Room TV', token_endpoint_auth_method: 'none',
         grant_types: ['urn:ietf:params:oauth:grant-type:device_code'], response_types: [], redirect_uris: []
+      }, {
+        // #1764: a device that may renew its own access.
+        client_id: 'speaker', client_name: 'Kitchen Speaker', token_endpoint_auth_method: 'none',
+        grant_types: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'], response_types: [], redirect_uris: []
       }],
       'oidc-auth-server.device-flow.enabled': true
     };
@@ -337,6 +341,41 @@ describe('OIDC sign-in bridge (#1572)', () => {
     const consent = await follow(agent, await enterDeviceCode(agent, device.user_code));
     await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
     expect(await manager.listGrants('jim')).toEqual([expect.objectContaining({ clientId: 'tv', name: 'Living Room TV', device: true })]);
+  });
+
+  test('#1764: a device holding a refresh key is listed as renewing itself, with when it last renewed; a revoke names who did it', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const start = await request(app).post('/oidc/device/auth').type('form').send({ client_id: 'speaker', scope: 'openid offline_access' });
+    const device = start.body as { device_code: string; user_code: string };
+    const consent = await follow(agent, await enterDeviceCode(agent, device.user_code));
+    await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    const issued = await request(app).post('/oidc/token').type('form')
+      .send({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: device.device_code, client_id: 'speaker' });
+    const refreshKey = (issued.body as { refresh_token?: string }).refresh_token;
+    expect(refreshKey).toBeTruthy();
+
+    const [first] = await manager.listGrants('jim');
+    expect(first).toMatchObject({ clientId: 'speaker', device: true, refreshable: true, renewedAt: null });
+
+    const renewed = await request(app).post('/oidc/token').type('form')
+      .send({ grant_type: 'refresh_token', refresh_token: refreshKey, client_id: 'speaker' });
+    expect(renewed.status).toBe(200);
+    const [after] = await manager.listGrants('jim');
+    expect(after.renewedAt).toEqual(expect.any(String));
+
+    expect(await manager.revokeGrant('jim', after.grantId, 'admin')).toBe(true);
+    expect(audited).toContainEqual(expect.objectContaining({
+      eventType: 'oidcgrant-revoke', user: 'admin', resource: 'speaker', metadata: expect.objectContaining({ owner: 'jim', revokedBy: 'admin' })
+    }));
+  });
+
+  test('#1764: an app with no refresh key is not listed as renewing itself', async () => {
+    signIn();
+    const agent = request.agent(app);
+    const consent = await follow(agent, (await authorize(agent)).res);
+    await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    expect(await manager.listGrants('jim')).toEqual([expect.objectContaining({ clientId: 'app', refreshable: false, renewedAt: null })]);
   });
 
   test('Deny ends the request with access_denied and no code', async () => {

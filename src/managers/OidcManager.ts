@@ -153,6 +153,14 @@ export interface ApprovedApp {
   /** ISO 8601. */
   approvedAt: string | null;
   expiresAt: string | null;
+  /**
+   * The app holds a refresh key, so its access is renewed automatically with
+   * a new key each time (#1764). False: it has only what it was given, which
+   * ends with the grant.
+   */
+  refreshable: boolean;
+  /** ISO 8601: when its key was last renewed; null when it has not been yet (#1764). */
+  renewedAt: string | null;
 }
 
 const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
@@ -318,6 +326,7 @@ export class OidcManager extends BaseManager {
   async listGrants(username: string): Promise<ApprovedApp[]> {
     if (!this.store || !this.auth || !username) return [];
     const grants = (await this.store.listLive('Grant')).filter((g) => g.accountId === username);
+    const refreshKeys = await this.store.listLive('RefreshToken');
     const out: ApprovedApp[] = [];
     for (const g of grants) {
       const clientId = typeof g.clientId === 'string' ? g.clientId : '';
@@ -326,6 +335,10 @@ export class OidcManager extends BaseManager {
       const openid = (g.openid ?? {}) as { scope?: string };
       const resources = (g.resources ?? {}) as Record<string, string>;
       const scopes = [...new Set([openid.scope ?? '', ...Object.values(resources)].join(' ').split(' ').filter(Boolean))];
+      // #1764: a refresh key under the grant means it renews itself; a rotated
+      // one (rotations > 0) was issued by a renewal, the newest saying when.
+      const keys = refreshKeys.filter((r) => r.grantId === g.jti);
+      const renewed = keys.filter((r) => typeof r.rotations === 'number' && r.rotations > 0 && typeof r.iat === 'number').map((r) => r.iat as number);
       out.push({
         grantId: String(g.jti ?? ''),
         clientId,
@@ -333,7 +346,9 @@ export class OidcManager extends BaseManager {
         device: Array.isArray(meta?.grant_types) && meta.grant_types.includes(DEVICE_GRANT_TYPE),
         scopes,
         approvedAt: typeof g.iat === 'number' ? new Date(g.iat * 1000).toISOString() : null,
-        expiresAt: typeof g.exp === 'number' ? new Date(g.exp * 1000).toISOString() : null
+        expiresAt: typeof g.exp === 'number' ? new Date(g.exp * 1000).toISOString() : null,
+        refreshable: keys.length > 0,
+        renewedAt: renewed.length > 0 ? new Date(Math.max(...renewed) * 1000).toISOString() : null
       });
     }
     return out.filter((a) => a.grantId).sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''));
@@ -342,9 +357,10 @@ export class OidcManager extends BaseManager {
   /**
    * End one of `username`'s grants and every code and token under it (#1601).
    * False when no such grant is theirs — never revokes another person's.
-   * Recorded as oidcgrant-revoke, by the account it belonged to.
+   * Recorded as oidcgrant-revoke by whoever revoked it (`by`, the owner when
+   * not given), naming the owner, as an agent token's revoke is (#1764).
    */
-  async revokeGrant(username: string, grantId: string): Promise<boolean> {
+  async revokeGrant(username: string, grantId: string, by: string = username): Promise<boolean> {
     if (!this.store || !username || !grantId) return false;
     const grant = (await this.store.listLive('Grant')).find((g) => g.jti === grantId && g.accountId === username);
     if (!grant) return false;
@@ -356,8 +372,8 @@ export class OidcManager extends BaseManager {
       accountId: username,
       clientId: typeof grant.clientId === 'string' ? grant.clientId : undefined,
       grantId
-    });
-    logger.info(`[OidcManager] revoked grant ${grantId} of ${username}`);
+    }, by);
+    logger.info(`[OidcManager] revoked grant ${grantId} of ${username} by ${by}`);
     return true;
   }
 
@@ -410,18 +426,20 @@ export class OidcManager extends BaseManager {
    * Record one provider event in ngdpbase's audit log (#1575). The package
    * never passes a token, code or secret; the person is the account, the
    * resource is the app. Returns the promise so the package can count a
-   * report the sink failed to take.
+   * report the sink failed to take. `revokedBy` is ngdpbase's own revoke
+   * (#1764): the record is by the person who revoked, naming the owner.
    */
-  async recordEvent(event: OidcAuditEvent): Promise<void> {
+  async recordEvent(event: OidcAuditEvent, revokedBy?: string): Promise<void> {
     const how = OIDC_AUDIT[event.event];
     if (!how) return;
     const metadata: Record<string, unknown> = {};
     for (const key of ['grantId', 'grantType', 'scope', 'tokenKind', 'error', 'errorDescription', 'errorDetail', 'userAgent', 'at'] as const) {
       if (event[key] !== undefined) metadata[key] = event[key];
     }
+    if (revokedBy) Object.assign(metadata, { owner: event.accountId, revokedBy });
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
       eventType: how.name,
-      user: event.accountId ?? 'anonymous',
+      user: revokedBy ?? event.accountId ?? 'anonymous',
       ipAddress: event.ip,
       action: event.event,
       result: how.result,

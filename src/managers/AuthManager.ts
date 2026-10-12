@@ -56,6 +56,8 @@ import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthPro
 import { OidcBearerAuthProvider } from '../providers/OidcBearerAuthProvider.js';
 import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
+import type AgentTokenManager from './AgentTokenManager.js';
+import type { OidcManager } from './OidcManager.js';
 import logger from '../utils/logger.js';
 import { createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
@@ -358,6 +360,39 @@ const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
 
 /** Who changed a credential, for its audit record: the person acting, and from where. */
 type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress'>;
+
+/**
+ * How a delegated credential is renewed (#1764): `fixed` ends on its date and
+ * someone makes a new one; `refreshable` is renewed automatically, with a new
+ * key each time. `extendable` (renewed by hand, same key) is #1734, not built.
+ */
+export type Renewal = 'fixed' | 'refreshable';
+
+/**
+ * One row of a person's "My tokens and devices" list (#1764): an agent token
+ * they made (`token`), or an app or device they approved through this site's
+ * own sign-in server (`app`). Never a secret.
+ */
+export interface Delegation {
+  kind: 'token' | 'app';
+  id: string;
+  name: string;
+  /** An app approved on a device by entering a code. */
+  device: boolean;
+  renewal: Renewal;
+  /** What it may do: permission names (and, for an app, its sign-in scopes). */
+  scopes: string[];
+  /** ISO 8601: made or approved. */
+  createdAt: string | null;
+  /** ISO 8601: when it stops working; null when it does not end by date. */
+  expiresAt: string | null;
+  /** ISO 8601: when a refreshable one was last renewed; null if not yet. */
+  renewedAt: string | null;
+  /** ISO 8601: an agent token's last use; null for an app, or never used. */
+  lastUsedAt: string | null;
+}
+
+export type DelegationKind = Delegation['kind'];
 
 /**
  * How a session signed in (#1523): kept on the session so step-up (#1525) can
@@ -1265,14 +1300,12 @@ class AuthManager extends BaseManager {
     if (mode !== 'delete') return;
 
     const by = ctx.username ?? 'system';
-    await step('agent tokens', async () => {
-      const tokens = this.engine.getManager<{ listForOwner(o: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('AgentTokenManager');
-      for (const t of tokens?.listForOwner(username) ?? []) if (!t.revokedAt) await tokens?.revoke(t.id, by);
-    });
-    await step('app grants', async () => {
-      const oidc = this.engine.getManager<{ listGrants(u: string): Promise<Array<{ grantId: string }>>; revokeGrant(u: string, g: string): Promise<boolean> }>('OidcManager');
-      for (const g of (await oidc?.listGrants(username)) ?? []) await oidc?.revokeGrant(username, g.grantId);
-    });
+    // #1764: the same path a person's own Revoke takes, one kind per step so one failing store does not stop the other.
+    for (const [what, kind] of [['agent tokens', 'token'], ['app grants', 'app']] as const) {
+      await step(what, async () => {
+        for (const d of await this.delegationsOf(username, kind)) await this.endDelegation(username, kind, d.id, by);
+      });
+    }
     await step('shares', async () => {
       const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
       for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, by);
@@ -1283,6 +1316,58 @@ class AuthManager extends BaseManager {
         if (await this.credentials.remove(row.id)) this.auditCredentialChange(ctx, username, 'credential-remove', row);
       }
     });
+  }
+
+  /**
+   * `username`'s agent tokens and the apps and devices they approved, as one
+   * list (#1764). Reading it is not a change, so, like `listCredentials`, it
+   * asks whether the caller holds the permission (their own:
+   * `account-security`; anyone else's: `user-edit`) without a fresh sign-in.
+   */
+  async listDelegations(ctx: PermissionSubject, username: string): Promise<Delegation[]> {
+    if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
+    return [...(await this.delegationsOf(username, 'token')), ...(await this.delegationsOf(username, 'app'))];
+  }
+
+  /**
+   * Revoke one of `username`'s agent tokens or approved apps (#1764): the one
+   * door every Revoke goes through — the profile list, `DELETE /api/tokens/:id`,
+   * the admin user page — and `closeAccess`. Their own needs `account-security`
+   * (so a fresh sign-in); anyone else's `user-edit`. False when no such live
+   * item is theirs, so another person's is never revoked. Each is audited by
+   * its owner, by who revoked it: `token-revoke` / `oidcgrant-revoke`.
+   */
+  async revokeDelegation(ctx: PermissionSubject, username: string, kind: DelegationKind, id: string): Promise<boolean> {
+    if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    return this.endDelegation(username, kind, id, ctx.username ?? 'system');
+  }
+
+  /** One kind of `username`'s live delegated credentials, as list rows. */
+  private async delegationsOf(username: string, kind: DelegationKind): Promise<Delegation[]> {
+    if (kind === 'token') {
+      const tokens = this.engine.getManager<AgentTokenManager>('AgentTokenManager')?.listForOwner(username) ?? [];
+      return tokens.filter(t => !t.revokedAt).map(t => ({
+        kind, id: t.id, name: t.name, device: false, renewal: 'fixed' as const, scopes: t.scopes,
+        createdAt: t.createdAt, expiresAt: t.expiresAt, renewedAt: null, lastUsedAt: t.lastUsedAt
+      }));
+    }
+    const apps = (await this.engine.getManager<OidcManager>('OidcManager')?.listGrants(username)) ?? [];
+    return apps.map(a => ({
+      kind, id: a.grantId, name: a.name, device: a.device, renewal: a.refreshable ? 'refreshable' as const : 'fixed' as const,
+      scopes: a.scopes, createdAt: a.approvedAt, expiresAt: a.expiresAt, renewedAt: a.renewedAt, lastUsedAt: null
+    }));
+  }
+
+  /** End one delegated credential the caller has already decided may be ended; only `username`'s own. */
+  private async endDelegation(username: string, kind: DelegationKind, id: string, by: string): Promise<boolean> {
+    if (kind === 'token') {
+      const tokens = this.engine.getManager<AgentTokenManager>('AgentTokenManager');
+      const token = tokens?.getById(id);
+      if (!tokens || !token || token.owner !== username || token.revokedAt) return false;
+      return tokens.revoke(id, by);
+    }
+    if (kind === 'app') return (await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, id, by)) ?? false;
+    return false;
   }
 
   /** Rename one of `username`'s credentials. The name is required, as at enrolment. */

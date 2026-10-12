@@ -1,7 +1,7 @@
 ---
 name: AgentTokenManager
 description: 'Mints, verifies and revokes user-delegated agent API tokens'
-dateModified: '2026-07-25'
+dateModified: '2026-10-12'
 category: managers
 code: src/managers/AgentTokenManager.ts
 ---
@@ -94,7 +94,8 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 - `GET /api/tokens` — the caller's tokens; `?all=true` lists everyone's (admin only)
 - `POST /api/tokens` — mint __for the caller__; an admin cannot mint on another user's behalf, so a token always traces to someone who chose to delegate
-- `DELETE /api/tokens/:id` — owner or admin. A non-owner without admin gets `404`, not `403`, so the existence of another user's token is not confirmed.
+- `DELETE /api/tokens/:id` — owner or admin. A non-owner without admin gets `404`, not `403`, so the existence of another user's token is not confirmed. The revoke itself is `AuthManager.revokeDelegation`, the one door every Revoke goes through ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)).
+- Profile → __My tokens and devices__ lists the person's tokens with the apps and devices they approved, and revokes either through the same door ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)).
 
 ## See also
 
