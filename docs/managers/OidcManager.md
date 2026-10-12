@@ -87,7 +87,7 @@ ngdpbase's own API is a resource server at `<base-url>/api`, derived like the is
 
 ## Approved apps and devices
 
-Each app or device a person approved through `/oidc` is a grant. It lasts until revoked ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)).
+Each app or device a person approved through `/oidc` is a grant ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)). It lasts until it expires or is revoked, whichever comes first: its lifetime is the package's `oidc-auth-server.ttl.grant` (14 days by default), its refresh key's `oidc-auth-server.ttl.refresh-token` (also 14 days). When the grant ends, the app's access ends with it, refresh key or not, and the person approves it again.
 
 - `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed, when it was approved, whether it holds a refresh key (`refreshable`) and when that key was last renewed (`renewedAt`, from the newest rotated refresh key). Profile → __My tokens and devices__ lists your own beside your agent tokens, through `AuthManager.listDelegations` ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)); the admin user page lists that person's (`user-read`). Apps are listed only while the provider is on.
 - `revokeGrant(username, grantId, by)`: removes the grant and every code and token under it from the store, recorded as `oidcgrant-revoke` by `by` (the owner when not given), naming the owner. It never touches another person's grant. Routes reach it only through `AuthManager.revokeDelegation`.
