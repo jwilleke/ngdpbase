@@ -254,6 +254,7 @@ __Server and network settings:__
   "ngdpbase.server.host": "localhost",
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
   "ngdpbase.session.max-age": 2592000000,
+  "ngdpbase.session.anonymous-max-age": 86400000,
   "ngdpbase.session.secure": false,
   "ngdpbase.session.http-only": true
 }
@@ -457,7 +458,8 @@ __Important session-related properties:__
   "ngdpbase.session.secret": "change-in-production",
   "ngdpbase.session.secure": true,    // HTTPS only
   "ngdpbase.session.http-only": true,  // No JavaScript access
-  "ngdpbase.session.max-age": 86400000 // 24 hours
+  "ngdpbase.session.max-age": 86400000, // 24 hours from sign-in
+  "ngdpbase.session.anonymous-max-age": 3600000 // signed-out visits: 1 hour (never longer than max-age)
 }
 ```
 

@@ -163,6 +163,9 @@ export interface WikiConfig {
   /** Session max age (milliseconds) */
   'ngdpbase.session.max-age': number;
 
+  /** How long a session nobody signed in to lives after its last change (milliseconds; never longer than max-age) */
+  'ngdpbase.session.anonymous-max-age': number;
+
   /** Session secure flag (HTTPS only) */
   'ngdpbase.session.secure': boolean;
 

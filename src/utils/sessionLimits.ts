@@ -28,7 +28,7 @@
  * long enough: a signed-in session's cookie lives `max-age` from its last
  * change (set at sign-in), so it never ends a session before the cap. An
  * anonymous session (every visitor gets one, for the CSRF token) keeps the
- * shorter `ANONYMOUS_SESSION_MS`, so a 30-day cap does not keep a month of
+ * shorter `ngdpbase.session.anonymous-max-age`, so a 30-day cap does not keep a month of
  * one-visit sessions in the store.
  */
 
@@ -39,12 +39,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The shipped `ngdpbase.session.max-age`: 30 days. */
 export const DEFAULT_SESSION_MAX_AGE_MS = 30 * DAY_MS;
 
+/** The shipped `ngdpbase.session.anonymous-max-age`: a day, the old shipped `max-age`. */
+export const DEFAULT_ANONYMOUS_SESSION_MS = DAY_MS;
+
 /**
- * How long a session nobody signed in to lives after its last change: a day,
- * the old shipped `max-age`, or the cap when that is shorter.
+ * How long a session nobody signed in to lives after its last change:
+ * `ngdpbase.session.anonymous-max-age` (the shipped day when not a positive
+ * number), or the cap when that is shorter.
  */
-export function anonymousSessionMs(capMs: number): number {
-  return Math.min(DAY_MS, capMs);
+export function anonymousSessionMs(capMs: number, configured: unknown = DEFAULT_ANONYMOUS_SESSION_MS): number {
+  const anonymousMs = typeof configured === 'number' && Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ANONYMOUS_SESSION_MS;
+  return Math.min(anonymousMs, capMs);
 }
 
 /** The configured cap in milliseconds; the shipped 30 days when not a positive number. There is no "off". */
