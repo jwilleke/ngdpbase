@@ -13,6 +13,8 @@ import { OidcAuthProvider, type IdentityStore } from '../OidcAuthProvider';
 import { fakeIssuer, flowFrom, type FakeIssuer } from './__fixtures__/fakeOidcIssuer';
 
 const BROWSER = 'browser-a';
+/** The authorization code the fake issuer is handed back; any value redeems. */
+const AUTH_CODE = 'code-1';
 
 describe('OidcAuthProvider (#1743)', () => {
   let idp: FakeIssuer;
@@ -181,6 +183,42 @@ describe('OidcAuthProvider (#1743)', () => {
     expect(idp.tokenRequests[1].headers.Authorization).toBeUndefined();
     expect(idp.tokenRequests[1].form.get('client_id')).toBe(idp.clientId);
     expect(idp.tokenRequests[1].form.get('client_secret')).toBe(idp.clientSecret);
+  });
+
+  describe('issuers with their own shape', () => {
+    /** A provider at an issuer of this shape, the issuer's next token answering a fresh flow with `claims`. */
+    const at = async (issuer: string, claims: Record<string, unknown>) => {
+      idp = await fakeIssuer(issuer);
+      vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
+      rows = new Map();
+      provider = make();
+      const flow = await begin(claims, { connectFor: 'ann' });
+      return provider.verifyIdentity({ token: AUTH_CODE, state: flow.state, deviceState: BROWSER }, 'ann');
+    };
+
+    test('Microsoft personal accounts send an email but no email_verified: the email is not kept', async () => {
+      const issuer = 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0';
+      const identity = await at(issuer, { email: 'ann@outlook.example', tid: '9188040d-6c67-4c5b-b112-36a304b66dad', ver: '2.0', preferred_username: 'ann@outlook.example' });
+      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: '' });
+    });
+
+    test('authentik\'s issuer ends in a slash: discovery is read beneath it, and the issuer is matched exactly', async () => {
+      const issuer = 'https://auth.example.test/application/o/ngdpbase/';
+      const identity = await at(issuer, { email: 'ann@example.com', email_verified: true });
+      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: 'ann@example.com' });
+      expect(vi.mocked(guardedFetch)).toHaveBeenCalledWith('https://auth.example.test/application/o/ngdpbase/.well-known/openid-configuration', expect.anything());
+    });
+
+    test('an authentik issuer configured without its slash is refused at discovery', async () => {
+      idp = await fakeIssuer('https://auth.example.test/application/o/ngdpbase/');
+      vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
+      provider = new OidcAuthProvider({
+        name: 'idp', displayName: 'authentik', issuer: 'https://auth.example.test/application/o/ngdpbase',
+        clientId: idp.clientId, clientSecret: idp.clientSecret,
+        redirectUri: 'https://wiki.example.com/auth/oauth/idp/callback', policy: { deniedRanges: [], allowedRanges: [] }
+      }, store());
+      await expect(provider.startFlow({ deviceState: BROWSER })).rejects.toThrow(/names issuer/);
+    });
   });
 
   test('discovery and keys are fetched once and cached', async () => {

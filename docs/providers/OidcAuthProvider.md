@@ -1,14 +1,14 @@
 ---
 name: OidcAuthProvider
 description: Sign-in through any outside OpenID Connect provider, by an identity connected to the account
-dateModified: '2026-10-11'
+dateModified: '2026-10-12'
 category: providers
 code: src/providers/OidcAuthProvider.ts
 ---
 
 # OidcAuthProvider
 
-Signs people in through an outside OpenID Connect provider (Google, a self-hosted authentik, any issuer that publishes discovery). One class; AuthManager registers one instance per enabled entry of `ngdpbase.auth.oidc.providers`, with the id `oidc:<name>` ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). Routes never call it: they call AuthManager.
+Signs people in through an outside OpenID Connect provider (Google, personal Microsoft accounts, a self-hosted authentik, any issuer that publishes discovery). One class; AuthManager registers one instance per enabled entry of `ngdpbase.auth.oidc.providers`, with the id `oidc:<name>` ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). Routes never call it: they call AuthManager.
 
 ## What an outside sign-in may do
 
@@ -40,10 +40,43 @@ Discovery, the key set and the token exchange go through `guardedFetch` (#1133),
 
 ## Configuration
 
-- `ngdpbase.auth.oidc.providers` — map of name → `{ preset, issuer, client-id, client-secret, enabled, display-name, auto-provision }`. `preset: "google"` fills the issuer and name. `client-secret` must be an environment reference (`$NAME`); an entry with a literal secret is not registered. The callback is `<base-url>/auth/oauth/<name>/callback`, so `ngdpbase.application.base-url` must be set explicitly.
+- `ngdpbase.auth.oidc.providers` — map of name → `{ preset, issuer, client-id, client-secret, enabled, display-name, auto-provision }`. `preset: "google"` and `preset: "microsoft"` fill the issuer and name (below); any other issuer is set with `issuer`, exactly as its discovery document states it. `client-secret` must be an environment reference (`$NAME`); an entry with a literal secret is not registered. The callback is `<base-url>/auth/oauth/<name>/callback`, so `ngdpbase.application.base-url` must be set explicitly.
 - `ngdpbase.auth.oidc.auto-provision` — the instance ceiling for account creation, `false`. An entry's own `auto-provision` (default off) and `ngdpbase.application.registration` must also be true.
 - The old `ngdpbase.auth.google-oidc.*` keys are read as the `google` entry when enabled and the map has none (its `callback-url` is used when set). Their `auto-provision`, `default-roles`, `hd` and `deny-redirect` are no longer acted on. A factors entry or an account's `allowedAuthMethods` naming `google-oidc` still applies to `oidc:google`.
 - A provider with no `ngdpbase.auth.factors` entry is offered as a primary sign-in method at AAL1.
+
+## Presets
+
+- `google` — issuer `https://accounts.google.com`, named Google.
+- `microsoft` — personal Microsoft accounts (Outlook.com, Hotmail, Xbox, Skype) only: the `consumers` tenant, issuer `https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0`, named Microsoft. Work and school accounts are not included. Register the app in the Microsoft Entra admin center for personal Microsoft accounts, with the callback below as a Web redirect URI, and use its client secret through an environment reference.
+  - Microsoft's subject is different for each registered app, so the identity belongs to this site's registration: registering a new app means people connect again.
+  - Microsoft sends an `email` but no `email_verified`, and an email counts as verified only when the provider says so. So the email is never kept: a Microsoft sign-in never creates an account (whatever `auto-provision` says), and the email step shows no address. People sign in another way once and connect Microsoft, or connect it from their profile.
+
+## authentik
+
+There is no preset: each authentik has its own issuer, one per application. In authentik:
+
+- Create an __OAuth2/OpenID Provider__: client type __Confidential__; redirect URI `<base-url>/auth/oauth/<name>/callback`, with `<name>` the entry's name below (strict match); scopes `openid`, `email` and `profile`; a signing key, so ID tokens are signed with RS256.
+- Create an __Application__ that uses that provider. Its slug is part of the issuer.
+- Copy the client ID, and put the client secret in the environment (`AUTHENTIK_CLIENT_SECRET` here), never in configuration.
+
+The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __with the trailing slash__: authentik's discovery document names it that way, and the configured issuer must match it exactly, or the sign-in is refused. The provider page in authentik shows it as the OpenID Configuration Issuer.
+
+```json
+"ngdpbase.auth.oidc.providers": {
+  "authentik": {
+    "issuer": "https://auth.example.org/application/o/ngdpbase/",
+    "client-id": "<client id from authentik>",
+    "client-secret": "$AUTHENTIK_CLIENT_SECRET",
+    "display-name": "Family sign-in",
+    "enabled": true
+  }
+}
+```
+
+- When authentik is on the local network, its address range must be in `ngdpbase.security.egress.allowed-ranges`, or discovery, keys and the code exchange are refused by the outbound guard.
+- authentik's groups give no roles here: roles come from this site's own role assignments only.
+- Whether authentik marks an email verified depends on its property mappings; without `email_verified: true` the email is not kept, as for any provider.
 
 ## See Also
 
