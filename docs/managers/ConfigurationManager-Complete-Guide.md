@@ -61,7 +61,7 @@ __Key sections:__
   "ngdpbase.server.port": 3000,
   "ngdpbase.server.host": "localhost",
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
-  "ngdpbase.session.max-age": 86400000,
+  "ngdpbase.session.max-age": 2592000000,
   "ngdpbase.front-page": "Welcome",
   "ngdpbase.pageProvider": "FileSystemProvider",
   "ngdpbase.searchProvider": "LuceneSearchProvider"
@@ -253,7 +253,7 @@ __Server and network settings:__
   "ngdpbase.server.port": 3000,
   "ngdpbase.server.host": "localhost",
   "ngdpbase.session.secret": "ngdpbase-session-secret-change-in-production",
-  "ngdpbase.session.max-age": 86400000,
+  "ngdpbase.session.max-age": 2592000000,
   "ngdpbase.session.secure": false,
   "ngdpbase.session.http-only": true
 }

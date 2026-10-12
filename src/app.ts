@@ -49,7 +49,9 @@ import { pageUrl } from './utils/pageUrl.js';
 import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf, newCspNonce } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
-import { effectiveIdleTimeoutMs, idleExpired, IDLE_STATUS_PATH, shouldTouch } from './utils/sessionIdle.js';
+import { effectiveIdleTimeoutMs, IDLE_STATUS_PATH } from './utils/sessionIdle.js';
+import { anonymousSessionMs, checkSessionLimits, DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from './utils/sessionLimits.js';
+import { throttlePerCopyWarning } from './utils/LoginThrottle.js';
 import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import { endSession, type SessionEndReason } from './utils/sessionEnd.js';
 import type PageManager from './managers/PageManager.js';
@@ -676,9 +678,23 @@ void (async (): Promise<void> => {
   }
   logger.info(`🔐 System principal: ${systemPrincipal.trim()} (NGDPBASE_SYSTEM_USER)`);
 
+  // #1767: sign-in throttling counts in this process's memory. Several copies
+  // of the server each count separately, so say so once at startup.
+  const throttleWarning = throttlePerCopyWarning(process.env, configManager.getProperty<unknown>('ngdpbase.auth.throttle.enabled', true) !== false);
+  if (throttleWarning) logger.warn(`🔐 ${throttleWarning}`);
+
+  // #1767: ngdpbase.session.max-age is the absolute cap from sign-in, enforced
+  // per request below (checkSessionLimits). The cookie and the store are
+  // rolling — express-session re-issues the cookie with now + maxAge whenever
+  // the session changes, and the file store expires a session maxAge after its
+  // LAST access — so they cannot be the cap; they only have to outlast it. A
+  // sign-in sets its own cookie to the cap (AuthManager.completeSignIn); the
+  // default below is for sessions nobody signed in to. The store's ttl is only
+  // the fallback for a session with no cookie lifetime of its own.
+  const sessionCap = sessionCapMs(configManager.getProperty('ngdpbase.session.max-age', DEFAULT_SESSION_MAX_AGE_MS));
   const sessionStore = new FileStore({
     path: sessionPath,
-    ttl: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000) / 1000,
+    ttl: sessionCap / 1000,
     retries: 0,
     reapInterval: 3600
   });
@@ -731,7 +747,7 @@ void (async (): Promise<void> => {
       // top-level navigation working while refusing the cookie on cross-site
       // POSTs — defence in depth behind the CSRF middleware, not a replacement.
       sameSite: 'lax',
-      maxAge: configManager.getProperty('ngdpbase.session.max-age', 24 * 60 * 60 * 1000)
+      maxAge: anonymousSessionMs(sessionCap)
     }
   }));
 
@@ -828,8 +844,11 @@ void (async (): Promise<void> => {
         delete req.session.privateStoreHandle;
         delete req.session.sessionGeneration;
         delete req.session.lastActivity;
+        delete req.session.signedInAt;
         delete req.session.signIn;
         req.session.isAuthenticated = false;
+        // #1767: back to an anonymous session's lifetime; the sign-in had set the cap.
+        if (req.session.cookie) req.session.cookie.maxAge = anonymousSessionMs(sessionCap);
       };
 
       // #1482: a session signed in before the account's password last changed
@@ -841,9 +860,10 @@ void (async (): Promise<void> => {
         }
       }
 
-      // #1546: a session idle past ngdpbase.session.idle-timeout-minutes is over,
-      // and the end is audited with its reason. Read per request, so a change
-      // takes effect without a restart.
+      // #1767: a session past ngdpbase.session.max-age from its sign-in is over,
+      // however active it has been; #1546: so is one idle past
+      // ngdpbase.session.idle-timeout-minutes. Both ends are audited with their
+      // reason. Read per request, so a change takes effect without a restart.
       if (req.session?.username && req.session.isAuthenticated) {
         // A role may shorten the site value (#1546). Roles are looked up only
         // when some role sets one, so the default costs nothing per request.
@@ -854,10 +874,15 @@ void (async (): Promise<void> => {
         const timeoutMs = effectiveIdleTimeoutMs(configManager.getProperty('ngdpbase.session.idle-timeout-minutes', 0), roleMinutes);
         res.locals.idleTimeoutMs = timeoutMs;
         const now = Date.now();
-        if (idleExpired(req.session.lastActivity, now, timeoutMs)) {
-          signOut('idle-timeout', 'idle past ngdpbase.session.idle-timeout-minutes (#1546)');
-        } else if (req.path !== IDLE_STATUS_PATH && shouldTouch(req.session.lastActivity, now, timeoutMs)) {
-          req.session.lastActivity = now;
+        const capMs = sessionCapMs(configManager.getProperty('ngdpbase.session.max-age', DEFAULT_SESSION_MAX_AGE_MS));
+        const verdict = checkSessionLimits(req.session, now, { idleMs: timeoutMs, capMs });
+        if (verdict.end) {
+          signOut(verdict.end, verdict.end === 'max-age'
+            ? 'signed in longer than ngdpbase.session.max-age (#1767)'
+            : 'idle past ngdpbase.session.idle-timeout-minutes (#1546)');
+        } else {
+          if (verdict.stampSignedIn) req.session.signedInAt = now;
+          if (req.path !== IDLE_STATUS_PATH && verdict.touch) req.session.lastActivity = now;
         }
       }
 

@@ -41,6 +41,8 @@ declare module 'express-session' {
     pendingConnection?: PendingConnection;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
+    /** When this session signed in, epoch ms: the start of `ngdpbase.session.max-age` (#1767). A re-authentication never moves it. */
+    signedInAt?: number;
     [key: string]: unknown;
   }
 }
