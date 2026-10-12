@@ -143,7 +143,7 @@ Decided on [#1523](https://github.com/jwilleke/ngdpbase/issues/1523) (operator, 
 - `authproviderid` — the registered provider; one provider may give several `amr` values, several providers the same one
 - `primary: true` — the provider can start a sign-in; exactly one primary starts each sign-in. Every enabled provider can also be an additional factor except the one that started
 - `amr`, `aal`, `acr` — what the provider gives, as declared in its __code__; config may __lower__ them (be stricter), never raise them. An overstated value is lowered to the truth with a warning (log, admin dashboard, posture report). Type (know / have / are) and device-boundness (`hwk` / `swk`) are derived from `amr`
-- `"amr": ["trust"]` — identity providers only (OIDC): take the provider's reported `amr` / `acr` at sign-in. `"trust"` is config-only, never stored or reported; a provider that reports nothing gives `[]` at AAL1. An untrusted provider is written with plain values (`"amr": [], "aal": 1`)
+- `"amr": ["trust"]` — planned as the switch to take an identity provider's reported `amr` / `acr`; superseded by the provider entry's `trust-mfa` ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)), because the shipped factors list already carried `"trust"` and honouring it would have trusted those providers on every install. `"trust"` is now ignored. The rule is in the [authentication developer guide](../guides/authentication-developer-guide.md#standing-rules)
 - `enabled` — off is never offered; a provider that is not fully available (SMS without a transport) counts as off
 - No `factors` count and no `priority`: requirements are per role, and enrolled methods are offered strongest first (`phrh`, `phr`, then by `aal`)
 - A second factor delivered by message carries __one link, no code__ (operator, 2026-10-02, replacing "link plus code"): it opens the approval page ([#1532](https://github.com/jwilleke/ngdpbase/issues/1532)), whose button press approves the waiting sign-in. The __email link and the magic link are one provider__ (`email-link`): starting a sign-in or confirming one is just the role it plays
@@ -256,7 +256,7 @@ __Not login providers, so outside this design for now__ (operator, 2026-10-10). 
 
 Each still finds a person by email, may create an account, and maps groups to roles with its own `group-map`. The rules above (`iss` + `sub`, no roles from outside, one instance provider) apply to login providers. If either of these ever becomes a way for people to sign in, it comes under them first.
 
-__Sign-in level.__ An external sign-in is AAL1. It counts as more only when the admin trusts that provider's reported `amr` / `acr` (`"amr": ["trust"]`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
+__Sign-in level.__ An external sign-in is AAL1. It counts as more (up to AAL2) only when the admin trusts that provider's own second factor (its entry's `trust-mfa`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
 
 __Security.__ Keep `GoogleOIDCProvider`'s protections:
 

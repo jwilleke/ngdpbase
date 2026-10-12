@@ -51,6 +51,7 @@ In the [Google Cloud console](https://console.cloud.google.com/), in a project o
 - __Google reports verified email__ (`email_verified` as a boolean), so its address is kept on the connection and shown in the email step, and account creation can work when it is turned on.
 - __No domain restriction.__ The old `ngdpbase.auth.google-oidc.hd` setting is no longer acted on: any Google account can sign in once it is connected to an account here, and creating accounts depends only on the settings above.
 - __The old keys still work.__ When `ngdpbase.auth.google-oidc.enabled` is true and `ngdpbase.auth.oidc.providers` has no `google` entry, `ngdpbase.auth.google-oidc.client-id`, `client-secret` and `callback-url` are read as the `google` entry. Their `auto-provision`, `default-roles`, `hd` and `deny-redirect` are not. A `google` entry in the map wins, and the old keys are then ignored with a warning. A factors entry or an account's `allowedAuthMethods` naming `google-oidc` still applies to `oidc:google`.
+- __Its own second factor is not relied on__ ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)): Google's ID tokens rarely carry `amr` or `acr`, so even with `trust-mfa` a Google sign-in is almost always AAL1.
 - Google is on the public internet, so the outbound guard allows it without configuration.
 
 ## See Also

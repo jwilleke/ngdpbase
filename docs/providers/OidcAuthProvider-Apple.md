@@ -56,6 +56,7 @@ In the Apple Developer account (Certificates, Identifiers & Profiles):
 - __Private relay addresses are real.__ A `…@privaterelay.appleid.com` address is verified and forwards to the person; it is treated like any other address. It will not match an address the person gave this site directly.
 - __The name is ignored.__ Apple sends the person's name only on the first sign-in, as an unsigned `user` field; the relay drops it.
 - __The subject is per developer team.__ Moving the Services ID to another team means people connect again.
+- __Its own second factor is not relied on__ ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)): Apple's ID tokens carry no `amr` or `acr`, although Apple accounts use two-factor authentication, so even with `trust-mfa` an Apple sign-in is AAL1.
 - Apple is on the public internet, so the outbound guard allows it without configuration.
 
 ## See Also

@@ -291,6 +291,14 @@ describe('AuditManager', () => {
       const eventId = await am.logAuthentication(ctx, 'success', 'credentials valid');
       expect(typeof eventId).toBe('string');
     });
+
+    test('an outside provider\'s reported amr / acr land in the record\'s metadata (#1633)', async () => {
+      const am = makeManagerWithMockProvider();
+      const reported = { amr: ['pwd', 'mfa'], acr: 'urn:example:loa:2', trusted: true };
+      await am.logAuthentication({ username: 'carol', loginMethod: 'oidc:idp', reported }, 'success', 'signed in: oidc:idp');
+      const provider = (am as unknown as { provider: { logAuditEvent: ReturnType<typeof vi.fn> } }).provider;
+      expect(provider.logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ metadata: { reported } }));
+    });
   });
 
   describe('logSecurityEvent()', () => {
