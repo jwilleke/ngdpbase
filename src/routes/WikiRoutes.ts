@@ -61,7 +61,7 @@ import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import type { PendingSignIn } from '../managers/AuthManager.js';
+import type { OutsideProvider, PendingSignIn } from '../managers/AuthManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -8123,7 +8123,7 @@ ${panes}
       const connectedIdentities = currentUser?.username && !credentialsUnavailable
         ? await authManagerForProfile?.connectedIdentities?.(currentUser as never, currentUser.username).catch(() => []) ?? []
         : [];
-      const connectableProviders: Array<{ id: string; name: string; displayName: string }> = [];
+      const connectableProviders: OutsideProvider[] = [];
       for (const p of currentUser?.username ? authManagerForProfile?.outsideProviders?.() ?? [] : []) {
         if (connectedIdentities.some((i: { provider: { id: string } | null }) => i.provider?.id === p.id)) continue;
         if (await authManagerForProfile.userMayUseProvider(String(currentUser.username), p.id)) connectableProviders.push(p);

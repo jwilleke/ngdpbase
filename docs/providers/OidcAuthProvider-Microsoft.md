@@ -13,7 +13,7 @@ Microsoft is the `microsoft` preset of [OidcAuthProvider](OidcAuthProvider.md), 
 ## What the preset fills
 
 - Issuer `https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0`: the `consumers` tenant, as its discovery document names it.
-- Name __Microsoft__ on the sign-in page and the profile (`display-name` overrides it).
+- Name __Microsoft__ on the sign-in page and the profile (`display-name` overrides it), with the Microsoft icon (`fab fa-microsoft`; `icon` overrides it).
 
 ## Registering the site in Microsoft Entra
 

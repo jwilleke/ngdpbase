@@ -13,7 +13,7 @@ Apple is the `apple` preset of [OidcAuthProvider](OidcAuthProvider.md) ([#1743](
 ## What the preset fills
 
 - Issuer `https://appleid.apple.com`.
-- Name __Apple__ on the sign-in page and the profile (`display-name` overrides it).
+- Name __Apple__ on the sign-in page and the profile (`display-name` overrides it), with the Apple icon (`fab fa-apple`; `icon` overrides it).
 - A client secret the site signs itself, in place of `client-secret` (below).
 - `response_mode=form_post`: Apple POSTs the callback (below).
 - `email_verified` read as a string as well as a boolean (below).

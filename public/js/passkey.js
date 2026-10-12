@@ -86,6 +86,11 @@
     if (el) { el.textContent = message; el.classList.remove('d-none'); }
   }
 
+  // The login page's passkey section (#1781): its heading and "or" show with the button.
+  document.querySelectorAll('[data-passkey-section]').forEach(function (section) {
+    section.classList.remove('d-none');
+  });
+
   // Sign in: any button with data-passkey-signin
   document.querySelectorAll('[data-passkey-signin]').forEach(function (button) {
     button.classList.remove('d-none');

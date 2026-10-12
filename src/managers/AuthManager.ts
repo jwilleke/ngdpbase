@@ -49,7 +49,7 @@ import type {
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider, EMAIL_FACTOR } from '../providers/MagicLinkAuthProvider.js';
 import { lockPrivateStores } from '../utils/privateStoreUnlock.js';
-import { OidcAuthProvider, type SignedClientSecret } from '../providers/OidcAuthProvider.js';
+import { OidcAuthProvider, type OutsideProviderIcon, type SignedClientSecret } from '../providers/OidcAuthProvider.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
@@ -248,7 +248,43 @@ interface OidcProviderEntry {
   'private-key'?: string;
   enabled?: boolean;
   'display-name'?: string;
+  /** The button's icon: an `https://` image, a site path (`/…`), or a Font Awesome name (`fa-users`, `fab fa-microsoft`) (#1781). */
+  icon?: string;
   'auto-provision'?: boolean;
+}
+
+/** The icon a provider's button shows when its entry sets none (#1781): by preset, else a generic sign-in icon. */
+const DEFAULT_PROVIDER_ICONS: Readonly<Record<string, OutsideProviderIcon>> = {
+  google: { kind: 'builtin', id: 'google' },
+  microsoft: { kind: 'fa', className: 'fab fa-microsoft' },
+  apple: { kind: 'fa', className: 'fab fa-apple' }
+};
+const GENERIC_PROVIDER_ICON: OutsideProviderIcon = { kind: 'fa', className: 'fas fa-right-to-bracket' };
+const FONT_AWESOME_ICON = /^(fa[srb]? )?fa-[a-z0-9-]+$/;
+
+/**
+ * Resolve an entry's `icon` (#1781). Accepted: an `https://` address, a site
+ * path (starts with one `/`, no `\`), or a Font Awesome name, normalised to
+ * its full class (`fa-users` → `fas fa-users`). Anything else — `http:`,
+ * `javascript:`, `data:`, a relative path — is refused with a warning naming
+ * the entry, and the default shown. Unset: the preset's icon, else generic.
+ */
+export function resolveOutsideProviderIcon(
+  name: string,
+  icon: unknown,
+  preset: string | undefined,
+  warn: (message: string) => void
+): OutsideProviderIcon {
+  const fallback = (preset && DEFAULT_PROVIDER_ICONS[preset]) || GENERIC_PROVIDER_ICON;
+  if (icon === undefined || icon === null || icon === '') return fallback;
+  if (typeof icon === 'string') {
+    if (FONT_AWESOME_ICON.test(icon)) return { kind: 'fa', className: icon.includes(' ') ? icon : `fas ${icon}` };
+    const plain = !/[\s\\]/.test(icon);
+    if (plain && icon.startsWith('/') && !icon.startsWith('//')) return { kind: 'image', src: icon };
+    if (plain && icon.startsWith('https://') && URL.canParse(icon)) return { kind: 'image', src: icon };
+  }
+  warn(`[AuthManager] Outside sign-in provider '${name}': its icon must be an https:// address, a site path starting with /, or a Font Awesome name such as fa-users; showing the default icon (#1781)`);
+  return fallback;
 }
 
 /** An outside sign-in provider as offered: on the login page, and to connect on the profile (#1743). */
@@ -258,6 +294,7 @@ export interface OutsideProvider {
   /** The `<name>` in its URLs. */
   name: string;
   displayName: string;
+  icon: OutsideProviderIcon;
 }
 
 /** An outside identity connected to an account, as shown to its owner (#1743). */
@@ -273,6 +310,9 @@ export interface ConnectedIdentity {
   /** The provider it came from, while it is configured and enabled; null when it is not, and it cannot sign in. */
   provider: OutsideProvider | null;
 }
+
+/** A registered outside provider, as views are given it. */
+const asOutsideProvider = (p: OidcAuthProvider): OutsideProvider => ({ id: p.id, name: p.name, displayName: p.displayName, icon: p.icon });
 
 /** How connecting an outside identity ended (#1743). */
 export type ConnectOutcome = 'connected' | 'refused' | 'already-yours' | 'connected-elsewhere';
@@ -610,7 +650,8 @@ class AuthManager extends BaseManager {
       const store = this.credentials;
       this.registerProvider(new OidcAuthProvider(
         {
-          name, displayName: entry['display-name'] || preset?.displayName || name, issuer, clientId, clientSecret, redirectUri, policy: egress.policy,
+          name, displayName: entry['display-name'] || preset?.displayName || name,
+          icon: resolveOutsideProviderIcon(name, entry.icon, preset ? entry.preset : undefined, m => logger.warn(m)), issuer, clientId, clientSecret, redirectUri, policy: egress.policy,
           ...(preset?.responseMode ? { responseMode: preset.responseMode } : {}),
           ...(preset?.emailVerifiedMayBeString ? { emailVerifiedMayBeString: true } : {})
         },
@@ -690,7 +731,7 @@ class AuthManager extends BaseManager {
   outsideProviders(): OutsideProvider[] {
     return [...this.providers.values()]
       .filter((p): p is OidcAuthProvider => p instanceof OidcAuthProvider)
-      .map(p => ({ id: p.id, name: p.name, displayName: p.displayName }));
+      .map(asOutsideProvider);
   }
 
   /** The enabled provider an identity row came from, by its issuer; null when none is. */
@@ -720,7 +761,7 @@ class AuthManager extends BaseManager {
         email: r.secret,
         createdAt: r.createdAt,
         ...(r.lastUsedAt ? { lastUsedAt: r.lastUsedAt } : {}),
-        provider: p ? { id: p.id, name: p.name, displayName: p.displayName } : null
+        provider: p ? asOutsideProvider(p) : null
       };
     });
   }

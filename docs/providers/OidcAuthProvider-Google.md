@@ -13,7 +13,7 @@ Google is the `google` preset of [OidcAuthProvider](OidcAuthProvider.md): the sa
 ## What the preset fills
 
 - Issuer `https://accounts.google.com`.
-- Name __Google__ on the sign-in page and the profile (`display-name` overrides it).
+- Name __Google__ on the sign-in page and the profile (`display-name` overrides it), with Google's logo as its icon (`icon` overrides it).
 - Nothing else: the client id and secret come from Google (below).
 
 ## Registering the site with Google

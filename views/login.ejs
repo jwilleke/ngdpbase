@@ -5,7 +5,7 @@
         <div class="col-md-6 col-lg-4">
             <div class="card mt-5">
                 <div class="card-header text-center">
-                    <h4>Login to <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></h4>
+                    <h4>Sign in to <%= typeof applicationName !== 'undefined' ? applicationName : 'ngdpbase' %></h4>
                 </div>
                 <div class="card-body">
                     <% if (error) { %>
@@ -31,27 +31,14 @@
                         </div>
                     <% } %>
 
-                    <%# #1743: one button per enabled outside sign-in provider. %>
+                    <%# #1781: one labelled section per sign-in method that is on, with "or" between those shown. %>
                     <% const outside = typeof outsideProviders !== 'undefined' ? outsideProviders : []; %>
-                    <% outside.forEach(function (p) { %>
-                    <form action="/auth/oauth/<%= encodeURIComponent(p.name) %>" method="POST" class="mb-2">
-                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <input type="hidden" name="redirect" value="<%= redirect || '/' %>">
-                        <button type="submit" class="btn btn-light w-100" style="border:1px solid #dadce0; font-size:0.95rem;">
-                            <% if (p.name === 'google') { %>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18" height="18" style="margin-right:8px;vertical-align:middle;">
-                                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                            </svg>
-                            <% } %>
-                            Sign in with <%= p.displayName %>
-                        </button>
-                    </form>
-                    <% }) %>
-                    <% if (passwordAuthEnabled || outside.length === 0) { %>
-                    <% if (outside.length > 0) { %><hr class="my-3"><% } %>
+                    <% const showPassword = passwordAuthEnabled || outside.length === 0; %>
+                    <% const showPasskey = typeof passkeyEnabled !== 'undefined' && passkeyEnabled; %>
+                    <% const orSeparator = '<p class="text-center text-muted small my-3" data-signin-separator>&mdash; or &mdash;</p>'; %>
+                    <% if (showPassword) { %>
+                    <section aria-labelledby="signin-password-heading" data-signin-method="password">
+                    <h2 class="h6" id="signin-password-heading">Username and password</h2>
                     <form action="/login" method="POST">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <input type="hidden" name="redirect" value="<%= redirect || '/' %>">
@@ -69,16 +56,6 @@
                     <p class="text-center small mt-2 mb-0">
                         <a href="/recover-password">Forgot your password? Use your recovery words</a>
                     </p>
-                    <% if (typeof passkeyEnabled !== 'undefined' && passkeyEnabled) { %>
-                    <%# #448: shown by passkey.js only where the browser supports passkeys. %>
-                    <hr>
-                    <button type="button" class="btn btn-outline-primary w-100 d-none" data-passkey-signin
-                            data-redirect="<%= redirect || '/' %>" data-error-target="passkey-error">
-                        <i class="fas fa-key"></i> Sign in with a passkey
-                    </button>
-                    <div id="passkey-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
-                    <script src="/js/passkey.js" defer></script>
-                    <% } %>
                     <% if (magicLinkEnabled) { %>
                     <hr>
                     <p class="text-center text-muted small mb-2">Or sign in without a password</p>
@@ -98,6 +75,35 @@
                         </form>
                     <% } %>
                     <% } %>
+                    </section>
+                    <% } %>
+                    <% if (showPasskey) { %>
+                    <%# #448: shown by passkey.js only where the browser supports passkeys — the section with its "or", so none is left dangling. %>
+                    <section class="d-none" aria-labelledby="signin-passkey-heading" data-signin-method="passkey" data-passkey-section>
+                    <% if (showPassword) { %><%- orSeparator %><% } %>
+                    <h2 class="h6" id="signin-passkey-heading">Passkey</h2>
+                    <button type="button" class="btn btn-outline-primary w-100 d-none" data-passkey-signin
+                            data-redirect="<%= redirect || '/' %>" data-error-target="passkey-error">
+                        <i class="fas fa-key" aria-hidden="true"></i> Sign in with a passkey
+                    </button>
+                    <div id="passkey-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
+                    <% if (!showPassword && outside.length > 0) { %><%- orSeparator %><% } %>
+                    </section>
+                    <script src="/js/passkey.js" defer></script>
+                    <% } %>
+                    <% if (outside.length > 0) { %>
+                    <% if (showPassword) { %><%- orSeparator %><% } %>
+                    <%# #1743: one button per enabled outside sign-in provider. %>
+                    <section aria-labelledby="signin-external-heading" data-signin-method="external">
+                    <h2 class="h6" id="signin-external-heading">External provider</h2>
+                    <% outside.forEach(function (p) { %>
+                    <form action="/auth/oauth/<%= encodeURIComponent(p.name) %>" method="POST" class="mb-2">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="redirect" value="<%= redirect || '/' %>">
+                        <%- include('_outside-provider-button', { provider: p, label: 'Sign in with ' + p.displayName, buttonClass: 'btn btn-light border w-100' }) %>
+                    </form>
+                    <% }) %>
+                    </section>
                     <% } %>
 
                     <hr>

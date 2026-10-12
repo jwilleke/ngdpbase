@@ -59,6 +59,13 @@ describe('passkey.js binds once (#448)', () => {
   });
 });
 
+describe('the login page\'s passkey section (#1781)', () => {
+  it('shows with its button where passkeys work, so its heading and "or" never show alone', () => {
+    const doc = page('<section id="s" class="d-none" data-passkey-section><p>or</p><button data-passkey-signin class="d-none"></button></section>', 1).dom.window.document;
+    expect(doc.getElementById('s')!.classList.contains('d-none')).toBe(false);
+  });
+});
+
 const MAC_CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36';
 const ANDROID_CHROME = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
 const ENROL = '<input id="label"><div id="err" class="d-none"></div><button data-passkey-enrol data-label-input="label" data-error-target="err" class="d-none">Add</button>';

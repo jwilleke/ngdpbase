@@ -130,7 +130,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
   describe('registration from configuration', () => {
     test('an enabled entry is registered as oidc:<name> and offered at AAL1 without a factors entry', async () => {
       const am = await started();
-      expect(am.outsideProviders()).toEqual([{ id: 'oidc:idp', name: 'idp', displayName: 'Example IdP' }]);
+      expect(am.outsideProviders()).toEqual([{ id: 'oidc:idp', name: 'idp', displayName: 'Example IdP', icon: { kind: 'fa', className: 'fas fa-right-to-bracket' } }]);
       expect(am.getFactors()).toContainEqual({ provider: 'oidc:idp', primary: true, amr: [], aal: 1 });
     });
 
@@ -155,7 +155,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
     test('the google preset fills the issuer and the name', async () => {
       config['ngdpbase.auth.oidc.providers'] = { google: { preset: 'google', 'client-id': 'g', 'client-secret': `$${SECRET_ENV}`, enabled: true } };
       const am = await started();
-      expect(am.outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google' }]);
+      expect(am.outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google', icon: { kind: 'builtin', id: 'google' } }]);
     });
 
     test('the microsoft preset fills the personal-accounts issuer and the name', async () => {
@@ -163,7 +163,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
       config['ngdpbase.auth.oidc.providers'] = { microsoft: { preset: 'microsoft', 'client-id': idp.clientId, 'client-secret': `$${SECRET_ENV}`, enabled: true } };
       const am = await started();
-      expect(am.outsideProviders()).toEqual([{ id: 'oidc:microsoft', name: 'microsoft', displayName: 'Microsoft' }]);
+      expect(am.outsideProviders()).toEqual([{ id: 'oidc:microsoft', name: 'microsoft', displayName: 'Microsoft', icon: { kind: 'fa', className: 'fab fa-microsoft' } }]);
       // Discovery is read at <issuer>/.well-known/openid-configuration, and its issuer matches the preset's.
       expect(new URL(await am.startFlow('oidc:microsoft', { deviceState: BROWSER })).href.startsWith(`${MICROSOFT_CONSUMERS_ISSUER}/authorize?`)).toBe(true);
       expect(vi.mocked(guardedFetch)).toHaveBeenCalledWith(`${MICROSOFT_CONSUMERS_ISSUER}/.well-known/openid-configuration`, expect.anything());
@@ -190,7 +190,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       test('fills Apple\'s issuer and name, needs no client-secret, POSTs its callback and signs its client secret', async () => {
         config['ngdpbase.auth.oidc.providers'] = { apple: apple(), idp: provider() };
         const am = await started();
-        expect(am.outsideProviders()).toContainEqual({ id: 'oidc:apple', name: 'apple', displayName: 'Apple' });
+        expect(am.outsideProviders()).toContainEqual({ id: 'oidc:apple', name: 'apple', displayName: 'Apple', icon: { kind: 'fa', className: 'fab fa-apple' } });
         expect(am.callbackIsPosted('oidc:apple')).toBe(true);
         expect(am.callbackIsPosted('oidc:idp')).toBe(false);
         expect(am.callbackIsPosted('oidc:nonesuch')).toBe(false);
@@ -235,11 +235,25 @@ describe('AuthManager outside sign-in (#1743)', () => {
         'ngdpbase.auth.factors': [{ authproviderid: 'password' }, { authproviderid: 'google-oidc', primary: true }]
       };
       const am = await started();
-      expect(am.outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google' }]);
+      expect(am.outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google', icon: { kind: 'builtin', id: 'google' } }]);
       expect(am.getFactors().map(f => f.provider)).toEqual(['password', 'oidc:google']);
 
       config['ngdpbase.auth.oidc.providers'] = { google: { preset: 'google', 'client-id': 'g2', 'client-secret': `$${SECRET_ENV}`, enabled: true, 'display-name': 'Google (new)' } };
-      expect((await started()).outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google (new)' }]);
+      expect((await started()).outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google (new)', icon: { kind: 'builtin', id: 'google' } }]);
+    });
+
+    test('an entry\'s icon reaches what views are given, resolved (#1781)', async () => {
+      config['ngdpbase.auth.oidc.providers'] = {
+        idp: provider({ icon: 'https://idp.example.com/favicon.ico' }),
+        other: provider({ icon: 'fa-users' }),
+        bad: provider({ icon: 'javascript:alert(1)' })
+      };
+      const am = await started();
+      expect(am.outsideProviders().map(p => [p.name, p.icon])).toEqual([
+        ['idp', { kind: 'image', src: 'https://idp.example.com/favicon.ico' }],
+        ['other', { kind: 'fa', className: 'fas fa-users' }],
+        ['bad', { kind: 'fa', className: 'fas fa-right-to-bracket' }]
+      ]);
     });
 
     test('an account limited to the old google-oidc id may still use oidc:google', async () => {
@@ -265,7 +279,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(result.factors).toEqual([expect.objectContaining({ provider: 'oidc:idp', aal: 1 })]);
 
       const [identity] = await am.connectedIdentities(subject('ann'), 'ann');
-      expect(identity).toEqual(expect.objectContaining({ label: 'Example IdP', email: 'ann@example.com', provider: { id: 'oidc:idp', name: 'idp', displayName: 'Example IdP' } }));
+      expect(identity).toEqual(expect.objectContaining({ label: 'Example IdP', email: 'ann@example.com', provider: { id: 'oidc:idp', name: 'idp', displayName: 'Example IdP', icon: { kind: 'fa', className: 'fas fa-right-to-bracket' } } }));
       expect(identity.lastUsedAt).toBeDefined();
     });
 
