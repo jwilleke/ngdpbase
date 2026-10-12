@@ -31,13 +31,12 @@
                         </div>
                     <% } %>
 
-                    <%# #1781: one labelled section per sign-in method that is on, with "or" between those shown. %>
+                    <%# #1781: one labelled section per sign-in method that is on; the headings separate them. %>
                     <% const outside = typeof outsideProviders !== 'undefined' ? outsideProviders : []; %>
                     <% const showPassword = passwordAuthEnabled || outside.length === 0; %>
                     <% const showPasskey = typeof passkeyEnabled !== 'undefined' && passkeyEnabled; %>
-                    <% const orSeparator = '<p class="text-center text-muted small my-3" data-signin-separator>&mdash; or &mdash;</p>'; %>
                     <% if (showPassword) { %>
-                    <section aria-labelledby="signin-password-heading" data-signin-method="password">
+                    <section class="mb-4" aria-labelledby="signin-password-heading" data-signin-method="password">
                     <h2 class="h6" id="signin-password-heading">Username and password</h2>
                     <form action="/login" method="POST">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -78,29 +77,26 @@
                     </section>
                     <% } %>
                     <% if (showPasskey) { %>
-                    <%# #448: shown by passkey.js only where the browser supports passkeys — the section with its "or", so none is left dangling. %>
-                    <section class="d-none" aria-labelledby="signin-passkey-heading" data-signin-method="passkey" data-passkey-section>
-                    <% if (showPassword) { %><%- orSeparator %><% } %>
+                    <%# #448: shown by passkey.js only where the browser supports passkeys. %>
+                    <section class="d-none mb-4" aria-labelledby="signin-passkey-heading" data-signin-method="passkey" data-passkey-section>
                     <h2 class="h6" id="signin-passkey-heading">Passkey</h2>
                     <button type="button" class="btn btn-outline-primary w-100 d-none" data-passkey-signin
                             data-redirect="<%= redirect || '/' %>" data-error-target="passkey-error">
                         <i class="fas fa-key" aria-hidden="true"></i> Sign in with a passkey
                     </button>
                     <div id="passkey-error" class="alert alert-danger small mt-2 mb-0 d-none" role="alert"></div>
-                    <% if (!showPassword && outside.length > 0) { %><%- orSeparator %><% } %>
                     </section>
                     <script src="/js/passkey.js" defer></script>
                     <% } %>
                     <% if (outside.length > 0) { %>
-                    <% if (showPassword) { %><%- orSeparator %><% } %>
                     <%# #1743: one button per enabled outside sign-in provider. %>
-                    <section aria-labelledby="signin-external-heading" data-signin-method="external">
+                    <section class="mb-4" aria-labelledby="signin-external-heading" data-signin-method="external">
                     <h2 class="h6" id="signin-external-heading">External provider</h2>
                     <% outside.forEach(function (p) { %>
                     <form action="/auth/oauth/<%= encodeURIComponent(p.name) %>" method="POST" class="mb-2">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <input type="hidden" name="redirect" value="<%= redirect || '/' %>">
-                        <%- include('_outside-provider-button', { provider: p, label: 'Sign in with ' + p.displayName, buttonClass: 'btn btn-light border w-100' }) %>
+                        <%- include('_outside-provider-button', { provider: p, label: p.displayName, buttonClass: 'btn btn-light border w-100' }) %>
                     </form>
                     <% }) %>
                     </section>
