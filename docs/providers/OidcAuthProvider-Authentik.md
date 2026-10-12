@@ -40,7 +40,7 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
 ```
 
 - The entry's name (`authentik` here) is the `<name>` in its URLs: lowercase letters, digits and hyphens.
-- `display-name` is the button's text, after "Sign in with": plain words people recognise, not a host name.
+- `display-name` is the button's whole text, under the sign-in page's External provider heading: plain words people recognise, not a host name.
 - `icon` is the picture left of it: here the authentik's own icon, by its `https://` address. A site path (`/…`) or a Font Awesome name (`fa-users`) also works; see [OidcAuthProvider](OidcAuthProvider.md#configuration).
 - `client-secret` must be an environment reference (`$NAME`); an entry with the secret written in literally is not registered.
 

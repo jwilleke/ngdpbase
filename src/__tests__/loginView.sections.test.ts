@@ -114,7 +114,7 @@ describe('#1781 an outside provider\'s button shows its icon on the left', () =>
     expect(img.getAttribute('src')).toBe('https://family.example.com/i.png?a=1&b="2"');
     expect(img.getAttribute('alt')).toBe('');
     expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['20', '20']);
-    expect(b.textContent?.trim()).toBe('Sign in with Family <b>');
+    expect(b.textContent?.trim()).toBe('Family <b>');
     expect(b.querySelector('b')).toBeNull();
   });
 

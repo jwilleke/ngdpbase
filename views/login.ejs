@@ -100,7 +100,7 @@
                     <form action="/auth/oauth/<%= encodeURIComponent(p.name) %>" method="POST" class="mb-2">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                         <input type="hidden" name="redirect" value="<%= redirect || '/' %>">
-                        <%- include('_outside-provider-button', { provider: p, label: 'Sign in with ' + p.displayName, buttonClass: 'btn btn-light border w-100' }) %>
+                        <%- include('_outside-provider-button', { provider: p, label: p.displayName, buttonClass: 'btn btn-light border w-100' }) %>
                     </form>
                     <% }) %>
                     </section>
