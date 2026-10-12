@@ -1,7 +1,7 @@
 ---
 name: OidcManager
 description: The embedded OpenID Connect provider at the base URL's /oidc — off unless enabled, never loaded when off (#1570)
-dateModified: '2026-10-03'
+dateModified: '2026-10-12'
 category: managers
 code: src/managers/OidcManager.ts
 ---
@@ -89,8 +89,8 @@ ngdpbase's own API is a resource server at `<base-url>/api`, derived like the is
 
 Each app or device a person approved through `/oidc` is a grant. It lasts until revoked ([#1601](https://github.com/jwilleke/ngdpbase/issues/1601)).
 
-- `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed and when it was approved. Profile → __Apps and devices__ lists your own; the admin user page lists that person's (`user-read`). The card is shown only while the provider is on.
-- `revokeGrant(username, grantId)`: removes the grant and every code and token under it from the store, recorded as `oidcgrant-revoke`. It never touches another person's grant.
+- `listGrants(username)`: one entry per live grant, with the app's name, whether it's a device (its client may use the device grant), the scopes allowed, when it was approved, whether it holds a refresh key (`refreshable`) and when that key was last renewed (`renewedAt`, from the newest rotated refresh key). Profile → __My tokens and devices__ lists your own beside your agent tokens, through `AuthManager.listDelegations` ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)); the admin user page lists that person's (`user-read`). Apps are listed only while the provider is on.
+- `revokeGrant(username, grantId, by)`: removes the grant and every code and token under it from the store, recorded as `oidcgrant-revoke` by `by` (the owner when not given), naming the owner. It never touches another person's grant. Routes reach it only through `AuthManager.revokeDelegation`.
   - From the profile, revoking asks `account-security`, so it needs step-up ([#1525](https://github.com/jwilleke/ngdpbase/issues/1525)).
   - From the admin page it asks `user-edit`.
   - A token can never revoke anything.

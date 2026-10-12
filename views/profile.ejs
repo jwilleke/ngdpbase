@@ -222,23 +222,6 @@
                     </div>
                     <% } %>
 
-                    <!-- #1601: apps and devices approved through this site's OpenID Connect provider -->
-                    <% if (typeof approvedApps !== 'undefined' && approvedApps !== null) { %>
-                    <div class="row mb-4">
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0"><i class="fas fa-plug"></i> Apps and devices</h6>
-                                </div>
-                                <div class="card-body">
-                                    <p class="small text-muted">Apps and devices you allowed to sign in with your account. Each keeps access until you revoke it.</p>
-                                    <%- include('_approved-apps', { apps: approvedApps, revokeBase: '/profile/apps/', csrfToken: csrfToken }) %>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <% } %>
-
                     <!-- #448 / #1524: Sign-in methods — the password and every credential -->
                     <% const signInWithPassword = typeof hasPassword !== 'undefined' && hasPassword; %>
                     <%# #1743: outside identities are listed on their own rows, with the provider's email and Disconnect. %>
@@ -352,22 +335,28 @@
                     </div>
                     <% } %>
 
-                    <!-- #946: Agent API Tokens — delegate your own permissions to an agent -->
-                    <% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
-                    <div class="row mb-4">
+                    <!-- #1764: My tokens and devices — agent tokens (#946) and the apps and devices
+                         approved through this site's own sign-in server (#1601), as one list -->
+                    <% if (typeof delegations !== 'undefined') { %>
+                    <% const mayMint = typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled; %>
+                    <div class="row mb-4" id="tokens-and-devices">
                         <div class="col-12">
                             <div class="card">
                                 <div class="card-header d-flex align-items-center justify-content-between">
-                                    <h6 class="mb-0"><i class="fas fa-robot"></i> Agent API Tokens</h6>
+                                    <h6 class="mb-0"><i class="fas fa-key"></i> My tokens and devices</h6>
+                                    <% if (mayMint) { %>
                                     <button type="button" class="btn btn-sm btn-primary" id="agent-token-new-btn">
                                         <i class="fas fa-plus"></i> New token
                                     </button>
+                                    <% } %>
                                 </div>
                                 <div class="card-body">
                                     <p class="text-muted small">
-                                        A token lets an agent act as you over the API. It can never do anything you
-                                        cannot already do, and it stops working the moment you revoke it or it expires.
+                                        Everything you have let act for you: tokens you made for programs, and apps and
+                                        devices you approved. None can do anything you cannot already do, and each stops
+                                        working the moment you revoke it.
                                     </p>
+                                    <% if (mayMint) { %>
 
                                     <!-- Mint form — hidden until "New token" is pressed -->
                                     <form id="agent-token-form" class="border rounded p-3 mb-3 d-none">
@@ -415,11 +404,15 @@
                                                 <i class="fas fa-copy"></i> Copy
                                             </button>
                                         </div>
+                                        <button type="button" class="btn btn-sm btn-primary mt-2" id="agent-token-done-btn">Done — I have copied it</button>
                                     </div>
+                                    <% } %>
 
-                                    <div id="agent-token-list" class="table-responsive">
-                                        <p class="text-muted small mb-0">Loading…</p>
-                                    </div>
+                                    <% if (delegations === null) { %>
+                                    <p class="text-danger small mb-0">Your tokens and devices could not be read just now. Nothing has been removed; reload the page to try again.</p>
+                                    <% } else { %>
+                                    <%- include('_delegations', { items: delegations, csrfToken: csrfToken }) %>
+                                    <% } %>
                                 </div>
                             </div>
                         </div>
@@ -960,65 +953,23 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<% if (typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
+<% if (typeof delegations !== 'undefined' && typeof agentTokensEnabled !== 'undefined' && agentTokensEnabled) { %>
 <script nonce="<%= locals.cspNonce %>">
-// #946: Agent API Tokens card. Entirely client-driven against /api/tokens —
-// the secret is only ever in the one-time mint response, never rendered
-// server-side into the page.
+// #946 / #1764: minting an agent token. The secret is only ever in the one-time
+// mint response, never rendered server-side into the page; the list itself is
+// rendered by the server (_delegations), so Done reloads to show the new row.
 (function () {
     const CSRF = '<%= csrfToken %>';
     const form     = document.getElementById('agent-token-form');
     const newBtn   = document.getElementById('agent-token-new-btn');
-    const listEl   = document.getElementById('agent-token-list');
     const resultEl = document.getElementById('agent-token-result');
     const secretEl = document.getElementById('agent-token-secret');
     const errorEl  = document.getElementById('agent-token-error');
-    if (!form || !listEl) return;
-
-    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
-        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    if (!form) return;
 
     function showError(message) {
         errorEl.textContent = message;
         errorEl.classList.remove('d-none');
-    }
-
-    function expiresIn(iso) {
-        const ms = Date.parse(iso) - Date.now();
-        if (!Number.isFinite(ms) || ms <= 0) return 'expired';
-        const hours = Math.floor(ms / 3600000);
-        if (hours >= 1) return 'in ' + hours + 'h';
-        return 'in ' + Math.max(1, Math.round(ms / 60000)) + 'm';
-    }
-
-    async function refresh() {
-        try {
-            const res = await fetch('/api/tokens');
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            const tokens = data.tokens || [];
-            if (tokens.length === 0) {
-                listEl.innerHTML = '<p class="text-muted small mb-0">No active tokens.</p>';
-                return;
-            }
-            listEl.innerHTML =
-                '<table class="table table-sm align-middle mb-0">' +
-                '<thead><tr><th>Name</th><th>Prefix</th><th>Permissions</th><th>Expires</th><th>Last used</th><th></th></tr></thead><tbody>' +
-                tokens.map((t) =>
-                    '<tr>' +
-                    '<td>' + esc(t.name) + '</td>' +
-                    '<td><code class="small">' + esc(t.prefix) + '…</code></td>' +
-                    '<td><span class="small text-muted">' + esc((t.scopes || []).join(', ')) + '</span></td>' +
-                    '<td class="small">' + esc(expiresIn(t.expiresAt)) + '</td>' +
-                    '<td class="small text-muted">' + (t.lastUsedAt ? esc(new Date(t.lastUsedAt).toLocaleString()) : 'never') + '</td>' +
-                    '<td class="text-end"><button class="btn btn-sm btn-outline-danger agent-token-revoke" data-id="' + esc(t.id) + '">Revoke</button></td>' +
-                    '</tr>'
-                ).join('') +
-                '</tbody></table>';
-        } catch (err) {
-            listEl.innerHTML = '<p class="text-danger small mb-0">Could not load tokens.</p>';
-        }
     }
 
     newBtn?.addEventListener('click', () => {
@@ -1053,7 +1004,6 @@ document.addEventListener('DOMContentLoaded', function() {
             resultEl.classList.remove('d-none');
             form.classList.add('d-none');
             document.getElementById('agent-token-name').value = '';
-            await refresh();
         } catch (err) {
             showError('Could not create token.');
         } finally {
@@ -1066,24 +1016,11 @@ document.addEventListener('DOMContentLoaded', function() {
         try { await navigator.clipboard.writeText(secretEl.value); } catch { document.execCommand('copy'); }
     });
 
-    listEl.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.agent-token-revoke');
-        if (!btn) return;
-        if (!window.confirm('Revoke this token? Any agent using it stops working immediately.')) return;
-        btn.disabled = true;
-        try {
-            const res = await fetch('/api/tokens/' + encodeURIComponent(btn.dataset.id), {
-                method: 'DELETE',
-                headers: { 'X-CSRF-Token': CSRF }
-            });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            await refresh();
-        } catch (err) {
-            btn.disabled = false;
-        }
+    // The secret leaves the page with the reload; the new token is then in the list.
+    document.getElementById('agent-token-done-btn')?.addEventListener('click', () => {
+        secretEl.value = '';
+        window.location.reload();
     });
-
-    refresh();
 })();
 </script>
 <% } %>

@@ -8,7 +8,7 @@ user-keywords:
   - agents
   - automation
 slug: using-tokens
-lastModified: '2026-08-25T00:00:00.000Z'
+lastModified: '2026-10-12T00:00:00.000Z'
 author: system
 ---
 
@@ -31,12 +31,12 @@ Handing over a password gives up all four.
 
 ## Before you start
 
-Tokens are __off by default__. If you do not see the Agent API Tokens section described below, an administrator needs to enable them first — see [Server Management].
+Tokens are __off by default__. If you do not see the __New token__ button in the __My tokens and devices__ section described below, an administrator needs to enable them first — see [Server Management].
 
 ## Creating a token
 
 1. Sign in and open your [Profile Page].
-2. Find the __Agent API Tokens__ section and choose __New__.
+2. Find the __My tokens and devices__ section and choose __New token__.
 3. Fill in three things:
 
 | Field | What to put |
@@ -45,7 +45,7 @@ Tokens are __off by default__. If you do not see the Agent API Tokens section de
 | __Permissions__ | The least the program needs. See the table below. |
 | __Hours__ | How long it should live, from 1 to 24. |
 
-1. Choose __Create__.
+1. Choose __Create__. Copy the token, then choose __Done__; it then appears in your list.
 
 ### Choosing permissions
 
@@ -87,9 +87,19 @@ A token is a working credential for your account, within the limits you set.
 
 ## Seeing and revoking your tokens
 
-Your [Profile Page] lists every token you have, with its name and when it expires. Each has a control to revoke it.
+The __My tokens and devices__ section of your [Profile Page] lists everything you have let act for you, in one place:
 
-Revoking is immediate — the next request using that token is refused. Nothing else you own is affected, and your password is unchanged.
+- __Agent tokens__ you made, with what each may do, when it ends, and when it was last used.
+- __Apps and devices__ you approved to sign in with your account, such as a phone app or a device you connected by entering a code.
+
+Each row says which kind it is:
+
+| Kind | What it means |
+|---|---|
+| __Fixed__ | It stops working on its end date. When you need it again, you make or approve a new one. Every agent token is fixed. |
+| __Refreshable__ | It renews itself automatically, with a new key each time, so a device can keep working unattended. The list shows when it was last renewed, and when it ends if it has an end date. |
+
+Each row has __Revoke__. Revoking is immediate — the next request using that token, app or device is refused. A revoked app or device has to be approved again before it can sign in. Nothing else you own is affected, and your password is unchanged. You may be asked to confirm your sign-in first.
 
 ## When tokens expire
 

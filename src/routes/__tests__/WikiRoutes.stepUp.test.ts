@@ -19,6 +19,7 @@ function routes(needed: boolean, authenticate: (id: string, c: unknown) => Promi
   const authManager = {
     stepUpNeeded: vi.fn(() => needed),
     renameCredential: vi.fn().mockResolvedValue(true),
+    revokeDelegation: vi.fn().mockResolvedValue(true),
     passkeyAuthenticationOptions: vi.fn().mockResolvedValue({ challenge: 'c1' }),
     passkeyRegistrationOptions: vi.fn().mockResolvedValue({ challenge: 'r1' }),
     authenticate: vi.fn(authenticate),
@@ -141,19 +142,52 @@ describe('re-authentication with the password (#1525)', () => {
 
 describe('revoking an approved app (#1601)', () => {
   test('asks account-security, so a stale session is sent to re-authenticate first', async () => {
-    const { r, oidc } = routes(true);
+    const { r, authManager, oidc } = routes(true);
     const out = res();
     await r.revokeOwnApp(req(session(), { params: { grantId: 'g1' }, originalUrl: '/profile/apps/g1/revoke' }), out);
     expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fprofile');
+    expect(authManager.revokeDelegation).not.toHaveBeenCalled();
     expect(oidc.revokeGrant).not.toHaveBeenCalled();
   });
 
-  test('a fresh session revokes its own grant, by its own username', async () => {
-    const { r, oidc } = routes(false);
+  test('a fresh session revokes its own grant through AuthManager\'s door, by its own username (#1764)', async () => {
+    const { r, authManager, oidc } = routes(false);
     const out = res();
     await r.revokeOwnApp(req(session(), { params: { grantId: 'g1' } }), out);
-    expect(oidc.revokeGrant).toHaveBeenCalledWith('molly', 'g1');
+    expect(authManager.revokeDelegation).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), 'molly', 'app', 'g1');
+    expect(oidc.revokeGrant).not.toHaveBeenCalled();
     expect(out.redirect).toHaveBeenCalledWith('/profile?success=Access+revoked');
+  });
+});
+
+describe('revoking from My tokens and devices (#1764)', () => {
+  test('a token row goes through the same door as an app row', async () => {
+    const { r, authManager } = routes(false);
+    const out = res();
+    await r.revokeOwnDelegation(req(session(), { params: { kind: 'token', id: 'tok_1' } }), out);
+    expect(authManager.revokeDelegation).toHaveBeenCalledWith(expect.objectContaining({ username: 'molly' }), 'molly', 'token', 'tok_1');
+    expect(out.redirect).toHaveBeenCalledWith('/profile?success=Access+revoked');
+  });
+
+  test('a stale session is sent to re-authenticate and nothing is revoked', async () => {
+    const { r, authManager } = routes(true);
+    const out = res();
+    await r.revokeOwnDelegation(req(session(), { params: { kind: 'token', id: 'tok_1' }, originalUrl: '/profile/tokens/token/tok_1/revoke' }), out);
+    expect(out.redirect).toHaveBeenCalledWith('/auth/reauth?next=%2Fprofile');
+    expect(authManager.revokeDelegation).not.toHaveBeenCalled();
+  });
+
+  test('an unknown kind, or a refusal at the door, revokes nothing and says not found', async () => {
+    const { r, authManager } = routes(false);
+    const out = res();
+    await r.revokeOwnDelegation(req(session(), { params: { kind: 'share', id: 's1' } }), out);
+    expect(authManager.revokeDelegation).not.toHaveBeenCalled();
+    expect(out.redirect).toHaveBeenCalledWith('/profile?error=Not+found');
+
+    authManager.revokeDelegation.mockRejectedValueOnce(new Error('Permission denied'));
+    const refused = res();
+    await r.revokeOwnDelegation(req(session(), { params: { kind: 'app', id: 'g9' } }), refused);
+    expect(refused.redirect).toHaveBeenCalledWith('/profile?error=Not+found');
   });
 });
 

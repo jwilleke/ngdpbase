@@ -40,6 +40,8 @@ describe('AuthManager.closeAccess — the one deactivation step (#1765)', () => 
       },
       AgentTokenManager: {
         listForOwner: (o: string) => [{ id: `tok-${o}`, revokedAt: null }, { id: 'tok-old', revokedAt: '2026-01-01' }],
+        // #1764: the revoke door re-reads the token to confirm it is the owner's and live.
+        getById: (id: string) => ({ id, owner: 'ann', revokedAt: id === 'tok-old' ? '2026-01-01' : null }),
         revoke: (id: string, by: string) => { calls.push(`token:${id}:${by}`); return Promise.resolve(true); }
       },
       OidcManager: {
