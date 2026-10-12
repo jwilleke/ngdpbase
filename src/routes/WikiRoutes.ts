@@ -960,6 +960,11 @@ class WikiRoutes {
     // exactly wrong on an instance where anyone can sign up with an email.
     const magicLinkSignup = this.isMagicLinkSignupEnabled();
 
+    // #1743: an outside sign-in that may create an account is open sign-up
+    // too; AuthManager owns the rule. The header sends Register to /login,
+    // where the provider buttons are, not to a /register that may be off.
+    const outsideSignup = this.engine.getManager<AuthManager>('AuthManager')?.outsideSignUpOpen?.() ?? false;
+
     // #1029: whether to offer the admin dashboard in the user dropdown. The
     // header used to test `roles.includes('admin')` — a hardcoded role name —
     // so a role holding `admin-read` could open /admin by typing the URL but
@@ -1087,6 +1092,7 @@ class WikiRoutes {
       capabilities: Record<string, boolean>;
       allowRegistration: boolean;
       magicLinkSignup: boolean;
+      outsideSignup: boolean;
       canViewAdmin: boolean;
       canCreatePage: boolean;
       can: (permission: string) => boolean;
@@ -1140,6 +1146,7 @@ class WikiRoutes {
       capabilities: this.engine.getCapabilities?.() ?? {},
       allowRegistration,
       magicLinkSignup,
+      outsideSignup,
       canViewAdmin,
       canCreatePage,
       can,

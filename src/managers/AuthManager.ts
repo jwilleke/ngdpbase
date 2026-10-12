@@ -212,9 +212,16 @@ export function maskEmail(address: string): string {
 /** Kinds that can start a sign-in on their own — what "a way in" counts (#1524, #1743). */
 const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['passkey', 'email', 'identity']);
 
-/** Presets fill what a well-known provider always has (#1743). Apple and Microsoft come with their quirks later. */
+/**
+ * Presets fill what a well-known provider always has (#1743). `microsoft` is
+ * personal Microsoft accounts only: the `consumers` tenant, whose discovery
+ * document names this issuer. It sends no `email_verified`, so its email is
+ * never kept (no account creation; the email step shows none). Apple comes
+ * later, with its JWT client secret.
+ */
 const OIDC_PRESETS: Readonly<Record<string, { issuer: string; displayName: string }>> = {
-  google: { issuer: 'https://accounts.google.com', displayName: 'Google' }
+  google: { issuer: 'https://accounts.google.com', displayName: 'Google' },
+  microsoft: { issuer: 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0', displayName: 'Microsoft' }
 };
 
 /** An entry of `ngdpbase.auth.oidc.providers`, as written in configuration (#1743). */
@@ -612,6 +619,16 @@ class AuthManager extends BaseManager {
     return p instanceof OidcAuthProvider ? p : null;
   }
 
+  /**
+   * Can a visitor with no account get one by an outside sign-in (#1743)?
+   * True when at least one enabled provider may create accounts, by the one
+   * rule the callback applies (`outsideMayCreateAccounts`). The header's
+   * Register button counts it as open sign-up. Read when asked.
+   */
+  outsideSignUpOpen(): boolean {
+    return [...this.providers.values()].some(p => p instanceof OidcAuthProvider && this.outsideMayCreateAccounts(p));
+  }
+
   /** The outside sign-in providers configured and enabled now, in registration order (#1743). */
   outsideProviders(): OutsideProvider[] {
     return [...this.providers.values()]
@@ -763,6 +780,7 @@ class AuthManager extends BaseManager {
    * provider's own `auto-provision` in `ngdpbase.auth.oidc.providers`, and
    * `ngdpbase.application.registration`, the policy for whether any path may
    * create an account. Read when asked, so a change applies at once.
+   * {@link outsideSignUpOpen} asks the same rule for every enabled provider.
    */
   private outsideMayCreateAccounts(provider: OidcAuthProvider): boolean {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');

@@ -35,6 +35,8 @@ export async function fakeIssuer(issuer = 'https://idp.example.test'): Promise<F
   const clientId = 'client-' + crypto.randomBytes(4).toString('hex');
   const clientSecret = crypto.randomBytes(16).toString('hex');
 
+  // Endpoints hang off the issuer without its trailing slash (authentik's issuer ends in one).
+  const base = issuer.replace(/\/$/, '');
   const json = (url: string, body: unknown, status = 200): GuardedResponse =>
     ({ status, headers: {}, body: Buffer.from(JSON.stringify(body)), finalUrl: url, chain: [url] });
 
@@ -46,14 +48,14 @@ export async function fakeIssuer(issuer = 'https://idp.example.test'): Promise<F
     tokenRequests: [],
     discovery: {
       issuer,
-      authorization_endpoint: `${issuer}/authorize`,
-      token_endpoint: `${issuer}/token`,
-      jwks_uri: `${issuer}/jwks`
+      authorization_endpoint: `${base}/authorize`,
+      token_endpoint: `${base}/token`,
+      jwks_uri: `${base}/jwks`
     },
     async respond(url, options) {
-      if (url === `${issuer}/.well-known/openid-configuration`) return json(url, fake.discovery);
-      if (url === `${issuer}/jwks`) return json(url, { keys: [jwk] });
-      if (url === `${issuer}/token` && options.method === 'POST') {
+      if (url === `${base}/.well-known/openid-configuration`) return json(url, fake.discovery);
+      if (url === `${base}/jwks`) return json(url, { keys: [jwk] });
+      if (url === `${base}/token` && options.method === 'POST') {
         fake.tokenRequests.push({ url, headers: options.headers ?? {}, form: new URLSearchParams(String(options.body)) });
         return json(url, { access_token: 'not-kept', token_type: 'Bearer', id_token: fake.idToken });
       }

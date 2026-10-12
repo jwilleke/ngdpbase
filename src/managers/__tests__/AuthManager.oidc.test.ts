@@ -26,6 +26,8 @@ import { endSession } from '../../utils/sessionEnd';
 const NOT_AN_ENV_REFERENCE = `literal-${crypto.randomUUID()}`;
 
 const BROWSER = 'browser-a';
+/** What the microsoft preset must fill: the consumers tenant's issuer, as its discovery document names it. */
+const MICROSOFT_CONSUMERS_ISSUER = 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0';
 const SECRET_ENV = 'NGDPBASE_TEST_OIDC_CLIENT_SECRET';
 const subject = (username: string) => ({ username, roles: ['reader'], isAuthenticated: true }) as never;
 
@@ -153,6 +155,17 @@ describe('AuthManager outside sign-in (#1743)', () => {
       config['ngdpbase.auth.oidc.providers'] = { google: { preset: 'google', 'client-id': 'g', 'client-secret': `$${SECRET_ENV}`, enabled: true } };
       const am = await started();
       expect(am.outsideProviders()).toEqual([{ id: 'oidc:google', name: 'google', displayName: 'Google' }]);
+    });
+
+    test('the microsoft preset fills the personal-accounts issuer and the name', async () => {
+      idp = await fakeIssuer(MICROSOFT_CONSUMERS_ISSUER);
+      vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
+      config['ngdpbase.auth.oidc.providers'] = { microsoft: { preset: 'microsoft', 'client-id': idp.clientId, 'client-secret': `$${SECRET_ENV}`, enabled: true } };
+      const am = await started();
+      expect(am.outsideProviders()).toEqual([{ id: 'oidc:microsoft', name: 'microsoft', displayName: 'Microsoft' }]);
+      // Discovery is read at <issuer>/.well-known/openid-configuration, and its issuer matches the preset's.
+      expect(new URL(await am.startFlow('oidc:microsoft', { deviceState: BROWSER })).href.startsWith(`${MICROSOFT_CONSUMERS_ISSUER}/authorize?`)).toBe(true);
+      expect(vi.mocked(guardedFetch)).toHaveBeenCalledWith(`${MICROSOFT_CONSUMERS_ISSUER}/.well-known/openid-configuration`, expect.anything());
     });
 
     test('the old google-oidc keys keep working, as the google entry, and only once', async () => {
@@ -464,6 +477,23 @@ describe('AuthManager outside sign-in (#1743)', () => {
       expect(await outsideSignIn(am, req, { email: 'new@idp.example', email_verified: true })).toEqual({ outcome: 'connect-first' });
       expect(created).toEqual([]);
       expect(req.session.pendingConnection).toBeDefined();
+      // The header's Register button asks the same rule.
+      expect(am.outsideSignUpOpen()).toBe(false);
+    });
+
+    test('sign-up is open when an enabled provider may create accounts, by the same rule', async () => {
+      config = { ...config, ...PROVISION, 'ngdpbase.auth.oidc.providers': { idp: provider({ 'auto-provision': true }) } };
+      expect((await started()).outsideSignUpOpen()).toBe(true);
+
+      // A provider that is not enabled is not registered, so its auto-provision opens nothing.
+      config['ngdpbase.auth.oidc.providers'] = { idp: provider({ 'auto-provision': true, enabled: false }) };
+      expect((await started()).outsideSignUpOpen()).toBe(false);
+
+      // Read when asked: turning registration off closes it at once.
+      config['ngdpbase.auth.oidc.providers'] = { idp: provider({ 'auto-provision': true }) };
+      const am = await started();
+      config['ngdpbase.application.registration'] = false;
+      expect(am.outsideSignUpOpen()).toBe(false);
     });
 
     test('with all three on, an account is created like registration\'s, the identity connected, and the person signed in', async () => {
