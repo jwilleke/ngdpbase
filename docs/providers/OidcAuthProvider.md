@@ -8,7 +8,7 @@ code: src/providers/OidcAuthProvider.ts
 
 # OidcAuthProvider
 
-Signs people in through an outside OpenID Connect provider (Google, Apple, personal Microsoft accounts, a self-hosted authentik, any issuer that publishes discovery). One class; AuthManager registers one instance per enabled entry of `ngdpbase.auth.oidc.providers`, with the id `oidc:<name>` ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). Routes never call it: they call AuthManager.
+Signs people in through an outside OpenID Connect provider ([Google](OidcAuthProvider-Google.md), [Apple](OidcAuthProvider-Apple.md), personal [Microsoft](OidcAuthProvider-Microsoft.md) accounts, a self-hosted [authentik](OidcAuthProvider-Authentik.md), any issuer that publishes discovery). One class; AuthManager registers one instance per enabled entry of `ngdpbase.auth.oidc.providers`, with the id `oidc:<name>` ([#1743](https://github.com/jwilleke/ngdpbase/issues/1743)). Routes never call it: they call AuthManager.
 
 ## What an outside sign-in may do
 
@@ -34,7 +34,7 @@ A flow carries its purpose: a flow started to connect never signs in, a sign-in 
 ## What each flow checks
 
 - `state` is single-use, expires in 10 minutes, and is bound to the starting browser by the HTTP-only `ngdp_oauth_state` cookie (#1630).
-- PKCE (S256) and an OIDC `nonce`; the code is exchanged with the verifier and the client secret (`client_secret_basic`, or `client_secret_post` when the issuer takes only that). For Apple the client secret is a JWT the site signs for each exchange (below).
+- PKCE (S256) and an OIDC `nonce`; the code is exchanged with the verifier and the client secret (`client_secret_basic`, or `client_secret_post` when the issuer takes only that). For Apple the client secret is a JWT the site signs for each exchange ([Apple](OidcAuthProvider-Apple.md)).
 - The ID token's signature against the issuer's published keys (`jose`), `iss` (the configured issuer; Google's scheme-less `accounts.google.com` is also accepted), `aud` = the client id, `azp` when there are several audiences, `exp`, and `nonce`.
 - The discovery document's `issuer` must equal the configured issuer (OIDC Discovery §4.3).
 
@@ -48,79 +48,26 @@ Discovery, the key set and the token exchange go through `guardedFetch` (#1133),
 
 ## Configuration
 
-- `ngdpbase.auth.oidc.providers` — map of name → `{ preset, issuer, client-id, client-secret, enabled, display-name, auto-provision }`, and for `preset: "apple"` `{ team-id, key-id, private-key }` in place of `client-secret`. `preset: "google"`, `preset: "microsoft"` and `preset: "apple"` fill the issuer and name (below); any other issuer is set with `issuer`, exactly as its discovery document states it. `client-secret` and `private-key` must be environment references (`$NAME`); an entry with either written in literally is not registered. The map is `sensitive`, and secret-looking fields inside it (`client-secret`, `private-key`) are hidden from anyone without `secret-reveal`. The callback is `<base-url>/auth/oauth/<name>/callback`, so `ngdpbase.application.base-url` must be set explicitly.
+- `ngdpbase.auth.oidc.providers` — map of name → `{ preset, issuer, client-id, client-secret, enabled, display-name, auto-provision }`, and for `preset: "apple"` `{ team-id, key-id, private-key }` in place of `client-secret`. `preset: "google"`, `preset: "microsoft"` and `preset: "apple"` fill the issuer and name ([Providers](#providers)); any other issuer is set with `issuer`, exactly as its discovery document states it. `client-secret` and `private-key` must be environment references (`$NAME`); an entry with either written in literally is not registered. The map is `sensitive`, and secret-looking fields inside it (`client-secret`, `private-key`) are hidden from anyone without `secret-reveal`. The callback is `<base-url>/auth/oauth/<name>/callback`, so `ngdpbase.application.base-url` must be set explicitly.
 - `ngdpbase.auth.oidc.auto-provision` — the instance ceiling for account creation, `false`. An entry's own `auto-provision` (default off) and `ngdpbase.application.registration` must also be true.
 - The old `ngdpbase.auth.google-oidc.*` keys are read as the `google` entry when enabled and the map has none (its `callback-url` is used when set). Their `auto-provision`, `default-roles`, `hd` and `deny-redirect` are no longer acted on. A factors entry or an account's `allowedAuthMethods` naming `google-oidc` still applies to `oidc:google`.
 - A provider with no `ngdpbase.auth.factors` entry is offered as a primary sign-in method at AAL1.
 
-## Presets
+## Providers
 
-- `google` — issuer `https://accounts.google.com`, named Google.
-- `microsoft` — personal Microsoft accounts (Outlook.com, Hotmail, Xbox, Skype) only: the `consumers` tenant, issuer `https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0`, named Microsoft. Work and school accounts are not included. Register the app in the Microsoft Entra admin center for personal Microsoft accounts, with the callback below as a Web redirect URI, and use its client secret through an environment reference.
-  - Microsoft's subject is different for each registered app, so the identity belongs to this site's registration: registering a new app means people connect again.
-  - Microsoft sends an `email` but no `email_verified`, and an email counts as verified only when the provider says so. So the email is never kept: a Microsoft sign-in never creates an account (whatever `auto-provision` says), and the email step shows no address. People sign in another way once and connect Microsoft, or connect it from their profile.
+Each provider's own page says what its preset fills, how to register the site with it, its configuration entry, and what is particular to it:
 
-- `apple` — Sign in with Apple: issuer `https://appleid.apple.com`, named Apple. It differs from the others in three ways:
-  - __The client secret is signed by the site.__ Instead of `client-secret`, the entry has `team-id`, `key-id` and `private-key`. For each code exchange the provider signs a JWT (ES256, header `kid` = the key id; `iss` = the team id, `sub` = the client id, `aud` = `https://appleid.apple.com`, valid 5 minutes) with that key and sends it as `client_secret` (`client_secret_post`, the only method Apple's discovery lists). An entry whose key is missing, written in literally, or not an EC P-256 key is not registered.
-  - __The callback is POSTed__ (`response_mode=form_post`, which Apple requires when the email scope is asked for), relayed as described above.
-  - __`email_verified` may be the string `"true"` or `"false"`__; only true, string or boolean, counts. A private-relay address (`…@privaterelay.appleid.com`, `is_private_email`) is a real, verified address that forwards to the person, and is treated like any other. The name Apple sends on the first sign-in is ignored.
-  - Apple's subject is stable for one developer team, so moving the Services ID to another team means people connect again.
+- [Google](OidcAuthProvider-Google.md) — `preset: "google"`; also the old `ngdpbase.auth.google-oidc.*` keys
+- [Microsoft](OidcAuthProvider-Microsoft.md) — `preset: "microsoft"`, personal Microsoft accounts only; never creates accounts
+- [Apple](OidcAuthProvider-Apple.md) — `preset: "apple"`; a client secret the site signs, and a POSTed callback
+- [authentik](OidcAuthProvider-Authentik.md) — no preset; its own issuer, with the trailing slash
 
-## Apple
-
-Apple's preset fills the issuer; the operator registers the site with Apple. In the Apple Developer account (Certificates, Identifiers & Profiles):
-
-- Create an __App ID__ with __Sign in with Apple__ enabled (it may be one used only for this), then a __Services ID__ grouped under it. The Services ID's identifier (for example `org.example.site`) is the `client-id`.
-- In the Services ID's Sign in with Apple configuration, add the site's domain and the return URL `<base-url>/auth/oauth/apple/callback` (with `<name>` = `apple`, or the entry's name). Apple accepts only `https` addresses on a real domain, not `localhost` or an IP address.
-- Under __Keys__, create a key with __Sign in with Apple__ enabled for that App ID, and download the `.p8` file. Apple lets you download it once. Note its __Key ID__.
-- The __Team ID__ is on the account's Membership details page.
-- Put the `.p8` file's contents in the environment, never in configuration. A multi-line value in quotes works in `.env`; so does one line with `\n` where the line breaks were.
-
-```json
-"ngdpbase.auth.oidc.providers": {
-  "apple": {
-    "preset": "apple",
-    "client-id": "org.example.site",
-    "team-id": "<Team ID>",
-    "key-id": "<Key ID>",
-    "private-key": "$APPLE_PRIVATE_KEY",
-    "enabled": true
-  }
-}
-```
-
-- Apple must be reachable through the outbound guard (it is on the public internet, so it is by default).
-- `auto-provision` may be turned on for Apple: it reports verified email, including private-relay addresses.
-
-## authentik
-
-There is no preset: each authentik has its own issuer, one per application. In authentik:
-
-- Create an __OAuth2/OpenID Provider__: client type __Confidential__; redirect URI `<base-url>/auth/oauth/<name>/callback`, with `<name>` the entry's name below (strict match); scopes `openid`, `email` and `profile`; a signing key, so ID tokens are signed with RS256.
-- Create an __Application__ that uses that provider. Its slug is part of the issuer.
-- Copy the client ID, and put the client secret in the environment (`AUTHENTIK_CLIENT_SECRET` here), never in configuration.
-
-The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __with the trailing slash__: authentik's discovery document names it that way, and the configured issuer must match it exactly, or the sign-in is refused. The provider page in authentik shows it as the OpenID Configuration Issuer.
-
-```json
-"ngdpbase.auth.oidc.providers": {
-  "authentik": {
-    "issuer": "https://auth.example.org/application/o/ngdpbase/",
-    "client-id": "<client id from authentik>",
-    "client-secret": "$AUTHENTIK_CLIENT_SECRET",
-    "display-name": "Family sign-in",
-    "enabled": true
-  }
-}
-```
-
-- When authentik is on the local network, its address range must be in `ngdpbase.security.egress.allowed-ranges`, or discovery, keys and the code exchange are refused by the outbound guard.
-- authentik's groups give no roles here: roles come from this site's own role assignments only.
-- Whether authentik marks an email verified depends on its property mappings; without `email_verified: true` the email is not kept, as for any provider.
+Any other issuer that publishes discovery works the same way as authentik: set `issuer` exactly as its discovery document states it.
 
 ## See Also
 
 - [BaseAuthProvider](BaseAuthProvider.md) — the contract
+- [Google](OidcAuthProvider-Google.md), [Microsoft](OidcAuthProvider-Microsoft.md), [Apple](OidcAuthProvider-Apple.md), [authentik](OidcAuthProvider-Authentik.md) — each provider
 - [AuthManager](../managers/AuthManager.md) — the one door
 - [authentication developer guide](../guides/authentication-developer-guide.md)
 - [planning/authentication.md](../planning/authentication.md#external-identity-providers-decided-2026-10-10) — the decisions

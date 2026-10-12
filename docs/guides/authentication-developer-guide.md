@@ -10,6 +10,31 @@ relatedModules: [AuthManager, UserManager, PolicyDecisionPoint, OidcManager]
 
 What a developer has to know to change how people sign in. Who may do what once signed in is [security-developer-guide.md](security-developer-guide.md); the design history, open plans and YourPHR's needs are in [planning/authentication.md](../planning/authentication.md).
 
+## Provider docs
+
+Every sign-in method is a provider registered with [AuthManager](../managers/AuthManager.md) (the methods, and the one door routes call). Each has its own page:
+
+- Signing people in
+  - [PasswordAuthProvider](../providers/PasswordAuthProvider.md) — username and password, checked against the hash on the user record
+  - [PasskeyAuthProvider](../providers/PasskeyAuthProvider.md) — passkeys (WebAuthn); a passkey alone signs in at AAL2, phishing-resistant
+  - [MagicLinkAuthProvider](../providers/MagicLinkAuthProvider.md) — an emailed single-use sign-in link
+  - [OidcAuthProvider](../providers/OidcAuthProvider.md) — sign-in through any outside OpenID Connect provider, by an identity connected to the account: what it may do, the flows and their checks
+    - [Google](../providers/OidcAuthProvider-Google.md) — the `google` preset, and registering the site in the Google Cloud console
+    - [Microsoft](../providers/OidcAuthProvider-Microsoft.md) — the `microsoft` preset (personal accounts only), and registering the site in Microsoft Entra
+    - [Apple](../providers/OidcAuthProvider-Apple.md) — the `apple` preset: a client secret the site signs, the POSTed callback, and registering with Apple
+    - [authentik](../providers/OidcAuthProvider-Authentik.md) — a self-hosted authentik as an entry with its own issuer (no preset)
+  - [CloudflareAccessAuthProvider](../providers/CloudflareAccessAuthProvider.md) — trusts Cloudflare Access's `cf-access-jwt-assertion` header when the site sits behind it
+- Requests from clients (bearer tokens; never a session)
+  - [AgentTokenAuthProvider](../providers/AgentTokenAuthProvider.md) — an agent token a person minted, delegating part of their own authority
+  - [OidcBearerAuthProvider](../providers/OidcBearerAuthProvider.md) — access tokens from this site's own OpenID Connect server, for apps a person allowed
+  - [AuthentikBearerAuthProvider](../providers/AuthentikBearerAuthProvider.md) — an authentik-issued token held by a headless client
+- The contract and what sign-in methods keep
+  - [BaseAuthProvider](../providers/BaseAuthProvider.md) — the interface every sign-in method implements
+  - [BaseCredentialsProvider](../providers/BaseCredentialsProvider.md) and [FileCredentialsProvider](../providers/FileCredentialsProvider.md) — the credentials store: passkeys, verified addresses, connected outside identities, as signed rows
+  - [FileOidcAdapter](../providers/FileOidcAdapter.md) — storage for this site's own OpenID Connect server ([OidcManager](../managers/OidcManager.md)): grants, sessions and tokens of apps people sign in to with this site
+
+For people signing in, the shipped help page [Signing In With Another Account](../../required-pages/349c67da-871c-40a5-8581-89bad4988970.md) is the user-facing counterpart of the outside providers: connecting one on the profile, signing in with it, and the email step.
+
 ## Standing rules
 
 - __AuthManager is the one door.__ Routes call `AuthManager`, never a provider. Every sign-in method is a registered `AuthProvider` (`registerProvider`), so a new method is a provider, not a route. This covers every check of a secret, not only a sign-in: re-checking a password before a change, an API key, a token. The provider is the connection to its method and owns the check; where the method's data lives (the password hash on the user record) is the storing manager's (operator, 2026-10-11).
@@ -60,6 +85,7 @@ Operator rule (2026-10-08): __whenever there is no way to reach AAL2, AAL1 must 
 ## See also
 
 - [managers/AuthManager.md](../managers/AuthManager.md) — the methods
+- [Provider docs](#provider-docs) — one page per sign-in method and outside provider
 - [planning/authentication.md](../planning/authentication.md) — decisions, plans, prior art, YourPHR
 - [security-developer-guide.md](security-developer-guide.md) — permissions once signed in
 - [security-posture.md](../security-posture.md)
