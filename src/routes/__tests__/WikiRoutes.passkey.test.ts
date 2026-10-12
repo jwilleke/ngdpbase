@@ -20,7 +20,7 @@ function routes(authenticate: (id: string, c: unknown) => Promise<unknown>) {
     passkeyAuthenticationOptions: vi.fn().mockResolvedValue({ challenge: 'chal-1', rpId: 'wiki.example.com' }),
     authenticate: vi.fn(authenticate),
     // #1758: the session work of a sign-in is completeSignIn's (AuthManager.completeSignIn.test.ts).
-    completeSignIn: vi.fn().mockResolvedValue(undefined)
+    completeSignIn: vi.fn().mockResolvedValue({})
   };
   const engine = {
     getManager: vi.fn((n: string) => (n === 'AuthManager' ? authManager
@@ -53,7 +53,7 @@ describe('passkey routes (#448)', () => {
       { ipAddress: '1.2.3.4', userAgent: 'ua', purpose: 'sign-in' });
     // #1758: the one completion step — the same one every sign-in path takes.
     expect(authManager.completeSignIn).toHaveBeenCalledTimes(1);
-    expect(authManager.completeSignIn).toHaveBeenCalledWith(q, result, { method: 'passkey' });
+    expect(authManager.completeSignIn).toHaveBeenCalledWith(q, result, expect.objectContaining({ method: 'passkey', returnTo: expect.any(String) }));
     expect(s.passkeyChallenge).toBeUndefined();
     expect(out.json).toHaveBeenCalledWith({ ok: true, redirect: '/view/Home' });
   });

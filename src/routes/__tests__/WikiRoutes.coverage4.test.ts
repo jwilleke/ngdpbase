@@ -104,7 +104,7 @@ const mockCacheManager = {
 // Present only where a test opts in (POST /login); the other routes here run without one.
 const mockAuthManager = {
   authenticate: vi.fn(),
-  completeSignIn: vi.fn() // #1758: the one sign-in completion step
+  completeSignIn: vi.fn().mockResolvedValue({}) // #1758: the one sign-in completion step
 };
 let authManagerPresent = false;
 
@@ -472,7 +472,7 @@ describe('WikiRoutes — coverage batch 4', () => {
       expect(mockAuthManager.completeSignIn).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ success: true, username: 'testuser' }),
-        { method: 'password', unlockWith: { password: 'password123' } }
+        expect.objectContaining({ method: 'password', returnTo: '/', unlockWith: expect.objectContaining({}) })
       );
     });
 

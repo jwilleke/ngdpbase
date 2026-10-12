@@ -1,9 +1,10 @@
 /**
  * #1743 — the outside sign-in routes carry HTTP only; AuthManager decides.
  * Start: a provider that is not enabled is refused, an enabled one gets a
- * browser binding and goes to the provider. Callback: a sign-in completes
- * through completeSignIn, a refusal is neutral, a replay opens no second
- * session; a connection goes back to the profile with its outcome. Connect:
+ * browser binding and goes to the provider. Callback: AuthManager's
+ * finishOutsideSignIn decides (sign in, create, or hold for the email step),
+ * a refusal is neutral, a replay opens no second session; a connection goes
+ * back to the profile with its outcome. Cancel drops the waiting identity. Connect:
  * account-security, so a stale sign-in is sent to re-authenticate first.
  * Disconnect is the credential-removal route, whose last-way-in refusal is
  * shown.
@@ -11,6 +12,10 @@
 import WikiRoutes from '../WikiRoutes';
 import AuthManager from '../../managers/AuthManager';
 import { OAUTH_STATE_COOKIE } from '../../utils/magicLinkDeviceState';
+import express, { type Request as ExpressRequest, type Response as ExpressResponse, type NextFunction } from 'express';
+import request from 'supertest';
+import { csrfMiddleware } from '../../middleware/csrf';
+import { csrfTestSessionFields, csrfTestBodyField } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
 
 const res = () => ({
   status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), redirect: vi.fn().mockReturnThis(),
@@ -25,10 +30,13 @@ function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
     startFlow: vi.fn().mockResolvedValue('https://accounts.example/authorize?state=s1'),
     startConnect: vi.fn().mockResolvedValue('https://accounts.example/authorize?state=s2'),
     flowConnectsFor: vi.fn(() => opts.connectFor ?? null),
-    getFlowRedirect: vi.fn(() => '/after'),
-    authenticate: vi.fn().mockResolvedValue({ success: true, username: 'ann', provider: 'oidc:google', factors: [] }),
-    consumeToken: vi.fn(() => true),
-    completeSignIn: vi.fn().mockResolvedValue(undefined),
+    finishOutsideSignIn: vi.fn().mockResolvedValue({ outcome: 'signed-in', next: '/after' }),
+    dropPendingConnection: vi.fn(),
+    pendingConnection: vi.fn(() => ({ displayName: 'Google', email: 'ann@gmail.example' })),
+    confirmPendingConnection: vi.fn().mockResolvedValue('/profile?success=Connected'),
+    declinePendingConnection: vi.fn(() => '/view/Home'),
+    authenticate: vi.fn(),
+    completeSignIn: vi.fn(),
     connectIdentity: vi.fn().mockResolvedValue('connected'),
     removeCredential: vi.fn().mockResolvedValue(true),
     stepUpNeeded: vi.fn(() => Boolean(opts.stale)),
@@ -39,8 +47,8 @@ function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
   const managers: Record<string, unknown> = {
     AuthManager: authManager,
     PolicyDecisionPoint: {
-      permits: vi.fn((s: { roles?: string[]; signIn?: unknown }, action: string) =>
-        Promise.resolve(!authManager.stepUpNeeded(action, s.signIn, s.roles ?? [], false))),
+      permits: vi.fn((s: { roles?: string[]; signIn?: unknown; isAuthenticated?: boolean }, action: string) =>
+        Promise.resolve(s.isAuthenticated !== false && !authManager.stepUpNeeded(action, s.signIn, s.roles ?? [], false))),
       holds: vi.fn(() => Promise.resolve(true))
     },
     AuditManager: { logAuditEvent: vi.fn().mockResolvedValue('a'), logAuthentication: vi.fn().mockResolvedValue('a') },
@@ -49,6 +57,7 @@ function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
   const engine = { getManager: vi.fn((n: string) => managers[n] ?? null) };
   authManager.engine = engine;
   const r = new WikiRoutes(engine) as unknown as Record<string, (q: unknown, s: unknown) => Promise<void>>;
+  (r as unknown as { getCommonTemplateData: () => Promise<Record<string, unknown>> }).getCommonTemplateData = () => Promise.resolve({});
   return { r, authManager };
 }
 
@@ -87,33 +96,65 @@ describe('outside sign-in routes (#1743)', () => {
     expect(authManager.startFlow).toHaveBeenCalledWith('oidc:google', expect.objectContaining({ redirect: '/' }));
   });
 
-  test('callback: a connected identity signs in through the one completion step', async () => {
+  test('callback: AuthManager decides, and the person goes where it says', async () => {
     const { r, authManager } = routes();
     const out = res();
     const q = req({ method: 'GET', query: { code: 'c1', state: 's1' } });
     await r.finishOutsideFlow(q, out);
-    expect(authManager.authenticate).toHaveBeenCalledWith('oidc:google', { token: 'c1', state: 's1', deviceState: 'browser-a' }, expect.objectContaining({ purpose: 'sign-in' }));
+    expect(authManager.finishOutsideSignIn).toHaveBeenCalledWith(q, 'oidc:google', expect.objectContaining({ state: 's1', deviceState: 'browser-a' }), expect.objectContaining({ purpose: 'sign-in' }));
+    expect(authManager.finishOutsideSignIn.mock.calls[0][2]).toEqual(expect.objectContaining({ token: q.query.code }));
     expect(out.clearCookie).toHaveBeenCalledWith(OAUTH_STATE_COOKIE, { path: '/' });
-    expect(authManager.completeSignIn).toHaveBeenCalledWith(q, expect.objectContaining({ username: 'ann' }), { method: 'oidc:google' });
+    expect(q.session.save).toHaveBeenCalled();
     expect(out.redirect).toHaveBeenCalledWith('/after');
+  });
+
+  test('callback: an account created for the identity goes where it says too', async () => {
+    const { r, authManager } = routes();
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'created', next: '/after' });
+    const out = res();
+    await r.finishOutsideFlow(req({ method: 'GET', query: { code: 'c1', state: 's1' } }), out);
+    expect(out.redirect).toHaveBeenCalledWith('/after');
+  });
+
+  test('callback: an identity held for the email step goes to the sign-in page, with what to say if anything', async () => {
+    const { r, authManager } = routes();
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'connect-first' });
+    const out = res();
+    const q = req({ method: 'GET', query: { code: 'c1', state: 's1' } });
+    await r.finishOutsideFlow(q, out);
+    expect(q.session.save).toHaveBeenCalled();
+    expect(out.redirect).toHaveBeenCalledWith('/login');
+
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'connect-first', error: 'That email address is already used by another account. Please use another.' });
+    const taken = res();
+    await r.finishOutsideFlow(req({ method: 'GET', query: { code: 'c1', state: 's1' } }), taken);
+    expect(decodeURIComponent(String(taken.redirect.mock.calls[0][0]))).toBe('/login?error=That email address is already used by another account. Please use another.');
   });
 
   test('callback: a refused sign-in is told neutrally, without saying whether an account exists', async () => {
     const { r, authManager } = routes();
-    authManager.authenticate.mockResolvedValue({ success: false });
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'refused' });
     const out = res();
     await r.finishOutsideFlow(req({ method: 'GET', query: { code: 'c1', state: 's1' } }), out);
-    expect(authManager.completeSignIn).not.toHaveBeenCalled();
     const target = decodeURIComponent(String(out.redirect.mock.calls[0][0]));
     expect(target).toMatch(/^\/login\?error=That sign-in did not work\. If you have an account here/);
   });
 
   test('callback: a replayed state opens no second session', async () => {
     const { r, authManager } = routes();
-    authManager.consumeToken.mockReturnValue(false);
+    authManager.finishOutsideSignIn.mockResolvedValue({ outcome: 'replayed' });
     const out = res();
     await r.finishOutsideFlow(req({ method: 'GET', query: { code: 'c1', state: 's1' } }), out);
-    expect(authManager.completeSignIn).not.toHaveBeenCalled();
+    expect(decodeURIComponent(String(out.redirect.mock.calls[0][0]))).toBe('/login?error=Sign-in link already used');
+  });
+
+  test('cancel: the waiting identity is dropped and the sign-in page shown', () => {
+    const { r, authManager } = routes();
+    const out = res();
+    const q = req();
+    (r as unknown as { cancelPendingConnection(q: unknown, s: unknown): void }).cancelPendingConnection(q, out);
+    expect(authManager.dropPendingConnection).toHaveBeenCalledWith(q);
+    expect(out.redirect).toHaveBeenCalledWith('/login');
   });
 
   test('callback: the provider\'s own error or a missing code goes back to the sign-in page', async () => {
@@ -178,5 +219,74 @@ describe('outside sign-in routes (#1743)', () => {
     const refused = res();
     await r.removeOwnCredential(req({ params: { id: 'row-1' } }), refused);
     expect(decodeURIComponent(String(refused.redirect.mock.calls[0][0]))).toMatch(/last way into the account/);
+  });
+  describe('confirming a waiting connection after a sign-in', () => {
+    const signedOut = { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false };
+
+    test('the page asks the signed-in person, naming the provider, the email and their account', async () => {
+      const { r } = routes();
+      const out = res();
+      await r.confirmConnectionPage(req({ method: 'GET' }), out);
+      expect(out.render).toHaveBeenCalledWith('login-connect-confirm', expect.objectContaining({
+        pending: { displayName: 'Google', email: 'ann@gmail.example' }, username: 'ann'
+      }));
+    });
+
+    test('the page is for a signed-in person only, and only while something waits', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      await r.confirmConnectionPage(req({ method: 'GET', userContext: signedOut }), out);
+      expect(out.render).not.toHaveBeenCalledWith('login-connect-confirm', expect.anything());
+      expect(authManager.pendingConnection).not.toHaveBeenCalled();
+      authManager.pendingConnection.mockReturnValue(null);
+      const none = res();
+      await r.confirmConnectionPage(req({ method: 'GET' }), none);
+      expect(none.redirect).toHaveBeenCalledWith('/');
+    });
+
+    test('Connect asks AuthManager to connect it, as the signed-in person', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      const q = req({ body: { answer: 'connect' } });
+      await r.answerConnectionConfirm(q, out);
+      expect(authManager.confirmPendingConnection).toHaveBeenCalledWith(q, expect.objectContaining({ username: 'ann', isAuthenticated: true }));
+      expect(out.redirect).toHaveBeenCalledWith('/profile?success=Connected');
+    });
+
+    test('Don\'t connect drops it and goes where the sign-in was going', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      await r.answerConnectionConfirm(req({ body: { answer: 'decline' } }), out);
+      expect(authManager.declinePendingConnection).toHaveBeenCalled();
+      expect(authManager.confirmPendingConnection).not.toHaveBeenCalled();
+      expect(out.redirect).toHaveBeenCalledWith('/view/Home');
+    });
+
+    test('a signed-out request connects nothing', async () => {
+      const { r, authManager } = routes();
+      const out = res();
+      await r.answerConnectionConfirm(req({ body: { answer: 'connect' }, userContext: signedOut }), out);
+      expect(authManager.confirmPendingConnection).not.toHaveBeenCalled();
+      expect(authManager.declinePendingConnection).not.toHaveBeenCalled();
+    });
+
+    test('the answer is a CSRF-protected POST: without the token nothing is connected', async () => {
+      const { r, authManager } = routes();
+      const session: Record<string, unknown> = { ...csrfTestSessionFields(), username: 'ann', isAuthenticated: true, save: (cb: () => void) => cb() };
+      const app = express();
+      app.use(express.urlencoded({ extended: true }));
+      app.use((q: ExpressRequest, _s: ExpressResponse, next: NextFunction) => {
+        Object.assign(q, { session, userContext: { username: 'ann', roles: ['reader'], isAuthenticated: true } });
+        next();
+      });
+      app.use(csrfMiddleware);
+      app.post('/login/connect/confirm', (q: ExpressRequest, s: ExpressResponse) => void r.answerConnectionConfirm(q, s));
+
+      await request(app).post('/login/connect/confirm').type('form').send({ answer: 'connect' }).expect(403);
+      expect(authManager.confirmPendingConnection).not.toHaveBeenCalled();
+
+      await request(app).post('/login/connect/confirm').type('form').send({ answer: 'connect', ...csrfTestBodyField() }).expect(302);
+      expect(authManager.confirmPendingConnection).toHaveBeenCalledTimes(1);
+    });
   });
 });

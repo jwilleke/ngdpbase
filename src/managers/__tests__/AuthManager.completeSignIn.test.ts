@@ -178,7 +178,7 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       const { req, session } = fakeReq();
 
       await expect(manager.completeSignIn(req, passwordResult, { method: 'password', unlockWith: { password: 'pw' } }))
-        .resolves.toBeUndefined();
+        .resolves.toEqual({});
 
       expect(session.privateStoreHandle).toBeUndefined();
       expect(session.isAuthenticated).toBe(true);
@@ -213,7 +213,7 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       const { manager, userManager } = setup({ recordSignIn: () => Promise.reject(new Error('disk full')) });
       const { req, session } = fakeReq();
 
-      await expect(manager.completeSignIn(req, passwordResult, { method: 'password' })).resolves.toBeUndefined();
+      await expect(manager.completeSignIn(req, passwordResult, { method: 'password' })).resolves.toEqual({});
 
       expect(userManager.recordSignIn).toHaveBeenCalledTimes(1);
       expect(session.isAuthenticated).toBe(true);
@@ -224,7 +224,7 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       audit.logAuthentication.mockRejectedValue(new Error('disk full'));
       const { req, session } = fakeReq();
 
-      await expect(manager.completeSignIn(req, passwordResult, { method: 'password' })).resolves.toBeUndefined();
+      await expect(manager.completeSignIn(req, passwordResult, { method: 'password' })).resolves.toEqual({});
       expect(session.isAuthenticated).toBe(true);
     });
   });

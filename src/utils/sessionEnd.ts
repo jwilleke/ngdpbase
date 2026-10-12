@@ -24,11 +24,13 @@ interface AuditSink {
 
 export function endSession(
   engine: { getManager(name: string): unknown },
-  session: { username?: unknown; privateStoreHandle?: unknown } | null | undefined,
+  session: { username?: unknown; privateStoreHandle?: unknown; pendingConnection?: unknown } | null | undefined,
   reason: SessionEndReason,
   from: { ipAddress?: string; userAgent?: string }
 ): void {
   endSessionKeys(session?.privateStoreHandle);
+  // #1743: an outside identity waiting to be connected never outlives the session it waited in.
+  if (session) delete session.pendingConnection;
   const username = typeof session?.username === 'string' && session.username ? session.username : null;
   if (!username) return; // nobody was signed in: nothing ended
   const audit = engine.getManager('AuditManager') as AuditSink | null;

@@ -75,6 +75,10 @@ import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
+import { deriveUsername } from '../utils/deriveUsername.js';
+import { safeRegistrationMessage } from '../utils/userCreateError.js';
+import { jobContextFromRequestWithReason } from '../context/JobContext.js';
+import { systemPrincipalOf } from '../context/bootActions.js';
 
 /** One entry of `ngdpbase.auth.factors`, as written in configuration (#1523). */
 export interface FactorEntry {
@@ -250,6 +254,47 @@ export interface ConnectedIdentity {
 
 /** How connecting an outside identity ended (#1743). */
 export type ConnectOutcome = 'connected' | 'refused' | 'already-yours' | 'connected-elsewhere';
+
+/**
+ * A verified outside identity no account has connected, held in the session
+ * until the person signs in another way and confirms it (#1743 slice 3). One
+ * at a time; a new one replaces the old. `email` is the provider's verified
+ * email, or ''.
+ */
+export interface PendingConnection {
+  providerId: string;
+  /** `${iss}#${sub}` */
+  subject: string;
+  email: string;
+  /** The provider's name, for the notice. */
+  displayName: string;
+  /** Epoch ms. */
+  expiresAt: number;
+  /** Where the sign-in that follows was going; a declined connection goes there. */
+  returnTo?: string;
+}
+
+/** How an outside sign-in's callback ended (#1743), for the route to answer. */
+export type OutsideSignIn =
+  /** Signed in (`created`: an account was made for it first); `next` is where to go. */
+  | { outcome: 'signed-in' | 'created'; next: string }
+  /** Held as a pending connection: the person signs in another way to connect it. `error` is what to say, if anything. */
+  | { outcome: 'connect-first'; error?: string }
+  /** Refused; nothing says whether an account exists. */
+  | { outcome: 'refused' }
+  /** The state was already used: no second session. */
+  | { outcome: 'replayed' };
+
+/** What the one completion step leaves for the route (#1743): where to go instead, when a pending identity waits to be confirmed. */
+export interface SignInCompleted {
+  next?: string;
+}
+
+/** Short: a shared browser should not keep someone else's identity waiting for long (#1743). */
+const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
+
+/** Who changed a credential, for its audit record: the person acting, and from where. */
+type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress'>;
 
 /**
  * How a session signed in (#1523): kept on the session so step-up (#1525) can
@@ -639,15 +684,196 @@ class AuthManager extends BaseManager {
       await this.auditCheck(attempt, username, providerId, 'failure', `connect: ${providerId} refused`);
       return 'refused';
     }
-    const store = this.requireCredentialsStore();
-    const existing = store.findBySubject('identity', identity.subject);
+    return this.attachIdentity(ctx, username, provider, identity, 'connected from the profile', attempt);
+  }
+
+  /**
+   * Add an outside identity to `username` — the one place a connection is
+   * made (#1743): from the profile, at the next sign-in after the email step,
+   * and when an account is created for it. The identity belongs to exactly
+   * one account, so one already connected elsewhere is refused. Audited as a
+   * credential added, saying how. The caller has decided the person may.
+   */
+  private async attachIdentity(
+    actor: CredentialActor, username: string, provider: OidcAuthProvider, identity: { subject: string; email: string },
+    how: string, attempt: AuthAttempt
+  ): Promise<ConnectOutcome> {
+    const existing = this.requireCredentialsStore().findBySubject('identity', identity.subject);
     if (existing) {
       if (existing.username === username) return 'already-yours';
-      await this.auditCheck(attempt, username, providerId, 'failure', `connect: ${providerId} identity is connected to another account`);
+      await this.auditCheck(attempt, username, provider.id, 'failure', `connect: ${provider.id} identity is connected to another account`);
       return 'connected-elsewhere';
     }
-    await this.addCredential(ctx, username, { kind: 'identity', subject: identity.subject, secret: identity.email, label: credentialLabel(provider.displayName) });
+    await this.storeCredential(actor, username, { kind: 'identity', subject: identity.subject, secret: identity.email, label: credentialLabel(provider.displayName) }, how);
     return 'connected';
+  }
+
+  /**
+   * Finish an outside sign-in's callback (#1743): the one decision about what
+   * a verified outside identity does here. Connected to an account: that
+   * account signs in. Connected to none: an account is created for it when
+   * the instance, the provider and the registration policy all allow it and
+   * the provider verified the email; otherwise (or when that email already
+   * belongs to an account) it is held in the session as a pending connection
+   * until the person signs in another way and confirms it. Email never signs
+   * anyone in.
+   */
+  async finishOutsideSignIn(req: Request, providerId: string, credentials: AuthVerifyCredentials, attempt: AuthAttempt = {}): Promise<OutsideSignIn> {
+    const provider = this.outsideProvider(providerId);
+    const state = credentials.state;
+    if (!provider || !state) return { outcome: 'refused' };
+    const redirect = provider.getFlowRedirect(state);
+
+    const result = await this.authenticate(providerId, credentials, attempt);
+    if (result.success) {
+      // #1021: the state is good for one sign-in; a replayed callback must not open a second session.
+      if (!provider.consumeToken(state)) return { outcome: 'replayed' };
+      const done = await this.completeSignIn(req, result, { method: providerId, returnTo: redirect });
+      return { outcome: 'signed-in', next: done.next ?? safeRedirect(redirect) };
+    }
+
+    const identity = provider.unconnectedIdentity(state);
+    if (!identity || !provider.consumeToken(state)) return { outcome: 'refused' };
+    const hold = (error?: string): OutsideSignIn => {
+      req.session.pendingConnection = {
+        providerId, subject: identity.subject, email: identity.email, displayName: provider.displayName,
+        expiresAt: Date.now() + PENDING_CONNECTION_TTL_MS
+      };
+      return error ? { outcome: 'connect-first', error } : { outcome: 'connect-first' };
+    };
+    if (!identity.email || !this.outsideMayCreateAccounts(provider)) return hold();
+
+    const created = await this.createAccountFor(req, provider, identity.email);
+    if ('error' in created) return hold(created.error);
+    delete req.session.pendingConnection;
+    const attached = await this.attachIdentity({ username: created.username, ipAddress: req.ip }, created.username, provider, identity, 'connected when the account was created for it', attempt)
+      .catch((err: unknown) => { logger.warn(`[AuthManager] could not connect ${provider.id} to the new account ${created.username}:`, err); return 'refused' as const; });
+    if (attached !== 'connected') {
+      // Never leave an account with no way in: the one created a moment ago goes, by the one deletion path.
+      await this.removeCreatedAccount(created.username, provider);
+      return { outcome: 'refused' };
+    }
+    await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId) }, { method: providerId });
+    return { outcome: 'created', next: safeRedirect(redirect) };
+  }
+
+  /**
+   * May an outside sign-in create an account (#1743)? All three must allow
+   * it: the instance ceiling `ngdpbase.auth.oidc.auto-provision`, the
+   * provider's own `auto-provision` in `ngdpbase.auth.oidc.providers`, and
+   * `ngdpbase.application.registration`, the policy for whether any path may
+   * create an account. Read when asked, so a change applies at once.
+   */
+  private outsideMayCreateAccounts(provider: OidcAuthProvider): boolean {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    if (!cm) return false;
+    if (cm.getProperty('ngdpbase.auth.oidc.auto-provision', false) !== true) return false;
+    const entries = cm.getProperty('ngdpbase.auth.oidc.providers', {}) as Record<string, OidcProviderEntry | undefined> | null;
+    if (entries?.[provider.name]?.['auto-provision'] !== true) return false;
+    return ((cm.getProperty('ngdpbase.application.registration', true) as boolean | undefined) ?? true) !== false;
+  }
+
+  /**
+   * Create the account for an outside identity's verified email (#1743), by
+   * the path magic-link auto-provisioning takes: a derived username,
+   * `UserManager.createUser` with registration's default roles (the provider
+   * gives none), no password (`isExternal`), the system principal acting with
+   * the provider named as the reason. `createUser` records the creation. An
+   * email that already belongs to an account creates nothing: the safe
+   * registration message is returned instead.
+   */
+  private async createAccountFor(req: Request, provider: OidcAuthProvider, email: string): Promise<{ username: string } | { error: string }> {
+    const userManager = this.engine.getManager<UserManager>('UserManager');
+    if (!userManager) return { error: safeRegistrationMessage(null) };
+    try {
+      const username = await deriveUsername(email, userManager);
+      await userManager.createUser({
+        username,
+        email,
+        displayName: username,
+        password: '',
+        isExternal: true,
+        isActive: true
+      }, jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine), ipAddress: req.ip }, `provisioned by ${provider.id}`));
+      logger.info(`[AuthManager] created ${username} for an outside sign-in through ${provider.id} (#1743)`);
+      return { username };
+    } catch (err) {
+      logger.warn(`[AuthManager] no account created for an outside sign-in through ${provider.id}: ${(err as Error).message}`);
+      return { error: safeRegistrationMessage(err) };
+    }
+  }
+
+  /** Delete an account created for an outside sign-in that could not be finished (#1743), through UserManager, which closes its access. */
+  private async removeCreatedAccount(username: string, provider: OidcAuthProvider): Promise<void> {
+    try {
+      await this.engine.getManager<UserManager>('UserManager')?.deleteUser(username,
+        jobContextFromRequestWithReason({ username: systemPrincipalOf(this.engine) }, `created for ${provider.id}, but its identity could not be connected`));
+    } catch (err) {
+      logger.error(`[AuthManager] the account ${username}, created for ${provider.id}, could not be removed after its identity failed to connect:`, err);
+    }
+  }
+
+  /**
+   * The person's pending connection, for the sign-in page's notice and the
+   * confirmation page; an expired one is dropped (#1743).
+   */
+  pendingConnection(req: Request): { displayName: string; email: string } | null {
+    const pending = req.session?.pendingConnection;
+    if (!pending) return null;
+    if (!(pending.expiresAt > Date.now())) {
+      delete req.session.pendingConnection;
+      return null;
+    }
+    return { displayName: pending.displayName, email: pending.email };
+  }
+
+  /** The person cancelled the pending connection (#1743). */
+  dropPendingConnection(req: Request): void {
+    if (req.session) delete req.session.pendingConnection;
+  }
+
+  /**
+   * Connect the pending identity to the signed-in person's own account, on
+   * their confirmation (#1743). Never automatic: on a shared browser the
+   * pending identity may be someone else's, and connecting it would let that
+   * person sign in here as this account. Checked again now: signed in, not
+   * expired, the provider enabled and allowed for the account, and the
+   * identity not connected elsewhere. Returns where to send the person, with
+   * what happened.
+   */
+  async confirmPendingConnection(req: Request, ctx: PermissionSubject): Promise<string> {
+    const pending = req.session?.pendingConnection;
+    const username = req.session?.username;
+    if (!ctx.isAuthenticated || typeof username !== 'string' || !username || ctx.username !== username) throw new Error('Permission denied');
+    this.dropPendingConnection(req);
+    if (!pending || !(pending.expiresAt > Date.now())) {
+      return `/profile?error=${encodeURIComponent('That connection waited too long and was not made. Connect it from Sign-in methods instead.')}`;
+    }
+    const provider = this.outsideProvider(pending.providerId);
+    let outcome: ConnectOutcome = 'refused';
+    if (provider && pending.subject.startsWith(`${provider.issuer}#`) && (await this.userMayUseProvider(username, provider.id))) {
+      try {
+        outcome = await this.attachIdentity({ username, ipAddress: ctx.ipAddress ?? req.ip }, username, provider, pending, 'confirmed after sign-in',
+          { ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 're-check' });
+      } catch (err) {
+        logger.warn(`[AuthManager] could not connect a pending ${pending.providerId} identity to ${username}:`, err);
+      }
+    }
+    const name = pending.displayName;
+    const message = {
+      connected: `success=${encodeURIComponent(`Your ${name} account is connected. You can now sign in with it.`)}`,
+      'already-yours': `success=${encodeURIComponent(`Your ${name} account was already connected.`)}`,
+      'connected-elsewhere': `error=${encodeURIComponent(`Your ${name} account was not connected: it is already connected to another account here.`)}`,
+      refused: `error=${encodeURIComponent(`Your ${name} account could not be connected.`)}`
+    }[outcome];
+    return `/profile?${message}`;
+  }
+
+  /** The person declined the pending connection: drop it, and return where their sign-in was going (#1743). */
+  declinePendingConnection(req: Request): string {
+    const returnTo = req.session?.pendingConnection?.returnTo;
+    this.dropPendingConnection(req);
+    return safeRedirect(returnTo);
   }
 
   /**
@@ -855,6 +1081,11 @@ class AuthManager extends BaseManager {
   /** Enrol a credential for `username`; returns its id. Audited (#1524). */
   async addCredential(ctx: PermissionSubject, username: string, input: CredentialInput): Promise<string> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    return this.storeCredential(ctx, username, input);
+  }
+
+  /** Store and audit a credential the caller has already decided may be added; `how` says how it happened. */
+  private async storeCredential(actor: CredentialActor, username: string, input: CredentialInput, how?: string): Promise<string> {
     const store = this.requireCredentialsStore();
     const record: CredentialRecord = {
       id: randomUUID(),
@@ -866,7 +1097,7 @@ class AuthManager extends BaseManager {
       createdAt: new Date().toISOString()
     };
     await store.add(record);
-    this.auditCredentialChange(ctx, username, 'credential-add', record);
+    this.auditCredentialChange(actor, username, 'credential-add', record, how);
     return record.id;
   }
 
@@ -955,17 +1186,17 @@ class AuthManager extends BaseManager {
     return (await userManager?.hasPassword(username)) ?? false;
   }
 
-  private auditCredentialChange(ctx: PermissionSubject, username: string, action: 'credential-add' | 'credential-remove' | 'credential-rename', row: CredentialRecord): void {
+  private auditCredentialChange(ctx: CredentialActor, username: string, action: 'credential-add' | 'credential-remove' | 'credential-rename', row: CredentialRecord, how?: string): void {
     void recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.USER_EDIT,
       user: ctx.username,
-      ipAddress: (ctx as { ipAddress?: string }).ipAddress,
+      ipAddress: ctx.ipAddress,
       action,
       result: 'success',
       severity: 'medium',
       resource: username,
       resourceType: 'user',
-      metadata: { credentialId: row.id, kind: row.kind, label: row.label }
+      metadata: { credentialId: row.id, kind: row.kind, label: row.label, ...(how ? { how } : {}) }
     });
   }
 
@@ -1086,11 +1317,7 @@ class AuthManager extends BaseManager {
         return await refused(result.username);
       }
 
-      // #1523: say how — the provider, and the factor it satisfied with its
-      // time. A delegated credential is never a factor, so it records none.
-      const factors: SatisfiedFactor[] = factor
-        ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
-        : [];
+      const factors = this.satisfiedFactors(providerId);
 
       // A re-check's success is recorded here; a sign-in's when it completes
       // (completeSignIn), once, with every factor it took.
@@ -1112,6 +1339,17 @@ class AuthManager extends BaseManager {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
       return await refused(typeof credentials.username === 'string' ? credentials.username : undefined);
     }
+  }
+
+  /**
+   * #1523: say how — the provider, and the factor it satisfied with its time.
+   * A delegated credential is never a factor, so it records none.
+   */
+  private satisfiedFactors(providerId: string): SatisfiedFactor[] {
+    const factor = this.getFactors().find(f => f.provider === providerId);
+    return factor
+      ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
+      : [];
   }
 
   /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
@@ -1329,16 +1567,21 @@ class AuthManager extends BaseManager {
    * - One audit record of the completed sign-in, naming how, and the count on
    *   the account. `authenticate()` records failures and re-checks; a
    *   successful sign-in is recorded here, once, when it is complete.
+   * - A pending outside identity (#1743): carried across the new session,
+   *   never connected here. The person is sent to confirm it (`next`,
+   *   `/login/connect/confirm`); ignored, it expires. An expired one is
+   *   dropped.
    *
-   * The route saves the session and answers.
+   * The route saves the session and answers, going to `next` when it is set.
    */
   async completeSignIn(
     req: Request,
     result: AuthenticateResult,
-    how: { method: string; unlockWith?: { password: string }; privateStoreHandle?: string }
-  ): Promise<void> {
+    how: { method: string; unlockWith?: { password: string }; privateStoreHandle?: string; returnTo?: string }
+  ): Promise<SignInCompleted> {
     const username = result.username;
     if (!username) throw new Error('completeSignIn needs a signed-in username');
+    const pending = req.session?.pendingConnection;
     await this.regenerate(req);
     req.session.username = username;
     req.session.isAuthenticated = true;
@@ -1359,6 +1602,11 @@ class AuthManager extends BaseManager {
     } catch (err) {
       logger.warn(`[AuthManager] could not count the sign-in for ${username}:`, err);
     }
+    if (pending && pending.expiresAt > Date.now()) {
+      req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
+      return { next: '/login/connect/confirm' };
+    }
+    return {};
   }
 
   /**

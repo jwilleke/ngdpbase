@@ -6206,6 +6206,7 @@ ${panes}
         magicLinkEnabled: authManager?.isEnabled('magic-link') ?? false,
         passkeyEnabled: authManager?.isEnabled('passkey') ?? false, // #448
         outsideProviders: authManager?.outsideProviders?.() ?? [], // #1743
+        pendingConnection: authManager?.pendingConnection?.(req) ?? null, // #1743: sign in to connect it
         passwordAuthEnabled: authManager?.isEnabled('password') ?? true,
         csrfToken: req.session?.csrfToken || ''
       });
@@ -6577,14 +6578,14 @@ ${panes}
       res.status(401).json({ error: 'Sign-in with that passkey failed' });
       return;
     }
-    await authManager.completeSignIn(req, result, { method: 'passkey' }); // #1758: the one completion step
+    const done = await authManager.completeSignIn(req, result, { method: 'passkey', returnTo: safeRedirect(body.redirect) }); // #1758: the one completion step
     logger.info(`👤 User logged in with a passkey: ${result.username}`);
     req.session.save((err) => {
       if (err) {
         res.status(500).json({ error: 'Session save failed' });
         return;
       }
-      res.json({ ok: true, redirect: safeRedirect(body.redirect) }); // #1041
+      res.json({ ok: true, redirect: done.next ?? safeRedirect(body.redirect) }); // #1041; #1743: a pending connection is confirmed first
     });
   }
 
@@ -6727,12 +6728,12 @@ ${panes}
     if (!done) { res.redirect('/login/second-factor'); return; }
     const redirect = safeRedirect(req.session.pendingRedirect);
     // #1758: the one completion step; the stores were unlocked at the password.
-    await authManager.completeSignIn(req, done.result, { method: 'password and email link', privateStoreHandle: done.privateStoreHandle });
+    const completed = await authManager.completeSignIn(req, done.result, { method: 'password and email link', privateStoreHandle: done.privateStoreHandle, returnTo: redirect });
     logger.info(`👤 User logged in with two factors: ${done.result.username ?? ''}`);
     res.clearCookie(TWO_STEP_COOKIE, { path: '/login' });
     req.session.save((err) => {
       if (err) { res.redirect('/login?error=Session save failed'); return; }
-      res.redirect(redirect);
+      res.redirect(completed.next ?? redirect); // #1743: a pending connection is confirmed first
     });
   }
 
@@ -6917,8 +6918,9 @@ ${panes}
       // how it signed in, and the stores unlocked with the password. KEK/DEK
       // live in the process bag keyed by a random handle (#1391), never in
       // the session JSON.
-      await authManager.completeSignIn(req, { ...result, username: result.username || username }, {
+      const completed = await authManager.completeSignIn(req, { ...result, username: result.username || username }, {
         method: 'password',
+        returnTo: redirect,
         ...(typeof password === 'string' && password ? { unlockWith: { password } } : {})
       });
 
@@ -6941,7 +6943,7 @@ ${panes}
         }
         if (debugLogin)
           logger.debug('DEBUG: Session saved successfully, now redirecting');
-        res.redirect(redirect);
+        res.redirect(completed.next ?? redirect); // #1743: a pending connection is confirmed first
       });
     } catch (err: unknown) {
       logger.error('Error processing login:', err);
@@ -7133,7 +7135,7 @@ ${panes}
         return res.redirect('/login?error=This+link+must+be+opened+on+the+device+that+requested+it');
       }
 
-      await authManager.completeSignIn(req, result, { method: 'magic-link' }); // #1758: the one completion step
+      const completed = await authManager.completeSignIn(req, result, { method: 'magic-link', returnTo: safeRedirect(redirect) }); // #1758: the one completion step
 
       logger.info(`👤 User logged in via magic link: ${result.username}`);
 
@@ -7142,7 +7144,7 @@ ${panes}
           logger.error('Error saving session after magic link login:', err);
           return res.redirect('/login?error=Session+save+failed');
         }
-        res.redirect(safeRedirect(redirect)); // #1041
+        res.redirect(completed.next ?? safeRedirect(redirect)); // #1041; #1743: a pending connection is confirmed first
       });
     } catch (err: unknown) {
       logger.error('Error completing magic link login:', err);
@@ -7184,6 +7186,48 @@ ${panes}
     }
   }
 
+  /** POST /login/connect/cancel — drop the outside identity waiting to be connected (#1743). */
+  cancelPendingConnection(req: Request, res: Response): void {
+    this.engine.getManager<AuthManager>('AuthManager')?.dropPendingConnection(req);
+    req.session.save(() => res.redirect('/login'));
+  }
+
+  /**
+   * GET /login/connect/confirm — after a sign-in, ask whether the outside
+   * identity waiting in this browser is the person's own (#1743). Never
+   * connected without this answer: on a shared browser it may be someone
+   * else's.
+   */
+  async confirmConnectionPage(req: Request, res: Response): Promise<void> {
+    const wikiContext = this.createWikiContext(req);
+    // Adding a way in is the person's own account-security change, as connecting from the profile is.
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    const pending = this.engine.getManager<AuthManager>('AuthManager')?.pendingConnection(req) ?? null;
+    if (!pending) return res.redirect('/');
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('login-connect-confirm', { ...commonData, title: 'Connect an account?', pending, username: user.username, csrfToken: req.session?.csrfToken || '' });
+  }
+
+  /** POST /login/connect/confirm — the signed-in person's answer: `connect` or anything else to decline (#1743). */
+  async answerConnectionConfirm(req: Request, res: Response): Promise<void> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'account-security', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    if (!authManager) return res.redirect('/login');
+    try {
+      const next = (req.body as Record<string, unknown> | undefined)?.answer === 'connect'
+        ? await authManager.confirmPendingConnection(req, user)
+        : authManager.declinePendingConnection(req);
+      req.session.save(() => res.redirect(next));
+    } catch (err: unknown) {
+      logger.warn(`[outside sign-in] confirming a connection failed: ${(err as Error).message}`);
+      res.redirect('/login');
+    }
+  }
+
   /**
    * POST /auth/oauth/:name/connect — connect an outside identity to your own
    * account (#1743). `account-security`, so it asks for a fresh sign-in first.
@@ -7206,9 +7250,10 @@ ${panes}
   /**
    * GET /auth/oauth/:name/callback — the provider sends the browser back
    * (#1743). A sign-in signs in only an identity already connected to an
-   * account, and is refused without saying whether an account exists; a
-   * connection joins the identity to the signed-in account and returns to
-   * the profile.
+   * account; one connected to none gets an account (where creation is
+   * allowed) or goes to the sign-in page to connect it by signing in another
+   * way, without saying whether an account exists. A connection joins the
+   * identity to the signed-in account and returns to the profile.
    */
   async finishOutsideFlow(req: Request, res: Response): Promise<void> {
     const refusedSignIn = '/login?error=' + encodeURIComponent('That sign-in did not work. If you have an account here, sign in another way, then connect it from your profile.');
@@ -7243,24 +7288,23 @@ ${panes}
         return res.redirect(`/profile?${message}`);
       }
 
-      const redirect = authManager.getFlowRedirect(providerId, state);
-      const result = await authManager.authenticate(providerId, { token: code, state, deviceState }, this.attemptFrom(req, 'sign-in'));
-      if (!result.success) return res.redirect(refusedSignIn);
-
-      // #1021: the state is good for one sign-in; a replayed callback must not open a second session.
-      if (!authManager.consumeToken(providerId, state)) {
+      // AuthManager decides: sign in, create the account, or hold the identity for the email step.
+      const done = await authManager.finishOutsideSignIn(req, providerId, { token: code, state, deviceState }, this.attemptFrom(req, 'sign-in'));
+      if (done.outcome === 'refused') return res.redirect(refusedSignIn);
+      if (done.outcome === 'replayed') {
         logger.warn('🔁 Outside sign-in state already used by a concurrent request — refusing a duplicate session');
         return res.redirect('/login?error=' + encodeURIComponent('Sign-in link already used'));
       }
-
-      await authManager.completeSignIn(req, result, { method: providerId }); // #1758: the one completion step
-      logger.info(`👤 User signed in via ${providerId}: ${result.username}`);
+      const target = done.outcome === 'connect-first'
+        ? '/login' + (done.error ? '?error=' + encodeURIComponent(done.error) : '')
+        : done.next;
+      if (done.outcome !== 'connect-first') logger.info(`👤 User signed in via ${providerId}${done.outcome === 'created' ? ' (account created)' : ''}`);
       req.session.save((err) => {
         if (err) {
           logger.error('Error saving session after an outside sign-in:', err);
           return res.redirect('/login?error=Session+save+failed');
         }
-        res.redirect(safeRedirect(redirect)); // #1041
+        res.redirect(target);
       });
     } catch (err: unknown) {
       logger.error('Error finishing an outside sign-in:', err);
@@ -15310,6 +15354,9 @@ ${panes}
     app.post('/auth/oauth/:name', (req: Request, res: Response) => void this.startOutsideSignIn(req, res));
     app.post('/auth/oauth/:name/connect', (req: Request, res: Response) => void this.startOutsideConnect(req, res));
     app.get('/auth/oauth/:name/callback', (req: Request, res: Response) => void this.finishOutsideFlow(req, res));
+    app.post('/login/connect/cancel', (req: Request, res: Response) => this.cancelPendingConnection(req, res));
+    app.get('/login/connect/confirm', (req: Request, res: Response) => void this.confirmConnectionPage(req, res));
+    app.post('/login/connect/confirm', (req: Request, res: Response) => void this.answerConnectionConfirm(req, res));
     app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));

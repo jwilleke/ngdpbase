@@ -16,7 +16,7 @@
  * and sign-in shapes are imported, not transcribed.
  */
 import type { ShareGrant } from './Share.js';
-import type { SignInRecord } from '../managers/AuthManager.js';
+import type { SignInRecord, PendingConnection } from '../managers/AuthManager.js';
 
 declare module 'express-session' {
   interface SessionData {
@@ -37,6 +37,8 @@ declare module 'express-session' {
     /** A sign-in waiting for its second factor: the handle, and where to go after (#1523). No identity yet. */
     pendingSignIn?: string;
     pendingRedirect?: string;
+    /** A verified outside identity no account has connected, waiting for the person to sign in another way (#1743). */
+    pendingConnection?: PendingConnection;
     /** When this session last made a request, epoch ms — kept only while an idle timeout is set (#1546). */
     lastActivity?: number;
     [key: string]: unknown;

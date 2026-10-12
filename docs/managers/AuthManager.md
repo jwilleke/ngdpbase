@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-05-28'
+dateModified: '2026-10-11'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -16,7 +16,7 @@ Registers one or more `AuthProvider` instances and delegates authenticate/initia
 
 - __PasswordAuthProvider__ — always registered.
 - __MagicLinkAuthProvider__ — registered when `ngdpbase.auth.magic-link.enabled`.
-- __OidcAuthProvider__ — one per enabled entry of `ngdpbase.auth.oidc.providers` (`oidc:<name>`), and the old `ngdpbase.auth.google-oidc.*` keys as the `google` entry (#1743). `outsideProviders()` lists them; `startConnect` / `flowConnectsFor` / `connectIdentity` connect an outside identity to the signed-in account; `connectedIdentities` lists them for the profile.
+- __OidcAuthProvider__ — one per enabled entry of `ngdpbase.auth.oidc.providers` (`oidc:<name>`), and the old `ngdpbase.auth.google-oidc.*` keys as the `google` entry (#1743). `outsideProviders()` lists them; `startConnect` / `flowConnectsFor` / `connectIdentity` connect an outside identity to the signed-in account; `connectedIdentities` lists them for the profile. `finishOutsideSignIn` decides an outside sign-in's callback: sign in a connected identity, create an account for an unconnected one where allowed, or hold it in the session as a pending connection (`pendingConnection`, `dropPendingConnection`). `completeSignIn` never connects it: it sends the signed-in person to confirm, and `confirmPendingConnection` / `declinePendingConnection` act on the answer.
 - __CloudflareAccessAuthProvider__ — when `ngdpbase.auth.cloudflare-access.enabled`.
 - __AuthentikBearerAuthProvider__ — when `ngdpbase.auth.authentik-bearer.enabled`; bearer JWTs for agent ingest.
 - __AgentTokenAuthProvider__ — when `ngdpbase.auth.agent-token.enabled`; user-delegated agent tokens (#946).
