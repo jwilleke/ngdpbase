@@ -74,6 +74,7 @@ import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
 import { sessionGenerationOf } from '../utils/sessionGeneration.js';
+import { DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from '../utils/sessionLimits.js';
 import { safeRedirect } from '../utils/safeRedirect.js';
 import { deriveUsername } from '../utils/deriveUsername.js';
 import { safeRegistrationMessage } from '../utils/userCreateError.js';
@@ -1674,7 +1675,9 @@ class AuthManager extends BaseManager {
    * signing in — a password, a passkey, a second factor, an email link, an
    * outside provider — ends here, so none can forget a part.
    *
-   * - A new session (#1043; a session already signed in on it ends, #1626).
+   * - A new session (#1043; a session already signed in on it ends, #1626),
+   *   with its sign-in time and a cookie as long as `ngdpbase.session.max-age`,
+   *   the cap from that time (#1767).
    * - The person, `isAuthenticated`, how they signed in (`session.signIn`,
    *   #1523) and the account's password-change generation (#1482).
    * - Their private stores: a handle already unlocked (a two-step sign-in
@@ -1701,6 +1704,7 @@ class AuthManager extends BaseManager {
     await this.regenerate(req);
     req.session.username = username;
     req.session.isAuthenticated = true;
+    this.startSessionLifetime(req);
     const record = this.signInRecord(result);
     if (record) req.session.signIn = record; else delete req.session.signIn;
     await this.stampSessionGeneration(req, username);
@@ -1723,6 +1727,19 @@ class AuthManager extends BaseManager {
       return { next: '/login/connect/confirm' };
     }
     return {};
+  }
+
+  /**
+   * Start the signed-in session's lifetime (#1767), on the new session after
+   * regeneration: `signedInAt`, from which `ngdpbase.session.max-age` caps it
+   * (checked per request in app.ts, `checkSessionLimits`), and a cookie that
+   * lasts that long, so the cookie never ends the session before the cap.
+   * Only a sign-in writes it; a re-authentication (`completeReauth`) does not.
+   */
+  private startSessionLifetime(req: Request): void {
+    req.session.signedInAt = Date.now();
+    const cap = sessionCapMs(this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty('ngdpbase.session.max-age', DEFAULT_SESSION_MAX_AGE_MS));
+    if (req.session.cookie) req.session.cookie.maxAge = cap;
   }
 
   /**

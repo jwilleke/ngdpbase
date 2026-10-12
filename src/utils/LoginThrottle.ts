@@ -33,7 +33,9 @@
  * In-memory and per-process, like SimpleRateLimiter. Across replicas each pod
  * counts separately, which weakens but does not defeat it. A shared store is
  * the upgrade path if this ever runs multi-replica; not worth a dependency at
- * the current scale.
+ * the current scale. Kept in memory by decision (#1767, operator 2026-10-11);
+ * the startup warning `throttlePerCopyWarning` says so when the process can
+ * tell it is one of several copies.
  */
 
 export interface LoginThrottleOptions {
@@ -164,6 +166,27 @@ export class LoginThrottle {
       }
     }
   }
+}
+
+/**
+ * The startup warning when this process is one of several copies of the
+ * server (#1767), each with its own throttle counts; null otherwise.
+ *
+ * The only signal a process has is pm2's: it puts its app settings in the
+ * environment (`pm_id`; `instances`, the copies it was asked to run, where 0,
+ * a negative number or `max` mean one per CPU; `NODE_APP_INSTANCE`, this
+ * copy's number). Copies a process cannot see — several containers or pods
+ * behind one address, several hosts — get no warning.
+ */
+export function throttlePerCopyWarning(env: Readonly<Record<string, string | undefined>>, throttleEnabled: boolean): string | null {
+  if (!throttleEnabled || env.pm_id === undefined) return null;
+  const raw = env.instances;
+  const count = raw === undefined || raw === '' ? 1 : raw === 'max' ? 0 : Number(raw);
+  const thisCopy = Number(env.NODE_APP_INSTANCE ?? 0);
+  const several = (Number.isFinite(count) && count !== 1) || thisCopy > 0;
+  if (!several) return null;
+  const how = Number.isFinite(count) && count > 1 ? `${count} copies` : 'several copies';
+  return `pm2 runs ${how} of this server. Sign-in throttling (ngdpbase.auth.throttle.*) counts failed attempts in each copy's memory, so each copy allows its own max-attempts (#1767).`;
 }
 
 export default LoginThrottle;

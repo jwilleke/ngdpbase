@@ -1,7 +1,8 @@
 /**
  * The one door for a signed-in session ending (#1626, #1670).
  *
- * Whatever ends it — the person signs out, the session idles out, a password
+ * Whatever ends it — the person signs out, the session idles out or reaches
+ * `ngdpbase.session.max-age` from its sign-in (#1767), a password
  * change ends the account's other sessions, or someone signs in again on the
  * same browser — goes through here, so two things can never be forgotten:
  *
@@ -16,7 +17,7 @@
 import { endSessionKeys } from './privateStoreUnlock.js';
 import logger from './logger.js';
 
-export type SessionEndReason = 'logout' | 'idle-timeout' | 'password-changed' | 'superseded';
+export type SessionEndReason = 'logout' | 'idle-timeout' | 'max-age' | 'password-changed' | 'superseded';
 
 interface AuditSink {
   logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<unknown>;

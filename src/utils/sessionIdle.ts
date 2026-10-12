@@ -2,9 +2,9 @@
  * Session idle timeout (#1546).
  *
  * `ngdpbase.session.idle-timeout-minutes` ends a signed-in session after that
- * many minutes with no request. `0` (the default) is off. It is separate from
- * `ngdpbase.session.max-age`, the absolute lifetime; a value at or above that
- * lifetime simply has no effect.
+ * many minutes with no request. Shipped at 10080 (7 days, #1767); `0` is off.
+ * It is separate from `ngdpbase.session.max-age`, the absolute cap from
+ * sign-in (`sessionLimits.ts`); a value at or above that cap has no effect.
  *
  * Enforced server-side on the next request — never only by a browser timer,
  * which a closed laptop or a copied cookie would not run.
