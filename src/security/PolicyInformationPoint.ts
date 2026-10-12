@@ -745,16 +745,20 @@ class PolicyInformationPoint extends BaseManager {
   /**
    * {@link canUserAccessPage} as an affordance (#1668): would the door allow
    * this action on that page — asked only to decide whether to show a control
-   * (the journal entry view's Edit link). The same cross-page path and the same
-   * evaluator, so it agrees with the door; it records nothing. Acting on the
-   * control asks the door.
+   * (the journal entry view's Edit link, `<wiki:If exists:>`). The same
+   * cross-page path and the same evaluator, so it agrees with the door; it
+   * records nothing. Acting on the control asks the door.
+   *
+   * @param knownMetadata - As for {@link canUserAccessPage}: the page's
+   *   metadata when the caller has just resolved it (`PageManager.mayShowPage`).
    */
   async pageAffordanceFor(
     userContext: UserContext | null | undefined,
     pageName: string,
-    action: string
+    action: string,
+    knownMetadata?: PageFrontmatter
   ): Promise<boolean> {
-    return this.crossPageDecision(userContext, pageName, action, undefined, false);
+    return this.crossPageDecision(userContext, pageName, action, knownMetadata, false);
   }
 
   /** The cross-page check, for the door (`record`) or an affordance (#1668). */

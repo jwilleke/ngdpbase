@@ -1,6 +1,6 @@
 import WikiTagHandler from '../WikiTagHandler';
 import ParseContext from '../../context/ParseContext';
-import { readPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
+import { readPageThroughDoor, mayShowPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
 
 // Mock PageManager
 // #1622: reads go through the real page-read door, over these pages, with the
@@ -8,8 +8,10 @@ import { readPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoo
 class MockPageManager {
   pages: Map<string, { content: string }>;
   readPage: ReturnType<typeof readPageThroughDoor>;
+  mayShowPage: ReturnType<typeof mayShowPageThroughDoor>;
   constructor(engine) {
     this.readPage = readPageThroughDoor(engine, (name) => this.pages.get(name));
+    this.mayShowPage = mayShowPageThroughDoor(engine, (name) => this.pages.get(name));
     this.pages = new Map([
       ['ExistingPage', { content: '# Existing Page\n\nThis page exists.' }],
       ['PageWithSection', { content: '# Page Title\n\n## Introduction\n\nIntro content.\n\n## Details\n\nDetail content.' }]
@@ -31,10 +33,17 @@ class MockPolicyInformationPoint {
     if (action === 'write' || action === 'edit') return userContext?.roles?.includes('admin');
     return false;
   }
+  // #1668: <wiki:If hasPermission:x> asks the affordance — the same answer.
+  async pageAffordance(ctx, action) {
+    return this.checkPagePermissionWithContext(ctx, action);
+  }
   // #1431 step 7: <wiki:Include> asks the cross-page door, which loads the
   // TARGET page's metadata and runs its own rules — audience included.
   async canUserAccessPage(_userContext, _pageName, action) {
     return action === 'read' || action === 'view';
+  }
+  async pageAffordanceFor(userContext, pageName, action) {
+    return this.canUserAccessPage(userContext, pageName, action);
   }
 }
 

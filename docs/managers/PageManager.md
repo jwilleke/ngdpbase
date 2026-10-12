@@ -64,6 +64,7 @@ await pageManager.deletePage('My Page');
 | `readVersionHistory(identifier, ctx, limit?)` | `Promise<PageRead<VersionHistoryEntry[]>>` | The same door, for the version list |
 | `readVersion(identifier, version, ctx)` | `Promise<PageRead<VersionContent>>` | The same door, for one past version |
 | `readVersionDiff(identifier, v1, v2, ctx)` | `Promise<PageRead<VersionDiff>>` | The same door, for the difference between two versions |
+| `mayShowPage(identifier, ctx)` | `Promise<boolean>` | The same `page-read` decision as `readPage`, as an affordance ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)): would `ctx` be allowed to read the page, asked only to decide whether to show something (`<wiki:If test="exists:Page">`). Reads no content and writes no audit record; a page `ctx` may not read answers false, as a missing one does |
 | `getPageMetadata(identifier)` | `Promise<Object\|null>` | Get metadata only |
 | `savePage(name, content, metadata, ctx, options?)` | `Promise<PageSaveResult>` | Save page — the one write door ([#1462](https://github.com/jwilleke/ngdpbase/issues/1462)) |
 | `deletePage(identifier, ctx)` | `Promise<boolean>` | Delete page — the one delete door |

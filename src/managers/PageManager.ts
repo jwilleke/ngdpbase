@@ -1496,7 +1496,8 @@ class PageManager extends BaseManager implements CatalogSource {
    */
   private async decideRead(
     identifier: string,
-    ctx: ActorContext
+    ctx: ActorContext,
+    record = true
   ): Promise<{ ok: true; name: string; key: string; metadata: PageFrontmatter } | { ok: false; refusal: PageReadRefusal }> {
     if (!this.provider) {
       throw new Error('PageManager: Provider not initialized');
@@ -1523,7 +1524,12 @@ class PageManager extends BaseManager implements CatalogSource {
     // The PIP's subject type has an index signature a PermissionSubject lacks;
     // the context is passed as it came, not rebuilt.
     const subject = ctx as unknown as Parameters<PolicyInformationPoint['canUserAccessPage']>[0];
-    if (!(await pip.canUserAccessPage(subject, name, 'view', metadata))) {
+    // #1668: the door records its refusal; the affordance (`mayShowPage`) asks
+    // the same evaluator and records nothing.
+    const allowed = record
+      ? await pip.canUserAccessPage(subject, name, 'view', metadata)
+      : await pip.pageAffordanceFor(subject, name, 'view', metadata);
+    if (!allowed) {
       return { ok: false, refusal: 'denied' };
     }
     const key = parsePrivatePageName(identifier) ? identifier : (metadata.uuid ?? identifier);
@@ -1538,6 +1544,20 @@ class PageManager extends BaseManager implements CatalogSource {
       throw new Error('PageManager: this page provider keeps no version history');
     }
     return provider as VersionReads;
+  }
+
+  /**
+   * Would `ctx` be allowed to read this page — asked only to decide whether to
+   * SHOW something (`<wiki:If exists:Page>`), never before reading it (#1668).
+   * The same `page-read` decision as {@link readPage}, so the two agree; it
+   * reads no content and writes no audit record. A page `ctx` may not read
+   * answers false, as one that does not exist does.
+   *
+   * @param identifier - Page UUID, title, slug or vault name
+   * @param ctx - Whose question this is (#1179) — never defaulted
+   */
+  async mayShowPage(identifier: string, ctx: ActorContext): Promise<boolean> {
+    return (await this.decideRead(identifier, ctx, false)).ok;
   }
 
   /**
