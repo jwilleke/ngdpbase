@@ -43,9 +43,9 @@ A page decision without the page's metadata refuses, except for `create`. A page
 | --- | --- |
 | `checkPagePermissionWithContext(ctx, action)` | one page, from a request that already holds it |
 | `evaluatePagePermission(ctx, action)` | the same, returning the reason (e.g. `author_lock_deny`) |
-| `pageAffordance(ctx, action)` | the same evaluator, asked only to decide whether to show a control — the view's Edit button. Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
+| `pageAffordance(ctx, action)` | the same evaluator, asked only to decide whether to show a control or a block — the view's Edit button, `<wiki:If test="hasPermission:x">` (through `WikiContext.mayShow`). Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
 | `canUserAccessPage(subject, page, action)` | another page, loaded as this subject — inserts, includes, attachments |
-| `pageAffordanceFor(subject, page, action)` | the cross-page check as an affordance — the journal entry view's Edit link. Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
+| `pageAffordanceFor(subject, page, action, metadata?)` | the cross-page check as an affordance — the journal entry view's Edit link, and `<wiki:If test="exists:Page">` (through `PageManager.mayShowPage`). Records nothing ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)) |
 | `filterAccessiblePages(subject, action, candidates)` | many pages over the index; no disk read, log line or audit record per page; agrees with the single-page answer in both directions ([#1219](https://github.com/jwilleke/ngdpbase/issues/1219)) |
 | `canUserAccessMediaItem(subject, item)` | media, including a share's media cover |
 | `canAccessPrivateContainer(subject, owner, resource, action)` | a private store's files |

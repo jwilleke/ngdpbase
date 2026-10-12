@@ -84,6 +84,8 @@ export interface WikiContextLike {
   readonly pageMetadata: PageFrontmatter | null;
   hasPermission(action: string): Promise<boolean>;
   canAccess(action: string): Promise<boolean>;
+  /** The non-recording affordance for display gates (#1668) — see WikiContext.mayShow. */
+  mayShow(action: string): Promise<boolean>;
   getPrincipals(): string[];
 }
 
@@ -182,7 +184,7 @@ class StubContext extends BaseContext {
  * fixtures).
  *
  * - getPrincipals: pure function over the snapshot's roles array
- * - hasPermission / canAccess: delegate to the engine's UserManager / PolicyInformationPoint
+ * - hasPermission / canAccess / mayShow: delegate to the engine's UserManager / PolicyInformationPoint
  *   when registered, so legacy callers that wired up these managers (mostly
  *   tests) keep getting the same policy-evaluated answer they did before
  *   Pass 2. When neither manager is available the stub denies (conservative).
@@ -202,6 +204,22 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     // here asserts authority; it is the shape a nobody has.
     userContext = { roles: [], isAuthenticated: false, ...(userContext ?? {}), username: pc.userName };
   }
+  // One page decision for both the door (`canAccess`, records) and the
+  // affordance (`mayShow`, #1668 — records nothing); the same evaluator.
+  const pageDecision = async (
+    action: string,
+    method: 'checkPagePermissionWithContext' | 'pageAffordance'
+  ): Promise<boolean> => {
+    type PageDecider = Record<typeof method, (ctx: unknown, action: string) => Promise<boolean>>;
+    const policyInformationPoint = engine.getManager<PageDecider>('PolicyInformationPoint');
+    if (!policyInformationPoint || !pageName || pageName === 'unknown') return false;
+    return policyInformationPoint[method]({
+      pageName,
+      content,
+      userContext: userContext ?? undefined,
+      pageMetadata
+    }, action);
+  };
   return {
     engine,
     pageName,
@@ -212,18 +230,8 @@ function pageContextToWikiContextLike(pc: PageContext, engine: WikiEngine, conte
     // copy, which is how three of them drifted apart in the first place.
     hasPermission: (action: string): Promise<boolean> =>
       new StubContext(engine, (userContext ?? ANONYMOUS_SUBJECT)).hasPermission(action),
-    canAccess: async (action: string): Promise<boolean> => {
-      const policyInformationPoint = engine.getManager<{
-        checkPagePermissionWithContext(ctx: unknown, action: string): Promise<boolean>;
-          }>('PolicyInformationPoint');
-      if (!policyInformationPoint || !pageName || pageName === 'unknown') return false;
-      return policyInformationPoint.checkPagePermissionWithContext({
-        pageName,
-        content,
-        userContext: userContext ?? undefined,
-        pageMetadata
-      }, action);
-    },
+    canAccess: (action: string): Promise<boolean> => pageDecision(action, 'checkPagePermissionWithContext'),
+    mayShow: (action: string): Promise<boolean> => pageDecision(action, 'pageAffordance'),
     getPrincipals: (): string[] => {
       const roles = [...(userContext?.roles ?? [])];
       const username = userContext?.username ?? userContext?.userName;

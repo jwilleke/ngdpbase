@@ -61,6 +61,8 @@ interface PageManager {
   // the `exists:` condition on one, answered "no such page" to its owner.
   // #1622: the deciding read — page-read decided for the reader first.
   readPage(pageName: string, ctx: unknown): Promise<{ ok: true; value: { content: string } } | { ok: false; refusal: string }>;
+  // #1668: the same decision as an affordance — for `exists:`, which only shows.
+  mayShowPage(pageName: string, ctx: unknown): Promise<boolean>;
 }
 
 /**
@@ -423,12 +425,13 @@ class WikiTagHandler extends BaseSyntaxHandler {
     }
 
     // Permission checks: hasPermission:read, hasPermission:write
-    // #633: was the resource-aware two-arg form; use canAccess for the
-    // current page's resource-aware ACL evaluation.
+    // #633: the current page's resource-aware ACL evaluation. #1668: this only
+    // decides whether to SHOW a block, so it asks the affordance (`mayShow`),
+    // which records nothing — a hidden block is not a refused attempt.
     const permissionMatch = condition.match(/^hasPermission:(\w+)$/);
     if (permissionMatch) {
       const permission = permissionMatch[1];
-      return context.wikiContext.canAccess(permission);
+      return context.wikiContext.mayShow(permission);
     }
 
     // Page existence checks: exists:PageName
@@ -439,8 +442,9 @@ class WikiTagHandler extends BaseSyntaxHandler {
       if (pageManager) {
         try {
           // #1622: a page this reader may not read does not exist for them.
-          const read = await pageManager.readPage(pageName, context.wikiContext?.userContext ?? ANONYMOUS_SUBJECT);
-          return read.ok;
+          // #1668: asked only to decide whether to show a block — the
+          // page-read decision as an affordance, no content read, no record.
+          return await pageManager.mayShowPage(pageName, context.wikiContext?.userContext ?? ANONYMOUS_SUBJECT);
         } catch {
           return false;
         }

@@ -494,6 +494,33 @@ class WikiContext extends BaseContext {
     return promise;
   }
 
+  /**
+   * Would the current user be allowed this action on the current page — asked
+   * only to decide whether to SHOW something (#1668): `<wiki:If
+   * hasPermission:edit>` hiding a block. An affordance, never a door.
+   *
+   * The same evaluator as {@link canAccess}'s same-page path, through
+   * {@link PolicyInformationPoint.pageAffordance}, so the two always agree; it
+   * writes no audit record. Hiding content is not an attempt, and asking the
+   * door here wrote an `authorization-deny` for every anonymous view of a page
+   * using the tag. Anything that then ACTS asks {@link canAccess}.
+   *
+   * @param action - Page action (e.g., 'view', 'edit')
+   * @returns true if the door would allow the action
+   */
+  async mayShow(action: string): Promise<boolean> {
+    if (!this.policyInformationPoint || !this.pageName) return false;
+    const key = `show:${action}:${this.pageName}`;
+    const cached = this._canAccessCache.get(key);
+    if (cached) return cached;
+    const promise = this.policyInformationPoint.pageAffordance(
+      this as unknown as Parameters<PolicyInformationPoint['pageAffordance']>[0],
+      action
+    );
+    this._canAccessCache.set(key, promise);
+    return promise;
+  }
+
   // #1399: getPrincipals() is BaseContext's — [...roles, username] off the
   // subject this context holds, one implementation for every context.
 
