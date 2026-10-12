@@ -45,11 +45,22 @@ import type {
 } from './BaseAuthProvider.js';
 import logger from '../utils/logger.js';
 
+/**
+ * A provider button's icon (#1781): an image (an `https://` address or a site
+ * path), a Font Awesome class, or a logo the button partial draws itself.
+ */
+export type OutsideProviderIcon =
+  | { kind: 'image'; src: string }
+  | { kind: 'fa'; className: string }
+  | { kind: 'builtin'; id: 'google' };
+
 /** One configured provider, as AuthManager resolved it from configuration. */
 export interface OidcProviderConfig {
   /** The entry's name; the provider's id is `oidc:<name>`, its URLs `/auth/oauth/<name>`. */
   name: string;
   displayName: string;
+  /** What its sign-in and Connect buttons show beside `displayName` (#1781). */
+  icon: OutsideProviderIcon;
   /** The issuer identifier, exactly as the issuer's discovery document states it. */
   issuer: string;
   clientId: string;
@@ -141,6 +152,7 @@ const ISSUER_ALIASES: Readonly<Record<string, string[]>> = {
 export class OidcAuthProvider implements AuthProvider {
   readonly id: string;
   readonly displayName: string;
+  readonly icon: OutsideProviderIcon;
   /**
    * AAL1 with no `amr`: what the outside provider did to sign the person in
    * is its own business until an admin trusts its reported `amr` / `acr`
@@ -158,6 +170,7 @@ export class OidcAuthProvider implements AuthProvider {
   ) {
     this.id = `oidc:${config.name}`;
     this.displayName = config.displayName;
+    this.icon = config.icon;
   }
 
   /** The configured issuer; an identity row's subject starts with it and `#`. */

@@ -12,7 +12,7 @@ A self-hosted [authentik](https://goauthentik.io/) is an ordinary [OidcAuthProvi
 
 ## No preset
 
-Each authentik has its own issuer, one per application, so there is no preset: the entry sets `issuer` itself, and is named on the sign-in page by its `display-name` (or, without one, by the entry's name).
+Each authentik has its own issuer, one per application, so there is no preset: the entry sets `issuer` itself, and is named on the sign-in page by its `display-name` (or, without one, by the entry's name), with a generic sign-in icon unless `icon` sets one.
 
 ## Setting it up in authentik
 
@@ -32,13 +32,16 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
     "issuer": "https://auth.example.org/application/o/ngdpbase/",
     "client-id": "<client id from authentik>",
     "client-secret": "$AUTHENTIK_CLIENT_SECRET",
-    "display-name": "Family sign-in",
+    "display-name": "Shared family sign-in",
+    "icon": "https://auth.example.org/static/dist/assets/icons/icon.png",
     "enabled": true
   }
 }
 ```
 
 - The entry's name (`authentik` here) is the `<name>` in its URLs: lowercase letters, digits and hyphens.
+- `display-name` is the button's text, after "Sign in with": plain words people recognise, not a host name.
+- `icon` is the picture left of it: here the authentik's own icon, by its `https://` address. A site path (`/…`) or a Font Awesome name (`fa-users`) also works; see [OidcAuthProvider](OidcAuthProvider.md#configuration).
 - `client-secret` must be an environment reference (`$NAME`); an entry with the secret written in literally is not registered.
 
 ## authentik's particulars

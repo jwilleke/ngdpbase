@@ -320,7 +320,7 @@
                                         <% connectable.forEach(function (p) { %>
                                         <form method="POST" action="/auth/oauth/<%= encodeURIComponent(p.name) %>/connect" class="d-inline">
                                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                                            <button type="submit" class="btn btn-sm btn-outline-primary">Connect <%= p.displayName %></button>
+                                            <%- include('_outside-provider-button', { provider: p, label: 'Connect ' + p.displayName, buttonClass: 'btn btn-sm btn-outline-primary' }) %>
                                         </form>
                                         <% }) %>
                                     </div>
