@@ -40,6 +40,15 @@ describe('anonymousSessionMs', () => {
     expect(anonymousSessionMs(30 * DAY)).toBe(DAY);
     expect(anonymousSessionMs(HOUR)).toBe(HOUR);
   });
+
+  test('ngdpbase.session.anonymous-max-age sets it, never longer than the cap', () => {
+    expect(anonymousSessionMs(30 * DAY, 2 * HOUR)).toBe(2 * HOUR);
+    expect(anonymousSessionMs(HOUR, 2 * DAY)).toBe(HOUR);
+  });
+
+  test('a missing or invalid setting falls back to the shipped day', () => {
+    for (const bad of [undefined, 0, -5, Number.NaN, '3600000']) expect(anonymousSessionMs(30 * DAY, bad)).toBe(DAY);
+  });
 });
 
 describe('capExpired', () => {

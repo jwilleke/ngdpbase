@@ -50,7 +50,7 @@ import { jsonForScript } from './utils/jsonForScript.js';
 import { securityHeaders, cspModeOf, newCspNonce } from './utils/securityHeaders.js';
 import { sessionGenerationOf, sessionIsCurrent } from './utils/sessionGeneration.js';
 import { effectiveIdleTimeoutMs, IDLE_STATUS_PATH } from './utils/sessionIdle.js';
-import { anonymousSessionMs, checkSessionLimits, DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from './utils/sessionLimits.js';
+import { anonymousSessionMs, checkSessionLimits, DEFAULT_ANONYMOUS_SESSION_MS, DEFAULT_SESSION_MAX_AGE_MS, sessionCapMs } from './utils/sessionLimits.js';
 import { throttlePerCopyWarning } from './utils/LoginThrottle.js';
 import { sweepOrphanedKeys } from './utils/privateStoreUnlock.js';
 import { endSession, type SessionEndReason } from './utils/sessionEnd.js';
@@ -692,6 +692,7 @@ void (async (): Promise<void> => {
   // default below is for sessions nobody signed in to. The store's ttl is only
   // the fallback for a session with no cookie lifetime of its own.
   const sessionCap = sessionCapMs(configManager.getProperty('ngdpbase.session.max-age', DEFAULT_SESSION_MAX_AGE_MS));
+  const anonymousSession = anonymousSessionMs(sessionCap, configManager.getProperty('ngdpbase.session.anonymous-max-age', DEFAULT_ANONYMOUS_SESSION_MS));
   const sessionStore = new FileStore({
     path: sessionPath,
     ttl: sessionCap / 1000,
@@ -747,7 +748,7 @@ void (async (): Promise<void> => {
       // top-level navigation working while refusing the cookie on cross-site
       // POSTs — defence in depth behind the CSRF middleware, not a replacement.
       sameSite: 'lax',
-      maxAge: anonymousSessionMs(sessionCap)
+      maxAge: anonymousSession
     }
   }));
 
@@ -848,7 +849,7 @@ void (async (): Promise<void> => {
         delete req.session.signIn;
         req.session.isAuthenticated = false;
         // #1767: back to an anonymous session's lifetime; the sign-in had set the cap.
-        if (req.session.cookie) req.session.cookie.maxAge = anonymousSessionMs(sessionCap);
+        if (req.session.cookie) req.session.cookie.maxAge = anonymousSession;
       };
 
       // #1482: a session signed in before the account's password last changed
