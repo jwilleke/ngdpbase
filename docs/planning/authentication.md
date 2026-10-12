@@ -256,7 +256,7 @@ __Not login providers, so outside this design for now__ (operator, 2026-10-10). 
 
 Each still finds a person by email, may create an account, and maps groups to roles with its own `group-map`. The rules above (`iss` + `sub`, no roles from outside, one instance provider) apply to login providers. If either of these ever becomes a way for people to sign in, it comes under them first.
 
-__Sign-in level.__ An external sign-in is AAL1. It counts as more (up to AAL2) only when the admin trusts that provider's own second factor (its entry's `trust-mfa`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
+__Sign-in level.__ An external sign-in is AAL1. It counts as more (to whatever level the provider reports, up to AAL3) only when the admin trusts that provider's own second factor (its entry's `trust-mfa`, #1633), which is off by default. It carries no key material, so it cannot unlock an encrypted private store, the same as a magic link (#1594, #1701).
 
 __Security.__ Keep `GoogleOIDCProvider`'s protections:
 

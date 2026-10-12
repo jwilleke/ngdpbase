@@ -50,8 +50,14 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
 - __On the local network, allow it.__ When authentik is on a private address, its range must be in `ngdpbase.security.egress.allowed-ranges`, or discovery, keys and the code exchange are refused by the outbound guard.
 - __Groups give no roles.__ authentik's groups and roles claims are never read: roles come from this site's own role assignments only.
 - __Verified email depends on the property mappings.__ Whether authentik marks an email verified depends on its scope mappings; without `email_verified: true` (a boolean) the address is not kept, the email step shows none, and no account is created, as for any provider.
-- __Its own second factor can count__ ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)): authentik reports `amr` from the stages its authentication flow ran (for example `pwd`, `mfa`), so with an MFA stage in that flow and `"trust-mfa": true` on the entry, those sign-ins count as AAL2. Check the sign-in's audit record (`metadata.reported`) for what your version sends before turning it on.
 - __The issuer is part of every connection.__ A connected identity is recorded as issuer + subject, so changing the application's slug (and with it the issuer) means people connect again.
+
+## Counting authentik's second factor
+
+- `"trust-mfa": true` on the entry is the switch ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633); `"amr": ["trust"]` in `ngdpbase.auth.factors` does nothing). authentik is the provider where it is most likely to count, because you control its authentication flow.
+- Make the authentication flow bound to this application require an MFA stage (an authenticator validation stage), so every sign-in through it uses a second factor.
+- Check what your authentik sends before turning `trust-mfa` on: sign in once and read the sign-in's audit record (`metadata.reported`). A sign-in counts as AAL3 (phishing-resistant) when its ID token's `amr` shows a hardware key with a second factor or user verification (`hwk` + `pin`, `hwk` + `user`, …), as AAL2 when it carries `mfa` or two factor types (such as `pwd` + `otp`), and as the level an SP 800-63C AAL2/AAL3 `acr` states; otherwise AAL1 ([mapping](OidcAuthProvider.md#counting-the-providers-second-factor)). Whether and how authentik puts `amr` in the ID token depends on its version and the provider's scope mappings, so check its documentation if nothing arrives.
+- If nothing multi-factor arrives, leave `trust-mfa` off: the sign-in is AAL1 either way.
 
 ## See Also
 

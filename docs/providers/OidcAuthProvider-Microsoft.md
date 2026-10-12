@@ -50,8 +50,11 @@ In the [Microsoft Entra admin center](https://entra.microsoft.com/) (or the Azur
 - __No verified email, so no account creation.__ Microsoft sends an `email` but no `email_verified`, and an address counts as verified only when the provider says so. So a Microsoft address is never kept on the connection: a Microsoft sign-in never creates an account, whatever `auto-provision` says, and the email step says "Sign in to connect your Microsoft account" with no address. People sign in another way once and confirm the connection, or connect Microsoft from their profile.
 - __The subject belongs to this registration.__ Microsoft gives each registered app a different subject for the same person, so a connection is tied to this site's registration: registering a new app means people connect again.
 - __Client secrets expire.__ Entra sets an expiry on each secret (up to two years). When it lapses, the code exchange fails and nobody can sign in with Microsoft; add a new secret and update the environment before then.
-- __Its own second factor is not relied on__ ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)): personal-account ID tokens sometimes carry `amr` (such as `pwd`, `mfa`) and sometimes not, so with `trust-mfa` a Microsoft sign-in counts as AAL2 only when that sign-in reported it; plan for AAL1.
 - Microsoft is on the public internet, so the outbound guard allows it without configuration.
+
+## Counting Microsoft's second factor
+
+- `"trust-mfa": true` on the entry is the switch ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633); `"amr": ["trust"]` in `ngdpbase.auth.factors` does nothing). Personal-account ID tokens sometimes carry `amr` (such as `pwd`, `mfa`) and sometimes not, so with `trust-mfa` a Microsoft sign-in counts above AAL1 only when that sign-in reported multi-factor (AAL2, or AAL3 when it reports a hardware key with a second factor or user verification). Plan for AAL1; the sign-in's audit record (`metadata.reported`) shows what Microsoft sent.
 
 ## See Also
 
