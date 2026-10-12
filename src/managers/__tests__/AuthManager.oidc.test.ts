@@ -44,6 +44,8 @@ describe('AuthManager outside sign-in (#1743)', () => {
   let deleted: Array<{ username: string; ctx: Record<string, unknown> }>;
   let authAudit: Array<{ ctx: Record<string, unknown>; result: string; reason: string }>;
   let stale: boolean;
+  /** #1633: each role's required-aal, all set by the operator (so never lowered); none unless a test sets them. */
+  let roleLevels: Record<string, number> | null;
   const saved = { key: process.env[CREDENTIALS_KEY_ENV], secret: process.env[SECRET_ENV] };
 
   const started = async (): Promise<AuthManager> => {
@@ -80,6 +82,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
           return Promise.resolve(true);
         }
       },
+      ...(roleLevels ? { RoleManager: { roleRequiredAal: () => roleLevels, operatorRequiredAal: () => roleLevels } } : {}),
       AuditManager: {
         logAuditEvent: (event: Record<string, unknown>) => { auditEvents.push(event); return Promise.resolve('evt'); },
         logAuthentication: (ctx: Record<string, unknown>, result: string, reason: string) => { authAudit.push({ ctx, result, reason }); return Promise.resolve('a'); }
@@ -101,6 +104,19 @@ describe('AuthManager outside sign-in (#1743)', () => {
     return { token: 'code-1', state: flow.state, deviceState: BROWSER };
   };
 
+  /** A request whose session behaves like express-session's: regenerate() empties it. */
+  const fakeReq = (initial: Record<string, unknown> = {}) => {
+    const session: Record<string, unknown> = {
+      ...initial,
+      regenerate: vi.fn((cb: (err?: unknown) => void) => {
+        for (const k of Object.keys(session)) if (k !== 'regenerate' && k !== 'save') delete session[k];
+        cb();
+      }),
+      save: vi.fn((cb: (err?: unknown) => void) => cb())
+    };
+    return { session, ip: '203.0.113.9', get: () => 'TestAgent/1.0' } as never as import('express').Request & { session: Record<string, unknown> };
+  };
+
   beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ngdpbase-1743-am-'));
     file = path.join(dir, 'users', 'credentials.json');
@@ -117,6 +133,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
     deleted = [];
     authAudit = [];
     stale = false;
+    roleLevels = null;
   });
 
   afterEach(() => {
@@ -347,19 +364,6 @@ describe('AuthManager outside sign-in (#1743)', () => {
     const PROVISION = {
       'ngdpbase.auth.oidc.auto-provision': true,
       'ngdpbase.application.registration': true
-    };
-
-    /** A request whose session behaves like express-session's: regenerate() empties it. */
-    const fakeReq = (initial: Record<string, unknown> = {}) => {
-      const session: Record<string, unknown> = {
-        ...initial,
-        regenerate: vi.fn((cb: (err?: unknown) => void) => {
-          for (const k of Object.keys(session)) if (k !== 'regenerate' && k !== 'save') delete session[k];
-          cb();
-        }),
-        save: vi.fn((cb: (err?: unknown) => void) => cb())
-      };
-      return { session, ip: '203.0.113.9', get: () => 'TestAgent/1.0' } as never as import('express').Request & { session: Record<string, unknown> };
     };
 
     /** An outside sign-in at the fake issuer, finished through AuthManager. */
@@ -634,6 +638,144 @@ describe('AuthManager outside sign-in (#1743)', () => {
       const second = fakeReq();
       expect(await am.finishOutsideSignIn(second, 'oidc:idp', creds)).toEqual({ outcome: 'refused' });
       expect(second.session.pendingConnection).toBeUndefined();
+    });
+  });
+
+  describe('an outside provider\'s own second factor (#1633)', () => {
+    const MFA = { amr: ['pwd', 'mfa'] };
+    /** A step-up permission, a 5-minute window, and an admin role at AAL2. */
+    const stepUp = () => {
+      config['ngdpbase.auth.step-up'] = { 'max-age-minutes': 5 };
+      config['ngdpbase.permissions.definitions'] = { 'account-security': { 'step-up': true } };
+      roleLevels = { admin: 2, reader: 1 };
+    };
+    const trust = (on: boolean | undefined) => {
+      config['ngdpbase.auth.oidc.providers'] = { idp: provider(on === undefined ? {} : { 'trust-mfa': on }) };
+    };
+    /** Connect ann's identity, then sign in with it, the issuer reporting `claims`. */
+    const signInWith = async (claims: Record<string, unknown>) => {
+      const am = await started();
+      expect(await am.connectIdentity(subject('ann'), 'ann', 'oidc:idp',
+        await callback(am, () => am.startConnect(subject('ann'), 'ann', 'oidc:idp', { deviceState: BROWSER })))).toBe('connected');
+      const req = fakeReq();
+      const done = await am.finishOutsideSignIn(req, 'oidc:idp', await callback(am, () => am.startFlow('oidc:idp', { deviceState: BROWSER }), claims));
+      expect(done.outcome).toBe('signed-in');
+      return { am, signIn: req.session.signIn as import('../AuthManager').SignInRecord };
+    };
+
+    test('trusted and reporting mfa: AAL2, so a role at AAL2 is kept and step-up is satisfied within the window', async () => {
+      stepUp();
+      trust(true);
+      const { am, signIn } = await signInWith(MFA);
+      expect(signIn.aal).toBe(2);
+      expect(signIn.factors).toEqual([expect.objectContaining({ provider: 'oidc:idp', amr: ['pwd', 'mfa'], aal: 2 })]);
+      expect(am.rolesAtSignIn(['admin', 'reader'], signIn.aal)).toEqual({ kept: ['admin', 'reader'], steppedDown: [] });
+      expect(am.stepUpNeeded('account-security', signIn, ['admin'], false)).toBe(false);
+      // Outside the window the same sign-in no longer counts.
+      expect(am.stepUpNeeded('account-security', signIn, ['admin'], false, Date.now() + 6 * 60_000)).toBe(true);
+    });
+
+    test.each([
+      ['off (unset)', undefined],
+      ['off (false)', false]
+    ])('untrusted (%s) and reporting mfa: AAL1, the role steps down and step-up asks', async (_what, on) => {
+      stepUp();
+      trust(on);
+      const { am, signIn } = await signInWith(MFA);
+      expect(signIn.aal).toBe(1);
+      expect(signIn.factors).toEqual([expect.objectContaining({ amr: [], aal: 1 })]);
+      expect(am.rolesAtSignIn(['admin', 'reader'], signIn.aal)).toEqual({ kept: ['reader'], steppedDown: ['admin'] });
+      expect(am.stepUpNeeded('account-security', signIn, ['admin'], false)).toBe(true);
+    });
+
+    test('trusted, a password alone is AAL1', async () => {
+      trust(true);
+      const { signIn } = await signInWith({ amr: ['pwd'] });
+      expect(signIn.aal).toBe(1);
+      expect(signIn.factors).toEqual([expect.objectContaining({ amr: ['pwd'], aal: 1 })]);
+    });
+
+    test('trusted, nothing reported is AAL1', async () => {
+      trust(true);
+      expect((await signInWith({})).signIn.aal).toBe(1);
+    });
+
+    test('a crafted amr that is not an array is ignored', async () => {
+      trust(true);
+      const { signIn } = await signInWith({ amr: 'mfa' });
+      expect(signIn.aal).toBe(1);
+      expect(signIn.factors).toEqual([expect.objectContaining({ amr: [], aal: 1 })]);
+      expect(authAudit.at(-1)?.ctx.reported).toEqual({ amr: [], trusted: true });
+    });
+
+    test('the audit record of the sign-in carries what was reported, trusted or not; never a token', async () => {
+      trust(false);
+      await signInWith({ amr: ['pwd', 'mfa', 42], acr: 'urn:example:loa:2' });
+      const success = authAudit.filter(a => a.result === 'success').at(-1);
+      expect(success?.reason).toBe('signed in: oidc:idp');
+      expect(success?.ctx.reported).toEqual({ amr: ['pwd', 'mfa'], acr: 'urn:example:loa:2', trusted: false });
+      expect(JSON.stringify(authAudit)).not.toMatch(/eyJ/);
+    });
+
+    describe('the mapping (outsideLevel)', () => {
+      const level = async (amr: unknown[], acr?: string, trusted = true) =>
+        (await started()).outsideLevel({ amr: amr as string[], ...(acr ? { acr } : {}), trusted });
+
+      test.each([
+        [['mfa'], 2],
+        [['pwd', 'otp'], 2],
+        [['pwd', 'hwk'], 2],
+        [['swk', 'pin'], 2],
+        [['hwk', 'fpt'], 2],
+        [['pwd', 'sms'], 2],
+        [['pwd'], 1],
+        [['otp'], 1],
+        [['hwk', 'user'], 1],
+        [['pwd', 'kba'], 1],
+        [['pwd', 'email'], 1],
+        [['pwd', 'push'], 1],
+        [[], 1]
+      ])('amr %j is AAL%i', async (amr, aal) => {
+        expect((await level(amr)).aal).toBe(aal);
+      });
+
+      test('only RFC 8176 values are kept as the factor\'s amr', async () => {
+        expect((await level(['pwd', 'email', 'push', 'magic', 'mfa'])).amr).toEqual(['pwd', 'mfa']);
+      });
+
+      test.each([
+        ['http://idmanagement.gov/ns/assurance/aal/2', 2],
+        ['http://idmanagement.gov/ns/assurance/aal/3', 2],
+        ['http://idmanagement.gov/ns/assurance/aal/1', 1],
+        ['phr', 1],
+        ['urn:example:aal2', 1]
+      ])('acr %s is AAL%i, never above 2', async (acr, aal) => {
+        expect((await level(['pwd'], acr)).aal).toBe(aal);
+      });
+
+      test('untrusted, nothing counts', async () => {
+        expect(await level(['pwd', 'mfa'], 'http://idmanagement.gov/ns/assurance/aal/3', false)).toEqual({ amr: [], aal: 1 });
+      });
+    });
+
+    test('trust leaves what is offered, and what an account can reach, at AAL1', async () => {
+      trust(true);
+      const am = await started();
+      expect(am.getFactors()).toContainEqual({ provider: 'oidc:idp', primary: true, amr: [], aal: 1 });
+      config['ngdpbase.auth.factors'] = [{ authproviderid: 'oidc:idp' }];
+      expect((await started()).reachableAal()).toBe(1);
+    });
+
+    test('an account created by an outside sign-in also gets the trusted level', async () => {
+      trust(true);
+      config['ngdpbase.auth.oidc.providers'] = { idp: provider({ 'trust-mfa': true, 'auto-provision': true }) };
+      Object.assign(config, { 'ngdpbase.auth.oidc.auto-provision': true, 'ngdpbase.application.registration': true });
+      const am = await started();
+      const req = fakeReq();
+      const done = await am.finishOutsideSignIn(req, 'oidc:idp', await callback(am, () => am.startFlow('oidc:idp', { deviceState: BROWSER }), { ...MFA, email: 'new@idp.example', email_verified: true }));
+      expect(done.outcome).toBe('created');
+      expect((req.session.signIn as { aal: number }).aal).toBe(2);
+      expect(authAudit.filter(a => a.result === 'success').at(-1)?.ctx.reported).toEqual({ amr: ['pwd', 'mfa'], trusted: true });
     });
   });
 });

@@ -50,6 +50,7 @@ The issuer is `https://<authentik-host>/application/o/<application-slug>/`, __wi
 - __On the local network, allow it.__ When authentik is on a private address, its range must be in `ngdpbase.security.egress.allowed-ranges`, or discovery, keys and the code exchange are refused by the outbound guard.
 - __Groups give no roles.__ authentik's groups and roles claims are never read: roles come from this site's own role assignments only.
 - __Verified email depends on the property mappings.__ Whether authentik marks an email verified depends on its scope mappings; without `email_verified: true` (a boolean) the address is not kept, the email step shows none, and no account is created, as for any provider.
+- __Its own second factor can count__ ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633)): authentik reports `amr` from the stages its authentication flow ran (for example `pwd`, `mfa`), so with an MFA stage in that flow and `"trust-mfa": true` on the entry, those sign-ins count as AAL2. Check the sign-in's audit record (`metadata.reported`) for what your version sends before turning it on.
 - __The issuer is part of every connection.__ A connected identity is recorded as issuer + subject, so changing the application's slug (and with it the issuer) means people connect again.
 
 ## See Also

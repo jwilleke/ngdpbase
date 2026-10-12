@@ -44,6 +44,7 @@ import type {
   AuthVerifyCredentials,
   FactorDescription,
   PhishingResistance,
+  ReportedAssurance,
   ViaToken
 } from '../providers/BaseAuthProvider.js';
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
@@ -139,6 +140,56 @@ const FACTOR_TYPE: Readonly<Record<string, FactorType>> = {
 const NEVER_LIFTS: ReadonlySet<string> = new Set(['email']);
 
 const PHR_RANK: Readonly<Record<PhishingResistance, number>> = { phr: 1, phrh: 2 };
+
+/**
+ * The `amr` values an outside provider's report is read for (#1633): those
+ * registered by RFC 8176 §2. Anything else (`email`, `push`, a provider's own
+ * word) is recorded in the audit record but never counts.
+ */
+const RFC8176_AMR: ReadonlySet<string> = new Set([
+  'face', 'fpt', 'geo', 'hwk', 'iris', 'kba', 'mca', 'mfa', 'otp', 'pin',
+  'pwd', 'rba', 'retina', 'sc', 'sms', 'swk', 'tel', 'user', 'vbm', 'wia'
+]);
+
+/**
+ * Outside `acr` values that state AAL2 or higher by NIST SP 800-63B (#1633):
+ * the identifiers SP 800-63C §6 assigns. Whatever they say, an outside
+ * sign-in counts for at most AAL2: this site cannot check how the provider
+ * met AAL3 (hardware, verifier-impersonation resistance).
+ */
+const AAL2_ACR: ReadonlySet<string> = new Set([
+  'http://idmanagement.gov/ns/assurance/aal/2',
+  'http://idmanagement.gov/ns/assurance/aal/3'
+]);
+
+/** Bounds on what an outside report may put in an audit record. */
+const REPORTED_MAX_AMR = 16;
+const REPORTED_MAX_LENGTH = 256;
+
+/**
+ * An outside provider's report, as kept (#1633): only well-formed values,
+ * bounded, and whether the admin trusts this provider's own second factor.
+ * Recorded in the sign-in's audit record whether or not it counts.
+ */
+export interface ReportedValues {
+  amr: string[];
+  acr?: string;
+  trusted: boolean;
+}
+
+/**
+ * Keep the well-formed part of a report: `amr` only when it is an array (its
+ * strings), `acr` only when it is a string. A crafted `amr` of another type is
+ * ignored (`[]`), never coerced.
+ */
+function reportedValues(raw: ReportedAssurance, trusted: boolean): ReportedValues {
+  const amr = Array.isArray(raw.amr)
+    ? raw.amr.filter((v): v is string => typeof v === 'string').slice(0, REPORTED_MAX_AMR).map(v => v.slice(0, REPORTED_MAX_LENGTH))
+    : [];
+  return typeof raw.acr === 'string'
+    ? { amr, acr: raw.acr.slice(0, REPORTED_MAX_LENGTH), trusted }
+    : { amr, trusted };
+}
 
 /** A credential as shown to a person: never its secret (#1524). */
 export type CredentialView = Omit<CredentialRecord, 'secret'>;
@@ -251,6 +302,11 @@ interface OidcProviderEntry {
   /** The button's icon: an `https://` image, a site path (`/…`), or a Font Awesome name (`fa-users`, `fab fa-microsoft`) (#1781). */
   icon?: string;
   'auto-provision'?: boolean;
+  /**
+   * Trust this provider's own second factor (#1633): its reported `amr` / `acr`
+   * count toward the sign-in level, up to AAL2 (`outsideLevel`). Off by default.
+   */
+  'trust-mfa'?: boolean;
 }
 
 /** The icon a provider's button shows when its entry sets none (#1781): by preset, else a generic sign-in icon. */
@@ -437,6 +493,8 @@ export interface AuthenticateResult {
   viaToken?: ViaToken;
   /** #1576: the sign-in level a bearer credential carries; roles above it step down. */
   aal?: Aal;
+  /** #1633: what an outside provider reported about its own sign-in, for the audit record. */
+  reported?: ReportedValues;
 }
 
 class AuthManager extends BaseManager {
@@ -868,7 +926,8 @@ class AuthManager extends BaseManager {
       await this.removeCreatedAccount(created.username, provider);
       return { outcome: 'refused' };
     }
-    await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId) }, { method: providerId });
+    const reported = reportedValues(identity.reported, this.trustsOutsideMfa(provider));
+    await this.completeSignIn(req, { success: true, username: created.username, provider: providerId, factors: this.satisfiedFactors(providerId, reported), reported }, { method: providerId });
     return { outcome: 'created', next: safeRedirect(redirect) };
   }
 
@@ -884,9 +943,26 @@ class AuthManager extends BaseManager {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     if (!cm) return false;
     if (cm.getProperty('ngdpbase.auth.oidc.auto-provision', false) !== true) return false;
-    const entries = cm.getProperty('ngdpbase.auth.oidc.providers', {}) as Record<string, OidcProviderEntry | undefined> | null;
-    if (entries?.[provider.name]?.['auto-provision'] !== true) return false;
+    if (this.oidcEntry(provider)?.['auto-provision'] !== true) return false;
     return ((cm.getProperty('ngdpbase.application.registration', true) as boolean | undefined) ?? true) !== false;
+  }
+
+  /**
+   * Does the admin trust this outside provider's own second factor (#1633)?
+   * Its entry's `trust-mfa` in `ngdpbase.auth.oidc.providers`, off unless set
+   * to true; read when asked, so a change applies at the next sign-in. The old
+   * `ngdpbase.auth.google-oidc.*` keys have no such switch: off.
+   */
+  private trustsOutsideMfa(provider: OidcAuthProvider): boolean {
+    return this.oidcEntry(provider)?.['trust-mfa'] === true;
+  }
+
+  /** The provider's entry in `ngdpbase.auth.oidc.providers` as configured now, or null. */
+  private oidcEntry(provider: OidcAuthProvider): OidcProviderEntry | null {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const entries = cm?.getProperty('ngdpbase.auth.oidc.providers', {}) as Record<string, OidcProviderEntry | undefined> | null | undefined;
+    const entry = entries?.[provider.name];
+    return entry && typeof entry === 'object' ? entry : null;
   }
 
   /**
@@ -1349,7 +1425,8 @@ class AuthManager extends BaseManager {
       logger.warn(`[AuthManager] ngdpbase.auth.factors entry '${id}' overstates ${what} — lowered to what the provider gives. (#1523)`);
     };
 
-    // "trust" is config-only: take the identity provider's reported values at sign-in.
+    // "trust" here is inert (#1633): an outside provider's own second factor is
+    // trusted by its entry's `trust-mfa` in ngdpbase.auth.oidc.providers.
     const configured = entry.amr?.filter(v => v !== 'trust');
     let amr = declared.amr;
     if (configured && configured.length > 0) {
@@ -1433,7 +1510,10 @@ class AuthManager extends BaseManager {
         return await refused(result.username);
       }
 
-      const factors = this.satisfiedFactors(providerId);
+      // #1633: an outside provider's report, kept for the audit record and mapped by trust.
+      const outside = this.outsideProvider(providerId);
+      const reported = outside && result.reported ? reportedValues(result.reported, this.trustsOutsideMfa(outside)) : undefined;
+      const factors = this.satisfiedFactors(providerId, reported);
 
       // A re-check's success is recorded here; a sign-in's when it completes
       // (completeSignIn), once, with every factor it took.
@@ -1449,7 +1529,8 @@ class AuthManager extends BaseManager {
         provider: providerId,
         factors,
         ...(result.viaToken ? { viaToken: result.viaToken } : {}),
-        ...(result.aal !== undefined ? { aal: result.aal } : {})
+        ...(result.aal !== undefined ? { aal: result.aal } : {}),
+        ...(reported ? { reported } : {})
       };
     } catch (err) {
       logger.error(`[AuthManager] Error authenticating via ${providerId}:`, err);
@@ -1459,20 +1540,40 @@ class AuthManager extends BaseManager {
 
   /**
    * #1523: say how — the provider, and the factor it satisfied with its time.
-   * A delegated credential is never a factor, so it records none.
+   * A delegated credential is never a factor, so it records none. An outside
+   * provider the admin trusts counts for what it reported (#1633,
+   * `outsideLevel`); step-up reads the same factor, so it uses the same level.
    */
-  private satisfiedFactors(providerId: string): SatisfiedFactor[] {
+  private satisfiedFactors(providerId: string, reported?: ReportedValues): SatisfiedFactor[] {
     const factor = this.getFactors().find(f => f.provider === providerId);
-    return factor
-      ? [{ provider: providerId, amr: factor.amr, aal: factor.aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }]
-      : [];
+    if (!factor) return [];
+    const { amr, aal } = reported?.trusted ? this.outsideLevel(reported) : factor;
+    return [{ provider: providerId, amr, aal, ...(factor.acr ? { acr: factor.acr } : {}), at: new Date().toISOString() }];
+  }
+
+  /**
+   * What an outside provider's own sign-in counts for here (#1633) — the one
+   * mapping, for every outside provider, by NIST SP 800-63B and RFC 8176.
+   * Untrusted: AAL1 with no `amr`, whatever was reported. Trusted: the
+   * reported RFC 8176 `amr` values, at AAL2 when they say multi-factor (`mfa`,
+   * or two factor types by the same rule `assess` applies to this site's own
+   * factors, so `pwd` + `otp` but not `hwk` + `user`) or the `acr` is an
+   * SP 800-63C AAL2 or AAL3 identifier; AAL1 otherwise. Never above AAL2 and
+   * never phishing-resistant: this site cannot check either claim.
+   */
+  outsideLevel(reported: ReportedValues | undefined): { amr: string[]; aal: Aal } {
+    if (!reported?.trusted) return { amr: [], aal: 1 };
+    const amr = [...new Set(reported.amr.filter(v => RFC8176_AMR.has(v)))];
+    const multiFactor = amr.includes('mfa') || this.assess([{ amr, aal: 1 }]).aal >= 2;
+    const aal2Acr = reported.acr !== undefined && AAL2_ACR.has(reported.acr);
+    return { amr, aal: multiFactor || aal2Acr ? 2 : 1 };
   }
 
   /** The audit record of one sign-in method's check (#1758): written here, never by a route. */
-  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string): Promise<void> {
+  private async auditCheck(attempt: AuthAttempt, username: string | undefined, method: string, result: 'success' | 'failure', reason: string, reported?: ReportedValues): Promise<void> {
     try {
       const audit = this.engine.getManager<{ logAuthentication?(context: Record<string, unknown>, result: string, reason: string): Promise<string> }>('AuditManager');
-      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method }, result, reason);
+      await audit?.logAuthentication?.({ username: username ?? 'unknown', ipAddress: attempt.ipAddress, userAgent: attempt.userAgent, loginMethod: method, ...(reported ? { reported } : {}) }, result, reason);
     } catch (err) {
       logger.warn('[AuthManager] audit record failed for an authentication check:', err);
     }
@@ -1712,7 +1813,7 @@ class AuthManager extends BaseManager {
     const handle = how.privateStoreHandle
       ?? (how.unlockWith && this.vaultUnlocker ? await this.vaultUnlocker(username, how.unlockWith.password) : undefined);
     if (handle) req.session.privateStoreHandle = handle;
-    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`);
+    await this.auditCheck({ ipAddress: req.ip, userAgent: req.get?.('user-agent'), purpose: 'sign-in' }, username, how.method, 'success', `signed in: ${how.method}`, result.reported);
     try {
       await this.engine.getManager<{ recordSignIn?(u: string): Promise<void> }>('UserManager')?.recordSignIn?.(username);
     } catch (err) {

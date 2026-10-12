@@ -41,7 +41,8 @@ import type {
   AuthProvider,
   AuthResult,
   AuthVerifyCredentials,
-  FactorDescription
+  FactorDescription,
+  ReportedAssurance
 } from './BaseAuthProvider.js';
 import logger from '../utils/logger.js';
 
@@ -104,6 +105,8 @@ export interface OidcIdentity {
   subject: string;
   /** The provider's email, only when it reports it verified; '' otherwise. */
   email: string;
+  /** The ID token's `amr` and `acr`, as sent (#1633); AuthManager decides what they count for. */
+  reported: ReportedAssurance;
 }
 
 /** How the provider reaches connected identities: the credentials store, through AuthManager. */
@@ -154,9 +157,10 @@ export class OidcAuthProvider implements AuthProvider {
   readonly displayName: string;
   readonly icon: OutsideProviderIcon;
   /**
-   * AAL1 with no `amr`: what the outside provider did to sign the person in
-   * is its own business until an admin trusts its reported `amr` / `acr`
-   * (#1633). Primary: it starts a sign-in on its own.
+   * AAL1 with no `amr`: what is offered, and what a sign-in counts for unless
+   * the admin trusts this provider's own second factor (`trust-mfa`, #1633),
+   * when AuthManager maps the reported `amr` / `acr` instead
+   * (`outsideLevel`). Primary: it starts a sign-in on its own.
    */
   readonly factor: FactorDescription = { amr: [], aal: 1, primary: true };
 
@@ -251,7 +255,7 @@ export class OidcAuthProvider implements AuthProvider {
     } catch (err) {
       logger.warn(`[OidcAuthProvider:${this.config.name}] could not record the sign-in on the connection:`, err);
     }
-    return { username: row.username };
+    return { username: row.username, reported: identity.reported };
   }
 
   /**
@@ -341,7 +345,8 @@ export class OidcAuthProvider implements AuthProvider {
     // may send the flag as a string; elsewhere only the boolean counts.
     const verified = claims.email_verified === true || (this.config.emailVerifiedMayBeString === true && claims.email_verified === 'true');
     const email = verified && typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
-    return { subject: `${this.config.issuer}#${claims.sub}`, email };
+    // #1633: how the provider says it signed the person in, passed on unread.
+    return { subject: `${this.config.issuer}#${claims.sub}`, email, reported: { amr: claims.amr, acr: claims.acr } };
   }
 
   /** Exchange the code for the ID token. No access or refresh token is kept. */
