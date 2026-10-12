@@ -80,6 +80,7 @@ vi.mock('../../WikiEngine', () => {
     }),
     checkPagePermission: vi.fn().mockResolvedValue(true),
     checkPagePermissionWithContext: vi.fn().mockResolvedValue(true),
+    pageAffordance: vi.fn().mockResolvedValue(true),
     removeACLMarkup: vi.fn().mockReturnValue('Content')
   };
 

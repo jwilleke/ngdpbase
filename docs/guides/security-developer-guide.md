@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-06
+dateModified: 2026-10-12
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -18,6 +18,7 @@ What a developer has to do so that a new route, manager method or addon authoriz
 | May they do it on this page? | `wikiContext.canAccess('edit', pageName)` | All of the above plus the page's own access markup, audience and private flags, and ACL frontmatter. Resource attributes beat global policy |
 | May they read this page — its content, its history? | Nothing: read it through the page door, `pageManager.readPage(id, ctx)` or `readVersionHistory` / `readVersion` / `readVersionDiff` | The door decides `page-read` itself before it reads anything, and answers a refusal instead of the page. A route answers a refusal with 404. `npm run lint:page-door` fails a route that reads past it ([#1622](https://github.com/jwilleke/ngdpbase/issues/1622)); the methods are in [PageManager.md](../managers/PageManager.md) |
 | Does the subject hold the permission, to show a control? | `wikiContext.holdsPermission('config-manage')` / `pdp.holds(subject, action)` | Policy alone, without the step-up freshness rule ([#1635](https://github.com/jwilleke/ngdpbase/issues/1635)). For affordances only — acting on the control asks `hasPermission`, which applies step-up. A door never asks this. |
+| Would the page door allow it, to show a control for a page — the Edit button? | `policyInformationPoint.pageAffordance(wikiContext, 'edit')`; for another page, `pageAffordanceFor(subject, pageName, 'edit')` (the journal entry view's Edit link) | The page door's own evaluator, so it agrees with `canAccess` / `checkPagePermissionWithContext` / `canUserAccessPage` on allow and deny. Records nothing — no `authorization-deny`, no info log line ([#1668](https://github.com/jwilleke/ngdpbase/issues/1668)). For affordances only; acting on the control (`GET /edit`, `POST /save`) asks the door. A door never asks this. |
 | May they do this kind of action to this page — create it, write it? | `wikiContext.hasPermissionOn('page-create', pageName)` | The capability, asked about the page itself. For a vault page: the owner only (the container rule), then the capability with the page's `vault`, so `vault-owner` decides and a site-wide role does not reach in ([#1539](https://github.com/jwilleke/ngdpbase/issues/1539)). A route that writes an existing page also asks the page door (`WikiRoutes.writeRefusal`), as the editor does ([#1542](https://github.com/jwilleke/ngdpbase/issues/1542)) |
 
 Nothing else is an allow or a deny:
@@ -25,6 +26,10 @@ Nothing else is an allow or a deny:
 - `isAuthenticated` classifies a refusal, 401 for an anonymous subject and 403 for an authenticated one, after policy has refused. It never decides.
 - `RoleManager.hasRole` is a lookup about a named account, the same shape as `PolicyDecisionPoint.userHoldsPermission`. It is never this request's authority: a role name skips the policy evaluator, deny policies and the token ceiling. `ApiContext.requireRole` is gone for that reason. `UserManager` has no `hasRole`.
 - A role name in code, `roles.includes('admin')`, is the same defect when it is the allow. The static test `src/routes/__tests__/WikiRoutes.permissionGates.test.ts` keeps `hasRole(` out of `src/routes/WikiRoutes.ts`. The one `updates.roles.includes('admin')` there validates submitted form data (an external account cannot be given the admin role); it is not an authorization decision.
+
+## A door records, an affordance does not
+
+A door is a check made before the action is performed or the content is served on its answer. Every door decision is recorded, and a refusal becomes an `authorization-deny` audit record with the subject's `user` and the request's `ipAddress`. An affordance only decides whether to show a button, link or menu item; it is not an attempt, so it is never recorded. Asking a door to decide an affordance writes a denial for every visitor who cannot act — the view's Edit button did this for every anonymous view until [#1668](https://github.com/jwilleke/ngdpbase/issues/1668). When it is unclear which a call is, it is a door.
 
 ## Every security-relevant call carries a context
 
