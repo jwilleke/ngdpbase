@@ -46,4 +46,11 @@ describe('sensitive values (#1750)', () => {
       .toEqual([{ client_id: 'app', client_secret: HIDDEN, redirect_uris: ['https://a.example.com'] }]);
     expect(shownValue('oidc-auth-server.clients', clients, new Map(), revealer)).toEqual(clients);
   });
+
+  test('an outside provider\'s client-secret and private-key references are hidden inside the providers map (#1743)', () => {
+    const levels = new Map([['ngdpbase.auth.oidc.providers', 'sensitive' as const]]);
+    const providers = { apple: { preset: 'apple', 'key-id': 'K1', 'private-key': '$APPLE_KEY' }, google: { 'client-secret': '$GOOGLE_KEY' } };
+    expect(shownValue('ngdpbase.auth.oidc.providers', providers, levels, admin))
+      .toEqual({ apple: { preset: 'apple', 'key-id': 'K1', 'private-key': HIDDEN }, google: { 'client-secret': HIDDEN } });
+  });
 });

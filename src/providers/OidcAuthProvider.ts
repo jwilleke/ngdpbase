@@ -18,6 +18,11 @@
  * `state` bound to the starting browser by an HTTP-only cookie, PKCE (S256),
  * an OIDC `nonce`, and the ID token's signature, issuer, audience and expiry.
  *
+ * Apple (slice 4b) differs in two ways handled here: its client secret is a
+ * JWT signed per exchange (`SignedClientSecret`), and it POSTs the callback
+ * (`responseMode: 'form_post'`), which `middleware/outsideCallbackRelay.ts`
+ * turns into the usual GET before the session and CSRF see it.
+ *
  * Discovery (`/.well-known/openid-configuration`) and the issuer's keys are
  * fetched through `guardedFetch`, like every outbound request (#1133), and
  * cached. Flow state is in memory: a restart drops a sign-in in progress.
@@ -27,7 +32,7 @@
  */
 
 import * as crypto from 'crypto';
-import { createLocalJWKSet, jwtVerify, errors as joseErrors, type JSONWebKeySet, type JWTPayload } from 'jose';
+import { createLocalJWKSet, jwtVerify, SignJWT, errors as joseErrors, type JSONWebKeySet, type JWTPayload } from 'jose';
 import { guardedFetch } from '../http/guardedFetch.js';
 import type { EgressPolicy } from '../http/ssrf.js';
 import { evaluateDeviceBinding } from '../utils/magicLinkDeviceState.js';
@@ -48,12 +53,38 @@ export interface OidcProviderConfig {
   /** The issuer identifier, exactly as the issuer's discovery document states it. */
   issuer: string;
   clientId: string;
-  /** Already resolved from its environment reference; never logged. */
-  clientSecret: string;
+  /**
+   * How the site proves itself at the token endpoint: a shared secret,
+   * already resolved from its environment reference, or (Apple) a key it signs
+   * a short-lived client secret with. Never logged.
+   */
+  clientSecret: string | SignedClientSecret;
   /** This site's callback, registered with the provider. */
   redirectUri: string;
   /** Where outbound requests may go (ngdpbase.security.egress.*). */
   policy: EgressPolicy;
+  /**
+   * `form_post`: the issuer POSTs the code and state back (Apple, whenever
+   * scopes are asked for). AuthManager answers `callbackIsPosted` from it, and
+   * the relay in `middleware/outsideCallbackRelay.ts` turns the POST into the
+   * usual GET callback.
+   */
+  responseMode?: 'form_post';
+  /** The issuer may send `email_verified` as the string `"true"` / `"false"` (Apple); only true counts either way. */
+  emailVerifiedMayBeString?: boolean;
+}
+
+/**
+ * Apple's client secret is not a shared secret but a JWT the site signs
+ * (ES256) with a key from its Apple developer account: `kid` the key's id,
+ * `iss` the team id, `sub` the client id, `aud` the issuer, and an expiry
+ * of at most six months. Signed afresh for each code exchange, valid 5 minutes.
+ */
+export interface SignedClientSecret {
+  teamId: string;
+  keyId: string;
+  /** The EC P-256 private key (Apple's `.p8`), checked by AuthManager when it registers the provider. */
+  privateKey: crypto.KeyObject;
 }
 
 /** An outside identity, as the provider vouched for it. */
@@ -99,6 +130,8 @@ const FLOW_TTL_MS = 10 * 60_000;
 const CACHE_TTL_MS = 60 * 60_000;
 const MAX_DOC_BYTES = 512 * 1024;
 const FETCH_TIMEOUT_MS = 10_000;
+/** How long a signed client secret is valid; Apple allows up to six months, a code exchange needs seconds. */
+const SIGNED_SECRET_TTL_S = 5 * 60;
 
 /** Google's ID tokens may name their issuer without the scheme (Google's OIDC documentation). */
 const ISSUER_ALIASES: Readonly<Record<string, string[]>> = {
@@ -137,6 +170,11 @@ export class OidcAuthProvider implements AuthProvider {
     return this.config.name;
   }
 
+  /** Whether the issuer POSTs the callback (`response_mode=form_post`) instead of redirecting to it. */
+  get callbackIsPosted(): boolean {
+    return this.config.responseMode === 'form_post';
+  }
+
   /**
    * Begin a sign-in, or a connection when `connectFor` names the signed-in
    * account: keep the flow's state and return the provider's authorization URL.
@@ -164,6 +202,7 @@ export class OidcAuthProvider implements AuthProvider {
     url.searchParams.set('nonce', oidcNonce);
     url.searchParams.set('code_challenge', crypto.createHash('sha256').update(codeVerifier).digest('base64url'));
     url.searchParams.set('code_challenge_method', 'S256');
+    if (this.config.responseMode) url.searchParams.set('response_mode', this.config.responseMode);
     return url.toString();
   }
 
@@ -285,8 +324,10 @@ export class OidcAuthProvider implements AuthProvider {
       logger.warn(`${tag} the ID token names no subject`);
       return null;
     }
-    // Only a verified address is kept; it never identifies anyone here.
-    const email = claims.email_verified === true && typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
+    // Only a verified address is kept; it never identifies anyone here. Apple
+    // may send the flag as a string; elsewhere only the boolean counts.
+    const verified = claims.email_verified === true || (this.config.emailVerifiedMayBeString === true && claims.email_verified === 'true');
+    const email = verified && typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
     return { subject: `${this.config.issuer}#${claims.sub}`, email };
   }
 
@@ -306,11 +347,12 @@ export class OidcAuthProvider implements AuthProvider {
     // RFC 6749 §2.3.1: Basic unless the issuer says it takes only the form;
     // OIDC Discovery: an absent list means client_secret_basic.
     const methods = doc.token_endpoint_auth_methods_supported;
+    const clientSecret = await this.clientSecret();
     if (methods && !methods.includes('client_secret_basic') && methods.includes('client_secret_post')) {
       form.set('client_id', this.config.clientId);
-      form.set('client_secret', this.config.clientSecret);
+      form.set('client_secret', clientSecret);
     } else {
-      const pair = `${encodeURIComponent(this.config.clientId)}:${encodeURIComponent(this.config.clientSecret)}`;
+      const pair = `${encodeURIComponent(this.config.clientId)}:${encodeURIComponent(clientSecret)}`;
       headers.Authorization = `Basic ${Buffer.from(pair).toString('base64')}`;
     }
     const res = await guardedFetch(doc.token_endpoint, {
@@ -325,6 +367,21 @@ export class OidcAuthProvider implements AuthProvider {
     const body = JSON.parse(res.body.toString('utf8')) as { id_token?: unknown };
     if (typeof body.id_token !== 'string') throw new Error('no id_token in the token response');
     return body.id_token;
+  }
+
+  /** The client secret for one code exchange: the shared one, or a freshly signed JWT (Apple). */
+  private async clientSecret(): Promise<string> {
+    const secret = this.config.clientSecret;
+    if (typeof secret === 'string') return secret;
+    const now = Math.floor(Date.now() / 1000);
+    return new SignJWT({})
+      .setProtectedHeader({ alg: 'ES256', kid: secret.keyId })
+      .setIssuer(secret.teamId)
+      .setSubject(this.config.clientId)
+      .setAudience(this.config.issuer)
+      .setIssuedAt(now)
+      .setExpirationTime(now + SIGNED_SECRET_TTL_S)
+      .sign(secret.privateKey);
   }
 
   /** Signature, issuer, audience and expiry; the keys are fetched again once if none matches (rotation). */
