@@ -492,6 +492,16 @@ void (async (): Promise<void> => {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // #1743 slice 4b: a provider that POSTs its callback (Apple's form_post) is
+  // relayed to the GET callback here, BEFORE the session and CSRF: the
+  // cross-site POST carries none of this site's SameSite=Lax cookies, and a
+  // session started for it would replace the person's own. Only providers
+  // AuthManager says POST their callback; any other POST falls through to CSRF.
+  const { outsideCallbackRelay, OUTSIDE_CALLBACK_PATH } = await import('./middleware/outsideCallbackRelay.js');
+  app.post(OUTSIDE_CALLBACK_PATH, outsideCallbackRelay((providerId) =>
+    engine.getManager<{ callbackIsPosted(id: string): boolean }>('AuthManager')?.callbackIsPosted(providerId) ?? false));
+
   app.use(cookieParser());
 
   // Install check middleware

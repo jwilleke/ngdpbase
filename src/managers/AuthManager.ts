@@ -49,7 +49,7 @@ import type {
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider, EMAIL_FACTOR } from '../providers/MagicLinkAuthProvider.js';
 import { lockPrivateStores } from '../utils/privateStoreUnlock.js';
-import { OidcAuthProvider } from '../providers/OidcAuthProvider.js';
+import { OidcAuthProvider, type SignedClientSecret } from '../providers/OidcAuthProvider.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
 import { AuthentikBearerAuthProvider } from '../providers/AuthentikBearerAuthProvider.js';
@@ -57,7 +57,7 @@ import { OidcBearerAuthProvider } from '../providers/OidcBearerAuthProvider.js';
 import { AgentTokenAuthProvider } from '../providers/AgentTokenAuthProvider.js';
 import type EmailManager from './EmailManager.js';
 import logger from '../utils/logger.js';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createPrivateKey, randomBytes, randomUUID, type KeyObject } from 'node:crypto';
 import FileCredentialsProvider from '../providers/FileCredentialsProvider.js';
 import { PasskeyAuthProvider, relyingPartyFrom, type PasskeyRelyingParty } from '../providers/PasskeyAuthProvider.js';
 import {
@@ -216,12 +216,23 @@ const WAY_IN_KINDS: ReadonlySet<CredentialKind> = new Set<CredentialKind>(['pass
  * Presets fill what a well-known provider always has (#1743). `microsoft` is
  * personal Microsoft accounts only: the `consumers` tenant, whose discovery
  * document names this issuer. It sends no `email_verified`, so its email is
- * never kept (no account creation; the email step shows none). Apple comes
- * later, with its JWT client secret.
+ * never kept (no account creation; the email step shows none). `apple`
+ * signs its own client secret (`team-id`, `key-id`, `private-key` instead of
+ * `client-secret`), has its callback POSTed (`form_post`, required by Apple
+ * when the email scope is asked for), and may send `email_verified` as a string.
  */
-const OIDC_PRESETS: Readonly<Record<string, { issuer: string; displayName: string }>> = {
+interface OidcPreset {
+  issuer: string;
+  displayName: string;
+  /** The client secret is a JWT signed with the site's key, not a shared secret (Apple). */
+  signedClientSecret?: true;
+  responseMode?: 'form_post';
+  emailVerifiedMayBeString?: true;
+}
+const OIDC_PRESETS: Readonly<Record<string, OidcPreset>> = {
   google: { issuer: 'https://accounts.google.com', displayName: 'Google' },
-  microsoft: { issuer: 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0', displayName: 'Microsoft' }
+  microsoft: { issuer: 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0', displayName: 'Microsoft' },
+  apple: { issuer: 'https://appleid.apple.com', displayName: 'Apple', signedClientSecret: true, responseMode: 'form_post', emailVerifiedMayBeString: true }
 };
 
 /** An entry of `ngdpbase.auth.oidc.providers`, as written in configuration (#1743). */
@@ -231,6 +242,10 @@ interface OidcProviderEntry {
   'client-id'?: string;
   /** An environment reference, `$NAME`; never the secret itself. */
   'client-secret'?: string;
+  /** apple: the Apple developer team id, the key's id, and the key (`.p8`, PEM) as an environment reference. */
+  'team-id'?: string;
+  'key-id'?: string;
+  'private-key'?: string;
   enabled?: boolean;
   'display-name'?: string;
   'auto-provision'?: boolean;
@@ -584,7 +599,9 @@ class AuthManager extends BaseManager {
       const clientId = entry['client-id'];
       if (!clientId) { refuse('set its client-id'); continue; }
       const fromLegacy = name === 'google' ? legacy : null;
-      const clientSecret = fromLegacy ? fromLegacy.secret : this.secretFromEnvironment(entry['client-secret'], refuse);
+      const clientSecret = fromLegacy
+        ? fromLegacy.secret
+        : preset?.signedClientSecret ? this.signingKeyFrom(entry, refuse) : this.secretFromEnvironment(entry['client-secret'], 'client-secret', refuse);
       if (!clientSecret) { if (fromLegacy) refuse('set ngdpbase.auth.google-oidc.client-secret'); continue; }
       const redirectUri = fromLegacy?.callbackUrl || (configManager.isBaseUrlExplicit()
         ? `${configManager.getBaseURL().replace(/\/$/, '')}/auth/oauth/${name}/callback`
@@ -592,7 +609,11 @@ class AuthManager extends BaseManager {
       if (!redirectUri) { refuse('ngdpbase.application.base-url is not set explicitly, so there is no address for the provider to send people back to'); continue; }
       const store = this.credentials;
       this.registerProvider(new OidcAuthProvider(
-        { name, displayName: entry['display-name'] || preset?.displayName || name, issuer, clientId, clientSecret, redirectUri, policy: egress.policy },
+        {
+          name, displayName: entry['display-name'] || preset?.displayName || name, issuer, clientId, clientSecret, redirectUri, policy: egress.policy,
+          ...(preset?.responseMode ? { responseMode: preset.responseMode } : {}),
+          ...(preset?.emailVerifiedMayBeString ? { emailVerifiedMayBeString: true } : {})
+        },
         {
           find: (subject) => store.findBySubject('identity', subject),
           used: (id, at, email) => store.touch(id, at, email || undefined)
@@ -602,21 +623,57 @@ class AuthManager extends BaseManager {
     }
   }
 
-  /** A client secret from its environment reference (`$NAME`); never the secret written into configuration. */
-  private secretFromEnvironment(ref: unknown, refuse: (why: string) => void): string {
+  /** A secret from its environment reference (`$NAME`); never the secret written into configuration. */
+  private secretFromEnvironment(ref: unknown, field: string, refuse: (why: string) => void): string {
     const match = typeof ref === 'string' ? /^\$([A-Z_][A-Z0-9_]*)$/.exec(ref) : null;
     if (!match) {
-      refuse('client-secret must be an environment reference ($NAME), never the secret itself');
+      refuse(`${field} must be an environment reference ($NAME), never the secret itself`);
       return '';
     }
     const value = process.env[match[1]] ?? '';
-    if (!value) refuse(`the environment variable ${match[1]} named by its client-secret is not set`);
+    if (!value) refuse(`the environment variable ${match[1]} named by its ${field} is not set`);
     return value;
+  }
+
+  /**
+   * Apple's client secret is signed by the site (#1743 slice 4b): the team id,
+   * the key's id, and the EC P-256 private key Apple issued (the `.p8` file's
+   * PEM, from an environment reference; `\n` escapes are accepted for a
+   * one-line variable). Null, with the reason refused, when any is missing or
+   * the key is not one Apple signs with.
+   */
+  private signingKeyFrom(entry: OidcProviderEntry, refuse: (why: string) => void): SignedClientSecret | null {
+    const teamId = entry['team-id'];
+    const keyId = entry['key-id'];
+    if (!teamId || !keyId) { refuse('set its team-id and key-id'); return null; }
+    const pem = this.secretFromEnvironment(entry['private-key'], 'private-key', refuse);
+    if (!pem) return null;
+    let privateKey: KeyObject;
+    try {
+      privateKey = createPrivateKey(pem.replace(/\\n/g, '\n'));
+    } catch {
+      refuse('its private-key is not a PEM private key');
+      return null;
+    }
+    if (privateKey.asymmetricKeyType !== 'ec' || privateKey.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+      refuse('its private-key must be an EC P-256 key (the .p8 file Apple issues)');
+      return null;
+    }
+    return { teamId, keyId, privateKey };
   }
 
   private outsideProvider(providerId: string): OidcAuthProvider | null {
     const p = this.providers.get(providerId);
     return p instanceof OidcAuthProvider ? p : null;
+  }
+
+  /**
+   * Whether this enabled outside provider POSTs its callback (`form_post`,
+   * Apple) — the only callbacks the relay in front of the session and CSRF
+   * accepts as a POST (#1743 slice 4b).
+   */
+  callbackIsPosted(providerId: string): boolean {
+    return this.outsideProvider(providerId)?.callbackIsPosted ?? false;
   }
 
   /**

@@ -21,6 +21,7 @@ import { guardedFetch } from '../../http/guardedFetch.js';
 import { fakeIssuer, flowFrom, type FakeIssuer } from '../../providers/__tests__/__fixtures__/fakeOidcIssuer';
 import { UserCreateError } from '../../utils/userCreateError';
 import { endSession } from '../../utils/sessionEnd';
+import { decodeProtectedHeader, exportPKCS8, generateKeyPair } from 'jose';
 
 /** A client-secret value written straight into config (not a $NAME reference), made up per run. */
 const NOT_AN_ENV_REFERENCE = `literal-${crypto.randomUUID()}`;
@@ -143,7 +144,7 @@ describe('AuthManager outside sign-in (#1743)', () => {
       ['a literal secret', { 'client-secret': NOT_AN_ENV_REFERENCE }],
       ['a secret whose variable is not set', { 'client-secret': '$NGDPBASE_TEST_UNSET_VARIABLE' }],
       ['no issuer and no preset', { issuer: undefined }],
-      ['a preset not available yet', { issuer: undefined, preset: 'apple' }],
+      ['a preset that does not exist', { issuer: undefined, preset: 'nonesuch' }],
       ['no client id', { 'client-id': '' }],
       ['enabled not set', { enabled: undefined }]
     ])('is not registered with %s', async (_what, overrides) => {
@@ -166,6 +167,62 @@ describe('AuthManager outside sign-in (#1743)', () => {
       // Discovery is read at <issuer>/.well-known/openid-configuration, and its issuer matches the preset's.
       expect(new URL(await am.startFlow('oidc:microsoft', { deviceState: BROWSER })).href.startsWith(`${MICROSOFT_CONSUMERS_ISSUER}/authorize?`)).toBe(true);
       expect(vi.mocked(guardedFetch)).toHaveBeenCalledWith(`${MICROSOFT_CONSUMERS_ISSUER}/.well-known/openid-configuration`, expect.anything());
+    });
+
+    describe('the apple preset (slice 4b)', () => {
+      const APPLE = 'https://appleid.apple.com';
+      const KEY_ENV = 'NGDPBASE_TEST_APPLE_KEY';
+      /** The authorization code the fake issuer is handed back; any value redeems. */
+      const AUTH_CODE = 'code-1';
+      const apple = (overrides: Record<string, unknown> = {}) => ({
+        preset: 'apple', 'client-id': idp.clientId, 'team-id': 'TEAM123456', 'key-id': 'KEY1234567', 'private-key': `$${KEY_ENV}`, enabled: true, ...overrides
+      });
+      const pkcs8 = async (alg: 'ES256' | 'RS256') => exportPKCS8((await generateKeyPair(alg, { extractable: true })).privateKey);
+
+      beforeEach(async () => {
+        idp = await fakeIssuer(APPLE);
+        idp.discovery = { ...idp.discovery, token_endpoint_auth_methods_supported: ['client_secret_post'] };
+        vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
+        process.env[KEY_ENV] = await pkcs8('ES256');
+      });
+      afterEach(() => { delete process.env[KEY_ENV]; });
+
+      test('fills Apple\'s issuer and name, needs no client-secret, POSTs its callback and signs its client secret', async () => {
+        config['ngdpbase.auth.oidc.providers'] = { apple: apple(), idp: provider() };
+        const am = await started();
+        expect(am.outsideProviders()).toContainEqual({ id: 'oidc:apple', name: 'apple', displayName: 'Apple' });
+        expect(am.callbackIsPosted('oidc:apple')).toBe(true);
+        expect(am.callbackIsPosted('oidc:idp')).toBe(false);
+        expect(am.callbackIsPosted('oidc:nonesuch')).toBe(false);
+        const flow = flowFrom(await am.startFlow('oidc:apple', { deviceState: BROWSER }));
+        expect(flow.params.get('response_mode')).toBe('form_post');
+        expect(flow.params.get('redirect_uri')).toMatch(/^https:\/\/[^/]+\/auth\/oauth\/apple\/callback$/);
+        idp.idToken = await idp.sign({ sub: 'ann-123', nonce: flow.nonce });
+        await am.authenticate('oidc:apple', { token: AUTH_CODE, state: flow.state, deviceState: BROWSER });
+        expect(decodeProtectedHeader(idp.tokenRequests[0].form.get('client_secret') ?? '')).toEqual({ alg: 'ES256', kid: 'KEY1234567' });
+      });
+
+      test('a key written on one line with \\n escapes is accepted', async () => {
+        process.env[KEY_ENV] = (await pkcs8('ES256')).replace(/\n/g, '\\n');
+        config['ngdpbase.auth.oidc.providers'] = { apple: apple() };
+        expect((await started()).outsideProviders().map(p => p.id)).toEqual(['oidc:apple']);
+      });
+
+      test.each([
+        ['a literal private key', { 'private-key': NOT_AN_ENV_REFERENCE }],
+        ['a private key whose variable is not set', { 'private-key': '$NGDPBASE_TEST_UNSET_VARIABLE' }],
+        ['no team id', { 'team-id': '' }],
+        ['no key id', { 'key-id': undefined }]
+      ])('is not registered with %s', async (_what, overrides) => {
+        config['ngdpbase.auth.oidc.providers'] = { apple: apple(overrides) };
+        expect((await started()).outsideProviders()).toEqual([]);
+      });
+
+      test('is not registered with a key Apple does not sign with (RSA)', async () => {
+        process.env[KEY_ENV] = await pkcs8('RS256');
+        config['ngdpbase.auth.oidc.providers'] = { apple: apple() };
+        expect((await started()).outsideProviders()).toEqual([]);
+      });
     });
 
     test('the old google-oidc keys keep working, as the google entry, and only once', async () => {

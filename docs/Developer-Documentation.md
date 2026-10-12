@@ -32,7 +32,7 @@ Workflow:
 | ---------- | --- | --- | ------------- |
 | [Managers](#managers) | 41 | 46 | Core system managers |
 | [Plugins](#plugins) | 32 | 36 | JSPWiki-style content plugins |
-| [Providers](#providers) | 45 | 47 | Storage and service providers |
+| [Providers](#providers) | 45 | 50 | Storage and service providers |
 | [Architecture](#architecture) | n/a | 15+ | System design and patterns |
 | [Testing](#testing) | n/a | 3 | Testing guides and strategies |
 | [API](#api-reference) | n/a | Auto-gen | TypeDoc generated API reference |
@@ -188,16 +188,19 @@ Storage and service providers in `src/providers/`. Each provider implements a `B
 | FileSystemMediaProvider | ✅ [doc](providers/FileSystemMediaProvider.md) | Read-only filesystem media library with EXIF parsing and keyword facets; the default MediaManager backend |
 | FileSystemProvider | 📘 [doc](providers/FileSystemProvider.md) + [guide](providers/FileSystemProvider-Complete-Guide.md) | UUID-based page storage on local disk with YAML frontmatter |
 | FileUserProvider | 📘 [doc](providers/FileUserProvider.md) + [guide](providers/FileUserProvider-Complete-Guide.md) | JSON-file user, role, and session storage — the default UserManager backend |
-| GoogleOIDCProvider | ✅ [doc](providers/GoogleOIDCProvider.md) | Retired — Google sign-in is now the generic OidcAuthProvider with the google preset |
 | LunrSearchProvider | ✅ [doc](providers/LunrSearchProvider.md) | In-memory full-text search index (MiniSearch, Lunr query syntax and stemming) — default backend for SearchManager |
 | MagicLinkAuthProvider | ✅ [doc](providers/MagicLinkAuthProvider.md) | Email-based passwordless authentication — user gets a single-use verification link |
 | NodeCacheProvider | ✅ [doc](providers/NodeCacheProvider.md) | In-process LRU cache (powered by node-cache) — default backend for CacheManager |
 | NullAuditProvider | ✅ [doc](providers/NullAuditProvider.md) | Discards all audit events — for tests and minimal-config deployments where auditing is off |
 | NullCacheProvider | ✅ [doc](providers/NullCacheProvider.md) | No-op cache — every get is a miss; every set is discarded |
 | OidcAuthProvider | ✅ [doc](providers/OidcAuthProvider.md) | Sign-in through any outside OpenID Connect provider, by an identity connected to the account |
+| OidcAuthProvider-Apple | ✅ [doc](providers/OidcAuthProvider-Apple.md) | Sign in with Apple — the apple preset of OidcAuthProvider, its signed client secret and POSTed callback, and how to register the site with Apple |
+| OidcAuthProvider-Authentik | ✅ [doc](providers/OidcAuthProvider-Authentik.md) | Sign in through a self-hosted authentik — an OidcAuthProvider entry with its own issuer (no preset), and how to set it up in authentik |
+| OidcAuthProvider-Google | ✅ [doc](providers/OidcAuthProvider-Google.md) | Sign in with Google — the google preset of OidcAuthProvider, and how to register the site with Google |
+| OidcAuthProvider-Microsoft | ✅ [doc](providers/OidcAuthProvider-Microsoft.md) | Sign in with a personal Microsoft account — the microsoft preset of OidcAuthProvider, and how to register the site in Microsoft Entra |
 | OidcBearerAuthProvider | ✅ [doc](providers/OidcBearerAuthProvider.md) | Accepts access tokens from this instance's own OpenID Connect provider on ngdpbase's API, as a delegation from the person (#1576) |
 | PasskeyAuthProvider | ✅ [doc](providers/PasskeyAuthProvider.md) | Passkeys (WebAuthn) on @simplewebauthn/server — a passkey alone signs a person in at AAL2, phishing-resistant, tied to the base-url host (#448) |
-| PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with bcrypt-hashed passwords stored in the user record |
+| PasswordAuthProvider | ✅ [doc](providers/PasswordAuthProvider.md) | Username + password authentication with scrypt-hashed passwords stored in the user record |
 | RedisCacheProvider | ✅ [doc](providers/RedisCacheProvider.md) | External Redis-backed cache — shared across multiple ngdpbase instances |
 | SqliteDatabaseProvider | ✅ [doc](providers/SqliteDatabaseProvider.md) | The application database as one SQLite file, SQLCipher-encrypted when NGDPBASE_DATABASE_KEY is set; WAL mode, fsynced, migrated at open (#1536) |
 | SqliteJobStateProvider | ✅ [doc](providers/SqliteJobStateProvider.md) | Scheduled-job state, run history, checkpoints and slot locks in the application database (job_state, job_runs, job_checkpoints, job_leases); lock by one conditional write (#1714) |

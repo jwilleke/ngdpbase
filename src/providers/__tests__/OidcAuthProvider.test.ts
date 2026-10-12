@@ -8,6 +8,7 @@
 vi.mock('../../http/guardedFetch.js', () => ({ guardedFetch: vi.fn() }));
 
 import * as crypto from 'node:crypto';
+import { decodeProtectedHeader, exportPKCS8, generateKeyPair, jwtVerify } from 'jose';
 import { guardedFetch } from '../../http/guardedFetch.js';
 import { OidcAuthProvider, type IdentityStore } from '../OidcAuthProvider';
 import { fakeIssuer, flowFrom, type FakeIssuer } from './__fixtures__/fakeOidcIssuer';
@@ -218,6 +219,59 @@ describe('OidcAuthProvider (#1743)', () => {
         redirectUri: 'https://wiki.example.com/auth/oauth/idp/callback', policy: { deniedRanges: [], allowedRanges: [] }
       }, store());
       await expect(provider.startFlow({ deviceState: BROWSER })).rejects.toThrow(/names issuer/);
+    });
+  });
+
+  describe('Apple: a signed client secret, a POSTed callback, a string email_verified (slice 4b)', () => {
+    const APPLE = 'https://appleid.apple.com';
+    const TEAM_ID = 'TEAM123456';
+    const KEY_ID = 'KEY1234567';
+    let publicKey: CryptoKey;
+
+    beforeEach(async () => {
+      idp = await fakeIssuer(APPLE);
+      rows = new Map([[`${APPLE}#ann-123`, { id: 'row-1', username: 'ann' }]]);
+      // Apple's discovery: client_secret_post only.
+      idp.discovery = { ...idp.discovery, token_endpoint_auth_methods_supported: ['client_secret_post'] };
+      vi.mocked(guardedFetch).mockImplementation((url, options) => idp.respond(url, options));
+      const pair = await generateKeyPair('ES256', { extractable: true });
+      publicKey = pair.publicKey;
+      provider = new OidcAuthProvider({
+        name: 'apple', displayName: 'Apple', issuer: APPLE, clientId: idp.clientId,
+        clientSecret: { teamId: TEAM_ID, keyId: KEY_ID, privateKey: crypto.createPrivateKey(await exportPKCS8(pair.privateKey)) },
+        redirectUri: 'https://site.example.com/auth/oauth/apple/callback', policy: { deniedRanges: [], allowedRanges: [] },
+        responseMode: 'form_post', emailVerifiedMayBeString: true
+      }, store());
+    });
+
+    test('asks for the callback to be POSTed', async () => {
+      const flow = await begin();
+      expect(flow.params.get('response_mode')).toBe('form_post');
+      expect(provider.callbackIsPosted).toBe(true);
+      expect(make().callbackIsPosted).toBe(false);
+    });
+
+    test('the client secret is a short-lived ES256 JWT: kid, iss = team, sub = client, aud = Apple, verified by the public key', async () => {
+      const flow = await begin();
+      expect(await provider.verify({ token: AUTH_CODE, state: flow.state, deviceState: BROWSER })).toEqual({ username: 'ann' });
+      const form = idp.tokenRequests[0].form;
+      expect(idp.tokenRequests[0].headers.Authorization).toBeUndefined();
+      expect(form.get('client_id')).toBe(idp.clientId);
+      const jwt = form.get('client_secret') ?? '';
+      expect(decodeProtectedHeader(jwt)).toEqual({ alg: 'ES256', kid: KEY_ID });
+      const { payload } = await jwtVerify(jwt, publicKey, { issuer: TEAM_ID, subject: idp.clientId, audience: APPLE, algorithms: ['ES256'] });
+      expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBeLessThanOrEqual(300);
+      expect(payload.exp ?? 0).toBeGreaterThan(Date.now() / 1000);
+    });
+
+    test.each([
+      ['the string "true" counts', 'true', 'ann@privaterelay.appleid.example'],
+      ['the boolean true counts', true, 'ann@privaterelay.appleid.example'],
+      ['the string "false" does not', 'false', ''],
+      ['no flag does not', undefined, '']
+    ])('email_verified: %s', async (_what, flag, kept) => {
+      const flow = await begin({ email: 'ann@privaterelay.appleid.example', email_verified: flag, is_private_email: 'true' }, { connectFor: 'ann' });
+      expect((await provider.verifyIdentity({ token: AUTH_CODE, state: flow.state, deviceState: BROWSER }, 'ann'))?.email).toBe(kept);
     });
   });
 

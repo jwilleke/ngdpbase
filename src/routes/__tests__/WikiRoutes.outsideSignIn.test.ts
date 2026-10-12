@@ -16,6 +16,10 @@ import express, { type Request as ExpressRequest, type Response as ExpressRespon
 import request from 'supertest';
 import { csrfMiddleware } from '../../middleware/csrf';
 import { csrfTestSessionFields, csrfTestBodyField } from '../../middleware/__tests__/__fixtures__/csrfTestHelpers';
+import { outsideCallbackRelay, OUTSIDE_CALLBACK_PATH } from '../../middleware/outsideCallbackRelay';
+import cookieParser from 'cookie-parser';
+import expressSession from 'express-session';
+import { randomBytes } from 'node:crypto';
 
 const res = () => ({
   status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis(), redirect: vi.fn().mockReturnThis(),
@@ -27,6 +31,7 @@ const session = (): Record<string, unknown> => ({ username: 'ann', isAuthenticat
 function routes(opts: { stale?: boolean; connectFor?: string | null } = {}) {
   const authManager = {
     outsideProviders: vi.fn(() => [{ id: 'oidc:google', name: 'google', displayName: 'Google' }]),
+    callbackIsPosted: vi.fn((id: string) => id === 'oidc:apple'),
     startFlow: vi.fn().mockResolvedValue('https://accounts.example/authorize?state=s1'),
     startConnect: vi.fn().mockResolvedValue('https://accounts.example/authorize?state=s2'),
     flowConnectsFor: vi.fn(() => opts.connectFor ?? null),
@@ -220,6 +225,66 @@ describe('outside sign-in routes (#1743)', () => {
     await r.removeOwnCredential(req({ params: { id: 'row-1' } }), refused);
     expect(decodeURIComponent(String(refused.redirect.mock.calls[0][0]))).toMatch(/last way into the account/);
   });
+  describe('a provider that POSTs its callback (Apple form_post, slice 4b)', () => {
+    /** The session signing key for this run; made up, never a literal. */
+    const SESSION_KEY = randomBytes(16).toString('hex');
+    /** The authorization code Apple POSTs back; any value. */
+    const AUTH_CODE = 'c1';
+
+    /** The app's order: body parser, the relay, cookies, the session, CSRF, then the routes. */
+    const app = () => {
+      const { r, authManager } = routes();
+      const a = express();
+      a.use(express.urlencoded({ extended: true }));
+      a.post(OUTSIDE_CALLBACK_PATH, outsideCallbackRelay((id) => authManager.callbackIsPosted(id)));
+      a.use(cookieParser());
+      a.use(expressSession({ secret: SESSION_KEY, resave: false, saveUninitialized: false, cookie: { sameSite: 'lax' } }));
+      a.use(csrfMiddleware);
+      a.get(OUTSIDE_CALLBACK_PATH, (q: ExpressRequest, s: ExpressResponse) => void r.finishOutsideFlow(q, s));
+      a.post('/auth/oauth/:name', (q: ExpressRequest, s: ExpressResponse) => void r.startOutsideSignIn(q, s));
+      return { a, authManager };
+    };
+
+    test('the cross-site POST (no cookies, no CSRF token) becomes a GET, which finishes with the browser\'s state cookie', async () => {
+      const { a, authManager } = app();
+      const posted = await request(a).post('/auth/oauth/apple/callback').type('form')
+        .send({ code: AUTH_CODE, state: 's1', user: JSON.stringify({ name: { firstName: 'Ann' } }) })
+        .expect(303);
+      expect(posted.headers.location).toBe('/auth/oauth/apple/callback?code=c1&state=s1');
+      // No session is started for the POST, so the person's own session cookie is not replaced.
+      expect(posted.headers['set-cookie']).toBeUndefined();
+      expect(authManager.finishOutsideSignIn).not.toHaveBeenCalled();
+
+      // The GET is a top-level navigation: the Lax state cookie comes with it.
+      const finished = await request(a).get(posted.headers.location as string).set('Cookie', `${OAUTH_STATE_COOKIE}=browser-a`).expect(302);
+      expect(finished.headers.location).toBe('/after');
+      expect(authManager.finishOutsideSignIn).toHaveBeenCalledWith(expect.anything(), 'oidc:apple',
+        { token: AUTH_CODE, state: 's1', deviceState: 'browser-a' }, expect.objectContaining({ purpose: 'sign-in' }));
+    });
+
+    test('the provider\'s error is carried on, and the sign-in page says it was cancelled', async () => {
+      const { a, authManager } = app();
+      const posted = await request(a).post('/auth/oauth/apple/callback').type('form').send({ error: 'user_cancelled_authorize', state: 's1' }).expect(303);
+      expect(posted.headers.location).toBe('/auth/oauth/apple/callback?state=s1&error=user_cancelled_authorize');
+      const finished = await request(a).get(posted.headers.location as string).expect(302);
+      expect(finished.headers.location).toBe('/login?error=' + encodeURIComponent('Sign-in was cancelled'));
+      expect(authManager.finishOutsideSignIn).not.toHaveBeenCalled();
+    });
+
+    test('a POSTed callback for a provider that does not POST it is refused by CSRF', async () => {
+      const { a, authManager } = app();
+      await request(a).post('/auth/oauth/google/callback').type('form').send({ code: 'c1', state: 's1' }).expect(403);
+      await request(a).post('/auth/oauth/Apple/callback').type('form').send({ code: 'c1', state: 's1' }).expect(403);
+      expect(authManager.finishOutsideSignIn).not.toHaveBeenCalled();
+    });
+
+    test('CSRF is still enforced on every other POST, including starting an Apple sign-in', async () => {
+      const { a, authManager } = app();
+      await request(a).post('/auth/oauth/apple').type('form').send({}).expect(403);
+      expect(authManager.startFlow).not.toHaveBeenCalled();
+    });
+  });
+
   describe('confirming a waiting connection after a sign-in', () => {
     const signedOut = { username: 'anonymous', roles: ['anonymous'], isAuthenticated: false };
 
