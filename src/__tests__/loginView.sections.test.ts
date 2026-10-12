@@ -38,7 +38,7 @@ const sections = (doc: Document): string[] =>
 const separators = (doc: Document): number => doc.querySelectorAll('[data-signin-separator]').length;
 
 describe('#1781 the login page labels each sign-in method', () => {
-  test('password only: one labelled section, no "or"', async () => {
+  test('password only: one labelled section', async () => {
     const doc = await login();
     expect(sections(doc)).toEqual(['password']);
     expect(doc.getElementById('signin-password-heading')?.textContent).toBe('Username and password');
@@ -46,26 +46,24 @@ describe('#1781 the login page labels each sign-in method', () => {
     expect(doc.querySelector('a[href="/recover-password"]')).not.toBeNull();
   });
 
-  test('all three, in order, with an "or" between each pair', async () => {
+  test('all three, in order, and no "or" lines between them', async () => {
     const doc = await login({ passkeyEnabled: true, outsideProviders: [FAMILY] });
     expect(sections(doc)).toEqual(['password', 'passkey', 'external']);
     expect([...doc.querySelectorAll('h2')].map(h => h.textContent)).toEqual(['Username and password', 'Passkey', 'External provider']);
-    expect(separators(doc)).toBe(2);
-    // The passkey section's "or" is inside it, so it hides with it where passkeys are unsupported.
+    expect(separators(doc)).toBe(0);
+    expect(doc.body.textContent).not.toMatch(/— or —/);
     const passkey = doc.querySelector('[data-passkey-section]')!;
     expect(passkey.classList.contains('d-none')).toBe(true);
-    expect(passkey.querySelectorAll('[data-signin-separator]')).toHaveLength(1);
   });
 
-  test('password sign-in off: passkey and external, the "or" between them hides with the passkey', async () => {
+  test('password sign-in off: passkey and external', async () => {
     const doc = await login({ passwordAuthEnabled: false, passkeyEnabled: true, outsideProviders: [GOOGLE] });
     expect(sections(doc)).toEqual(['passkey', 'external']);
     expect(doc.querySelector('form:has(input[type="password"])')).toBeNull();
-    expect(separators(doc)).toBe(1);
-    expect(doc.querySelector('[data-passkey-section] [data-signin-separator]')).not.toBeNull();
+    expect(separators(doc)).toBe(0);
   });
 
-  test('password sign-in off with only outside providers: no "or" at all', async () => {
+  test('password sign-in off with only outside providers', async () => {
     const doc = await login({ passwordAuthEnabled: false, outsideProviders: [GOOGLE, FAMILY] });
     expect(sections(doc)).toEqual(['external']);
     expect(separators(doc)).toBe(0);
@@ -76,10 +74,10 @@ describe('#1781 the login page labels each sign-in method', () => {
     expect(sections(await login({ passwordAuthEnabled: false }))).toEqual(['password']);
   });
 
-  test('password and external: one "or"', async () => {
+  test('password and external: two sections, no "or"', async () => {
     const doc = await login({ outsideProviders: [GOOGLE] });
     expect(sections(doc)).toEqual(['password', 'external']);
-    expect(separators(doc)).toBe(1);
+    expect(separators(doc)).toBe(0);
   });
 
   test('the pending-connection notice stays above every section', async () => {
