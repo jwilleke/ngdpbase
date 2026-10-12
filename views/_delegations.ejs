@@ -1,12 +1,15 @@
 <%# #1764 — "My tokens and devices": the signed-in person's agent tokens and the apps and
     devices they approved, as one list (AuthManager.listDelegations). Each row says how it
     is renewed, in plain words, and has one Revoke that goes through AuthManager's door.
-    Locals: items (Delegation[]), csrfToken. "Can do" shows each scope's plain words (Delegation.can). %>
+    Locals: items (Delegation[]), csrfToken, canExtend (#1734: the viewer, who owns every row
+    here, holds token-extend). "Can do" shows each scope's plain words (Delegation.can). %>
 <%# Times go out as <time datetime data-local-time> with the UTC text as the fallback;
     /js/local-time.js (loaded by header.ejs) shows them in the viewer's own zone. %>
 <%
   const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
   const typeOf = function (d) { return d.kind === 'token' ? 'Agent token' : (d.device ? 'Device' : 'App'); };
+  // #1734: a fixed agent token its owner may extend. The button is an affordance; the route still decides.
+  const extendable = function (d) { return typeof canExtend !== 'undefined' && canExtend === true && d.kind === 'token' && d.renewal === 'fixed'; };
 %>
 <% if (items.length === 0) { %>
   <p class="text-muted small mb-0">You have no tokens, apps or devices.</p>
@@ -14,6 +17,7 @@
   <p class="small text-muted mb-2">
     <span class="badge bg-secondary">Fixed</span> stops working on its end date; you make a new one when you need it.
     <span class="badge bg-info text-dark ms-2">Refreshable</span> renews itself automatically, with a new key each time.
+    <% if (items.some(extendable)) { %><span class="badge bg-success ms-2">Extendable</span> stops on its end date unless you press Extend, which moves the date later; the token and what it can do stay the same.<% } %>
   </p>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0">
@@ -25,6 +29,7 @@
           <td class="small"><%= typeOf(d) %></td>
           <td>
             <% if (d.renewal === 'refreshable') { %><span class="badge bg-info text-dark">Refreshable</span>
+            <% } else if (extendable(d)) { %><span class="badge bg-success">Extendable</span>
             <% } else { %><span class="badge bg-secondary">Fixed</span><% } %>
           </td>
           <td class="small text-muted">
@@ -43,6 +48,10 @@
             <% } %>
           </td>
           <td class="text-end">
+            <% if (extendable(d)) { %>
+            <%# #1734: POST /api/tokens/:id/extend, to the longest a token may last; profile.ejs wires the click. %>
+            <button type="button" class="btn btn-sm btn-outline-secondary me-1" data-extend-token="<%= d.id %>" title="Move the end date to the latest a token may last">Extend</button>
+            <% } %>
             <%# The name rides in a data attribute, HTML-escaped — never built into a script string. %>
             <form action="/profile/tokens/<%= d.kind %>/<%= encodeURIComponent(d.id) %>/revoke" method="POST" class="d-inline"
                   data-confirm="<%= d.kind === 'token' ? 'Revoke ' + d.name + '? Anything using it stops working immediately.' : 'Revoke access for ' + d.name + '? It will need approving again.' %>"

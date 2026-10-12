@@ -1,6 +1,6 @@
 ---
 name: AgentTokenManager
-description: 'Mints, verifies and revokes user-delegated agent API tokens'
+description: 'Mints, verifies, extends and revokes user-delegated agent API tokens'
 dateModified: '2026-10-12'
 category: managers
 code: src/managers/AgentTokenManager.ts
@@ -44,11 +44,12 @@ A record:
 
 ## Audit events
 
-Mint and revoke emit audit events through `AuditManager` ([#1111](https://github.com/jwilleke/ngdpbase/issues/1111)):
+Mint, extend and revoke emit audit events through `AuditManager` ([#1111](https://github.com/jwilleke/ngdpbase/issues/1111), [#1734](https://github.com/jwilleke/ngdpbase/issues/1734)):
 
 | Event | `action` | Carries |
 |---|---|---|
 | `token-mint` | `token-mint` | `id`, `owner`, `name`, `scopes`, `expiresAt` |
+| `token-extend` | `token-extend` | `id`, `owner`, `name`, `previousExpiresAt`, `expiresAt` |
 | `token-revoke` | `token-revoke` | `id`, `owner`, `name`, `revokedBy` |
 
 Both also carry `viaTokenId` / `viaTokenName`, as explicit nulls for a human action so a query can filter on the field existing rather than treating "absent" and "not a token" as the same thing.
@@ -77,16 +78,28 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 | `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
 | `listForOwner(owner)` | That owner's live tokens, without hashes. |
 | `listAll()` | Every live token — admin oversight. |
+| `extend(id, subject, hours?)` | Moves the expiry of one of `subject`'s own live tokens later by `hours` (the maximum when omitted), never past now + `max-ttl-hours`. The token string and scopes do not change. See [Extending](#extending). |
 | `revoke(id, byUsername)` | Effective immediately; `verify()` reads the store per request, so there is no cache to wait out. |
 | `purgeExpired()` | Drops dead records past `retention-days`. Audit records are unaffected. Also runs on the maintenance timer, not only at boot. |
 | `flushLastUsed()` | Writes buffered `lastUsedAt` stamps to disk. Runs on the maintenance timer and on `shutdown()`; public so a caller can force it. |
 | `backup()` | Public records only — __no hashes, and so not restorable__. It preserves the audit trail of what existed, not working credentials. |
+
+### Extending
+
+[#1734](https://github.com/jwilleke/ngdpbase/issues/1734). Extending saves handing an agent a new token every day; it never makes a token longer-lived than minting one now would.
+
+- __The owner only.__ `extend` returns `null` for a token that is not the subject's, and the route answers that as `404`, as revoke does for a non-owner. An admin does not extend someone else's token: like minting, a token's lifetime traces to the person who chose to delegate (decided 2026-10-12, conservatively; the issue left it open).
+- __`token-extend`__, asked of the PDP with the request's subject, so step-up applies and a delegated credential is refused. Shipped to admin only, grantable; an admin may grant it to any role or person.
+- __Live tokens only.__ An expired or revoked token is refused: mint a new one.
+- __Capped.__ The new expiry is the old one plus `hours`, but never beyond now + `max-ttl-hours`; `hours` above `max-ttl-hours` is refused, and a token already at the cap is refused rather than silently left unchanged.
+- __Recorded first.__ `token-extend` is declared `on-failure: refuse`, so the record is written before the expiry moves, and a failed write leaves the token as it was.
 
 ### Mint-time rules
 
 - An __unscoped token is rejected__, never treated as unrestricted.
 - __`admin-*` scopes are refused outright__ — a token can never carry them, however privileged its owner. This is a refusal, not a warning: warnings get clicked through.
 - TTL above `max-ttl-hours` is rejected; the max defaults equal to the default so nothing longer-lived can be minted without an operator raising the ceiling.
+- __`token-extend` is refused as a scope__, as `token-mint` is (`src/utils/delegation.ts`): a token that could lengthen its own life would never expire. Step-up already refuses it to a delegated credential, but a site may turn step-up off.
 - The per-user cap counts __live__ tokens only — revoking one frees a slot.
 - __Every scope must be one the owner holds right now__ (#1178). Asked of policy through the PDP (`PolicyDecisionPoint.permits`) per expanded scope; the refusal names the missing scopes (`You do not hold page-delete. …`) and the route returns it as a 400, which the profile card shows in its error alert. A scope the owner lacks would be inert anyway (effective permission is owner ∩ scopes), so this is an accurate error at the moment the user can act on it rather than a silent token that cannot do what it says. No `UserManager` means no answer, and no answer is a refusal.
 

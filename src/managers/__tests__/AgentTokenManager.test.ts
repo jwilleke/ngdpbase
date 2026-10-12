@@ -770,3 +770,141 @@ describe('#1111 the token lifecycle is audited', () => {
     expect(m.listAll()).toHaveLength(0);
   });
 });
+
+/**
+ * #1734 — extend a token instead of minting a new one. The token string and
+ * scopes stay; only `expiresAt` moves, never past now + max-ttl-hours. Only
+ * the owner, holding `token-extend`, and only while the token is live.
+ *
+ * Sabotaged once each (2026-10-12): owner check removed (another user's
+ * extend returned a record), the PDP ask removed (holder-without passed),
+ * isLive check removed (expired and revoked extended), the Math.min cap
+ * removed (expiry went to old + 24h), the audit call removed (no event, and
+ * the failing-sink test extended anyway), the token-extend mint refusal
+ * removed (minted). Each went red.
+ */
+describe('#1734 extend', () => {
+  const HOUR = 3_600_000;
+
+  function withAudit(failing = false) {
+    const events: Array<Record<string, unknown>> = [];
+    const engine = {
+      getManager: (name: string) => {
+        if (name === 'ConfigurationManager') {
+          return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => tmpDir };
+        }
+        if (name === 'AuditManager') {
+          return {
+            logAuditEvent: async (e: Record<string, unknown>) => {
+              if (failing) throw new Error('sink down');
+              events.push(e);
+              return 'id';
+            },
+            flushAuditQueue: async () => {}
+          };
+        }
+        if (name === 'PolicyDecisionPoint') {
+          return { permits: async (_s: PermissionSubject, action: string) => !lackingScopes.includes(action) };
+        }
+        return null;
+      }
+    } as never;
+    return { engine, events };
+  }
+
+  test('the owner extends their own live token; token and scopes unchanged', async () => {
+    const m = await makeManager();
+    const t0 = Date.now();
+    const { token, record } = await m.mint(subject('jim'), 'agent', ['page-read'], 2, t0);
+    const extended = await m.extend(record.id, subject('jim'), 5, t0 + HOUR);
+    expect(extended).not.toBeNull();
+    expect(Date.parse(extended!.expiresAt)).toBe(t0 + 7 * HOUR);
+    expect(extended!.scopes).toEqual(record.scopes);
+    // The same cleartext still verifies, now past its old expiry.
+    expect(await m.verify(token, t0 + 3 * HOUR)).not.toBeNull();
+  });
+
+  test('omitting hours extends to the longest a token may last: now + max-ttl-hours', async () => {
+    const m = await makeManager();
+    const t0 = Date.now();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 1, t0);
+    const extended = await m.extend(record.id, subject('jim'), undefined, t0 + 30 * 60_000);
+    expect(Date.parse(extended!.expiresAt)).toBe(t0 + 30 * 60_000 + 24 * HOUR);
+  });
+
+  test('another user is refused as if the token did not exist', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 2);
+    expect(await m.extend(record.id, subject('mallory'), 1)).toBeNull();
+    expect(m.getById(record.id)!.expiresAt).toBe(record.expiresAt);
+  });
+
+  test('an expired token is refused: mint a new one', async () => {
+    const m = await makeManager();
+    const t0 = Date.now();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 1, t0);
+    await expect(m.extend(record.id, subject('jim'), 1, t0 + 2 * HOUR)).rejects.toThrow(/expired or revoked/);
+  });
+
+  test('a revoked token is refused', async () => {
+    const m = await makeManager();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 2);
+    await m.revoke(record.id, 'jim');
+    await expect(m.extend(record.id, subject('jim'), 1)).rejects.toThrow(/expired or revoked/);
+  });
+
+  test('the new expiry never exceeds now + max-ttl-hours', async () => {
+    const m = await makeManager();
+    const t0 = Date.now();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 20, t0);
+    const extended = await m.extend(record.id, subject('jim'), 24, t0 + HOUR);
+    expect(Date.parse(extended!.expiresAt)).toBe(t0 + HOUR + 24 * HOUR);
+    await expect(m.extend(record.id, subject('jim'), 25, t0 + HOUR)).rejects.toThrow(/exceeds the maximum of 24/);
+  });
+
+  test('a token already at the cap is refused rather than silently unchanged', async () => {
+    const m = await makeManager();
+    const t0 = Date.now();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 24, t0);
+    await expect(m.extend(record.id, subject('jim'), 1, t0)).rejects.toThrow(/already lasts the longest/);
+  });
+
+  test('an owner who does not hold token-extend is refused', async () => {
+    lackingScopes = ['token-extend'];
+    const m = await makeManager();
+    const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 2);
+    await expect(m.extend(record.id, subject('jim'), 1)).rejects.toThrow(/You do not hold token-extend/);
+    expect(m.getById(record.id)!.expiresAt).toBe(record.expiresAt);
+  });
+
+  test('a token can never carry token-extend', async () => {
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'x', ['page-read', 'token-extend'])).rejects.toThrow(/never extends/);
+  });
+
+  test('the extension is audited with the old and new expiry', async () => {
+    const { engine, events } = withAudit();
+    const m = new AgentTokenManager(engine);
+    await m.initialize();
+    const t0 = Date.now();
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read'], 2, t0);
+    const extended = await m.extend(record.id, subject('alice'), 3, t0);
+    const ext = events.filter((e) => e.eventType === 'token-extend');
+    expect(ext).toHaveLength(1);
+    expect(ext[0]).toMatchObject({ user: 'alice', action: 'token-extend', result: 'success' });
+    expect(ext[0].metadata).toMatchObject({
+      id: record.id, owner: 'alice', name: 'ci',
+      previousExpiresAt: record.expiresAt, expiresAt: extended!.expiresAt
+    });
+  });
+
+  test('a failing audit sink refuses the extension and leaves the expiry where it was', async () => {
+    // Mint with a working sink, then extend against a failing one.
+    const m = new AgentTokenManager(withAudit().engine);
+    await m.initialize();
+    const { record } = await m.mint(subject('alice'), 'ci', ['page-read'], 2);
+    (m as unknown as { engine: unknown }).engine = withAudit(true).engine;
+    await expect(m.extend(record.id, subject('alice'), 1)).rejects.toThrow(/on-failure: refuse/i);
+    expect(m.getById(record.id)!.expiresAt).toBe(record.expiresAt);
+  });
+});

@@ -1827,13 +1827,24 @@
       }
     },
     "token-mint": {
-      "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope",
+      "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role; never anonymous (#1734). A token can never carry this scope",
       "label": "Make and revoke your own agent tokens",
       "icon": "key",
       "color": "#fd7e14",
       "audit": {
         "on-failure": "refuse",
         "description": "Agent token minted; a credential nobody knows exists is the worst case"
+      },
+      "step-up": true
+    },
+    "token-extend": {
+      "description": "Extend your own live agent tokens instead of minting new ones, to at most max-ttl-hours from now; the token and its scopes stay the same (#1734). Admin only by default. A token can never carry this scope",
+      "label": "Extend your own agent tokens",
+      "icon": "clock",
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Agent token's expiry moved later by its owner; carries the old and new expiry (#1734)"
       },
       "step-up": true
     },
@@ -2391,6 +2402,7 @@
         "share-extend",
         "share-revoke",
         "token-mint",
+        "token-extend",
         "asset-edit",
         "search-page",
         "search-user",
@@ -2440,6 +2452,7 @@
         "asset-upload",
         "search-page",
         "admin-read",
+        "token-mint",
         "profile-manage",
         "account-security",
         "comment-create",
@@ -2472,6 +2485,7 @@
         "user-delete",
         "search-user",
         "page-read",
+        "token-mint",
         "profile-manage",
         "account-security",
         "comment-create",
@@ -2546,6 +2560,7 @@
         "media-read",
         "asset-upload",
         "search-page",
+        "token-mint",
         "profile-manage",
         "account-security",
         "comment-create",
@@ -2577,6 +2592,7 @@
         "asset-read",
         "media-read",
         "search-page",
+        "token-mint",
         "profile-manage",
         "account-security",
         "comment-create",

@@ -33,6 +33,8 @@ Handing over a password gives up all four.
 
 Tokens are __off by default__. If you do not see the __New token__ button in the __My tokens and devices__ section described below, an administrator needs to enable them first — see [Server Management].
 
+Once they are on, anyone who can sign in may create tokens. Creating one asks you to confirm your sign-in if you have not signed in recently.
+
 ## Creating a token
 
 1. Sign in and open your [Profile Page].
@@ -109,6 +111,15 @@ Every token expires within a day at most. This is deliberate: a credential that 
 
 A program that runs continuously therefore needs a new token each day, created here while you are signed in. There is no way for a program to renew its own token — that is the point, since anything able to renew a credential indefinitely is close to a permanent one.
 
+## Extending a token
+
+If you are allowed to extend tokens, __Extend__ on your [Profile Page] moves a token's expiry to a full day from now. The token itself and what it may do stay the same, so the program using it keeps working without being given a new one.
+
+- Only a token that has not expired and has not been revoked can be extended. Once a token has expired, create a new one.
+- Extending never makes a token last longer than a day from the moment you extend it.
+- You can extend only your own tokens. Like creating one, extending asks you to confirm your sign-in if you have not signed in recently.
+- Extending is an administrator's permission by default; an administrator can let others do it too.
+
 If a program stops working and reports an authorisation failure, an expired token is the first thing to check.
 
 ## Limits
@@ -119,6 +130,6 @@ If a program stops working and reports an authorisation failure, an expired toke
 
 ## Related
 
-- [Profile Page] — where tokens are created and revoked
+- [Profile Page] — where tokens are created, extended and revoked
 - [User Roles and Permissions] — what your account may do, which bounds every token you create
 - [Server Management] — enabling tokens, for administrators

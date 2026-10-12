@@ -504,6 +504,7 @@ audited.
 | `secret-reveal` | A masked configuration value shown to an administrator; the key is recorded, never the value | continue | yes |
 | `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
+| `token-extend` | Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) | refuse | yes |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `search-page` | Page search; not recorded, read volume | continue | no |
