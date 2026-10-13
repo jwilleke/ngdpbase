@@ -411,7 +411,7 @@
                                     <% if (delegations === null) { %>
                                     <p class="text-danger small mb-0">Your tokens and devices could not be read just now. Nothing has been removed; reload the page to try again.</p>
                                     <% } else { %>
-                                    <%- include('_delegations', { items: delegations, csrfToken: csrfToken }) %>
+                                    <%- include('_delegations', { items: delegations, csrfToken: csrfToken, canExtend: typeof agentTokensCanExtend !== 'undefined' && agentTokensCanExtend === true }) %>
                                     <% } %>
                                 </div>
                             </div>
@@ -1020,6 +1020,31 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('agent-token-done-btn')?.addEventListener('click', () => {
         secretEl.value = '';
         window.location.reload();
+    });
+
+    // #1734: Extend keeps the token and its permissions; only the end date moves.
+    // Step-up: the route answers with a reauth link, which is followed.
+    document.querySelectorAll('[data-extend-token]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/tokens/' + encodeURIComponent(btn.dataset.extendToken) + '/extend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+                    body: '{}'
+                });
+                const data = await res.json().catch(() => ({}));
+                if (data.reauth) { window.location.href = data.reauth; return; }
+                if (!res.ok || !data.success) {
+                    window.alert(data.error || ('Could not extend the token (HTTP ' + res.status + ')'));
+                    btn.disabled = false;
+                    return;
+                }
+                window.location.reload();
+            } catch (err) {
+                btn.disabled = false;
+            }
+        });
     });
 })();
 </script>

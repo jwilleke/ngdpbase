@@ -137,6 +137,8 @@ export const AUDIT_EVENT = {
   SYSTEM_SHUTDOWN: 'system-shutdown',
   /** Instance started; reports whether the previous run ended cleanly */
   SYSTEM_START: 'system-start',
+  /** Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) */
+  TOKEN_EXTEND: 'token-extend',
   /** Agent token minted; a credential nobody knows exists is the worst case */
   TOKEN_MINT: 'token-mint',
   /** Agent token revoked */

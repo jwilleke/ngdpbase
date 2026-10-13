@@ -65,7 +65,9 @@ export type CorePermission =
   | 'share-revoke'
   /** Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it */
   | 'store-create'
-  /** Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope */
+  /** Extend your own live agent tokens instead of minting new ones, to at most max-ttl-hours from now; the token and its scopes stay the same (#1734). Admin only by default. A token can never carry this scope */
+  | 'token-extend'
+  /** Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). Every signed-in role except demo-admin; never anonymous (#1734). A token can never carry this scope */
   | 'token-mint'
   /** Create user accounts */
   | 'user-create'
@@ -107,6 +109,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'share-extend',
   'share-revoke',
   'store-create',
+  'token-extend',
   'token-mint',
   'user-create',
   'user-delete',

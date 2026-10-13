@@ -94,7 +94,7 @@ export interface AuditEvent {
  */
 export type PageMutationOp = 'create' | 'edit' | 'rename' | 'link-rewrite';
 export type AttachmentOp = 'upload' | 'delete';
-export type TokenOp = 'mint' | 'revoke';
+export type TokenOp = 'mint' | 'revoke' | 'extend';
 
 // #1201: the builders look the name up rather than interpolating it, so the
 // compiler — not a grep — knows which names each family can produce.
@@ -110,7 +110,8 @@ const ASSET_EVENT: Record<AttachmentOp, AuditEventName> = {
 };
 const TOKEN_EVENT: Record<TokenOp, AuditEventName> = {
   mint: AUDIT_EVENT.TOKEN_MINT,
-  revoke: AUDIT_EVENT.TOKEN_REVOKE
+  revoke: AUDIT_EVENT.TOKEN_REVOKE,
+  extend: AUDIT_EVENT.TOKEN_EXTEND
 };
 
 interface CommonInput {
@@ -143,8 +144,10 @@ export interface TokenInput extends CommonInput {
   name?: string | null;
   /** Only meaningful for `mint`; ignored otherwise. */
   scopes?: readonly string[];
-  /** Only meaningful for `mint`; ignored otherwise. */
+  /** The expiry granted: meaningful for `mint` and `extend`; ignored otherwise. */
   expiresAt?: string;
+  /** The expiry before an `extend` (#1734); ignored otherwise. */
+  previousExpiresAt?: string;
   /** Only meaningful for `revoke`; ignored otherwise. */
   revokedBy?: string;
 }
@@ -439,7 +442,7 @@ export async function recordAuditEvent(
 }
 
 /**
- * Build the audit event for an agent token mint or revoke (#1111).
+ * Build the audit event for an agent token mint, extend or revoke (#1111, #1734).
  *
  * Before this, the token store was the only record that a credential had ever
  * existed — and `purgeExpired()` claimed otherwise in a comment ("Audit is
@@ -453,12 +456,13 @@ export async function recordAuditEvent(
  * mutation logged at the HTTP layer misses an internal caller and that is
  * survivable; an unaudited mint is a credential nobody knows exists.
  *
- * `scopes` and `expiresAt` appear on a mint only, and `revokedBy` on a revoke
- * only — the same rule `page-rename` follows for `fromPageName`. A field
- * present on every event is useless as a filter.
+ * `scopes` appear on a mint only, `expiresAt` on a mint and an extend (with
+ * `previousExpiresAt` on an extend, #1734), and `revokedBy` on a revoke only —
+ * the same rule `page-rename` follows for `fromPageName`. A field present on
+ * every event is useless as a filter.
  */
 export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
-  const { op, username, ipAddress, id, owner, name, scopes, expiresAt, revokedBy, viaToken } = input;
+  const { op, username, ipAddress, id, owner, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
 
   const metadata: Record<string, unknown> = {
     id,
@@ -469,6 +473,11 @@ export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
 
   if (op === 'mint') {
     metadata.scopes = [...(scopes ?? [])];
+    metadata.expiresAt = expiresAt;
+  }
+
+  if (op === 'extend') {
+    metadata.previousExpiresAt = previousExpiresAt;
     metadata.expiresAt = expiresAt;
   }
 

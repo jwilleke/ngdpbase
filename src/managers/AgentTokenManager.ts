@@ -66,7 +66,7 @@ import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
-import { FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation.js';
+import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -454,6 +454,11 @@ class AgentTokenManager extends BaseManager {
     if (effectiveScopes.includes(MINT_PERMISSION)) {
       throw new Error(`Tokens cannot carry ${MINT_PERMISSION}: a token never mints a token`);
     }
+    // #1734: nor does it extend one — a leaked token that could lengthen its
+    // own life would never expire.
+    if (effectiveScopes.includes(EXTEND_PERMISSION)) {
+      throw new Error(`Tokens cannot carry ${EXTEND_PERMISSION}: a token never extends a token`);
+    }
 
     // #1178: every scope must be one the owner holds right now. Asked of the
     // PDP, the same answer the token would get at use time; with no PDP there
@@ -624,6 +629,91 @@ class AgentTokenManager extends BaseManager {
 
     logger.info(`[AgentTokenManager] Token ${id} (owner=${record.owner}) revoked by ${byUsername}`);
     return true;
+  }
+
+  /**
+   * Extend one of the caller's own live tokens (#1734): move its expiry later
+   * by `hours` (the maximum when omitted), never beyond now + `max-ttl-hours`.
+   * The token string and its scopes do not change, so the agent holding it
+   * keeps working without a new hand-over.
+   *
+   * - Only the token's owner extends it. An admin does not extend someone
+   *   else's token: like minting, a token's lifetime traces to the person who
+   *   chose to delegate. Returns null for a token that is not the caller's, so
+   *   the route answers it as one that does not exist.
+   * - The owner must hold `token-extend`, asked of the PDP with the subject the
+   *   request carries, so step-up applies and a delegated credential is refused.
+   * - An expired or revoked token is not extended: mint a new one.
+   *
+   * Recorded before the expiry moves, like mint and revoke: `token-extend` is
+   * declared on-failure: refuse, so a lifetime change that cannot be audited
+   * does not happen.
+   *
+   * @returns The updated record, or null when the caller has no such token
+   * @throws Error with a caller-safe message when the extension is refused
+   */
+  async extend(
+    id: string,
+    subject: PermissionSubject,
+    hours?: number,
+    now: number = Date.now()
+  ): Promise<AgentTokenPublic | null> {
+    const owner = subject?.username;
+    const record = this.tokens.get(id);
+    if (!owner || !record || record.owner !== owner) return null;
+
+    const pdp = this.engine.getManager('PolicyDecisionPoint') as
+      { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
+    if (!pdp || !(await pdp.permits(subject, EXTEND_PERMISSION))) {
+      throw new Error(`You do not hold ${EXTEND_PERMISSION}`);
+    }
+
+    if (!this.isLive(record, now)) {
+      throw new Error('An expired or revoked token cannot be extended; mint a new one');
+    }
+
+    const add = hours ?? this.tokenConfig.maxTtlHours;
+    if (!Number.isFinite(add) || add <= 0) {
+      throw new Error('hours must be a positive number');
+    }
+    if (add > this.tokenConfig.maxTtlHours) {
+      throw new Error(`hours exceeds the maximum of ${this.tokenConfig.maxTtlHours}`);
+    }
+
+    const previous = expiryOf(record);
+    const next = Math.min(previous + add * 3_600_000, now + this.tokenConfig.maxTtlHours * 3_600_000);
+    if (next <= previous) {
+      throw new Error(`This token already lasts the longest a token may (${this.tokenConfig.maxTtlHours} hours from now)`);
+    }
+    const expiresAt = new Date(next).toISOString();
+
+    await recordAuditEvent(
+      this.auditSink(),
+      buildTokenAuditEvent({
+        op: 'extend',
+        username: owner,
+        ipAddress: undefined,
+        id,
+        owner: record.owner,
+        name: record.name,
+        previousExpiresAt: record.expiresAt,
+        expiresAt,
+        viaToken: subject.viaToken ? { id: subject.viaToken.id, name: subject.viaToken.name } : null
+      }),
+      (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-extend of ${id}:`, err)
+    );
+
+    const previousIso = record.expiresAt;
+    record.expiresAt = expiresAt;
+    try {
+      await this.persist();
+    } catch (err) {
+      record.expiresAt = previousIso;
+      throw err;
+    }
+
+    logger.info(`[AgentTokenManager] Token ${id} (owner=${owner}) extended from ${previousIso} to ${expiresAt}`);
+    return this.toPublic(record);
   }
 
   /**

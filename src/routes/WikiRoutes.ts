@@ -8104,6 +8104,8 @@ ${panes}
         this.engine.getManager<{ getProperty(k: string, d: unknown): unknown }>('ConfigurationManager')
           ?.getProperty('ngdpbase.auth.agent-token.enabled', false)
       );
+      // #1734: the Extend button is an affordance — held, not fresh; pressing it asks the door.
+      const agentTokensCanExtend = agentTokensEnabled && (await wikiContext.holdsPermission('token-extend'));
 
       // #1517: files in the user's own vaults that no page there uses. Best-effort:
       // a failure leaves the section out rather than the profile.
@@ -8169,6 +8171,7 @@ ${panes}
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
         agentTokensEnabled, // #946
+        agentTokensCanExtend, // #1734
         captureStartsPrivate: this.captureDefaultPrivatePreference(freshUser?.preferences), // #1504
         user: freshUser || currentUser, // Use fresh user data if available
         permissions: userPermissions,
@@ -10224,6 +10227,49 @@ ${panes}
     } catch (err) {
       logger.error('[api/tokens] revoke failed:', err);
       return res.status(500).json({ success: false, error: 'Could not revoke token' });
+    }
+  }
+
+  /**
+   * POST /api/tokens/:id/extend — move one of the caller's own live tokens'
+   * expiry later (#1734). Body: `{ hours? }`, the maximum when omitted; never
+   * beyond now + max-ttl-hours. The token string and scopes stay the same.
+   *
+   * Asks `token-extend` (step-up, admin only by default). Only the owner
+   * extends a token: another user's token answers 404, as revoke does, so its
+   * existence is not confirmed.
+   */
+  async extendAgentToken(req: Request, res: Response) {
+    try {
+      const wikiContext = this.createWikiContext(req);
+      const user = wikiContext.userContext;
+      if (!(await this.permitted(wikiContext, 'token-extend', req, res, 'json'))) return;
+      if (!user?.username) return this.refuse(wikiContext, req, res, 'json', 'token-extend');
+      const manager = this.agentTokensEnabled()
+        ? this.engine.getManager('AgentTokenManager') as import('../managers/AgentTokenManager.js').default | null
+        : null;
+      if (!manager) {
+        return res.status(503).json({ success: false, error: 'Agent tokens are not enabled' });
+      }
+
+      const body = (req.body ?? {}) as { hours?: unknown };
+      const hours = body.hours === undefined ? undefined : Number(body.hours);
+      let record;
+      try {
+        record = await manager.extend(req.params.id, user, hours);
+      } catch (err) {
+        // extend() throws caller-safe refusals (expired, revoked, bad hours, at the cap).
+        const message = err instanceof Error ? err.message : 'Could not extend token';
+        logger.warn(`[api/tokens] extend rejected: ${message}`);
+        return res.status(400).json({ success: false, error: message });
+      }
+      if (!record) {
+        return res.status(404).json({ success: false, error: 'Token not found' });
+      }
+      return res.json({ success: true, record });
+    } catch (err) {
+      logger.error('[api/tokens] extend failed:', err);
+      return res.status(500).json({ success: false, error: 'Could not extend token' });
     }
   }
 
@@ -15445,6 +15491,7 @@ ${panes}
     app.get('/api/tokens', (req: Request, res: Response) => void this.listAgentTokens(req, res));
     app.post('/api/tokens', (req: Request, res: Response) => void this.mintAgentToken(req, res));
     app.delete('/api/tokens/:id', (req: Request, res: Response) => void this.revokeAgentToken(req, res));
+    app.post('/api/tokens/:id/extend', (req: Request, res: Response) => void this.extendAgentToken(req, res));
     app.post('/api/comments/:pageUuid', (req: Request, res: Response) => void this.addComment(req, res));
     app.delete('/api/comments/:pageUuid/:commentId', (req: Request, res: Response) => void this.deleteComment(req, res));
     // #590 partial-render: returns just the inner comment-list HTML so the
