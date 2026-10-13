@@ -462,6 +462,8 @@ interface IPolicyInformationPoint {
   /** #714 Slice F: rich-return form — `{ allowed, reason }`. Lets callers
    *  specialise 403 messages on `reason` (e.g. `author_lock_deny`). */
   evaluatePagePermission(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }>;
+  /** #1668: the same evaluator, asked only to show a control — records nothing. */
+  pageAffordance(wikiContext: WikiContext, action: string): Promise<boolean>;
   /** The private-container decision for a file in a store: owner or delegate, never a role (#1382). */
   canAccessPrivateContainer(userContext: WikiContext['userContext'], owner: string, resource: string, action: string): boolean;
   /** An active account as a subject, or null (#1431). */
@@ -1169,10 +1171,8 @@ class WikiRoutes {
         } roles=${userContext?.roles?.join('|')}`
       );
 
-      // #632: build the WikiContext once and use it for both the ACL check and
-      // the render. checkPagePermissionWithContext runs the full 3-tier evaluator
-      // (private user-keyword → frontmatter audience → global policies) where
-      // the deprecated checkPagePermission only ran tier 2.
+      // #632: build the WikiContext once for the render. There is no access
+      // check on chrome (#950, below), so nothing here is recorded.
       const leftMenuCtx = leftMenuContent !== null
         ? new WikiContext(this.engine as unknown as import('../types/WikiEngine.js').WikiEngine, {
           pageName: 'LeftMenu',
@@ -2829,8 +2829,10 @@ ${panes}
       // the helper; a no-op on the default (wiki) posture.
       this.auditPageView(req, pageName, (metadata as { uuid?: string } | null)?.uuid);
 
-      // Check if user can edit this page
-      const canEdit = await policyInformationPoint.checkPagePermissionWithContext(wikiContext, 'edit');
+      // Whether to SHOW the Edit control — an affordance, not the edit door
+      // (#1668): it records nothing, so an anonymous view writes no
+      // authorization-deny. GET /edit and POST /save ask the door.
+      const canEdit = await policyInformationPoint.pageAffordance(wikiContext, 'edit');
 
       // #1751: one page cache — the markup parser's read-through, keyed by the
       // viewer and their roles and following the data each render read.

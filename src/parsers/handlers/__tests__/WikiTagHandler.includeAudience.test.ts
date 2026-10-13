@@ -11,7 +11,7 @@
  * what the decider was handed, and a mocked decider cannot see that.
  */
 import PolicyInformationPoint from '../../../security/PolicyInformationPoint';
-import { readPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
+import { readPageThroughDoor, mayShowPageThroughDoor } from '../../../__tests__/__fixtures__/pageReadDoor';
 import WikiTagHandler from '../WikiTagHandler';
 
 const PAGES: Record<string, Record<string, unknown>> = {
@@ -34,7 +34,8 @@ function makeEngine(withAcl = true) {
   const pageManager = {
     getPageMetadata: async (name: string) => PAGES[name] ?? null,
     checkPrivatePageAccess: async () => null,
-    readPage: null as unknown
+    readPage: null as unknown,
+    mayShowPage: null as unknown
   };
   const engine = {
     getManager: (name: string): unknown => {
@@ -46,8 +47,9 @@ function makeEngine(withAcl = true) {
     }
   };
   acl = new PolicyInformationPoint(engine);
-  pageManager.readPage = readPageThroughDoor(engine, (name) =>
-    PAGES[name] ? { content: CONTENT[name], metadata: PAGES[name] } : null);
+  const pages = (name: string) => PAGES[name] ? { content: CONTENT[name], metadata: PAGES[name] } : null;
+  pageManager.readPage = readPageThroughDoor(engine, pages);
+  pageManager.mayShowPage = mayShowPageThroughDoor(engine, pages);
   return engine;
 }
 

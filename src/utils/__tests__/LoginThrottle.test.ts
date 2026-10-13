@@ -8,7 +8,7 @@
  * these tests state the exact instant they mean and cannot drift.
  */
 
-import { LoginThrottle } from '../LoginThrottle';
+import { LoginThrottle, throttlePerCopyWarning } from '../LoginThrottle';
 
 const MIN = 60_000;
 
@@ -172,5 +172,30 @@ describe('configure() applies without losing state (#1044)', () => {
     t.configure({ maxAttempts: 2, windowMs: 10 * MIN, baseLockMs: 1 * MIN, maxLockMs: 8 * MIN });
 
     expect(t.recordFailure('user:admin', 1).justLocked).toBe(true);
+  });
+});
+
+describe('throttlePerCopyWarning (#1767)', () => {
+  test('pm2 running several copies: one warning naming the count and that each copy counts separately', () => {
+    const warning = throttlePerCopyWarning({ pm_id: '3', instances: '4', NODE_APP_INSTANCE: '0' }, true);
+    expect(warning).toMatch(/4 copies/);
+    expect(warning).toMatch(/each copy/);
+  });
+
+  test('pm2 one copy per CPU (max, 0, -1) is several', () => {
+    for (const instances of ['max', '0', '-1']) {
+      expect(throttlePerCopyWarning({ pm_id: '0', instances }, true)).toMatch(/several copies/);
+    }
+  });
+
+  test('a copy numbered above 0 is one of several, whatever instances says', () => {
+    expect(throttlePerCopyWarning({ pm_id: '7', NODE_APP_INSTANCE: '2' }, true)).not.toBeNull();
+  });
+
+  test('no warning for one pm2 copy, outside pm2, or with throttling off', () => {
+    expect(throttlePerCopyWarning({ pm_id: '0', instances: '1', NODE_APP_INSTANCE: '0' }, true)).toBeNull();
+    expect(throttlePerCopyWarning({}, true)).toBeNull();
+    expect(throttlePerCopyWarning({ instances: '4' }, true)).toBeNull();
+    expect(throttlePerCopyWarning({ pm_id: '3', instances: '4' }, false)).toBeNull();
   });
 });

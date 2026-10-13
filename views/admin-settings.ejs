@@ -66,7 +66,7 @@
                                     <td><%= settings.activeTheme %><% if (settings.themeInfo) { %> &mdash; <em><%= settings.themeInfo.name %></em><% } %></td>
                                 </tr>
                                 <tr>
-                                    <td><strong>Session Timeout:</strong></td>
+                                    <td><strong>Longest sign-in:</strong></td>
                                     <td><%= settings.sessionTimeoutHours %> hours</td>
                                 </tr>
                             </table>
@@ -92,9 +92,10 @@
                                            value="<%= settings.maxFileSizeMB %>" min="1" max="2048" style="max-width: 120px;">
                                 </div>
                                 <div class="mb-3">
-                                    <label for="sessionTimeoutHours" class="form-label">Session Timeout (hours)</label>
+                                    <label for="sessionTimeoutHours" class="form-label">Longest sign-in (hours)</label>
                                     <input type="number" class="form-control" id="sessionTimeoutHours" name="sessionTimeoutHours"
                                            value="<%= settings.sessionTimeoutHours %>" min="1" max="8760" style="max-width: 120px;">
+                                    <div class="form-text">After this long, a person signs in again however active they have been. 720 hours is 30 days.</div>
                                 </div>
                                 <div class="mb-3">
                                     <div class="form-check">
@@ -153,8 +154,8 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
-                            <p>Settings saved. Changes to <strong>Maximum File Upload Size</strong> and
-                            <strong>Session Timeout</strong> will not take effect until the server is restarted.</p>
+                            <p>Settings saved. A change to <strong>Maximum File Upload Size</strong> will not take
+                            effect until the server is restarted.</p>
                             <p class="text-muted mb-0"><small>Use the Restart button on the Admin Dashboard, or run
                             <code>./server.sh restart</code> from the command line.</small></p>
                         </div>

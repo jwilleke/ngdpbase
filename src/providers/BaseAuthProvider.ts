@@ -96,6 +96,24 @@ export interface AuthResult {
    * Absent on credentials that carry no sign-in (agent tokens).
    */
   aal?: Aal;
+
+  /**
+   * What an outside identity provider said about its own sign-in (#1633), set
+   * only by outside sign-in providers. AuthManager reads it and decides what
+   * it counts for; a provider never does.
+   */
+  reported?: ReportedAssurance;
+}
+
+/**
+ * An outside identity provider's `amr` and `acr` (#1633), exactly as its
+ * verified ID token carried them: unchecked, so any type. AuthManager keeps
+ * only well-formed values (`reportedValues`) and maps them to a level
+ * (`outsideLevel`), counting them only for a provider the admin trusts.
+ */
+export interface ReportedAssurance {
+  amr?: unknown;
+  acr?: unknown;
 }
 
 /**

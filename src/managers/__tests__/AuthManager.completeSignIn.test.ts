@@ -9,7 +9,13 @@
  * Real AuthManager; a fake request whose session behaves like
  * express-session's (regenerate() empties it and hands back a fresh id).
  */
+import { createRequire } from 'node:module';
 import AuthManager from '../AuthManager';
+import { checkSessionLimits } from '../../utils/sessionLimits';
+
+// express-session's own Cookie, so the lifetime a sign-in sets is checked as the library keeps it.
+const Cookie = createRequire(import.meta.url)('express-session/session/cookie.js') as new (opts: { maxAge: number }) => { maxAge: number; originalMaxAge: number };
+const DAY = 24 * 60 * 60 * 1000;
 
 const makeConfigManager = () => ({
   getProperty: vi.fn((_key: string, defaultValue: unknown) => defaultValue),
@@ -256,6 +262,61 @@ describe('AuthManager.completeSignIn (#1758)', () => {
       expect(audit.logAuthentication).toHaveBeenCalledWith(
         { username: 'molly', ipAddress: '203.0.113.7', userAgent: 'TestAgent/1.0', loginMethod: 'password' }, 'failure', 'password refused');
       expect(userManager.recordSignIn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the session\'s lifetime (#1767)', () => {
+    /** A session like express-session's: regenerate() hands back a fresh one with the default cookie. */
+    function reqWithCookie() {
+      const { req, session } = fakeReq();
+      session.cookie = new Cookie({ maxAge: DAY });
+      session.regenerate = vi.fn((cb: (err?: unknown) => void) => {
+        for (const k of Object.keys(session)) if (k !== 'regenerate' && k !== 'save') delete session[k];
+        session.id = 'regenerated-id';
+        session.cookie = new Cookie({ maxAge: DAY });
+        cb();
+      });
+      return { req, session };
+    }
+
+    test('sign-in records its time on the regenerated session, and the cookie lasts the cap', async () => {
+      const { manager } = setup();
+      const { req, session } = reqWithCookie();
+      const before = Date.now();
+
+      await manager.completeSignIn(req, passwordResult, { method: 'password' });
+
+      expect(session.id).toBe('regenerated-id');
+      expect(session.signedInAt).toBeGreaterThanOrEqual(before);
+      expect(session.signedInAt).toBeLessThanOrEqual(Date.now());
+      const cookie = session.cookie as { originalMaxAge: number };
+      // originalMaxAge is what express-session re-issues the cookie with, and what the store expires by.
+      expect(cookie.originalMaxAge).toBeGreaterThan(30 * DAY - 1000);
+      expect(cookie.originalMaxAge).toBeLessThanOrEqual(30 * DAY);
+    });
+
+    test('a time left on the old session does not survive regeneration: the cap starts at this sign-in', async () => {
+      const { manager } = setup();
+      const { req, session } = reqWithCookie();
+      session.signedInAt = 1;
+
+      await manager.completeSignIn(req, passwordResult, { method: 'password' });
+
+      expect(session.signedInAt).toBeGreaterThan(1);
+      expect(checkSessionLimits(session, Date.now(), { idleMs: 0, capMs: 30 * DAY }).end).toBeNull();
+    });
+
+    test('a re-authentication (step-up) does not move the sign-in time, so it cannot extend the cap', async () => {
+      const { manager } = setup();
+      const { req, session } = reqWithCookie();
+      await manager.completeSignIn(req, passwordResult, { method: 'password' });
+      const signedInAt = session.signedInAt as number;
+      session.signedInAt = signedInAt - 31 * DAY;
+
+      await manager.completeReauth(req, passwordResult, 'password');
+
+      expect(session.signedInAt).toBe(signedInAt - 31 * DAY);
+      expect(checkSessionLimits(session, Date.now(), { idleMs: 0, capMs: 30 * DAY }).end).toBe('max-age');
     });
   });
 });

@@ -75,6 +75,7 @@ const mockPolicyInformationPoint = {
   currentSubject: vi.fn(),
   checkPagePermission: vi.fn(),
   checkPagePermissionWithContext: vi.fn(),
+  pageAffordance: vi.fn(),
   removeACLMarkup: vi.fn(),
   parseACL: vi.fn()
 };
@@ -254,6 +255,7 @@ function resetMocks() {
   // ACL
   mockPolicyInformationPoint.checkPagePermission.mockResolvedValue(true);
   mockPolicyInformationPoint.checkPagePermissionWithContext.mockResolvedValue(true);
+  mockPolicyInformationPoint.pageAffordance.mockResolvedValue(true);
   mockPolicyInformationPoint.removeACLMarkup.mockImplementation((c: string) => c);
   mockPolicyInformationPoint.parseACL.mockReturnValue({ permissions: [] });
 

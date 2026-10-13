@@ -96,7 +96,11 @@ interface AccessDecisionLog {
  *   is the `admin-system` permission), frontmatter `audience` / `access`, then
  *   the share or global policy. Shared by every entry point below (#1431 7c).
  * - `checkPagePermissionWithContext` / `evaluatePagePermission` — one page, for
- *   a request that already holds it; the latter returns the reason.
+ *   a request that already holds it; the latter returns the reason. These are
+ *   the doors: asked before acting, and every decision is recorded.
+ * - `pageAffordance` / `pageAffordanceFor` — the same evaluator (this page /
+ *   another page), asked only to decide whether to show a control; records
+ *   nothing (#1668).
  * - `canUserAccessPage` — another page, loaded as this subject (cross-page:
  *   inserts, includes, attachments).
  * - `filterAccessiblePages` — many pages, over the index, with no per-page
@@ -104,7 +108,9 @@ interface AccessDecisionLog {
  *   both directions (#1219).
  * - `canUserAccessMediaItem` / `canAccessPrivateContainer` — media and store
  *   files, by the same rules.
- * - `logAccessDecision` — every single-page decision is recorded.
+ * - `logAccessDecision` — every single-page door decision is recorded; a
+ *   denial becomes an `authorization-deny` record carrying the request's
+ *   address. An affordance is not recorded.
  *
  * What it no longer holds, so nobody goes looking: JSPWiki's page-body ACL
  * markup (#1431 7a — imports convert it to audience terms, #1446); the
@@ -402,24 +408,56 @@ class PolicyInformationPoint extends BaseManager {
   }
 
   /**
+   * Would the page door allow this action — asked only to decide whether to
+   * SHOW a control (the view's Edit button), never before performing it
+   * (#1668). The page analogue of `holdsPermission` / `pdp.holds`: an
+   * affordance, which a door never asks.
+   *
+   * The same evaluator as {@link checkPagePermissionWithContext}, so the two
+   * always agree on allow/deny for the same subject and page. What it does not
+   * do is record: no audit record and no info log line. Showing a control is
+   * not an attempt, and recording it wrote an `authorization-deny` for every
+   * anonymous page view. Acting on the control goes through the door, which
+   * records a refusal.
+   *
+   * @param wikiContext - The request's context, holding the page and its metadata
+   * @param action - Page action (view, edit, delete, rename, upload)
+   * @returns True if the door would allow the action
+   */
+  async pageAffordance(wikiContext: WikiContext, action: string): Promise<boolean> {
+    const { allowed } = await this._runEvaluator(wikiContext, action, false);
+    return allowed;
+  }
+
+  /**
    * Internal evaluator — walks the tiers in order (Tier -1 delegation
    * ceilings → Tier 0 private → Tier 0.5 author-lock → Tier 1
    * audience/access → Tier 2 global policies → default deny) and returns the
    * rich `{ allowed, reason }` decision. First tier to answer wins.
    *
    * `evaluatePagePermission` (rich) and `checkPagePermissionWithContext`
-   * (boolean) both delegate here.
+   * (boolean) both delegate here — the doors, which record every decision.
+   * `pageAffordance` delegates here with `record` false (#1668): the same
+   * walk, with no audit record and its trace at debug, because it only decides
+   * whether to show a control.
    */
-  private async _runEvaluator(wikiContext: WikiContext, action: string): Promise<{ allowed: boolean; reason: string }> {
+  private async _runEvaluator(wikiContext: WikiContext, action: string, record = true): Promise<{ allowed: boolean; reason: string }> {
     if (!wikiContext) {
       throw new Error('PolicyInformationPoint.checkPagePermissionWithContext requires a WikiContext');
     }
 
     const pageName = wikiContext.pageName;
     const userContext = wikiContext.userContext;
+    // A door's trace is info; an affordance's is debug — it runs on every view.
+    const trace = (msg: string): void => {
+      if (record) logger.info(msg); else logger.debug(msg);
+    };
+    const recordDecision = (entry: AccessDecisionLog): void => {
+      if (record) this.logAccessDecision(entry);
+    };
 
     const roles = (userContext?.roles || []).join('|');
-    logger.info(`[ACL] checkPagePermissionWithContext page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
+    trace(`[ACL] ${record ? 'checkPagePermissionWithContext' : 'pageAffordance'} page=${pageName} action=${action} user=${userContext?.username} roles=${roles}`);
 
 
     const policyAction = permissionForPageAction(action);
@@ -455,11 +493,11 @@ class PolicyInformationPoint extends BaseManager {
       )
       : null;
     if (ceiling && !ceiling.permit) {
-      this.logAccessDecision({
+      recordDecision({
         user: userContext, pageName, action, allowed: false, reason: ceiling.reason,
         context: { wikiContext: wikiContext.context }
       });
-      logger.info(`[ACL] ${ceiling.reason} for '${policyAction}' on '${pageName}' — denied`);
+      trace(`[ACL] ${ceiling.reason} for '${policyAction}' on '${pageName}' — denied`);
       return { allowed: false, reason: ceiling.reason };
     }
     // NOT an early allow for a share. A share that passed its ceiling still
@@ -485,7 +523,7 @@ class PolicyInformationPoint extends BaseManager {
     // for a page it did load is a caller bug, and the warning names it.
     if (!wikiContext.pageMetadata && policyAction !== 'page-create') {
       logger.warn(`[ACL] no metadata for '${pageName}' (action=${action}) — refused; a caller deciding about a page must load its metadata`);
-      this.logAccessDecision({
+      recordDecision({
         user: userContext, pageName, action, allowed: false, reason: 'no_page_metadata',
         context: { wikiContext: wikiContext.context }
       });
@@ -517,7 +555,7 @@ class PolicyInformationPoint extends BaseManager {
             // #1504: for policies on the page's system-category.
             attributes: { 'system-category': wikiContext.pageMetadata?.['system-category'], ...extra }
           });
-          logger.info(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
+          trace(`[ACL] PDP decision applicable=${d.applicable} permit=${d.permit} reason=${d.reason}`);
           return { applicable: d.applicable, permit: d.permit, reason: d.reason || 'global_policy' };
         } catch (e) {
           logger.warn('[ACL] PDP error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
@@ -527,9 +565,9 @@ class PolicyInformationPoint extends BaseManager {
     });
 
     if (decision.reason === 'default_deny') {
-      logger.info(`[ACL] Default deny for page=${pageName} (no policy matched)`);
+      trace(`[ACL] Default deny for page=${pageName} (no policy matched)`);
     }
-    this.logAccessDecision({
+    recordDecision({
       user: userContext,
       pageName,
       action,
@@ -701,6 +739,36 @@ class PolicyInformationPoint extends BaseManager {
     action: string,
     knownMetadata?: PageFrontmatter
   ): Promise<boolean> {
+    return this.crossPageDecision(userContext, pageName, action, knownMetadata, true);
+  }
+
+  /**
+   * {@link canUserAccessPage} as an affordance (#1668): would the door allow
+   * this action on that page — asked only to decide whether to show a control
+   * (the journal entry view's Edit link, `<wiki:If exists:>`). The same
+   * cross-page path and the same evaluator, so it agrees with the door; it
+   * records nothing. Acting on the control asks the door.
+   *
+   * @param knownMetadata - As for {@link canUserAccessPage}: the page's
+   *   metadata when the caller has just resolved it (`PageManager.mayShowPage`).
+   */
+  async pageAffordanceFor(
+    userContext: UserContext | null | undefined,
+    pageName: string,
+    action: string,
+    knownMetadata?: PageFrontmatter
+  ): Promise<boolean> {
+    return this.crossPageDecision(userContext, pageName, action, knownMetadata, false);
+  }
+
+  /** The cross-page check, for the door (`record`) or an affordance (#1668). */
+  private async crossPageDecision(
+    userContext: UserContext | null | undefined,
+    pageName: string,
+    action: string,
+    knownMetadata: PageFrontmatter | undefined,
+    record: boolean
+  ): Promise<boolean> {
     if (!pageName) {
       // Conservative-on-security: no page name → deny. Pre-#714 callers in
       // WikiRoutes.checkPrivatePageAccess returned allow for the
@@ -748,10 +816,8 @@ class PolicyInformationPoint extends BaseManager {
       content: null,
       context: 'cross-page-check'
     };
-    return this.checkPagePermissionWithContext(
-      minimalCtx as unknown as WikiContext,
-      action
-    );
+    const { allowed } = await this._runEvaluator(minimalCtx as unknown as WikiContext, action, record);
+    return allowed;
   }
 
   /**
@@ -874,7 +940,7 @@ class PolicyInformationPoint extends BaseManager {
       });
       if (ceiling && !ceiling.permit) {
         logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${ceiling.reason} — media ${item.id} denied`);
-        void this.auditDenial(userContext?.username || 'anonymous', item.id, 'asset-read', ceiling.reason, viaShare, 'media');
+        void this.auditDenial(userContext, item.id, 'asset-read', ceiling.reason, 'media');
         return false;
       }
     }
@@ -943,7 +1009,7 @@ class PolicyInformationPoint extends BaseManager {
       // context preserved for potential future use or logging
       void (obj.context || {});
     }
-    const username = user?.username || user?.name || 'anonymous';
+    const username = PolicyInformationPoint.recordedUser(user);
     const msg = `ACL decision: user=${username} page=${pageName} action=${action} allowed=${!!allowed} reason=${reason || 'n/a'}`;
     if (allowed) {
       this.engine?.logger?.info?.(msg);
@@ -963,8 +1029,13 @@ class PolicyInformationPoint extends BaseManager {
     // that auditRegistry exempts `page-read` for and that #334 was filed about.
     // A denial is rare and is the half worth keeping.
     if (!allowed) {
-      void this.auditDenial(username, pageName, action, reason, (user as { viaShare?: ShareGrant } | undefined)?.viaShare);
+      void this.auditDenial(user, pageName, action, reason);
     }
+  }
+
+  /** The name a decision is recorded under: the subject's, or `anonymous`. */
+  private static recordedUser(subject: UserContext | null | undefined): string {
+    return subject?.username || subject?.name || 'anonymous';
   }
 
   /**
@@ -974,15 +1045,23 @@ class PolicyInformationPoint extends BaseManager {
    * this user do this" must not depend on the audit backend being healthy, and
    * a slow sink must not delay a page render. `authorization-deny` is standard
    * tier for that reason — the critical tier is destruction and credentials.
+   *
+   * Everything about who asked — the name, the request's address, a share —
+   * is read here from the subject the decision was made for, so every
+   * denial this manager records carries the same fields (#1668: the address
+   * was dropped, `ipAddress: undefined`, on every page and media denial). The
+   * session and bearer middleware put the request's address on the subject.
    */
   private async auditDenial(
-    username: string,
+    subject: UserContext | null | undefined,
     pageName: string | undefined,
     action: string | undefined,
     reason: string | undefined,
-    viaShare?: ShareGrant,
     resourceType: 'page' | 'media' = 'page'
   ): Promise<void> {
+    const username = PolicyInformationPoint.recordedUser(subject);
+    const ipAddress = typeof subject?.ipAddress === 'string' && subject.ipAddress ? subject.ipAddress : undefined;
+    const viaShare = subject?.viaShare;
     // #1205: through recordAuditEvent, so the enabled switch, the tier and the
     // outcome are the same door every emitter uses. Standard tier: a slow
     // sink must not delay a page render, and the drop is counted, not hidden.
@@ -992,7 +1071,7 @@ class PolicyInformationPoint extends BaseManager {
       {
         eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
         user: username,
-        ipAddress: undefined,
+        ipAddress,
         action: action ?? 'unknown',
         resource: pageName ?? '',
         resourceType,

@@ -53,6 +53,10 @@ In the [Google Cloud console](https://console.cloud.google.com/), in a project o
 - __The old keys still work.__ When `ngdpbase.auth.google-oidc.enabled` is true and `ngdpbase.auth.oidc.providers` has no `google` entry, `ngdpbase.auth.google-oidc.client-id`, `client-secret` and `callback-url` are read as the `google` entry. Their `auto-provision`, `default-roles`, `hd` and `deny-redirect` are not. A `google` entry in the map wins, and the old keys are then ignored with a warning. A factors entry or an account's `allowedAuthMethods` naming `google-oidc` still applies to `oidc:google`.
 - Google is on the public internet, so the outbound guard allows it without configuration.
 
+## Counting Google's second factor
+
+- `"trust-mfa": true` on the entry is the switch ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633); `"amr": ["trust"]` in `ngdpbase.auth.factors` does nothing). Google's ID tokens rarely carry `amr` or `acr`, even when the account uses 2-Step Verification, so with `trust-mfa` a Google sign-in is still almost always AAL1. Plan for AAL1; the sign-in's audit record (`metadata.reported`) shows what Google actually sent.
+
 ## See Also
 
 - [OidcAuthProvider](OidcAuthProvider.md) — what an outside sign-in may do, the flows and the checks

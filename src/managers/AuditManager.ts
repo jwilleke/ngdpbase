@@ -46,6 +46,7 @@ import { auditDeclarationsFrom, auditEventDeclarations, bindAuditEvents } from '
 import { AUDIT_EVENT, AUDIT_EVENT_NAME_PATTERN, auditEventNames, type AuditEventName } from '../utils/auditEventNames.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
+import type { ReportedValues } from './AuthManager.js';
 import type { AuditReport } from '../providers/BaseAuditProvider.js';
 import { assessPreviousRun, buildLifecycleAuditEvent, type LifecycleRecord, type PreviousRun } from '../utils/auditLifecycle.js';
 import { recordAuditEvent, type AuditEventSink, type AuditRecordOutcome } from '../utils/auditEvents.js';
@@ -122,6 +123,8 @@ interface AuthenticationContext {
   userAgent?: string;
   loginMethod?: string;
   attemptedUsername?: string;
+  /** #1633: an outside provider's reported `amr` / `acr`, and whether it is trusted; never a token. */
+  reported?: ReportedValues;
 }
 
 /**
@@ -663,7 +666,8 @@ class AuditManager extends BaseManager {
       context: {
         loginMethod: context.loginMethod,
         attemptedUsername: context.attemptedUsername
-      }
+      },
+      ...(context.reported ? { metadata: { reported: context.reported } } : {})
     };
 
     return await this.record(auditEvent);

@@ -58,6 +58,10 @@ In the Apple Developer account (Certificates, Identifiers & Profiles):
 - __The subject is per developer team.__ Moving the Services ID to another team means people connect again.
 - Apple is on the public internet, so the outbound guard allows it without configuration.
 
+## Counting Apple's second factor
+
+- `"trust-mfa": true` on the entry is the switch ([#1633](https://github.com/jwilleke/ngdpbase/issues/1633); `"amr": ["trust"]` in `ngdpbase.auth.factors` does nothing). Apple's ID tokens carry no `amr` or `acr`, although Apple accounts use two-factor authentication, so even with `trust-mfa` an Apple sign-in is AAL1.
+
 ## See Also
 
 - [OidcAuthProvider](OidcAuthProvider.md) — what an outside sign-in may do, the flows and the checks

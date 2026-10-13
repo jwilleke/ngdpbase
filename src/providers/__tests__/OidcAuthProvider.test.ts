@@ -84,8 +84,15 @@ describe('OidcAuthProvider (#1743)', () => {
   test('a connected identity signs in as its account, and nothing else comes back (no roles)', async () => {
     const flow = await begin({ email: 'Ann@Example.com', email_verified: true, groups: ['admins'], roles: ['admin'] });
     const result = await provider.verify({ token: 'code-1', state: flow.state, deviceState: BROWSER });
-    expect(result).toEqual({ username: 'ann' });
+    // #1633: no roles; only how the provider says it signed in, passed on unread (none sent here).
+    expect(result).toEqual({ username: 'ann', reported: { amr: undefined, acr: undefined } });
     expect(used).toEqual([{ id: 'row-1', email: 'ann@example.com' }]);
+  });
+
+  test('the ID token\'s amr and acr are passed on as sent, for AuthManager to judge (#1633)', async () => {
+    const flow = await begin({ amr: ['pwd', 'mfa'], acr: 'http://idmanagement.gov/ns/assurance/aal/2' });
+    const result = await provider.verify({ token: 'code-1', state: flow.state, deviceState: BROWSER });
+    expect(result).toEqual({ username: 'ann', reported: { amr: ['pwd', 'mfa'], acr: 'http://idmanagement.gov/ns/assurance/aal/2' } });
   });
 
   test('an identity connected to no account is refused', async () => {
@@ -156,11 +163,11 @@ describe('OidcAuthProvider (#1743)', () => {
   test('connecting returns the issuer + subject, and the email only when verified', async () => {
     const verified = await begin({ email: 'Ann@Example.com', email_verified: true }, { connectFor: 'ann' });
     expect(await provider.verifyIdentity({ token: 'c', state: verified.state, deviceState: BROWSER }, 'ann'))
-      .toEqual({ subject: `${idp.issuer}#ann-123`, email: 'ann@example.com' });
+      .toEqual({ subject: `${idp.issuer}#ann-123`, email: 'ann@example.com', reported: {} });
 
     const unverified = await begin({ email: 'ann@example.com', email_verified: false }, { connectFor: 'ann' });
     expect(await provider.verifyIdentity({ token: 'c', state: unverified.state, deviceState: BROWSER }, 'ann'))
-      .toEqual({ subject: `${idp.issuer}#ann-123`, email: '' });
+      .toEqual({ subject: `${idp.issuer}#ann-123`, email: '', reported: {} });
 
     const stringly = await begin({ email: 'ann@example.com', email_verified: 'true' }, { connectFor: 'ann' });
     expect((await provider.verifyIdentity({ token: 'c', state: stringly.state, deviceState: BROWSER }, 'ann'))?.email).toBe('');
@@ -200,13 +207,13 @@ describe('OidcAuthProvider (#1743)', () => {
     test('Microsoft personal accounts send an email but no email_verified: the email is not kept', async () => {
       const issuer = 'https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0';
       const identity = await at(issuer, { email: 'ann@outlook.example', tid: '9188040d-6c67-4c5b-b112-36a304b66dad', ver: '2.0', preferred_username: 'ann@outlook.example' });
-      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: '' });
+      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: '', reported: {} });
     });
 
     test('authentik\'s issuer ends in a slash: discovery is read beneath it, and the issuer is matched exactly', async () => {
       const issuer = 'https://auth.example.test/application/o/ngdpbase/';
       const identity = await at(issuer, { email: 'ann@example.com', email_verified: true });
-      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: 'ann@example.com' });
+      expect(identity).toEqual({ subject: `${issuer}#ann-123`, email: 'ann@example.com', reported: {} });
       expect(vi.mocked(guardedFetch)).toHaveBeenCalledWith('https://auth.example.test/application/o/ngdpbase/.well-known/openid-configuration', expect.anything());
     });
 
@@ -253,7 +260,7 @@ describe('OidcAuthProvider (#1743)', () => {
 
     test('the client secret is a short-lived ES256 JWT: kid, iss = team, sub = client, aud = Apple, verified by the public key', async () => {
       const flow = await begin();
-      expect(await provider.verify({ token: AUTH_CODE, state: flow.state, deviceState: BROWSER })).toEqual({ username: 'ann' });
+      expect(await provider.verify({ token: AUTH_CODE, state: flow.state, deviceState: BROWSER })).toEqual({ username: 'ann', reported: {} });
       const form = idp.tokenRequests[0].form;
       expect(idp.tokenRequests[0].headers.Authorization).toBeUndefined();
       expect(form.get('client_id')).toBe(idp.clientId);
