@@ -1,9 +1,11 @@
 <%# #1764 — "My tokens and devices": the signed-in person's agent tokens and the apps and
     devices they approved, as one list (AuthManager.listDelegations). Each row says how it
     is renewed, in plain words, and has one Revoke that goes through AuthManager's door.
-    Locals: items (Delegation[]), csrfToken. %>
+    Locals: items (Delegation[]), csrfToken. "Can do" shows each scope's plain words (Delegation.can). %>
+<%# Times go out as <time datetime data-local-time> with the UTC text as the fallback;
+    /js/local-time.js (loaded by header.ejs) shows them in the viewer's own zone. %>
 <%
-  const when = function (iso) { return iso ? iso.slice(0, 16).replace('T', ' ') + ' UTC' : ''; };
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
   const typeOf = function (d) { return d.kind === 'token' ? 'Agent token' : (d.device ? 'Device' : 'App'); };
 %>
 <% if (items.length === 0) { %>
@@ -25,16 +27,19 @@
             <% if (d.renewal === 'refreshable') { %><span class="badge bg-info text-dark">Refreshable</span>
             <% } else { %><span class="badge bg-secondary">Fixed</span><% } %>
           </td>
-          <td class="small text-muted"><%= d.scopes.join(', ') %></td>
+          <td class="small text-muted">
+            <%# #1764: each permission in plain words (the catalog's label); the internal name only as a tooltip. %>
+            <% (d.can || d.scopes.map(function (n) { return { name: n, description: n }; })).forEach(function (c, i) { %><%= i ? ', ' : '' %><span data-scope="<%= c.name %>" title="<%= c.name %>"><%= c.description %></span><% }) %>
+          </td>
           <td class="small">
             <% if (d.renewal === 'refreshable') { %>
-              <%= d.renewedAt ? 'Last renewed ' + when(d.renewedAt) : 'Not renewed yet' %>
-              <% if (d.expiresAt) { %><div class="text-muted"><%= 'Ends ' + when(d.expiresAt) %></div><% } %>
+              <% if (d.renewedAt) { %>Last renewed <time datetime="<%= d.renewedAt %>" data-local-time><%= utc(d.renewedAt) %></time><% } else { %>Not renewed yet<% } %>
+              <% if (d.expiresAt) { %><div class="text-muted">Ends <time datetime="<%= d.expiresAt %>" data-local-time><%= utc(d.expiresAt) %></time></div><% } %>
             <% } else { %>
-              <%= d.expiresAt ? 'Ends ' + when(d.expiresAt) : 'Ends when you revoke it' %>
+              <% if (d.expiresAt) { %>Ends <time datetime="<%= d.expiresAt %>" data-local-time><%= utc(d.expiresAt) %></time><% } else { %>Ends when you revoke it<% } %>
             <% } %>
             <% if (d.kind === 'token') { %>
-              <div class="text-muted"><%= d.lastUsedAt ? 'Last used ' + when(d.lastUsedAt) : 'Never used' %></div>
+              <div class="text-muted"><% if (d.lastUsedAt) { %>Last used <time datetime="<%= d.lastUsedAt %>" data-local-time><%= utc(d.lastUsedAt) %></time><% } else { %>Never used<% } %></div>
             <% } %>
           </td>
           <td class="text-end">

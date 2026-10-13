@@ -1237,7 +1237,9 @@ void (async (): Promise<void> => {
     registerOidcRoutes(app, {
       oidc: oidcManager,
       templateData: (req) => wikiRoutes.getCommonTemplateData(req),
-      permit: (req, res, permission, mode) => wikiRoutes.permitRequest(req, res, permission, mode)
+      permit: (req, res, permission, mode) => wikiRoutes.permitRequest(req, res, permission, mode),
+      // #1764: consent lines in the catalog's plain words, the same lookup as "My tokens and devices".
+      describeScopes: (names) => engine.getManager<import('./managers/AuthManager.js').default>('AuthManager')?.describeScopes(names) ?? []
     });
   }
   wikiRoutes.registerRoutes(app);

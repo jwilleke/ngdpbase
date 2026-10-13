@@ -6,6 +6,7 @@
   "ngdpbase.permissions.definitions": {
     "form-submit": {
       "description": "Submit a form; site policy decides who may, and an add-on that receives the form checks its own permission",
+      "label": "Submit forms",
       "icon": "paper-plane",
       "color": "#198754",
       "audit": {

@@ -12,6 +12,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import request from 'supertest';
 import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_INTERACTION_PREFIX, OIDC_JWKS_ENV, OIDC_MOUNT } from '../../managers/OidcManager';
 import { consentLines, freshSignInNeeded, registerOidcRoutes } from '../OidcRoutes';
+import { describeScopes } from '../../utils/permissionCatalog';
 
 const BASE = 'http://localhost:3000';
 const REDIRECT = 'https://app.example.com/cb';
@@ -466,6 +467,14 @@ describe('bridge rules (#1572)', () => {
       { scope: 'openid', text: 'Confirm who you are (your username)' },
       { scope: 'email', text: 'Your email address' },
       { scope: 'custom:read', text: 'custom:read' }
+    ]);
+  });
+
+  test('consentLines: a permission scope reads in the catalog\'s plain words (#1764)', () => {
+    const lookup = (names: readonly string[]) => describeScopes(names, { 'page-read': { description: 'dev text', label: 'Read pages' } });
+    expect(consentLines('openid page-read', lookup)).toEqual([
+      { scope: 'openid', text: 'Confirm who you are (your username)' },
+      { scope: 'page-read', text: 'Read pages' }
     ]);
   });
 });

@@ -73,6 +73,7 @@ import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.j
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
+import { describeScopes, type ScopeDescription } from '../utils/permissionCatalog.js';
 import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
@@ -437,6 +438,8 @@ export interface Delegation {
   renewal: Renewal;
   /** What it may do: permission names (and, for an app, its sign-in scopes). */
   scopes: string[];
+  /** `scopes` in plain words, for a person to read (#1764): `describeScopes`. */
+  can: ScopeDescription[];
   /** ISO 8601: made or approved. */
   createdAt: string | null;
   /** ISO 8601: when it stops working; null when it does not end by date. */
@@ -1401,7 +1404,9 @@ class AuthManager extends BaseManager {
    */
   async listDelegations(ctx: PermissionSubject, username: string): Promise<Delegation[]> {
     if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
-    return [...(await this.delegationsOf(username, 'token')), ...(await this.delegationsOf(username, 'app'))];
+    const rows = [...(await this.delegationsOf(username, 'token')), ...(await this.delegationsOf(username, 'app'))];
+    // #1764: what each may do, in the words the person reads.
+    return rows.map(d => ({ ...d, can: this.describeScopes(d.scopes) }));
   }
 
   /**
@@ -1417,8 +1422,20 @@ class AuthManager extends BaseManager {
     return this.endDelegation(username, kind, id, ctx.username ?? 'system');
   }
 
+  /**
+   * Scope and permission names in plain words (#1764): the permission
+   * catalog's `label` for each (`ngdpbase.permissions.definitions`, add-on
+   * permissions merged in), the sign-in scopes' own lines, and anything
+   * declared nowhere by its name. The one lookup: the "My tokens and devices"
+   * list and the app consent page both read it.
+   */
+  describeScopes(names: readonly string[]): ScopeDescription[] {
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    return describeScopes(names, cm?.getProperty('ngdpbase.permissions.definitions', {}));
+  }
+
   /** One kind of `username`'s live delegated credentials, as list rows. */
-  private async delegationsOf(username: string, kind: DelegationKind): Promise<Delegation[]> {
+  private async delegationsOf(username: string, kind: DelegationKind): Promise<Array<Omit<Delegation, 'can'>>> {
     if (kind === 'token') {
       const tokens = this.engine.getManager<AgentTokenManager>('AgentTokenManager')?.listForOwner(username) ?? [];
       return tokens.filter(t => !t.revokedAt).map(t => ({

@@ -9,14 +9,16 @@
 import ejs from 'ejs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { JSDOM } from 'jsdom';
 import type { Delegation } from '../managers/AuthManager';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PARTIAL = path.join(__dirname, '../../views/_delegations.ejs');
+const LOCAL_TIME_JS = path.join(__dirname, '../../public/js/local-time.js');
 
 const row = (over: Partial<Delegation>): Delegation => ({
-  kind: 'token', id: 'tok_1', name: 'import-script', device: false, renewal: 'fixed', scopes: ['page-read'],
+  kind: 'token', id: 'tok_1', name: 'import-script', device: false, renewal: 'fixed', scopes: ['page-read'], can: [{ name: 'page-read', description: 'Read pages' }],
   createdAt: '2026-10-12T08:00:00.000Z', expiresAt: '2026-10-12T20:00:00.000Z', renewedAt: null, lastUsedAt: null, ...over
 });
 
@@ -36,17 +38,24 @@ describe('#1764 My tokens and devices list', () => {
   test('each kind is labelled, with its end date or last renewal, and a Revoke to the one door', async () => {
     const doc = await render([
       row({}),
-      row({ kind: 'app', id: 'g/1', name: 'Living Room TV', device: true, renewal: 'refreshable', expiresAt: null, renewedAt: '2026-10-11T08:00:00.000Z', scopes: ['openid', 'page-read'] }),
+      row({ kind: 'app', id: 'g/1', name: 'Living Room TV', device: true, renewal: 'refreshable', expiresAt: null, renewedAt: '2026-10-11T08:00:00.000Z', scopes: ['openid', 'page-read'], can: [{ name: 'openid', description: 'Confirm who you are' }, { name: 'page-read', description: 'Read pages' }] }),
       row({ kind: 'app', id: 'g2', name: 'Notes app', renewal: 'fixed', expiresAt: '2026-10-15T09:00:00.000Z' })
     ]);
     const rows = [...doc.querySelectorAll('tbody tr')];
     expect(rows.map(r => r.getAttribute('data-delegation'))).toEqual(['token', 'app', 'app']);
-    expect(cells(rows[0]).slice(0, 5)).toEqual(['import-script', 'Agent token', 'Fixed', 'page-read', 'Ends 2026-10-12 20:00 UTC Never used']);
-    expect(cells(rows[1]).slice(0, 5)).toEqual(['Living Room TV', 'Device', 'Refreshable', 'openid, page-read', 'Last renewed 2026-10-11 08:00 UTC']);
-    expect(cells(rows[2]).slice(0, 5)).toEqual(['Notes app', 'App', 'Fixed', 'page-read', 'Ends 2026-10-15 09:00 UTC']);
+    expect(cells(rows[0]).slice(0, 5)).toEqual(['import-script', 'Agent token', 'Fixed', 'Read pages', 'Ends 2026-10-12 20:00 UTC Never used']);
+    expect(cells(rows[1]).slice(0, 5)).toEqual(['Living Room TV', 'Device', 'Refreshable', 'Confirm who you are, Read pages', 'Last renewed 2026-10-11 08:00 UTC']);
+    expect(cells(rows[2]).slice(0, 5)).toEqual(['Notes app', 'App', 'Fixed', 'Read pages', 'Ends 2026-10-15 09:00 UTC']);
     const actions = [...doc.querySelectorAll('form')].map(f => f.getAttribute('action'));
     expect(actions).toEqual(['/profile/tokens/token/tok_1/revoke', '/profile/tokens/app/g%2F1/revoke', '/profile/tokens/app/g2/revoke']);
     expect(doc.querySelector('input[name="_csrf"]')?.getAttribute('value')).toBe('csrf-value');
+  });
+
+  test('"Can do" shows each permission\'s plain words, never its internal name; the name is only the tooltip', async () => {
+    const doc = await render([row({ scopes: ['page-read', 'patient/*.read'], can: [{ name: 'page-read', description: 'Read pages' }, { name: 'patient/*.read', description: 'patient/*.read' }] })]);
+    const spans = [...doc.querySelectorAll('[data-scope]')];
+    expect(spans.map(s => [s.textContent, s.getAttribute('title')])).toEqual([['Read pages', 'page-read'], ['patient/*.read', 'patient/*.read']]);
+    expect(cells(doc.querySelector('tbody tr') as Element)[3]).toBe('Read pages, patient/*.read');
   });
 
   test('a refreshable one not yet renewed says so; plain words, no protocol names', async () => {
@@ -54,5 +63,20 @@ describe('#1764 My tokens and devices list', () => {
     expect(doc.body.textContent).toMatch(/Not renewed yet/);
     expect(doc.body.textContent).toMatch(/Ends 2026-10-12 20:00 UTC/);
     expect(doc.body.textContent).not.toMatch(/RFC|grant|OAuth|OIDC|refresh token/i);
+  });
+  test('times go out as <time datetime data-local-time> (UTC text only as the fallback), and local-time.js shows them in the viewer\'s zone', async () => {
+    const html = await ejs.renderFile(PARTIAL, { items: [row({ lastUsedAt: '2026-10-12T09:30:00.000Z' })], csrfToken: 'csrf-value' });
+    const times = [...new JSDOM(html).window.document.querySelectorAll('time[data-local-time]')];
+    expect(times.map(t => [t.getAttribute('datetime'), t.textContent])).toEqual([
+      ['2026-10-12T20:00:00.000Z', '2026-10-12 20:00 UTC'], ['2026-10-12T09:30:00.000Z', '2026-10-12 09:30 UTC']
+    ]);
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    dom.window.eval(fs.readFileSync(LOCAL_TIME_JS, 'utf8'));
+    if (dom.window.document.readyState === 'loading') await new Promise(r => dom.window.document.addEventListener('DOMContentLoaded', r));
+    const shown = [...dom.window.document.querySelectorAll('time[data-local-time]')];
+    const expected = new Date('2026-10-12T20:00:00.000Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    expect(shown[0].textContent).toBe(expected);
+    expect(shown[0].textContent).not.toMatch(/UTC/);
+    expect(shown[0].getAttribute('title')).toBe('2026-10-12 20:00 UTC');
   });
 });

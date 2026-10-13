@@ -22,16 +22,19 @@
   "ngdpbase.permissions.definitions": {
     "journal-read": {
       "description": "View your own journal: the entry list, entries, tags, moods, on-this-day and streak",
+      "label": "Read your own journal",
       "icon": "book",
       "color": "#0dcaf0"
     },
     "journal-write": {
       "description": "Write, edit and delete your own journal entries and change your journal settings",
+      "label": "Write and edit your own journal",
       "icon": "pen",
       "color": "#198754"
     },
     "journal-export": {
       "description": "Export your whole journal as JSON or Markdown",
+      "label": "Export your own journal",
       "icon": "file-export",
       "color": "#6c757d"
     }
