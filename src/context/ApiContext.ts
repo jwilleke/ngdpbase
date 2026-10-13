@@ -29,7 +29,7 @@ import type { Request, Response } from 'express';
 import '../types/express.js';
 import { BaseContext } from './BaseContext.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
-import type { AgentTokenGrant, PermissionSubject } from '../managers/UserManager.js';
+import type { AgentTokenGrant, PermissionSubject, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
 import type { ReauthMode, FreshSignInAnswer } from '../managers/AuthManager.js';
 
@@ -135,6 +135,9 @@ export class ApiContext extends BaseContext {
   /** The share this request presented, when it did (#1222). Carried for the same reason as `viaToken`. */
   readonly viaShare?: ShareGrant;
 
+  /** The proxy grant this request acts under, when it does (#1762). Carried for the same reason as `viaToken`: a job started from this context keeps it. */
+  readonly viaProxy?: ProxyClaim;
+
   /**
    * The request's subject exactly as the middleware wrote it (#1179/#1382).
    *
@@ -163,6 +166,7 @@ export class ApiContext extends BaseContext {
     roles: string[],
     viaToken?: AgentTokenGrant,
     viaShare?: ShareGrant,
+    viaProxy?: ProxyClaim,
     subject: PermissionSubject | null = null,
     request: Request | null = null
   ) {
@@ -178,6 +182,7 @@ export class ApiContext extends BaseContext {
     this.roles = roles;
     this.viaToken = viaToken;
     this.viaShare = viaShare;
+    this.viaProxy = viaProxy;
     this.subject = subject;
     this.request = request;
   }
@@ -211,6 +216,7 @@ export class ApiContext extends BaseContext {
       Array.isArray(uc.roles) ? (uc.roles) : [],
       uc.viaToken,
       uc.viaShare,
+      uc.viaProxy,
       // #1399: forward the subject the middleware wrote, as it wrote it.
       subjectOf(req),
       req

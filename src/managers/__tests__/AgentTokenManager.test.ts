@@ -887,6 +887,11 @@ describe('#1734 extend', () => {
     await expect(m.mint(subject('jim'), 'x', ['page-read', 'proxy-grant'])).rejects.toThrow(/never lets someone act/);
   });
 
+  test('a token can never carry vault-proxy, a proxy grant\'s marker (#1762 slice 2)', async () => {
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'x', ['page-read', 'vault-proxy'])).rejects.toThrow(/only for proxy grants/);
+  });
+
   test('the extension is audited with the old and new expiry', async () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);

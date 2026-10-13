@@ -1,7 +1,7 @@
 ---
 name: PolicyInformationPoint
 description: What a page decision needs to know about the page — its own rules, walked in order, asking the PDP where global policy decides (was ACLManager)
-dateModified: '2026-10-12'
+dateModified: '2026-10-13'
 category: managers
 code: src/security/PolicyInformationPoint.ts
 ---
@@ -25,11 +25,11 @@ A door asks for a __permission__, never a role. The policies are the only grant,
 
 ## The page's rules
 
-`walkPageTiers` is the one implementation, and every entry point below uses it. The ceilings (an agent token's scope, a share's grant) are asked first by each caller, because they bound the subject rather than the page. Then, first answer wins:
+`walkPageTiers` is the one implementation, and every entry point below uses it. The ceilings (an agent token's scope, a share's grant, a proxy grant — `carriesCeiling`, [#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) are asked first by each caller, because they bound the subject rather than the page. Then, first answer wins:
 
 | Tier | Rule | Note |
 | --- | --- | --- |
-| 0 | __private__ | owner or delegate, never a role. For an encrypted store there is no key an administrator could hold |
+| 0 | __private__ | owner or delegate, never a role; a proxy only under a grant carrying `vault-proxy`. For an encrypted store there is no key an administrator (or a proxy, until #1762 slice 5) could hold |
 | 0.5 | __author-lock__, `edit` only | only denies. The author, or a subject holding `admin-system`, goes on to tier 1 |
 | 1 | frontmatter __`access[action]`__ / __`audience`__ | a page's own restriction, when it states one |
 | 2 | a __share__ is the policy for a share visitor; otherwise __global policy__ via the PDP | |

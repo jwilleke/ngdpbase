@@ -2,8 +2,9 @@
  * Who may act inside a user's private container — `pages/vaults/{user}/` and
  * every vault below it (docs/private-stores.md, Access).
  *
- * The owner, or a share link the owner issued. No role reaches in, admin
- * included.
+ * The owner, a share link the owner issued, or someone acting for the owner
+ * under a proxy grant that carries `vault-proxy` (#1762). No role reaches in,
+ * admin included.
  *
  * A share link gets in only for a vault it names (#1388), and only when the
  * caller names that vault: a question about the owner's container as a whole
@@ -15,11 +16,17 @@
  *
  * An encrypted vault additionally needs a key in the session
  * (`assertContextCanWriteStore`); a share link carries none until #1388's
- * encrypted slices.
+ * encrypted slices, and a proxy none until #1762 slice 5 (`dekFor`).
+ *
+ * The container rule reads the proxy claim the subject carries; whether the
+ * grant is still in force is re-read live by the PDP on every decision, and
+ * the subject itself is rebuilt from the live grant on every request (#1762
+ * slice 4).
  */
 import { isJobContext, type ActorContext } from '../context/ActorContext.js';
 import { toPermissionSubject } from '../context/JobContext.js';
 import { shareNamesVault } from '../types/Share.js';
+import { mixesProxyWithDelegation, proxyCarries } from './proxyClaim.js';
 
 /** The PDP surface a vault decision needs. */
 export interface VaultDecider {
@@ -35,6 +42,10 @@ export function mayActInPrivateContainer(
   opts: { vault?: string } = {}
 ): boolean {
   if (!owner) return false;
+  // #1762: a proxy's subject carries the represented person's username, so
+  // the owner test below would admit it unasked. It gets in only when the
+  // grant carries `vault-proxy`, and never alongside a token or a share.
+  if (ctx.viaProxy && (mixesProxyWithDelegation(ctx) || !proxyCarries(ctx.viaProxy, 'vault-proxy'))) return false;
   if (ctx.viaShare) {
     return opts.vault !== undefined
       && ctx.viaShare.issuer === owner

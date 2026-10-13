@@ -1866,6 +1866,17 @@
       },
       "step-up": true
     },
+    "vault-proxy": {
+      "description": "Let a person acting for you into your vaults (#1762). Read only from a proxy grant: a grant that includes it lets the proxy act inside your vaults within the grant's other permissions; without it a proxy never reaches them. Encrypted vaults stay shut to a proxy until a vault key copy is supported (#1762 slice 5). Every signed-in role except demo-admin, beside proxy-grant. Never carried by an agent token or an app",
+      "label": "Let someone acting for you into your vaults",
+      "icon": "lock-open",
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "continue",
+        "enabled": false,
+        "description": "Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant"
+      }
+    },
     "store-create": {
       "description": "Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it",
       "label": "Create your own private store",
@@ -2447,7 +2458,8 @@
         "account-security",
         "comment-create",
         "store-create",
-        "proxy-grant"
+        "proxy-grant",
+        "vault-proxy"
       ]
     },
     {
@@ -2515,7 +2527,8 @@
         "account-security",
         "comment-create",
         "store-create",
-        "proxy-grant"
+        "proxy-grant",
+        "vault-proxy"
       ]
     },
     {
@@ -2557,7 +2570,8 @@
         "comment-create",
         "search-user",
         "store-create",
-        "proxy-grant"
+        "proxy-grant",
+        "vault-proxy"
       ]
     },
     {
@@ -2593,7 +2607,8 @@
         "comment-create",
         "search-user",
         "store-create",
-        "proxy-grant"
+        "proxy-grant",
+        "vault-proxy"
       ]
     },
     {
@@ -2626,7 +2641,8 @@
         "comment-create",
         "search-user",
         "store-create",
-        "proxy-grant"
+        "proxy-grant",
+        "vault-proxy"
       ]
     },
     {

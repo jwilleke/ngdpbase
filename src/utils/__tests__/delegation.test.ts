@@ -1,12 +1,13 @@
 /** #1576 — one rule for what a delegation (agent token, OIDC app) may never carry. */
-import { EXTEND_PERMISSION, MINT_PERMISSION, PROXY_GRANT_PERMISSION, lackingScopes, refusedDelegatedScope, requireScopeList } from '../delegation';
+import { EXTEND_PERMISSION, MINT_PERMISSION, PROXY_GRANT_PERMISSION, VAULT_PROXY_PERMISSION, lackingScopes, refusedDelegatedScope, requireScopeList } from '../delegation';
 
 describe('refusedDelegatedScope', () => {
-  test('admin-*, token-mint, token-extend and proxy-grant are never delegated; everything else may be', () => {
+  test('admin-*, token-mint, token-extend, proxy-grant and vault-proxy are never delegated; everything else may be', () => {
     expect(refusedDelegatedScope('admin-users')).toMatch(/admin permission/);
     expect(refusedDelegatedScope(MINT_PERMISSION)).toMatch(/never mints a token/);
     expect(refusedDelegatedScope(EXTEND_PERMISSION)).toMatch(/never extends a token/);
     expect(refusedDelegatedScope(PROXY_GRANT_PERMISSION)).toMatch(/never lets someone act for you/);
+    expect(refusedDelegatedScope(VAULT_PROXY_PERMISSION)).toMatch(/only for proxy grants/);
     expect(refusedDelegatedScope('page-read')).toBeNull();
     expect(refusedDelegatedScope('page-edit')).toBeNull();
   });

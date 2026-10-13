@@ -31,7 +31,7 @@
  * becoming asynchronous.
  */
 
-import type { JobSubject, AgentTokenGrant } from '../managers/UserManager.js';
+import type { JobSubject, AgentTokenGrant, ProxyClaim } from '../managers/UserManager.js';
 import type { ShareGrant } from '../types/Share.js';
 
 /**
@@ -63,6 +63,8 @@ export interface JobContext {
   viaToken?: AgentTokenGrant;
   /** The share the requesting call presented, when it did (#1222). Carried for the same reason. */
   viaShare?: ShareGrant;
+  /** The proxy grant the requesting call acted under, when it did (#1762). Carried for the same reason: a job never runs as the represented person unbounded. */
+  viaProxy?: ProxyClaim;
   /** The address the requesting call came from (#1179), when there was one. Provenance for the record. */
   ipAddress?: string;
   /** ISO 8601. When the work was requested, not when it ran. */
@@ -76,6 +78,7 @@ export interface RequestIdentity {
   username?: string | null;
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
+  viaProxy?: ProxyClaim;
   ipAddress?: string;
 }
 
@@ -107,6 +110,7 @@ export function jobContextFromRequest(
     origin: 'request',
     ...(identity?.viaToken ? { viaToken: identity.viaToken } : {}),
     ...(identity?.viaShare ? { viaShare: identity.viaShare } : {}),
+    ...(identity?.viaProxy ? { viaProxy: identity.viaProxy } : {}),
     ...(identity?.ipAddress ? { ipAddress: identity.ipAddress } : {}),
     requestedAt: now.toISOString()
   };
@@ -193,7 +197,8 @@ export function toPermissionSubject(ctx: JobContext): JobSubject {
     // type could not tell that from a caller that forgot them.
     resolveRolesNow: true,
     ...(ctx.viaToken ? { viaToken: ctx.viaToken } : {}),
-    ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {})
+    ...(ctx.viaShare ? { viaShare: ctx.viaShare } : {}),
+    ...(ctx.viaProxy ? { viaProxy: ctx.viaProxy } : {})
   };
 }
 

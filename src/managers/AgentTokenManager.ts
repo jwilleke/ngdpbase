@@ -66,7 +66,7 @@ import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
-import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION, PROXY_GRANT_PERMISSION, lackingScopes, requireScopeList } from '../utils/delegation.js';
+import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION, PROXY_GRANT_PERMISSION, lackingScopes, refusedDelegatedScope, requireScopeList } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -453,6 +453,10 @@ class AgentTokenManager extends BaseManager {
     if (effectiveScopes.includes(PROXY_GRANT_PERMISSION)) {
       throw new Error(`Tokens cannot carry ${PROXY_GRANT_PERMISSION}: a token never lets someone act for its owner`);
     }
+    // Every other scope the one delegation rule refuses (#1762: vault-proxy,
+    // which means something only inside a proxy grant).
+    const refused = effectiveScopes.map(refusedDelegatedScope).find((r): r is string => r !== null);
+    if (refused) throw new Error(`Tokens cannot carry it: ${refused}`);
 
     // #1178: every scope must be one the owner holds right now. Asked of the
     // PDP, the same answer the token would get at use time; with no PDP there

@@ -202,6 +202,19 @@ describe('AuthManager — proxy grants, slice 1 (#1762)', () => {
     expect(await am.listProxyGrants(subject('ann'), { asOwner: 'ann' })).toHaveLength(1);
   });
 
+  test('liveProxyGrant (slice 2): the grant while in force; null once revoked, past its end date, or with proxy access off', async () => {
+    const now = Date.now();
+    const made = await am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'bob', permissions: ['page-read'], expiresAt: new Date(now + 60_000).toISOString() });
+    expect(am.liveProxyGrant(made.id, now)).toEqual(expect.objectContaining({ id: made.id, owner: 'ann', proxy: 'bob', permissions: ['page-read'] }));
+    expect(am.liveProxyGrant(made.id, now + 120_000)).toBeNull();
+    enabled = false;
+    expect(am.liveProxyGrant(made.id, now)).toBeNull();
+    enabled = true;
+    expect(am.liveProxyGrant('no-such-grant', now)).toBeNull();
+    await am.revokeProxy(subject('ann'), made.id);
+    expect(am.liveProxyGrant(made.id, now)).toBeNull();
+  });
+
   test('nobody acts for themselves, and both people must be active accounts', async () => {
     await expect(am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'ann', permissions: ['page-read'] })).rejects.toThrow(/themselves/);
     await expect(am.grantProxy(subject('ann'), { owner: 'ann', proxy: 'nobody', permissions: ['page-read'] })).rejects.toThrow(/no active account nobody/);

@@ -15,7 +15,10 @@
  *   to a delegation, but a site may turn step-up off; this does not move;
  * - `proxy-grant` — a token or an app never lets someone act for the person
  *   (#1762). A proxy grant itself may carry it (that is how a proxy passes
- *   access on), so this rule is for tokens and apps, not proxy grants.
+ *   access on), so this rule is for tokens and apps, not proxy grants;
+ * - `vault-proxy` — it means something only inside a proxy grant, where it
+ *   lets the proxy into the person's vaults (#1762 slice 2); on a token or an
+ *   app it would read as access it can never give.
  *
  * One rule for both delegations, so they cannot drift.
  */
@@ -28,12 +31,15 @@ export const MINT_PERMISSION = 'token-mint';
 export const EXTEND_PERMISSION = 'token-extend';
 /** The permission to make a proxy grant — never carried by a token or an app (#1762). */
 export const PROXY_GRANT_PERMISSION = 'proxy-grant';
+/** The proxy grant's vault marker — never carried by a token or an app (#1762). */
+export const VAULT_PROXY_PERMISSION = 'vault-proxy';
 
 /** Why a scope cannot be delegated, or null when it can. */
 export function refusedDelegatedScope(scope: string): string | null {
   if (scope.startsWith(FORBIDDEN_DELEGATED_PREFIX)) return `${scope} is an admin permission, which is never delegated`;
   if (scope === MINT_PERMISSION) return `${MINT_PERMISSION} is never delegated: a delegation never mints a token`;
   if (scope === EXTEND_PERMISSION) return `${EXTEND_PERMISSION} is never delegated: a delegation never extends a token`;
+  if (scope === VAULT_PROXY_PERMISSION) return `${VAULT_PROXY_PERMISSION} is only for proxy grants: it lets someone acting for you into your vaults`;
   if (scope === PROXY_GRANT_PERMISSION) return `${PROXY_GRANT_PERMISSION} is never delegated: a token or an app never lets someone act for you`;
   return null;
 }

@@ -64,6 +64,30 @@ export interface AgentTokenGrant {
 }
 
 /**
+ * A person acting for another under a proxy grant (#1762 slice 2), as a
+ * subject carries it. The subject's `username` and `roles` are the person
+ * REPRESENTED; this names who is actually acting and under which grant.
+ *
+ * The PDP re-reads the grant on every decision (`AuthManager.liveProxyGrant`)
+ * — nothing here is trusted beyond naming it — and bounds the action by the
+ * grant's permissions and by what `actor` holds, live. A proxy is not a
+ * delegated credential for step-up: the actor's own fresh sign-in counts, so
+ * the subject's `signIn` and `aalCap` are the ACTOR's (the session's).
+ *
+ * `kind: 'impersonation'` is reserved for #1763 "view as"; nothing admits it
+ * yet, so a subject carrying it is refused everywhere.
+ */
+export interface ProxyClaim {
+  kind: 'proxy' | 'impersonation';
+  /** The grant's id in the credentials store. */
+  grantId: string;
+  /** Who is acting: the grant's proxy. */
+  actor: string;
+  /** The grant's permissions as the subject was built with them; the live grant must still carry every one. */
+  scopes: string[];
+}
+
+/**
  * The subject for a check about nobody in particular (#1164).
  *
  * There is one honest reason to hand `hasPermission` a subject you built:
@@ -120,6 +144,12 @@ export interface PermissionSubject {
   viaToken?: AgentTokenGrant;
   /** Present only when the request presented a share token (#1222). Forwarded like `viaToken`. */
   viaShare?: ShareGrant;
+  /**
+   * Present only when someone is acting for this subject's person under a
+   * proxy grant (#1762). Forwarded like `viaToken`; never combined with a
+   * token or a share (the PDP refuses a subject carrying both).
+   */
+  viaProxy?: ProxyClaim;
   /** The address the request came from (#1179) — provenance for the record, set where the request subject is built. */
   ipAddress?: string;
   /**
@@ -133,14 +163,16 @@ export interface PermissionSubject {
    * How and when this session signed in (#1525, #1635): the factors and when
    * each was last satisfied. Set only where the request subject is built from
    * the session, so the PDP can decide a step-up permission itself — the door
-   * decides, not the route in front of it. Never recorded.
+   * decides, not the route in front of it. Never recorded. Under `viaProxy`
+   * it is the actor's: the proxy's own fresh sign-in is what counts (#1762).
    */
   signIn?: import('./AuthManager.js').SignInRecord;
   /**
    * The highest level this account's allowed sign-in methods can reach, at
    * least 1 (#1690). A role's required level never exceeds it: an account
    * with no way to reach AAL2 holds its roles at AAL1. Set where the request
-   * subject is built, beside `signIn`.
+   * subject is built, beside `signIn` — under `viaProxy`, the actor's
+   * account's cap, since it is the actor who signs in (#1762).
    */
   aalCap?: import('../providers/BaseAuthProvider.js').Aal;
 }
@@ -154,7 +186,7 @@ export interface PermissionSubject {
  * to be absent", which the type could not tell apart from a caller that
  * forgot them. `resolveRolesNow` says it on purpose: the compiler now refuses
  * a subject missing `roles`, and this is the one sanctioned way to ask for
- * live resolution. `viaToken` / `viaShare` ride along exactly as on a request.
+ * live resolution. `viaToken` / `viaShare` / `viaProxy` ride along exactly as on a request.
  */
 export interface JobSubject {
   username: string;
@@ -163,6 +195,7 @@ export interface JobSubject {
   resolveRolesNow: true;
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
+  viaProxy?: ProxyClaim;
 }
 
 

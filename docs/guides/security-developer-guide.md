@@ -1,7 +1,7 @@
 ---
 name: Security developer guide
 description: How to write a route, manager method or addon that authorizes correctly — context forwarded, allow and deny from hasPermission or canAccess, permissions and policies as configuration, and the checks that fail
-dateModified: 2026-10-12
+dateModified: 2026-10-13
 category: guides
 relatedModules: [UserManager, PolicyEvaluator, PolicyInformationPoint, WikiContext, ApiContext]
 ---
@@ -25,6 +25,7 @@ Nothing else is an allow or a deny:
 
 - `isAuthenticated` classifies a refusal, 401 for an anonymous subject and 403 for an authenticated one, after policy has refused. It never decides.
 - `RoleManager.hasRole` is a lookup about a named account, the same shape as `PolicyDecisionPoint.userHoldsPermission`. It is never this request's authority: a role name skips the policy evaluator, deny policies and the token ceiling. `ApiContext.requireRole` is gone for that reason. `UserManager` has no `hasRole`.
+- A proxy ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) is a subject carrying `viaProxy`: the person represented in `username` and `roles`, the actor and grant in the claim. Forward it like `viaToken`; never decide on `ctx.username === owner` without `mayActInPrivateContainer`, because a proxy's username is the owner's. The ceiling is the PDP's (grant ∩ the person represented ∩ the actor, re-read live), and a check that a subject is delegated before asking it is `carriesCeiling`, which includes the proxy.
 - A role name in code, `roles.includes('admin')`, is the same defect when it is the allow. The static test `src/routes/__tests__/WikiRoutes.permissionGates.test.ts` keeps `hasRole(` out of `src/routes/WikiRoutes.ts`. The one `updates.roles.includes('admin')` there validates submitted form data (an external account cannot be given the admin role); it is not an authorization decision.
 
 ## A door records, an affordance does not
@@ -77,5 +78,6 @@ The `lint:*` commands above run in `lint`, `lint:ci` and the pre-commit hook. `n
 
 ## Known gaps
 
+- [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — proxy access: the ceiling and the private-store rule are built (slice 2), and no request carries `viaProxy` yet. Still to come: audit rows naming both people (3), choosing whom to act for, which turns it on (4), encrypted stores through a wrapped key copy (5), tokens and devices approved by a proxy (6), the screens (7). The private-store risk (a proxy's username matching the owner's) is closed
 - [#1174](https://github.com/jwilleke/ngdpbase/issues/1174)
 - [#1216](https://github.com/jwilleke/ngdpbase/issues/1216)

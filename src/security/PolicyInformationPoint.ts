@@ -4,6 +4,7 @@ import PolicyDecisionPoint from './PolicyDecisionPoint.js';
 import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import { carriesCeiling } from '../utils/proxyClaim.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
@@ -11,7 +12,7 @@ import { AUDIT_EVENT } from '../utils/auditEventNames.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
-import type { AgentTokenGrant } from '../managers/UserManager.js';
+import type { AgentTokenGrant, ProxyClaim } from '../managers/UserManager.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { ANONYMOUS_SUBJECT, SYSTEM_PRINCIPAL_KEY, SYSTEM_ROLES_KEY } from '../managers/UserManager.js';
 import type UserManager from '../managers/UserManager.js';
@@ -54,6 +55,7 @@ interface UserContext {
   /** The delegations a request carries; declared so the index signature does not erase their type. */
   viaToken?: AgentTokenGrant;
   viaShare?: ShareGrant;
+  viaProxy?: ProxyClaim;
   [key: string]: unknown;
 }
 
@@ -465,7 +467,8 @@ class PolicyInformationPoint extends BaseManager {
     // Tier -1: the delegation ceilings, asked of the PDP (#1431).
     //
     // A delegated token may only ever exercise a SUBSET of its owner's rights,
-    // and a share only what its issuer delegated and still holds — hard
+    // a share only what its issuer delegated and still holds, and a proxy
+    // only what its grant carries and its actor holds (#1762) — hard
     // ceilings, checked BEFORE every other tier. They must precede tier 1,
     // because frontmatter `access` overrides global policies and returns
     // directly; a ceiling living at tier 2 would never run on a page whose
@@ -481,7 +484,7 @@ class PolicyInformationPoint extends BaseManager {
     // would evaluate the policies twice for every ordinary request — once here
     // and again at Tier 2 — and would let an evaluator error escape the Tier 2
     // catch, which exists so an evaluator fault denies rather than throws.
-    const ceiling = (delegated?.viaToken || delegated?.viaShare)
+    const ceiling = carriesCeiling(userContext)
       ? await this.policyDecisionPoint().ceiling(
         userContext,
         {
@@ -859,9 +862,10 @@ class PolicyInformationPoint extends BaseManager {
     // PDP's, so this is not a third copy of them (#1431). No resource is
     // passed: coverage is per PAGE and is checked in the loop below, where the
     // page's keywords are to hand.
-    const viaToken = (userContext as { viaToken?: { scopes: string[] } } | null | undefined)?.viaToken;
     const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
-    if (viaToken || viaShare) {
+    // #1762: a proxy claim too — the page's own frontmatter must not let a
+    // proxy past what the grant and the actor allow.
+    if (carriesCeiling(userContext)) {
       const ceiling = await this.policyDecisionPoint().ceiling(userContext, { action: policyAction });
       if (ceiling && !ceiling.permit) return [];
     }
@@ -925,7 +929,9 @@ class PolicyInformationPoint extends BaseManager {
     // cannot know (does the share cover THIS item) is
     // supplied as coverage, which is PIP work.
     const viaShare = (userContext as { viaShare?: ShareGrant } | null | undefined)?.viaShare;
-    if (viaShare) {
+    // #1762: someone acting for a person reads media only under a grant that
+    // carries asset-read and an actor who holds it.
+    if (viaShare || userContext?.viaProxy) {
       const ceiling = await this.policyDecisionPoint().ceiling(userContext, {
         action: 'asset-read',
         resource: { type: 'media', id: item.id },
@@ -939,7 +945,7 @@ class PolicyInformationPoint extends BaseManager {
         }
       });
       if (ceiling && !ceiling.permit) {
-        logger.info(`[ACL] share ${viaShare.id} (issued by ${viaShare.issuer}): ${ceiling.reason} — media ${item.id} denied`);
+        logger.info(`[ACL] ${viaShare ? `share ${viaShare.id} (issued by ${viaShare.issuer})` : `proxy grant ${userContext?.viaProxy?.grantId}`}: ${ceiling.reason} — media ${item.id} denied`);
         void this.auditDenial(userContext, item.id, 'asset-read', ceiling.reason, 'media');
         return false;
       }
