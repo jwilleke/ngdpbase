@@ -874,12 +874,6 @@ class UserManager extends BaseManager {
     return this.engine.getManager('AuditManager') as AuditEventSink | null;
   }
 
-  /** Build the actor half of an account event (#1204). */
-  /** The record's actor fields, read from the context the write was handed (#1179). */
-  private static actorFields(ctx: ActorContext): { user: string; ipAddress: string | undefined; actorMeta: Record<string, unknown> } {
-    const who = actorOf(ctx);
-    return { user: who.user, ipAddress: who.ipAddress, actorMeta: who.metadata };
-  }
 
   /**
    * Every account write goes through here (#1751): it writes, then bumps the
@@ -989,17 +983,16 @@ class UserManager extends BaseManager {
     // #1204: recorded at the door, so an admin form, self-registration and an
     // identity provider's auto-provisioning all leave the same record.
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
+      const who = actorOf(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_CREATE,
-        user: who,
-        ipAddress,
+        ...who,
         action: 'user-create',
         result: 'success',
         severity: 'medium',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles: [...roles], isExternal, selfRegistration: ctx.username === username, ...actorMeta }
+        metadata: { username, roles: [...roles], isExternal, selfRegistration: ctx.username === username, ...who.metadata }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
     }
 
@@ -1125,11 +1118,10 @@ class UserManager extends BaseManager {
     // never a password or an email value.
     const changed = SENSITIVE_USER_FIELDS.filter((f) => f in updates && (updates as Record<string, unknown>)[f] !== undefined);
     if (changed.length > 0) {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
+      const who = actorOf(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_EDIT,
-        user: who,
-        ipAddress,
+        ...who,
         action: 'user-edit',
         result: 'success',
         severity: changed.includes('roles') || changed.includes('isActive') ? 'high' : 'medium',
@@ -1140,7 +1132,7 @@ class UserManager extends BaseManager {
           fields: changed,
           ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
           selfEdit: ctx.username === username,
-          ...actorMeta
+          ...who.metadata
         }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-edit of ${username}:`, err));
     }
@@ -1167,18 +1159,17 @@ class UserManager extends BaseManager {
     // attribution — so the record is written and flushed BEFORE the delete,
     // and a failure refuses it (the token-mint / share-create ordering).
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
+      const who = actorOf(ctx);
       const roles = await this.roleManager().resolveUserRoles(username);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.USER_DELETE,
-        user: who,
-        ipAddress,
+        ...who,
         action: 'user-delete',
         result: 'success',
         severity: 'high',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles, isExternal: user.isExternal === true, ...actorMeta }
+        metadata: { username, roles, isExternal: user.isExternal === true, ...who.metadata }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-delete of ${username}:`, err));
     }
 
@@ -1325,15 +1316,14 @@ class UserManager extends BaseManager {
     // honours the switch. Enumerating people is disclosive, so a deployment
     // that wants it on can have it without a code change.
     {
-      const { user: who, ipAddress, actorMeta } = UserManager.actorFields(ctx);
+      const who = actorOf(ctx);
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SEARCH_USER,
-        user: who,
-        ipAddress,
+        ...who,
         action: 'search-user',
         result: 'success',
         severity: 'low',
-        metadata: { query: q, role: role ?? null, results: results.length, ...actorMeta }
+        metadata: { query: q, role: role ?? null, results: results.length, ...who.metadata }
       }, (err) => logger.warn('[UserManager] Audit record failed for search-user:', err));
     }
     return results;

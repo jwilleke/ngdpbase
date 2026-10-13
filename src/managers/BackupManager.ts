@@ -399,8 +399,7 @@ class BackupManager extends BaseManager {
       const who = actorOf(ctx);
       await recordAuditEvent(this.engine.getManager('AuditManager'), {
         eventType: AUDIT_EVENT.BACKUP_CREATE,
-        user: who.user,
-        ipAddress: who.ipAddress,
+        ...who,
         action: 'backup-create',
         result: 'success',
         severity: 'medium',

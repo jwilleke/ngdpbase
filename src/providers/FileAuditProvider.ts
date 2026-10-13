@@ -34,6 +34,8 @@ interface ExtendedAuditEvent {
   level?: string;
   eventType: string;
   user?: string;
+  /** Who actually did it when that is not `user` — under a proxy grant (#1762). */
+  actor?: string;
   userId?: string;
   sessionId?: string;
   ipAddress?: string;
@@ -338,6 +340,9 @@ class FileAuditProvider extends BaseAuditProvider {
       level: (evt.level as string) || 'info',
       eventType: (evt.eventType as string) || legacy.type || 'unknown',
       user: (evt.user as string) || legacy.actor || 'anonymous',
+      // #1762: who actually did it, beside the account acted on. Kept only
+      // alongside a `user` — a legacy record's `actor` IS its user (above).
+      ...(evt.user && typeof evt.actor === 'string' && evt.actor ? { actor: evt.actor } : {}),
       userId: evt.userId as string | undefined,
       sessionId: evt.sessionId as string | undefined,
       ipAddress: legacy.ipAddress,
@@ -418,6 +423,7 @@ class FileAuditProvider extends BaseAuditProvider {
   searchAuditLogs(filters: AuditFilters = {}, options: Record<string, unknown> = {}): Promise<AuditSearchResults> {
     const {
       user,
+      actor,
       eventType,
       result,
       severity,
@@ -441,6 +447,9 @@ class FileAuditProvider extends BaseAuditProvider {
     // Apply filters
     if (user) {
       filteredLogs = filteredLogs.filter(log => log.user === user);
+    }
+    if (actor) {
+      filteredLogs = filteredLogs.filter(log => log.actor === actor);
     }
     if (eventType) {
       filteredLogs = filteredLogs.filter(log => log.eventType === eventType);
@@ -740,7 +749,7 @@ class FileAuditProvider extends BaseAuditProvider {
         try {
           await this.logAuditEvent({
             eventType: AUDIT_EVENT.SECURITY_EVENT,
-            user: who.user,
+            ...who,
             ipAddress: undefined,
             action: 'audit-archive-purge',
             resource: archive,

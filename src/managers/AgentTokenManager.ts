@@ -693,7 +693,8 @@ class AgentTokenManager extends BaseManager {
         name: record.name,
         previousExpiresAt: record.expiresAt,
         expiresAt,
-        viaToken: subject.viaToken ? { id: subject.viaToken.id, name: subject.viaToken.name } : null
+        viaToken: subject.viaToken ? { id: subject.viaToken.id, name: subject.viaToken.name } : null,
+        viaProxy: subject.viaProxy
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-extend of ${id}:`, err)
     );

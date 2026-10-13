@@ -72,6 +72,7 @@ import {
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { actorOf } from '../context/ActorContext.js';
+import { proxyAttribution } from '../utils/proxyClaim.js';
 import { lackingScopes, requireScopeList } from '../utils/delegation.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
@@ -417,7 +418,7 @@ export interface SignInCompleted {
 const PENDING_CONNECTION_TTL_MS = 5 * 60_000;
 
 /** Who changed a credential, for its audit record: the person acting, and from where. */
-type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress'>;
+type CredentialActor = Pick<PermissionSubject, 'username' | 'ipAddress' | 'viaProxy'>;
 
 /**
  * How a delegated credential is renewed (#1764): `fixed` ends on its date and
@@ -1362,7 +1363,7 @@ class AuthManager extends BaseManager {
     const remaining = store.quarantined().length;
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.SECURITY_EVENT,
-      user: ctx.username,
+      ...actorOf(ctx),
       ipAddress: undefined,
       action: 'credential-retrusted',
       result: 'success',
@@ -1709,7 +1710,9 @@ class AuthManager extends BaseManager {
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType,
       user: grant.owner,
-      actor: who.user,
+      // The person who made or ended the grant: under a proxy grant (a proxy
+      // re-delegating, #1762), the proxy, not the person they act for.
+      actor: who.actor ?? who.user,
       ipAddress: who.ipAddress,
       action: eventType,
       result: 'success',
@@ -1740,16 +1743,19 @@ class AuthManager extends BaseManager {
   }
 
   private auditCredentialChange(ctx: CredentialActor, username: string, action: 'credential-add' | 'credential-remove' | 'credential-rename', row: CredentialRecord, how?: string): void {
+    // #1762: a credential changed under a proxy grant names the proxy too.
+    const { metadata: proxyMeta, ...proxy } = proxyAttribution(ctx.viaProxy);
     void recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.USER_EDIT,
       user: ctx.username,
+      ...proxy,
       ipAddress: ctx.ipAddress,
       action,
       result: 'success',
       severity: 'medium',
       resource: username,
       resourceType: 'user',
-      metadata: { credentialId: row.id, kind: row.kind, label: row.label, ...(how ? { how } : {}) }
+      metadata: { credentialId: row.id, kind: row.kind, label: row.label, ...(how ? { how } : {}), ...proxyMeta }
     });
   }
 

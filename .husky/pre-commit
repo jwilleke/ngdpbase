@@ -55,6 +55,11 @@ npm run lint:context --silent
 # every copy was slightly different. Cheap.
 npm run lint:page-door --silent
 
+# Audit attribution (#1762) — every audit row takes its "who" from the
+# caller's context, so a row done under a proxy grant names both people
+# (`user` = the person represented, `actor` = who did it). Cheap: AST walk.
+npm run lint:audit-attribution --silent
+
 # Permission types (#1431) — the registry is a TypeScript union, generated from
 # config. This fails when the two have drifted, i.e. someone added a permission
 # and did not run `npm run generate:permissions`. Cheap.

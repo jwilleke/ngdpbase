@@ -377,6 +377,10 @@ const authFailures = await auditManager.searchAuditLogs({
   endDate: '2025-01-31'
 });
 
+// Search what a proxy did while acting for others (#1762): `user` is the
+// person represented, `actor` the person who acted
+const byProxy = await auditManager.searchAuditLogs({ actor: 'jim' });
+
 // Search denied access attempts
 const deniedAccess = await auditManager.searchAuditLogs({
   result: 'deny',
@@ -613,7 +617,8 @@ how the other read-volume events (`asset-read`, `search-page`, `user-read`,
   timestamp: '2025-01-15T10:30:00.000Z', // ISO 8601 timestamp
   level: 'info',                         // Log level (debug, info, warn, error)
   eventType: 'page-edit',                // Type of event (see Event Types)
-  user: 'john.doe',                      // Username or identifier
+  user: 'john.doe',                      // The account acted on (under a proxy grant: the person represented)
+  actor: 'jane.roe',                     // Only under a proxy grant (#1762): who actually did it; absent otherwise
   userId: 'user-123',                    // Internal user ID
   sessionId: 'session-456',              // Session identifier
   ipAddress: '192.168.1.100',            // Client IP address

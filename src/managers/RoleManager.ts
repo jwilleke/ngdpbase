@@ -501,8 +501,7 @@ class RoleManager extends BaseManager {
     const event = roleChangeEvent(username, op, roleName);
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager') ?? null, {
       ...event,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       metadata: { ...event.metadata, ...who.metadata }
     }, (err) => logger.warn(`[RoleManager] Audit record failed for user-edit (${op} ${roleName}) of ${username}:`, err));
   }

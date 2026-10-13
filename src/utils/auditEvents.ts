@@ -26,6 +26,8 @@
 import logger from './logger.js';
 import { auditEventDeclarations, AUDIT_EVENTS_KEY, isAuditEventEnabled, refusesOnFailure } from './auditRegistry.js';
 import { AUDIT_EVENT, isCoreAuditEventName, type AuditEventName, type RecordableAuditEventName } from './auditEventNames.js';
+import { proxyAttribution } from './proxyClaim.js';
+import type { ProxyClaim } from '../managers/UserManager.js';
 
 /** Agent-token identity attached to a request that authenticated with one. */
 export interface AuditViaToken {
@@ -73,8 +75,10 @@ export interface AuditEvent {
   /**
    * Who actually did it, when that is not `user` (#1762): `user` is the
    * account acted on — the person represented — and `actor` the person
-   * signed in. Set by the proxy-grant events only so far; carrying it on
-   * every record is #1762 slice 3.
+   * signed in. Absent on a row with no proxy claim, never a copy of `user`.
+   * Comes from `actorOf` / `proxyAttribution` (slice 3); the proxy-grant
+   * events also set it for the person who made or ended the grant (slice 1).
+   * The audit search filters on it (`?actor=`).
    */
   actor?: string;
   ipAddress: string | undefined;
@@ -125,6 +129,18 @@ interface CommonInput {
   username: string | undefined;
   ipAddress: string | undefined;
   viaToken?: AuditViaToken | null;
+  /**
+   * The proxy grant the request acted under (#1762 slice 3). Forwarded from the
+   * caller's context beside `viaToken`, never rebuilt: the row then names the
+   * represented person in `user` and the person who acted in `actor`.
+   */
+  viaProxy?: ProxyClaim | null;
+}
+
+/** A content row's "who" — `user`, `actor` and `ipAddress` — and the proxy grant's metadata. One place, read by every builder below. */
+function whoOf(input: CommonInput): { fields: Pick<AuditEvent, 'user' | 'actor' | 'ipAddress'>; metadata: Record<string, unknown> } {
+  const { metadata, ...proxy } = proxyAttribution(input.viaProxy);
+  return { fields: { user: input.username ?? 'unknown', ...proxy, ipAddress: input.ipAddress }, metadata };
 }
 
 export interface PageMutationInput extends CommonInput {
@@ -189,12 +205,14 @@ function tokenMetadata(viaToken: AuditViaToken | null | undefined): Record<strin
  * nothing the file does not already say.
  */
 export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEvent {
-  const { op, username, ipAddress, pageName, uuid, fromPageName, rewriteOf, viaToken } = input;
+  const { op, pageName, uuid, fromPageName, rewriteOf, viaToken } = input;
+  const who = whoOf(input);
 
   const metadata: Record<string, unknown> = {
     pageName,
     uuid: uuid ?? null,
-    ...tokenMetadata(viaToken)
+    ...tokenMetadata(viaToken),
+    ...who.metadata
   };
 
   // Only a rename has a previous title. Emitting `fromPageName: null` on
@@ -212,8 +230,7 @@ export function buildPageMutationAuditEvent(input: PageMutationInput): AuditEven
 
   return {
     eventType: PAGE_EVENT[op],
-    user: username ?? 'unknown',
-    ipAddress,
+    ...who.fields,
     action: `page-${op}`,
     result: 'success',
     // A token write is worth surfacing above ordinary editing traffic, but an
@@ -238,11 +255,11 @@ export interface PageViewInput extends CommonInput {
  * that read auditing exists for.
  */
 export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
-  const { username, ipAddress, pageName, uuid, viaToken } = input;
+  const { pageName, uuid, viaToken } = input;
+  const who = whoOf(input);
   return {
     eventType: AUDIT_EVENT.PAGE_READ,
-    user: username ?? 'unknown',
-    ipAddress,
+    ...who.fields,
     action: 'page-read',
     result: 'success',
     // Same convention as the mutations: an unattended (token-driven) read is
@@ -251,7 +268,8 @@ export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
     metadata: {
       pageName,
       uuid: uuid ?? null,
-      ...tokenMetadata(viaToken)
+      ...tokenMetadata(viaToken),
+      ...who.metadata
     }
   };
 }
@@ -264,12 +282,14 @@ export function buildPageViewAuditEvent(input: PageViewInput): AuditEvent {
  * unattended destruction is the case someone reviewing the log is looking for.
  */
 export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
-  const { op, username, ipAddress, attachmentId, filename, pageName, sizeBytes, viaToken } = input;
+  const { op, attachmentId, filename, pageName, sizeBytes, viaToken } = input;
+  const who = whoOf(input);
 
   const metadata: Record<string, unknown> = {
     attachmentId,
     filename,
-    ...tokenMetadata(viaToken)
+    ...tokenMetadata(viaToken),
+    ...who.metadata
   };
   if (pageName) metadata.pageName = pageName;
   if (typeof sizeBytes === 'number') metadata.sizeBytes = sizeBytes;
@@ -280,8 +300,7 @@ export function buildAttachmentAuditEvent(input: AttachmentInput): AuditEvent {
 
   return {
     eventType: ASSET_EVENT[op],
-    user: username ?? 'unknown',
-    ipAddress,
+    ...who.fields,
     action: `asset-${op}`,
     result: 'success',
     severity,
@@ -469,13 +488,15 @@ export async function recordAuditEvent(
  * every event is useless as a filter.
  */
 export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
-  const { op, username, ipAddress, id, owner, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
+  const { op, id, owner, name, scopes, expiresAt, previousExpiresAt, revokedBy, viaToken } = input;
+  const who = whoOf(input);
 
   const metadata: Record<string, unknown> = {
     id,
     owner,
     name: name ?? null,
-    ...tokenMetadata(viaToken)
+    ...tokenMetadata(viaToken),
+    ...who.metadata
   };
 
   if (op === 'mint') {
@@ -494,8 +515,7 @@ export function buildTokenAuditEvent(input: TokenInput): AuditEvent {
 
   return {
     eventType: TOKEN_EVENT[op],
-    user: username ?? 'unknown',
-    ipAddress,
+    ...who.fields,
     action: `token-${op}`,
     result: 'success',
     // Every credential event outranks ordinary content traffic: a token acts

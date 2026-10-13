@@ -142,6 +142,8 @@ interface SecurityContext {
  */
 interface AuditFilters {
   user?: string;
+  /** The person who actually acted, under a proxy grant (#1762). */
+  actor?: string;
   eventType?: string;
   result?: string;
   severity?: 'low' | 'medium' | 'high' | 'critical';
@@ -909,7 +911,7 @@ class AuditManager extends BaseManager {
       const recorder = systemContext(this.engine, 'record the security posture at start-up (D19)');
       await recordAuditEvent(this as unknown as AuditEventSink, {
         eventType: AUDIT_EVENT.POSTURE_RECORDED,
-        user: attributedTo(recorder).user,
+        ...attributedTo(recorder),
         ipAddress: undefined,
         action: 'posture-recorded',
         result: 'success',

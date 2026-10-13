@@ -80,6 +80,12 @@
                             <label class="form-label">User</label>
                             <input type="text" class="form-control" id="filterUser" placeholder="Username" value="<%= filters.user || '' %>">
                         </div>
+                        <%# #1762: under a proxy grant, User is the person represented and
+                            Acted by the person who did it. Empty on every other row. %>
+                        <div class="col-md-3">
+                            <label class="form-label">Acted by</label>
+                            <input type="text" class="form-control" id="filterActor" placeholder="Proxy (acting for User)" value="<%= filters.actor || '' %>">
+                        </div>
                         <div class="col-md-3">
                             <label class="form-label">Event Type</label>
                             <select class="form-select" id="filterEventType">
@@ -186,7 +192,7 @@
                                     <% auditLogs.results.forEach(log => { %>
                                     <tr>
                                         <td><%= new Date(log.timestamp).toLocaleString() %></td>
-                                        <td><%= log.user %></td>
+                                        <td><%= log.user %><% if (log.actor) { %> <small class="text-muted">(acted by <%= log.actor %>)</small><% } %></td>
                                         <td>
                                             <span class="badge bg-secondary event-type-badge">
                                                 <%= log.eventType %>
@@ -310,6 +316,7 @@
             const params = new URLSearchParams();
             const fields = {
                 user: '#filterUser',
+                actor: '#filterActor',
                 eventType: '#filterEventType',
                 severity: '#filterSeverity',
                 result: '#filterResult',
@@ -353,6 +360,7 @@
                                     <tr><td><strong>ID:</strong></td><td>${data.id}</td></tr>
                                     <tr><td><strong>Timestamp:</strong></td><td>${new Date(data.timestamp).toLocaleString()}</td></tr>
                                     <tr><td><strong>User:</strong></td><td>${data.user}</td></tr>
+                                    ${data.actor ? `<tr><td><strong>Acted by:</strong></td><td>${data.actor}</td></tr>` : ''}
                                     <tr><td><strong>Event Type:</strong></td><td>${data.eventType}</td></tr>
                                     <tr><td><strong>Severity:</strong></td><td><span class="severity-${data.severity}"><i class="fas fa-circle"></i> ${data.severity}</span></td></tr>
                                 </table>
