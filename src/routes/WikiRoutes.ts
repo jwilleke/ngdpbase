@@ -27,7 +27,7 @@ import { guardedFetch } from '../http/guardedFetch.js';
 import { AuditQueryForbiddenError } from '../managers/AuditManager.js';
 import { ANONYMOUS_SUBJECT, type PermissionSubject } from '../managers/UserManager.js';
 import { jobContextFromRequest, jobContextFromRequestWithReason } from '../context/JobContext.js';
-import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { secretKeys } from '../utils/sensitiveValues.js';
 import { createPatch } from 'diff';
@@ -1425,9 +1425,8 @@ class WikiRoutes {
       // sessions are already cleared and a slow sink must not fail the action.
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SESSION_CLEAR_ANONYMOUS,
-        user: wikiContext.userContext.username ?? 'unknown',
+        ...WikiRoutes.auditWho(req, wikiContext.userContext, 'unknown'),
         sessionId: excludeSid ?? undefined,
-        ipAddress: req.ip,
         action: 'clear-anonymous-sessions',
         result: 'success',
         severity: 'medium',
@@ -1523,9 +1522,8 @@ class WikiRoutes {
       // #1205: through recordAuditEvent (see clear-anonymous above).
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SESSION_REVOKE,
-        user: wikiContext.userContext.username ?? 'unknown',
+        ...WikiRoutes.auditWho(req, wikiContext.userContext, 'unknown'),
         sessionId: callerId ?? undefined,
-        ipAddress: req.ip,
         action: 'revoke-session',
         result: 'success',
         severity: 'medium',
@@ -4200,8 +4198,7 @@ ${panes}
       const rawAfter = pageManager.getRawPageContent ? await pageManager.getRawPageContent(pageName) : null;
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.PAGE_RAW_EDIT,
-        user: wikiContext.userContext.username ?? 'unknown',
-        ipAddress: req.ip,
+        ...WikiRoutes.auditWho(req, wikiContext.userContext, 'unknown'),
         action: 'admin-raw-edit',
         result: 'success',
         severity: 'medium',
@@ -4734,6 +4731,17 @@ ${panes}
   }
 
   /** Agent-token identity on this request, when it authenticated with one (#946). */
+  /**
+   * A route's audit row "who" (#1762 slice 3): `actorOf` the subject — under a
+   * proxy grant the represented person in `user` and the proxy in `actor` —
+   * with the request's address, as these rows always recorded. Spread before
+   * the row's own `metadata`, which replaces the attribution's.
+   */
+  private static auditWho(req: Request, subject: PermissionSubject | null | undefined, fallbackUser: string): ActorAttribution {
+    if (!subject?.username) return { user: fallbackUser, ipAddress: req.ip, metadata: {} };
+    return { ...actorOf(subject), ipAddress: req.ip };
+  }
+
   private static viaTokenOf(req: Request): AuditViaToken | null {
     return (req.userContext as { viaToken?: AuditViaToken } | undefined)?.viaToken ?? null;
   }
@@ -4759,7 +4767,8 @@ ${panes}
       ipAddress: req.ip,
       pageName,
       uuid,
-      viaToken: WikiRoutes.viaTokenOf(req)
+      viaToken: WikiRoutes.viaTokenOf(req),
+      viaProxy: req.userContext?.viaProxy
     });
     void recordAuditEvent(this.auditSink(), event, (err) =>
       logger.warn(`Audit log failed for page-read of '${pageName}':`, err)
@@ -4892,7 +4901,7 @@ ${panes}
    */
   private async auditPageDelete(
     req: Request,
-    wikiContext: { userContext?: { username?: string } | null },
+    wikiContext: { userContext: PermissionSubject },
     pageName: string,
     uuid: string
   ): Promise<void> {
@@ -4900,8 +4909,7 @@ ${panes}
 
     await recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.PAGE_DELETE,
-      user: wikiContext.userContext?.username ?? 'unknown',
-      ipAddress: req.ip,
+      ...WikiRoutes.auditWho(req, wikiContext.userContext, 'unknown'),
       action: 'page-delete',
       result: 'success',
       severity: viaToken ? 'high' : 'medium',
@@ -6048,8 +6056,7 @@ ${panes}
       // recorded at the route.
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.PAGE_EXPORT,
-        user: req.userContext?.username ?? 'anonymous',
-        ipAddress: req.ip,
+        ...WikiRoutes.auditWho(req, req.userContext, 'anonymous'),
         action: 'page-export',
         result: 'success',
         severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
@@ -6092,8 +6099,7 @@ ${panes}
       // recorded at the route.
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.PAGE_EXPORT,
-        user: req.userContext?.username ?? 'anonymous',
-        ipAddress: req.ip,
+        ...WikiRoutes.auditWho(req, req.userContext, 'anonymous'),
         action: 'page-export',
         result: 'success',
         severity: WikiRoutes.viaTokenOf(req) ? 'medium' : 'low',
@@ -8567,8 +8573,7 @@ ${panes}
     const actor = actorOf(req.userContext);
     await recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.STORE_CREATE,
-      user: actor.user,
-      ipAddress: actor.ipAddress,
+      ...actor,
       action: 'create',
       result: 'success',
       severity: kind.encrypt ? 'high' : 'medium',
@@ -9292,8 +9297,7 @@ ${panes}
     // the clear — so the record says who, which store and how much.
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.STORE_TAKEOUT,
-      user: currentUser.username,
-      ipAddress: req.ip,
+      ...WikiRoutes.auditWho(req, currentUser, 'unknown'),
       action: 'store-takeout',
       result: 'success',
       severity: 'high',
@@ -9384,8 +9388,7 @@ ${panes}
     // Counts only; a private page is never named in a log (#1461).
     await recordAuditEvent(this.engine.getManager('AuditManager'), {
       eventType: AUDIT_EVENT.STORE_IMPORT,
-      user: currentUser.username,
-      ipAddress: req.ip,
+      ...WikiRoutes.auditWho(req, currentUser, 'unknown'),
       action: 'store-import',
       // The import ran; what failed within it is counted below.
       result: 'success',
@@ -11758,8 +11761,7 @@ ${panes}
       // read of one configuration value.
       await recordAuditEvent(this.auditSink(), {
         eventType: AUDIT_EVENT.SECRET_REVEAL,
-        user: currentUser.username ?? 'unknown',
-        ipAddress: req.ip,
+        ...WikiRoutes.auditWho(req, currentUser, 'unknown'),
         action: 'secret-reveal',
         result: 'success',
         severity: 'high',
@@ -16225,7 +16227,7 @@ ${panes}
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
     const filters: Record<string, unknown> = {};
-    for (const key of ['user', 'eventType', 'result', 'severity', 'startDate', 'endDate', 'resource', 'action']) {
+    for (const key of ['user', 'actor', 'eventType', 'result', 'severity', 'startDate', 'endDate', 'resource', 'action']) {
       const value = pick(key);
       if (value !== undefined) filters[key] = value;
     }

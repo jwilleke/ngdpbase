@@ -258,8 +258,7 @@ export default class FootnoteManager extends BaseManager {
     const sink = (this.engine?.getManager?.('AuditManager')) ?? null;
     await recordAuditEvent(sink, {
       eventType: AUDIT_EVENT.FOOTNOTE_EDIT,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       action,
       result: 'success',
       severity: 'low',

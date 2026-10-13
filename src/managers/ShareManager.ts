@@ -50,7 +50,7 @@ import type ValidationManager from './ValidationManager.js';
 import { DEFAULT_SHARE_MAX_DAYS } from './ValidationManager.js';
 import { formatPrivatePageName, isValidStoreId, parsePrivatePageName, privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { permitsInVault, type VaultDecider } from '../utils/privateStoreAccess.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorAttribution, type ActorContext } from '../context/ActorContext.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
 import { isLockbox, sealForLink, type LinkPublicKey, type Lockbox } from '../utils/shareLockbox.js';
 import WikiContext from '../context/WikiContext.js';
@@ -258,7 +258,7 @@ export default class ShareManager extends BaseManager {
     const expiresAt = new Date(Date.parse(record.expiresAt) + hours * HOUR_MS).toISOString();
     // Recorded before the link changes, like create and revoke: a lifetime
     // change to a credential that cannot be written to the audit trail is refused.
-    await this.audit(AUDIT_EVENT.SHARE_EXTEND, by.username, { ...record, expiresAt });
+    await this.audit(AUDIT_EVENT.SHARE_EXTEND, actorOf(by), { ...record, expiresAt });
     record.expiresAt = expiresAt;
     this.persist(record);
     logger.info(`[ShareManager] Share ${id} extended by ${by.username} by ${hours}h, to ${expiresAt}`);
@@ -309,7 +309,7 @@ export default class ShareManager extends BaseManager {
     // flushed BEFORE the share exists, and a failure refuses the share. The
     // ordering follows AgentTokenManager.mint: persisting first would leave a
     // live credential the caller believes was never created.
-    await this.audit(AUDIT_EVENT.SHARE_CREATE, issuer.username, record);
+    await this.audit(AUDIT_EVENT.SHARE_CREATE, actorOf(issuer), record);
 
     this.persist(record);
     this.byToken.set(record.token, record);
@@ -385,7 +385,7 @@ export default class ShareManager extends BaseManager {
     // flushed before the share is marked revoked; if the record cannot be
     // written the share stays live and the caller sees the refusal.
     const revokedAt = new Date().toISOString();
-    await this.audit(AUDIT_EVENT.SHARE_REVOKE, revokedBy, { ...record, revokedAt });
+    await this.audit(AUDIT_EVENT.SHARE_REVOKE, { user: revokedBy }, { ...record, revokedAt });
 
     record.revokedAt = revokedAt;
     this.persist(record);
@@ -811,13 +811,15 @@ export default class ShareManager extends BaseManager {
    * rejection is exactly what made the old `critical` claim a promise the code
    * did not keep.
    */
-  private async audit(eventType: AuditEventName, user: string, record: ShareRecord): Promise<void> {
+  private async audit(eventType: AuditEventName, who: Pick<ActorAttribution, 'user' | 'actor'>, record: ShareRecord): Promise<void> {
     const sink = this.engine.getManager('AuditManager') as AuditEventSink | null;
     await recordAuditEvent(
       sink,
       {
         eventType,
-        user,
+        // `user` and, under a proxy grant, `actor` (#1762). Share rows have
+        // never carried an address; the metadata below replaces who.metadata.
+        ...who,
         ipAddress: undefined,
         resource: record.id,
         resourceType: 'share',

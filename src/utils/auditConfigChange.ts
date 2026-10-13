@@ -98,10 +98,10 @@ export interface ConfigChangeInput {
  * thing.
  */
 export function buildConfigChangeAuditEvent(input: ConfigChangeInput): AuditEvent {
-  const { key, before, after, actor, secret } = input;
+  const { key, before, after, actor: who, secret } = input;
 
   // The actor's provenance first (origin, reason, delegation), then the change.
-  const metadata: Record<string, unknown> = { ...actor.metadata, key };
+  const metadata: Record<string, unknown> = { ...who.metadata, key };
 
   if (secret) {
     metadata.secret = true;
@@ -117,8 +117,8 @@ export function buildConfigChangeAuditEvent(input: ConfigChangeInput): AuditEven
     eventType: AUDIT_EVENT.CONFIG_CHANGE,
     // #1179: read from the context. A change no request drove arrives with a
     // JobContext that names the system principal and its reason.
-    user: actor.user,
-    ipAddress: actor.ipAddress,
+    // Spread, so a proxy row carries `actor` beside `user` (#1762).
+    ...who,
     action: 'config-change',
     result: 'success',
     severity: 'medium',

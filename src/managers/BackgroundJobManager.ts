@@ -6,6 +6,7 @@ import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import { describeJobContext, toPermissionSubject, type JobContext } from '../context/JobContext.js';
 import { scheduleContext } from '../context/bootActions.js';
+import { actorOf } from '../context/ActorContext.js';
 import { parseSchedule, type Schedule, type ScheduleInput } from '../utils/schedule.js';
 import { selectSlots, CATCH_UP_ALL_CAP, type CatchUp, type Overlap } from '../utils/jobSlots.js';
 import { assertJobId, checkpointJson, selectJobStateBackend, type JobRunRecord, type JobState, type JobStateProvider } from '../providers/jobState.js';
@@ -954,8 +955,8 @@ class BackgroundJobManager extends BaseManager {
     if (!sink) return;
     await recordAuditEvent(sink, {
       eventType,
-      user: by.username,
-      ipAddress: by.ipAddress,
+      // #1762: spread, so a job queued under a proxy grant names its actor.
+      ...actorOf(by),
       action,
       result: 'success',
       severity: 'low',
@@ -1361,9 +1362,9 @@ class BackgroundJobManager extends BaseManager {
     const by = run.requestedBy;
     await recordAuditEvent(sink, {
       eventType: JOB_EVENT[outcome],
-      user: by.username,
-      // #1667: the address the requesting call came from, when there was one.
-      ipAddress: by.ipAddress,
+      // #1667 / #1762: the address the requesting call came from, and the
+      // actor under a proxy grant — spread from the job's context.
+      ...actorOf(by),
       action: `job-${outcome}`,
       result: 'success',
       severity: outcome === 'failed' ? 'medium' : 'low',

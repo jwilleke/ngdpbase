@@ -1342,8 +1342,7 @@ class ConfigurationManager extends BaseManager {
     const who = actorOf(ctx);
     await recordAuditEvent(sink, {
       eventType: AUDIT_EVENT.CONFIG_RESET,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       action: 'config-reset',
       result: 'success',
       severity: 'high',

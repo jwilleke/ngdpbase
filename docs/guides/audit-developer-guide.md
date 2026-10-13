@@ -27,7 +27,7 @@ What a developer has to do so that an action leaves a record. The decisions behi
 3. __Regenerate__ with `npm run generate:permissions`: `AUDIT_EVENT.<NAME>` (the name upper-cased with underscores) now exists. An add-on instead declares the event in its own `config/default-config.json` and emits it as `addonAuditEventName('ledger-post')` — see [Addons](#addons) below.
 4. __Emit it__ through `recordAuditEvent(sink, event, onError)`, where the sink is `engine.getManager('AuditManager')`. Never call `logAuditEvent` directly: that skips the `enabled` switch, the on-failure rule and the outcome.
 5. __Decide `on-failure`.__ `refuse` means the action must not complete unless the record does: record first, then act, so a failed record refuses the action rather than leaving it done and unrecorded (`AgentTokenManager.mint`, `ShareManager.issue`, `UserManager.deleteUser` are the pattern). `continue` means the action proceeds and the loss is counted. This is failure handling, not importance; importance is `severity` on the record.
-6. __Carry the actor.__ The record's `user` and `ipAddress` come from the context the caller was given ([security-posture.md](../security-posture.md) P1). Where nothing was given, say so: `user: 'unknown'` and `actorMissing: true` in metadata. Never invent an identity from imported content or a default.
+6. __Carry the actor.__ The record's "who" comes from the context the caller was given ([security-posture.md](../security-posture.md) P1), built in one place: spread `actorOf(ctx)` (`{ eventType, ...who, …, metadata: { ...who.metadata, … } }`), never copy `user: ctx.username` across. A content builder (`buildPageMutationAuditEvent` and the rest) takes `viaProxy` beside `viaToken`. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that gives `user` = the person represented and a top-level `actor` = who actually did it, plus `metadata.delegated: 'proxy'` and `proxyGrantId`; with no proxy there is no `actor` field at all. `npm run lint:audit-attribution` fails on an audit row that sets `user` from anything else, or a builder call without `viaProxy`, unless the script lists it with a reason. Where nothing was given, say so: `user: 'unknown'` and `actorMissing: true` in metadata. Never invent an identity from imported content or a default.
 7. __Record names, never values.__ A password field changed is `fields: ['password']`; a secret revealed is the key, not the value; an audit export is who, format and filter, never the content.
 8. __Regenerate the docs__: `npm run docs:audit`.
 9. __Test it, then sabotage it.__ One test that the record is written with the actor and the metadata; for `refuse`, one that a failing sink refuses the action and leaves the state untouched. Then break the emitter on purpose and watch the test go red before trusting it; write what you broke in the test's comment.
@@ -56,6 +56,7 @@ A `refuse` event that cannot be recorded does not return; it throws, and the cal
 
 ```bash
 npm run lint:audit
+npm run lint:audit-attribution
 npm run docs:audit:check
 npm run audit:coverage
 npm run audit:verify
@@ -72,5 +73,6 @@ At boot the log says which provider loaded and whether the posture changed since
 
 ## Known gaps
 
+- [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — audit rows name both people (slice 3), and no request carries a proxy until slice 4. Emitters still recording a bare name, each listed in `scripts/check-audit-attribution.ts`: `logSecurityEvent` from the spam and security filters (the parse context must carry the subject, slice 4), `audit-export` (its caller is a username fact, slice 4), token mint and revoke (slice 6).
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209)
 - [#1237](https://github.com/jwilleke/ngdpbase/issues/1237)

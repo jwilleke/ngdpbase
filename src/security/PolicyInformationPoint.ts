@@ -4,7 +4,7 @@ import PolicyDecisionPoint from './PolicyDecisionPoint.js';
 import type { PolicyResource } from '../types/Policy.js';
 import { promises as fs } from 'fs';
 import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
-import { carriesCeiling } from '../utils/proxyClaim.js';
+import { carriesCeiling, proxyAttribution } from '../utils/proxyClaim.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import logger from '../utils/logger.js';
@@ -1068,6 +1068,9 @@ class PolicyInformationPoint extends BaseManager {
     const username = PolicyInformationPoint.recordedUser(subject);
     const ipAddress = typeof subject?.ipAddress === 'string' && subject.ipAddress ? subject.ipAddress : undefined;
     const viaShare = subject?.viaShare;
+    // #1762 slice 3: a denial under a proxy grant names the represented person
+    // in `user` and the person who tried in `actor`, as every other row does.
+    const { metadata: proxyMeta, ...proxy } = proxyAttribution(subject?.viaProxy);
     // #1205: through recordAuditEvent, so the enabled switch, the tier and the
     // outcome are the same door every emitter uses. Standard tier: a slow
     // sink must not delay a page render, and the drop is counted, not hidden.
@@ -1077,6 +1080,7 @@ class PolicyInformationPoint extends BaseManager {
       {
         eventType: AUDIT_EVENT.AUTHORIZATION_DENY,
         user: username,
+        ...proxy,
         ipAddress,
         action: action ?? 'unknown',
         resource: pageName ?? '',
@@ -1086,7 +1090,7 @@ class PolicyInformationPoint extends BaseManager {
         severity: 'medium',
         // #1222: a share visit is attributed to the share and its issuer —
         // "anonymous via share, issued by" — on every record it produces.
-        metadata: viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : {}
+        metadata: viaShare ? { viaShareId: viaShare.id, viaShareIssuer: viaShare.issuer } : proxyMeta
       },
       (err) => logger.warn(`Audit log failed for authorization-deny of '${pageName}':`, err)
     );

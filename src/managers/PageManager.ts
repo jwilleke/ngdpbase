@@ -2207,7 +2207,9 @@ class PageManager extends BaseManager implements CatalogSource {
           uuid: (enrichedMetadata as Record<string, unknown>).uuid as string | undefined,
           fromPageName: op === 'rename' ? options.moveFrom ?? pageName : null,
           rewriteOf: options.audit?.rewriteOf ?? null,
-          viaToken: viaToken
+          viaToken: viaToken,
+          // #1762: forwarded like the token — the row names the proxy as `actor`.
+          viaProxy: ctx.viaProxy
         }),
         (err) => logger.warn(`Audit log failed for page.${op} of '${pageName}':`, err)
       );

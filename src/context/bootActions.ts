@@ -29,6 +29,7 @@
 import { jobContextFromSystem, jobContextFromSchedule, type JobContext } from './JobContext.js';
 import { recordAuditEvent, type AuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import logger from '../utils/logger.js';
+import { proxyAttribution } from '../utils/proxyClaim.js';
 
 type EngineLike = { getManager: (name: string) => unknown } | null | undefined;
 
@@ -57,14 +58,19 @@ export function scheduleContext(engine: EngineLike, reason: string): JobContext 
 }
 
 /** The audit fields a system context contributes: who, from where, why. */
-export function attributedTo(ctx: JobContext): { user: string; ipAddress?: string; metadata: Record<string, unknown> } {
+export function attributedTo(ctx: JobContext): { user: string; actor?: string; ipAddress: string | undefined; metadata: Record<string, unknown> } {
+  // #1762 slice 3: work queued under a proxy grant names the person who
+  // queued it, as the request itself would have.
+  const { metadata: proxyMeta, ...proxy } = proxyAttribution(ctx.viaProxy);
   return {
     user: ctx.username,
-    ...(ctx.ipAddress ? { ipAddress: ctx.ipAddress } : {}),
+    ...proxy,
+    ipAddress: ctx.ipAddress || undefined,
     metadata: {
       origin: ctx.origin,
       reason: ctx.reason ?? null,
-      requestedAt: ctx.requestedAt
+      requestedAt: ctx.requestedAt,
+      ...proxyMeta
     }
   };
 }
@@ -77,7 +83,7 @@ function stamp(ctx: JobContext, event: SystemActionEvent): AuditEvent {
   const who = attributedTo(ctx);
   return {
     ...event,
-    user: who.user,
+    ...who,
     ipAddress: undefined,
     metadata: { ...who.metadata, ...(event.metadata ?? {}) }
   };

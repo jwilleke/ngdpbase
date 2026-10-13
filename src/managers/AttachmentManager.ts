@@ -1448,7 +1448,8 @@ class AttachmentManager extends BaseManager implements CatalogSource {
       // Forwarded, never rebuilt — the delegation rides on the caller's
       // context (P1). Without it a token-driven upload records as its owner
       // with no sign a token was involved.
-      viaToken: context.viaToken
+      viaToken: context.viaToken,
+      viaProxy: context.viaProxy
     });
 
     if (op === 'delete') {
@@ -1476,8 +1477,7 @@ class AttachmentManager extends BaseManager implements CatalogSource {
     const who = actorOf(context);
     await recordAuditEvent(sink, {
       eventType: AUDIT_EVENT.ASSET_EDIT,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       action: 'asset-edit',
       result: 'success',
       severity: 'low',

@@ -93,8 +93,7 @@ export default class CommentManager extends BaseManager {
     const who = actorOf(ctx);
     await recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.COMMENT_CREATE,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       action: 'comment-create',
       result: 'success',
       severity: 'low',
@@ -126,8 +125,7 @@ export default class CommentManager extends BaseManager {
     const who = actorOf(ctx);
     await recordAuditEvent(this.auditSink(), {
       eventType: AUDIT_EVENT.COMMENT_DELETE,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       action: 'comment-delete',
       result: 'success',
       severity: 'low',

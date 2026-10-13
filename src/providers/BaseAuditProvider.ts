@@ -10,8 +10,11 @@ import { actorOf, type ActorContext } from '../context/ActorContext.js';
  * Audit search filters
  */
 export interface AuditFilters {
-  /** Filter by username */
+  /** Filter by username — the account acted on */
   user?: string;
+
+  /** Filter by the person who actually acted, under a proxy grant (#1762) */
+  actor?: string;
 
   /** Filter by event type */
   eventType?: string;
@@ -377,8 +380,7 @@ abstract class BaseAuditProvider extends BaseProvider {
     const who = actorOf(ctx);
     const prepared = this.prepareRecord({
       eventType: CHAIN_RESTART_EVENT,
-      user: who.user,
-      ipAddress: who.ipAddress,
+      ...who,
       severity: 'high',
       result: 'success',
       action: 'audit-chain-restart',

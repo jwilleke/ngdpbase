@@ -136,6 +136,10 @@ On clean shutdown the file provider flushes with fsync. `system-shutdown` is its
 
 `/admin/audit` is registered and served from `views/admin-audit.ejs` ([#1113](https://github.com/jwilleke/ngdpbase/issues/1113)). Operators can filter, paginate, inspect a record, and export JSON/CSV. The filter uses canonical `{target}.{action}` names and widens to retired snake_case names on read (`canonicalEventTypeOf` / `legacyTypesFor`), so history written before the rename stays findable.
 
+### Who a row names
+
+A row's `user` is the account acted on. Under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) that is the person represented, and a separate top-level `actor` names the person who actually did it (`metadata.proxyGrantId` names the grant). A row with no proxy has no `actor` field, so every existing row reads as before. `/admin/audit` shows "acted by" beside the user and filters on it (`?actor=`, also on the API and the export). Every emitter builds the "who" from the caller's context in one place (`actorOf` / `proxyAttribution`); `npm run lint:audit-attribution` fails on one that writes a bare name, except those it lists with a reason (spam and security-filter events, `audit-export`, token mint and revoke, which later slices thread). No request carries a proxy until slice 4.
+
 ## Failure of auditing itself
 
 `ngdpbase.audit.on-failure`:
