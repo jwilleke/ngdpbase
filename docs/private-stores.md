@@ -1,7 +1,7 @@
 ---
 name: Private stores
 description: Developer and operator reference for private stores — layout, kinds, keys, access, pages, links, search, trash and files
-dateModified: 2026-09-24
+dateModified: 2026-10-13
 category: architecture
 relatedModules: [PageManager, AttachmentManager, SearchManager, PolicyInformationPoint, FileSystemProvider, VersioningFileProvider]
 ---
@@ -186,6 +186,7 @@ The matching boot passes (`migratePrivateLinksAtBoot`, `buildStoreSearchIndexesA
 One function decides: `mayActInPrivateContainer(ctx, owner, opts)` in `src/utils/privateStoreAccess.ts`.
 
 - a context acting `viaShare` (a share link) passes only when its issuer is the owner, the caller names a vault (`opts.vault`), and the link names that vault (#1388). A question about the owner's container as a whole (their list of vaults, their trash, their takeout) names no vault, so a link never passes it
+- a context acting `viaProxy` (someone acting for the owner, [#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) carries the owner's username, so it passes only when the claim is a `proxy` (not `impersonation`), carries no token or share, and its grant carries `vault-proxy`; then the rule below. The PDP re-reads the grant on every decision. An encrypted store stays shut to it: `dekFor` reaches no key under `viaProxy` until a wrapped key copy exists (#1762 slice 5)
 - otherwise the context must be a job acting for the owner, or an authenticated session (`isAuthenticated === true`) whose username is the owner
 
 No role reaches in. An anonymous visitor without a link never matches, even a page whose recorded owner is `Anonymous`.

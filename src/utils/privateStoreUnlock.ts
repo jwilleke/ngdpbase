@@ -258,10 +258,16 @@ export function newPrivateStoreHandle(): string {
  * The handle a context carries to its session's key bag. Only a password
  * session's request subject has one; a `JobContext`, a bearer-token request
  * and a share visitor carry none, so they reach no keys.
+ *
+ * A subject acting for someone (`viaProxy`, #1762) reaches no keys either,
+ * whatever handle it carries: the session's bag is the actor's own, and the
+ * represented person's encrypted stores open to a proxy only through a
+ * wrapped key copy (#1762 slice 5). Until then they stay shut.
  */
 function handleOf(ctx: ActorContext | undefined): string | undefined {
   // A caller that passed no context reaches no keys — a refusal, not a crash.
-  return (ctx as Partial<PermissionSubject> | undefined)?.privateStoreHandle;
+  const subject = ctx as Partial<PermissionSubject> | undefined;
+  return subject?.viaProxy ? undefined : subject?.privateStoreHandle;
 }
 
 /**

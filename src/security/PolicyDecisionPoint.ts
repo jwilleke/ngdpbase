@@ -36,13 +36,15 @@ import { normalizeUsername } from '../utils/username.js';
 import { roleGrants, type RoleGrant } from '../utils/roleGrants.js';
 import { vaultOfShare } from '../types/Share.js';
 
-/** The one AuthManager question the PDP asks (#1635); AuthManager owns the freshness rule. */
+/** The AuthManager questions the PDP asks; AuthManager owns the freshness rule (#1635) and the proxy grants (#1762). */
 interface StepUpDecider {
   stepUpNeeded?(permission: string, signIn: PermissionSubject['signIn'], roles: readonly string[], delegated: boolean, now?: number, cap?: number): boolean;
+  liveProxyGrant?(grantId: string): { owner: string; proxy: string; permissions: string[] } | null;
 }
 import { permitsInVault } from '../utils/privateStoreAccess.js';
 import { formatPrivatePageName } from '../utils/privateStorePath.js';
 import { RETIRED_PERMISSIONS, withRetiredExpanded } from '../utils/permissionCatalog.js';
+import { mixesProxyWithDelegation } from '../utils/proxyClaim.js';
 
 export const POLICIES_KEY = 'ngdpbase.access.policies';
 export const POLICIES_ENABLED_KEY = 'ngdpbase.access.policies.enabled';
@@ -229,6 +231,12 @@ export class PolicyDecisionPoint extends BaseManager {
    * delegated credential (agent token, share) never satisfies it. Work with no
    * request (a JobSubject: timers, operator commands) has no sign-in to be
    * fresh and is not asked.
+   *
+   * A proxy (`viaProxy`, #1762) is NOT delegated here: a person is at the
+   * keyboard, and their own fresh sign-in counts (operator, 2026-10-12). The
+   * subject's `signIn` and `aalCap` are the actor's — the session's — so the
+   * actor's sign-in must reach the level the represented person's roles
+   * require, capped at what the actor's account can reach.
    */
   private stepUpRefuses(subject: PermissionSubject | JobSubject | null | undefined, action: string): boolean {
     if (!subject || typeof subject !== 'object' || 'resolveRolesNow' in subject) return false;
@@ -308,15 +316,17 @@ export class PolicyDecisionPoint extends BaseManager {
    * 4. __The policies__, through `PolicyEvaluator`.
    */
   /**
-   * The delegation ceilings alone: does the token's scope and the share's
-   * grant permit this at all?
+   * The delegation ceilings alone: does the token's scope, the share's grant,
+   * or the proxy grant (#1762, {@link proxyCeiling}) permit this at all?
    *
    * Returns `null` when the caller carries no delegation — there is nothing to
    * bound, and the answer is whatever policy says.
    *
    * The refusal reasons are the vocabulary already recorded by
    * `PolicyInformationPoint.logAccessDecision` — `token_scope_deny`, `share_action_deny`,
-   * `share_expired`, `share_resource_deny`, `share_issuer_deny` — because they
+   * `share_expired`, `share_resource_deny`, `share_issuer_deny`, and for a
+   * proxy `proxy_combined_deny`, `proxy_kind_deny`, `proxy_revoked`,
+   * `proxy_scope_deny`, `proxy_actor_deny` — because they
    * land in the audit trail, and renaming one silently changes what an
    * assessor reads.
    *
@@ -331,6 +341,10 @@ export class PolicyDecisionPoint extends BaseManager {
     request: DecisionRequest
   ): Promise<Decision | null> {
     const { action } = request;
+
+    // #1762: a proxy claim is bounded first, and alone — never together with
+    // a token or a share, which no legitimate request carries.
+    if (subject?.viaProxy) return this.proxyCeiling(subject, action);
 
     const viaToken = subject?.viaToken;
     if (viaToken && !withRetiredExpanded(viaToken.scopes).includes(action)) {
@@ -379,11 +393,75 @@ export class PolicyDecisionPoint extends BaseManager {
   }
 
   /**
+   * The proxy ceiling (#1762 slice 2): someone acting for the subject's person
+   * under a proxy grant. Refused unless ALL hold, in this order:
+   *
+   * - the subject carries no token or share as well (`proxy_combined_deny`),
+   *   and the claim is a proxy — `impersonation` (#1763) admits nothing yet
+   *   (`proxy_kind_deny`);
+   * - the grant is still in force, re-read live on every decision: not
+   *   revoked, not past its end date, proxy access still on, and naming this
+   *   person and this actor, with every permission the subject was built with,
+   *   and the person represented still an active account (`proxy_revoked`);
+   * - the action is one the grant carries — the claim's scopes, each still in
+   *   the live grant (`proxy_scope_deny`);
+   * - the actor holds the action themselves, live — an inactive actor holds
+   *   nothing (`proxy_actor_deny`).
+   *
+   * Passing is not an allow: policy then runs against the represented person
+   * (`decide` falls through, as for a token), so the result is grant ∩
+   * represented ∩ actor. The actor is asked whether they HOLD the action —
+   * policy alone — because step-up is asked of this subject, with the actor's
+   * own sign-in, once policy has said yes.
+   */
+  private async proxyCeiling(subject: PermissionSubject | JobSubject, action: string): Promise<Decision> {
+    const claim = subject.viaProxy;
+    const refuse = (reason: string, why: string): Decision => {
+      logger.info(`[PDP] proxy grant ${claim?.grantId ?? '?'} (${claim?.actor ?? '?'} for ${subject.username}): ${why} — denied`);
+      return { permit: false, applicable: true, reason };
+    };
+    if (!claim) return refuse('proxy_revoked', 'no claim');
+    if (mixesProxyWithDelegation(subject)) return refuse('proxy_combined_deny', 'carries a token or share as well');
+    if (claim.kind !== 'proxy') return refuse('proxy_kind_deny', `'${String(claim.kind)}' is not admitted`);
+
+    const grant = this.engine.getManager<StepUpDecider>('AuthManager')?.liveProxyGrant?.(claim.grantId) ?? null;
+    const carried = Array.isArray(claim.scopes) ? claim.scopes : [];
+    if (!grant || grant.owner !== subject.username || grant.proxy !== claim.actor ||
+      !carried.every(p => grant.permissions.includes(p))) {
+      return refuse('proxy_revoked', 'the grant is not in force for this person and actor');
+    }
+    // Disabling the represented person's account stops every proxy for them
+    // at once, as it stops their own sessions. (An inactive actor holds
+    // nothing, so the actor check below refuses them.)
+    if (!(await this.informationPoint()?.subjectFor(subject.username))) {
+      return refuse('proxy_revoked', `${subject.username} is not an active account`);
+    }
+    // The claim's scopes are within the live grant (checked above), so an
+    // action they carry is one the grant carries now.
+    if (!withRetiredExpanded(carried).includes(action)) {
+      return refuse('proxy_scope_deny', `the grant does not carry '${action}'`);
+    }
+    if (!(await this.actorHolds(claim.actor, action))) {
+      return refuse('proxy_actor_deny', `${claim.actor} does not hold '${action}'`);
+    }
+    return { permit: true, applicable: true, reason: 'proxy_scope_ok' };
+  }
+
+  /** Does the named actor HOLD `action` (policy alone, live)? Step-up is the proxy subject's question, not theirs. */
+  private async actorHolds(actor: string, action: string): Promise<boolean> {
+    if (!actor || normalizeUsername(actor) === 'anonymous') return false;
+    const subject = await this.informationPoint()?.subjectFor(actor);
+    return subject ? this.holds(subject, action) : false;
+  }
+
+  /**
    * Decide. The order is load-bearing:
    *
    * 1. __The ceilings__ (see {@link ceiling}), before anything else. A
    *    delegated credential may only ever exercise a subset of what was
-   *    delegated, whatever policy says (#946, #1222).
+   *    delegated, whatever policy says (#946, #1222); a proxy only what its
+   *    grant carries and its actor holds, and then policy for the person
+   *    represented (#1762).
    * 2. __A share IS the policy__ for a capability check, so a passing share
    *    returns an allow rather than falling through to the evaluator — a share
    *    must work on an instance whose policy grants anonymous nothing.

@@ -16,6 +16,7 @@
  * and sign-in shapes are imported, not transcribed.
  */
 import type { ShareGrant } from './Share.js';
+import type { ProxyClaim } from '../managers/UserManager.js';
 import type { SignInRecord, PendingConnection } from '../managers/AuthManager.js';
 
 declare module 'express-session' {
@@ -95,6 +96,8 @@ declare global {
         viaToken?: { id: string; name: string; scopes: string[] };
         /** The share this request presented, when it did (#1222). Forwarded like `viaToken`. */
         viaShare?: ShareGrant;
+        /** The proxy grant someone is acting for this person under (#1762). Forwarded like `viaToken`. */
+        viaProxy?: ProxyClaim;
         [key: string]: unknown;
       };
       file?: Multer.File;

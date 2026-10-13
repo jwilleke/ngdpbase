@@ -78,7 +78,9 @@ export type CorePermission =
   /** Edit user accounts */
   | 'user-edit'
   /** View user list and profiles */
-  | 'user-read';
+  | 'user-read'
+  /** Let a person acting for you into your vaults (#1762). Read only from a proxy grant: a grant that includes it lets the proxy act inside your vaults within the grant's other permissions; without it a proxy never reaches them. Encrypted vaults stay shut to a proxy until a vault key copy is supported (#1762 slice 5). Every signed-in role except demo-admin, beside proxy-grant. Never carried by an agent token or an app */
+  | 'vault-proxy';
 
 /** The same list at runtime, for a check that has to iterate. */
 export const CORE_PERMISSIONS: readonly CorePermission[] = [
@@ -117,5 +119,6 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'user-create',
   'user-delete',
   'user-edit',
-  'user-read'
+  'user-read',
+  'vault-proxy'
 ] as const;

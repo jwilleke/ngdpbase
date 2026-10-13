@@ -154,7 +154,9 @@ export const AUDIT_EVENT = {
   /** Account changed in a way that alters what it may do or who holds it: roles, password, active, external, email, profile lock. Preference edits are not recorded */
   USER_EDIT: 'user-edit',
   /** User profile read; not recorded, read volume */
-  USER_READ: 'user-read'
+  USER_READ: 'user-read',
+  /** Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant */
+  VAULT_PROXY: 'vault-proxy'
 } as const;
 
 /** A name core code may emit. */

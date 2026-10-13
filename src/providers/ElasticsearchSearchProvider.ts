@@ -29,6 +29,8 @@ import { createGuardedElasticsearchClient, refusedNodeMessage } from '../http/gu
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { validateUrl } from '../http/ssrf.js';
 import { parsePrivatePageName } from '../utils/privateStorePath.js';
+import { mayActInPrivateContainer } from '../utils/privateStoreAccess.js';
+import type { ActorContext } from '../context/ActorContext.js';
 
 // Type aliases for commonly used ES types (estypes namespace is the stable export path)
 type AggregationsStringTermsBucket = estypes.AggregationsStringTermsBucket;
@@ -765,9 +767,12 @@ class ElasticsearchSearchProvider extends BaseSearchProvider {
   private _buildPrivacyFilter(wikiContext?: SearchOptions['wikiContext']): {
     owner: string | undefined;
   } {
-    const subject = wikiContext?.userContext;
-    const username = subject && !subject.viaShare && subject.isAuthenticated ? subject.username : undefined;
-    return { owner: typeof username === 'string' && username ? username : undefined };
+    // The container rule itself (#1762): a share visitor finds no private
+    // page, and someone acting for a person finds theirs only under a grant
+    // that lets them into the person's vaults.
+    const subject = wikiContext?.userContext as unknown as ActorContext | undefined;
+    const username = subject?.username;
+    return { owner: typeof username === 'string' && username && mayActInPrivateContainer(subject, username) ? username : undefined };
   }
 
   /**

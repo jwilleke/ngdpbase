@@ -1678,6 +1678,21 @@ class AuthManager extends BaseManager {
       .map(g => this.proxyGrantView(g));
   }
 
+  /**
+   * The grant with this id if it is in force right now, else null (#1762
+   * slice 2): the PDP's live re-read on every decision under `viaProxy`.
+   * Null when proxy access is off, when there is no such row (revoked, or the
+   * account closed), when its terms do not read, or when its end date has
+   * passed — each fails closed. Not a door: it answers the decision point,
+   * never a person, so it asks no permission.
+   */
+  liveProxyGrant(grantId: string, now: number = Date.now()): ProxyGrant | null {
+    if (!this.proxyAccessEnabled() || !this.credentials || typeof grantId !== 'string' || !grantId) return null;
+    const row = this.credentials.get(grantId);
+    const grant = row ? proxyGrantOf(row) : null;
+    return grant && proxyGrantLive(grant, now) ? grant : null;
+  }
+
   private proxyGrantView(grant: ProxyGrant): ProxyGrantView {
     return { ...grant, permissions: [...grant.permissions], can: this.describeScopes(grant.permissions), mayRedelegate: grant.permissions.includes(PROXY_GRANT_PERMISSION) };
   }

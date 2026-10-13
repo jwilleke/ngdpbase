@@ -506,6 +506,7 @@ audited.
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
 | `token-extend` | Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) | refuse | yes |
 | `proxy-grant` | Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) | refuse | yes |
+| `vault-proxy` | Not an action: read from a proxy grant at the vault door; the grant itself is recorded as proxy-grant | continue | no |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `search-page` | Page search; not recorded, read volume | continue | no |
