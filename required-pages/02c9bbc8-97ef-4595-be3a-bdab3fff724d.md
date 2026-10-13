@@ -98,7 +98,8 @@ Each row says which kind it is:
 
 | Kind | What it means |
 |---|---|
-| __Fixed__ | It stops working on its end date. When you need it again, you make or approve a new one. Every agent token is fixed. |
+| __Fixed__ | It stops working on its end date. When you need it again, you make or approve a new one. |
+| __Extendable__ | An agent token that stops on its end date unless you press __Extend__, which moves the date later. Shown instead of Fixed on your own tokens when you are allowed to extend tokens. |
 | __Refreshable__ | It renews itself automatically, with a new key each time, so a device can keep working unattended. The list shows when it was last renewed, and when it ends if it has an end date. |
 
 The __Can do__ column says in plain words what each one may do. Point at a line to see the permission's short name. Every permission and what it lets you do is listed on [Permissions]. A line the site does not recognise, such as one an app asked for on its own, is shown exactly as the app named it.
@@ -113,7 +114,7 @@ A program that runs continuously therefore needs a new token each day, created h
 
 ## Extending a token
 
-If you are allowed to extend tokens, __Extend__ on your [Profile Page] moves a token's expiry to a full day from now. The token itself and what it may do stay the same, so the program using it keeps working without being given a new one.
+If you are allowed to extend tokens, your agent tokens show as __Extendable__ in __My tokens and devices__ on your [Profile Page], each with an __Extend__ button beside __Revoke__. __Extend__ moves a token's expiry to a full day from now. The token itself and what it may do stay the same, so the program using it keeps working without being given a new one.
 
 - Only a token that has not expired and has not been revoked can be extended. Once a token has expired, create a new one.
 - Extending never makes a token last longer than a day from the moment you extend it.

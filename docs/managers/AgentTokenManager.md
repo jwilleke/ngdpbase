@@ -109,7 +109,8 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 - `GET /api/tokens` — the caller's tokens; `?all=true` lists everyone's (admin only)
 - `POST /api/tokens` — mint __for the caller__; an admin cannot mint on another user's behalf, so a token always traces to someone who chose to delegate
 - `DELETE /api/tokens/:id` — owner or admin. A non-owner without admin gets `404`, not `403`, so the existence of another user's token is not confirmed. The revoke itself is `AuthManager.revokeDelegation`, the one door every Revoke goes through ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)).
-- Profile → __My tokens and devices__ lists the person's tokens with the apps and devices they approved, and revokes either through the same door ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)).
+- `POST /api/tokens/:id/extend` — body `{ hours? }`; asks `token-extend` (step-up: a stale sign-in gets `reauth`, which the page follows). The owner only: another user's token is `404`; a refusal (expired, revoked, at the cap) is `400` with its message.
+- Profile → __My tokens and devices__ lists the person's tokens with the apps and devices they approved, and revokes either through the same door ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)). To a holder of `token-extend`, each of their fixed agent tokens is labelled __Extendable__ and has an __Extend__ button in its row, which extends to the maximum ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734)).
 
 ## See also
 

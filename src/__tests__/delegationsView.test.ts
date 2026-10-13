@@ -22,8 +22,8 @@ const row = (over: Partial<Delegation>): Delegation => ({
   createdAt: '2026-10-12T08:00:00.000Z', expiresAt: '2026-10-12T20:00:00.000Z', renewedAt: null, lastUsedAt: null, ...over
 });
 
-async function render(items: Delegation[]): Promise<Document> {
-  const html = await ejs.renderFile(PARTIAL, { items, csrfToken: 'csrf-value' });
+async function render(items: Delegation[], canExtend = false): Promise<Document> {
+  const html = await ejs.renderFile(PARTIAL, { items, csrfToken: 'csrf-value', canExtend });
   return new JSDOM(html).window.document;
 }
 
@@ -64,6 +64,42 @@ describe('#1764 My tokens and devices list', () => {
     expect(doc.body.textContent).toMatch(/Ends 2026-10-12 20:00 UTC/);
     expect(doc.body.textContent).not.toMatch(/RFC|grant|OAuth|OIDC|refresh token/i);
   });
+  describe('#1734 Extend', () => {
+    const mixed = (): Delegation[] => [
+      row({}),
+      row({ kind: 'app', id: 'g1', name: 'Notes app', renewal: 'fixed' }),
+      row({ kind: 'app', id: 'g2', name: 'Speaker', device: true, renewal: 'refreshable', renewedAt: '2026-10-11T08:00:00.000Z' })
+    ];
+
+    test('without token-extend: no Extend, tokens stay Fixed, no Extendable in the legend', async () => {
+      const doc = await render(mixed());
+      expect(doc.querySelectorAll('[data-extend-token]')).toHaveLength(0);
+      expect(cells(doc.querySelector('tbody tr') as Element)[2]).toBe('Fixed');
+      expect(doc.body.textContent).not.toMatch(/Extendable/);
+    });
+
+    test('with token-extend: only the own fixed agent token is Extendable, with Extend beside Revoke', async () => {
+      const doc = await render(mixed(), true);
+      const rows = [...doc.querySelectorAll('tbody tr')];
+      expect(rows.map(r => cells(r)[2])).toEqual(['Extendable', 'Fixed', 'Refreshable']);
+      const buttons = [...doc.querySelectorAll('[data-extend-token]')];
+      expect(buttons.map(b => [b.getAttribute('data-extend-token'), b.textContent?.trim()])).toEqual([['tok_1', 'Extend']]);
+      expect(rows[0].querySelector('[data-extend-token]')).not.toBeNull();
+      expect(rows[0].querySelector('form button')?.textContent).toBe('Revoke');
+    });
+
+    test('the legend explains Extendable in plain words, only when a row is extendable', async () => {
+      const legend = (doc: Document) => (doc.querySelector('p.small')?.textContent ?? '').replace(/\s+/g, ' ');
+      expect(legend(await render(mixed(), true))).toMatch(/Extendable stops on its end date unless you press Extend, which moves the date later; the token and what it can do stay the same\./);
+      expect(legend(await render([row({ kind: 'app', id: 'g1', name: 'Notes app' })], true))).not.toMatch(/Extendable/);
+    });
+
+    test('a truthy non-boolean canExtend does not offer Extend', async () => {
+      const html = await ejs.renderFile(PARTIAL, { items: [row({})], csrfToken: 'c', canExtend: 'yes' });
+      expect(new JSDOM(html).window.document.querySelectorAll('[data-extend-token]')).toHaveLength(0);
+    });
+  });
+
   test('times go out as <time datetime data-local-time> (UTC text only as the fallback), and local-time.js shows them in the viewer\'s zone', async () => {
     const html = await ejs.renderFile(PARTIAL, { items: [row({ lastUsedAt: '2026-10-12T09:30:00.000Z' })], csrfToken: 'csrf-value' });
     const times = [...new JSDOM(html).window.document.querySelectorAll('time[data-local-time]')];
