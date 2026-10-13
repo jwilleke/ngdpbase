@@ -7,7 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS } from '../permissionCatalog';
+import { isGrantable, grantablePermissionNames, grantablePermissions, withRetiredExpanded, RETIRED_PERMISSIONS, permissionLabel, describeScopes } from '../permissionCatalog';
 import { delegablePermissions } from '../../managers/OidcManager';
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
@@ -76,5 +76,38 @@ describe('#1638 a split permission still grants what it stood for', () => {
     };
     const pdp = new PolicyDecisionPoint(engine);
     expect([...(pdp.rolePermissions().get('sharer') ?? [])].sort()).toEqual(['share-create', 'share-extend', 'share-revoke']);
+  });
+});
+
+describe('#1764 every permission has plain words', () => {
+  const addonCatalogs = fs.readdirSync(path.join(process.cwd(), 'addons'))
+    .map((slug) => path.join(process.cwd(), 'addons', slug, 'config', 'default-config.json'))
+    .filter((file) => fs.existsSync(file))
+    .map((file) => [file, (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)['ngdpbase.permissions.definitions'] ?? {}] as const);
+
+  test.each([['core', catalog] as const, ...addonCatalogs])('%s: each grantable permission declares a label; no record does', (_where, defs) => {
+    for (const [name, entry] of Object.entries(defs as Record<string, { grantable?: boolean; label?: unknown }>)) {
+      if (entry.grantable === false) expect(entry.label, name).toBeUndefined();
+      // A person reads the label: no issue numbers, no configuration keys.
+      else expect(String(entry.label), name).toMatch(/^[A-Z][^#]*[^.]$/);
+      if (entry.grantable !== false) expect(String(entry.label), name).not.toMatch(/ngdpbase\./);
+    }
+  });
+
+  test('permissionLabel: the label, else the description, else nothing', () => {
+    expect(permissionLabel({ label: 'Read pages', description: 'dev' })).toBe('Read pages');
+    expect(permissionLabel({ description: 'Manage it' })).toBe('Manage it');
+    expect(permissionLabel({ label: '  ' })).toBeNull();
+    expect(permissionLabel(undefined)).toBeNull();
+  });
+
+  test('describeScopes: sign-in scopes, catalog permissions, anything else by name, no repeats', () => {
+    expect(describeScopes(['openid', 'page-read', 'patient/*.read', 'openid', 'toString'], catalog)).toEqual([
+      { name: 'openid', description: 'Confirm who you are (your username)' },
+      { name: 'page-read', description: 'View pages' },
+      { name: 'patient/*.read', description: 'patient/*.read' },
+      { name: 'toString', description: 'toString' }
+    ]);
+    expect(describeScopes(['page-read'], null)).toEqual([{ name: 'page-read', description: 'page-read' }]);
   });
 });

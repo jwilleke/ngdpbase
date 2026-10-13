@@ -97,7 +97,7 @@
                     <tr>
                         <td>
                             <code class="text-primary"><%= perm.key %></code>
-                            <br><small class="text-muted"><%= perm.description %></small>
+                            <br><small class="text-muted" title="<%= perm.description %>"><%= perm.label || perm.description %></small>
                         </td>
                         <% roles.forEach(role => { %>
                         <td class="text-center">

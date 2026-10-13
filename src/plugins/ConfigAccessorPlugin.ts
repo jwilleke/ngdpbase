@@ -44,7 +44,7 @@ import {
   applyPagination,
   formatPaginationLinks
 } from '../utils/pluginFormatters.js';
-import { grantablePermissions } from '../utils/permissionCatalog.js';
+import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 
 // ============================================================================
 // Type Definitions
@@ -103,7 +103,8 @@ interface SystemCategory {
 }
 
 interface PermissionDefinition {
-  name?: string;
+  /** The plain end-user line (#1764); read through permissionLabel. */
+  label?: string;
   description?: string;
   icon?: string;
   color?: string;
@@ -252,9 +253,10 @@ function displayPermissions(configManager: ConfigurationManager, pdp: PolicyDeci
     return '<p class="text-muted">No permissions defined in the system</p>';
   }
 
+  // #1764: the plain words a person reads, the same field as "My tokens and devices".
   const permissionsArray = Object.entries(permissions).map(([key, def]) => ({
     key,
-    description: def?.description ?? key
+    description: permissionLabel(def) ?? key
   }));
 
   const rolesArray: Role[] = roles;
@@ -1311,7 +1313,7 @@ function displayPermissionsList(configManager: ConfigurationManager): string {
     html += '  <div class="card mb-3">\n';
     html += `    <div class="card-header"><h6 class="mb-0"><i class="fas fa-tag me-1"></i>${escapeHtml(target.charAt(0).toUpperCase() + target.slice(1))} Permissions</h6></div>\n`;
     html += '    <div class="table-responsive"><table class="table table-sm table-hover mb-0">\n';
-    html += '      <thead class="table-light"><tr><th>Permission</th><th>Name</th><th>Icon</th><th>Description</th></tr></thead>\n';
+    html += '      <thead class="table-light"><tr><th>Permission</th><th>Icon</th><th>What it lets you do</th></tr></thead>\n';
     html += '      <tbody>\n';
 
     for (const p of perms) {
@@ -1321,9 +1323,9 @@ function displayPermissionsList(configManager: ConfigurationManager): string {
         : '—';
       html += '        <tr>\n';
       html += `          <td><code>${escapeHtml(p.key)}</code></td>\n`;
-      html += `          <td>${escapeHtml(p.name ?? p.key)}</td>\n`;
       html += `          <td>${iconHtml}</td>\n`;
-      html += `          <td><small class="text-muted">${escapeHtml(p.description ?? '')}</small></td>\n`;
+      // #1764: the catalog's plain line, never the developer description.
+      html += `          <td>${escapeHtml(permissionLabel(p) ?? p.key)}</td>\n`;
       html += '        </tr>\n';
     }
 

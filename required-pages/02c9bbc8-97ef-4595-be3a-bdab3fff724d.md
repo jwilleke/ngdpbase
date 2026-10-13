@@ -8,7 +8,7 @@ user-keywords:
   - agents
   - automation
 slug: using-tokens
-lastModified: '2026-10-12T00:00:00.000Z'
+lastModified: '2026-10-13T00:00:00.000Z'
 author: system
 ---
 
@@ -98,6 +98,8 @@ Each row says which kind it is:
 |---|---|
 | __Fixed__ | It stops working on its end date. When you need it again, you make or approve a new one. Every agent token is fixed. |
 | __Refreshable__ | It renews itself automatically, with a new key each time, so a device can keep working unattended. The list shows when it was last renewed, and when it ends if it has an end date. |
+
+The __Can do__ column says in plain words what each one may do. Point at a line to see the permission's short name. Every permission and what it lets you do is listed on [Permissions]. A line the site does not recognise, such as one an app asked for on its own, is shown exactly as the app named it.
 
 Each row has __Revoke__. Revoking is immediate — the next request using that token, app or device is refused. A revoked app or device has to be approved again before it can sign in. Nothing else you own is affected, and your password is unchanged. You may be asked to confirm your sign-in first.
 

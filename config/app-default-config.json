@@ -1653,6 +1653,7 @@
   "ngdpbase.permissions.definitions": {
     "page-read": {
       "description": "View pages",
+      "label": "View pages",
       "icon": "eye",
       "color": "#6c757d",
       "audit": {
@@ -1663,6 +1664,7 @@
     },
     "page-edit": {
       "description": "Edit pages",
+      "label": "Edit pages",
       "icon": "edit",
       "color": "#007bff",
       "audit": {
@@ -1672,11 +1674,13 @@
     },
     "page-public": {
       "description": "Make a page public: move it out of its vault (checked by the page's system-category, #1504)",
+      "label": "Make a page public by moving it out of its vault",
       "icon": "globe",
       "color": "#20c997"
     },
     "page-create": {
       "description": "Create new pages",
+      "label": "Create pages",
       "icon": "plus",
       "color": "#28a745",
       "audit": {
@@ -1686,6 +1690,7 @@
     },
     "page-delete": {
       "description": "Delete pages",
+      "label": "Delete pages",
       "icon": "trash",
       "color": "#dc3545",
       "audit": {
@@ -1695,6 +1700,7 @@
     },
     "page-rename": {
       "description": "Rename pages",
+      "label": "Rename pages",
       "icon": "i-cursor",
       "color": "#fd7e14",
       "audit": {
@@ -1704,6 +1710,7 @@
     },
     "page-export": {
       "description": "Export pages",
+      "label": "Export pages",
       "icon": "file-export",
       "color": "#6c757d",
       "audit": {
@@ -1713,6 +1720,7 @@
     },
     "asset-read": {
       "description": "View assets (attachments)",
+      "label": "View attachments",
       "icon": "paperclip",
       "color": "#6c757d",
       "audit": {
@@ -1723,11 +1731,13 @@
     },
     "media-read": {
       "description": "Browse and view the media library (not delegated to anonymous visitors)",
+      "label": "Browse and view the media library",
       "icon": "images",
       "color": "#6c757d"
     },
     "asset-upload": {
       "description": "Upload assets",
+      "label": "Upload attachments",
       "icon": "upload",
       "color": "#28a745",
       "audit": {
@@ -1737,6 +1747,7 @@
     },
     "asset-delete": {
       "description": "Delete assets",
+      "label": "Delete attachments",
       "icon": "trash",
       "color": "#dc3545",
       "audit": {
@@ -1746,6 +1757,7 @@
     },
     "share-create": {
       "description": "Create share links — hand out anonymous read access to content you may read — and see your own (#1224, #1638)",
+      "label": "Create share links and see your own",
       "icon": "share-alt",
       "color": "#20c997",
       "audit": {
@@ -1755,6 +1767,7 @@
     },
     "share-extend": {
       "description": "Extend your own share links (#1638)",
+      "label": "Extend your own share links",
       "icon": "clock",
       "color": "#20c997",
       "audit": {
@@ -1764,6 +1777,7 @@
     },
     "share-revoke": {
       "description": "Revoke your own share links; revoking anyone's also needs admin-system (#1638)",
+      "label": "Revoke your own share links",
       "icon": "ban",
       "color": "#20c997",
       "audit": {
@@ -1773,23 +1787,27 @@
     },
     "profile-manage": {
       "description": "Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous",
+      "label": "Manage your own profile and preferences",
       "icon": "user-cog",
       "color": "#6f42c1"
     },
     "account-security": {
       "description": "Change what protects your own account — password, email, sign-in methods (passkeys), vault takeout and import, approving a device (#1525). Granted wherever profile-manage is; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "label": "Change your password, email and sign-in methods, and approve devices",
       "icon": "user-shield",
       "color": "#6f42c1",
       "step-up": true
     },
     "config-manage": {
       "description": "Change any configuration setting, and download a backup (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up",
+      "label": "Change site settings and download backups",
       "icon": "sliders-h",
       "color": "#dc3545",
       "step-up": true
     },
     "secret-reveal": {
       "description": "Unmask a configuration secret (#1525). Admin only by default; asks for a fresh sign-in when listed in ngdpbase.auth.step-up. Hashed credentials (agent tokens) and shown-once secrets can never be revealed",
+      "label": "Show hidden configuration secrets",
       "icon": "eye-slash",
       "color": "#dc3545",
       "audit": {
@@ -1800,6 +1818,7 @@
     },
     "comment-create": {
       "description": "Add a comment, and delete your own; deleting anyone's is admin-system (#1198)",
+      "label": "Add comments and delete your own",
       "icon": "comment",
       "color": "#0dcaf0",
       "audit": {
@@ -1809,6 +1828,7 @@
     },
     "token-mint": {
       "description": "Mint, list and revoke your own agent tokens — a standing credential carrying a slice of your authority (#1198, #1178). A token can never carry this scope",
+      "label": "Make and revoke your own agent tokens",
       "icon": "key",
       "color": "#fd7e14",
       "audit": {
@@ -1819,6 +1839,7 @@
     },
     "store-create": {
       "description": "Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it",
+      "label": "Create your own private store",
       "icon": "lock",
       "color": "#198754",
       "audit": {
@@ -1828,6 +1849,7 @@
     },
     "asset-edit": {
       "description": "Edit asset metadata (EXIF/IPTC/XMP)",
+      "label": "Edit attachment details such as photo information",
       "icon": "pen",
       "color": "#fd7e14",
       "audit": {
@@ -1837,6 +1859,7 @@
     },
     "search-page": {
       "description": "Search pages",
+      "label": "Search pages",
       "icon": "search",
       "color": "#6c757d",
       "audit": {
@@ -1847,6 +1870,7 @@
     },
     "search-user": {
       "description": "Search users",
+      "label": "Search for people",
       "icon": "search",
       "color": "#6c757d",
       "audit": {
@@ -1857,6 +1881,7 @@
     },
     "user-read": {
       "description": "View user list and profiles",
+      "label": "View the list of people and their profiles",
       "icon": "users",
       "color": "#6c757d",
       "audit": {
@@ -1867,6 +1892,7 @@
     },
     "user-edit": {
       "description": "Edit user accounts",
+      "label": "Edit people's accounts",
       "icon": "user-edit",
       "color": "#007bff",
       "audit": {
@@ -1876,6 +1902,7 @@
     },
     "user-create": {
       "description": "Create user accounts",
+      "label": "Create accounts",
       "icon": "user-plus",
       "color": "#28a745",
       "audit": {
@@ -1885,6 +1912,7 @@
     },
     "user-delete": {
       "description": "Delete user accounts",
+      "label": "Delete accounts",
       "icon": "user-minus",
       "color": "#dc3545",
       "audit": {
@@ -1894,6 +1922,7 @@
     },
     "admin-read": {
       "description": "View administration screens (read-only, no changes)",
+      "label": "View administration screens without changing anything",
       "icon": "eye",
       "color": "#6c757d",
       "audit": {
@@ -1904,11 +1933,13 @@
     },
     "admin-system": {
       "description": "System administration",
+      "label": "Administer the site",
       "icon": "cog",
       "color": "#dc3545"
     },
     "admin-roles": {
       "description": "Role management",
+      "label": "Manage roles",
       "icon": "shield-alt",
       "color": "#dc3545"
     },
@@ -2082,6 +2113,7 @@
     },
     "page-raw-edit": {
       "description": "Edit a page's raw file in the admin raw editor — bypasses the page editor's checks (#1638)",
+      "label": "Edit a page's raw file, skipping the page editor's checks",
       "icon": "file-code",
       "color": "#dc3545",
       "audit": {
@@ -2091,6 +2123,7 @@
     },
     "session-revoke": {
       "description": "End another person's signed-in session (#1638)",
+      "label": "Sign other people out",
       "icon": "user-slash",
       "color": "#dc3545",
       "audit": {
@@ -2135,6 +2168,7 @@
     },
     "audit-export": {
       "description": "Export the audit trail to a file (#1638)",
+      "label": "Export the audit trail",
       "icon": "file-export",
       "color": "#dc3545",
       "audit": {

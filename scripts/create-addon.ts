@@ -403,7 +403,7 @@ function defaultConfig(o: ScaffoldOptions): string {
     // it; the host merges this layer. The route asks ctx.requirePermission
     // for this name — never a role name, never isAuthenticated (#1198).
     'ngdpbase.permissions.definitions': {
-      [perm]: { description: `Manage the ${toTitleCase(o.id)} addon: refresh its data and change its settings`, icon: 'gear', color: '#0d6efd' }
+      [perm]: { description: `Manage the ${toTitleCase(o.id)} addon: refresh its data and change its settings`, label: `Manage the ${toTitleCase(o.id)} add-on`, icon: 'gear', color: '#0d6efd' }
     },
     'ngdpbase.access.policies': [{
       id: `${perm}-access`,

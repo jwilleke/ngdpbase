@@ -157,6 +157,7 @@ Declare the permission and grant it in the addon's own `config/default-config.js
   "ngdpbase.permissions.definitions": {
     "my-addon-manage": {
       "description": "Create and edit my-addon records",
+      "label": "Manage my-addon records",
       "icon": "cog",
       "color": "#0d6efd"
     }
@@ -174,6 +175,8 @@ Declare the permission and grant it in the addon's own `config/default-config.js
   ]
 }
 ```
+
+`label` is the permission in plain words for the person reading it: the __Can do__ column of "My tokens and devices", the app consent screen, the roles matrix and the shipped Permissions page all show it. `description` is the note for administrators and developers. Without a `label` those places show the `description`, so give one. A scope that is not a permission at all (an app's own scope) has no declaration and is shown by its name.
 
 A policy may name the roles it grants on day one. An operator narrows that in `app-custom-config.json`. Addon code never names a role.
 

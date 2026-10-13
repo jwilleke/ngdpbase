@@ -50,3 +50,58 @@ export function withRetiredExpanded(names: readonly string[]): string[] {
   }
   return out;
 }
+
+/**
+ * What the standard OpenID Connect sign-in scopes let an app see, in plain
+ * words (#1572). They are not permissions, so they are not in the catalog;
+ * this is their one declaration — the consent page and the "My tokens and
+ * devices" list both read it through `describeScopes`.
+ */
+export const SIGN_IN_SCOPE_LABELS: Readonly<Record<string, string>> = {
+  openid: 'Confirm who you are (your username)',
+  profile: 'Your name',
+  email: 'Your email address',
+  address: 'Your postal address',
+  phone: 'Your phone number',
+  offline_access: 'Stay connected while you are not using it, until you revoke it'
+};
+
+/** One scope or permission as a person reads it: its name, and what it lets the holder do. */
+export interface ScopeDescription {
+  name: string;
+  description: string;
+}
+
+/**
+ * A permission entry in plain words (#1764): its `label` — the end-user line
+ * shown wherever a person reads what a permission does — else its
+ * `description` (an add-on that declares no label), else nothing.
+ */
+export function permissionLabel(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const { label, description } = entry as { label?: unknown; description?: unknown };
+  if (typeof label === 'string' && label.trim()) return label;
+  if (typeof description === 'string' && description.trim()) return description;
+  return null;
+}
+
+/**
+ * Scope or permission names in plain words (#1764), in order, without
+ * repeats: a sign-in scope by `SIGN_IN_SCOPE_LABELS`, a permission by
+ * `permissionLabel` of its catalog entry. A name declared nowhere (an app's
+ * own scope, such as a host's `patient/*.read`) is shown as itself.
+ */
+export function describeScopes(names: readonly string[], definitions: unknown): ScopeDescription[] {
+  const catalog = definitions && typeof definitions === 'object' && !Array.isArray(definitions) ? definitions as Record<string, unknown> : {};
+  const out: ScopeDescription[] = [];
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const description = Object.hasOwn(SIGN_IN_SCOPE_LABELS, name)
+      ? SIGN_IN_SCOPE_LABELS[name]
+      : (Object.hasOwn(catalog, name) ? permissionLabel(catalog[name]) : null);
+    out.push({ name, description: description ?? name });
+  }
+  return out;
+}

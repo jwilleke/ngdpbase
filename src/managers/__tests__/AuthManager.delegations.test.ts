@@ -42,6 +42,11 @@ const app = (owner: string, over: Partial<Grant> = {}): Grant => ({
   ...over
 });
 
+const CATALOG = {
+  'page-read': { description: 'View pages (dev note #1)', label: 'Read pages' },
+  'addon-thing': { description: 'Manage the add-on' }
+};
+
 describe('AuthManager — My tokens and devices (#1764)', () => {
   let dir: string;
   const savedKey = process.env[CREDENTIALS_KEY_ENV];
@@ -63,7 +68,8 @@ describe('AuthManager — My tokens and devices (#1764)', () => {
     ];
     const managers: Record<string, unknown> = {
       ConfigurationManager: {
-        getProperty: (_k: string, d: unknown) => d,
+        // #1764: the permission catalog, for the rows' plain words.
+        getProperty: (k: string, d: unknown) => (k === 'ngdpbase.permissions.definitions' ? CATALOG : d),
         getCustomProperty: () => undefined,
         // Every store this test opens lives in the temp directory, never a live data tree.
         getResolvedDataPath: (k: string) => (k === 'ngdpbase.auth.credentials.file' ? path.join(dir, 'credentials.json') : path.join(dir, 'tokens')),
@@ -152,6 +158,21 @@ describe('AuthManager — My tokens and devices (#1764)', () => {
     const samToken = tokens.listForOwner('sam')[0];
     expect(await am.revokeDelegation(subject('admin'), 'sam', 'token', samToken.id)).toBe(true);
     expect(audited).toContainEqual(expect.objectContaining({ action: 'token-revoke', user: 'admin', metadata: expect.objectContaining({ owner: 'sam', revokedBy: 'admin' }) }));
+  });
+
+  test('each row says what it can do in plain words: the catalog label, a sign-in scope\'s line, else the name', async () => {
+    const rows = await am.listDelegations(subject('ann'), 'ann');
+    expect(rows[0].can).toEqual([{ name: 'page-read', description: 'Read pages' }]);
+    expect(rows[2].can).toEqual([
+      { name: 'openid', description: 'Confirm who you are (your username)' },
+      { name: 'page-read', description: 'Read pages' }
+    ]);
+    // An add-on permission with no label reads by its description; a scope declared nowhere, by its name.
+    expect(am.describeScopes(['addon-thing', 'patient/*.read', 'page-read', 'page-read'])).toEqual([
+      { name: 'addon-thing', description: 'Manage the add-on' },
+      { name: 'patient/*.read', description: 'patient/*.read' },
+      { name: 'page-read', description: 'Read pages' }
+    ]);
   });
 
   test('a signed-out caller is refused', async () => {
