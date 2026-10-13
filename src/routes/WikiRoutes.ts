@@ -147,7 +147,7 @@ import { buildConceptSchemeJsonLd } from '../utils/buildConceptSchemeJsonLd.js';
 import { renderFootnoteListHtml } from '../plugins/FootnotesPlugin.js';
 import { renderCommentListHtml } from '../plugins/CommentsPlugin.js';
 import WikiContext from '../context/WikiContext.js';
-import { grantablePermissions } from '../utils/permissionCatalog.js';
+import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 import type PageManagerClass from '../managers/PageManager.js';
 import { PageContentValidationError, type PageConvertResult, type PageSaveOptions, type PageSaveResult, type ShippedPageSource, type ShippedPageSyncReport } from '../managers/PageManager.js';
 import { auditEventTypes } from '../utils/auditVocabulary.js';
@@ -11322,7 +11322,9 @@ ${panes}
         })),
         permissions: Object.entries(permissions).map(([key, def]) => ({
           key,
-          description: def?.description ?? key
+          description: def?.description ?? key,
+          // #1764: the plain line, the same field every permission listing reads.
+          label: permissionLabel(def) ?? key
         }))
       });
     } catch (err: unknown) {

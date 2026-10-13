@@ -1,7 +1,7 @@
 <%# #1764 — "My tokens and devices": the signed-in person's agent tokens and the apps and
     devices they approved, as one list (AuthManager.listDelegations). Each row says how it
     is renewed, in plain words, and has one Revoke that goes through AuthManager's door.
-    Locals: items (Delegation[]), csrfToken. %>
+    Locals: items (Delegation[]), csrfToken. "Can do" shows each scope's plain words (Delegation.can). %>
 <%
   const when = function (iso) { return iso ? iso.slice(0, 16).replace('T', ' ') + ' UTC' : ''; };
   const typeOf = function (d) { return d.kind === 'token' ? 'Agent token' : (d.device ? 'Device' : 'App'); };
@@ -25,7 +25,10 @@
             <% if (d.renewal === 'refreshable') { %><span class="badge bg-info text-dark">Refreshable</span>
             <% } else { %><span class="badge bg-secondary">Fixed</span><% } %>
           </td>
-          <td class="small text-muted"><%= d.scopes.join(', ') %></td>
+          <td class="small text-muted">
+            <%# #1764: each permission in plain words (the catalog's label); the internal name only as a tooltip. %>
+            <% (d.can || d.scopes.map(function (n) { return { name: n, description: n }; })).forEach(function (c, i) { %><%= i ? ', ' : '' %><span data-scope="<%= c.name %>" title="<%= c.name %>"><%= c.description %></span><% }) %>
+          </td>
           <td class="small">
             <% if (d.renewal === 'refreshable') { %>
               <%= d.renewedAt ? 'Last renewed ' + when(d.renewedAt) : 'Not renewed yet' %>

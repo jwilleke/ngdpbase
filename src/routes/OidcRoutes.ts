@@ -25,18 +25,10 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import { OIDC_INTERACTION_PREFIX, OIDC_MOUNT, type OidcManager } from '../managers/OidcManager.js';
 import logger from '../utils/logger.js';
+import { describeScopes, type ScopeDescription } from '../utils/permissionCatalog.js';
 
 const ROUTE = `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}:uid`;
 
-/** Plain-language lines for the consent page, by scope; anything else is shown by name. */
-export const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  openid: 'Confirm who you are (your username)',
-  profile: 'Your name',
-  email: 'Your email address',
-  address: 'Your postal address',
-  phone: 'Your phone number',
-  offline_access: 'Stay connected while you are not using it, until you revoke it'
-};
 
 
 export interface OidcRoutesDeps {
@@ -48,6 +40,11 @@ export interface OidcRoutesDeps {
    * Answers the refusal or the re-authentication redirect itself; true to proceed.
    */
   permit: (req: Request, res: Response, permission: 'account-security', mode: 'page') => Promise<boolean>;
+  /**
+   * Scope names in plain words (#1764): AuthManager.describeScopes, which reads
+   * the permission catalog. Omitted, only the sign-in scopes are described.
+   */
+  describeScopes?: (names: readonly string[]) => ScopeDescription[];
 }
 
 /** What approving a device asks: the permission step-up guards (decided 2026-10-02, renamed 2026-10-04). */
@@ -69,16 +66,12 @@ export function freshSignInNeeded(params: Record<string, unknown>, authTime: num
   return null;
 }
 
-/** The scopes as consent lines, in request order, without repeats. */
-export function consentLines(scope: string): Array<{ scope: string; text: string }> {
-  const seen = new Set<string>();
-  const lines: Array<{ scope: string; text: string }> = [];
-  for (const s of scope.split(' ').filter(Boolean)) {
-    if (seen.has(s)) continue;
-    seen.add(s);
-    lines.push({ scope: s, text: SCOPE_DESCRIPTIONS[s] ?? s });
-  }
-  return lines;
+/**
+ * The scopes as consent lines, in request order, without repeats. `describe`
+ * is the one lookup (#1764); a scope it does not know is shown by name.
+ */
+export function consentLines(scope: string, describe: (names: readonly string[]) => ScopeDescription[] = (names) => describeScopes(names, {})): Array<{ scope: string; text: string }> {
+  return describe(scope.split(' ').filter(Boolean)).map(({ name, description }) => ({ scope: name, text: description }));
 }
 
 export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
@@ -148,7 +141,7 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
         title: 'Allow access',
         uid: req.params.uid,
         clientName: await oidc.clientName(pending.clientId),
-        lines: consentLines(pending.scope),
+        lines: consentLines(pending.scope, deps.describeScopes),
         deviceFlow: pending.deviceFlow
       });
     } catch (err) {

@@ -37,7 +37,7 @@ A manager method that decides access, writes an audit record, or acts on someone
 
 ## Permissions and policies are configuration
 
-- `ngdpbase.permissions.definitions` is the permission catalog: `{target}-{action}`, target first, hyphen separated. Callers read it live with `ConfigurationManager.getProperty('ngdpbase.permissions.definitions')`; there is no list in code. `UserManager` does not hold the catalog.
+- `ngdpbase.permissions.definitions` is the permission catalog: `{target}-{action}`, target first, hyphen separated. Callers read it live with `ConfigurationManager.getProperty('ngdpbase.permissions.definitions')`; there is no list in code. `UserManager` does not hold the catalog. Each grantable entry carries a `label`, the plain words a person reads; `description` is for administrators and developers. `permissionLabel` / `describeScopes` in `src/utils/permissionCatalog.ts` are the one lookup, and `AuthManager.describeScopes` reads it against the live catalog (#1764).
 - `ngdpbase.access.policies` grants permissions to subjects. `hasPermission` resolves through `PolicyEvaluator` over these; a permission that appears in a policy is honoured whether or not anything else names it.
 - Roles are lists in `ngdpbase.roles.definitions`, additive, unordered, never gating anything. A role change is a configuration change and is recorded as `config-change`.
 

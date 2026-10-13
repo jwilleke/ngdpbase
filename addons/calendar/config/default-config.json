@@ -6,11 +6,13 @@
   "ngdpbase.permissions.definitions": {
     "calendar-manage": {
       "description": "Create, edit and delete calendar events; see private reservation details; cancel any reservation",
+      "label": "Manage calendar events and everyone's reservations",
       "icon": "calendar-check",
       "color": "#0d6efd"
     },
     "calendar-reserve": {
       "description": "Make and cancel your own reservations",
+      "label": "Make and cancel your own reservations",
       "icon": "calendar-plus",
       "color": "#198754"
     }
