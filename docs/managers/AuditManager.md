@@ -505,6 +505,7 @@ audited.
 | `comment-create` | Comment added to a page — user content written on someone's behalf, the page-edit class (#1232) | continue | yes |
 | `token-mint` | Agent token minted; a credential nobody knows exists is the worst case | refuse | yes |
 | `token-extend` | Agent token's expiry moved later by its owner; carries the old and new expiry (#1734) | refuse | yes |
+| `proxy-grant` | Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) | refuse | yes |
 | `store-create` | A user's private store copy created at its door (#1414) — with key material when sealed; never the words or a key in the record | refuse | yes |
 | `asset-edit` | Attachment metadata edited; EXIF/IPTC and catalog fields change provenance | continue | yes |
 | `search-page` | Page search; not recorded, read volume | continue | no |
@@ -518,6 +519,7 @@ audited.
 | `footnote-edit` | A page's footnote list changed — action add, import, transfer, update or delete; page content written on someone's behalf (#1233) | continue | yes |
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
+| `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
 | `authentication-logout` | User signed out | continue | yes |

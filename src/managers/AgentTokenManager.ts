@@ -66,7 +66,7 @@ import { buildTokenAuditEvent, recordAuditEvent, type AuditEventSink } from '../
 import { writeFileAtomic } from '../utils/atomicWrite.js';
 import logger from '../utils/logger.js';
 import type BackgroundJobManager from './BackgroundJobManager.js';
-import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION } from '../utils/delegation.js';
+import { EXTEND_PERMISSION, FORBIDDEN_DELEGATED_PREFIX, MINT_PERMISSION, PROXY_GRANT_PERMISSION, lackingScopes, requireScopeList } from '../utils/delegation.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type { PermissionSubject } from './UserManager.js';
@@ -429,18 +429,7 @@ class AgentTokenManager extends BaseManager {
     if (!owner) throw new Error('owner is required');
     if (!name || !name.trim()) throw new Error('A token name is required');
 
-    // An unscoped token is rejected, never treated as unrestricted (#946 decision 4).
-    if (!Array.isArray(scopes) || scopes.length === 0) {
-      throw new Error('At least one scope is required');
-    }
-    // Scopes arrive from a request body. A non-string here would be stored and
-    // then match no action for the life of the token — a credential that fails
-    // silently rather than at the point of the mistake.
-    if (!scopes.every(s => typeof s === 'string' && s.trim().length > 0)) {
-      throw new Error('Every scope must be a non-empty string');
-    }
-
-    const effectiveScopes = expandScopes(scopes);
+    const effectiveScopes = expandScopes(requireScopeList(scopes));
 
     // admin-* is refused outright rather than warned (#946 decision 3).
     // Checked after expansion so an alias can never smuggle one in.
@@ -459,6 +448,11 @@ class AgentTokenManager extends BaseManager {
     if (effectiveScopes.includes(EXTEND_PERMISSION)) {
       throw new Error(`Tokens cannot carry ${EXTEND_PERMISSION}: a token never extends a token`);
     }
+    // #1762: nor lets anyone act for its owner — a leaked token must not hand
+    // the owner's account to someone else.
+    if (effectiveScopes.includes(PROXY_GRANT_PERMISSION)) {
+      throw new Error(`Tokens cannot carry ${PROXY_GRANT_PERMISSION}: a token never lets someone act for its owner`);
+    }
 
     // #1178: every scope must be one the owner holds right now. Asked of the
     // PDP, the same answer the token would get at use time; with no PDP there
@@ -466,10 +460,7 @@ class AgentTokenManager extends BaseManager {
     const pdp = this.engine.getManager('PolicyDecisionPoint') as
       { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
     if (!pdp) throw new Error('Cannot mint: the owner\'s permissions cannot be verified');
-    const lacking: string[] = [];
-    for (const scope of effectiveScopes) {
-      if (!(await pdp.permits(subject, scope))) lacking.push(scope);
-    }
+    const lacking = await lackingScopes(effectiveScopes, scope => pdp.permits(subject, scope));
     if (lacking.length > 0) {
       throw new Error(
         `You do not hold ${lacking.join(', ')}. A token can only carry permissions its owner has, ` +

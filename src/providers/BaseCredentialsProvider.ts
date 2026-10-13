@@ -21,10 +21,15 @@ export const CREDENTIALS_KEY_ENV = 'NGDPBASE_CREDENTIALS_KEY';
  * `identity` (#1743): an outside OpenID Connect identity connected to the
  * account — subject `${iss}#${sub}`, label the provider's name, secret the
  * provider's verified email ('' when none).
+ *
+ * `proxy` (#1762): a proxy grant — the row's `username` is the person
+ * represented, `subject` the grant id, `secret` the grant's terms as JSON
+ * (whom it is for, the permissions, who made it, when it ends). Never a way
+ * in; AuthManager reads and writes it only through its proxy-grant methods.
  */
-export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device' | 'identity';
+export type CredentialKind = 'passkey' | 'totp' | 'email' | 'sms' | 'device' | 'identity' | 'proxy';
 
-export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device', 'identity'];
+export const CREDENTIAL_KINDS: readonly CredentialKind[] = ['passkey', 'totp', 'email', 'sms', 'device', 'identity', 'proxy'];
 
 /** One credential, as stored. */
 export interface CredentialRecord {
@@ -71,6 +76,9 @@ abstract class BaseCredentialsProvider extends BaseProvider {
   abstract list(username: string): CredentialRecord[];
 
   abstract get(id: string): CredentialRecord | null;
+
+  /** Every verified row of one kind, whoever's, oldest first (#1762: the grants naming a person as proxy). */
+  abstract listKind(kind: CredentialKind): CredentialRecord[];
 
   /** Add a row; refuses a second row with the same kind and subject. */
   abstract add(record: CredentialRecord): Promise<void>;

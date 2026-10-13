@@ -51,7 +51,9 @@ const ENFORCEMENT_PATTERNS: RegExp[] = [
   /\bsubjectMayDo\(\s*[^,]+,\s*[^,]+,\s*'([^']+)'/g,
   // #1638: ShareManager asks policy inside a vault (permitsInVault) for the
   // owner's share-create / share-extend.
-  /\bpermitsInScope\(\s*[^,]+,\s*'([^']+)'/g
+  /\bpermitsInScope\(\s*[^,]+,\s*'([^']+)'/g,
+  // #1762: AuthManager asks the policy decision point itself for proxy-grant.
+  /\bpdp\.permits\(\s*\w+,\s*'([^']+)'/g
 ];
 
 /**

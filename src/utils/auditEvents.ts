@@ -70,6 +70,13 @@ export interface AuditEvent {
   /** A core name (`AUDIT_EVENT.KEY`), or an addon's name from `addonAuditEventName` (#1638). */
   eventType: RecordableAuditEventName;
   user: string;
+  /**
+   * Who actually did it, when that is not `user` (#1762): `user` is the
+   * account acted on — the person represented — and `actor` the person
+   * signed in. Set by the proxy-grant events only so far; carrying it on
+   * every record is #1762 slice 3.
+   */
+  actor?: string;
   ipAddress: string | undefined;
   action: string;
   /** How it went. Mutations record `success`; decisions record `allow` / `deny`; sign-in records `failure` / `logout`. */

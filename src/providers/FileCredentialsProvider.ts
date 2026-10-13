@@ -101,6 +101,12 @@ class FileCredentialsProvider extends BaseCredentialsProvider {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  listKind(kind: CredentialRecord['kind']): CredentialRecord[] {
+    return [...this.rows.values()]
+      .filter(r => r.kind === kind)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
   get(id: string): CredentialRecord | null {
     return this.rows.get(id) ?? null;
   }
