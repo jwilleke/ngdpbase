@@ -9,11 +9,13 @@
 import ejs from 'ejs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { JSDOM } from 'jsdom';
 import type { Delegation } from '../managers/AuthManager';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PARTIAL = path.join(__dirname, '../../views/_delegations.ejs');
+const LOCAL_TIME_JS = path.join(__dirname, '../../public/js/local-time.js');
 
 const row = (over: Partial<Delegation>): Delegation => ({
   kind: 'token', id: 'tok_1', name: 'import-script', device: false, renewal: 'fixed', scopes: ['page-read'], can: [{ name: 'page-read', description: 'Read pages' }],
@@ -61,5 +63,20 @@ describe('#1764 My tokens and devices list', () => {
     expect(doc.body.textContent).toMatch(/Not renewed yet/);
     expect(doc.body.textContent).toMatch(/Ends 2026-10-12 20:00 UTC/);
     expect(doc.body.textContent).not.toMatch(/RFC|grant|OAuth|OIDC|refresh token/i);
+  });
+  test('times go out as <time datetime data-local-time> (UTC text only as the fallback), and local-time.js shows them in the viewer\'s zone', async () => {
+    const html = await ejs.renderFile(PARTIAL, { items: [row({ lastUsedAt: '2026-10-12T09:30:00.000Z' })], csrfToken: 'csrf-value' });
+    const times = [...new JSDOM(html).window.document.querySelectorAll('time[data-local-time]')];
+    expect(times.map(t => [t.getAttribute('datetime'), t.textContent])).toEqual([
+      ['2026-10-12T20:00:00.000Z', '2026-10-12 20:00 UTC'], ['2026-10-12T09:30:00.000Z', '2026-10-12 09:30 UTC']
+    ]);
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    dom.window.eval(fs.readFileSync(LOCAL_TIME_JS, 'utf8'));
+    if (dom.window.document.readyState === 'loading') await new Promise(r => dom.window.document.addEventListener('DOMContentLoaded', r));
+    const shown = [...dom.window.document.querySelectorAll('time[data-local-time]')];
+    const expected = new Date('2026-10-12T20:00:00.000Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    expect(shown[0].textContent).toBe(expected);
+    expect(shown[0].textContent).not.toMatch(/UTC/);
+    expect(shown[0].getAttribute('title')).toBe('2026-10-12 20:00 UTC');
   });
 });
