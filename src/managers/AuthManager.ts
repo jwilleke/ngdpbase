@@ -71,6 +71,8 @@ import {
 } from '../providers/BaseCredentialsProvider.js';
 import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.js';
 import { recordAuditEvent } from '../utils/auditEvents.js';
+import { actorOf } from '../context/ActorContext.js';
+import { lackingScopes, requireScopeList } from '../utils/delegation.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
 import { describeScopes, type ScopeDescription } from '../utils/permissionCatalog.js';
@@ -451,6 +453,88 @@ export interface Delegation {
 }
 
 export type DelegationKind = Delegation['kind'];
+
+/** The setting that turns proxy access on (#1762); false by default. */
+export const PROXY_ACCESS_ENABLED_KEY = 'ngdpbase.auth.proxy-access.enabled';
+/** The permission to make a proxy grant on your own account (#1762); step-up. */
+export const PROXY_GRANT_PERMISSION = 'proxy-grant';
+
+/**
+ * A proxy grant (#1762 slice 1): `owner` lets `proxy` act for them within
+ * `permissions`. Kept as a signed `proxy` row of the credentials store. Slice 1
+ * records it only: no request is affected by it yet.
+ */
+export interface ProxyGrant {
+  id: string;
+  /** The person represented. */
+  owner: string;
+  /** The person who may act for them. */
+  proxy: string;
+  /** Permission names; each one the owner held when the grant was made. */
+  permissions: string[];
+  /** Who made it: the owner, or an administrator acting for them. */
+  createdBy: string;
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601: when it stops; null lasts until revoked. */
+  expiresAt: string | null;
+  /**
+   * Vault access (operator, 2026-10-12). `none`: the owner made it and it
+   * carries no copy of their vault key (one can be added only by the owner,
+   * with their store unlocked — #1762 slice 5). `never`: an administrator made
+   * it, so it never carries one.
+   */
+  vault: 'none' | 'never';
+}
+
+/** A grant as listed: its terms, the permissions in plain words, and whether it lets the proxy give others access. */
+export interface ProxyGrantView extends ProxyGrant {
+  can: ScopeDescription[];
+  /** It includes `proxy-grant`: the proxy may make grants for the owner (the UI warns, #1762 slice 7). */
+  mayRedelegate: boolean;
+}
+
+/** What `grantProxy` takes. */
+export interface ProxyGrantInput {
+  owner: string;
+  proxy: string;
+  permissions: string[];
+  /** ISO 8601, in the future; omitted or null for none. */
+  expiresAt?: string | null;
+}
+
+/** Which side of the grants to list: the ones a person made (`asOwner`) or the ones naming them as proxy (`asProxy`). */
+export type ProxyGrantSide = { asOwner: string; asProxy?: undefined } | { asProxy: string; asOwner?: undefined };
+
+/** The policy decision point, as proxy grants ask it. */
+interface ProxyPolicy {
+  permits(subject: PermissionSubject, action: string): Promise<boolean>;
+  holds(subject: PermissionSubject, action: string): Promise<boolean>;
+}
+
+/** A grant's terms as the row's `secret` holds them: everything but what the row's own fields carry. */
+type ProxyTerms = Omit<ProxyGrant, 'id' | 'owner' | 'createdAt'>;
+
+/** A `proxy` row's grant, or null when its terms do not read. */
+function proxyGrantOf(row: CredentialRecord): ProxyGrant | null {
+  if (row.kind !== 'proxy') return null;
+  try {
+    const t = JSON.parse(row.secret) as Partial<ProxyTerms>;
+    if (typeof t.proxy !== 'string' || typeof t.createdBy !== 'string' ||
+      !Array.isArray(t.permissions) || !t.permissions.every(p => typeof p === 'string') ||
+      !(t.expiresAt === null || typeof t.expiresAt === 'string') || (t.vault !== 'none' && t.vault !== 'never')) return null;
+    return { id: row.id, owner: row.username, proxy: t.proxy, permissions: [...t.permissions], createdBy: t.createdBy, createdAt: row.createdAt, expiresAt: t.expiresAt, vault: t.vault };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a grant is still in force at `now`. An end date that does not read counts as passed: unreadable fails closed. */
+function proxyGrantLive(grant: ProxyGrant, now: number): boolean {
+  if (grant.expiresAt === null) return true;
+  const end = Date.parse(grant.expiresAt);
+  return Number.isFinite(end) && end > now;
+}
 
 /**
  * How a session signed in (#1523): kept on the session so step-up (#1525) can
@@ -1305,12 +1389,14 @@ class AuthManager extends BaseManager {
    */
   async listCredentials(ctx: PermissionSubject, username: string): Promise<CredentialView[]> {
     if (!(await this.mayManageCredentials(ctx, username, { viewOnly: true }))) throw new Error('Permission denied');
-    return this.requireCredentialsStore().list(username).map(({ secret: _secret, ...view }) => view);
+    // #1762: a proxy grant is not a sign-in method; it is listed and ended through the proxy-grant methods only.
+    return this.requireCredentialsStore().list(username).filter(r => r.kind !== 'proxy').map(({ secret: _secret, ...view }) => view);
   }
 
   /** Enrol a credential for `username`; returns its id. Audited (#1524). */
   async addCredential(ctx: PermissionSubject, username: string, input: CredentialInput): Promise<string> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
+    if (input.kind === 'proxy') throw new Error('A proxy grant is made with grantProxy (#1762)');
     return this.storeCredential(ctx, username, input);
   }
 
@@ -1339,7 +1425,7 @@ class AuthManager extends BaseManager {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
     const store = this.requireCredentialsStore();
     const row = store.get(id);
-    if (!row || row.username !== username) return false;
+    if (!row || row.username !== username || row.kind === 'proxy') return false;
     if (WAY_IN_KINDS.has(row.kind)) {
       const others = store.list(username).filter(r => r.id !== id && this.isWayIn(r)).length;
       if (others === 0 && !(await this.hasPassword(username))) {
@@ -1367,8 +1453,12 @@ class AuthManager extends BaseManager {
    *
    * The account change itself is audited by UserManager (user-delete, or the
    * isActive change); each revocation is audited by its owner, and each removed
-   * credential here (`credential-remove`). Proxy grants join when proxy-access
-   * (#1762) exists. The encrypted store is left to survivorship (#1545).
+   * credential here (`credential-remove`). Delete also ends every proxy grant
+   * the account is on, either side — the grants it made and the grants naming
+   * it as proxy (#1762), each recorded as `proxy-revoke` — whether or not
+   * proxy access is on. Disable leaves them, as it leaves tokens: acting under
+   * a grant must refuse it live while either account is inactive (#1762
+   * slice 2). The encrypted store is left to survivorship (#1545).
    */
   async closeAccess(username: string, mode: 'disable' | 'delete', ctx: PermissionSubject): Promise<void> {
     const step = async (what: string, run: () => Promise<unknown>): Promise<void> => {
@@ -1388,9 +1478,17 @@ class AuthManager extends BaseManager {
       const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
       for (const sh of shares?.list(username) ?? []) if (!sh.revokedAt) await shares?.revoke(sh.id, by);
     });
+    await step('proxy grants', async () => {
+      if (!this.credentials) return;
+      for (const row of this.credentials.listKind('proxy')) {
+        const grant = proxyGrantOf(row);
+        if (grant && (grant.owner === username || grant.proxy === username)) await this.endProxyGrant(ctx, grant, 'account-deleted');
+      }
+    });
     await step('credentials', async () => {
       if (!this.credentials) return;
       for (const row of this.credentials.list(username)) {
+        // A proxy row is ended above, as a grant; one left here did not read and is removed as a row.
         if (await this.credentials.remove(row.id)) this.auditCredentialChange(ctx, username, 'credential-remove', row);
       }
     });
@@ -1462,13 +1560,159 @@ class AuthManager extends BaseManager {
     return false;
   }
 
+  // ── Proxy access (#1762) ─────────────────────────────────────────────
+
+  /** Whether proxy access is on (`ngdpbase.auth.proxy-access.enabled`), read on every call. */
+  proxyAccessEnabled(): boolean {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getProperty(PROXY_ACCESS_ENABLED_KEY, false) === true;
+  }
+
+  private requireProxyAccess(): BaseCredentialsProvider {
+    if (!this.proxyAccessEnabled()) throw new Error('Proxy access is turned off on this site');
+    return this.requireCredentialsStore();
+  }
+
+  /**
+   * Whether `ctx` may make or end a grant on `owner`'s account (#1762): their
+   * own under `proxy-grant`, which asks for a fresh sign-in; anyone else's also
+   * under `user-edit`, so an administrator acting for someone is fresh too.
+   * `viewOnly` (a listing) asks whether the permission is held, without the
+   * fresh sign-in, as `mayManageCredentials` does.
+   */
+  private async mayManageProxyGrants(ctx: PermissionSubject, owner: string, opts: { viewOnly?: boolean } = {}): Promise<boolean> {
+    const pdp = this.engine.getManager<ProxyPolicy>('PolicyDecisionPoint');
+    if (!pdp || !ctx.isAuthenticated || !ctx.username) return false;
+    if (opts.viewOnly) return pdp.holds(ctx, ctx.username === owner ? PROXY_GRANT_PERMISSION : 'user-edit');
+    const own = await pdp.permits(ctx, 'proxy-grant');
+    // Someone else's also needs user-edit; proxy-grant above brings the fresh sign-in either way.
+    return ctx.username === owner ? own : own && pdp.permits(ctx, 'user-edit');
+  }
+
+  /**
+   * Let `proxy` act for `owner` within `permissions` (#1762 slice 1: recorded
+   * only; no request is affected yet). Refused while proxy access is off.
+   *
+   * - The owner makes it under `proxy-grant`; an administrator makes it for
+   *   them under `user-edit` too (see `mayManageProxyGrants`).
+   * - Delegate, not grant: every permission must be one the owner holds now,
+   *   the check agent tokens make (`lackingScopes`). Any permission they hold
+   *   may be included (operator, 2026-10-12), `proxy-grant` among them, which
+   *   lets the proxy give others access too (`mayRedelegate`).
+   * - An administrator's grant never carries vault access (`vault: 'never'`).
+   * - `expiresAt` is optional; without it the grant lasts until revoked.
+   *
+   * Recorded first, as `proxy-grant` (refuse on failure): `user` is the owner,
+   * `actor` who made it.
+   */
+  async grantProxy(ctx: PermissionSubject, input: ProxyGrantInput): Promise<ProxyGrantView> {
+    const store = this.requireProxyAccess();
+    const owner = typeof input?.owner === 'string' ? input.owner.trim() : '';
+    const proxy = typeof input?.proxy === 'string' ? input.proxy.trim() : '';
+    if (!owner || !proxy) throw new Error('Name the person represented and the person acting for them');
+    if (!(await this.mayManageProxyGrants(ctx, owner))) throw new Error('Permission denied');
+    if (owner === proxy) throw new Error('A person cannot act for themselves');
+
+    const pdp = this.engine.getManager<ProxyPolicy>('PolicyDecisionPoint');
+    const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+    if (!pdp || !pip) throw new Error('Cannot grant: permissions cannot be verified');
+    const ownerSubject = ctx.username === owner ? ctx : await pip.subjectFor(owner);
+    if (!ownerSubject) throw new Error(`There is no active account ${owner}`);
+    if (!(await pip.subjectFor(proxy))) throw new Error(`There is no active account ${proxy}`);
+
+    const permissions = requireScopeList(input.permissions);
+    // Held, not fresh: the owner's own step-up is not the question when an administrator makes it.
+    const lacking = await lackingScopes(permissions, p => pdp.holds(ownerSubject, p));
+    if (lacking.length > 0) {
+      throw new Error(`${owner} does not hold ${lacking.join(', ')}. A grant can only carry permissions the person represented has.`);
+    }
+
+    const now = Date.now();
+    let expiresAt: string | null = null;
+    if (input.expiresAt !== undefined && input.expiresAt !== null) {
+      const end = typeof input.expiresAt === 'string' ? Date.parse(input.expiresAt) : NaN;
+      if (!Number.isFinite(end) || end <= now) throw new Error('The end date must be a date in the future');
+      expiresAt = new Date(end).toISOString();
+    }
+
+    const grant: ProxyGrant = {
+      id: randomUUID(), owner, proxy, permissions, createdBy: ctx.username, createdAt: new Date(now).toISOString(), expiresAt,
+      vault: ctx.username === owner ? 'none' : 'never'
+    };
+    const terms: ProxyTerms = { proxy, permissions, createdBy: grant.createdBy, expiresAt, vault: grant.vault };
+    // Recorded before it exists (the token-mint ordering): a grant nobody knows about is the worst case.
+    await this.auditProxy(AUDIT_EVENT.PROXY_GRANT, ctx, grant);
+    await store.add({ id: grant.id, username: owner, kind: 'proxy', subject: grant.id, secret: JSON.stringify(terms), label: '', createdAt: grant.createdAt });
+    return this.proxyGrantView(grant);
+  }
+
+  /**
+   * End a proxy grant (#1762). The owner under `proxy-grant`; anyone else
+   * under `user-edit` too, so another person's grant is never ended by someone
+   * without both. False when there is no such grant. Recorded as
+   * `proxy-revoke`, first. Refused while proxy access is off.
+   */
+  async revokeProxy(ctx: PermissionSubject, grantId: string): Promise<boolean> {
+    const store = this.requireProxyAccess();
+    const row = typeof grantId === 'string' ? store.get(grantId) : null;
+    const grant = row ? proxyGrantOf(row) : null;
+    if (!grant) return false;
+    if (!(await this.mayManageProxyGrants(ctx, grant.owner))) throw new Error('Permission denied');
+    return this.endProxyGrant(ctx, grant, 'revoked');
+  }
+
+  /**
+   * The live proxy grants on one side (#1762): those `asOwner` made, or those
+   * naming `asProxy`. One's own needs `proxy-grant` held; anyone else's
+   * `user-edit`, as `listDelegations`. A grant past its end date is left out.
+   * Refused while proxy access is off.
+   */
+  async listProxyGrants(ctx: PermissionSubject, side: ProxyGrantSide): Promise<ProxyGrantView[]> {
+    const store = this.requireProxyAccess();
+    const who = side?.asOwner ?? side?.asProxy;
+    if (typeof who !== 'string' || !who) throw new Error('Say whose grants: asOwner or asProxy');
+    if (!(await this.mayManageProxyGrants(ctx, who, { viewOnly: true }))) throw new Error('Permission denied');
+    const now = Date.now();
+    return store.listKind('proxy')
+      .map(proxyGrantOf)
+      .filter((g): g is ProxyGrant => g !== null && proxyGrantLive(g, now) && (side.asOwner !== undefined ? g.owner === who : g.proxy === who))
+      .map(g => this.proxyGrantView(g));
+  }
+
+  private proxyGrantView(grant: ProxyGrant): ProxyGrantView {
+    return { ...grant, permissions: [...grant.permissions], can: this.describeScopes(grant.permissions), mayRedelegate: grant.permissions.includes(PROXY_GRANT_PERMISSION) };
+  }
+
+  /** End a grant the caller has already decided may be ended: recorded first, then removed. */
+  private async endProxyGrant(ctx: PermissionSubject, grant: ProxyGrant, why: 'revoked' | 'account-deleted'): Promise<boolean> {
+    await this.auditProxy(AUDIT_EVENT.PROXY_REVOKE, ctx, grant, why);
+    return this.requireCredentialsStore().remove(grant.id);
+  }
+
+  /** A proxy-grant record (#1762): `user` the person represented, `actor` who acted. */
+  private async auditProxy(eventType: AuditEventName, ctx: PermissionSubject, grant: ProxyGrant, reason?: string): Promise<void> {
+    const who = actorOf(ctx);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType,
+      user: grant.owner,
+      actor: who.user,
+      ipAddress: who.ipAddress,
+      action: eventType,
+      result: 'success',
+      severity: 'high',
+      resource: grant.id,
+      resourceType: 'proxy-grant',
+      ...(reason ? { reason } : {}),
+      metadata: { ...who.metadata, proxy: grant.proxy, permissions: grant.permissions, expiresAt: grant.expiresAt, vault: grant.vault, createdBy: grant.createdBy }
+    }, (err) => logger.warn(`[AuthManager] Audit record failed for ${eventType} of ${grant.id}:`, err));
+  }
+
   /** Rename one of `username`'s credentials. The name is required, as at enrolment. */
   async renameCredential(ctx: PermissionSubject, username: string, id: string, label: unknown): Promise<boolean> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
     const name = credentialLabel(label);
     const store = this.requireCredentialsStore();
     const row = store.get(id);
-    if (!row || row.username !== username) return false;
+    if (!row || row.username !== username || row.kind === 'proxy') return false;
     const renamed = await store.relabel(id, name);
     if (renamed) this.auditCredentialChange(ctx, username, 'credential-rename', { ...row, label: name });
     return renamed;

@@ -101,6 +101,10 @@ export const AUDIT_EVENT = {
   POLICY_EVALUATE: 'policy-evaluate',
   /** Security posture at startup, compared against the previous start */
   POSTURE_RECORDED: 'posture-recorded',
+  /** Proxy grant made: someone may act for the person named in user; actor is who made it (#1762) */
+  PROXY_GRANT: 'proxy-grant',
+  /** Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) */
+  PROXY_REVOKE: 'proxy-revoke',
   /** Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) */
   REAUTH_FAILURE: 'reauth-failure',
   /** Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one */

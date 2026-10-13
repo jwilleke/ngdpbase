@@ -41,6 +41,7 @@
     "ngdpbase.backup.directory": "sensitive",
     "ngdpbase.auth.credentials.file": "sensitive",
     "ngdpbase.auth.agent-token.directory": "sensitive",
+    "ngdpbase.auth.proxy-access.enabled": "sensitive",
     "ngdpbase.audit.chain-witness.destination": "sensitive",
     "ngdpbase.media.folders": "sensitive",
     "ngdpbase.server.tls.cert-file": "sensitive",
@@ -351,6 +352,8 @@
   "ngdpbase.auth.agent-token.retention-days": 1,
   "ngdpbase.auth.agent-token.sweep-interval-seconds": 60,
   "ngdpbase.auth.agent-token.directory": "./data/tokens",
+  "_comment_auth_proxy_access": "#1762 — proxy access: a person lets another act for them (\"Jim acting for Mom\"), within permissions the person holds, until they revoke it or its optional end date passes. Off by default; while false, no grant can be made, listed or revoked (closing an account still ends its grants). The grant records are built (Profile and admin screens follow); a grant has NO effect on any request yet — acting for someone, the permission ceiling and private stores come in later slices of #1762. Creating a grant on your own account needs proxy-grant (asks for a fresh sign-in); an administrator making one for someone else also needs user-edit, and such a grant can never carry access to the person's encrypted private stores. Sensitive in ngdpbase.config.sensitive-values. Read on every call.",
+  "ngdpbase.auth.proxy-access.enabled": false,
   "_comment_auth_oidc_providers": "#1743 — sign in with an outside OpenID Connect provider. A map of name → { preset, issuer, client-id, client-secret, enabled, display-name, icon, auto-provision, trust-mfa }. The name is lowercase letters, digits and hyphens and is part of the URLs: the login button posts to /auth/oauth/<name>, and the provider must send people back to <base-url>/auth/oauth/<name>/callback (register that address with it; ngdpbase.application.base-url must be set explicitly). preset: google fills issuer https://accounts.google.com and the name Google; preset: microsoft fills the personal-Microsoft-accounts (consumers) issuer https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0 and the name Microsoft (work and school accounts are not included; Microsoft sends no email_verified, so it never creates an account and the email step shows no email); preset: apple fills issuer https://appleid.apple.com and the name Apple, and takes team-id, key-id and private-key (the .p8 key from the Apple developer account, an environment reference only, $NAME) instead of client-secret: the site signs a short-lived ES256 client secret with it for each code exchange, and Apple POSTs the callback (form_post), which is relayed to the GET callback before the session and CSRF so the browser's SameSite=Lax cookies come with it; Apple's return URL must be https; none (or absent) needs issuer, the issuer identifier exactly as its /.well-known/openid-configuration states it. client-secret is an environment reference only, $NAME, never the secret itself; an entry with a literal secret is not registered. display-name is what the buttons say. icon (#1781, optional) is shown left of it: an https:// image address, a site path starting with / (not //), or a Font Awesome name such as fa-users or fab fa-microsoft; anything else (http:, javascript:, data:, a relative path) is refused with a startup warning naming the entry and the default shown. Unset: google shows its logo, microsoft fab fa-microsoft, apple fab fa-apple, any other fas fa-right-to-bracket. enabled must be true. Discovery, keys and the code exchange go through the outbound guard, so an issuer on this network needs ngdpbase.security.egress.allowed-ranges. An outside sign-in signs in only an identity (issuer + subject) connected to an account. An identity connected to none is held for 5 minutes while the sign-in page asks the person to sign in another way; after that sign-in they are asked whether the identity is theirs, and only their yes connects it (or connect it any time from Profile → Sign-in methods → Connect). auto-provision: true lets this provider create an account for an unconnected identity with a verified email, when ngdpbase.auth.oidc.auto-provision and ngdpbase.application.registration are also true. Email never signs anyone in, and an outside provider gives no roles. A provider with no ngdpbase.auth.factors entry is offered as a sign-in method at AAL1. trust-mfa (#1633, default false): true counts the provider's own second factor, so a sign-in whose ID token reports multi-factor amr (mfa, or two factor types such as pwd + otp) or an SP 800-63C AAL2/AAL3 acr counts as AAL2, never more; otherwise, and always when false, AAL1. Read at each sign-in. It does not change what an account can reach. The reported amr / acr are kept in the sign-in's audit record either way. Turn it on only for a provider whose sign-in policy requires a second factor. Example in app-custom-config.json: \"ngdpbase.auth.oidc.providers\": { \"google\": { \"preset\": \"google\", \"client-id\": \"<id>.apps.googleusercontent.com\", \"client-secret\": \"$GOOGLE_CLIENT_SECRET\", \"enabled\": true } }. The map is sensitive in ngdpbase.config.sensitive-values; client-secret and private-key fields inside it are hidden like any secret-looking field.",
   "ngdpbase.auth.oidc.providers": {},
   "_comment_auth_oidc_auto_provision": "#1743 — whether an outside sign-in may create an account, for the whole instance. A ceiling: false (the default) means no provider creates accounts, whatever its own auto-provision says; true lets each provider's own auto-provision decide. An account is created only when this, the provider's auto-provision and ngdpbase.application.registration are all true, and only for an email the provider reports verified. It is made like a magic-link account: a username from the email, registration's default roles (the provider gives none), no password. An email that already belongs to an account creates nothing; the person is asked to sign in to that account and confirm connecting the identity instead.",
@@ -533,6 +536,10 @@
       "restart": false
     },
     "ngdpbase.auth.oidc.auto-provision": {
+      "group": "Identity and registration",
+      "restart": false
+    },
+    "ngdpbase.auth.proxy-access.enabled": {
       "group": "Identity and registration",
       "restart": false
     },
@@ -1848,6 +1855,17 @@
       },
       "step-up": true
     },
+    "proxy-grant": {
+      "description": "Let another person act for you, within permissions you hold, and revoke it (#1762). Every signed-in role except demo-admin; an administrator making or revoking a grant for someone else also needs user-edit, and that grant never carries a copy of the person's vault key. A grant that includes proxy-grant lets the proxy give others access too. Asks for a fresh sign-in",
+      "label": "Let someone act for you, and stop them",
+      "icon": "user-friends",
+      "color": "#fd7e14",
+      "audit": {
+        "on-failure": "refuse",
+        "description": "Proxy grant made: someone may act for the person named in user; actor is who made it (#1762)"
+      },
+      "step-up": true
+    },
     "store-create": {
       "description": "Walk through a private store's door and create your own copy of it — with a user key and recovery words when the store kind is encrypted (#1414). Every signed-in role; never anonymous. The door also needs a password sign-in, so a token or share cannot use it",
       "label": "Create your own private store",
@@ -1977,6 +1995,13 @@
     },
     "token-revoke": {
       "description": "Agent token revoked",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "proxy-revoke": {
+      "description": "Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762)",
       "grantable": false,
       "audit": {
         "on-failure": "refuse"
@@ -2421,7 +2446,8 @@
         "profile-manage",
         "account-security",
         "comment-create",
-        "store-create"
+        "store-create",
+        "proxy-grant"
       ]
     },
     {
@@ -2488,7 +2514,8 @@
         "profile-manage",
         "account-security",
         "comment-create",
-        "store-create"
+        "store-create",
+        "proxy-grant"
       ]
     },
     {
@@ -2529,7 +2556,8 @@
         "account-security",
         "comment-create",
         "search-user",
-        "store-create"
+        "store-create",
+        "proxy-grant"
       ]
     },
     {
@@ -2564,7 +2592,8 @@
         "account-security",
         "comment-create",
         "search-user",
-        "store-create"
+        "store-create",
+        "proxy-grant"
       ]
     },
     {
@@ -2596,7 +2625,8 @@
         "account-security",
         "comment-create",
         "search-user",
-        "store-create"
+        "store-create",
+        "proxy-grant"
       ]
     },
     {

@@ -1,7 +1,7 @@
 ---
 name: AuthManager
 description: Pluggable authentication provider chain — registers AuthProviders and delegates authenticate/initiate calls
-dateModified: '2026-10-12'
+dateModified: '2026-10-13'
 category: managers
 code: src/managers/AuthManager.ts
 ---
@@ -63,7 +63,7 @@ A few permissions ask for a __fresh__ sign-in even inside a valid session, so a 
 
 The window is one site-wide value for every step-up permission, shipped at 15 minutes ([#1767](https://github.com/jwilleke/ngdpbase/issues/1767)); there is no per-action window. A site wanting "prove it now" sets 1; 0 turns step-up off.
 
-Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-reveal`, `token-mint`, `token-extend`. An add-on marks its own permissions the same way. A `permissions` list still set under `ngdpbase.auth.step-up` in a custom config (the shape before #1638) is honoured, with a warning naming where it moved.
+Shipped with `step-up: true`: `account-security`, `config-manage`, `secret-reveal`, `token-mint`, `token-extend`, `proxy-grant`. An add-on marks its own permissions the same way. A `permissions` list still set under `ngdpbase.auth.step-up` in a custom config (the shape before #1638) is honoured, with a warning naming where it moved.
 
 - __Decided at the door__ (#1635): `PolicyDecisionPoint.decide()` applies step-up itself, so every door that asks the PDP — a route, `AuthManager`'s credential methods, `AgentTokenManager`, an add-on's `requirePermission` — gets it, and none can forget it. A granted permission whose sign-in is not fresh is refused with reason `step-up`; `WikiRoutes.permitted()` turns that into the `/auth/reauth` prompt. The request subject carries `signIn` for this. Work with no request (a `JobSubject`: timers, operator commands) is not asked. An affordance (show this button) asks `holds` — policy alone — so a person whose sign-in is not fresh still sees the way to the prompt.
 - __Fresh__ (`stepUpNeeded`) means a factor satisfied within the window that reaches the level the person's roles require. An admin (AAL2) re-authenticates with a passkey; others with a passkey or their password. A known device never counts.
@@ -96,3 +96,15 @@ One list of everything a person delegated, and one door to revoke any of it. The
 - `revokeDelegation(ctx, username, kind, id)`: their own needs `account-security` (step-up); anyone else's `user-edit`; otherwise it throws `Permission denied`. False when no live item of that kind and id belongs to `username`, so another person's is never revoked. The token's revoke is `AgentTokenManager.revoke(id, by)`, recorded as `token-revoke`; the app's is `OidcManager.revokeGrant(username, id, by)`, recorded as `oidcgrant-revoke`. Both records are by the person who revoked, naming the owner.
 - `closeAccess(username, 'delete', ctx)` revokes through the same path, one kind per step.
 - `refreshable` is an app or device holding a refresh key; `renewedAt` is when its key was last renewed. Everything else is `fixed`. `extendable` is [#1734](https://github.com/jwilleke/ngdpbase/issues/1734).
+
+## Proxy grants (#1762)
+
+A person lets another act for them ("Jim acting for Mom"). Slice 1 records the grant only: __no request is affected by a grant yet__. The rule and what is still to come are in [authentication-developer-guide.md](../guides/authentication-developer-guide.md#standing-rules).
+
+- `proxyAccessEnabled()`: `ngdpbase.auth.proxy-access.enabled`, read on every call, false by default. While false, the three methods below throw.
+- `grantProxy(ctx, { owner, proxy, permissions, expiresAt? })` returns the grant as a `ProxyGrantView`: `id`, `owner` (the person represented), `proxy`, `permissions`, `createdBy`, `createdAt`, `expiresAt` (null: until revoked), `vault`, `can` (the permissions in plain words, `describeScopes`), `mayRedelegate` (it includes `proxy-grant`). The owner needs `proxy-grant` (step-up); an administrator making one for someone also needs `user-edit`. Every permission must be one the owner holds now (`lackingScopes`, the agent-token rule), or it throws naming the missing ones. Both accounts must be active, and nobody acts for themselves. `expiresAt` must be in the future. `vault` is `none` when the owner made it (no vault-key copy yet) and `never` when an administrator did: such a grant never carries one.
+- `revokeProxy(ctx, grantId)`: the owner under `proxy-grant`; anyone else under `user-edit` and `proxy-grant` (so a fresh sign-in), or it throws `Permission denied`. The proxy cannot end it. False when there is no such grant.
+- `listProxyGrants(ctx, { asOwner } | { asProxy })`: the grants a person made, or the ones naming them as proxy. Their own needs `proxy-grant` held; anyone else's `user-edit` held (no fresh sign-in, as `listDelegations`). A grant past its end date is left out (an unreadable date counts as passed).
+- `closeAccess(username, 'delete', ctx)` ends every grant the account is on, either side, whether or not proxy access is on. Disable leaves them.
+- Stored as a signed `proxy` row of the credentials store (`username` the owner, `subject` the grant id, `secret` the terms as JSON). `listCredentials` never shows one; `addCredential`, `renameCredential` and `removeCredential` refuse one.
+- Recorded first, refused when the record cannot be written: `proxy-grant` and `proxy-revoke` (reason `revoked` or `account-deleted`), with `user` the person represented and a top-level `actor` naming who made or ended it.

@@ -49,6 +49,8 @@ export type CorePermission =
   | 'page-rename'
   /** Manage your own account — profile, preferences, display theme, pinned pages and the /my/* pages (#1198). Every signed-in role; never anonymous */
   | 'profile-manage'
+  /** Let another person act for you, within permissions you hold, and revoke it (#1762). Every signed-in role except demo-admin; an administrator making or revoking a grant for someone else also needs user-edit, and that grant never carries a copy of the person's vault key. A grant that includes proxy-grant lets the proxy give others access too. Asks for a fresh sign-in */
+  | 'proxy-grant'
   /** Search pages */
   | 'search-page'
   /** Search users */
@@ -101,6 +103,7 @@ export const CORE_PERMISSIONS: readonly CorePermission[] = [
   'page-read',
   'page-rename',
   'profile-manage',
+  'proxy-grant',
   'search-page',
   'search-user',
   'secret-reveal',

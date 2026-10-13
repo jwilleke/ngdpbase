@@ -882,6 +882,11 @@ describe('#1734 extend', () => {
     await expect(m.mint(subject('jim'), 'x', ['page-read', 'token-extend'])).rejects.toThrow(/never extends/);
   });
 
+  test('a token can never carry proxy-grant (#1762)', async () => {
+    const m = await makeManager();
+    await expect(m.mint(subject('jim'), 'x', ['page-read', 'proxy-grant'])).rejects.toThrow(/never lets someone act/);
+  });
+
   test('the extension is audited with the old and new expiry', async () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);

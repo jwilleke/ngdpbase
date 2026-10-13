@@ -98,6 +98,7 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 - __Who may mint:__ `token-mint` ships in every signed-in role's policy except `demo-admin`, never to `anonymous` ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734); demo-admin excluded by operator decision 2026-10-12). It is step-up, and a token can never carry it.
 - An __unscoped token is rejected__, never treated as unrestricted.
+- __`proxy-grant` is refused too__ ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)): a token never lets someone act for its owner. A proxy grant itself may carry `proxy-grant`; a token or an app may not (`src/utils/delegation.ts`).
 - __`admin-*` scopes are refused outright__ — a token can never carry them, however privileged its owner. This is a refusal, not a warning: warnings get clicked through.
 - TTL above `max-ttl-hours` is rejected; the max defaults equal to the default so nothing longer-lived can be minted without an operator raising the ceiling.
 - __`token-extend` is refused as a scope__, as `token-mint` is (`src/utils/delegation.ts`): a token that could lengthen its own life would never expire. Step-up already refuses it to a delegated credential, but a site may turn step-up off.
