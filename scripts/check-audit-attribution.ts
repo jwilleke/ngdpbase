@@ -59,12 +59,6 @@ const ALLOWED: Record<string, string> = {
     'proxy-grant / proxy-revoke (slice 1): `user` is the account the grant is ON, and `actor` is set explicitly from actorOf (the proxy, when a proxy re-delegates)',
   'src/managers/AuthManager.ts::typeof req.session?.username === \'string\' ? req.session.username : \'anonymous\'':
     'step-up (reauth) records the SIGNED-IN person\'s own fresh sign-in; under a proxy that is the actor, which is what session.username names (slice 4: session.username stays the actor; the grant acted under is session.actingFor)',
-  'src/managers/OidcManager.ts::revokedBy ?? event.accountId ?? \'anonymous\'':
-    'OIDC provider events (grant revoked, token issued) are attributed by the provider library\'s account id; an OAuth client acts as its own account and can never act for anyone (#1762: agent-token and app requests never carry a proxy)',
-  'src/managers/AgentTokenManager.ts::owner':
-    'KNOWN, left for #1762 slice 6: mint(owner, …) takes a username, not the subject. Tokens approved by a proxy (`approvedBy` = actor) are slice 6, which threads the subject through mint',
-  'src/managers/AgentTokenManager.ts::byUsername':
-    'KNOWN, left for #1762 slice 6: revoke(id, byUsername) takes a username. Slice 6 makes a grant\'s revocation revoke the tokens it approved, and threads the subject then',
   'src/utils/auditLifecycle.ts::input.principal ?? \'system\'':
     'system-start / system-shutdown: the configured system principal at boot, with no request and no person'
 };

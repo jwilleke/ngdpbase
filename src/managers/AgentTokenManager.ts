@@ -130,6 +130,13 @@ export interface AgentTokenRecord {
   lastUsedAt: string | null;
   revokedAt: string | null;
   revokedBy: string | null;
+  /**
+   * #1762 slice 6: the person who minted it while acting for `owner` under a
+   * proxy grant. Absent when the owner minted it themselves.
+   */
+  approvedBy?: string;
+  /** The proxy grant it was minted under. Ending that grant ends this token; it works only while the grant is in force. */
+  proxyGrantId?: string;
 }
 
 /** A record safe to return over the API — no hash. */
@@ -221,7 +228,9 @@ function isWellFormed(value: unknown): value is AgentTokenRecord {
     str(r.expiresAt) && !Number.isNaN(Date.parse(r.expiresAt as string)) &&
     nullableStr(r.lastUsedAt) &&
     nullableStr(r.revokedAt) &&
-    nullableStr(r.revokedBy)
+    nullableStr(r.revokedBy) &&
+    (r.approvedBy === undefined || str(r.approvedBy)) &&
+    (r.proxyGrantId === undefined || str(r.proxyGrantId))
   );
 }
 
@@ -417,6 +426,12 @@ class AgentTokenManager extends BaseManager {
    * scopes), so refusing it here is honesty rather than security — a token
    * that silently cannot do the thing it names is a support ticket. The
    * refusal names the missing scopes so the caller can act on it.
+   *
+   * #1762 slice 6: a subject acting for the owner under a proxy grant mints
+   * the owner's token. The same `permits` question then asks the proxy
+   * ceiling, so every scope must be in the grant, held by the owner and held
+   * by the person acting. The token records that person (`approvedBy`) and the
+   * grant (`proxyGrantId`); it works only while that grant is in force.
    */
   async mint(
     subject: PermissionSubject,
@@ -428,6 +443,7 @@ class AgentTokenManager extends BaseManager {
     const owner = subject?.username;
     if (!owner) throw new Error('owner is required');
     if (!name || !name.trim()) throw new Error('A token name is required');
+    const claim = subject.viaProxy;
 
     const effectiveScopes = expandScopes(requireScopeList(scopes));
 
@@ -464,6 +480,12 @@ class AgentTokenManager extends BaseManager {
     const pdp = this.engine.getManager('PolicyDecisionPoint') as
       { permits(subject: PermissionSubject, action: string): Promise<boolean> } | null;
     if (!pdp) throw new Error('Cannot mint: the owner\'s permissions cannot be verified');
+    // #1762 slice 6: minting itself is asked here too, not only at the route,
+    // so someone acting for the owner mints only when the grant carries
+    // token-mint and both people hold it (the proxy ceiling).
+    if (!(await pdp.permits(subject, MINT_PERMISSION))) {
+      throw new Error(claim ? `The access ${claim.actor} was given for ${owner} does not include making tokens` : `You do not hold ${MINT_PERMISSION}`);
+    }
     const lacking = await lackingScopes(effectiveScopes, scope => pdp.permits(subject, scope));
     if (lacking.length > 0) {
       throw new Error(
@@ -499,7 +521,8 @@ class AgentTokenManager extends BaseManager {
       expiresAt: new Date(now + ttl * 3_600_000).toISOString(),
       lastUsedAt: null,
       revokedAt: null,
-      revokedBy: null
+      revokedBy: null,
+      ...(claim ? { approvedBy: claim.actor, proxyGrantId: claim.grantId } : {})
     };
 
     // #1121: token-mint is CRITICAL, so the audit is written and flushed BEFORE
@@ -516,12 +539,13 @@ class AgentTokenManager extends BaseManager {
       buildTokenAuditEvent({
         op: 'mint',
         username: owner,
-        ipAddress: undefined,
+        ipAddress: subject.ipAddress,
         id,
         owner,
         name: record.name,
         scopes: record.scopes,
-        expiresAt: record.expiresAt
+        expiresAt: record.expiresAt,
+        viaProxy: claim
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-mint of ${id}:`, err)
     );
@@ -555,6 +579,8 @@ class AgentTokenManager extends BaseManager {
 
     if (match.revokedAt) return null;
     if (expiryOf(match) <= now) return null;
+    // #1762 slice 6: minted under a proxy grant that is no longer in force.
+    if (!this.approvalInForce(match, now)) return null;
 
     match.lastUsedAt = new Date(now).toISOString();
     this.dirtyLastUsed.add(match.id);
@@ -595,12 +621,27 @@ class AgentTokenManager extends BaseManager {
   }
 
   /**
-   * Revoke a token. Effective immediately — verify() reads the in-memory store
-   * per request, so there is no cache to wait out.
+   * A token minted under a proxy grant works only while that grant is in
+   * force (#1762 slice 6): ended, past its end date, or proxy access turned
+   * off, and the token stops. Asked of AuthManager, which owns the grants; no
+   * answer is a refusal. A token its owner minted is not affected.
    */
-  async revoke(id: string, byUsername: string, now: number = Date.now()): Promise<boolean> {
+  private approvalInForce(record: AgentTokenRecord, now: number): boolean {
+    if (!record.proxyGrantId) return true;
+    const auth = this.engine.getManager<{ liveProxyGrant(grantId: string, now?: number): unknown }>('AuthManager');
+    return Boolean(auth?.liveProxyGrant(record.proxyGrantId, now));
+  }
+
+  /**
+   * Revoke a token. Effective immediately — verify() reads the in-memory store
+   * per request, so there is no cache to wait out. `ctx` is who revoked it:
+   * under a proxy grant (#1762 slice 6) the record names the represented
+   * person and the person acting, and `revokedBy` is the person acting.
+   */
+  async revoke(id: string, ctx: PermissionSubject, now: number = Date.now()): Promise<boolean> {
     const record = this.tokens.get(id);
     if (!record || record.revokedAt) return false;
+    const byUsername = ctx.viaProxy?.actor ?? ctx.username ?? 'system';
     record.revokedAt = new Date(now).toISOString();
     record.revokedBy = byUsername;
     // #1121: critical, and audited before the state reaches disk for the same
@@ -610,12 +651,13 @@ class AgentTokenManager extends BaseManager {
       this.auditSink(),
       buildTokenAuditEvent({
         op: 'revoke',
-        username: byUsername,
-        ipAddress: undefined,
+        username: ctx.username ?? 'system',
+        ipAddress: ctx.ipAddress,
         id,
         owner: record.owner,
         name: record.name,
-        revokedBy: byUsername
+        revokedBy: byUsername,
+        viaProxy: ctx.viaProxy
       }),
       (err) => logger.warn(`[AgentTokenManager] Audit log failed for token-revoke of ${id}:`, err)
     );
@@ -744,7 +786,7 @@ class AgentTokenManager extends BaseManager {
   }
 
   private isLive(record: AgentTokenRecord, now: number): boolean {
-    return record.revokedAt === null && expiryOf(record) > now;
+    return record.revokedAt === null && expiryOf(record) > now && this.approvalInForce(record, now);
   }
 
   /**

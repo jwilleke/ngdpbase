@@ -462,6 +462,13 @@ export interface Delegation {
   renewedAt: string | null;
   /** ISO 8601: an agent token's last use; null for an app, or never used. */
   lastUsedAt: string | null;
+  /**
+   * #1762 slice 6: who approved it while acting for this person under a proxy
+   * grant; null when the person approved it themselves.
+   */
+  approvedBy: string | null;
+  /** The proxy grant it was approved under; ending that grant revokes it. Null when the person approved it. */
+  proxyGrantId: string | null;
 }
 
 export type DelegationKind = Delegation['kind'];
@@ -1522,9 +1529,7 @@ class AuthManager extends BaseManager {
     const by = ctx.username ?? 'system';
     // #1764: the same path a person's own Revoke takes, one kind per step so one failing store does not stop the other.
     for (const [what, kind] of [['agent tokens', 'token'], ['app grants', 'app']] as const) {
-      await step(what, async () => {
-        for (const d of await this.delegationsOf(username, kind)) await this.endDelegation(username, kind, d.id, by);
-      });
+      await step(what, async () => this.endDelegationsWhere(ctx, username, kind, () => true));
     }
     await step('shares', async () => {
       const shares = this.engine.getManager<{ list(owner?: string): Array<{ id: string; revokedAt?: string | null }>; revoke(id: string, by: string): Promise<boolean> }>('ShareManager');
@@ -1569,7 +1574,7 @@ class AuthManager extends BaseManager {
    */
   async revokeDelegation(ctx: PermissionSubject, username: string, kind: DelegationKind, id: string): Promise<boolean> {
     if (!(await this.mayManageCredentials(ctx, username))) throw new Error('Permission denied');
-    return this.endDelegation(username, kind, id, ctx.username ?? 'system');
+    return this.endDelegation(username, kind, id, ctx);
   }
 
   /**
@@ -1590,26 +1595,43 @@ class AuthManager extends BaseManager {
       const tokens = this.engine.getManager<AgentTokenManager>('AgentTokenManager')?.listForOwner(username) ?? [];
       return tokens.filter(t => !t.revokedAt).map(t => ({
         kind, id: t.id, name: t.name, device: false, renewal: 'fixed' as const, scopes: t.scopes,
-        createdAt: t.createdAt, expiresAt: t.expiresAt, renewedAt: null, lastUsedAt: t.lastUsedAt
+        createdAt: t.createdAt, expiresAt: t.expiresAt, renewedAt: null, lastUsedAt: t.lastUsedAt,
+        approvedBy: t.approvedBy ?? null, proxyGrantId: t.proxyGrantId ?? null
       }));
     }
     const apps = (await this.engine.getManager<OidcManager>('OidcManager')?.listGrants(username)) ?? [];
     return apps.map(a => ({
       kind, id: a.grantId, name: a.name, device: a.device, renewal: a.refreshable ? 'refreshable' as const : 'fixed' as const,
-      scopes: a.scopes, createdAt: a.approvedAt, expiresAt: a.expiresAt, renewedAt: a.renewedAt, lastUsedAt: null
+      scopes: a.scopes, createdAt: a.approvedAt, expiresAt: a.expiresAt, renewedAt: a.renewedAt, lastUsedAt: null,
+      approvedBy: a.approvedBy ?? null, proxyGrantId: a.proxyGrantId ?? null
     }));
   }
 
-  /** End one delegated credential the caller has already decided may be ended; only `username`'s own. */
-  private async endDelegation(username: string, kind: DelegationKind, id: string, by: string): Promise<boolean> {
+  /**
+   * End one delegated credential the caller has already decided may be ended;
+   * only `username`'s own. Recorded by its owner as done by `ctx`: under a
+   * proxy grant, naming both people (#1762 slice 6).
+   */
+  private async endDelegation(username: string, kind: DelegationKind, id: string, ctx: PermissionSubject): Promise<boolean> {
     if (kind === 'token') {
       const tokens = this.engine.getManager<AgentTokenManager>('AgentTokenManager');
       const token = tokens?.getById(id);
       if (!tokens || !token || token.owner !== username || token.revokedAt) return false;
-      return tokens.revoke(id, by);
+      return tokens.revoke(id, ctx);
     }
-    if (kind === 'app') return (await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, id, by)) ?? false;
+    if (kind === 'app') return (await this.engine.getManager<OidcManager>('OidcManager')?.revokeGrant(username, id, ctx)) ?? false;
     return false;
+  }
+
+  /**
+   * End each of `username`'s live delegated credentials of one kind that
+   * `which` picks: the one loop for an account closed (all of them) and a
+   * proxy grant ended (those approved under it, #1762 slice 6).
+   */
+  private async endDelegationsWhere(ctx: PermissionSubject, username: string, kind: DelegationKind, which: (d: Omit<Delegation, 'can'>) => boolean): Promise<void> {
+    for (const d of await this.delegationsOf(username, kind)) {
+      if (which(d)) await this.endDelegation(username, kind, d.id, ctx);
+    }
   }
 
   // ── Proxy access (#1762) ─────────────────────────────────────────────
@@ -2006,9 +2028,22 @@ class AuthManager extends BaseManager {
     return { ...grant, permissions: [...grant.permissions], can: this.describeScopes(grant.permissions), mayRedelegate: grant.permissions.includes(PROXY_GRANT_PERMISSION) };
   }
 
-  /** End a grant the caller has already decided may be ended: recorded first, then removed. */
+  /**
+   * End a grant the caller has already decided may be ended: recorded first,
+   * then the tokens, apps and devices approved under it are revoked (#1762
+   * slice 6) — while the grant still stands, since a token under a grant no
+   * longer in force is no longer listed as live — and then it is removed.
+   */
   private async endProxyGrant(ctx: PermissionSubject, grant: ProxyGrant, why: 'revoked' | 'account-deleted'): Promise<boolean> {
     await this.auditProxy(AUDIT_EVENT.PROXY_REVOKE, ctx, grant, why);
+    for (const kind of ['token', 'app'] as const) {
+      try {
+        await this.endDelegationsWhere(ctx, grant.owner, kind, d => d.proxyGrantId === grant.id);
+      } catch (err) {
+        // Ending the grant still goes ahead: each credential checks the grant is in force at use, so none outlives it.
+        logger.error(`[AuthManager] ending proxy grant ${grant.id}: revoking the ${kind}s approved under it failed:`, err);
+      }
+    }
     // #1762 slice 5: the row holds the sealed key copy, so removing it deletes the copy; any opened from it is wiped now.
     const removed = await this.requireCredentialsStore().remove(grant.id);
     dropKeyCopiesOfGrant(grant.id);

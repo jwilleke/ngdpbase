@@ -112,7 +112,7 @@
       <div class="card mb-4">
         <div class="card-header"><i class="fas fa-plug me-2"></i><strong>Apps and devices</strong></div>
         <div class="card-body">
-          <%- include('_approved-apps', { apps: approvedApps, revokeBase: '/admin/users/' + encodeURIComponent(editUser.username) + '/apps/', csrfToken: csrfToken }) %>
+          <%- include('_approved-apps', { apps: approvedApps, revokeBase: '/admin/users/' + encodeURIComponent(editUser.username) + '/apps/', csrfToken: csrfToken, owner: editUser.username }) %>
         </div>
       </div>
       <% } %>

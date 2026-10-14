@@ -23,6 +23,12 @@ interface FakeSession {
   signIn?: { provider: string; factors: never[]; amr: string[]; aal: 2; acr: 'phr'; mfa: boolean; at: string };
 }
 
+/** #1762 slice 6: what policy grants each person, by name. */
+const HOLDS: Record<string, string[]> = {
+  sam: ['account-security', 'page-read', 'page-edit'],
+  jim: ['account-security', 'page-read']
+};
+
 const decodeJwt = (jwt: string): Record<string, unknown> =>
   JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString()) as Record<string, unknown>;
 
@@ -35,6 +41,10 @@ describe('OIDC sign-in bridge (#1572)', () => {
   let users: Record<string, { username: string; displayName: string; isActive: boolean; passwordChangedAt?: string }>;
   let permitAnswer: boolean;
   let permitted: string[];
+  /** #1762 slice 6: the session acts for someone under this claim; null for themselves. */
+  let acting: { for: string; claim: { kind: 'proxy'; grantId: string; actor: string; scopes: string[] } } | null;
+  /** Whether the stand-in AuthManager reports the proxy grant in force. */
+  let proxyLive: boolean;
   let app: express.Express;
   const saved: Record<string, string | undefined> = {};
 
@@ -52,6 +62,8 @@ describe('OIDC sign-in bridge (#1572)', () => {
     audited = [];
     permitAnswer = true;
     permitted = [];
+    acting = null;
+    proxyLive = true;
 
     const custom: Record<string, unknown> = {
       'oidc-auth-server.enabled': true,
@@ -82,6 +94,13 @@ describe('OIDC sign-in bridge (#1572)', () => {
         getInstanceDataFolder: () => dir
       },
       UserManager: { getUser: (u: string) => Promise.resolve(users[u]) },
+      // #1762 slice 6: the proxy ceiling as the real PDP decides it — the grant, the represented person and the actor
+      // all allow; a person themselves is allowed everything here (their own limits are covered elsewhere).
+      PolicyDecisionPoint: {
+        permits: (s: { username: string; viaProxy?: { actor: string; scopes: string[] } }, action: string) => Promise.resolve(
+          !s.viaProxy || (proxyLive && s.viaProxy.scopes.includes(action) && (HOLDS[s.username] ?? []).includes(action) && (HOLDS[s.viaProxy.actor] ?? []).includes(action)))
+      },
+      AuthManager: { liveProxyGrant: (id: string) => (proxyLive && id === 'g1' ? { id } : null) },
       AuditManager: { logAuditEvent: (e: Record<string, unknown>) => { audited.push(e); return Promise.resolve('evt'); } }
     };
     manager = new OidcManager({ getManager: (n: string) => managers[n] ?? null });
@@ -98,7 +117,9 @@ describe('OIDC sign-in bridge (#1572)', () => {
     // Stand-in for the session middleware.
     app.use((req: Request, _res: Response, next: NextFunction) => {
       (req as unknown as { session: FakeSession }).session = session;
-      (req as unknown as { userContext: unknown }).userContext = { username: session.username ?? 'anonymous', roles: [], isAuthenticated: Boolean(session.username) };
+      (req as unknown as { userContext: unknown }).userContext = acting && session.username
+        ? { username: acting.for, roles: [], isAuthenticated: true, viaProxy: acting.claim }
+        : { username: session.username ?? 'anonymous', roles: [], isAuthenticated: Boolean(session.username) };
       next();
     });
     // Views render their locals as JSON, so the test reads what the page was given.
@@ -110,10 +131,12 @@ describe('OIDC sign-in bridge (#1572)', () => {
     registerOidcRoutes(app, {
       oidc: manager,
       templateData: () => Promise.resolve({ csrfToken: 't' }),
-      permit: (req, res, permission) => {
+      permit: async (req, res, permission) => {
         permitted.push(permission);
-        if (!permitAnswer) res.redirect(`/auth/reauth?next=${encodeURIComponent(req.originalUrl)}`);
-        return Promise.resolve(permitAnswer);
+        // The real door asks the PDP with the request's subject: under a proxy, the ceiling.
+        const ok = permitAnswer && await (managers.PolicyDecisionPoint as { permits(s: unknown, a: string): Promise<boolean> }).permits(req.userContext, permission);
+        if (!ok) res.redirect(`/auth/reauth?next=${encodeURIComponent(req.originalUrl)}`);
+        return ok;
       }
     });
   });
@@ -326,10 +349,10 @@ describe('OIDC sign-in bridge (#1572)', () => {
     expect(listed).toEqual([expect.objectContaining({ clientId: 'app', name: 'Test App', device: false, scopes: ['openid', 'profile'] })]);
     expect(await manager.listGrants('sam')).toEqual([]);
 
-    expect(await manager.revokeGrant('sam', listed[0].grantId)).toBe(false);
+    expect(await manager.revokeGrant('sam', listed[0].grantId, { username: 'sam', roles: [], isAuthenticated: true })).toBe(false);
     expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(200);
 
-    expect(await manager.revokeGrant('jim', listed[0].grantId)).toBe(true);
+    expect(await manager.revokeGrant('jim', listed[0].grantId, { username: 'jim', roles: [], isAuthenticated: true })).toBe(true);
     expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(401);
     expect(await manager.listGrants('jim')).toEqual([]);
     expect(audited).toContainEqual(expect.objectContaining({ eventType: 'oidcgrant-revoke', user: 'jim', resource: 'app' }));
@@ -365,7 +388,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
     const [after] = await manager.listGrants('jim');
     expect(after.renewedAt).toEqual(expect.any(String));
 
-    expect(await manager.revokeGrant('jim', after.grantId, 'admin')).toBe(true);
+    expect(await manager.revokeGrant('jim', after.grantId, { username: 'admin', roles: [], isAuthenticated: true })).toBe(true);
     expect(audited).toContainEqual(expect.objectContaining({
       eventType: 'oidcgrant-revoke', user: 'admin', resource: 'speaker', metadata: expect.objectContaining({ owner: 'jim', revokedBy: 'admin' })
     }));
@@ -443,6 +466,92 @@ describe('OIDC sign-in bridge (#1572)', () => {
     const { res } = await authorize(agent);
     const bridge = await agent.get(new URL(res.headers.location as string, BASE).pathname);
     expect(bridge.headers.location).toMatch(/^\/login\?redirect=/);
+  });
+
+  describe('#1762 slice 6: a device approved by someone acting for its owner', () => {
+    const api = `${BASE}/api`;
+    /** Jim signed in, acting for Sam under grant g1 carrying `scopes`. */
+    const jimActsForSam = (scopes: string[]) => {
+      signIn('jim');
+      acting = { for: 'sam', claim: { kind: 'proxy', grantId: 'g1', actor: 'jim', scopes } };
+    };
+    const startDeviceFor = async (scope: string) => {
+      const start = await request(app).post('/oidc/device/auth').type('form').send({ client_id: 'tv', scope, resource: api });
+      expect(start.status).toBe(200);
+      return start.body as { device_code: string; user_code: string };
+    };
+    const pollApi = (deviceCode: string) => request(app).post('/oidc/token').type('form')
+      .send({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: deviceCode, client_id: 'tv', resource: api });
+    /** Enter the code and follow the bridge until it shows consent or stops. */
+    const approve = async (agent: ReturnType<typeof request.agent>, userCode: string) => {
+      const consent = await follow(agent, await enterDeviceCode(agent, userCode));
+      if (!consent.text.startsWith('{')) return consent;
+      return follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+    };
+
+    test('the device is Sam\'s, records Jim as the approver and the grant, and the approval names both people', async () => {
+      jimActsForSam(['account-security', 'page-read']);
+      const agent = request.agent(app);
+      const device = await startDeviceFor('openid page-read');
+      await approve(agent, device.user_code);
+
+      const tokens = await pollApi(device.device_code);
+      expect(tokens.status).toBe(200);
+      expect(await manager.verifyAccessToken((tokens.body as { access_token: string }).access_token))
+        .toMatchObject({ username: 'sam', scopes: ['page-read'] });
+      expect(await manager.listGrants('sam')).toEqual([expect.objectContaining({ clientId: 'tv', device: true, approvedBy: 'jim', proxyGrantId: 'g1' })]);
+      expect(await manager.listGrants('jim')).toEqual([]);
+      expect(audited).toContainEqual(expect.objectContaining({
+        eventType: 'oidcauthorize-allow', user: 'sam', actor: 'jim', reason: 'approved-by-proxy', resource: 'tv',
+        metadata: expect.objectContaining({ delegated: 'proxy', proxyGrantId: 'g1', approvedBy: 'jim' })
+      }));
+    });
+
+    test('without the device-approval permission on the grant, the device is not approved', async () => {
+      jimActsForSam(['page-read']);
+      const agent = request.agent(app);
+      const device = await startDeviceFor('openid page-read');
+      await approve(agent, device.user_code);
+      expect(permitted).toContain('account-security');
+      expect((await pollApi(device.device_code)).body).toMatchObject({ error: 'authorization_pending' });
+      expect(await manager.listGrants('sam')).toEqual([]);
+    });
+
+    test('a device asking for what Jim does not hold is refused, though the grant and Sam allow it', async () => {
+      jimActsForSam(['account-security', 'page-read', 'page-edit']);
+      const agent = request.agent(app);
+      const device = await startDeviceFor('openid page-edit');
+      await approve(agent, device.user_code);
+      expect((await pollApi(device.device_code)).body).toMatchObject({ error: 'access_denied' });
+      expect(await manager.listGrants('sam')).toEqual([]);
+    });
+
+    test('an app sign-in while acting for someone is refused', async () => {
+      jimActsForSam(['account-security', 'page-read']);
+      const agent = request.agent(app);
+      const back = await follow(agent, (await authorize(agent)).res);
+      expect(codeFrom(back).searchParams.get('error')).toBe('access_denied');
+      expect(codeFrom(back).searchParams.get('error_description')).toMatch(/Switch back to yourself/);
+    });
+
+    test('the device works only while the grant is in force; a revoke by someone acting names both people', async () => {
+      jimActsForSam(['account-security', 'page-read']);
+      const agent = request.agent(app);
+      const device = await startDeviceFor('openid page-read');
+      await approve(agent, device.user_code);
+      const access = ((await pollApi(device.device_code)).body as { access_token: string }).access_token;
+      expect(await manager.verifyAccessToken(access)).not.toBeNull();
+      proxyLive = false;
+      expect(await manager.verifyAccessToken(access)).toBeNull();
+      proxyLive = true;
+
+      const [grant] = await manager.listGrants('sam');
+      const actingSubject = { username: 'sam', roles: [], isAuthenticated: true, viaProxy: { kind: 'proxy' as const, grantId: 'g1', actor: 'jim', scopes: [] } };
+      expect(await manager.revokeGrant('sam', grant.grantId, actingSubject)).toBe(true);
+      expect(audited).toContainEqual(expect.objectContaining({
+        eventType: 'oidcgrant-revoke', user: 'sam', actor: 'jim', metadata: expect.objectContaining({ owner: 'sam', revokedBy: 'jim', proxyGrantId: 'g1' })
+      }));
+    });
   });
 
   test('an unknown or used interaction renders the expired page', async () => {

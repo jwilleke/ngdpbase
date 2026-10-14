@@ -84,11 +84,11 @@ describe('AuthManager — My tokens and devices (#1764)', () => {
       UserManager: { getUser: () => Promise.resolve(undefined), hasPassword: () => Promise.resolve(true) },
       OidcManager: {
         listGrants: (u: string) => Promise.resolve(grants.filter(g => g.owner === u).map(({ owner: _o, ...g }) => g)),
-        revokeGrant: (u: string, id: string, by: string) => {
+        revokeGrant: (u: string, id: string, by: { username: string }) => {
           const i = grants.findIndex(g => g.owner === u && g.grantId === id);
           if (i < 0) return Promise.resolve(false);
           grants.splice(i, 1);
-          grantRevokes.push(`${id}:${u}:${by}`);
+          grantRevokes.push(`${id}:${u}:${by.username}`);
           return Promise.resolve(true);
         }
       },

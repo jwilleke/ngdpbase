@@ -8,7 +8,7 @@ user-keywords:
   - agents
   - automation
 slug: using-tokens
-lastModified: '2026-10-13T00:00:00.000Z'
+lastModified: '2026-10-14T00:00:00.000Z'
 author: system
 ---
 
@@ -105,6 +105,12 @@ Each row says which kind it is:
 The __Can do__ column says in plain words what each one may do. Point at a line to see the permission's short name. Every permission and what it lets you do is listed on [Permissions]. A line the site does not recognise, such as one an app asked for on its own, is shown exactly as the app named it.
 
 Each row has __Revoke__. Revoking is immediate — the next request using that token, app or device is refused. A revoked app or device has to be approved again before it can sign in. Nothing else you own is affected, and your password is unchanged. You may be asked to confirm your sign-in first.
+
+### Tokens and devices someone set up for you
+
+If you let someone act for you (see [Acting For Someone Else]), they may be able to make a token or connect a device for you. It is yours and appears in your list, marked __Approved by__ and their name, followed by "(acting for you)". It can do only what you, they and the access you gave them all allow.
+
+It keeps working only while their access to your account lasts. When you revoke their access, or it reaches its end date, every token and device they set up for you stops at once. You can also revoke one on its own, like any other row.
 
 ## When tokens expire
 

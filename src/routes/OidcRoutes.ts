@@ -18,6 +18,14 @@
  * step-up (#1525) — at every step of the approval (#1577). A stale session
  * goes to /auth/reauth and comes back to the same pending request.
  *
+ * Acting for someone (#1762 slice 6): a person acting for someone under a
+ * proxy grant may approve a device for them, never an app sign-in. The
+ * device's access is the represented person's. Approving it asks
+ * account-security of the proxy subject, so the grant must carry it, and
+ * every permission the device asks for must be within the grant and held by
+ * both people (`OidcManager.proxyApprovalRefusal`). The step-up is the
+ * person acting's own. The approval records who approved it.
+ *
  * Not yet, and refused rather than faked: a fresh sign-in on demand from an
  * app (`prompt=login`, an expired `max_age`) for a session older than the
  * request.
@@ -77,8 +85,23 @@ export function consentLines(scope: string, describe: (names: readonly string[])
 export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
   const { oidc } = deps;
 
-  const signedInAs = (req: Request): string | null =>
-    req.userContext?.isAuthenticated && typeof req.session?.username === 'string' ? req.session.username : null;
+  /** The account the provider signs in: the session's person, or the person they act for (#1762 slice 6). */
+  const signedInAs = (req: Request): string | null => {
+    if (!req.userContext?.isAuthenticated || typeof req.session?.username !== 'string') return null;
+    return req.userContext.viaProxy ? req.userContext.username : req.session.username;
+  };
+
+  /**
+   * Why this pending request cannot go on while the session acts for someone,
+   * or null (#1762 slice 6). Only a device may be approved for them, and only
+   * with permissions within the grant that both people hold.
+   */
+  const proxyRefusal = async (req: Request, pending: { deviceFlow: boolean; scope: string }): Promise<string | null> => {
+    const subject = req.userContext;
+    if (!subject?.viaProxy) return null;
+    if (!pending.deviceFlow) return `You are acting for ${subject.username}. Switch back to yourself to sign in to an app.`;
+    return oidc.proxyApprovalRefusal(subject, pending.scope);
+  };
 
   const toLogin = (req: Request, res: Response): void => {
     res.redirect(`/login?redirect=${encodeURIComponent(`${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${req.params.uid}`)}`);
@@ -113,6 +136,11 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
       // factor. The door answers a stale session with /auth/reauth, which
       // returns here to the same pending request.
       if (pending.deviceFlow && !(await deps.permit(req, res, DEVICE_APPROVAL_PERMISSION, 'page'))) return;
+      const refusedForProxy = await proxyRefusal(req, pending);
+      if (refusedForProxy) {
+        await helpers.fail(req, res, 'access_denied', refusedForProxy);
+        return;
+      }
 
       if (pending.prompt === 'login') {
         const signIn = req.session.signIn;
@@ -169,7 +197,9 @@ export function registerOidcRoutes(app: Express, deps: OidcRoutesDeps): void {
     // The approval itself is the moment that matters for a device: asked again here.
     if (pending.deviceFlow && !(await deps.permit(req, res, DEVICE_APPROVAL_PERMISSION, 'page'))) return;
     try {
-      if (allow) await helpers.finishConsent(req, res);
+      const refusedForProxy = allow ? await proxyRefusal(req, pending) : null;
+      if (refusedForProxy) await helpers.fail(req, res, 'access_denied', refusedForProxy);
+      else if (allow) await oidc.finishConsent(req, res, req.userContext);
       else await helpers.fail(req, res, 'access_denied', 'The person declined');
     } catch (err) {
       logger.error(`[OidcRoutes] consent for ${req.params.uid} failed: ${(err as Error).message}`);
