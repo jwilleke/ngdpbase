@@ -61,7 +61,8 @@ import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn } from '../managers/AuthManager.js';
+import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
+import type { ScopeDescription } from '../utils/permissionCatalog.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -7266,8 +7267,8 @@ ${panes}
    * session currently acts as, so switching back is always possible.
    */
   async actingForPage(req: Request, res: Response): Promise<void> {
-    const authManager = this.engine.getManager<AuthManager>('AuthManager');
-    if (!authManager?.proxyAccessEnabled()) { await this.renderError(req, res, 404, 'Not Available', 'Acting for someone else is not turned on on this site.'); return; }
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
     const choices = authManager.actingForChoices(req);
     if (!choices) return res.redirect(`/login?redirect=${encodeURIComponent(ACTING_FOR_PATH)}`);
     const commonData = await this.getCommonTemplateData(req);
@@ -7284,8 +7285,8 @@ ${panes}
 
   /** POST /account/acting-for — switch: `grant` names a grant, or is empty to act as yourself (#1762 slice 4). */
   async switchActingFor(req: Request, res: Response): Promise<void> {
-    const authManager = this.engine.getManager<AuthManager>('AuthManager');
-    if (!authManager?.proxyAccessEnabled()) { await this.renderError(req, res, 404, 'Not Available', 'Acting for someone else is not turned on on this site.'); return; }
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const grant = typeof body.grant === 'string' && body.grant ? body.grant : null;
     const returnTo = safeRedirect(body.returnTo);
@@ -7294,6 +7295,115 @@ ${panes}
       return res.redirect(`${ACTING_FOR_PATH}?error=${encodeURIComponent('You can no longer act for that person.')}`);
     }
     req.session.save(() => res.redirect(returnTo));
+  }
+
+  /** AuthManager while proxy access is on; otherwise answers Not Found and returns null (#1762: every proxy screen is hidden while off). */
+  private async proxyAccessOn(req: Request, res: Response): Promise<AuthManager | null> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    if (authManager?.proxyAccessEnabled()) return authManager;
+    await this.renderError(req, res, 404, 'Not Available', 'Acting for someone else is not turned on on this site.');
+    return null;
+  }
+
+  /**
+   * The "Proxy access" card on `owner`'s account (#1762 slice 7), for the
+   * profile (the owner, `adminView` false) or the admin user page. Undefined
+   * hides it: proxy access is off, or there is nothing to show. `given` and
+   * `options` are null when the viewer may not give access on that account
+   * (AuthManager decides); `actingFor` — whom the signed-in person may act
+   * for — is the profile's only.
+   */
+  private async proxyAccessCard(req: Request, ctx: PermissionSubject, owner: string, adminView: boolean): Promise<{
+    given: ProxyGrantView[] | null; options: ScopeDescription[] | null; actingFor: ProxyGrantView[]; owner: string;
+  } | undefined> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    if (!authManager?.proxyAccessEnabled?.() || !owner) return undefined;
+    const refused = (): null => null;
+    const given = await authManager.listProxyGrants(ctx, { asOwner: owner }).catch(refused);
+    const options = given === null ? null : await authManager.proxyGrantOptions(ctx, owner).catch(refused);
+    const actingFor = adminView ? [] : authManager.actingForChoices(req)?.grants ?? [];
+    if (given === null && actingFor.length === 0) return undefined;
+    return { given, options, actingFor, owner };
+  }
+
+  /** A give-access form's fields as grantProxy takes them, or the plain reason they cannot be (#1762 slice 7). */
+  private proxyGrantFromForm(body: unknown, owner: string): ProxyGrantInput | string {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const proxy = typeof b.proxy === 'string' ? b.proxy.trim() : '';
+    if (!proxy) return 'Choose the person who will act for you.';
+    const permissions = ([] as unknown[]).concat(b.permissions ?? []).filter((p): p is string => typeof p === 'string' && p.length > 0);
+    if (permissions.length === 0) return 'Tick at least one thing they may do.';
+    // The page sends the end of the chosen day in the person's own time zone; without its script, the end of that day UTC.
+    const expiresAt = typeof b.expiresAt === 'string' && b.expiresAt
+      ? b.expiresAt
+      : typeof b.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.endDate) ? `${b.endDate}T23:59:59.999Z` : null;
+    return { owner, proxy, permissions, expiresAt };
+  }
+
+  /**
+   * POST /profile/proxy-access — let someone act for you (#1762 slice 7).
+   * `proxy-grant` at the door, so a stale sign-in is sent to step-up first;
+   * AuthManager decides the rest (only permissions you hold, a live account).
+   */
+  async giveProxyAccess(req: Request, res: Response): Promise<void> {
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'proxy-grant', req, res, 'page'))) return;
+    const user = wikiContext.userContext;
+    const input = this.proxyGrantFromForm(req.body, String(user.username ?? ''));
+    if (typeof input === 'string') return res.redirect(`/profile?error=${encodeURIComponent(input)}#proxy-access`);
+    try {
+      await authManager.grantProxy(user, input);
+      res.redirect(`/profile?success=${encodeURIComponent(`${input.proxy} can now act for you.`)}#proxy-access`);
+    } catch (err) {
+      res.redirect(`/profile?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+    }
+  }
+
+  /** POST /profile/proxy-access/:id/revoke — stop someone acting for you (#1762 slice 7); AuthManager refuses anyone else's grant. */
+  async revokeOwnProxyAccess(req: Request, res: Response): Promise<void> {
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'proxy-grant', req, res, 'page'))) return;
+    const revoked = await authManager.revokeProxy(wikiContext.userContext, req.params.id).catch(() => false);
+    res.redirect(`/profile?${revoked ? 'success=Access+revoked' : 'error=Not+found'}#proxy-access`);
+  }
+
+  /**
+   * POST /admin/users/:username/proxy-access — an administrator lets someone
+   * act for this person (#1762 slice 7). `user-edit`, then `proxy-grant` for
+   * the fresh sign-in; recorded with the administrator as the actor. The grant
+   * never carries vault access (AuthManager refuses it).
+   */
+  async adminGiveProxyAccess(req: Request, res: Response): Promise<void> {
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'proxy-grant', req, res, 'page'))) return;
+    const username = req.params.username;
+    const back = `/admin/users/${encodeURIComponent(username)}/edit`;
+    const input = this.proxyGrantFromForm(req.body, username);
+    if (typeof input === 'string') return res.redirect(`${back}?error=${encodeURIComponent(input)}#proxy-access`);
+    try {
+      await authManager.grantProxy(wikiContext.userContext, input);
+      res.redirect(`${back}?success=${encodeURIComponent(`${input.proxy} can now act for ${username}.`)}#proxy-access`);
+    } catch (err) {
+      res.redirect(`${back}?error=${encodeURIComponent((err as Error).message)}#proxy-access`);
+    }
+  }
+
+  /** POST /admin/users/:username/proxy-access/:id/revoke — an administrator ends one of this person's grants (#1762 slice 7). */
+  async adminRevokeProxyAccess(req: Request, res: Response): Promise<void> {
+    const authManager = await this.proxyAccessOn(req, res);
+    if (!authManager) return;
+    const wikiContext = this.createWikiContext(req);
+    if (!(await this.permitted(wikiContext, 'user-edit', req, res, 'page'))) return;
+    if (!(await this.permitted(wikiContext, 'proxy-grant', req, res, 'page'))) return;
+    const revoked = await authManager.revokeProxy(wikiContext.userContext, req.params.id).catch(() => false);
+    res.redirect(`/admin/users/${encodeURIComponent(req.params.username)}/edit?${revoked ? 'success=Access+revoked' : 'error=Not+found'}#proxy-access`);
   }
 
   /**
@@ -8199,6 +8309,8 @@ ${panes}
         if (connectedIdentities.some((i: { provider: { id: string } | null }) => i.provider?.id === p.id)) continue;
         if (await authManagerForProfile.userMayUseProvider(String(currentUser.username), p.id)) connectableProviders.push(p);
       }
+      // #1762 slice 7: the "Proxy access" card; undefined hides it (proxy access off, or nothing to show).
+      const proxyAccess = currentUser?.username ? await this.proxyAccessCard(req, currentUser, currentUser.username, false) : undefined;
       // The password is a sign-in method too; the card lists it beside the credentials.
       const hasPassword = currentUser?.username
         ? await this.engine.getManager('UserManager')?.hasPassword?.(currentUser.username).catch(() => false) ?? false
@@ -8214,6 +8326,7 @@ ${panes}
         passkeyHost, // #448
         approvedApps, // #1601
         delegations, // #1764: undefined hides the card; null means it could not be read
+        proxyAccess, // #1762 slice 7
         offerEmailSecondFactor, // #1523
         hasPassword, // #1524: listed under Sign-in methods
         unusedVaultFiles, // #1517
@@ -11230,6 +11343,13 @@ ${panes}
         extendedFields,
         // #1601: what this person approved through /oidc; null when the provider is off.
         approvedApps: await this.approvedAppsFor(username),
+        // #1762 slice 7: give or stop access for this person; undefined hides it.
+        proxyAccess: await this.proxyAccessCard(req, currentUser, username, true),
+        // The answer to the last give or revoke on this page (its redirect's query), shown in that card.
+        proxyAccessNotice: {
+          error: typeof req.query.error === 'string' ? req.query.error : null,
+          success: typeof req.query.success === 'string' ? req.query.success : null
+        },
         csrfToken: req.session.csrfToken
       });
     } catch (err: unknown) {
@@ -15486,6 +15606,10 @@ ${panes}
     app.post('/login/connect/confirm', (req: Request, res: Response) => void this.answerConnectionConfirm(req, res));
     app.get(ACTING_FOR_PATH, (req: Request, res: Response) => void this.actingForPage(req, res));
     app.post(ACTING_FOR_PATH, (req: Request, res: Response) => void this.switchActingFor(req, res));
+    app.post('/profile/proxy-access', (req: Request, res: Response) => void this.giveProxyAccess(req, res));
+    app.post('/profile/proxy-access/:id/revoke', (req: Request, res: Response) => void this.revokeOwnProxyAccess(req, res));
+    app.post('/admin/users/:username/proxy-access', (req: Request, res: Response) => void this.adminGiveProxyAccess(req, res));
+    app.post('/admin/users/:username/proxy-access/:id/revoke', (req: Request, res: Response) => void this.adminRevokeProxyAccess(req, res));
     app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));

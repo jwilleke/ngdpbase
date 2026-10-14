@@ -73,10 +73,10 @@ import type BaseCredentialsProvider from '../providers/BaseCredentialsProvider.j
 import { recordAuditEvent } from '../utils/auditEvents.js';
 import { actorOf } from '../context/ActorContext.js';
 import { proxyAttribution } from '../utils/proxyClaim.js';
-import { lackingScopes, requireScopeList } from '../utils/delegation.js';
+import { lackingScopes, requireScopeList, VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import { enabledEntries } from '../utils/configFiles.js';
-import { describeScopes, type ScopeDescription } from '../utils/permissionCatalog.js';
+import { describeScopes, grantablePermissionNames, type ScopeDescription } from '../utils/permissionCatalog.js';
 import type { Request } from 'express';
 import { endSession } from '../utils/sessionEnd.js';
 import { generateCsrfToken } from '../middleware/csrf.js';
@@ -1621,7 +1621,8 @@ class AuthManager extends BaseManager {
    *   the check agent tokens make (`lackingScopes`). Any permission they hold
    *   may be included (operator, 2026-10-12), `proxy-grant` among them, which
    *   lets the proxy give others access too (`mayRedelegate`).
-   * - An administrator's grant never carries vault access (`vault: 'never'`).
+   * - An administrator's grant never carries vault access: no key copy
+   *   (`vault: 'never'`), and never `vault-proxy` (#1762 slice 7).
    * - `expiresAt` is optional; without it the grant lasts until revoked.
    *
    * Recorded first, as `proxy-grant` (refuse on failure): `user` is the owner,
@@ -1635,14 +1636,14 @@ class AuthManager extends BaseManager {
     if (!(await this.mayManageProxyGrants(ctx, owner))) throw new Error('Permission denied');
     if (owner === proxy) throw new Error('A person cannot act for themselves');
 
-    const pdp = this.engine.getManager<ProxyPolicy>('PolicyDecisionPoint');
-    const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
-    if (!pdp || !pip) throw new Error('Cannot grant: permissions cannot be verified');
-    const ownerSubject = ctx.username === owner ? ctx : await pip.subjectFor(owner);
-    if (!ownerSubject) throw new Error(`There is no active account ${owner}`);
+    const { pdp, pip, ownerSubject } = await this.proxyOwnerSubject(ctx, owner);
     if (!(await pip.subjectFor(proxy))) throw new Error(`There is no active account ${proxy}`);
 
     const permissions = requireScopeList(input.permissions);
+    // Vault access is added only by the person themselves (operator, 2026-10-12): an administrator's grant never carries it.
+    if (ctx.username !== owner && permissions.includes(VAULT_PROXY_PERMISSION)) {
+      throw new Error('A grant made for someone else can never include access to their vaults');
+    }
     // Held, not fresh: the owner's own step-up is not the question when an administrator makes it.
     const lacking = await lackingScopes(permissions, p => pdp.holds(ownerSubject, p));
     if (lacking.length > 0) {
@@ -1666,6 +1667,39 @@ class AuthManager extends BaseManager {
     await this.auditProxy(AUDIT_EVENT.PROXY_GRANT, ctx, grant);
     await store.add({ id: grant.id, username: owner, kind: 'proxy', subject: grant.id, secret: JSON.stringify(terms), label: '', createdAt: grant.createdAt });
     return this.proxyGrantView(grant);
+  }
+
+  /** The decision points and the represented person's live subject (`ctx` itself for one's own), as grantProxy and its form ask them. */
+  private async proxyOwnerSubject(ctx: PermissionSubject, owner: string): Promise<{
+    pdp: ProxyPolicy; pip: { subjectFor(username: string): Promise<PermissionSubject | null> }; ownerSubject: PermissionSubject;
+  }> {
+    const pdp = this.engine.getManager<ProxyPolicy>('PolicyDecisionPoint');
+    const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+    if (!pdp || !pip) throw new Error('Cannot grant: permissions cannot be verified');
+    const ownerSubject = ctx.username === owner ? ctx : await pip.subjectFor(owner);
+    if (!ownerSubject) throw new Error(`There is no active account ${owner}`);
+    return { pdp, pip, ownerSubject };
+  }
+
+  /**
+   * What a grant on `owner`'s account may carry, in plain words (#1762 slice
+   * 7): every grantable catalog permission the owner holds now — the same
+   * `holds` question grantProxy asks — so the give form offers nothing
+   * grantProxy would refuse. An administrator's form for someone else never
+   * offers `vault-proxy`. Asked like a listing (held, not fresh); refused
+   * while proxy access is off.
+   */
+  async proxyGrantOptions(ctx: PermissionSubject, owner: string): Promise<ScopeDescription[]> {
+    this.requireProxyAccess();
+    if (!(await this.mayManageProxyGrants(ctx, owner, { viewOnly: true }))) throw new Error('Permission denied');
+    const { pdp, ownerSubject } = await this.proxyOwnerSubject(ctx, owner);
+    const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+    const offered: string[] = [];
+    for (const name of grantablePermissionNames(cm?.getProperty('ngdpbase.permissions.definitions', {}))) {
+      if (ctx.username !== owner && name === VAULT_PROXY_PERMISSION) continue;
+      if (await pdp.holds(ownerSubject, name)) offered.push(name);
+    }
+    return this.describeScopes(offered);
   }
 
   /**

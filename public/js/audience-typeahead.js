@@ -23,6 +23,11 @@
  *
  * The widget auto-initialises every `[data-audience-typeahead]` on
  * DOMContentLoaded — no per-page config needed.
+ *
+ * #1762 slice 7: the same person picker chooses who may act for you. Two
+ * optional attributes on the root: `data-audience-field="proxy"` names the
+ * hidden input (default `audience`), and `data-audience-single` keeps one
+ * person — picking another replaces the first.
  */
 (function () {
   'use strict';
@@ -41,8 +46,9 @@
       .replace(/'/g, '&#39;');
   }
 
-  function pickedUsernames(chipsContainer) {
-    return Array.from(chipsContainer.querySelectorAll('input[name="audience"]'))
+  function pickedUsernames(chipsContainer, field) {
+    return Array.from(chipsContainer.querySelectorAll('input[type="hidden"]'))
+      .filter((el) => el.name === field)
       .map((el) => el.value);
   }
 
@@ -64,16 +70,16 @@
       .map((el) => el.value);
   }
 
-  function makeChip(username, displayName) {
+  function makeChip(username, displayName, field) {
     const li = document.createElement('span');
     li.className = 'badge bg-info-subtle text-dark border d-inline-flex align-items-center me-1 mb-1';
     li.style.fontWeight = 'normal';
     li.innerHTML =
       '<i class="fas fa-user me-1" aria-hidden="true"></i>' +
       '<span class="audience-chip-label">' + escapeHtml(displayName || username) + '</span>' +
-      '<input type="hidden" name="audience" value="' + escapeHtml(username) + '">' +
+      '<input type="hidden" name="' + escapeHtml(field) + '" value="' + escapeHtml(username) + '">' +
       '<button type="button" class="btn-close btn-close-sm ms-2 audience-user-remove" ' +
-        'aria-label="Remove ' + escapeHtml(username) + ' from audience"></button>';
+        'aria-label="Remove ' + escapeHtml(username) + (field === 'audience' ? ' from audience' : '') + '"></button>';
     return li;
   }
 
@@ -82,6 +88,8 @@
     const input = root.querySelector('[data-audience-search]');
     const list = root.querySelector('[data-audience-results]');
     if (!chips || !input || !list) return;
+    const field = root.dataset.audienceField || 'audience';
+    const single = root.hasAttribute('data-audience-single');
 
     let debounceTimer = null;
     let selectedIndex = -1;
@@ -104,16 +112,17 @@
 
     function addUser(username, displayName) {
       if (!username) return;
-      const already = pickedUsernames(chips);
+      const already = pickedUsernames(chips, field);
       if (already.indexOf(username) !== -1) return;
-      chips.appendChild(makeChip(username, displayName));
+      if (single) chips.innerHTML = '';
+      chips.appendChild(makeChip(username, displayName, field));
       input.value = '';
       hideResults();
       input.focus();
     }
 
     function renderResults(results) {
-      const picked = pickedUsernames(chips);
+      const picked = pickedUsernames(chips, field);
       const roles = allRoleNames(root);
       const filtered = results.filter((r) => {
         const u = r.id || (r.metadata && r.metadata.username);

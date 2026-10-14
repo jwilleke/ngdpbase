@@ -590,9 +590,10 @@
             </nav>
 
             <main role="main" class="col-12 col-md-9 col-lg-10 px-md-4 px-2 jspwiki-content main-content">
+                <%# #1762 slice 7: the person picker, only for someone a live grant lets act for another. %>
+                <% const _actingForPicker = typeof actingForPicker !== 'undefined' && actingForPicker && actingForPicker.grants && actingForPicker.grants.length > 0 ? actingForPicker : null; %>
                 <% if (typeof actingFor !== 'undefined' && actingFor && actingFor.name) { %>
-                <%# #1762 slice 4: this session acts for someone under a proxy grant; say whom, and offer the way back.
-                    The header person-picker is slice 7. %>
+                <%# #1762 slice 4: this session acts for someone under a proxy grant; say whom, and offer the way back. %>
                 <div class="alert alert-info d-flex flex-wrap align-items-center gap-2 mt-2 py-2" role="status" data-acting-for>
                     <i class="fas fa-user-friends" aria-hidden="true"></i>
                     <span>Acting for <strong><%= actingFor.name %></strong></span>
@@ -602,6 +603,13 @@
                         <input type="hidden" name="grant" value="">
                         <button type="submit" class="btn btn-link btn-sm p-0 align-baseline">Switch back</button>
                     </form>
+                    <% if (_actingForPicker) { %>
+                    <div class="ms-auto"><%- include('_acting-for-picker', { picker: _actingForPicker, csrfToken: typeof csrfToken !== 'undefined' ? csrfToken : '' }) %></div>
+                    <% } %>
+                </div>
+                <% } else if (_actingForPicker) { %>
+                <div class="d-flex justify-content-end mt-2">
+                    <%- include('_acting-for-picker', { picker: _actingForPicker, csrfToken: typeof csrfToken !== 'undefined' ? csrfToken : '' }) %>
                 </div>
                 <% } %>
                 <% if (typeof aalStepDown !== 'undefined' && aalStepDown && aalStepDown.roles.length > 0) { %>
