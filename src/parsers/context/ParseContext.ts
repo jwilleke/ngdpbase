@@ -24,6 +24,8 @@ export interface UserContext extends PermissionSubject {
   /** Legacy alias some plugin code reads. */
   userName?: string;
   permissions?: string[];
+  /** A test account (#1805), from the account record; plugins enforce their own rules from it. */
+  isTest?: boolean;
   [key: string]: unknown;
 }
 

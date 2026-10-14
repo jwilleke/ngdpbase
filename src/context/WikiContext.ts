@@ -83,6 +83,11 @@ export interface UserContext extends PermissionSubject {
   locale?: string;
   /** Shorthand for preferences.timezone */
   timezone?: string;
+  /**
+   * A test account (#1805), from the account record. An attribute for the host
+   * and its add-ons to enforce their own rules from; no policy reads it.
+   */
+  isTest?: boolean;
   /** Additional user context data */
   [key: string]: unknown;
 }

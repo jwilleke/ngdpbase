@@ -109,6 +109,22 @@ export interface User {
   isExternal: boolean;
 
   /**
+   * A test account (#1805): it holds test or synthetic data, never real data,
+   * so a site can keep the two apart by account and show which is which.
+   *
+   * An attribute, not a role — it grants nothing and no policy reads it. Set
+   * by an administrator (`user-create` / `user-edit`), marked in the admin
+   * user list, shown to the signed-in person as a banner, and handed to the
+   * host as `userContext.isTest` and the OIDC `test_account` claim, so the
+   * host decides what a test account may do.
+   *
+   * Optional in storage only: an account saved before the flag existed has
+   * none. Every read through UserManager returns it as a boolean, `false`
+   * when absent.
+   */
+  isTest?: boolean;
+
+  /**
    * Freeze this account's identity against self-service change (#1029).
    *
    * For a shared account whose credentials are published — a demo login, say —

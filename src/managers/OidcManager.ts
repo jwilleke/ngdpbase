@@ -63,6 +63,19 @@ const DERIVED = ['issuer', 'trust-proxy', 'development', 'acr-values'].map((k) =
 /** The `acr` values ngdpbase's sign-in record can carry (SessionSignIn.acr). */
 export const NGDPBASE_ACR_VALUES = ['aal1', 'aal2', 'aal3', 'phr', 'phrh'];
 
+/**
+ * The claim that says the account is a test account (#1805): always a boolean,
+ * so a client can tell "real" (`false`) from "not asked" (absent). Released
+ * with the `profile` scope — the provider drops any claim no scope names.
+ */
+export const TEST_ACCOUNT_CLAIM = 'test_account';
+
+/** The package's scope-to-claims map with `test_account` added to `profile`. */
+export function withTestAccountClaim(scopeClaims: Record<string, string[]> | undefined): Record<string, string[]> {
+  const profile = scopeClaims?.profile ?? [];
+  return { ...scopeClaims, profile: profile.includes(TEST_ACCOUNT_CLAIM) ? profile : [...profile, TEST_ACCOUNT_CLAIM] };
+}
+
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 type OidcPackage = typeof import('@jwilleke/oidc-auth-server');
 type AuthServer = ReturnType<OidcPackage['createAuthServer']>;
@@ -266,7 +279,8 @@ export class OidcManager extends BaseManager {
           ...base.resourceServers,
           ...(apiScopes.length > 0 ? { [this.apiResource]: { scope: apiScopes.join(' '), accessTokenFormat: 'opaque' as const } } : {})
         },
-        development: isLoopbackHttp(this.issuer)
+        development: isLoopbackHttp(this.issuer),
+        scopeClaims: withTestAccountClaim(base.scopeClaims)
       };
       // Throws on unsafe options now, at boot, rather than at the first request.
       this.pkg.assertSafeOptions(this.options);
@@ -510,6 +524,7 @@ export class OidcManager extends BaseManager {
    * sign-in is older than the account's last password change (#1592): an app
    * keeps nothing past a password change, as no web session does (#1482).
    * Never roles: a session can hold fewer roles than the account (#1569).
+   * `test_account` is always a boolean (#1805), released with `profile`.
    */
   async findAccount(accountId: string, signIn?: SignInContext): Promise<Record<string, unknown> | undefined> {
     const userManager = this.engine.getManager<UserManager>('UserManager');
@@ -519,7 +534,11 @@ export class OidcManager extends BaseManager {
     // A request that carries a sign-in must prove it came after the change;
     // one that carries none (no token yet) is the sign-in itself.
     if (changedAt !== null && signIn && (signIn.authTime === undefined || signIn.authTime < changedAt)) return undefined;
-    const claims: Record<string, unknown> = { preferred_username: user.username, name: user.displayName || user.username };
+    const claims: Record<string, unknown> = {
+      preferred_username: user.username,
+      name: user.displayName || user.username,
+      [TEST_ACCOUNT_CLAIM]: user.isTest === true
+    };
     if (user.email) claims.email = user.email;
     return claims;
   }

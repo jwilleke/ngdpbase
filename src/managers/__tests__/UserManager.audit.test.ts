@@ -218,3 +218,50 @@ describe('#1482 a password change ends the account\'s other sessions', () => {
     expect(users.get('alice')?.passwordChangedAt).toBe(stamped);
   });
 });
+
+describe('#1805 the test-account flag', () => {
+  const create = (um: UserManager, isTest?: boolean) =>
+    um.createUser({ username: 'qa', email: 'qa@x', displayName: 'QA', password: 'pw-1234567', ...(isTest === undefined ? {} : { isTest }) }, ADMIN);
+
+  test('defaults to false, is stored as a boolean, and is on the create record', async () => {
+    const { um, users, sink } = makeManager();
+    const created = await create(um);
+    expect(created.isTest).toBe(false);
+    expect(users.get('qa')?.isTest).toBe(false);
+    expect(sink[0].metadata).toMatchObject({ isTest: false });
+  });
+
+  test('an admin can create a test account', async () => {
+    const { um, users, sink } = makeManager();
+    await create(um, true);
+    expect(users.get('qa')?.isTest).toBe(true);
+    expect(sink[0].metadata).toMatchObject({ isTest: true });
+  });
+
+  test('an account saved before the flag existed reads as false', async () => {
+    const { um, users } = makeManager();
+    users.set('old', { username: 'old', email: 'o@x', displayName: 'Old', password: 'h', isActive: true, isSystem: false, isExternal: false });
+    expect((await um.getUser('old'))?.isTest).toBe(false);
+    expect((await um.getUsers()).find((u) => u.username === 'old')?.isTest).toBe(false);
+  });
+
+  test('setting and clearing it are user-edit records carrying the change and who made it', async () => {
+    const { um, users, sink } = makeManager();
+    await create(um);
+    sink.length = 0;
+    await um.updateUser('qa', { isTest: true }, ADMIN);
+    expect(users.get('qa')?.isTest).toBe(true);
+    expect(sink[0]).toMatchObject({ eventType: 'user-edit', user: 'root', metadata: { fields: ['isTest'], isTest: { from: false, to: true } } });
+    await um.updateUser('qa', { isTest: false }, ADMIN);
+    expect(users.get('qa')?.isTest).toBe(false);
+    expect(sink[1].metadata).toMatchObject({ fields: ['isTest'], isTest: { from: true, to: false } });
+  });
+
+  test('an edit that leaves it unchanged records no isTest change', async () => {
+    const { um, sink } = makeManager();
+    await create(um, true);
+    sink.length = 0;
+    await um.updateUser('qa', { isTest: true, isActive: true }, ADMIN);
+    expect(sink[0].metadata.isTest).toBeUndefined();
+  });
+});

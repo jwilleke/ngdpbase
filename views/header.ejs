@@ -639,6 +639,13 @@
                     <a class="btn btn-sm btn-danger ms-auto" href="/profile#sign-in-methods">Add a passkey now</a>
                 </div>
                 <% } %>
+                <% if (typeof currentUser !== 'undefined' && currentUser && currentUser.isAuthenticated && currentUser.isTest === true) { %>
+                <%# #1805: an administrator marked this account as holding test data. On every page, never dismissible. %>
+                <div class="alert alert-info d-flex align-items-center gap-2 mt-2 py-2" role="status" data-test-account-banner>
+                    <i class="fas fa-flask" aria-hidden="true"></i>
+                    <span>You are signed in to a test account. It is for test or sample data only, never real data.</span>
+                </div>
+                <% } %>
 <%# #1448: this session has not unwrapped the signed-in owner's store key — after
     a restart, typically — so their private pages 404 and are absent from lists.
     About the user's STATE only: it never names a page, because while locked the

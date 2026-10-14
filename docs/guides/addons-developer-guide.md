@@ -928,6 +928,7 @@ export default function apiRoutes(engine: WikiEngine, _config: Record<string, un
 | `ctx.username` | Caller's username, or `null` for anonymous |
 | `ctx.roles` | Caller's role array — always an array, never undefined. Never an allow or deny |
 | `ctx.email` | Caller's email, or `null` |
+| `ctx.isTest` | `true` when the caller is signed in to a test account ([#1805](https://github.com/jwilleke/ngdpbase/issues/1805)). An attribute, never an allow or deny: the add-on decides what a test account may do. Plugins read the same flag as `userContext.isTest` |
 | `await ctx.hasPermission(permission)` | `true` if policy grants the permission — deny policies and the token and share ceilings included |
 | `await ctx.requirePermission(permission)` | Throws unless policy grants the permission: `ApiError(401)` for an anonymous caller, `ApiError(403)` for a signed-in one |
 | `ctx.actingUsername()` | The signed-in username a per-person feature acts as; throws `ApiError(401)` if nobody is signed in. Ask it after `requirePermission` |

@@ -167,3 +167,13 @@ describe('#1525 — a password or email change needs account-security; the rest 
   });
 });
 
+
+describe('#1805 — a person cannot mark or unmark their own account as a test account', () => {
+  test.each([true, 'true', false])('isTest=%s posted to /profile never reaches updateUser', async (isTest) => {
+    const res = createMockRes();
+    const { routes, userManager } = makeRoutes({ ...UNLOCKED, isTest: !isTest });
+    await routes.updateProfile(createMockReq('jim', { displayName: 'Jim W', email: UNLOCKED.email, isTest }), res);
+    expect(userManager.updateUser).toHaveBeenCalled();
+    expect(userManager.updateUser.mock.calls[0][1]).not.toHaveProperty('isTest');
+  });
+});

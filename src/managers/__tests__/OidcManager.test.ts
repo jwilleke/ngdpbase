@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_JWKS_ENV, OIDC_MOUNT, aalOfAcr, apiResourceFor, delegablePermissions, issuerFor, operatorOidcConfig } from '../OidcManager';
+import OidcManager, { OIDC_COOKIE_KEYS_ENV, OIDC_JWKS_ENV, OIDC_MOUNT, aalOfAcr, apiResourceFor, delegablePermissions, issuerFor, operatorOidcConfig, withTestAccountClaim } from '../OidcManager';
 
 const ENV_NAMES = [OIDC_JWKS_ENV, OIDC_COOKIE_KEYS_ENV];
 
@@ -19,7 +19,7 @@ describe('OidcManager (#1570)', () => {
   let custom: Record<string, unknown>;
   let baseUrl: string;
   let explicit: boolean;
-  let users: Record<string, { username: string; displayName: string; email?: string; isActive: boolean; roles?: string[]; passwordChangedAt?: string }>;
+  let users: Record<string, { username: string; displayName: string; email?: string; isActive: boolean; roles?: string[]; passwordChangedAt?: string; isTest?: boolean }>;
   const saved: Record<string, string | undefined> = {};
 
   const started = async (): Promise<OidcManager> => {
@@ -171,10 +171,24 @@ describe('OidcManager (#1570)', () => {
   test('findAccount: claims without roles; a disabled or missing account fails closed', async () => {
     const manager = await started();
     const claims = await manager.findAccount('molly');
-    expect(claims).toEqual({ preferred_username: 'molly', name: 'Molly Example', email: 'molly@example.com' });
+    expect(claims).toEqual({ preferred_username: 'molly', name: 'Molly Example', email: 'molly@example.com', test_account: false });
     expect(claims).not.toHaveProperty('roles');
     expect(await manager.findAccount('gone')).toBeUndefined();
     expect(await manager.findAccount('nobody')).toBeUndefined();
+  });
+
+  test('findAccount: test_account is true only for a test account (#1805)', async () => {
+    const manager = await started();
+    users.molly.isTest = true;
+    expect(await manager.findAccount('molly')).toMatchObject({ test_account: true });
+    users.molly.isTest = false;
+    expect(await manager.findAccount('molly')).toMatchObject({ test_account: false });
+  });
+
+  test('withTestAccountClaim adds test_account to profile once and keeps every other scope (#1805)', () => {
+    const base = { profile: ['name'], email: ['email'] };
+    expect(withTestAccountClaim(base)).toEqual({ profile: ['name', 'test_account'], email: ['email'] });
+    expect(withTestAccountClaim(withTestAccountClaim(base))).toEqual({ profile: ['name', 'test_account'], email: ['email'] });
   });
 
   test('findAccount refuses a sign-in older than the last password change (#1592)', async () => {

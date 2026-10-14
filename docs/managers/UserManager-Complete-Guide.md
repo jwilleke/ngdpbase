@@ -192,6 +192,7 @@ __Parameters:__
   - `isActive` (boolean, default: true) - Whether the account may sign in
   - `isExternal` (boolean, default: false) - Identity owned by an external provider; the stored hash is empty and no password will ever match
   - `profileLocked` (boolean, default: false) - Freeze password, email and display name against self-service change; for shared accounts whose credentials are published (#1029)
+  - `isTest` (boolean, default: false) - Test account: holds test or synthetic data, never real data; grants nothing (#1805)
   - `acceptLanguage` (string, optional) - Browser language
 
 __Returns:__ User object (without password)
@@ -370,6 +371,7 @@ The `User` interface in `src/types/User.ts` is authoritative; this is an illustr
   isActive: true,
   isSystem: false,
   isExternal: false,
+  isTest: false,               // #1805; read as false on accounts saved before the flag
   profileLocked: undefined,    // omitted unless the account is locked
   profilePage: "John Doe",
   allowedAuthMethods: undefined, // e.g. ["password"] to pin an emergency fallback
@@ -395,6 +397,7 @@ The `User` interface in `src/types/User.ts` is authoritative; this is an illustr
 | `isSystem` | Account cannot be deleted — nothing more | `deleteUser` |
 | `isExternal` | Identity owned by an external provider; empty hash, no password can match | Password paths |
 | `profileLocked` | Password, email and display name frozen against self-service change (#1029) | `POST /profile` |
+| `isTest` | Test account: test or synthetic data only (#1805). An attribute, not a role | Nowhere in core: marked in `/admin/users`, a banner for the person, `userContext.isTest`, OIDC `test_account` — the host enforces its own rules |
 
 Independent by design — none implies another, and none restricts an administrator. `isSystem` in particular is set on `admin`, which must keep self-service password change, so it can never come to mean "immutable". `profileLocked` covers email specifically because magic-link login resolves accounts by address: a shared account without it can be taken over by repointing the email, whatever its password.
 

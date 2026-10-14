@@ -37,7 +37,17 @@ import { USER_DATA_TOPIC } from '../cache/CacheDependencies.js';
 // provisions an account now says so in the JobContext's reason.
 
 /** Account fields whose change alters what the account may do or who holds it. Preferences are not among them. */
-const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'email', 'profileLocked', 'username'] as const;
+const SENSITIVE_USER_FIELDS = ['password', 'roles', 'isActive', 'isExternal', 'isTest', 'email', 'profileLocked', 'username'] as const;
+
+/**
+ * An account record as UserManager hands it out: never the password hash, and
+ * `isTest` always a boolean (#1805) — an account saved before the flag existed
+ * carries none, and reads it as `false`.
+ */
+function publicRecord(user: User): Omit<User, 'password'> {
+  const { password: _pwd, ...rest } = user;
+  return { ...rest, isTest: user.isTest === true };
+}
 
 /**
  * Provider constructor type for dynamic loading
@@ -220,6 +230,8 @@ interface UserCreateInput {
   acceptLanguage?: string;
   /** Freeze password/email/displayName against self-service change (#1029). */
   profileLocked?: boolean;
+  /** A test account (#1805): attribute only, grants nothing. Default false. */
+  isTest?: boolean;
 }
 
 /**
@@ -232,6 +244,8 @@ interface UserUpdateInput {
   roles?: string[];
   isActive?: boolean;
   isExternal?: boolean;
+  /** A test account (#1805); the change is recorded on user-edit. */
+  isTest?: boolean;
   preferences?: Partial<UserPreferences>;
   profilePage?: string;
   [key: string]: unknown; // allow addon/extended fields
@@ -903,7 +917,7 @@ class UserManager extends BaseManager {
       throw new Error('Provider not initialized');
     }
 
-    const { username, email, displayName, password, roles: chosenRoles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false } = userData;
+    const { username, email, displayName, password, roles: chosenRoles = ['reader'], isExternal = false, isActive = true, acceptLanguage, profileLocked = false, isTest = false } = userData;
     const roles = this.withAccountRoles(chosenRoles);
 
     if (this.policyInformationPoint().isSystemPrincipal(username)) {
@@ -968,6 +982,7 @@ class UserManager extends BaseManager {
       isActive: isActive,
       isSystem: false,
       isExternal: isExternal,
+      isTest: isTest === true,
       profileLocked: profileLocked || undefined,
       createdAt: new Date().toISOString(),
       lastLogin: undefined,
@@ -999,7 +1014,7 @@ class UserManager extends BaseManager {
         severity: 'medium',
         resource: username,
         resourceType: 'user',
-        metadata: { username, roles: [...roles], isExternal, selfRegistration: ctx.username === username, ...who.metadata }
+        metadata: { username, roles: [...roles], isExternal, isTest: user.isTest, selfRegistration: ctx.username === username, ...who.metadata }
       }, (err) => logger.warn(`[UserManager] Audit record failed for user-create of ${username}:`, err));
     }
 
@@ -1013,8 +1028,7 @@ class UserManager extends BaseManager {
       logger.warn(`⚠️  Failed to create user page for ${username}:`, error instanceof Error ? error.message : String(error));
     }
 
-    const { password: _pwd, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return publicRecord(user);
   }
 
   /**
@@ -1103,6 +1117,10 @@ class UserManager extends BaseManager {
     }
 
     const { roles: incomingRoles, password: _password, ...userFieldUpdates } = updates;
+    // #1805: the value, not only the field name — recorded only when it changes.
+    const wasTest = user.isTest === true;
+    const testChange = updates.isTest !== undefined && (updates.isTest === true) !== wasTest
+      ? { from: wasTest, to: updates.isTest === true } : undefined;
     const oldRoles = incomingRoles ? await this.roleManager().resolveUserRoles(username) : [];
     const disabling = user.isActive !== false && updates.isActive === false;
     Object.assign(user, userFieldUpdates);
@@ -1138,6 +1156,7 @@ class UserManager extends BaseManager {
           username,
           fields: changed,
           ...(incomingRoles ? { roles: { from: oldRoles, to: [...incomingRoles] } } : {}),
+          ...(testChange ? { isTest: testChange } : {}),
           selfEdit: ctx.username === username,
           ...who.metadata
         }
@@ -1206,10 +1225,7 @@ class UserManager extends BaseManager {
     const allUsers = await this.provider.getAllUsers();
     return Array.from(allUsers.values())
       .filter((user): user is User => user != null)
-      .map((user) => {
-        const { password: _pwd, ...userWithoutPassword } = user;
-        return userWithoutPassword;
-      });
+      .map(publicRecord);
   }
 
   async getUser(username: string): Promise<Omit<User, 'password'> | undefined> {
@@ -1220,8 +1236,7 @@ class UserManager extends BaseManager {
     if (!user) {
       return undefined;
     }
-    const { password: _pwd, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return publicRecord(user);
   }
 
   /**
@@ -1258,8 +1273,7 @@ class UserManager extends BaseManager {
     }
     const found = matches[0];
     if (!found) return undefined;
-    const { password: _pwd, ...userWithoutPassword } = found;
-    return userWithoutPassword;
+    return publicRecord(found);
   }
 
   /**

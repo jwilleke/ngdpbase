@@ -157,6 +157,15 @@ export class ApiContext extends BaseContext {
     return typeof ip === 'string' && ip ? ip : undefined;
   }
 
+  /**
+   * Whether the caller is signed in to a test account (#1805), read from the
+   * subject the middleware wrote (the account record's flag). An attribute for
+   * an add-on to enforce its own rules from; no policy reads it.
+   */
+  get isTest(): boolean {
+    return (this.subject as { isTest?: unknown } | null)?.isTest === true;
+  }
+
   private constructor(
     engine: WikiEngine,
     isAuthenticated: boolean,
