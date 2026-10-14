@@ -174,7 +174,7 @@ describe('AgentTokenManager (#946)', () => {
       const m = await makeManager({ 'ngdpbase.auth.agent-token.max-per-user': 1 });
       const first = await m.mint(subject('jim'), 'a', ['page-ingest']);
       await expect(m.mint(subject('jim'), 'b', ['page-ingest'])).rejects.toThrow(/limit/i);
-      await m.revoke(first.record.id, 'jim');
+      await m.revoke(first.record.id, subject('jim'));
       await expect(m.mint(subject('jim'), 'b', ['page-ingest'])).resolves.toBeTruthy();
     });
   });
@@ -211,7 +211,7 @@ describe('AgentTokenManager (#946)', () => {
       const m = await makeManager();
       const { token, record } = await m.mint(subject('jim'), 'x', ['page-ingest']);
       expect(await m.verify(token)).not.toBeNull();
-      await m.revoke(record.id, 'jim');
+      await m.revoke(record.id, subject('jim'));
       expect(await m.verify(token)).toBeNull();
     });
 
@@ -263,7 +263,7 @@ describe('AgentTokenManager (#946)', () => {
       const m = await makeManager();
       const a = await m.mint(subject('jim'), 'a', ['page-ingest']);
       await m.mint(subject('jim'), 'b', ['page-ingest'], 1);
-      await m.revoke(a.record.id, 'jim');
+      await m.revoke(a.record.id, subject('jim'));
       expect(m.listForOwner('jim')).toHaveLength(1);
       expect(m.listForOwner('jim', Date.now() + 2 * 3_600_000)).toHaveLength(0);
     });
@@ -271,7 +271,7 @@ describe('AgentTokenManager (#946)', () => {
     test('revoke records who did it', async () => {
       const m = await makeManager();
       const { record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
-      await m.revoke(record.id, 'admin');
+      await m.revoke(record.id, subject('admin'));
       const after = m.getById(record.id);
       expect(after?.revokedBy).toBe('admin');
       expect(after?.revokedAt).not.toBeNull();
@@ -280,13 +280,13 @@ describe('AgentTokenManager (#946)', () => {
     test('revoking twice is reported as a no-op', async () => {
       const m = await makeManager();
       const { record } = await m.mint(subject('jim'), 'a', ['page-ingest']);
-      expect(await m.revoke(record.id, 'jim')).toBe(true);
-      expect(await m.revoke(record.id, 'jim')).toBe(false);
+      expect(await m.revoke(record.id, subject('jim'))).toBe(true);
+      expect(await m.revoke(record.id, subject('jim'))).toBe(false);
     });
 
     test('revoking an unknown id is false, not an error', async () => {
       const m = await makeManager();
-      expect(await m.revoke('tok_nope', 'jim')).toBe(false);
+      expect(await m.revoke('tok_nope', subject('jim'))).toBe(false);
     });
   });
 
@@ -568,7 +568,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
   test('a mutation writes no backup file beside the store', async () => {
     const mgr = await makeManager();
     const { record } = await mgr.mint(subject('alice'), 'probe', ['page-read']);
-    await mgr.revoke(record.id, 'alice');
+    await mgr.revoke(record.id, subject('alice'));
     await mgr.purgeExpired();
 
     expect(await fs.readdir(tmpDir)).toEqual(['agent-tokens.json']);
@@ -598,7 +598,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
     // live again after restart.
     const mgr = await makeManager();
     const { record } = await mgr.mint(subject('alice'), 'doomed', ['page-read']);
-    void mgr.revoke(record.id, 'alice');
+    void mgr.revoke(record.id, subject('alice'));
     await mgr.shutdown();
 
     const onDisk = JSON.parse(await fs.readFile(path.join(tmpDir, 'agent-tokens.json'), 'utf8'));
@@ -630,7 +630,7 @@ describe('#1110 no snapshots, and a failed write does not poison the queue', () 
   test('retention-days: 0 purges a revoked record on the next sweep', async () => {
     const mgr = await makeManager({ [`${KEY}.retention-days`]: 0 });
     const { record } = await mgr.mint(subject('alice'), 'probe', ['page-read']);
-    await mgr.revoke(record.id, 'alice');
+    await mgr.revoke(record.id, subject('alice'));
     expect(await mgr.purgeExpired()).toBe(1);
     expect(mgr.listAll()).toHaveLength(0);
   });
@@ -686,7 +686,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const m = new AgentTokenManager(engine);
     await m.initialize();
     const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
-    await m.revoke(record.id, 'admin');
+    await m.revoke(record.id, subject('admin'));
 
     const revoked = events.filter((e) => e.eventType === 'token-revoke');
     expect(revoked).toHaveLength(1);
@@ -697,7 +697,7 @@ describe('#1111 the token lifecycle is audited', () => {
     const { engine, events } = withAudit();
     const m = new AgentTokenManager(engine);
     await m.initialize();
-    expect(await m.revoke('tok_missing', 'admin')).toBe(false);
+    expect(await m.revoke('tok_missing', subject('admin'))).toBe(false);
     expect(events.filter((e) => e.eventType === 'token-revoke')).toHaveLength(0);
   });
 
@@ -739,7 +739,7 @@ describe('#1111 the token lifecycle is audited', () => {
     // the backup — the case incident response wants — was absent.
     const m = await makeManager();
     const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
-    await m.revoke(record.id, 'alice');
+    await m.revoke(record.id, subject('alice'));
 
     const data = (await m.backup()).data as { restorable: boolean; tokens: Array<{ id: string }> };
     expect(data.restorable).toBe(false);
@@ -765,7 +765,7 @@ describe('#1111 the token lifecycle is audited', () => {
   test('retention-days: 0 leaves nothing behind once the lifecycle is audited', async () => {
     const m = await makeManager({ [`${KEY}.retention-days`]: 0 });
     const { record } = await m.mint(subject('alice'), 'ci', ['page-read']);
-    await m.revoke(record.id, 'alice');
+    await m.revoke(record.id, subject('alice'));
     await m.purgeExpired();
     expect(m.listAll()).toHaveLength(0);
   });
@@ -849,7 +849,7 @@ describe('#1734 extend', () => {
   test('a revoked token is refused', async () => {
     const m = await makeManager();
     const { record } = await m.mint(subject('jim'), 'agent', ['page-read'], 2);
-    await m.revoke(record.id, 'jim');
+    await m.revoke(record.id, subject('jim'));
     await expect(m.extend(record.id, subject('jim'), 1)).rejects.toThrow(/expired or revoked/);
   });
 

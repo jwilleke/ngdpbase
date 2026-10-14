@@ -35,7 +35,10 @@ import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT, type AuditEventName } from '../utils/auditEventNames.js';
 import type { AuditEvent as OidcAuditEvent, SignInContext } from '@jwilleke/oidc-auth-server';
 import { passwordChangedAtSeconds } from '../utils/passwordChange.js';
-import { refusedDelegatedScope } from '../utils/delegation.js';
+import { lackingScopes, refusedDelegatedScope } from '../utils/delegation.js';
+import { proxyAttribution } from '../utils/proxyClaim.js';
+import { actorOf } from '../context/ActorContext.js';
+import type { PermissionSubject } from './UserManager.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import { grantablePermissionNames } from '../utils/permissionCatalog.js';
 
@@ -161,6 +164,23 @@ export interface ApprovedApp {
   refreshable: boolean;
   /** ISO 8601: when its key was last renewed; null when it has not been yet (#1764). */
   renewedAt: string | null;
+  /** #1762 slice 6: who approved it while acting for this person; null when they approved it themselves. */
+  approvedBy: string | null;
+  /** The proxy grant it was approved under; null when the person approved it. */
+  proxyGrantId: string | null;
+}
+
+/**
+ * An app or device approved by someone acting for its owner (#1762 slice 6),
+ * kept beside the provider's grant under its own model: the provider rewrites
+ * a grant from its own fields, so a field added to it would be lost.
+ */
+const PROXY_APPROVAL_MODEL = 'ProxyApproval';
+interface ProxyApproval {
+  grantId: string;
+  accountId: string;
+  approvedBy: string;
+  proxyGrantId: string;
 }
 
 const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
@@ -181,6 +201,8 @@ export class OidcManager extends BaseManager {
   private auth: AuthServer | null = null;
   private issuer = '';
   private apiResource = '';
+  /** The permissions an app may ask for on ngdpbase's API (`delegablePermissions`). */
+  private apiScopes: string[] = [];
 
   constructor(engine: WikiEngine) {
     super(engine);
@@ -226,6 +248,7 @@ export class OidcManager extends BaseManager {
       this.pkg = await import('@jwilleke/oidc-auth-server');
       const loaded = this.pkg.loadConfig({ customConfig: operatorConfig, env: process.env });
       const apiScopes = delegablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}));
+      this.apiScopes = apiScopes;
       const base = this.pkg.optionsFromConfig(loaded, {
         interactionUrl: (uid: string) => `${OIDC_MOUNT}${OIDC_INTERACTION_PREFIX}${uid}`,
         findAccount: (accountId: string, signIn?: SignInContext) => this.findAccount(accountId, signIn),
@@ -310,6 +333,7 @@ export class OidcManager extends BaseManager {
     const extra = (found.extra ?? {}) as { acr?: string; amr?: string[]; auth_time?: number };
     const account = await this.findAccount(found.accountId, { acr: extra.acr, amr: extra.amr, authTime: extra.auth_time });
     if (!account) return null;
+    if (!(await this.approvalInForce(found.grantId))) return null;
     return {
       username: found.accountId,
       clientId: found.clientId ?? '',
@@ -320,6 +344,79 @@ export class OidcManager extends BaseManager {
   }
 
   /**
+   * Why `subject` may not approve an app asking for `scope`, in plain words,
+   * or null when they may (#1762 slice 6). Only someone acting for the person
+   * under a proxy grant is asked: each permission the app asks for on
+   * ngdpbase's API must be one the decision point permits that subject, which
+   * under a proxy is the grant, the represented person and the person acting
+   * all at once. The person themselves is not asked, as before: what an app
+   * of theirs can do is bounded by what they hold, at every use.
+   */
+  async proxyApprovalRefusal(subject: PermissionSubject, scope: string): Promise<string | null> {
+    const claim = subject.viaProxy;
+    if (!claim) return null;
+    const asked = scope.split(' ').filter((s) => this.apiScopes.includes(s));
+    const pdp = this.engine.getManager<{ permits(subject: PermissionSubject, action: string): Promise<boolean> }>('PolicyDecisionPoint');
+    if (!pdp) return 'Permissions cannot be verified right now';
+    const lacking = await lackingScopes(asked, (s) => pdp.permits(subject, s));
+    if (lacking.length === 0) return null;
+    return `${claim.actor} cannot give this device ${lacking.join(', ')} for ${subject.username}: access given while acting for someone can only include what the access you were given allows, and what you both hold.`;
+  }
+
+  /**
+   * Finish the consent step (#1572) for `subject`. Acting for someone (#1762
+   * slice 6), the approval is also recorded beside the grant: who approved it
+   * and under which proxy grant, so the profile can say so, ending the proxy
+   * grant revokes it, and it works only while that grant is in force. Recorded
+   * in the audit log as an approval naming both people.
+   */
+  async finishConsent(req: IncomingMessage, res: ServerResponse, subject: PermissionSubject): Promise<void> {
+    const helpers = this.interactions();
+    if (!helpers || !this.auth || !this.store) throw new Error('The OpenID Connect provider is not serving');
+    const { uid, clientId, scope } = await helpers.details(req, res);
+    await helpers.finishConsent(req, res);
+    const claim = subject.viaProxy;
+    if (!claim) return;
+    const interaction = await this.auth.provider.Interaction.find(uid);
+    const grantId = (interaction?.result as { consent?: { grantId?: string } } | undefined)?.consent?.grantId;
+    if (!grantId) throw new Error(`interaction ${uid} finished without a grant`);
+    const grant = (await this.store.listLive('Grant')).find((g) => g.jti === grantId);
+    const expiresIn = typeof grant?.exp === 'number' ? Math.max(1, grant.exp - Math.floor(Date.now() / 1000)) : undefined;
+    const approval: ProxyApproval = { grantId, accountId: subject.username, approvedBy: claim.actor, proxyGrantId: claim.grantId };
+    await this.store.adapter(PROXY_APPROVAL_MODEL).upsert(grantId, { ...approval }, expiresIn);
+    const who = actorOf(subject);
+    await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
+      eventType: AUDIT_EVENT.OIDCAUTHORIZE_ALLOW,
+      ...who,
+      action: 'oidcauthorize-allow',
+      result: 'success',
+      severity: 'medium',
+      resource: clientId,
+      resourceType: 'oidc-client',
+      reason: 'approved-by-proxy',
+      metadata: { ...who.metadata, grantId, scope, approvedBy: claim.actor }
+    });
+  }
+
+  /** The proxy approvals of live grants, by grant id (#1762 slice 6). */
+  private async proxyApprovals(): Promise<Map<string, ProxyApproval>> {
+    const rows = this.store ? await this.store.listLive(PROXY_APPROVAL_MODEL) : [];
+    return new Map(rows.map((r) => [String(r.grantId), r as unknown as ProxyApproval]));
+  }
+
+  /**
+   * An app approved under a proxy grant works only while that grant is in
+   * force (#1762 slice 6), asked of AuthManager, which owns the grants; no
+   * answer is a refusal. One the person approved is not affected.
+   */
+  private async approvalInForce(grantId: string): Promise<boolean> {
+    const approval = (await this.proxyApprovals()).get(grantId);
+    if (!approval) return true;
+    const auth = this.engine.getManager<{ liveProxyGrant(grantId: string): unknown }>('AuthManager');
+    return Boolean(auth?.liveProxyGrant(approval.proxyGrantId));
+  }
+
+  /**
    * The apps and devices `username` approved (#1601): one per live grant,
    * newest first. Empty when the provider is off.
    */
@@ -327,6 +424,7 @@ export class OidcManager extends BaseManager {
     if (!this.store || !this.auth || !username) return [];
     const grants = (await this.store.listLive('Grant')).filter((g) => g.accountId === username);
     const refreshKeys = await this.store.listLive('RefreshToken');
+    const approvals = await this.proxyApprovals();
     const out: ApprovedApp[] = [];
     for (const g of grants) {
       const clientId = typeof g.clientId === 'string' ? g.clientId : '';
@@ -348,7 +446,9 @@ export class OidcManager extends BaseManager {
         approvedAt: typeof g.iat === 'number' ? new Date(g.iat * 1000).toISOString() : null,
         expiresAt: typeof g.exp === 'number' ? new Date(g.exp * 1000).toISOString() : null,
         refreshable: keys.length > 0,
-        renewedAt: renewed.length > 0 ? new Date(Math.max(...renewed) * 1000).toISOString() : null
+        renewedAt: renewed.length > 0 ? new Date(Math.max(...renewed) * 1000).toISOString() : null,
+        approvedBy: approvals.get(String(g.jti))?.approvedBy ?? null,
+        proxyGrantId: approvals.get(String(g.jti))?.proxyGrantId ?? null
       });
     }
     return out.filter((a) => a.grantId).sort((a, b) => (b.approvedAt ?? '').localeCompare(a.approvedAt ?? ''));
@@ -358,22 +458,24 @@ export class OidcManager extends BaseManager {
    * End one of `username`'s grants and every code and token under it (#1601).
    * False when no such grant is theirs — never revokes another person's.
    * Recorded as oidcgrant-revoke by whoever revoked it (`by`, the owner when
-   * not given), naming the owner, as an agent token's revoke is (#1764).
+   * not given), naming the owner, as an agent token's revoke is (#1764);
+   * under a proxy grant, naming the person acting too (#1762 slice 6).
    */
-  async revokeGrant(username: string, grantId: string, by: string = username): Promise<boolean> {
+  async revokeGrant(username: string, grantId: string, by: PermissionSubject): Promise<boolean> {
     if (!this.store || !username || !grantId) return false;
     const grant = (await this.store.listLive('Grant')).find((g) => g.jti === grantId && g.accountId === username);
     if (!grant) return false;
     for (const model of GRANT_BOUND_MODELS) await this.store.destroyWhere(model, (p) => p.grantId === grantId);
     await this.store.destroyWhere('Grant', (p) => p.jti === grantId);
-    await this.recordEvent({
+    await this.store.destroyWhere(PROXY_APPROVAL_MODEL, (p) => p.grantId === grantId);
+    await this.writeEvent({
       event: 'oidcgrant-revoke',
       at: new Date().toISOString(),
       accountId: username,
       clientId: typeof grant.clientId === 'string' ? grant.clientId : undefined,
       grantId
     }, by);
-    logger.info(`[OidcManager] revoked grant ${grantId} of ${username} by ${by}`);
+    logger.info(`[OidcManager] revoked grant ${grantId} of ${username} by ${by.viaProxy?.actor ?? by.username}`);
     return true;
   }
 
@@ -426,21 +528,32 @@ export class OidcManager extends BaseManager {
    * Record one provider event in ngdpbase's audit log (#1575). The package
    * never passes a token, code or secret; the person is the account, the
    * resource is the app. Returns the promise so the package can count a
-   * report the sink failed to take. `revokedBy` is ngdpbase's own revoke
-   * (#1764): the record is by the person who revoked, naming the owner.
+   * report the sink failed to take.
    */
-  async recordEvent(event: OidcAuditEvent, revokedBy?: string): Promise<void> {
+  async recordEvent(event: OidcAuditEvent): Promise<void> {
+    return this.writeEvent(event, null);
+  }
+
+  /**
+   * One provider event into the audit log. `revoker` is ngdpbase's own
+   * revoke (#1764): the record is by the person who revoked, naming the
+   * owner; under a proxy grant `user` is the represented person and `actor`
+   * the person acting (#1762 slice 6). Null for the provider's own events.
+   */
+  private async writeEvent(event: OidcAuditEvent, revoker: PermissionSubject | null): Promise<void> {
     const how = OIDC_AUDIT[event.event];
     if (!how) return;
     const metadata: Record<string, unknown> = {};
     for (const key of ['grantId', 'grantType', 'scope', 'tokenKind', 'error', 'errorDescription', 'errorDetail', 'userAgent', 'at'] as const) {
       if (event[key] !== undefined) metadata[key] = event[key];
     }
-    if (revokedBy) Object.assign(metadata, { owner: event.accountId, revokedBy });
+    const { metadata: proxyMeta, ...proxy } = proxyAttribution(revoker?.viaProxy);
+    if (revoker) Object.assign(metadata, { owner: event.accountId, revokedBy: revoker.viaProxy?.actor ?? revoker.username }, proxyMeta);
     await recordAuditEvent(this.engine.getManager<AuditEventSink>('AuditManager'), {
       eventType: how.name,
-      user: revokedBy ?? event.accountId ?? 'anonymous',
-      ipAddress: event.ip,
+      user: revoker?.username ?? event.accountId ?? 'anonymous',
+      ...proxy,
+      ipAddress: event.ip ?? revoker?.ipAddress,
       action: event.event,
       result: how.result,
       severity: how.severity,

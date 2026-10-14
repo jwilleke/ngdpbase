@@ -2,7 +2,8 @@
     devices they approved, as one list (AuthManager.listDelegations). Each row says how it
     is renewed, in plain words, and has one Revoke that goes through AuthManager's door.
     Locals: items (Delegation[]), csrfToken, canExtend (#1734: the viewer, who owns every row
-    here, holds token-extend). "Can do" shows each scope's plain words (Delegation.can). %>
+    here, holds token-extend). "Can do" shows each scope's plain words (Delegation.can).
+    A row someone approved while acting for the person says so (#1762 slice 6). %>
 <%# Times go out as <time datetime data-local-time> with the UTC text as the fallback;
     /js/local-time.js (loaded by header.ejs) shows them in the viewer's own zone. %>
 <%
@@ -25,7 +26,10 @@
       <tbody>
         <% items.forEach(function (d) { %>
         <tr data-delegation="<%= d.kind %>">
-          <td><%= d.name %></td>
+          <td><%= d.name %>
+            <%# #1762 slice 6: approved by someone acting for this person; plain words. %>
+            <% if (d.approvedBy) { %><div class="small text-muted" data-approved-by="<%= d.approvedBy %>">Approved by <%= d.approvedBy %> (acting for you)</div><% } %>
+          </td>
           <td class="small"><%= typeOf(d) %></td>
           <td>
             <% if (d.renewal === 'refreshable') { %><span class="badge bg-info text-dark">Refreshable</span>

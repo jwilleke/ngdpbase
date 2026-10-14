@@ -19,7 +19,8 @@ const LOCAL_TIME_JS = path.join(__dirname, '../../public/js/local-time.js');
 
 const row = (over: Partial<Delegation>): Delegation => ({
   kind: 'token', id: 'tok_1', name: 'import-script', device: false, renewal: 'fixed', scopes: ['page-read'], can: [{ name: 'page-read', description: 'Read pages' }],
-  createdAt: '2026-10-12T08:00:00.000Z', expiresAt: '2026-10-12T20:00:00.000Z', renewedAt: null, lastUsedAt: null, ...over
+  createdAt: '2026-10-12T08:00:00.000Z', expiresAt: '2026-10-12T20:00:00.000Z', renewedAt: null, lastUsedAt: null,
+  approvedBy: null, proxyGrantId: null, ...over
 });
 
 async function render(items: Delegation[], canExtend = false): Promise<Document> {
@@ -30,6 +31,23 @@ async function render(items: Delegation[], canExtend = false): Promise<Document>
 const cells = (tr: Element): string[] => [...tr.querySelectorAll('td')].map(td => (td.textContent ?? '').replace(/\s+/g, ' ').trim());
 
 describe('#1764 My tokens and devices list', () => {
+  test('#1762 slice 6: a row approved by someone acting for the person says so in plain words; others say nothing', async () => {
+    const doc = await render([row({ approvedBy: 'jim', proxyGrantId: 'g1' }), row({ id: 'tok_2', name: 'mine' })]);
+    const rows = [...doc.querySelectorAll('tbody tr')];
+    expect(cells(rows[0])[0]).toBe('import-script Approved by jim (acting for you)');
+    expect(cells(rows[1])[0]).toBe('mine');
+    expect(doc.body.textContent).not.toMatch(/proxy|grant/i);
+  });
+
+  test('#1762 slice 6: the admin user page names who approved an app and for whom', async () => {
+    const html = await ejs.renderFile(path.join(__dirname, '../../views/_approved-apps.ejs'), {
+      apps: [{ grantId: 'g-tv', clientId: 'tv', name: 'Living Room TV', device: true, scopes: ['openid'], approvedAt: null, expiresAt: null, refreshable: false, renewedAt: null, approvedBy: 'jim', proxyGrantId: 'g1' }],
+      revokeBase: '/admin/users/mom/apps/', csrfToken: 'csrf-value', owner: 'mom'
+    });
+    const doc = new JSDOM(html).window.document;
+    expect(doc.querySelector('[data-approved-by]')?.textContent).toBe('Approved by jim (acting for mom)');
+  });
+
   test('an empty list says so', async () => {
     const doc = await render([]);
     expect(doc.body.textContent).toMatch(/You have no tokens, apps or devices/);

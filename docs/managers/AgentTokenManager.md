@@ -75,11 +75,11 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 | Method | Purpose |
 |---|---|
 | `mint(subject, name, scopes, ttlHours?)` | `subject` is the owner's `PermissionSubject` from the session (#1178). Returns `{ token, record }`. The cleartext is returned __once__ and never persisted. |
-| `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
+| `verify(token)` | Returns a __copy__ of the record without its hash, or `null` for unknown/expired/revoked, or minted under a proxy grant that is no longer in force. Buffers `lastUsedAt` in memory — no disk IO on the request path. |
 | `listForOwner(owner)` | That owner's live tokens, without hashes. |
 | `listAll()` | Every live token — admin oversight. |
 | `extend(id, subject, hours?)` | Moves the expiry of one of `subject`'s own live tokens later by `hours` (the maximum when omitted), never past now + `max-ttl-hours`. The token string and scopes do not change. See [Extending](#extending). |
-| `revoke(id, byUsername)` | Effective immediately; `verify()` reads the store per request, so there is no cache to wait out. |
+| `revoke(id, ctx)` | Effective immediately; `verify()` reads the store per request, so there is no cache to wait out. `ctx` is the subject who revoked: under a proxy grant the record names both people, and `revokedBy` is the person acting ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)). |
 | `purgeExpired()` | Drops dead records past `retention-days`. Audit records are unaffected. Also runs on the maintenance timer, not only at boot. |
 | `flushLastUsed()` | Writes buffered `lastUsedAt` stamps to disk. Runs on the maintenance timer and on `shutdown()`; public so a caller can force it. |
 | `backup()` | Public records only — __no hashes, and so not restorable__. It preserves the audit trail of what existed, not working credentials. |
@@ -98,6 +98,8 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 
 - __Who may mint:__ `token-mint` ships in every signed-in role's policy except `demo-admin`, never to `anonymous` ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734); demo-admin excluded by operator decision 2026-10-12). It is step-up, and a token can never carry it.
 - An __unscoped token is rejected__, never treated as unrestricted.
+- __`token-mint` is asked by `mint` itself__, not only at the route, with the same subject.
+- __Minted while acting for someone__ ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762) slice 6): the subject is the person represented carrying `viaProxy`, so the token is theirs. `token-mint` and every scope are asked of the PDP with that subject, which bounds them by the grant, the person represented and the person acting, all at once; the never-delegated permissions stay refused. The record carries `approvedBy` (the person acting) and `proxyGrantId`, and the `token-mint` record names both people. The token works, and is listed as live, only while that grant is in force (`AuthManager.liveProxyGrant`: revoked, past its end date or proxy access off, and it stops). Ending the grant revokes it (`AuthManager` `endProxyGrant`). A token the owner minted has neither field.
 - __`proxy-grant` is refused too__ ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)): a token never lets someone act for its owner. A proxy grant itself may carry `proxy-grant`; a token or an app may not (`src/utils/delegation.ts`).
 - __`admin-*` scopes are refused outright__ — a token can never carry them, however privileged its owner. This is a refusal, not a warning: warnings get clicked through.
 - TTL above `max-ttl-hours` is rejected; the max defaults equal to the default so nothing longer-lived can be minted without an operator raising the ceiling.
@@ -108,10 +110,10 @@ Because the lifecycle is audited, `retention-days` no longer has to keep dead re
 ## HTTP surface
 
 - `GET /api/tokens` — the caller's tokens; `?all=true` lists everyone's (admin only)
-- `POST /api/tokens` — mint __for the caller__; an admin cannot mint on another user's behalf, so a token always traces to someone who chose to delegate
+- `POST /api/tokens` — mint __for the caller__; an admin cannot mint on another user's behalf, so a token always traces to someone who chose to delegate. Someone acting for a person under a proxy grant mints for that person, recorded as approved by them (above)
 - `DELETE /api/tokens/:id` — owner or admin. A non-owner without admin gets `404`, not `403`, so the existence of another user's token is not confirmed. The revoke itself is `AuthManager.revokeDelegation`, the one door every Revoke goes through ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)).
 - `POST /api/tokens/:id/extend` — body `{ hours? }`; asks `token-extend` (step-up: a stale sign-in gets `reauth`, which the page follows). The owner only: another user's token is `404`; a refusal (expired, revoked, at the cap) is `400` with its message.
-- Profile → __My tokens and devices__ lists the person's tokens with the apps and devices they approved, and revokes either through the same door ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)). To a holder of `token-extend`, each of their fixed agent tokens is labelled __Extendable__ and has an __Extend__ button in its row, which extends to the maximum ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734)).
+- Profile → __My tokens and devices__ lists the person's tokens with the apps and devices they approved, and revokes either through the same door ([#1764](https://github.com/jwilleke/ngdpbase/issues/1764)). To a holder of `token-extend`, each of their fixed agent tokens is labelled __Extendable__ and has an __Extend__ button in its row, which extends to the maximum ([#1734](https://github.com/jwilleke/ngdpbase/issues/1734)). A token someone minted while acting for the person says "Approved by … (acting for you)" ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762)).
 
 ## See also
 
