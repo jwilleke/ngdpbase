@@ -349,6 +349,7 @@ module.exports = {
   description: 'What this add-on does',
   author: 'Your Name',
   dependencies: [],           // names of other add-ons that must load first
+  optionalDependencies: [],   // load these first if installed and enabled; never required
 
   async register(engine, config) {
     // Called at startup if enabled. Mount routes, init data, register plugins.
@@ -1064,6 +1065,25 @@ module.exports = {
 };
 ```
 
+`dependencies` makes the other add-on mandatory: if it is not installed or not enabled, your add-on does not load.
+
+When your add-on works without the other one but uses it when present, declare it in `optionalDependencies` instead. If it is installed and enabled it loads first, so its managers exist in your `register()`; if not, your add-on loads anyway. Without either declaration the load order is the discovery order (alphabetical within each `addons-path` entry), which is not something to rely on.
+
+```javascript
+module.exports = {
+  name: 'accounting',
+  optionalDependencies: ['forms'],  // forms loads first when enabled
+  async register(engine, config) {
+    const forms = engine.getManager('FormsAddon');
+    if (forms) {
+      // register form handlers and definitions
+    }
+  }
+};
+```
+
+An optional dependency never blocks disabling the add-on it names. A cycle is still an error, whether it runs through `dependencies` or `optionalDependencies`.
+
 `AddonsManager` resolves load order via topological sort. It will error at startup if a
 declared dependency is not installed or not enabled.
 
@@ -1103,7 +1123,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] `status()` returns `{ healthy: bool, message: string }` for admin health display
 - [ ] `shutdown()` closes any open connections or file handles
 - [ ] Recurring work is a scheduled job with an id `<slug>.<job>`, safe to run again for the same slot, honouring `ctx.signal` — no `setInterval`
-- [ ] Dependencies declared in `dependencies[]` if your add-on relies on another
+- [ ] Dependencies declared in `dependencies[]` if your add-on relies on another, or in `optionalDependencies[]` if it only uses another when present
 - [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
 - [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
@@ -1132,32 +1152,33 @@ The image is the only container artifact ngdpbase produces. There is no publishe
 
 ### Recommended Dockerfile pattern
 
-Layer your addon on top of the published ngdpbase image. Example from [`jwilleke/geohazardwatch/Dockerfile`](https://github.com/jwilleke/geohazardwatch/blob/main/Dockerfile):
+The runtime image has no npm (removed for its vulnerability scans, #956), so nothing can be installed or compiled in it. Build the add-on in a stage based on the `-devtools` image, which is the same image with npm, then copy the result into the runtime image:
 
 ```dockerfile
 # renovate: datasource=docker depName=ghcr.io/jwilleke/ngdpbase
-ARG NGDPBASE_VERSION=3.11.3
-FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
+ARG NGDPBASE_VERSION=5.8.0
 
+FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}-devtools AS build
+WORKDIR /app/addons/<slug>
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run build && npm prune --omit=dev
+
+FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
 LABEL org.opencontainers.image.title="my-addon-site"
 LABEL org.opencontainers.image.source="https://github.com/<you>/<your-addon-repo>"
-
-WORKDIR /opt/<slug>
-
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
-
-COPY addons ./addons
-
-WORKDIR /app
+COPY --from=build /app/addons/<slug> /app/addons/<slug>
 ```
 
 Key points:
 
-- The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG.
-- `--ignore-scripts` skips `prepare` (husky). Husky is a devDependency, not present under `--omit=dev`, and the missing `husky` binary would crash `npm ci` with exit 127 in the runtime container.
-- `WORKDIR /app` at the end matches ngdpbase's working directory so the inherited `CMD` and `ENTRYPOINT` from the base image still resolve correctly.
-- The addon code is mounted into the runtime via `addons-path` config (typically supplied through a Kubernetes ConfigMap or a `-v /opt/<slug>:/opt/<slug>` bind mount, plus `"ngdpbase.managers.addons-manager.addons-path": ["/opt/<slug>/addons"]` in the instance config).
+- The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG. Both `FROM` lines use the same ARG, so the add-on is compiled against exactly the core it runs on.
+- The add-on is built at `/app/addons/<slug>`, the same place it runs from. Its `../../dist/...` imports then resolve to the image's own `/app/dist`, and `express`, `tslib` and the other host packages resolve from `/app/node_modules`. Building anywhere else compiles against, or loads, a second copy of core.
+- `npm ci` installs devDependencies too (the compiler); `npm prune --omit=dev` drops them before the copy. `--ignore-scripts` skips `prepare` (husky).
+- `/app/addons` is scanned by default, so no `addons-path` setting is needed. Add-ons there load in discovery order (alphabetical) unless they declare `dependencies` or `optionalDependencies` ([Dependency Example](#9-dependency-example)).
+- The final stage is the plain runtime image, so the deployed artifact carries no npm. Its `CMD`, `ENTRYPOINT` and `WORKDIR /app` are inherited unchanged.
+- The image is published for `linux/amd64` only. It runs on Apple Silicon under emulation, which works but is slow.
 
 ### Auto-bump with Renovate
 

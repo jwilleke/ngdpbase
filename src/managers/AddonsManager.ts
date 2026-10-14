@@ -114,6 +114,12 @@ export interface AddonModule {
   dependencies?: string[];
 
   /**
+   * #1808: add-ons to load first when they are installed and enabled. Unlike
+   * `dependencies`, a missing or disabled one is skipped, not an error.
+   */
+  optionalDependencies?: string[];
+
+  /**
    * Called during app startup if add-on is enabled.
    * Use this to register routes, initialize databases, etc.
    */
@@ -326,6 +332,8 @@ export interface AddonStatus {
   enabled: boolean;
   loaded: boolean;
   dependencies: string[];
+  /** #1808: loaded first when installed and enabled; never required */
+  optionalDependencies: string[];
   error: string | null;
   /** 'domain' | 'additive' | undefined (unset addons behave as additive) */
   type?: 'domain' | 'additive';
@@ -1319,6 +1327,13 @@ class AddonsManager extends BaseManager {
         visit(dep);
       }
 
+      // #1808: optional dependencies load first when present, else are skipped
+      for (const dep of addon.module.optionalDependencies || []) {
+        if (this.addons.has(dep) && this.isEnabled(dep)) {
+          visit(dep);
+        }
+      }
+
       order.push(name);
       visiting.delete(name);
       visited.add(name);
@@ -1495,6 +1510,7 @@ class AddonsManager extends BaseManager {
         enabled: addon.enabled,
         loaded: addon.loaded,
         dependencies: addon.module.dependencies || [],
+        optionalDependencies: addon.module.optionalDependencies || [],
         error: addon.error,
         type: addon.manifest?.type
       };
