@@ -51,7 +51,7 @@ Every manager class in `src/managers/`. Quick reference docs are ~100-200 lines;
 | --- | --- | --- |
 | ACLManager | 📘 [doc](managers/ACLManager.md) + [guide](managers/ACLManager-Complete-Guide.md) | Renamed — ACLManager is now the PolicyInformationPoint (#1431 step 8) |
 | AddonsManager | ✅ [doc](managers/AddonsManager.md) | Discovery, registration, lifecycle, and dependency management for optional ngdpbase add-ons |
-| AgentTokenManager | ✅ [doc](managers/AgentTokenManager.md) | Mints, verifies and revokes user-delegated agent API tokens |
+| AgentTokenManager | ✅ [doc](managers/AgentTokenManager.md) | Mints, verifies, extends and revokes user-delegated agent API tokens |
 | AssetManager | ✅ [doc](managers/AssetManager.md) | Provider registry for the unified Digital Asset Management framework — fans search/getById/getThumbnail across all registered AssetProviders |
 | AssetService | ✅ [doc](managers/AssetService.md) | Unified DAM search facade over the AssetProvider registry; called by SearchManager and the asset-picker |
 | AttachmentManager | 📘 [doc](managers/AttachmentManager.md) + [guide](managers/AttachmentManager-Complete-Guide.md) | File attachment CRUD: upload, lookup-by-filename, per-page attachment listings, SHA-256 deduplication |
