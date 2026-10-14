@@ -16,7 +16,8 @@
  *
  * An encrypted vault additionally needs a key in the session
  * (`assertContextCanWriteStore`); a share link carries none until #1388's
- * encrypted slices, and a proxy none until #1762 slice 5 (`dekFor`).
+ * encrypted slices, and a proxy only the key copy its grant carries (#1762
+ * slice 5, `dekFor`).
  *
  * The container rule reads the proxy claim the subject carries; whether the
  * grant is still in force is re-read live by the PDP on every decision, and

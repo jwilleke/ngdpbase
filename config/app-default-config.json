@@ -2019,7 +2019,7 @@
       }
     },
     "proxy-switch": {
-      "description": "A signed-in session started or stopped acting for someone under a proxy grant: chosen, switched-back, or ended because the grant no longer allows it (grant-ended, proxy-access-off); user is the person represented, actor the person signed in (#1762)",
+      "description": "A signed-in session started or stopped acting for someone under a proxy grant, or opens their private store: chosen, switched-back, ended because the grant no longer allows it (grant-ended, proxy-access-off), or vault-opened; user is the person represented, actor the person signed in (#1762)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"

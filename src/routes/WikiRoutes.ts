@@ -63,6 +63,7 @@ import type ShareManager from '../managers/ShareManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
 import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn, type ProxyGrantInput, type ProxyGrantView } from '../managers/AuthManager.js';
 import type { ScopeDescription } from '../utils/permissionCatalog.js';
+import { VAULT_PROXY_PERMISSION } from '../utils/delegation.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -7311,10 +7312,11 @@ ${panes}
    * hides it: proxy access is off, or there is nothing to show. `given` and
    * `options` are null when the viewer may not give access on that account
    * (AuthManager decides); `actingFor` — whom the signed-in person may act
-   * for — is the profile's only.
+   * for — is the profile's only. `vaultBlocked` is why the vaults choice
+   * cannot be ticked now, in plain words, or null (#1762 slice 5).
    */
   private async proxyAccessCard(req: Request, ctx: PermissionSubject, owner: string, adminView: boolean): Promise<{
-    given: ProxyGrantView[] | null; options: ScopeDescription[] | null; actingFor: ProxyGrantView[]; owner: string;
+    given: ProxyGrantView[] | null; options: ScopeDescription[] | null; actingFor: ProxyGrantView[]; owner: string; vaultBlocked: string | null;
   } | undefined> {
     const authManager = this.engine.getManager<AuthManager>('AuthManager');
     if (!authManager?.proxyAccessEnabled?.() || !owner) return undefined;
@@ -7323,7 +7325,8 @@ ${panes}
     const options = given === null ? null : await authManager.proxyGrantOptions(ctx, owner).catch(refused);
     const actingFor = adminView ? [] : authManager.actingForChoices(req)?.grants ?? [];
     if (given === null && actingFor.length === 0) return undefined;
-    return { given, options, actingFor, owner };
+    const vaultBlocked = options?.some(o => o.name === VAULT_PROXY_PERMISSION) ? await authManager.vaultGrantBlocked(ctx, owner) : null;
+    return { given, options, actingFor, owner, vaultBlocked };
   }
 
   /** A give-access form's fields as grantProxy takes them, or the plain reason they cannot be (#1762 slice 7). */

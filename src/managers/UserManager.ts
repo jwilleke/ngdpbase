@@ -85,6 +85,13 @@ export interface ProxyClaim {
   actor: string;
   /** The grant's permissions as the subject was built with them; the live grant must still carry every one. */
   scopes: string[];
+  /**
+   * The actor's OWN private-store handle (#1762 slice 5): where a key copy
+   * opened under this grant is held (`privateStoreUnlock.openKeyCopy`). It
+   * reaches only that copy — never the actor's own keys — and only while the
+   * copy was opened for this grant and this represented person (`dekFor`).
+   */
+  keyHandle?: string;
 }
 
 /**

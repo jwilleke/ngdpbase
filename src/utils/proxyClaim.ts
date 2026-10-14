@@ -25,8 +25,8 @@ interface Delegations {
  * Read for a permission the grant carries as a marker rather than one policy
  * is asked: `vault-proxy`, which lets the proxy into the represented person's
  * private container (`mayActInPrivateContainer`). Without it a proxy acts on
- * everything else the grant allows and never reaches a vault; encrypted vaults
- * stay shut either way until the proxy holds a wrapped key copy (slice 5).
+ * everything else the grant allows and never reaches a vault; an encrypted vault
+ * opens only through the key copy the owner sealed to the proxy (slice 5).
  */
 export function proxyCarries(claim: ProxyClaim | undefined, permission: string): boolean {
   return claim?.kind === 'proxy' && Array.isArray(claim.scopes) && claim.scopes.includes(permission);

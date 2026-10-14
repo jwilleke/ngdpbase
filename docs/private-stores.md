@@ -127,11 +127,12 @@ The `store-create` audit event (`AUDIT_EVENT.STORE_CREATE`) is recorded __before
 
 Implemented in `src/utils/privateStoreCrypto.ts`. Nothing here is a manager method, and nothing here touches HTTP.
 
-- __User KEK__ — 32 random bytes. Wrapped twice with AES-256-GCM: once by a key derived from the login password with scrypt (`N: 16384, r: 8, p: 1`, 16-byte random salt), once by a key derived from a 12-word BIP39 English phrase. The envelope on disk is `{ version: 1, kdf, passwordWrap, recoveryKdf, recoveryWrap }`.
+- __User KEK__ — 32 random bytes. Wrapped twice with AES-256-GCM: once by a key derived from the login password with scrypt (`N: 16384, r: 8, p: 1`, 16-byte random salt), once by a key derived from a 12-word BIP39 English phrase. The envelope on disk is `{ version: 1, kdf, passwordWrap, recoveryKdf, recoveryWrap, personKey }`.
 - __Recovery phrase__ — 128 bits of entropy plus a 4-bit checksum, rendered as 12 words from `src/utils/bip39English.ts`. The wrap key is the first 32 bytes of `pbkdf2(mnemonic, "mnemonic", 2048, 64, sha512)`. Comparison at the confirm screen is normalised (NFKD, lower case, single-spaced) and constant time.
 - __Store DEK__ — 32 random bytes per encrypted store, wrapped by the user KEK and kept in that store's `store.json`. `createEncryptedStore()` makes it; `unwrapDek()` opens it.
+- __Person key pair__ ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762) slice 5) — an ECDH P-256 pair, `personKey: { publicKey, privateWrap }`: the public half readable, the private half wrapped by the user KEK. It is the share lockbox's pair (`shareLockbox.ts`), so a copy sealed to it uses the same ECDH + HKDF-SHA-256 + AES-256-GCM steps. `createUserKeys()` makes it at enrolment; a person enrolled earlier gets one the first time their store is unlocked (`unlockWithKek` writes it back, every wrap of the KEK unchanged). It lets the owner of a store hand a proxy a copy of their KEK while the proxy is offline.
 
-A password change re-wraps the envelope's `passwordWrap` and leaves `recoveryWrap` untouched (`rewrapPassword()`), which is why the 12 words keep working after a password change. `UserManager.updateUser` calls `rewrapUserKeysOnPasswordChange()` on the way through, and no-ops when the user has no envelope.
+A password change re-wraps the envelope's `passwordWrap` and leaves `recoveryWrap` untouched (`rewrapPassword()`), which is why the 12 words keep working after a password change. The KEK itself never changes, so the person key pair and every proxy key copy of that KEK stay valid too. `UserManager.updateUser` calls `rewrapUserKeysOnPasswordChange()` on the way through, and no-ops when the user has no envelope.
 
 ### What is sealed, and how
 
@@ -168,6 +169,17 @@ When the bag is filled and when it is dropped:
 
 `privateStoreLockedFor()` in `src/utils/privateStoreLock.ts` answers "is this signed-in user's store locked?" from the user's own key file and their own bag, never from any page: while locked the catalog is itself encrypted, so the server does not know which pages are in it and must not pretend to. `getCommonTemplateData` puts the answer in `privateStoreLocked`, and `views/header.ejs` shows the banner that links to `/private-store/unlock`. It is only ever true for a store's own owner in their own session.
 
+### Proxy key copies
+
+Someone acting for the owner under a proxy grant ([#1762](https://github.com/jwilleke/ngdpbase/issues/1762) slice 5, operator decisions 2026-10-12) opens the owner's encrypted stores through a copy of the owner's KEK that the owner made:
+
+- __Made only by the owner, while unlocked.__ A grant the owner makes for themselves with `vault-proxy`, while their store is unlocked, seals a copy of their KEK to the proxy's public key (`sealKekCopyFor`) and stores it in the grant's credentials row; the grant reads `vault: 'copy'`. The proxy may be offline. It is refused, in plain words, when the owner's encrypted store is locked or the proxy has no key pair yet (no private store of their own, or not unlocked since key pairs existed). An administrator's grant never carries a copy (`vault: 'never'`), and a proxy re-delegating can never add `vault-proxy`. An owner with no encrypted store needs nothing unlocked: the grant opens only their unencrypted vaults (`vault: 'none'`), and does not gain a copy if they make an encrypted store later — they give access again.
+- __Opened only by the proxy, while acting and unlocked.__ When the session acts for the owner and the proxy's own store is unlocked, `AuthManager.subjectActingFor` opens the copy (`openKeyCopy`): the proxy's KEK unwraps their private key, which opens the copy, which opens each of the owner's encrypted stores' DEKs. They are held inside the proxy's OWN bag (`copy`), never a bag of the owner's, and the subject's claim carries `viaProxy.keyHandle` naming that bag. Opening is recorded once as `proxy-switch` with reason `vault-opened`, naming both people. A copy that does not open is not retried for that bag.
+- __Reached only through `dekFor`.__ `dekFor` and `unlockedStoreIdsFor` answer from the copy only when the claim is a `proxy` claim carrying `vault-proxy` and no token or share, the bag at `keyHandle` belongs to the claim's actor, and the copy there was opened under that grant for the person the subject represents. `kekFor`, `hasUnlockedKey` and `userIndexFor` stay the owner's: a proxy never creates a vault, re-wraps a key or adopts the legacy catalog.
+- __Wiped__ on switching back or to someone else, on any request that finds the grant dead (revoked, expired, an account inactive, proxy access off), on revoke or account deletion in every session that opened it (`dropKeyCopiesOfGrant`), and with the proxy's own keys at sign-out or session end (`lockPrivateStores`).
+- __Deleted__ with the grant: the sealed copy is in the row, and revoking removes the row.
+- __KEK rotation.__ There is none today: a password change and a reset with the recovery words keep the KEK, so copies stay valid. Anything that replaces a KEK must drop every copy of the old one (re-mark the grants `vault: 'none'`) rather than leave a copy that opens nothing or opens stale stores; the owner then gives access again.
+
 ### What only the owner's session can do
 
 Three pieces of maintenance can only run where the keys are. `WikiRoutes.adoptSealedPages()` runs all of them after an unlock, as the owner:
@@ -186,7 +198,7 @@ The matching boot passes (`migratePrivateLinksAtBoot`, `buildStoreSearchIndexesA
 One function decides: `mayActInPrivateContainer(ctx, owner, opts)` in `src/utils/privateStoreAccess.ts`.
 
 - a context acting `viaShare` (a share link) passes only when its issuer is the owner, the caller names a vault (`opts.vault`), and the link names that vault (#1388). A question about the owner's container as a whole (their list of vaults, their trash, their takeout) names no vault, so a link never passes it
-- a context acting `viaProxy` (someone acting for the owner, [#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) carries the owner's username, so it passes only when the claim is a `proxy` (not `impersonation`), carries no token or share, and its grant carries `vault-proxy`; then the rule below. The PDP re-reads the grant on every decision. An encrypted store stays shut to it: `dekFor` reaches no key under `viaProxy` until a wrapped key copy exists (#1762 slice 5)
+- a context acting `viaProxy` (someone acting for the owner, [#1762](https://github.com/jwilleke/ngdpbase/issues/1762)) carries the owner's username, so it passes only when the claim is a `proxy` (not `impersonation`), carries no token or share, and its grant carries `vault-proxy`; then the rule below. The PDP re-reads the grant on every decision. An encrypted store opens to it only through the key copy its grant carries (#1762 slice 5, "Proxy key copies" below)
 - otherwise the context must be a job acting for the owner, or an authenticated session (`isAuthenticated === true`) whose username is the owner
 
 No role reaches in. An anonymous visitor without a link never matches, even a page whose recorded owner is `Anonymous`.

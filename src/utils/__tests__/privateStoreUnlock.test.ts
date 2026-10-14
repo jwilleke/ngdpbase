@@ -7,11 +7,15 @@
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
+import { randomBytes } from 'crypto';
 import {
   TEST_PRIVATE_STORE_KDF,
   createEncryptedStore,
   createUserKeys,
-  unwrapDek
+  openKekCopy,
+  sealKekCopy,
+  unwrapDek,
+  type UserKeyEnvelope
 } from '../privateStoreCrypto';
 import { privateUserKeysPath, storeMetaPath } from '../privateStorePath';
 import {
@@ -70,6 +74,28 @@ describe('unlockPrivateStoresWithPassword (#1391)', () => {
     const json = JSON.stringify({ sessionId: 'sid-1', username: 'molly' });
     expect(json).not.toContain(created.kek.toString('base64'));
     expect(json).not.toContain(created.kek.toString('hex'));
+  });
+
+  test('#1762 slice 5: a person enrolled before key pairs existed gets one at unlock; every wrap of the KEK is kept', async () => {
+    const password = randomBytes(12).toString('hex');
+    const created = await createUserKeys(password, { kdf });
+    expect(created.envelope.personKey).toBeDefined();
+    const { personKey: _none, ...older } = created.envelope;
+    await fs.ensureDir(path.dirname(privateUserKeysPath(pagesDir, 'molly')));
+    await fs.writeJson(privateUserKeysPath(pagesDir, 'molly'), older);
+
+    await unlockPrivateStoresWithPassword({ handle: 'sid-1', username: 'molly', password, pagesDirectory: pagesDir });
+    const after = await fs.readJson(privateUserKeysPath(pagesDir, 'molly')) as UserKeyEnvelope;
+    expect(after).toEqual({ ...older, personKey: expect.objectContaining({ publicKey: expect.objectContaining({ kty: 'EC', crv: 'P-256' }) }) });
+    // Its private half opens a copy sealed to its public half, with the person's own KEK.
+    const copy = await sealKekCopy(after.personKey!.publicKey, created.kek);
+    expect(Buffer.compare(await openKekCopy(after, created.kek, copy), created.kek)).toBe(0);
+    // Another KEK does not.
+    await expect(openKekCopy(after, randomBytes(32), copy)).rejects.toThrow(/key copy|person key/);
+
+    // A second unlock leaves the pair as it is.
+    await unlockPrivateStoresWithPassword({ handle: 'sid-2', username: 'molly', password, pagesDirectory: pagesDir });
+    expect((await fs.readJson(privateUserKeysPath(pagesDir, 'molly')) as UserKeyEnvelope).personKey).toEqual(after.personKey);
   });
 
   test('wrong password does not put a KEK in the bag', async () => {
