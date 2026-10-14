@@ -44,6 +44,13 @@ declare module 'express-session' {
     lastActivity?: number;
     /** When this session signed in, epoch ms: the start of `ngdpbase.session.max-age` (#1767). A re-authentication never moves it. */
     signedInAt?: number;
+    /**
+     * The proxy grant this session acts under (#1762 slice 4), chosen at
+     * `/account/acting-for`; absent while the person acts as themselves. Only
+     * a name: the grant is re-read live on every request
+     * (`AuthManager.subjectActingFor`), and a dead one clears it.
+     */
+    actingFor?: string;
     [key: string]: unknown;
   }
 }

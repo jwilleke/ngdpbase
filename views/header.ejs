@@ -590,6 +590,20 @@
             </nav>
 
             <main role="main" class="col-12 col-md-9 col-lg-10 px-md-4 px-2 jspwiki-content main-content">
+                <% if (typeof actingFor !== 'undefined' && actingFor && actingFor.name) { %>
+                <%# #1762 slice 4: this session acts for someone under a proxy grant; say whom, and offer the way back.
+                    The header person-picker is slice 7. %>
+                <div class="alert alert-info d-flex flex-wrap align-items-center gap-2 mt-2 py-2" role="status" data-acting-for>
+                    <i class="fas fa-user-friends" aria-hidden="true"></i>
+                    <span>Acting for <strong><%= actingFor.name %></strong></span>
+                    <span aria-hidden="true">·</span>
+                    <form action="/account/acting-for" method="POST" class="m-0 d-inline">
+                        <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+                        <input type="hidden" name="grant" value="">
+                        <button type="submit" class="btn btn-link btn-sm p-0 align-baseline">Switch back</button>
+                    </form>
+                </div>
+                <% } %>
                 <% if (typeof aalStepDown !== 'undefined' && aalStepDown && aalStepDown.roles.length > 0) { %>
                 <%# #448: a role above this sign-in's level is off for this session; say so, and offer the way back. %>
                 <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-2" role="alert">

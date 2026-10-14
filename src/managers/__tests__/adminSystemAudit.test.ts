@@ -137,7 +137,7 @@ describe('#1215 audit-export', () => {
       getManager: vi.fn((name: string) => {
         if (name === 'ConfigurationManager') return { getProperty: (_k: string, d: unknown) => d, getResolvedDataPath: () => os.tmpdir() };
         // #1431 step 14: decisions are the PDP's.
-        if (name === 'PolicyDecisionPoint') return { userHoldsPermission: async () => true };
+        if (name === 'PolicyDecisionPoint') return { permits: async () => true };
         return null;
       }),
       blockConfiguration: vi.fn(), getBlockingConditions: () => []

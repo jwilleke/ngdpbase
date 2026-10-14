@@ -1,0 +1,67 @@
+<%- include('header', { pageName: '' }) %>
+
+<%# #1762 slice 4 — choose whom to act for: yourself, or each person whose proxy grant names you.
+    Shown after sign-in to a person who holds a grant, and reachable any time. One form per choice,
+    each posting to the one switch door (AuthManager.switchActingFor). Locals: choices
+    (ActingForChoices), returnTo, error, csrfToken. Times go out as <time datetime data-local-time>
+    with the UTC text as the fallback; /js/local-time.js shows them in the viewer's own zone. %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+%>
+
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card mt-5">
+                <div class="card-header">
+                    <h4 class="mb-0">Act for someone else</h4>
+                </div>
+                <div class="card-body">
+                    <% if (error) { %>
+                    <div class="alert alert-warning" role="alert"><%= error %></div>
+                    <% } %>
+                    <p>You are signed in as <strong><%= choices.self %></strong>. Choose whose account to use. While you act for someone, everything you do is recorded as done by you for them.</p>
+                    <ul class="list-group mb-3">
+                        <li class="list-group-item d-flex flex-wrap align-items-center gap-2" data-acting-for-choice="self">
+                            <div class="flex-grow-1">
+                                <strong>Yourself</strong> (<%= choices.self %>)
+                                <% if (choices.actingFor === null) { %><span class="badge bg-success ms-2">Now</span><% } %>
+                            </div>
+                            <form action="/account/acting-for" method="POST" class="m-0">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="grant" value="">
+                                <input type="hidden" name="returnTo" value="<%= returnTo %>">
+                                <button type="submit" class="btn btn-sm <%= choices.actingFor === null ? 'btn-outline-secondary' : 'btn-primary' %>"><%= choices.actingFor === null ? 'Continue' : 'Switch back to yourself' %></button>
+                            </form>
+                        </li>
+                        <% choices.grants.forEach(function (g) { %>
+                        <li class="list-group-item d-flex flex-wrap align-items-center gap-2" data-acting-for-choice="<%= g.id %>">
+                            <div class="flex-grow-1">
+                                <strong><%= g.owner %></strong>
+                                <% if (choices.actingFor === g.id) { %><span class="badge bg-success ms-2">Now</span><% } %>
+                                <div class="small text-muted">
+                                    Can: <%= g.can.map(function (c) { return c.description; }).join(', ') %>
+                                </div>
+                                <div class="small text-muted">
+                                    <% if (g.expiresAt) { %>Ends <time datetime="<%= g.expiresAt %>" data-local-time><%= utc(g.expiresAt) %></time><% } else { %>Until <%= g.owner %> stops it<% } %>
+                                </div>
+                            </div>
+                            <form action="/account/acting-for" method="POST" class="m-0">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                <input type="hidden" name="grant" value="<%= g.id %>">
+                                <input type="hidden" name="returnTo" value="<%= returnTo %>">
+                                <button type="submit" class="btn btn-sm btn-primary" <%= choices.actingFor === g.id ? 'disabled' : '' %>>Act for <%= g.owner %></button>
+                            </form>
+                        </li>
+                        <% }) %>
+                    </ul>
+                    <% if (choices.grants.length === 0) { %>
+                    <p class="text-muted small mb-0">Nobody has let you act for them.</p>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('footer') %>

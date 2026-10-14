@@ -73,6 +73,6 @@ At boot the log says which provider loaded and whether the posture changed since
 
 ## Known gaps
 
-- [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — audit rows name both people (slice 3), and no request carries a proxy until slice 4. Emitters still recording a bare name, each listed in `scripts/check-audit-attribution.ts`: `logSecurityEvent` from the spam and security filters (the parse context must carry the subject, slice 4), `audit-export` (its caller is a username fact, slice 4), token mint and revoke (slice 6).
+- [#1762](https://github.com/jwilleke/ngdpbase/issues/1762) — audit rows name both people (slice 3), and a session can act for someone (slice 4). `logSecurityEvent` takes the context (`subject`, null only for a sign-in throttle) and `audit-export` the caller's subject (slice 4). Emitters still recording a bare name, each listed in `scripts/check-audit-attribution.ts`: token mint and revoke (slice 6).
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209)
 - [#1237](https://github.com/jwilleke/ngdpbase/issues/1237)

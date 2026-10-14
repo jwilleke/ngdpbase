@@ -155,7 +155,9 @@ describe('a blocked save is visible afterwards (#1037)', () => {
     expect(auditManager.logSecurityEvent).toHaveBeenCalledTimes(1);
     const [ctx, eventType, severity, description] =
       auditManager.logSecurityEvent.mock.calls[0];
-    expect(ctx).toMatchObject({ user: { username: 'mallory' } });
+    // #1762 slice 4: the save's context names the row (both people under a proxy
+    // grant); `userName` stays the diagnostic log line's.
+    expect(ctx).toMatchObject({ subject: TEST_ACTOR });
     expect(eventType).toBe('content_blocked_on_save');
     expect(severity).toBe('high');
     expect(description).toContain('no-script-tags');

@@ -105,6 +105,8 @@ export const AUDIT_EVENT = {
   PROXY_GRANT: 'proxy-grant',
   /** Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) */
   PROXY_REVOKE: 'proxy-revoke',
+  /** A signed-in session started or stopped acting for someone under a proxy grant: chosen, switched-back, or ended because the grant no longer allows it (grant-ended, proxy-access-off); user is the person represented, actor the person signed in (#1762) */
+  PROXY_SWITCH: 'proxy-switch',
   /** Step-up: a re-authentication failed (wrong password, another person's passkey, throttled) */
   REAUTH_FAILURE: 'reauth-failure',
   /** Step-up: an action asked for a fresh sign-in (#1525) — or refused a delegated credential that cannot give one */
