@@ -118,6 +118,7 @@ Defined by the `User` interface in `src/types/User.ts`, which is the authoritati
   isActive: true,
   isSystem: false,
   isExternal: false,
+  isTest: false,
   profileLocked: undefined,
   profilePage: "John Doe",
   createdAt: "2025-10-11T12:00:00.000Z",
@@ -131,7 +132,7 @@ __Roles are not on the record.__ `User.roles[]` is deprecated as of #617 iterati
 
 ### Account flags
 
-The four booleans each answer a different question, and they are deliberately independent — none implies another.
+The five booleans each answer a different question, and they are deliberately independent — none implies another.
 
 | Flag | Meaning | Set by | Enforced at |
 |---|---|---|---|
@@ -139,11 +140,14 @@ The four booleans each answer a different question, and they are deliberately in
 | `isSystem` | Account cannot be deleted | `createDefaultAdmin` (`admin`) | `deleteUser` |
 | `isExternal` | Identity owned by an external provider (OAuth, magic-link auto-provision) | The auth provider | Password paths — an external account has an empty hash and can never match a password |
 | `profileLocked` | Password, email and display name are frozen against self-service change (#1029) | `createUser`, for shared accounts | `POST /profile` |
+| `isTest` | Test account: holds test or synthetic data, never real data ([#1805](https://github.com/jwilleke/ngdpbase/issues/1805)) | Admin, on create or edit (`user-create` / `user-edit`) | Nowhere in core — marked in the admin list, a banner for the person, and handed to the host |
 
 Two pairings are worth stating explicitly, because both look interchangeable and are not:
 
 - __`isSystem` is not "protected".__ It means one thing: `deleteUser` refuses. It is set on `admin`, an account that must keep self-service password change — so it can never grow to imply immutability.
 - __`profileLocked` is not `isExternal`.__ An external account has no password to change; a locked account has one, published deliberately, that must not change. `profileLocked` also covers email, which is the field that matters most: magic-link login resolves an account by address, so an unlocked shared account can be taken over by repointing its email regardless of the password.
+
+- __`isTest` is an attribute, not a role.__ It grants nothing and no policy reads it. A role could be given to a real account and mix the data again; the flag says what the account's data *is*. Core only marks and shows it: "Test account" in `/admin/users`, a persistent banner for the signed-in person (`header.ejs`), `isTest` on the request's subject, so on `req.userContext`, `WikiContext.userContext`, the ParseContext a plugin is handed, `currentUser` in `engine.templateData`, and `ApiContext.isTest` for an add-on route; and the OIDC `test_account` claim. A host or add-on enforces its own rules from those. Every read through `UserManager` (`getUser`, `getUsers`, `getUserByEmail`, `searchUsers`, `createUser`) returns it as a boolean; an account saved before the flag has none and reads as `false`. Setting or clearing it is a `user-edit` audit row with `fields` naming `isTest` and `metadata.isTest = { from, to }` when the value changes; `user-create` carries `isTest`. `POST /profile` never accepts it, so only an administrator can change it.
 
 Neither flag restricts administrators. `/admin/users/<name>/edit` requires `user-edit` and consults neither, so a locked or system account is always recoverable.
 

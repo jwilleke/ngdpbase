@@ -587,6 +587,15 @@ describe('WikiRoutes — coverage batch 5', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/admin/users');
     });
+
+    test('#1805: the Test account checkbox reaches createUser as a boolean; unticked is false', async () => {
+      await request(app).post('/admin/users').set('x-csrf-token', 'test-csrf-token')
+        .send({ username: 'qa1', email: 'qa1@example.com', password: 'pass', roles: 'reader', isTest: 'true' });
+      expect(mockUserManager.createUser).toHaveBeenLastCalledWith(expect.objectContaining({ username: 'qa1', isTest: true }), expect.anything());
+      await request(app).post('/admin/users').set('x-csrf-token', 'test-csrf-token')
+        .send({ username: 'real1', email: 'real1@example.com', password: 'pass', roles: 'reader' });
+      expect(mockUserManager.createUser).toHaveBeenLastCalledWith(expect.objectContaining({ username: 'real1', isTest: false }), expect.anything());
+    });
   });
 
   // ── PUT /admin/users/:username (adminUpdateUser) ─────────────────────────────
@@ -608,6 +617,21 @@ describe('WikiRoutes — coverage batch 5', () => {
         .send({ displayName: 'Updated Name' });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+
+    test('#1805: isTest is set and cleared as a boolean through updateUser', async () => {
+      await request(app).put('/admin/users/testuser').set('x-csrf-token', 'test-csrf-token').send({ isTest: 'true' });
+      expect(mockUserManager.updateUser).toHaveBeenLastCalledWith('testuser', expect.objectContaining({ isTest: true }), expect.anything());
+      await request(app).put('/admin/users/testuser').set('x-csrf-token', 'test-csrf-token').send({ isTest: false });
+      expect(mockUserManager.updateUser).toHaveBeenLastCalledWith('testuser', expect.objectContaining({ isTest: false }), expect.anything());
+    });
+
+    test('#1805: without user-edit nobody can set isTest', async () => {
+      mockPolicyDecisionPoint.permits.mockResolvedValue(false);
+      mockUserManager.updateUser.mockClear();
+      const res = await request(app).put('/admin/users/testuser').set('x-csrf-token', 'test-csrf-token').send({ isTest: true });
+      expect(res.status).toBe(403);
+      expect(mockUserManager.updateUser).not.toHaveBeenCalled();
     });
   });
 

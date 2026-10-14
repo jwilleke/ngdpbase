@@ -246,6 +246,11 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+/** A checkbox or boolean from a form or JSON body: `true` or `'true'`, anything else false. */
+function formChecked(value: unknown): boolean {
+  return value === true || value === 'true';
+}
+
 /**
  * Autocomplete order for a typed query: exact match, then prefix, then
  * alphabetical. Declared once so the public titles and the caller's own
@@ -11319,12 +11324,16 @@ ${panes}
       (user as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(username);
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      const coreFields: string[] = configManager.getProperty('ngdpbase.user.coreFields', [
-        'username', 'email', 'displayName', 'password',
-        'roles', 'isActive', 'isExternal', 'isSystem',
-        'createdAt', 'loginCount', 'lastLogin',
-        'preferences', 'profilePage', 'allowedAuthMethods', 'avatar'
-      ]) as string[];
+      const coreFields: string[] = [
+        ...(configManager.getProperty('ngdpbase.user.coreFields', [
+          'username', 'email', 'displayName', 'password',
+          'roles', 'isActive', 'isExternal', 'isSystem',
+          'createdAt', 'loginCount', 'lastLogin',
+          'preferences', 'profilePage', 'allowedAuthMethods', 'avatar'
+        ]) as string[]),
+        // #1805: has its own checkbox on this form, so never listed again as a read-only extended field.
+        'isTest'
+      ];
 
       const extendedFields: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(user)) {
@@ -11377,7 +11386,7 @@ ${panes}
         return res.status(403).send('Access denied');
       }
 
-      const { username, email, displayName, password, roles } = req.body;
+      const { username, email, displayName, password, roles, isTest } = req.body;
 
       logger.debug(`[admin/users] Attempting to create user: "${username}" with display name: "${displayName}"`);
 
@@ -11388,6 +11397,8 @@ ${panes}
         password,
         // #1521: no role is ticked in advance, so none may be sent.
         roles: roles === undefined ? [] : Array.isArray(roles) ? roles : [roles],
+        // #1805: the form's "Test account" checkbox.
+        isTest: formChecked(isTest),
         acceptLanguage: req.headers['accept-language'] // Pass browser locale
       }, currentUser);
 
@@ -11424,9 +11435,9 @@ ${panes}
       const username = req.params.username;
       const updates = req.body;
 
-      // Normalise isExternal from JSON body (may arrive as string or boolean)
-      if ('isExternal' in updates) {
-        updates.isExternal = updates.isExternal === true || updates.isExternal === 'true';
+      // Normalise the account flags from the JSON body (may arrive as string or boolean).
+      for (const flag of ['isExternal', 'isTest'] as const) {
+        if (flag in updates) updates[flag] = formChecked(updates[flag]);
       }
 
       // Admin-role users must always be local accounts.

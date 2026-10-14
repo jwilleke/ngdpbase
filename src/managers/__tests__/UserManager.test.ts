@@ -135,7 +135,7 @@ describe('UserManager', () => {
       const result = await userManager.getUser('test');
 
       expect(userManager.provider.getUser).toHaveBeenCalledWith('test');
-      expect(result).toEqual({ username: 'test', email: 'test@example.com' });
+      expect(result).toEqual({ username: 'test', email: 'test@example.com', isTest: false }); // #1805: always a boolean on read
       expect(result.password).toBeUndefined();
     });
 

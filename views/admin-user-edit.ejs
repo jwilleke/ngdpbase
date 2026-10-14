@@ -61,6 +61,13 @@
               <div class="form-text text-danger" id="editIsExternalAdminWarning" style="display:none">
                 Admin accounts cannot be set as external OAuth accounts.
               </div>
+              <%# #1805: an attribute, not a role — it grants nothing. %>
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="editIsTest"
+                       <%= editUser.isTest ? 'checked' : '' %>>
+                <label class="form-check-label" for="editIsTest">Test account</label>
+              </div>
+              <div class="form-text">For test or sample data only, never real data. The person sees a banner saying so, and it gives the account no extra access.</div>
             </div>
 
             <div id="editPasswordSection" <%= editUser.isExternal ? 'style="display:none"' : '' %>>
@@ -259,6 +266,7 @@
       email: document.getElementById('editEmail').value,
       isActive: document.getElementById('editIsActive').checked,
       isExternal: isExternal,
+      isTest: document.getElementById('editIsTest').checked,
       roles: selectedRoles
     };
     // Never send the stored password hash

@@ -39,7 +39,9 @@ The server starts in two steps: `initialize()` validates and prepares the store 
 
 ## Accounts
 
-`findAccount(accountId, signIn)` releases `preferred_username`, `name` and, when set, `email`. Roles are never released: a session can hold fewer roles than the account ([#1569](https://github.com/jwilleke/ngdpbase/issues/1569)).
+`findAccount(accountId, signIn)` releases `preferred_username`, `name`, `test_account` and, when set, `email`. Roles are never released: a session can hold fewer roles than the account ([#1569](https://github.com/jwilleke/ngdpbase/issues/1569)).
+
+`test_account` ([#1805](https://github.com/jwilleke/ngdpbase/issues/1805)) is always a boolean, `true` for an account an administrator marked as a test account, so a client can tell a real account (`false`) from a claim it did not ask for (absent). It is released with the `profile` scope: the manager adds it to that scope's claims (`withTestAccountClaim`), since the provider drops any claim no scope names. With the code flow it arrives from UserInfo; an ID token issued without an access token carries it too. It grants nothing: the app decides what a test account may do.
 
 It returns nothing, which fails the request closed, when:
 

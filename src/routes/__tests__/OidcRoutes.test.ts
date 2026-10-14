@@ -38,7 +38,7 @@ describe('OIDC sign-in bridge (#1572)', () => {
   let session: FakeSession;
   let manager: OidcManager;
   let audited: Array<Record<string, unknown>>;
-  let users: Record<string, { username: string; displayName: string; isActive: boolean; passwordChangedAt?: string }>;
+  let users: Record<string, { username: string; displayName: string; isActive: boolean; passwordChangedAt?: string; isTest?: boolean }>;
   let permitAnswer: boolean;
   let permitted: string[];
   /** #1762 slice 6: the session acts for someone under this claim; null for themselves. */
@@ -232,6 +232,25 @@ describe('OIDC sign-in bridge (#1572)', () => {
 
     users.jim.passwordChangedAt = new Date(Date.now() + 60_000).toISOString();
     expect((await agent.get('/oidc/me').set('Authorization', `Bearer ${access}`)).status).toBe(401);
+  });
+
+  test('#1805: UserInfo says whether the account is a test account — with profile, always a boolean; without it, nothing', async () => {
+    const userinfo = async (scope: string) => {
+      signIn();
+      const agent = request.agent(app);
+      const { res, verifier } = await authorize(agent, { scope });
+      const consent = await follow(agent, res);
+      const back = await follow(agent, await agent.post(`/oidc/interaction/${(JSON.parse(consent.text) as { uid: string }).uid}/allow`));
+      const token = await agent.post('/oidc/token').type('form')
+        .send({ grant_type: 'authorization_code', code: codeFrom(back).searchParams.get('code'), redirect_uri: REDIRECT, client_id: 'app', code_verifier: verifier });
+      const me = await agent.get('/oidc/me').set('Authorization', `Bearer ${(token.body as { access_token: string }).access_token}`);
+      expect(me.status).toBe(200);
+      return me.body as Record<string, unknown>;
+    };
+    expect(await userinfo('openid profile')).toMatchObject({ sub: 'jim', test_account: false });
+    users.jim.isTest = true;
+    expect(await userinfo('openid profile')).toMatchObject({ sub: 'jim', test_account: true });
+    expect(await userinfo('openid')).not.toHaveProperty('test_account');
   });
 
   test('#1576: an app asks for ngdpbase\'s API and its token verifies as a delegation, stepped to the sign-in level', async () => {
