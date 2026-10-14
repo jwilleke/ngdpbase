@@ -2,13 +2,15 @@
     optional end date. Used by the profile (the person's own account) and the admin user page.
     Locals: action (POST URL), options (ScopeDescription[]: only permissions the account holds,
     from AuthManager.proxyGrantOptions), owner (whose account), self (true on the person's own
-    profile), csrfToken. The person is picked with the shared user typeahead
+    profile), csrfToken, vaultBlocked (optional: why the vaults choice cannot be ticked now, in
+    plain words — AuthManager.vaultGrantBlocked, #1762 slice 5). The person is picked with the shared user typeahead
     (/js/audience-typeahead.js, single mode); /js/proxy-access.js shows the warning for
     proxy-grant and sends the end date as the end of that day in the viewer's own time zone. %>
 <%
   const whose = self ? 'your' : owner + "'s";
   const fieldId = function (name) { return 'proxy-perm-' + (self ? 'own' : 'admin') + '-' + name.replace(/[^a-z0-9-]/gi, '_'); };
   const prefix = self ? 'proxy-own' : 'proxy-admin';
+  const vaultReason = typeof vaultBlocked === 'string' && vaultBlocked ? vaultBlocked : null;
 %>
 <form action="<%= action %>" method="POST" class="border rounded p-3" data-proxy-grant-form>
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -37,10 +39,13 @@
     <% } %>
     <% options.forEach(function (o) { %>
     <div class="form-check">
-      <input class="form-check-input" type="checkbox" name="permissions" value="<%= o.name %>" id="<%= fieldId(o.name) %>" data-permission="<%= o.name %>">
+      <% const blocked = o.name === 'vault-proxy' && vaultReason; %>
+      <input class="form-check-input" type="checkbox" name="permissions" value="<%= o.name %>" id="<%= fieldId(o.name) %>" data-permission="<%= o.name %>"<%= blocked ? ' disabled' : '' %><% if (blocked) { %> aria-describedby="<%= fieldId(o.name) %>-why"<% } %>>
       <label class="form-check-label" for="<%= fieldId(o.name) %>"><%= o.description %></label>
-      <% if (o.name === 'vault-proxy') { %>
-      <div class="form-text">Encrypted vaults are not shared yet: they stay closed to anyone acting for <%= self ? 'you' : owner %>.</div>
+      <% if (blocked) { %>
+      <div class="form-text" id="<%= fieldId(o.name) %>-why" data-vault-blocked><%= vaultReason %></div>
+      <% } else if (o.name === 'vault-proxy') { %>
+      <div class="form-text" data-vault-shared>Your encrypted vaults open to them too, while they act for you. They need a private store of their own, unlocked at least once. Revoking their access takes the vaults back.</div>
       <% } %>
       <% if (o.name === 'proxy-grant') { %>
       <div class="alert alert-warning small py-2 mt-1 mb-0 d-none" role="alert" data-proxy-redelegate-warning>

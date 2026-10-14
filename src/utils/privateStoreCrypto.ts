@@ -16,6 +16,7 @@ import {
   scrypt
 } from 'crypto';
 import { BIP39_ENGLISH } from './bip39English.js';
+import { newLinkKeyPair, openLockbox, parseLinkPublicKey, sealForLink, type LinkPublicKey, type Lockbox } from './shareLockbox.js';
 
 export const mnemonicWordCount = 12;
 
@@ -37,12 +38,30 @@ export interface WrappedBlob {
   ct: string;
 }
 
+/**
+ * A person's own key pair (#1762 slice 5): what lets someone else's grant hand
+ * them a copy of a vault key while they are offline. The pair is the share
+ * lockbox's (ECDH P-256, `shareLockbox.ts`); no other crypto.
+ */
+export interface PersonKey {
+  /** The public half, readable: a grant seals a copy of the owner's KEK to it. */
+  publicKey: LinkPublicKey;
+  /** The private half (the lockbox key string), wrapped under the person's own KEK. */
+  privateWrap: WrappedBlob;
+}
+
 export interface UserKeyEnvelope {
   version: 1;
   kdf: ScryptKdf & { salt: string };
   passwordWrap: WrappedBlob;
   recoveryKdf: { alg: 'bip39-pbkdf2' };
   recoveryWrap: WrappedBlob;
+  /**
+   * The person's key pair (#1762 slice 5). Made with the KEK at enrolment, or
+   * the first time the store is unlocked after this field existed; absent
+   * until then.
+   */
+  personKey?: PersonKey;
 }
 
 export interface EncryptedStoreRecord {
@@ -74,7 +93,7 @@ function wrap(key: Buffer, plaintext: Buffer): WrappedBlob {
   };
 }
 
-function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 'DEK' | 'catalog'): Buffer {
+function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 'DEK' | 'catalog' | 'person'): Buffer {
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(blob.iv, 'base64'));
     decipher.setAuthTag(Buffer.from(blob.tag, 'base64'));
@@ -86,6 +105,7 @@ function unwrap(key: Buffer, blob: WrappedBlob, kind: 'password' | 'recovery' | 
     if (kind === 'password') throw new Error('password does not unwrap the user KEK');
     if (kind === 'recovery') throw new Error('recovery phrase does not unwrap the user KEK');
     if (kind === 'catalog') throw new Error('cannot decrypt catalog');
+    if (kind === 'person') throw new Error('cannot unwrap the person key');
     throw new Error('cannot unwrap store DEK');
   }
 }
@@ -136,9 +156,55 @@ export async function createUserKeys(
       kdf: { ...kdf, salt: passwordSalt.toString('base64') },
       passwordWrap: wrap(await derivePasswordKey(password, passwordSalt, kdf), kek),
       recoveryKdf: { alg: 'bip39-pbkdf2' },
-      recoveryWrap: wrap(mnemonicToWrapKey(mnemonic), kek)
+      recoveryWrap: wrap(mnemonicToWrapKey(mnemonic), kek),
+      personKey: await newPersonKey(kek)
     }
   };
+}
+
+/** A fresh key pair for a person (#1762 slice 5), its private half wrapped under their KEK. */
+export async function newPersonKey(kek: Buffer): Promise<PersonKey> {
+  const pair = await newLinkKeyPair();
+  const secret = Buffer.from(pair.linkKey, 'utf8');
+  try {
+    return { publicKey: pair.publicKey, privateWrap: wrap(kek, secret) };
+  } finally {
+    secret.fill(0);
+  }
+}
+
+/** The public half of a person's key pair, checked strictly; null when they have none. */
+export function personPublicKey(envelope: UserKeyEnvelope): LinkPublicKey | null {
+  return parseLinkPublicKey(envelope.personKey?.publicKey);
+}
+
+/**
+ * Seal a copy of `kek` to `recipient`'s public key (#1762 slice 5): the copy a
+ * proxy grant carries. Only the recipient's private key opens it.
+ */
+export function sealKekCopy(recipient: LinkPublicKey, kek: Buffer): Promise<Lockbox> {
+  return sealForLink(recipient, kek);
+}
+
+/**
+ * Open a KEK copy sealed to this person (#1762 slice 5): `ownKek` unwraps
+ * their private key from `envelope`, which opens `copy`. Throws when any step
+ * fails; the private key never leaves this function.
+ */
+export async function openKekCopy(envelope: UserKeyEnvelope, ownKek: Buffer, copy: Lockbox): Promise<Buffer> {
+  if (!envelope.personKey) throw new Error('cannot unwrap the person key');
+  const secret = unwrap(ownKek, envelope.personKey.privateWrap, 'person');
+  let opened: Uint8Array | undefined;
+  try {
+    opened = await openLockbox(secret.toString('utf8'), copy);
+    if (opened.length !== KEYLEN) throw new Error('not a key copy');
+    return Buffer.from(opened);
+  } catch {
+    throw new Error('cannot open the key copy');
+  } finally {
+    secret.fill(0);
+    opened?.fill(0);
+  }
 }
 
 export async function unwrapKekWithPassword(envelope: UserKeyEnvelope, password: string): Promise<Buffer> {

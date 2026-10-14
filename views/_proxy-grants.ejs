@@ -21,6 +21,7 @@
           <td><%= g.proxy %></td>
           <td class="small text-muted">
             <% g.can.forEach(function (c, i) { %><%= i ? ', ' : '' %><span data-scope="<%= c.name %>" title="<%= c.name %>"><%= c.description %></span><% }) %>
+            <% if (g.vault === 'copy') { %><div data-proxy-vault-copy>Including <%= whose %> encrypted vaults.</div><% } %>
             <% if (g.mayRedelegate) { %><div class="text-warning-emphasis" data-proxy-redelegates><%= g.proxy %> can also give other people access to <%= whose %> account.</div><% } %>
           </td>
           <td class="small">

@@ -59,6 +59,13 @@ describe('#1762 slice 7 — the people who may act for you', () => {
     expect(forms[0].querySelector('button')?.getAttribute('aria-label')).toBe("Revoke jim's access");
   });
 
+  test('a grant carrying a key copy says it includes the encrypted vaults (#1762 slice 5)', async () => {
+    const doc = await render('_proxy-grants.ejs', { grants: [grant({ vault: 'copy' }), grant({ id: 'g-2', proxy: 'sue' })], owner: 'mom', revokeBase: '/x/', csrfToken: 't', self: true });
+    const rows = [...doc.querySelectorAll('tbody tr')];
+    expect(text(rows[0].querySelector('[data-proxy-vault-copy]'))).toBe('Including your encrypted vaults.');
+    expect(rows[1].querySelector('[data-proxy-vault-copy]')).toBeNull();
+  });
+
   test('an empty list says so', async () => {
     const doc = await render('_proxy-grants.ejs', { grants: [], owner: 'mom', revokeBase: '/x/', csrfToken: 't', self: true });
     expect(text(doc.body)).toBe('Nobody can act for you.');
@@ -89,7 +96,22 @@ describe('#1762 slice 7 — the give form', () => {
     expect(text(doc.querySelector(`label[for="${search?.id}"]`))).toBe('Who will act for you?');
     const end = form.querySelector('input[type="date"][name="endDate"]');
     expect(text(doc.querySelector(`label[for="${end?.id}"]`))).toBe('End date (optional)');
-    expect(text(form)).toMatch(/Encrypted vaults are not shared yet/);
+    // #1762 slice 5: encrypted vaults are shared when the owner chooses.
+    expect(text(form.querySelector('[data-vault-shared]'))).toMatch(/^Your encrypted vaults open to them too, while they act for you\./);
+    expect(boxes[1].hasAttribute('disabled')).toBe(false);
+  });
+
+  test('the vaults choice cannot be ticked while it is blocked, and says why (#1762 slice 5)', async () => {
+    const why = 'Unlock your private store first: access to your encrypted vaults can only be given while it is open.';
+    const doc = await render('_proxy-grant-form.ejs', { action: '/profile/proxy-access', options: OPTIONS, owner: 'mom', self: true, csrfToken: 't', vaultBlocked: why });
+    const box = doc.querySelector('input[data-permission="vault-proxy"]');
+    expect(box?.hasAttribute('disabled')).toBe(true);
+    const reason = doc.querySelector('[data-vault-blocked]');
+    expect(text(reason)).toBe(why);
+    expect(box?.getAttribute('aria-describedby')).toBe(reason?.id);
+    expect(doc.querySelector('[data-vault-shared]')).toBeNull();
+    // Only that choice: the others stay open.
+    expect(doc.querySelector('input[data-permission="page-read"]')?.hasAttribute('disabled')).toBe(false);
   });
 
   test('choosing proxy-grant has the decided warning beside it', async () => {

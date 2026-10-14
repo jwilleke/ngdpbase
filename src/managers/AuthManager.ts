@@ -49,7 +49,18 @@ import type {
 } from '../providers/BaseAuthProvider.js';
 import { PasswordAuthProvider } from '../providers/PasswordAuthProvider.js';
 import { MagicLinkAuthProvider, EMAIL_FACTOR } from '../providers/MagicLinkAuthProvider.js';
-import { lockPrivateStores } from '../utils/privateStoreUnlock.js';
+import {
+  dropKeyCopiesOfGrant,
+  dropKeyCopy,
+  hasUnlockedKey,
+  hasUserKeys,
+  heldKeyCopy,
+  lockPrivateStores,
+  openKeyCopy,
+  personKeyOf,
+  sealKekCopyFor
+} from '../utils/privateStoreUnlock.js';
+import { isLockbox, type Lockbox } from '../utils/shareLockbox.js';
 import { OidcAuthProvider, type OutsideProviderIcon, type SignedClientSecret } from '../providers/OidcAuthProvider.js';
 import { resolveEgressPolicy } from '../http/egressPolicy.js';
 import { CloudflareAccessAuthProvider } from '../providers/CloudflareAccessAuthProvider.js';
@@ -480,12 +491,14 @@ export interface ProxyGrant {
   /** ISO 8601: when it stops; null lasts until revoked. */
   expiresAt: string | null;
   /**
-   * Vault access (operator, 2026-10-12). `none`: the owner made it and it
-   * carries no copy of their vault key (one can be added only by the owner,
-   * with their store unlocked — #1762 slice 5). `never`: an administrator made
-   * it, so it never carries one.
+   * Vault access (operator, 2026-10-12). `copy`: the owner made it with their
+   * store unlocked and `vault-proxy` in it, so it carries a copy of their
+   * vault key sealed to the proxy's public key (#1762 slice 5) — the copy
+   * itself is in the row, never on the grant. `none`: the owner made it with
+   * no copy (no `vault-proxy`, or no encrypted store to copy). `never`: an
+   * administrator made it, so it never carries one.
    */
-  vault: 'none' | 'never';
+  vault: 'none' | 'never' | 'copy';
 }
 
 /** A grant as listed: its terms, the permissions in plain words, and whether it lets the proxy give others access. */
@@ -515,9 +528,11 @@ export const ACTING_FOR_PATH = '/account/acting-for';
  * `proxy-switch` record's `reason` says it: the person chose a grant, chose
  * themselves again, or the session was dropped back to them because the grant
  * no longer allows it (ended, expired, either account inactive) or proxy
- * access was turned off.
+ * access was turned off. `vault-opened` is not a switch: the grant's key copy
+ * was opened, so the represented person's encrypted vaults are open to the
+ * session that acts for them (#1762 slice 5).
  */
-export type ActingForChange = 'chosen' | 'switched-back' | 'grant-ended' | 'proxy-access-off';
+export type ActingForChange = 'chosen' | 'switched-back' | 'grant-ended' | 'proxy-access-off' | 'vault-opened';
 
 /** The choice a signed-in person has (#1762 slice 4): themselves, or someone a live grant lets them act for. */
 export interface ActingForChoices {
@@ -535,8 +550,11 @@ interface ProxyPolicy {
   holds(subject: PermissionSubject, action: string): Promise<boolean>;
 }
 
-/** A grant's terms as the row's `secret` holds them: everything but what the row's own fields carry. */
-type ProxyTerms = Omit<ProxyGrant, 'id' | 'owner' | 'createdAt'>;
+/**
+ * A grant's terms as the row's `secret` holds them: everything but what the
+ * row's own fields carry, plus the key copy a `vault: 'copy'` grant carries.
+ */
+type ProxyTerms = Omit<ProxyGrant, 'id' | 'owner' | 'createdAt'> & { keyCopy?: Lockbox };
 
 /** A `proxy` row's grant, or null when its terms do not read. */
 function proxyGrantOf(row: CredentialRecord): ProxyGrant | null {
@@ -545,8 +563,19 @@ function proxyGrantOf(row: CredentialRecord): ProxyGrant | null {
     const t = JSON.parse(row.secret) as Partial<ProxyTerms>;
     if (typeof t.proxy !== 'string' || typeof t.createdBy !== 'string' ||
       !Array.isArray(t.permissions) || !t.permissions.every(p => typeof p === 'string') ||
-      !(t.expiresAt === null || typeof t.expiresAt === 'string') || (t.vault !== 'none' && t.vault !== 'never')) return null;
+      !(t.expiresAt === null || typeof t.expiresAt === 'string') || (t.vault !== 'none' && t.vault !== 'never' && t.vault !== 'copy')) return null;
     return { id: row.id, owner: row.username, proxy: t.proxy, permissions: [...t.permissions], createdBy: t.createdBy, createdAt: row.createdAt, expiresAt: t.expiresAt, vault: t.vault };
+  } catch {
+    return null;
+  }
+}
+
+/** The key copy a `proxy` row carries (#1762 slice 5), or null: none, or one that does not read. */
+function proxyKeyCopyOf(row: CredentialRecord | null | undefined): Lockbox | null {
+  if (row?.kind !== 'proxy') return null;
+  try {
+    const t = JSON.parse(row.secret) as { vault?: unknown; keyCopy?: unknown };
+    return t.vault === 'copy' && isLockbox(t.keyCopy) ? t.keyCopy : null;
   } catch {
     return null;
   }
@@ -1644,6 +1673,10 @@ class AuthManager extends BaseManager {
     if (ctx.username !== owner && permissions.includes(VAULT_PROXY_PERMISSION)) {
       throw new Error('A grant made for someone else can never include access to their vaults');
     }
+    // Nor does a proxy's, re-delegating: it would hand on the owner's vault key (#1762 slice 5).
+    if (ctx.viaProxy && permissions.includes(VAULT_PROXY_PERMISSION)) {
+      throw new Error(`Only ${owner} can give access to their vaults`);
+    }
     // Held, not fresh: the owner's own step-up is not the question when an administrator makes it.
     const lacking = await lackingScopes(permissions, p => pdp.holds(ownerSubject, p));
     if (lacking.length > 0) {
@@ -1658,15 +1691,62 @@ class AuthManager extends BaseManager {
       expiresAt = new Date(end).toISOString();
     }
 
+    // #1762 slice 5: vault access to an encrypted store carries a copy of the owner's key, sealed to the proxy.
+    const keyCopy = ctx.username === owner && permissions.includes(VAULT_PROXY_PERMISSION) ? await this.sealVaultCopy(ctx, owner, proxy) : null;
+
     const grant: ProxyGrant = {
       id: randomUUID(), owner, proxy, permissions, createdBy: ctx.username, createdAt: new Date(now).toISOString(), expiresAt,
-      vault: ctx.username === owner ? 'none' : 'never'
+      vault: ctx.username !== owner ? 'never' : keyCopy ? 'copy' : 'none'
     };
-    const terms: ProxyTerms = { proxy, permissions, createdBy: grant.createdBy, expiresAt, vault: grant.vault };
+    const terms: ProxyTerms = { proxy, permissions, createdBy: grant.createdBy, expiresAt, vault: grant.vault, ...(keyCopy ? { keyCopy } : {}) };
     // Recorded before it exists (the token-mint ordering): a grant nobody knows about is the worst case.
     await this.auditProxy(AUDIT_EVENT.PROXY_GRANT, ctx, grant);
     await store.add({ id: grant.id, username: owner, kind: 'proxy', subject: grant.id, secret: JSON.stringify(terms), label: '', createdAt: grant.createdAt });
     return this.proxyGrantView(grant);
+  }
+
+  /** Where private stores live; undefined when this site has no page directory. */
+  private pagesDirectory(): string | undefined {
+    return this.engine.getManager<ConfigurationManager>('ConfigurationManager')?.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+  }
+
+  /**
+   * Why `ctx` cannot give access to their own vaults now, in plain words, or
+   * null when they can (#1762 slice 5). The give form shows it beside the
+   * "vaults" choice; grantProxy refuses with the same words.
+   *
+   * - Only the person themselves, signed in as themselves: not an
+   *   administrator, not a proxy re-delegating.
+   * - A person with an encrypted store must have it unlocked, so the grant
+   *   can seal a copy of its key. A person with none needs nothing unlocked:
+   *   the grant opens only their unencrypted vaults.
+   */
+  async vaultGrantBlocked(ctx: PermissionSubject, owner: string): Promise<string | null> {
+    if (ctx.username !== owner || ctx.viaProxy) return `Only ${owner} can give access to their vaults.`;
+    const pagesDirectory = this.pagesDirectory();
+    if (!pagesDirectory || !(await hasUserKeys(pagesDirectory, owner))) return null;
+    return hasUnlockedKey(ctx) ? null : 'Unlock your private store first: access to your encrypted vaults can only be given while it is open.';
+  }
+
+  /**
+   * The copy of the owner's vault key a grant to `proxy` carries (#1762 slice
+   * 5), sealed to the proxy's public key while the owner's store is unlocked;
+   * null when the owner has no encrypted store (nothing to copy). Refused, in
+   * plain words, when the owner's store is locked or the proxy has no key
+   * pair yet — a grant never promises vault access it cannot give.
+   */
+  private async sealVaultCopy(ctx: PermissionSubject, owner: string, proxy: string): Promise<Lockbox | null> {
+    const blocked = await this.vaultGrantBlocked(ctx, owner);
+    if (blocked) throw new Error(blocked);
+    const pagesDirectory = this.pagesDirectory();
+    if (!pagesDirectory || !(await hasUserKeys(pagesDirectory, owner))) return null;
+    const proxyKey = await personKeyOf(pagesDirectory, proxy);
+    if (!proxyKey) {
+      throw new Error(`${proxy} cannot be given access to your encrypted vaults yet: they need a private store of their own, unlocked at least once. Give access without vaults, or ask them to set one up first.`);
+    }
+    const copy = await sealKekCopyFor(ctx, proxyKey);
+    if (!copy) throw new Error('Unlock your private store first: access to your encrypted vaults can only be given while it is open.');
+    return copy;
   }
 
   /** The decision points and the represented person's live subject (`ctx` itself for one's own), as grantProxy and its form ask them. */
@@ -1685,8 +1765,10 @@ class AuthManager extends BaseManager {
    * What a grant on `owner`'s account may carry, in plain words (#1762 slice
    * 7): every grantable catalog permission the owner holds now — the same
    * `holds` question grantProxy asks — so the give form offers nothing
-   * grantProxy would refuse. An administrator's form for someone else never
-   * offers `vault-proxy`. Asked like a listing (held, not fresh); refused
+   * grantProxy would refuse. An administrator's form for someone else, or a
+   * proxy's acting for them, never offers `vault-proxy`; the owner's own form
+   * offers it and says why it cannot be chosen now (`vaultGrantBlocked`).
+   * Asked like a listing (held, not fresh); refused
    * while proxy access is off.
    */
   async proxyGrantOptions(ctx: PermissionSubject, owner: string): Promise<ScopeDescription[]> {
@@ -1696,7 +1778,7 @@ class AuthManager extends BaseManager {
     const cm = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
     const offered: string[] = [];
     for (const name of grantablePermissionNames(cm?.getProperty('ngdpbase.permissions.definitions', {}))) {
-      if (ctx.username !== owner && name === VAULT_PROXY_PERMISSION) continue;
+      if ((ctx.username !== owner || ctx.viaProxy) && name === VAULT_PROXY_PERMISSION) continue;
       if (await pdp.holds(ownerSubject, name)) offered.push(name);
     }
     return this.describeScopes(offered);
@@ -1809,19 +1891,44 @@ class AuthManager extends BaseManager {
     const represented = usable ? await pip?.subjectFor(grant.owner) : null;
     if (!grant || !usable || !represented) {
       delete req.session.actingFor;
+      // #1762 slice 5: a dead grant's key copy goes with it.
+      dropKeyCopy(req.session?.privateStoreHandle);
       const why: ActingForChange = this.proxyAccessEnabled() ? 'grant-ended' : 'proxy-access-off';
       logger.info(`[proxy] ${person ?? self.username} no longer acts under grant ${String(grantId)} (${why}); back to themselves`);
       await this.auditActingFor(req, person ?? self.username, String(grantId), (grant ?? this.proxyGrantRecord(grantId))?.owner ?? null, why);
       return self;
     }
+    const keyHandle = await this.openVaultCopy(req, grant, person, self.privateStoreHandle);
     return {
       ...represented,
       roles: this.rolesAtSignIn(represented.roles, self.signIn?.aal ?? 1, self.aalCap).kept,
       ...(self.aalCap !== undefined ? { aalCap: self.aalCap } : {}),
       ...(self.signIn ? { signIn: self.signIn } : {}),
       ipAddress: self.ipAddress,
-      viaProxy: { kind: 'proxy', grantId: grant.id, actor: person, scopes: [...grant.permissions] }
+      viaProxy: { kind: 'proxy', grantId: grant.id, actor: person, scopes: [...grant.permissions], ...(keyHandle ? { keyHandle } : {}) }
     };
+  }
+
+  /**
+   * Open the grant's key copy into the actor's own bag (#1762 slice 5), once,
+   * when the grant carries `vault-proxy` and a copy and the actor's own store
+   * is unlocked; recorded as `proxy-switch` `vault-opened`, naming both
+   * people. Returns the handle the subject's claim carries to reach it, or
+   * undefined: no copy is held then, and a copy held for another grant is
+   * wiped. The copy is tried again when the actor unlocks their store later.
+   */
+  private async openVaultCopy(req: Request, grant: ProxyGrant, person: string, handle: string | undefined): Promise<string | undefined> {
+    if (!handle) return undefined;
+    const held = heldKeyCopy(handle);
+    if (held?.grantId === grant.id && held.owner === grant.owner) return handle;
+    if (held) dropKeyCopy(handle);
+    const pagesDirectory = this.pagesDirectory();
+    if (grant.vault !== 'copy' || !grant.permissions.includes(VAULT_PROXY_PERMISSION) || !pagesDirectory) return undefined;
+    const copy = proxyKeyCopyOf(this.credentials?.get(grant.id));
+    if (!copy) return undefined;
+    if (!(await openKeyCopy({ handle, actor: person, grantId: grant.id, owner: grant.owner, copy, pagesDirectory }))) return undefined;
+    await this.auditActingFor(req, person, grant.id, grant.owner, 'vault-opened');
+    return handle;
   }
 
   /**
@@ -1861,6 +1968,8 @@ class AuthManager extends BaseManager {
     }
     if (current !== null) {
       delete req.session.actingFor;
+      // #1762 slice 5: the represented person's keys go with the switch.
+      dropKeyCopy(req.session.privateStoreHandle);
       await this.auditActingFor(req, person, current, this.proxyGrantRecord(current)?.owner ?? null, 'switched-back');
     }
     if (grantId !== null) {
@@ -1900,7 +2009,10 @@ class AuthManager extends BaseManager {
   /** End a grant the caller has already decided may be ended: recorded first, then removed. */
   private async endProxyGrant(ctx: PermissionSubject, grant: ProxyGrant, why: 'revoked' | 'account-deleted'): Promise<boolean> {
     await this.auditProxy(AUDIT_EVENT.PROXY_REVOKE, ctx, grant, why);
-    return this.requireCredentialsStore().remove(grant.id);
+    // #1762 slice 5: the row holds the sealed key copy, so removing it deletes the copy; any opened from it is wiped now.
+    const removed = await this.requireCredentialsStore().remove(grant.id);
+    dropKeyCopiesOfGrant(grant.id);
+    return removed;
   }
 
   /** A proxy-grant record (#1762): `user` the person represented, `actor` who acted. */

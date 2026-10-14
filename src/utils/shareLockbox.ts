@@ -99,7 +99,11 @@ export function linkKeyFromParts(jwk: { d: string; x: string; y: string }): stri
   return `${jwk.d}.${jwk.x}.${jwk.y}`;
 }
 
-/** Make a link key pair, as the owner's browser does. Tests only: production pairs are made in the browser. */
+/**
+ * Make a key pair on the server. A link's pair is made in the owner's browser,
+ * so for links this is the tests' stand-in; a person's own key pair for proxy
+ * access (#1762 slice 5, `privateStoreCrypto.newPersonKey`) is made here.
+ */
 export async function newLinkKeyPair(): Promise<{ publicKey: LinkPublicKey; linkKey: string }> {
   const pair = await subtle.generateKey({ name: 'ECDH', namedCurve: CURVE }, true, ['deriveBits']);
   const jwk = await subtle.exportKey('jwk', pair.privateKey);
