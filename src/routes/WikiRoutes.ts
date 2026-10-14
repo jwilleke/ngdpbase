@@ -11324,16 +11324,12 @@ ${panes}
       (user as { roles?: string[] }).roles = await this.engine.getManager('RoleManager').resolveUserRoles(username);
 
       const configManager = this.engine.getManager('ConfigurationManager');
-      const coreFields: string[] = [
-        ...(configManager.getProperty('ngdpbase.user.coreFields', [
-          'username', 'email', 'displayName', 'password',
-          'roles', 'isActive', 'isExternal', 'isSystem',
-          'createdAt', 'loginCount', 'lastLogin',
-          'preferences', 'profilePage', 'allowedAuthMethods', 'avatar'
-        ]) as string[]),
-        // #1805: has its own checkbox on this form, so never listed again as a read-only extended field.
-        'isTest'
-      ];
+      const coreFields: string[] = configManager.getProperty('ngdpbase.user.coreFields', [
+        'username', 'email', 'displayName', 'password',
+        'roles', 'isActive', 'isExternal', 'isSystem', 'isTest',
+        'createdAt', 'loginCount', 'lastLogin',
+        'preferences', 'profilePage', 'allowedAuthMethods', 'avatar'
+      ]) as string[];
 
       const extendedFields: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(user)) {

@@ -27,6 +27,7 @@ import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
 import request from 'supertest';
 import path from 'path';
 import WikiRoutes from '../WikiRoutes';
+import shippedConfig from '../../../config/app-default-config.json';
 
 vi.mock('../../utils/LocaleUtils', () => {
   const methods = {
@@ -35,6 +36,8 @@ vi.mock('../../utils/LocaleUtils', () => {
   };
   return { default: methods, ...methods };
 });
+
+let lastRenderData: Record<string, unknown> | undefined;
 
 let mockUserContext: {
   username: string;
@@ -333,6 +336,7 @@ function buildApp() {
 
   appInstance.use((_req: express.Request, res: express.Response, next: express.NextFunction) => {
     res.render = (_view: string, _data: unknown, cb?: (err: Error | null, str?: string) => void) => {
+      lastRenderData = _data as Record<string, unknown>;
       if (cb) cb(null, '<html>stub</html>');
       else res.send('<html>stub</html>');
     };
@@ -678,6 +682,19 @@ describe('WikiRoutes — coverage batch 5', () => {
     test('renders user edit form for admin', async () => {
       const res = await request(app).get('/admin/users/testuser/edit');
       expect(res.status).toBe(200);
+    });
+
+    test('#1805: isTest is a shipped core field, so never listed as a read-only extended field', async () => {
+      const shipped = shippedConfig['ngdpbase.user.coreFields'];
+      const original = mockConfigManager.getProperty.getMockImplementation();
+      mockConfigManager.getProperty.mockImplementation((key: string, def: unknown) =>
+        key === 'ngdpbase.user.coreFields' ? shipped : original(key, def));
+      mockUserManager.getUser.mockResolvedValue({ username: 'testuser', isTest: true, addonField: 'x' });
+      const res = await request(app).get('/admin/users/testuser/edit');
+      mockConfigManager.getProperty.mockImplementation(original);
+      expect(res.status).toBe(200);
+      expect(shipped).toContain('isTest');
+      expect(lastRenderData?.extendedFields).toEqual({ addonField: 'x' });
     });
 
     test('returns 404 when user is not found', async () => {
