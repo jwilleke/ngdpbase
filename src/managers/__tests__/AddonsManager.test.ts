@@ -560,6 +560,70 @@ describe('AddonsManager', () => {
 
       expect(manager.isLoaded('needs-missing')).toBe(false);
     });
+
+    describe('optionalDependencies (#1808)', () => {
+      // 'acct' sorts before 'forms', so discovery alone would load it first
+      const writeAddon = async (name: string, extra = ''): Promise<void> => {
+        const dir = path.join(tmpDir, name);
+        await fs.mkdir(dir);
+        await fs.writeFile(
+          path.join(dir, 'index.js'),
+          `module.exports = { name: '${name}', version: '1.0.0', ${extra} register: () => {} };`,
+          'utf8'
+        );
+      };
+
+      const start = async (enabledAddons: string[]): Promise<AddonsManager> => {
+        const manager = new AddonsManager(makeEngine(makeConfigManager({ enabledAddons })));
+        await manager.initialize();
+        return manager;
+      };
+
+      test('loads an installed, enabled optional dependency first', async () => {
+        await writeAddon('acct', 'optionalDependencies: [\'forms\'],');
+        await writeAddon('forms');
+        const manager = await start(['acct', 'forms']);
+
+        expect(manager.resolveLoadOrder()).toEqual(['forms', 'acct']);
+        expect(manager.isLoaded('acct')).toBe(true);
+        expect(manager.isLoaded('forms')).toBe(true);
+      });
+
+      test('loads anyway when the optional dependency is disabled', async () => {
+        await writeAddon('acct', 'optionalDependencies: [\'forms\'],');
+        await writeAddon('forms');
+        const manager = await start(['acct']);
+
+        expect(manager.resolveLoadOrder()).toEqual(['acct']);
+        expect(manager.isLoaded('acct')).toBe(true);
+        expect(manager.isLoaded('forms')).toBe(false);
+      });
+
+      test('loads anyway when the optional dependency is not installed', async () => {
+        await writeAddon('acct', 'optionalDependencies: [\'forms\'],');
+        const manager = await start(['acct']);
+
+        expect(manager.isLoaded('acct')).toBe(true);
+      });
+
+      test('a cycle through an optional dependency is still detected', async () => {
+        await writeAddon('acct', 'optionalDependencies: [\'forms\'],');
+        await writeAddon('forms', 'dependencies: [\'acct\'],');
+        const manager = await start(['acct', 'forms']);
+
+        expect(() => manager.resolveLoadOrder()).toThrow(/Circular dependency/);
+      });
+
+      test('does not block disabling the optional dependency, and is reported in status', async () => {
+        await writeAddon('acct', 'optionalDependencies: [\'forms\'],');
+        await writeAddon('forms');
+        const manager = await start(['acct', 'forms']);
+
+        expect(manager.canDisable('forms')).toEqual({ ok: true });
+        const status = await manager.getStatus();
+        expect(status.find(s => s.name === 'acct')?.optionalDependencies).toEqual(['forms']);
+      });
+    });
   });
 
   describe('status reporting', () => {
