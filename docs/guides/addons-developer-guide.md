@@ -1171,6 +1171,15 @@ LABEL org.opencontainers.image.source="https://github.com/<you>/<your-addon-repo
 COPY --from=build /app/addons/<slug> /app/addons/<slug>
 ```
 
+Put a `.dockerignore` beside the Dockerfile, so `COPY . .` does not copy your machine's installed packages and build output over what `npm ci` just installed in the image. Host `node_modules` built on a Mac are darwin-arm64; a native dependency among them breaks or misbehaves on Linux.
+
+```text
+node_modules
+.git
+*.js.map
+*.tsbuildinfo
+```
+
 Key points:
 
 - The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG. Both `FROM` lines use the same ARG, so the add-on is compiled against exactly the core it runs on.
