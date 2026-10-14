@@ -61,7 +61,7 @@ import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
 import type ShareManager from '../managers/ShareManager.js';
 import type { ApprovedApp, OidcManager } from '../managers/OidcManager.js';
-import type { OutsideProvider, PendingSignIn } from '../managers/AuthManager.js';
+import { ACTING_FOR_PATH, type OutsideProvider, type PendingSignIn } from '../managers/AuthManager.js';
 import type { ShareScope, SharePageEntry } from '../types/Share.js';
 import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js';
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
@@ -6376,6 +6376,8 @@ ${panes}
       } | null;
       await audit?.logSecurityEvent?.(
         {
+          // Nobody is signed in yet: the attempted name is a fact, not a context (#1762 slice 4).
+          subject: null,
           ipAddress: req.ip,
           userAgent: req.get?.('user-agent'),
           attemptedUsername: typeof username === 'string' ? username : undefined
@@ -7253,6 +7255,45 @@ ${panes}
       logger.warn(`[outside sign-in] confirming a connection failed: ${(err as Error).message}`);
       res.redirect('/login');
     }
+  }
+
+  /**
+   * GET /account/acting-for — choose whom to act for (#1762 slice 4):
+   * yourself, or each person a live proxy grant lets you act for. Shown after
+   * sign-in to a person who holds a grant, and reachable any time. Not found
+   * while proxy access is off. The authority is the signed-in session and the
+   * grant itself (`AuthManager.actingForChoices`), never the subject the
+   * session currently acts as, so switching back is always possible.
+   */
+  async actingForPage(req: Request, res: Response): Promise<void> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    if (!authManager?.proxyAccessEnabled()) { await this.renderError(req, res, 404, 'Not Available', 'Acting for someone else is not turned on on this site.'); return; }
+    const choices = authManager.actingForChoices(req);
+    if (!choices) return res.redirect(`/login?redirect=${encodeURIComponent(ACTING_FOR_PATH)}`);
+    const commonData = await this.getCommonTemplateData(req);
+    res.set('Cache-Control', 'no-store');
+    res.render('account-acting-for', {
+      ...commonData,
+      title: 'Act for someone else',
+      choices,
+      returnTo: safeRedirect(req.query.returnTo),
+      error: typeof req.query.error === 'string' ? req.query.error : null,
+      csrfToken: req.session?.csrfToken || ''
+    });
+  }
+
+  /** POST /account/acting-for — switch: `grant` names a grant, or is empty to act as yourself (#1762 slice 4). */
+  async switchActingFor(req: Request, res: Response): Promise<void> {
+    const authManager = this.engine.getManager<AuthManager>('AuthManager');
+    if (!authManager?.proxyAccessEnabled()) { await this.renderError(req, res, 404, 'Not Available', 'Acting for someone else is not turned on on this site.'); return; }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const grant = typeof body.grant === 'string' && body.grant ? body.grant : null;
+    const returnTo = safeRedirect(body.returnTo);
+    if (!(await authManager.switchActingFor(req, grant))) {
+      if (!authManager.actingForChoices(req)) return res.redirect(`/login?redirect=${encodeURIComponent(ACTING_FOR_PATH)}`);
+      return res.redirect(`${ACTING_FOR_PATH}?error=${encodeURIComponent('You can no longer act for that person.')}`);
+    }
+    req.session.save(() => res.redirect(returnTo));
   }
 
   /**
@@ -8791,7 +8832,11 @@ ${panes}
     const pagesDirectory = configManager.getResolvedDataPath('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
     const layout = privateStoreLayoutFromConfig(getProperty);
     const username = req.userContext?.username ?? '';
-    const locked = await privateStoreLockedFor({ ctx: req.userContext, username, pagesDirectory, layout });
+    // #1762 slice 4: while acting for someone there is no store of "yours" to
+    // unlock here — the subject is the represented person's, and the session's
+    // key bag is the actor's own — so no banner, and the unlock door opens
+    // nothing (a proxy reaches encrypted stores only through slice 5's copy).
+    const locked = !req.userContext?.viaProxy && await privateStoreLockedFor({ ctx: req.userContext, username, pagesDirectory, layout });
     return { username, pagesDirectory, layout, locked };
   }
 
@@ -15439,6 +15484,8 @@ ${panes}
     app.post('/login/connect/cancel', (req: Request, res: Response) => this.cancelPendingConnection(req, res));
     app.get('/login/connect/confirm', (req: Request, res: Response) => void this.confirmConnectionPage(req, res));
     app.post('/login/connect/confirm', (req: Request, res: Response) => void this.answerConnectionConfirm(req, res));
+    app.get(ACTING_FOR_PATH, (req: Request, res: Response) => void this.actingForPage(req, res));
+    app.post(ACTING_FOR_PATH, (req: Request, res: Response) => void this.switchActingFor(req, res));
     app.get('/logout', (req: Request, res: Response) => void this.confirmLogout(req, res));
     app.post('/logout', (req: Request, res: Response) => this.processLogout(req, res));
     app.get('/register', (req: Request, res: Response) => this.registerPage(req, res));
@@ -16316,19 +16363,20 @@ ${panes}
 
   /**
    * The audit sink as a queryable manager, or null when auditing is
-   * unconfigured. #1116: every query takes the caller's username — a fact —
-   * and the manager derives the admin-system decision itself; the route's
+   * unconfigured. #1116: every query takes the caller's subject (#1762 slice 4:
+   * the subject, not its username, so a person acting for someone is decided
+   * as they are) and the manager derives the decision itself; the route's
    * own 403 gate is defense in depth, no longer the only door.
    */
   private auditQuery(): {
-    searchAuditLogs?: (f: unknown, o: unknown, caller: { username?: string | null }) => Promise<unknown>;
-    getAuditStats?: (f: unknown, caller: { username?: string | null }) => Promise<unknown>;
-    exportAuditLogs?: (f: unknown, format: string, caller: { username?: string | null }) => Promise<string>;
+    searchAuditLogs?: (f: unknown, o: unknown, caller: PermissionSubject) => Promise<unknown>;
+    getAuditStats?: (f: unknown, caller: PermissionSubject) => Promise<unknown>;
+    exportAuditLogs?: (f: unknown, format: string, caller: PermissionSubject) => Promise<string>;
   } | null {
     return this.engine.getManager('AuditManager') as {
-      searchAuditLogs?: (f: unknown, o: unknown, caller: { username?: string | null }) => Promise<unknown>;
-      getAuditStats?: (f: unknown, caller: { username?: string | null }) => Promise<unknown>;
-      exportAuditLogs?: (f: unknown, format: string, caller: { username?: string | null }) => Promise<string>;
+      searchAuditLogs?: (f: unknown, o: unknown, caller: PermissionSubject) => Promise<unknown>;
+      getAuditStats?: (f: unknown, caller: PermissionSubject) => Promise<unknown>;
+      exportAuditLogs?: (f: unknown, format: string, caller: PermissionSubject) => Promise<string>;
     } | null;
   }
 
@@ -16357,7 +16405,7 @@ ${panes}
       // An unconfigured audit provider renders an empty page rather than a
       // 500: "auditing is off" and "auditing is broken" must not look alike.
       const emptyStats = { totalEvents: 0, eventsByType: {}, eventsByResult: {}, eventsBySeverity: {}, eventsByUser: {}, recentActivity: [], securityIncidents: 0 };
-      const caller = { username: currentUser.username };
+      const caller = currentUser;
       const auditStats = audit?.getAuditStats ? await audit.getAuditStats(filters, caller) : emptyStats;
       // #1304: the stat bar navigates, so its numbers are of the whole log, not
       // of the current filter. Filtered stats make "Total Events" agree with the
@@ -16467,7 +16515,7 @@ ${panes}
       return res.json(await audit.searchAuditLogs(
         this.auditFiltersFromQuery(req),
         { limit, offset, sortBy: 'timestamp', sortOrder: 'desc' },
-        { username: currentUser.username }
+        currentUser
       ));
     } catch (err: unknown) {
       if (err instanceof AuditQueryForbiddenError) {
@@ -16498,7 +16546,7 @@ ${panes}
       // Bounded deliberately: an unbounded scan on a large log is a denial of
       // service wearing a detail view.
       const logId = req.params.id;
-      const page = await audit.searchAuditLogs({}, { limit: 1000, sortBy: 'timestamp', sortOrder: 'desc' }, { username: currentUser.username }) as { results?: Array<{ id?: string }> };
+      const page = await audit.searchAuditLogs({}, { limit: 1000, sortBy: 'timestamp', sortOrder: 'desc' }, currentUser) as { results?: Array<{ id?: string }> };
       const details = (page.results ?? []).find((entry) => entry.id === logId);
 
       if (!details) {
@@ -16531,7 +16579,7 @@ ${panes}
       }
 
       const format = req.query.format === 'csv' ? 'csv' : 'json';
-      const data = await audit.exportAuditLogs(this.auditFiltersFromQuery(req), format, { username: currentUser.username });
+      const data = await audit.exportAuditLogs(this.auditFiltersFromQuery(req), format, currentUser);
       const stamp = new Date().toISOString().slice(0, 10);
 
       res.setHeader('Content-Type', format === 'csv' ? 'text/csv' : 'application/json');

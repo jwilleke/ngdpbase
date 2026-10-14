@@ -507,6 +507,28 @@ export interface ProxyGrantInput {
 /** Which side of the grants to list: the ones a person made (`asOwner`) or the ones naming them as proxy (`asProxy`). */
 export type ProxyGrantSide = { asOwner: string; asProxy?: undefined } | { asProxy: string; asOwner?: undefined };
 
+/** Where a signed-in person chooses whom to act for, and switches back (#1762 slice 4). */
+export const ACTING_FOR_PATH = '/account/acting-for';
+
+/**
+ * Why a session started or stopped acting for someone (#1762 slice 4), as the
+ * `proxy-switch` record's `reason` says it: the person chose a grant, chose
+ * themselves again, or the session was dropped back to them because the grant
+ * no longer allows it (ended, expired, either account inactive) or proxy
+ * access was turned off.
+ */
+export type ActingForChange = 'chosen' | 'switched-back' | 'grant-ended' | 'proxy-access-off';
+
+/** The choice a signed-in person has (#1762 slice 4): themselves, or someone a live grant lets them act for. */
+export interface ActingForChoices {
+  /** The person signed in on this session. */
+  self: string;
+  /** The grant this session acts under now, or null when the person acts as themselves. */
+  actingFor: string | null;
+  /** The live grants naming the person as proxy. */
+  grants: ProxyGrantView[];
+}
+
 /** The policy decision point, as proxy grants ask it. */
 interface ProxyPolicy {
   permits(subject: PermissionSubject, action: string): Promise<boolean>;
@@ -1672,11 +1694,15 @@ class AuthManager extends BaseManager {
     const who = side?.asOwner ?? side?.asProxy;
     if (typeof who !== 'string' || !who) throw new Error('Say whose grants: asOwner or asProxy');
     if (!(await this.mayManageProxyGrants(ctx, who, { viewOnly: true }))) throw new Error('Permission denied');
-    const now = Date.now();
+    return this.liveGrantsOn(store, side).map(g => this.proxyGrantView(g));
+  }
+
+  /** The live grants on one side, unchecked: each caller has already decided who may see them. */
+  private liveGrantsOn(store: BaseCredentialsProvider, side: ProxyGrantSide, now: number = Date.now()): ProxyGrant[] {
+    const who = side.asOwner ?? side.asProxy;
     return store.listKind('proxy')
       .map(proxyGrantOf)
-      .filter((g): g is ProxyGrant => g !== null && proxyGrantLive(g, now) && (side.asOwner !== undefined ? g.owner === who : g.proxy === who))
-      .map(g => this.proxyGrantView(g));
+      .filter((g): g is ProxyGrant => g !== null && proxyGrantLive(g, now) && (side.asOwner !== undefined ? g.owner === who : g.proxy === who));
   }
 
   /**
@@ -1688,10 +1714,149 @@ class AuthManager extends BaseManager {
    * never a person, so it asks no permission.
    */
   liveProxyGrant(grantId: string, now: number = Date.now()): ProxyGrant | null {
-    if (!this.proxyAccessEnabled() || !this.credentials || typeof grantId !== 'string' || !grantId) return null;
-    const row = this.credentials.get(grantId);
-    const grant = row ? proxyGrantOf(row) : null;
+    if (!this.proxyAccessEnabled()) return null;
+    const grant = this.proxyGrantRecord(grantId);
     return grant && proxyGrantLive(grant, now) ? grant : null;
+  }
+
+  /** The grant row with this id as it stands — live or not, whether proxy access is on or off — or null. */
+  private proxyGrantRecord(grantId: unknown): ProxyGrant | null {
+    if (!this.credentials || typeof grantId !== 'string' || !grantId) return null;
+    const row = this.credentials.get(grantId);
+    return row ? proxyGrantOf(row) : null;
+  }
+
+  // ── Acting for someone (#1762 slice 4) ───────────────────────────────
+
+  /**
+   * The person signed in on this interactive session, or null. Never a
+   * bearer request: an agent token or an app can never act for anyone, so it
+   * can never choose to either. `session.username` stays the person who
+   * signed in while they act for someone; the subject changes, not the
+   * session.
+   */
+  private sessionPerson(req: Request): string | null {
+    if ((req as Request & { bearerAuth?: boolean }).bearerAuth) return null;
+    const s = req.session;
+    return s?.isAuthenticated === true && typeof s.username === 'string' && s.username ? s.username : null;
+  }
+
+  /**
+   * The request's subject when the session acts for someone (#1762 slice 4):
+   * the one place it is built, called from the session middleware in app.ts
+   * with the session's own subject (`self`). Returns `self` unchanged when the
+   * session acts for nobody.
+   *
+   * When `session.actingFor` names a grant, the grant is re-read live on this
+   * request: in force, proxy access on, naming the session's person as proxy,
+   * and the represented account active. The subject is then the represented
+   * person — their username and live roles — with `viaProxy` naming the
+   * actor, the grant and its permissions; the PDP bounds every decision by
+   * the grant and by what the actor holds. The sign-in is the actor's
+   * (`signIn`, `aalCap`): the represented person's roles are held at the
+   * level the actor signed in at, and step-up asks the actor's own fresh
+   * sign-in. It carries no private-store handle: the session's key bag is the
+   * actor's own.
+   *
+   * Anything else — a grant revoked or expired mid-session, an inactive
+   * account, proxy access turned off, a subject that came with a token or a
+   * share — drops the session back to the person themselves: `actingFor` is
+   * cleared and the drop recorded as `proxy-switch`. A request never acts on
+   * a dead grant.
+   */
+  async subjectActingFor(req: Request, self: PermissionSubject): Promise<PermissionSubject> {
+    const grantId = req.session?.actingFor;
+    if (grantId === undefined) return self;
+    const person = this.sessionPerson(req);
+    const grant = this.liveProxyGrant(String(grantId));
+    const usable = grant !== null && person !== null && self.username === person && grant.proxy === person &&
+      !self.viaToken && !self.viaShare && !self.viaProxy;
+    const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+    const represented = usable ? await pip?.subjectFor(grant.owner) : null;
+    if (!grant || !usable || !represented) {
+      delete req.session.actingFor;
+      const why: ActingForChange = this.proxyAccessEnabled() ? 'grant-ended' : 'proxy-access-off';
+      logger.info(`[proxy] ${person ?? self.username} no longer acts under grant ${String(grantId)} (${why}); back to themselves`);
+      await this.auditActingFor(req, person ?? self.username, String(grantId), (grant ?? this.proxyGrantRecord(grantId))?.owner ?? null, why);
+      return self;
+    }
+    return {
+      ...represented,
+      roles: this.rolesAtSignIn(represented.roles, self.signIn?.aal ?? 1, self.aalCap).kept,
+      ...(self.aalCap !== undefined ? { aalCap: self.aalCap } : {}),
+      ...(self.signIn ? { signIn: self.signIn } : {}),
+      ipAddress: self.ipAddress,
+      viaProxy: { kind: 'proxy', grantId: grant.id, actor: person, scopes: [...grant.permissions] }
+    };
+  }
+
+  /**
+   * Whom the signed-in person may act for (#1762 slice 4): themselves, and
+   * each person a live grant names them proxy for. Null when proxy access is
+   * off or this is not an interactive signed-in session — the choice page
+   * does not exist then.
+   */
+  actingForChoices(req: Request): ActingForChoices | null {
+    const person = this.sessionPerson(req);
+    if (!this.proxyAccessEnabled() || !person || !this.credentials) return null;
+    const current = req.session.actingFor;
+    return {
+      self: person,
+      actingFor: typeof current === 'string' ? current : null,
+      grants: this.liveGrantsOn(this.credentials, { asProxy: person }).map(g => this.proxyGrantView(g))
+    };
+  }
+
+  /**
+   * Switch whom this session acts for (#1762 slice 4): a grant id, or null to
+   * act as yourself. The authority is the grant itself — live, naming the
+   * session's person as proxy, the represented account active — and the
+   * session's own sign-in; an agent token or an app never switches. Switching
+   * back is always allowed. Each change is recorded as `proxy-switch`. False
+   * when the switch is refused; the session is unchanged then.
+   */
+  async switchActingFor(req: Request, grantId: string | null): Promise<boolean> {
+    const person = this.sessionPerson(req);
+    if (!person) return false;
+    const current = typeof req.session.actingFor === 'string' ? req.session.actingFor : null;
+    if (grantId !== null) {
+      const grant = this.liveProxyGrant(grantId);
+      const pip = this.engine.getManager<{ subjectFor(username: string): Promise<PermissionSubject | null> }>('PolicyInformationPoint');
+      if (!grant || grant.proxy !== person || !(await pip?.subjectFor(grant.owner))) return false;
+      if (current === grant.id) return true;
+    }
+    if (current !== null) {
+      delete req.session.actingFor;
+      await this.auditActingFor(req, person, current, this.proxyGrantRecord(current)?.owner ?? null, 'switched-back');
+    }
+    if (grantId !== null) {
+      req.session.actingFor = grantId;
+      await this.auditActingFor(req, person, grantId, this.proxyGrantRecord(grantId)?.owner ?? null, 'chosen');
+    }
+    return true;
+  }
+
+  /**
+   * A `proxy-switch` record (#1762 slice 4): `user` the person represented,
+   * `actor` the person signed in — the attribution every proxy row carries.
+   * When the grant's record is already gone (revoked), the represented person
+   * is not known and the row names the signed-in person alone.
+   */
+  private async auditActingFor(req: Request, person: string, grantId: string, owner: string | null, change: ActingForChange): Promise<void> {
+    const { metadata: proxyMeta, ...proxy } = proxyAttribution(owner ? { kind: 'proxy', grantId, actor: person, scopes: [] } : null);
+    await recordAuditEvent(this.engine.getManager('AuditManager'), {
+      eventType: AUDIT_EVENT.PROXY_SWITCH,
+      user: owner ?? person,
+      ...proxy,
+      ipAddress: req.ip,
+      action: 'proxy-switch',
+      result: 'success',
+      severity: 'medium',
+      resource: grantId,
+      resourceType: 'proxy-grant',
+      reason: change,
+      metadata: { ...proxyMeta, proxyGrantId: grantId }
+    }, (err) => logger.warn(`[AuthManager] Audit record failed for proxy-switch (${change}) of ${grantId}:`, err));
   }
 
   private proxyGrantView(grant: ProxyGrant): ProxyGrantView {
@@ -2169,6 +2334,9 @@ class AuthManager extends BaseManager {
    *   never connected here. The person is sent to confirm it (`next`,
    *   `/login/connect/confirm`); ignored, it expires. An expired one is
    *   dropped.
+   * - Whom to act for (#1762 slice 4): a person a live proxy grant names is
+   *   sent to choose (`next`, `ACTING_FOR_PATH`); they act as themselves
+   *   until they choose someone. The new session never carries a choice.
    *
    * The route saves the session and answers, going to `next` when it is set.
    */
@@ -2204,6 +2372,12 @@ class AuthManager extends BaseManager {
     if (pending && pending.expiresAt > Date.now()) {
       req.session.pendingConnection = { ...pending, ...(how.returnTo !== undefined ? { returnTo: safeRedirect(how.returnTo) } : {}) };
       return { next: '/login/connect/confirm' };
+    }
+    // #1762 slice 4: a person someone has let act for them is asked whom to act
+    // for, then sent on to where they were going. Acting as themselves is the
+    // default: a sign-in never starts acting for anyone unasked.
+    if (this.proxyAccessEnabled() && this.credentials && this.liveGrantsOn(this.credentials, { asProxy: username }).length > 0) {
+      return { next: `${ACTING_FOR_PATH}?returnTo=${encodeURIComponent(safeRedirect(how.returnTo))}` };
     }
     return {};
   }

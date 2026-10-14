@@ -1687,6 +1687,7 @@ class PageManager extends BaseManager implements CatalogSource {
   private async assertContentPasses(
     pageName: string,
     content: string | undefined,
+    ctx: ActorContext,
     options: PageSaveOptions
   ): Promise<void> {
     if (options.skipValidation || !content) return;
@@ -1746,7 +1747,8 @@ class PageManager extends BaseManager implements CatalogSource {
           ) => Promise<string>;
             }>('AuditManager');
         await auditManager?.logSecurityEvent?.(
-          { user: { username: who } },
+          // #1762 slice 4: the save's context names the row — both people under a proxy grant.
+          { subject: ctx },
           'content_blocked_on_save',
           'high',
           `Refused save of "${pageName}": ${securityRules.map((e) => `${e.rule} (line ${e.line ?? '?'})`).join(', ')}`
@@ -2066,7 +2068,7 @@ class PageManager extends BaseManager implements CatalogSource {
     // system write is still named rather than falling back to a literal.
     const actingUser = actorOf(ctx).user;
 
-    await this.assertContentPasses(pageName, content, {
+    await this.assertContentPasses(pageName, content, ctx, {
       userName: actingUser,
       ...options
     });

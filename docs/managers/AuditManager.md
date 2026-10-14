@@ -525,6 +525,7 @@ audited.
 | `page-link-rewrite` | Inbound links rewritten after a rename | continue | yes |
 | `token-revoke` | Agent token revoked | refuse | yes |
 | `proxy-revoke` | Proxy grant ended: revoked, or the account closed; user is the person represented, actor who ended it (#1762) | refuse | yes |
+| `proxy-switch` | A signed-in session started or stopped acting for someone under a proxy grant: chosen, switched-back, or ended because the grant no longer allows it (grant-ended, proxy-access-off); user is the person represented, actor the person signed in (#1762) | continue | yes |
 | `authentication-success` | Sign-in succeeded | continue | yes |
 | `authentication-failed` | Sign-in failed | continue | yes |
 | `authentication-logout` | User signed out | continue | yes |

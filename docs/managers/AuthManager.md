@@ -99,7 +99,7 @@ One list of everything a person delegated, and one door to revoke any of it. The
 
 ## Proxy grants (#1762)
 
-A person lets another act for them ("Jim acting for Mom"). Slice 1 records the grant only: __no request is affected by a grant yet__. The rule and what is still to come are in [authentication-developer-guide.md](../guides/authentication-developer-guide.md#standing-rules).
+A person lets another act for them ("Jim acting for Mom"). A grant takes effect when the proxy chooses to act for the person (slice 4, below). The rule and what is still to come are in [authentication-developer-guide.md](../guides/authentication-developer-guide.md#standing-rules).
 
 - `proxyAccessEnabled()`: `ngdpbase.auth.proxy-access.enabled`, read on every call, false by default. While false, the three methods below throw.
 - `grantProxy(ctx, { owner, proxy, permissions, expiresAt? })` returns the grant as a `ProxyGrantView`: `id`, `owner` (the person represented), `proxy`, `permissions`, `createdBy`, `createdAt`, `expiresAt` (null: until revoked), `vault`, `can` (the permissions in plain words, `describeScopes`), `mayRedelegate` (it includes `proxy-grant`). The owner needs `proxy-grant` (step-up); an administrator making one for someone also needs `user-edit`. Every permission must be one the owner holds now (`lackingScopes`, the agent-token rule), or it throws naming the missing ones. Both accounts must be active, and nobody acts for themselves. `expiresAt` must be in the future. `vault` is `none` when the owner made it (no vault-key copy yet) and `never` when an administrator did: such a grant never carries one.
@@ -109,3 +109,12 @@ A person lets another act for them ("Jim acting for Mom"). Slice 1 records the g
 - `closeAccess(username, 'delete', ctx)` ends every grant the account is on, either side, whether or not proxy access is on. Disable leaves them.
 - Stored as a signed `proxy` row of the credentials store (`username` the owner, `subject` the grant id, `secret` the terms as JSON). `listCredentials` never shows one; `addCredential`, `renameCredential` and `removeCredential` refuse one.
 - Recorded first, refused when the record cannot be written: `proxy-grant` and `proxy-revoke` (reason `revoked` or `account-deleted`), with `user` the person represented and a top-level `actor` naming who made or ended it.
+
+### Acting for someone (slice 4)
+
+- `ACTING_FOR_PATH` (`/account/acting-for`): the choice page, `GET` to show it and `POST` (`grant`, empty for yourself; `returnTo`) to switch. Not found while proxy access is off.
+- `subjectActingFor(req, self)`: the request subject, built only here and called only from the session middleware in `app.ts`. `self` when `session.actingFor` is absent. Otherwise the grant is re-read live: in force, proxy access on, naming the session's person as proxy, the represented account active, and `self` carrying no token, share or proxy. Then the subject is the represented person (username, live roles held at the actor's sign-in level) with the actor's `signIn` and `aalCap`, no `privateStoreHandle`, and `viaProxy = { kind: 'proxy', grantId, actor, scopes }`. Anything else clears `actingFor`, records `proxy-switch` (`grant-ended` or `proxy-access-off`) and returns `self`.
+- `actingForChoices(req)`: `{ self, actingFor, grants }` for the signed-in person (the live grants naming them proxy), or null while proxy access is off or for a request that is not an interactive signed-in session (a bearer token or app).
+- `switchActingFor(req, grantId | null)`: sets or clears `session.actingFor`. A grant must be live, name the session's person as proxy and its owner be active; null (yourself) is always allowed. False when refused, with the session unchanged; a bearer request is always refused. Records `proxy-switch` (`switched-back` for the old choice, then `chosen`).
+- `completeSignIn` returns `next` = the choice page (with `returnTo`) when proxy access is on and a live grant names the person; a new session never carries a choice. `endSession` clears `actingFor` on every session end.
+- `proxy-switch` rows (continue on failure): `user` the person represented, `actor` the person signed in, `resource` the grant id, `reason` the change. When the grant's record is already gone (revoked), the row names the signed-in person alone.

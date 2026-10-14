@@ -48,7 +48,7 @@ function makeEngine(configOverrides: Record<string, unknown> = {}, declared: Rec
       // #1431 step 14: decisions are the PDP's.
       if (name === 'PolicyDecisionPoint') {
         return {
-          userHoldsPermission: vi.fn(async (username: string, permission: string) =>
+          permits: vi.fn(async ({ username }: { username?: string | null }, permission: string) =>
             username === 'root' && (permission === 'admin-system' || permission === 'audit-export'))
         };
       }
@@ -534,8 +534,8 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
     const cm = makeConfigManager(configOverrides);
     // #1431 step 14: decisions are the PDP's.
     const pdp = {
-      userHoldsPermission: vi.fn(async (username: string, permission: string) => {
-        const g = grants[username];
+      permits: vi.fn(async ({ username }: { username?: string | null }, permission: string) => {
+        const g = grants[username ?? ''];
         return g === true ? ['admin-system', 'audit-export'].includes(permission) : Array.isArray(g) && g.includes(permission);
       })
     };
@@ -596,6 +596,40 @@ describe('#1116 audit queries refuse without an admin-system caller', () => {
       searchAuditLogs: vi.fn().mockResolvedValue({ results: [] })
     };
     await expect(am.searchAuditLogs({}, {}, { username: 'root' })).rejects.toThrow(/admin-system/);
+  });
+
+  // #1762 slice 4: the caller is the subject, so the PDP decides it as it is —
+  // under a proxy grant, bounded by the grant and the actor — and the export
+  // row names both people. Sabotaged once (the gate asked by username): the
+  // decision went to a bare name and this went red.
+  // Sabotaged once (the row built from context.user again): this went red.
+  test('a security event with a proxy subject names both people, and the subject is not stored on the row', async () => {
+    const am = await makeGatedManager({});
+    const recorded: Array<Record<string, unknown>> = [];
+    (am as unknown as { record: (e: Record<string, unknown>) => Promise<string> }).record = async (e) => { recorded.push(e); return 'recorded'; };
+    const viaProxy = { kind: 'proxy' as const, grantId: 'pg-1', actor: 'jim', scopes: ['page-edit'] };
+    await am.logSecurityEvent({ subject: { username: 'mom', roles: ['editor'], isAuthenticated: true, ipAddress: '203.0.113.9', viaProxy }, user: { username: 'mom' }, resource: 'Recipes' }, 'SPAM_ATTEMPT', 'medium', 'spam');
+    expect(recorded[0]).toMatchObject({ user: 'mom', actor: 'jim', ipAddress: '203.0.113.9', metadata: { delegated: 'proxy', proxyGrantId: 'pg-1', securityEventType: 'SPAM_ATTEMPT' } });
+    expect(recorded[0].context).not.toHaveProperty('subject');
+    // With no subject (a sign-in throttle), the named user or 'system', and no actor.
+    await am.logSecurityEvent({ subject: null, ipAddress: '203.0.113.9' }, 'login_throttled', 'medium', 'throttled');
+    expect(recorded[1]).toMatchObject({ user: 'system' });
+    expect(recorded[1]).not.toHaveProperty('actor');
+  });
+
+  test('a proxy caller is decided as the whole subject, and the export row names both people', async () => {
+    const am = await makeGatedManager({ mom: true });
+    const pdp = (am as unknown as { engine: { getManager(n: string): { permits: ReturnType<typeof vi.fn> } } }).engine.getManager('PolicyDecisionPoint');
+    const recorded: Array<Record<string, unknown>> = [];
+    (am as unknown as { record: (e: Record<string, unknown>) => Promise<string> }).record = async (e) => { recorded.push(e); return 'recorded'; };
+    const viaProxy = { kind: 'proxy' as const, grantId: 'pg-1', actor: 'jim', scopes: ['audit-export'] };
+    const momViaJim = { username: 'mom', roles: ['admin'], isAuthenticated: true, ipAddress: '203.0.113.9', viaProxy };
+
+    await am.exportAuditLogs({}, 'json', momViaJim);
+    expect(pdp.permits).toHaveBeenCalledWith(expect.objectContaining({ username: 'mom', viaProxy }), 'audit-export');
+    expect(recorded).toContainEqual(expect.objectContaining({
+      eventType: 'audit-export', user: 'mom', actor: 'jim', metadata: expect.objectContaining({ delegated: 'proxy', proxyGrantId: 'pg-1', format: 'json' })
+    }));
   });
 });
 

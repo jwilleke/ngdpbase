@@ -9,6 +9,7 @@
  * - its unlocked private-store keys are zeroed and dropped (#1626), and
  * - the end is recorded as `authentication-logout`, with who, from where and
  *   why (#1670). Until this, only the idle timeout was recorded.
+ * - a choice to act for someone (`actingFor`, #1762) ends with it.
  *
  * An admin revoking another person's session is recorded separately as
  * `session-revoke`, by the route that does it. A session that simply expires
@@ -25,13 +26,15 @@ interface AuditSink {
 
 export function endSession(
   engine: { getManager(name: string): unknown },
-  session: { username?: unknown; privateStoreHandle?: unknown; pendingConnection?: unknown } | null | undefined,
+  session: { username?: unknown; privateStoreHandle?: unknown; pendingConnection?: unknown; actingFor?: unknown } | null | undefined,
   reason: SessionEndReason,
   from: { ipAddress?: string; userAgent?: string }
 ): void {
   endSessionKeys(session?.privateStoreHandle);
   // #1743: an outside identity waiting to be connected never outlives the session it waited in.
   if (session) delete session.pendingConnection;
+  // #1762 slice 4: nor does a choice to act for someone.
+  if (session) delete session.actingFor;
   const username = typeof session?.username === 'string' && session.username ? session.username : null;
   if (!username) return; // nobody was signed in: nothing ended
   const audit = engine.getManager('AuditManager') as AuditSink | null;

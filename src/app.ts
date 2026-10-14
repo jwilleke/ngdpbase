@@ -808,6 +808,7 @@ void (async (): Promise<void> => {
     rolesAwaitingEnrolment?(roles: readonly string[], reach: { now: number; ifEnrolled: number }): string[];
     hasCredential?(username: string, kind: 'passkey'): boolean;
     passkeyRelyingParty?(): unknown;
+    subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
   } | null;
   const roleManager = engine.getManager('RoleManager') as {
     roleIdleTimeouts?(): Record<string, number>;
@@ -913,7 +914,7 @@ void (async (): Promise<void> => {
               passkeysAvailable: Boolean(authManagerForRoles?.passkeyRelyingParty?.())
             };
           }
-          req.userContext = {
+          const self = {
             ...sessionContext,
             ...(stepDown ? { roles: stepDown.kept } : {}),
             ...(aalCap !== undefined ? { aalCap } : {}),
@@ -922,7 +923,12 @@ void (async (): Promise<void> => {
             // #1635: how and when this session signed in, so the PDP decides step-up at the door.
             ...(req.session.signIn ? { signIn: req.session.signIn } : {})
           };
-          logger.info(`[SESSION] Restored session for user: ${sessionContext.username}`);
+          // #1762 slice 4: a session acting for someone carries the represented
+          // person's subject, rebuilt from the live grant on every request; a
+          // dead grant drops it back to `self`. AuthManager builds it, here only.
+          req.userContext = await authManagerForRoles?.subjectActingFor?.(req, self) ?? self;
+          if (req.userContext.viaProxy) res.locals.actingFor = { name: req.userContext.username };
+          logger.info(`[SESSION] Restored session for user: ${sessionContext.username}${req.userContext.viaProxy ? ` acting for ${req.userContext.username}` : ''}`);
         } else {
           req.userContext = { ...pip.anonymousSubject(), ipAddress: req.ip };
           logger.info('[SESSION] User not found or inactive, treating as Anonymous');

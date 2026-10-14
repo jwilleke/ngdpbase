@@ -1,3 +1,4 @@
+import type { ActorContext } from '../../context/ActorContext.js';
 import BaseFilter from './BaseFilter.js';
 import logger from '../../utils/logger.js';
 import type { FilterValidationError } from './FilterChain.js';
@@ -45,6 +46,8 @@ interface SecurityViolation {
 interface ParseContext {
   pageName?: string;
   userName?: string;
+  /** The render's WikiContext, whose subject names an audit row's "who" (#1762 slice 4). */
+  wikiContext?: { userContext: ActorContext | null };
   engine?: {
     getManager: (name: string) => unknown;
   };
@@ -708,6 +711,9 @@ class SecurityFilter extends BaseFilter {
     if (auditManager) {
       auditManager.logSecurityEvent(
         {
+          // #1762 slice 4: the render's subject names the row (both people under a
+          // proxy grant); the name is the fallback when there is none.
+          subject: context.wikiContext?.userContext ?? null,
           user: { username: violation.userName },
           resource: violation.pageName,
           resourceType: 'page',

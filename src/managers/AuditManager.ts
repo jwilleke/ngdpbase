@@ -39,7 +39,8 @@ export class AuditQueryForbiddenError extends Error {
  */
 import BaseManager from './BaseManager.js';
 import { attributedTo, drainBootActions, systemContext, systemPrincipalOf } from '../context/bootActions.js';
-import type { ActorContext } from '../context/ActorContext.js';
+import { actorOf, type ActorContext } from '../context/ActorContext.js';
+import type { PermissionSubject } from './UserManager.js';
 import type { ProviderInfo } from '../types/Provider.js';
 import logger from '../utils/logger.js';
 import { auditDeclarationsFrom, auditEventDeclarations, bindAuditEvents } from '../utils/auditRegistry.js';
@@ -131,6 +132,14 @@ interface AuthenticationContext {
  * Context for security events
  */
 interface SecurityContext {
+  /**
+   * The context the event happened in (#1762 slice 4): the row's "who" is
+   * built from it (`actorOf`), so under a proxy grant it names both people.
+   * Mandatory: null only for a caller with no context (a sign-in throttle,
+   * before anyone is signed in). Never stored on the row itself.
+   */
+  subject: ActorContext | null;
+  /** The named user, for a caller with no context (a sign-in throttle, before anyone is signed in). */
   user?: AuditUser;
   ipAddress?: string;
   userAgent?: string;
@@ -188,12 +197,13 @@ interface AuditStats {
 }
 
 /**
- * Who is asking for audit records (#1116). A fact about the caller — the
- * permission decision is derived inside AuditManager, never passed in.
+ * Who is asking for audit records (#1116): the request's subject (#1762
+ * slice 4), so the decision is the PDP's for the subject as it is — under a
+ * proxy grant, bounded by the grant and the actor — and the export row names
+ * both people. The permission decision is derived inside AuditManager, never
+ * passed in.
  */
-export interface AuditQueryCaller {
-  username?: string | null;
-}
+export type AuditQueryCaller = PermissionSubject;
 
 /**
  * Base audit provider interface
@@ -685,15 +695,23 @@ class AuditManager extends BaseManager {
    * @returns What became of the record (#1205)
    */
   async logSecurityEvent(context: SecurityContext, eventType: string, severity: 'low' | 'medium' | 'high' | 'critical', description: string): Promise<AuditRecordOutcome> {
+    // #1762 slice 4: the "who" is the context's when the caller has one — both
+    // people under a proxy grant — else the named user, else 'system'. The
+    // context itself is not stored: it carries roles and the sign-in.
+    const { subject, ...facts } = context;
+    const who = subject
+      ? actorOf(subject)
+      : { user: facts.user?.username || 'system', ipAddress: facts.ipAddress, metadata: {} };
     const auditEvent: AuditEvent = {
       eventType: AUDIT_EVENT.SECURITY_EVENT,   // the specific kind is in metadata.securityEventType
-      user: context.user?.username || 'system',
-      ipAddress: context.ipAddress,
-      userAgent: context.userAgent,
+      ...who,
+      ipAddress: facts.ipAddress ?? who.ipAddress,
+      userAgent: facts.userAgent,
       severity: severity,
       reason: description,
-      context: context,
+      context: facts,
       metadata: {
+        ...who.metadata,
         securityEventType: eventType,
         timestamp: new Date().toISOString()
       }
@@ -708,24 +726,24 @@ class AuditManager extends BaseManager {
    * The audit list was the counterexample to the list-gate rule: this manager
    * applied no authorization of its own, safe only because one admin-system
    * check gated the whole page at the route — exactly the reasoning that
-   * stops working the moment a second caller appears. The caller supplies a
-   * FACT (its username); the decision is derived here, against UserManager.
-   * Fail closed: no caller, no username, no UserManager, or no permission
-   * all refuse. The audit log has no per-record narrowing, and a list that
+   * stops working the moment a second caller appears. The caller supplies its
+   * subject; the decision is derived here, by the PDP (#1762 slice 4: the
+   * subject as it is, so a person acting for someone is bounded by the grant
+   * and by what they hold themselves, never by the represented person's roles
+   * alone). Fail closed: no caller, no username, no PDP, or no permission all
+   * refuse. The audit log has no per-record narrowing, and a list that
    * cannot be narrowed refuses rather than returning everything.
    */
-  private async assertQueryCallerAllowed(caller?: AuditQueryCaller, permission: 'admin-system' | 'audit-export' = 'admin-system'): Promise<void> {
+  private async assertQueryCallerAllowed(caller?: AuditQueryCaller, permission: 'admin-system' | 'audit-export' = 'admin-system'): Promise<AuditQueryCaller> {
     const username = caller?.username;
-    if (username) {
-      // #1173: `userHoldsPermission`, not `hasPermission`. This is a LOOKUP —
-      // the caller supplies a username as a fact and the decision is derived
-      // here — not the authorisation of a request, so there is no token to cap.
-      // The two questions now have two names, and the dangerous one cannot be
-      // reached with a bare string at all.
+    if (caller && username) {
+      // #1762 slice 4: `permits` with the subject, not `userHoldsPermission`
+      // with its username — a username alone is the represented person under
+      // a proxy grant, and would query the log with their roles unbounded.
       const pdp = this.engine.getManager('PolicyDecisionPoint') as
-        { userHoldsPermission(username: string, permission: string): Promise<boolean> } | null;
-      if (pdp && await pdp.userHoldsPermission(username, permission)) {
-        return;
+        { permits(subject: PermissionSubject, permission: string): Promise<boolean> } | null;
+      if (pdp && await pdp.permits(caller, permission)) {
+        return caller;
       }
     }
     throw new AuditQueryForbiddenError(
@@ -738,7 +756,7 @@ class AuditManager extends BaseManager {
    *
    * @param {AuditFilters} filters - Search filters
    * @param {AuditSearchOptions} options - Search options
-   * @param {AuditQueryCaller} caller - Who is asking (username fact; the decision is made here)
+   * @param {AuditQueryCaller} caller - Who is asking: the request's subject (the decision is made here)
    * @returns {Promise<AuditSearchResults>} Search results
    */
   async searchAuditLogs(filters: AuditFilters = {}, options: AuditSearchOptions = {}, caller?: AuditQueryCaller): Promise<AuditSearchResults> {
@@ -778,20 +796,22 @@ class AuditManager extends BaseManager {
    */
   async exportAuditLogs(filters: AuditFilters = {}, format = 'json', caller?: AuditQueryCaller): Promise<string> {
     // #1638: exporting is its own action, audit-export; reading stays admin-system.
-    await this.assertQueryCallerAllowed(caller, 'audit-export');
+    const exporter = await this.assertQueryCallerAllowed(caller, 'audit-export');
     if (!this.provider) {
       throw new Error('Audit provider not initialized');
     }
     const exported = await this.provider.exportAuditLogs(filters, format);
     // #1215: a copy of the trail left the system. Who, what format, what
     // filter — never the content, which is the trail itself.
+    // #1762 slice 4: the caller's subject names the row — both people under a proxy grant.
+    const who = actorOf(exporter);
     await this.record({
       eventType: AUDIT_EVENT.AUDIT_EXPORT,
-      user: caller?.username ?? 'unknown',
+      ...who,
       action: 'audit-export',
       result: 'success',
       severity: 'medium',
-      metadata: { format, filters: { ...filters }, ...(caller ? {} : { actorMissing: true }) }
+      metadata: { ...who.metadata, format, filters: { ...filters } }
     });
     return exported;
   }
