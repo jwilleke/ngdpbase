@@ -8,7 +8,6 @@
 - Running / in-flight: none
 - Parked / half-done: none
 - Next steps:
-  - Review Dependabot PR #1789 (exiftool-vendored 38→39, major)
   - Remaining auth gaps: #1766 "Recent sign-in activity" (incl. "acted for you" entries); device-approval sign-in-server session after a proxy approval (auth guide Known gaps)
   - #1545 survivorship now carries the vault-handoff question from #1762
 - Blockers / significant notes: braces/sprintf-js Dependabot alerts carried under #1582/#1655 (no upstream fix); one flaky E2E (editor-submit) seen once 2026-10-14
