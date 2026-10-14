@@ -1638,7 +1638,7 @@
       "enabled": true
     }
   },
-  "_comment_user_coreFields": "Fields owned by the core platform on user records. Any field NOT in this list is treated as an extended/addon field and rendered read-only in the admin user edit page.",
+  "_comment_user_coreFields": "Fields owned by the core platform on user records. Any field NOT in this list is treated as an extended/addon field and rendered read-only in the admin user edit page. isTest (#1805, default false) marks a test account and has its own checkbox on that page.",
   "ngdpbase.user.coreFields": [
     "username",
     "email",
@@ -1648,6 +1648,7 @@
     "isActive",
     "isExternal",
     "isSystem",
+    "isTest",
     "createdAt",
     "loginCount",
     "lastLogin",
