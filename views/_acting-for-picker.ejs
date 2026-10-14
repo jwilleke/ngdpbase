@@ -1,0 +1,17 @@
+<%# #1762 slice 7 — the header's person picker: act as yourself, or for each person a live grant
+    lets you act for. Shown only to someone who holds such a grant (actingForPicker, set by the
+    session middleware from AuthManager.actingForChoices). Posts to the one switch door,
+    /account/acting-for, and comes back to this page. Locals: picker (ActingForChoices with
+    returnTo, the page to come back to), csrfToken. %>
+<form action="/account/acting-for" method="POST" class="d-inline-flex align-items-center gap-1 m-0" data-acting-for-picker>
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="returnTo" value="<%= picker.returnTo || '/' %>">
+    <label class="small mb-0" for="acting-for-picker-select">Act as</label>
+    <select class="form-select form-select-sm w-auto" id="acting-for-picker-select" name="grant">
+        <option value="" <%= picker.actingFor === null ? 'selected' : '' %>>Yourself (<%= picker.self %>)</option>
+        <% picker.grants.forEach(function (g) { %>
+        <option value="<%= g.id %>" <%= picker.actingFor === g.id ? 'selected' : '' %>><%= g.owner %></option>
+        <% }) %>
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary">Switch</button>
+</form>

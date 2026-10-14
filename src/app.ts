@@ -809,6 +809,7 @@ void (async (): Promise<void> => {
     hasCredential?(username: string, kind: 'passkey'): boolean;
     passkeyRelyingParty?(): unknown;
     subjectActingFor?(req: Request, self: NonNullable<Request['userContext']>): Promise<NonNullable<Request['userContext']>>;
+    actingForChoices?(req: Request): { grants: unknown[] } | null;
   } | null;
   const roleManager = engine.getManager('RoleManager') as {
     roleIdleTimeouts?(): Record<string, number>;
@@ -928,6 +929,10 @@ void (async (): Promise<void> => {
           // dead grant drops it back to `self`. AuthManager builds it, here only.
           req.userContext = await authManagerForRoles?.subjectActingFor?.(req, self) ?? self;
           if (req.userContext.viaProxy) res.locals.actingFor = { name: req.userContext.username };
+          // #1762 slice 7: the header's person picker, only for someone a live grant lets act for another.
+          const actingForChoices = authManagerForRoles?.actingForChoices?.(req);
+          // `returnTo`: switching comes back to the page it was made on (switchActingFor keeps it on this site).
+          if (actingForChoices && actingForChoices.grants.length > 0) res.locals.actingForPicker = { ...actingForChoices, returnTo: req.method === 'GET' ? req.originalUrl : '/' };
           logger.info(`[SESSION] Restored session for user: ${sessionContext.username}${req.userContext.viaProxy ? ` acting for ${req.userContext.username}` : ''}`);
         } else {
           req.userContext = { ...pip.anonymousSubject(), ipAddress: req.ip };

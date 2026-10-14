@@ -1,0 +1,62 @@
+<%# #1762 slice 7 — "Give someone access": choose a person, tick what they may do, and an
+    optional end date. Used by the profile (the person's own account) and the admin user page.
+    Locals: action (POST URL), options (ScopeDescription[]: only permissions the account holds,
+    from AuthManager.proxyGrantOptions), owner (whose account), self (true on the person's own
+    profile), csrfToken. The person is picked with the shared user typeahead
+    (/js/audience-typeahead.js, single mode); /js/proxy-access.js shows the warning for
+    proxy-grant and sends the end date as the end of that day in the viewer's own time zone. %>
+<%
+  const whose = self ? 'your' : owner + "'s";
+  const fieldId = function (name) { return 'proxy-perm-' + (self ? 'own' : 'admin') + '-' + name.replace(/[^a-z0-9-]/gi, '_'); };
+  const prefix = self ? 'proxy-own' : 'proxy-admin';
+%>
+<form action="<%= action %>" method="POST" class="border rounded p-3" data-proxy-grant-form>
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <h6 class="mb-2">Give someone access</h6>
+  <% if (!self) { %>
+  <div class="alert alert-secondary small py-2" role="note" data-proxy-admin-note>
+    Access given here can never include <%= owner %>'s encrypted information or vaults. Only <%= owner %> can add that.
+  </div>
+  <% } %>
+
+  <div class="mb-3" data-audience-typeahead data-audience-field="proxy" data-audience-single>
+    <label class="form-label small fw-semibold mb-1" for="<%= prefix %>-person">Who will act for <%= self ? 'you' : owner %>?</label>
+    <div class="d-flex flex-wrap mb-1" data-audience-chips></div>
+    <div class="position-relative">
+      <input type="text" id="<%= prefix %>-person" class="form-control form-control-sm" data-audience-search
+             placeholder="Type their name or username…" autocomplete="off">
+      <ul class="list-group position-absolute w-100 d-none shadow-sm" data-audience-results
+          style="z-index:1050; max-height:240px; overflow-y:auto; top:100%;"></ul>
+    </div>
+  </div>
+
+  <fieldset class="mb-3">
+    <legend class="form-label small fw-semibold mb-1">What may they do for <%= self ? 'you' : owner %>?</legend>
+    <% if (options.length === 0) { %>
+    <p class="text-muted small mb-0">There is nothing <%= self ? 'you' : owner %> can let someone else do.</p>
+    <% } %>
+    <% options.forEach(function (o) { %>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="permissions" value="<%= o.name %>" id="<%= fieldId(o.name) %>" data-permission="<%= o.name %>">
+      <label class="form-check-label" for="<%= fieldId(o.name) %>"><%= o.description %></label>
+      <% if (o.name === 'vault-proxy') { %>
+      <div class="form-text">Encrypted vaults are not shared yet: they stay closed to anyone acting for <%= self ? 'you' : owner %>.</div>
+      <% } %>
+      <% if (o.name === 'proxy-grant') { %>
+      <div class="alert alert-warning small py-2 mt-1 mb-0 d-none" role="alert" data-proxy-redelegate-warning>
+        <span data-proxy-name>This person</span> will be able to give other people access to <%= whose %> account.
+      </div>
+      <% } %>
+    </div>
+    <% }) %>
+  </fieldset>
+
+  <div class="mb-3" style="max-width: 16rem;">
+    <label class="form-label small fw-semibold mb-1" for="<%= prefix %>-end">End date (optional)</label>
+    <input type="date" class="form-control form-control-sm" id="<%= prefix %>-end" name="endDate" aria-describedby="<%= prefix %>-end-help">
+    <input type="hidden" name="expiresAt" value="">
+    <div class="form-text" id="<%= prefix %>-end-help">Access stops at the end of this day. Leave it empty to keep access until it is revoked.</div>
+  </div>
+
+  <button type="submit" class="btn btn-sm btn-primary" <%= options.length === 0 ? 'disabled' : '' %>>Give access</button>
+</form>

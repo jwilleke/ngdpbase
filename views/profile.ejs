@@ -419,6 +419,48 @@
                     </div>
                     <% } %>
 
+                    <!-- #1762 slice 7: Proxy access — who may act for me, and whom I may act for.
+                         Hidden while proxy access is off (proxyAccess undefined). -->
+                    <% if (typeof proxyAccess !== 'undefined' && proxyAccess) { %>
+                    <div class="row mb-4" id="proxy-access">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-user-friends" aria-hidden="true"></i> Proxy access</h6>
+                                </div>
+                                <div class="card-body">
+                                    <% if (proxyAccess.given !== null) { %>
+                                    <p class="text-muted small">
+                                        Let someone you trust, such as a family member or a caregiver, act for you on this site.
+                                        They can only do what you tick, never more than you can do yourself, and everything they
+                                        do is recorded as done by them for you. You can revoke their access at any time.
+                                    </p>
+                                    <%- include('_proxy-grants', { grants: proxyAccess.given, owner: proxyAccess.owner, revokeBase: '/profile/proxy-access/', csrfToken: csrfToken, self: true }) %>
+                                    <% if (proxyAccess.options !== null) { %>
+                                    <div class="mt-3">
+                                        <%- include('_proxy-grant-form', { action: '/profile/proxy-access', options: proxyAccess.options, owner: proxyAccess.owner, self: true, csrfToken: csrfToken }) %>
+                                    </div>
+                                    <% } %>
+                                    <% } %>
+                                    <% if (proxyAccess.actingFor.length > 0) { %>
+                                    <div class="<%= proxyAccess.given !== null ? 'mt-3' : '' %>" data-proxy-acting-for>
+                                        <h6 class="small fw-semibold mb-1">You can act for</h6>
+                                        <ul class="small mb-1">
+                                            <% proxyAccess.actingFor.forEach(function (g) { %>
+                                            <li><%= g.owner %></li>
+                                            <% }) %>
+                                        </ul>
+                                        <a class="btn btn-sm btn-outline-primary" href="/account/acting-for">Choose whom to act for</a>
+                                    </div>
+                                    <% } %>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <script src="/js/audience-typeahead.js" defer></script>
+                    <script src="/js/proxy-access.js" defer></script>
+                    <% } %>
+
                     <!-- User Preferences Section -->
                     <div class="row mb-4">
                         <div class="col-12">

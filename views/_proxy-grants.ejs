@@ -1,0 +1,43 @@
+<%# #1762 slice 7 — the people who may act for one person, each with what they may do (the
+    permissions' plain words, ProxyGrantView.can), when it ends, and one Revoke that goes through
+    AuthManager's door. Used by the profile (the person's own) and the admin user page.
+    Locals: grants (ProxyGrantView[]), owner (whose account), revokeBase (URL the grant id is
+    appended to, then /revoke), csrfToken, self (true on the person's own profile: "you").
+    Times go out as <time datetime data-local-time> with the UTC text as the fallback;
+    /js/local-time.js (loaded by header.ejs) shows them in the viewer's own zone. %>
+<%
+  const utc = function (iso) { return iso.slice(0, 16).replace('T', ' ') + ' UTC'; };
+  const whose = self ? 'your' : owner + "'s";
+%>
+<% if (grants.length === 0) { %>
+  <p class="text-muted small mb-0"><%= self ? 'Nobody can act for you.' : 'Nobody can act for ' + owner + '.' %></p>
+<% } else { %>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Person</th><th>May do</th><th>Ends</th><th><span class="visually-hidden">Revoke</span></th></tr></thead>
+      <tbody>
+        <% grants.forEach(function (g) { %>
+        <tr data-proxy-grant="<%= g.id %>">
+          <td><%= g.proxy %></td>
+          <td class="small text-muted">
+            <% g.can.forEach(function (c, i) { %><%= i ? ', ' : '' %><span data-scope="<%= c.name %>" title="<%= c.name %>"><%= c.description %></span><% }) %>
+            <% if (g.mayRedelegate) { %><div class="text-warning-emphasis" data-proxy-redelegates><%= g.proxy %> can also give other people access to <%= whose %> account.</div><% } %>
+          </td>
+          <td class="small">
+            <% if (g.expiresAt) { %><time datetime="<%= g.expiresAt %>" data-local-time><%= utc(g.expiresAt) %></time><% } else { %>Until <%= self ? 'you revoke it' : 'revoked' %><% } %>
+          </td>
+          <td class="text-end">
+            <%# The name rides in a data attribute, HTML-escaped — never built into a script string. %>
+            <form action="<%= revokeBase %><%= encodeURIComponent(g.id) %>/revoke" method="POST" class="d-inline"
+                  data-confirm="<%= 'Revoke ' + g.proxy + "'s access? They can no longer act for " + (self ? 'you' : owner) + ', starting now.' %>"
+                  onsubmit="return confirm(this.dataset.confirm)">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Revoke <%= g.proxy %>'s access">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% } %>
