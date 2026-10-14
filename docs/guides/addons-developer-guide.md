@@ -1135,7 +1135,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 
 ## 12. Shipping Your Addon as a Container Image
 
-This section is the drop-in wrapper: an addon in __its own repo__, layered onto the published ngdpbase image with `COPY addons`. It does not apply to bundled addons, which are already in `ghcr.io/jwilleke/ngdpbase`. The packaged model (an npm package, no `COPY addons`) is [Where it is loaded](#where-it-is-loaded) and [addon-packaged.md](../platform/deployment/addon-packaged.md).
+This section is the drop-in wrapper: an addon in __its own repo__, layered onto the published ngdpbase image. The Dockerfile, `.dockerignore` and Renovate config below live in the __site repo__, the one that builds and deploys the site image. That can be the add-on's own repo (geohazardwatch is both), or a separate repo that builds from the add-on's source, which keeps the add-on repo free of anything deployment-specific (ngdp-accounting-addons works this way). It does not apply to bundled addons, which are already in `ghcr.io/jwilleke/ngdpbase`. The packaged model (an npm package, no `COPY addons`) is [Where it is loaded](#where-it-is-loaded) and [addon-packaged.md](../platform/deployment/addon-packaged.md).
 
 ### What ngdpbase publishes for you
 
@@ -1167,11 +1167,11 @@ RUN npm run build && npm prune --omit=dev
 
 FROM ghcr.io/jwilleke/ngdpbase:${NGDPBASE_VERSION}
 LABEL org.opencontainers.image.title="my-addon-site"
-LABEL org.opencontainers.image.source="https://github.com/<you>/<your-addon-repo>"
+LABEL org.opencontainers.image.source="https://github.com/<you>/<your-site-repo>"
 COPY --from=build /app/addons/<slug> /app/addons/<slug>
 ```
 
-Put a `.dockerignore` beside the Dockerfile, so `COPY . .` does not copy your machine's installed packages and build output over what `npm ci` just installed in the image. Host `node_modules` built on a Mac are darwin-arm64; a native dependency among them breaks or misbehaves on Linux.
+Give the build an ignore file (where it goes is under Key points), so `COPY . .` does not copy your machine's installed packages and build output over what `npm ci` just installed in the image. Host `node_modules` built on a Mac are darwin-arm64; a native dependency among them breaks or misbehaves on Linux.
 
 ```text
 node_modules
@@ -1183,6 +1183,7 @@ node_modules
 Key points:
 
 - The `# renovate: datasource=docker depName=...` annotation on the line above `ARG` is what makes the auto-bump (next section) work. Without it Renovate ignores the ARG. Both `FROM` lines use the same ARG, so the add-on is compiled against exactly the core it runs on.
+- The build context is the add-on's folder: `docker build -f <site-repo>/Dockerfile <path-to-addon>`. The `.dockerignore` sits at the root of that context, which is how Docker finds it; from the site repo, use `<site-repo>/Dockerfile.dockerignore` (a Dockerfile-specific ignore file) instead.
 - The add-on is built at `/app/addons/<slug>`, the same place it runs from. Its `../../dist/...` imports then resolve to the image's own `/app/dist`, and `express`, `tslib` and the other host packages resolve from `/app/node_modules`. Building anywhere else compiles against, or loads, a second copy of core.
 - `npm ci` installs devDependencies too (the compiler); `npm prune --omit=dev` drops them before the copy. `--ignore-scripts` skips `prepare` (husky).
 - `/app/addons` is scanned by default, so no `addons-path` setting is needed. Add-ons there load in discovery order (alphabetical) unless they declare `dependencies` or `optionalDependencies` ([Dependency Example](#9-dependency-example)).
@@ -1193,7 +1194,7 @@ Key points:
 
 Without automation, the `ARG NGDPBASE_VERSION` default rots. ngdpbase ships `v3.11.3` → your image still pulls `v3.10.3` → your container is missing CVE patches.
 
-Add `renovate.json` to your addon repo:
+Add `renovate.json` to your site repo:
 
 ```json
 {
@@ -1238,11 +1239,11 @@ Renovate is recommended over Dependabot here because Renovate's `datasource=dock
 | Concern | Where it's owned |
 |---|---|
 | Building/publishing the ngdpbase image | `jwilleke/ngdpbase` (`.github/workflows/docker-build.yml`) — fully automated |
-| Building/publishing the combined addon-site image | Your addon repo (your own Dockerfile + your own CI workflow) |
-| Bumping the `FROM` version | Renovate/Dependabot in your addon repo — fully automated |
+| Building/publishing the combined addon-site image | Your site repo (your own Dockerfile + your own CI workflow) |
+| Bumping the `FROM` version | Renovate/Dependabot in your site repo — fully automated |
 | Runtime addon registration | `addons-path` config on the deployed instance (ConfigMap, `.env`, etc.) |
 
-ngdpbase does not need to know your addon exists. Your addon repo does not need to know how ngdpbase is built. The only contract between them is: ngdpbase publishes images at `ghcr.io/jwilleke/ngdpbase:<version>`; you consume them with `FROM`.
+ngdpbase does not need to know your addon exists. Your site repo does not need to know how ngdpbase is built. The only contract between them is: ngdpbase publishes images at `ghcr.io/jwilleke/ngdpbase:<version>`; you consume them with `FROM`.
 
 ---
 
