@@ -148,7 +148,9 @@ export function emittedTypes(_names: string[], scope: Scope = REPO_SCOPE): { res
   const roots = scope.addonDir ? [path.resolve(REPO, scope.addonDir)] : [path.join(REPO, 'src'), path.join(REPO, 'addons')];
   for (const file of roots.flatMap((root) => walk(root))) {
     const rel = path.relative(REPO, file);
-    if (rel.endsWith('auditEventNames.ts') || rel.endsWith('auditEventNames.generated.ts') || rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts')) continue;
+    // addonHost.ts (#1813) wraps addonAuditEventName for an add-on's host and
+    // forwards the add-on's own name; it emits nothing itself.
+    if (rel.endsWith('auditEventNames.ts') || rel.endsWith('auditEventNames.generated.ts') || rel.endsWith('auditVocabulary.ts') || rel.endsWith('auditRegistry.ts') || rel === path.join('src', 'utils', 'addonHost.ts')) continue;
     const src = stripComments(readFileSync(file, 'utf8'));
 
     for (const m of src.matchAll(/AUDIT_EVENT\.([A-Z_]+)/g)) {
