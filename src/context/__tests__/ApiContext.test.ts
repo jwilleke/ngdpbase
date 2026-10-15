@@ -319,6 +319,98 @@ describe('#1745 ApiContext#requirePermission() answers step-up with the way to r
   });
 });
 
+// ── #1431: refuse(), the one refusal for a manager that asks the PDP itself ──
+
+describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () => {
+  const deny = (reason: string) => ({ permit: false, applicable: true, reason });
+  function engineWith(audit: unknown[] = []) {
+    const authManager = {
+      engine: null as unknown,
+      askForFreshSignIn: vi.fn(function (this: unknown, ...a: Parameters<AuthManager['askForFreshSignIn']>) { return AuthManager.prototype.askForFreshSignIn.apply(this, a); }),
+      recordReauth(...a: Parameters<AuthManager['recordReauth']>) { return AuthManager.prototype.recordReauth.apply(this as never, a); }
+    };
+    const engine = {
+      audit,
+      authManager,
+      getManager: vi.fn((name: string) => {
+        if (name === 'AuditManager') return { logAuditEvent: vi.fn(async (e: unknown) => { audit.push(e); }) };
+        if (name === 'AuthManager') return authManager;
+        return null;
+      })
+    };
+    authManager.engine = engine;
+    return engine;
+  }
+  function reqFor(userContext: Record<string, unknown>) {
+    return {
+      userContext, session: { username: String(userContext.username) }, method: 'POST', ip: '203.0.113.7', originalUrl: '/api/ledger/adjust',
+      get: (h: string) => (h.toLowerCase() === 'referer' ? 'http://localhost/view/Books' : undefined)
+    } as unknown as Request;
+  }
+  const tess = { username: 'tess', roles: ['treasurer'], isAuthenticated: true };
+
+  test('an anonymous caller gets 401', async () => {
+    const engine = engineWith();
+    const ctx = ApiContext.from(reqFor({ ...ANONYMOUS_SUBJECT }), engine);
+    const err = await ctx.refuse('ledger-read', deny('policy_deny')).catch((e: unknown) => e) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(401);
+    expect(err.message).toBe('Authentication required');
+    expect(engine.authManager.askForFreshSignIn).not.toHaveBeenCalled();
+  });
+
+  test('a signed-in caller gets 403, no reauth', async () => {
+    const engine = engineWith();
+    const ctx = ApiContext.from(reqFor(tess), engine);
+    const err = await ctx.refuse('ledger-read', deny('default_deny')).catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.message).toBe('Forbidden');
+    expect(err.reauth).toBeUndefined();
+    expect(engine.authManager.askForFreshSignIn).not.toHaveBeenCalled();
+    expect(engine.audit).toHaveLength(0);
+  });
+
+  test('a step-up deny asks AuthManager: 403 with reauth, the prompt audited', async () => {
+    const engine = engineWith();
+    const req = reqFor(tess);
+    const ctx = ApiContext.from(req, engine);
+    const err = await ctx.refuse('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    expect(engine.authManager.askForFreshSignIn).toHaveBeenCalledWith(req, req.userContext, 'ledger-adjust', 'json');
+    expect(err.status).toBe(403);
+    expect(err.message).toBe('A fresh sign-in is needed');
+    expect(err.reauth).toBe('/auth/reauth?next=%2Fview%2FBooks');
+    expect(engine.audit).toHaveLength(1);
+    expect(engine.audit[0]).toMatchObject({ eventType: 'reauth-prompt', resource: 'ledger-adjust' });
+  });
+
+  test.each(['token_scope_deny', 'share_action_deny', 'proxy_scope_deny'])('a delegated-credential ceiling deny (%s) is a plain 403, never a reauth', async (reason) => {
+    const engine = engineWith();
+    const ctx = ApiContext.from(reqFor({ ...tess, viaToken: { id: 't1' } }), engine);
+    const err = await ctx.refuse('ledger-adjust', deny(reason)).catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.message).toBe('Forbidden');
+    expect(err.reauth).toBeUndefined();
+    expect(engine.authManager.askForFreshSignIn).not.toHaveBeenCalled();
+  });
+
+  test('a step-up deny for a delegated credential is 403 with no reauth', async () => {
+    const engine = engineWith();
+    const ctx = ApiContext.from(reqFor({ ...tess, viaToken: { id: 't1' } }), engine);
+    const err = await ctx.refuse('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    expect(err.status).toBe(403);
+    expect(err.reauth).toBeUndefined();
+  });
+
+  test('an allow decision is a programming error, never a silent pass', async () => {
+    const engine = engineWith();
+    const ctx = ApiContext.from(reqFor(tess), engine);
+    const err = await ctx.refuse('ledger-read', { permit: true, applicable: true, reason: 'policy_allow' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect(String(err)).toMatch(/allow decision/);
+  });
+});
+
 // ── requireRole() ─────────────────────────────────────────────────────────────
 
 // #1198: hasRole / requireRole are gone from ApiContext — a role name is not authority (security-posture.md P2).
