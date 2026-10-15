@@ -708,7 +708,7 @@ if [[ "$DO_COMPARE" -eq 1 ]]; then
     COMPARE_FILE=$(ls -t "$OUT_DIR"/baseline-v*.md 2>/dev/null \
       | grep -v "^${OUT_FILE}$" \
       | grep -v -- '-addondiff' \
-      | head -1)
+      | sed -n 1p)  # not head -1: it closes the pipe early, and under pipefail the SIGPIPE (141) aborts the script
   fi
 
   if [[ -z "$COMPARE_FILE" || ! -f "$COMPARE_FILE" ]]; then
