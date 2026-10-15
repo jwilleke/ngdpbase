@@ -40,7 +40,7 @@ The rules that have to be right before that restart: [identity](#identity), [whe
 - `ngdpbase.slug` in `package.json` and the `name` exported from `index.ts` are the same value. What the loader does when they are not is [Identity](#identity).
 - `ngdpbase.minVersion` in `package.json` (`x.y.z`) is the oldest ngdpbase release the addon runs on. Raise it whenever the addon starts importing something core added (a `dist/src/...` module, a new `ApiContext` method). On an older core the addon is not imported, and its status reads "needs ngdpbase X or later", instead of failing at import with a missing module. `create:addon` sets it to the core it was generated from (#1757).
 - Seed pages get a real UUID v4, a title and a slug. A placeholder UUID, or a missing title or slug, is skipped with a warning (an error log for a domain add-on) and an admin notification.
-- Import host HTTP as `../../dist/src/http/guardedFetch.js`, never `src/http/`.
+- Reach core values through `host`, the third argument to `register` ([Using the Engine](#4-using-the-engine)). Host HTTP is `host.guardedFetch`; an addon that still imports it uses `../../dist/src/http/guardedFetch.js`, never `src/http/`.
 - Recurring work is a scheduled job ([Background Jobs](#8-background-jobs)), never `setInterval`: a timer catches nothing up, runs twice during a rolling update, and records nothing when it misses.
 
 ---
@@ -351,8 +351,9 @@ module.exports = {
   dependencies: [],           // names of other add-ons that must load first
   optionalDependencies: [],   // load these first if installed and enabled; never required
 
-  async register(engine, config) {
+  async register(engine, config, host) {
     // Called at startup if enabled. Mount routes, init data, register plugins.
+    // host: the core values this add-on may use; see "The host parameter".
   },
 
   async status() {
@@ -377,11 +378,38 @@ async register(engine, config) {
 }
 ```
 
+### The `host` parameter
+
+`host` is how an addon reaches core values ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). Core builds one for each addon from its own running code, and freezes it. The names are the ones the values were imported under, so moving an addon over is mechanical: `import { X } from '../../dist/…'` becomes `const { X } = host`.
+
+| Name | What it is |
+|---|---|
+| `ApiContext`, `ApiError`, `sendApiError` | Requests and refusals ([ApiContext](#apicontext--authentication-and-authorisation)) |
+| `recordAuditEvent`, `addonAuditEventName` | Audit, limited to this addon's own events (below) |
+| `actorOf` | The "who" of an audit record, from a context |
+| `jobContextFromRequest`, `jobContextFromSystem` | Contexts for [Background Jobs](#8-background-jobs) |
+| `logger` | Core's logger, every line tagged `addon=<slug>` |
+| `guardedFetch` | Outbound HTTP through the egress guard |
+
+```typescript
+async register(engine, config, host) {
+  const { ApiContext, ApiError, sendApiError, logger } = host;
+  logger.info('ready'); // logged as "ready addon=my-addon"
+}
+```
+
+- `host.recordAuditEvent` and `host.addonAuditEventName` accept only the audit events this addon declares in its own `config/default-config.json`: a permission entry's `audit` block, or an entry in `ngdpbase.audit.events`. Any other name, core's or another addon's, throws, so one addon cannot write records that look like another's.
+- `host` is frozen. Nothing in it is removed or renamed without a major release; raise `minVersion` when the addon starts using a name core added.
+- An addon whose `register` takes two arguments still loads.
+- Anything an addon needs that `host` does not offer is added to core by pull request; the addon does not import it.
+
 ---
 
 ## 4. Using the Engine
 
 ### Importing host code — through `dist/`, never `src/`
+
+Use [`host`](#the-host-parameter) for any value it offers. Importing through `../../dist/…` still works for now, and is what the bundled addons do until they move over; once they have, `npm run lint:addons` will refuse a value import from `../../dist` ([#1813](https://github.com/jwilleke/ngdpbase/issues/1813)). `import type` stays allowed.
 
 The host compiles to `dist/`. A bundled addon compiles __in place__ (its `tsconfig.json` has `rootDir` and `outDir` of `../..`), so its `.js` sits beside its `.ts`. Any value you import from the host must therefore be a path that exists at runtime:
 
@@ -1125,7 +1153,7 @@ Keep core PRs self-contained — no add-on-specific code in the core repo.
 - [ ] Recurring work is a scheduled job with an id `<slug>.<job>`, safe to run again for the same slot, honouring `ctx.signal` — no `setInterval`
 - [ ] Dependencies declared in `dependencies[]` if your add-on relies on another, or in `optionalDependencies[]` if it only uses another when present
 - [ ] Every restricted route asks `requirePermission` / `hasPermission` for a permission the addon declares and grants by policy — no role name anywhere; its actions emit their declared audit events ([security-developer-guide.md](security-developer-guide.md), [audit-developer-guide.md](audit-developer-guide.md))
-- [ ] Host code is imported through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
+- [ ] Core values come from `host`; anything still imported comes through `dist/…`, never `src/…` — `npm run lint:addons` and `npm run check:addon-load` are green
 - [ ] Seed pages in `pages/` have a title, a slug, and a real UUID v4 in frontmatter (`uuid`). The instance file is `{uuid}.md`; the source filename is not
 - [ ] `pages/left-menu-content.md` and `pages/footer-content.md` present if the add-on owns the UI chrome
 - [ ] If shipping a theme: `theme/theme.json` present (sentinel) and `domainDefaults` sets `ngdpbase.theme.active`
@@ -1288,8 +1316,9 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 ## Known gaps
 
 - [#686](https://github.com/jwilleke/ngdpbase/issues/686) — an addon discovered outside the default `./addons` path still starts disabled; the operator has to set `ngdpbase.addons.<slug>.enabled` to `true`.
+- [#1813](https://github.com/jwilleke/ngdpbase/issues/1813) — the bundled addons still import core values through `../../dist`; they move to `host` in a later slice, and then `lint:addons` refuses those imports. No published types package for `AddonHost` yet.
 - [#1209](https://github.com/jwilleke/ngdpbase/issues/1209) — closed. `lint:audit` and `lint:addons` are already on the pre-commit hook.
 
 ---
 
-Last updated: 2026-10-09
+Last updated: 2026-10-15

@@ -41,6 +41,7 @@ import {
 } from '../utils/privateStoreDoor.js';
 import { privateStoreLayoutFromConfig } from '../utils/privateStorePath.js';
 import { isAtLeast } from '../utils/version.js';
+import { buildAddonHost, type AddonHost } from '../utils/addonHost.js';
 
 /**
  * Type passed to `AddonModule.profileSection()` (#534). Matches what
@@ -122,10 +123,15 @@ export interface AddonModule {
   /**
    * Called during app startup if add-on is enabled.
    * Use this to register routes, initialize databases, etc.
+   *
+   * #1813: `host` carries the core values an add-on uses (ApiContext,
+   * recordAuditEvent, logger, guardedFetch, …), built for this add-on and
+   * frozen. An add-on that takes two arguments keeps working until it moves.
    */
   register(
     engine: WikiEngine,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    host?: AddonHost
   ): Promise<void> | void;
 
   /**
@@ -1400,8 +1406,13 @@ class AddonsManager extends BaseManager {
       // Get add-on specific configuration
       const addonConfig = this.getAddonConfig(addonName);
 
+      // #1813: the host is built per add-on: its logger tagged with the slug,
+      // its audit helpers limited to the events this add-on declares.
+      const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
+      const host = buildAddonHost(addonName, configManager?.getAddonDeclaredDefaults?.(addonName) ?? {});
+
       // Call the add-on's register function
-      await addon.module.register(this.engine, addonConfig);
+      await addon.module.register(this.engine, addonConfig, host);
 
       // Seed any pages shipped with the add-on (pages/ subdir)
       await this.seedAddonPages(addonName, addon.path);
