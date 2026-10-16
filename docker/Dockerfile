@@ -117,6 +117,11 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy compiled JavaScript
 COPY --from=builder /app/dist ./dist
 
+# dist/src/test-support is test code (fixture actors, vaults, plugin formatters
+# for unit tests, #1820); nothing at run time imports it, so it stays out of
+# the image. The devtools stage builds FROM this one and inherits the removal.
+RUN rm -rf ./dist/src/test-support
+
 # Copy package.json (needed for module resolution metadata)
 COPY --from=builder /app/package.json ./
 
