@@ -27,7 +27,7 @@ Code that is not a plugin uses `engine.getManager('PluginManager').formatters`. 
 import type { PageLink, TableOptions } from '../../utils/pluginFormatters';
 ```
 
-Importing the functions by path still works until the existing importers are switched over, after which the path import goes. Write new code against `context.formatters`.
+Importing the functions by path is not allowed: `npm run lint:addons` fails on a value import of this module from any file but `src/managers/PluginManager.ts`, in core and add-on code alike (tests are exempt). A module-level helper in a plugin takes the formatters as a parameter from `execute`; it never imports or caches them. Only `import type` reaches this file.
 
 ## Start here, not with a string of HTML
 

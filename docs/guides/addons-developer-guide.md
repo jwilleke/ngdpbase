@@ -191,7 +191,7 @@ Worked examples: `addons/journal/config/default-config.json` declares `journal-r
 An addon under `addons/` is linted with the host. These run in `npm run lint`, in `lint:ci`, and (for the ones named) on the pre-commit hook:
 
 - `npm run lint:code` — eslint on `src/**/*.ts` and `addons/**/*.ts`.
-- `npm run lint:addons` — no addon value-import of host `src/`, and no compiled `.js` left under `src/`. On the pre-commit hook.
+- `npm run lint:addons` — no addon value-import of host `src/`, no compiled `.js` left under `src/`, and no value import of `pluginFormatters` outside PluginManager ([#1820](https://github.com/jwilleke/ngdpbase/issues/1820)). On the pre-commit hook.
 - `npm run lint:http`, `npm run lint:csrf`, `npm run lint:gates`, `npm run lint:permission-subject` — outbound HTTP, CSRF, role-name gates, and rebuilt permission subjects. Each scans `addons/` as well as `src/`.
 - `npm run lint:audit` — declared audit events are emitted, including the add-on's own (declared in its `config/default-config.json`, emitted with `addonAuditEventName`; see [audit-developer-guide.md](audit-developer-guide.md#addons)). On the pre-commit hook. An add-on kept in its own repository runs the same check on its own directory, from the image: `node dist/scripts/audit-coverage.js --check --addon <dir>` (the CI that `create:addon --repo` generates does this).
 
@@ -837,7 +837,7 @@ execute(context, params) {
 }
 ```
 
-An addon that imports them from `../../dist/src/utils/pluginFormatters.js` still works until the bundled importers are switched over; write new code against `context.formatters`. `import type` of their types stays allowed.
+Do not import them from `../../dist/src/utils/pluginFormatters.js`: `npm run lint:addons` fails on a value import of that module from addon code (tests are exempt). A helper function outside `execute` takes `context.formatters` as a parameter; it does not import or cache the helpers. Code that is not a plugin, such as a route or a manager, reads `engine.getManager('PluginManager').formatters`. `import type` of their types (`PageLink`, `FormOption` and the rest) stays allowed.
 
 ### Plugins and the page cache
 
@@ -1339,4 +1339,4 @@ ngdpbase does not need to know your addon exists. Your site repo does not need t
 
 ---
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16

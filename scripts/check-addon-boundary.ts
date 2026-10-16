@@ -35,6 +35,14 @@
  *
  * Exemption: none. There is no legitimate reason for an addon to compile the
  * host's TypeScript.
+ *
+ * 3. (#1820) The plugin formatter helpers are PluginManager's. Plugins get
+ *    them as `context.formatters`; other code reads
+ *    `engine.getManager('PluginManager').formatters`. So no file value-imports
+ *    `utils/pluginFormatters` — by `dist/` or `src/` — except
+ *    `src/managers/PluginManager.ts`, which builds them. That covers addon
+ *    runtime code and the host's own `src/`. `import type` stays allowed (the
+ *    types live there), and tests are exempt: they check the module itself.
  */
 
 import { readFileSync, readdirSync, statSync } from 'fs';
@@ -67,22 +75,23 @@ function walk(dir: string, ext: string, out: string[]): void {
  */
 function valueImportSpecifiers(source: string): Array<{ line: number; spec: string }> {
   const out: Array<{ line: number; spec: string }> = [];
-  const lines = source.split('\n');
-  const re = /^\s*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/;
-  for (let i = 0; i < lines.length; i++) {
-    const m = re.exec(lines[i]);
-    if (!m) continue;
+  const lineOf = (index: number): number => source.slice(0, index).split('\n').length;
+  // Over the whole source, so an import whose `{ … }` spans lines is seen too.
+  const re = /^[ \t]*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) {
     if (m[2]) continue; // import type / export type — erased
-    out.push({ line: i + 1, spec: m[3] });
+    out.push({ line: lineOf(m.index), spec: m[3] });
   }
   // Dynamic import('…') with a literal specifier is a value import too.
   const dyn = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
-  for (let i = 0; i < lines.length; i++) {
-    let d: RegExpExecArray | null;
-    while ((d = dyn.exec(lines[i])) !== null) out.push({ line: i + 1, spec: d[1] });
-  }
+  let d: RegExpExecArray | null;
+  while ((d = dyn.exec(source)) !== null) out.push({ line: lineOf(d.index), spec: d[1] });
   return out;
 }
+
+const isTestFile = (file: string): boolean =>
+  file.endsWith('.test.ts') || file.split(path.sep).includes('__tests__');
 
 // 1. Value imports resolving under src/.
 const addonFiles: string[] = [];
@@ -123,10 +132,31 @@ for (const f of strayJs) {
   });
 }
 
+// 3. Value imports of the plugin formatters, which PluginManager owns (#1820).
+const FORMATTERS_OWNER = path.join(SRC, 'managers', 'PluginManager.ts');
+const isFormattersModule = (target: string): boolean =>
+  /[\\/]utils[\\/]pluginFormatters(\.js|\.ts)?$/.test(target);
+const srcFiles: string[] = [];
+walk(SRC, '.ts', srcFiles);
+for (const file of [...addonFiles, ...srcFiles]) {
+  if (file === FORMATTERS_OWNER || isTestFile(file)) continue;
+  const source = readFileSync(file, 'utf8');
+  for (const { line, spec } of valueImportSpecifiers(source)) {
+    if (!spec.startsWith('.') || !isFormattersModule(path.resolve(path.dirname(file), spec))) continue;
+    findings.push({
+      file: path.relative(REPO, file),
+      line,
+      detail: 'value-imports utils/pluginFormatters, which PluginManager owns (#1820). In a plugin use ' +
+        "`context.formatters`; elsewhere `engine.getManager('PluginManager').formatters`. Types stay " +
+        'importable with `import type`.'
+    });
+  }
+}
+
 console.log('Addon/host import boundary (#1192)');
 console.log('==================================');
 if (findings.length === 0) {
-  console.log(`No addon value-imports host source; no compiled .js under src/ (scanned ${addonFiles.length} addon files).`);
+  console.log(`No addon value-imports host source; no compiled .js under src/; only PluginManager value-imports pluginFormatters (scanned ${addonFiles.length} addon files, ${srcFiles.length} src files).`);
   process.exit(0);
 }
 for (const f of findings) {
