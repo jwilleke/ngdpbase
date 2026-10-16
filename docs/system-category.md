@@ -161,7 +161,9 @@ There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided
 
 ### System-categories that add-ons bring
 
-An add-on __declares__ its system-category in its manifest, and core __persists__ it into the site's configuration at first load, the way store kinds are persisted today (#1414). After that, configuration wins. It isn't merged from the add-on's `config/default-config.json`, which only applies while the add-on is loaded. So turning an add-on off, or removing it, never loses anything:
+__Today (built):__ an add-on puts its entry under `ngdpbase.system-category` in its own `config/default-config.json`, which is merged into the site's configuration one entry at a time while the add-on is enabled (#1220). The journal's entry in core config is the shape to copy; the practice is [storage-developer-guide.md](guides/storage-developer-guide.md). The gap: turning the add-on off removes the entry, so its pages and vault are unreachable until it is enabled again ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)).
+
+__Decided target (#1559):__ an add-on __declares__ its system-category, and core keeps it readable whether or not the add-on is loaded, marked with its `owner`. So turning an add-on off, or removing it, never loses anything:
 
 - the system-category stays valid, and is just not offered for new pages;
 - its public pages still display;
@@ -230,7 +232,11 @@ A missing or unknown value reads as `site`, with a startup warning naming the en
 
 ### `storageLocation`
 
-Not read today. The shipped entries no longer carry it. It becomes the pair of folders (`defaultstore`, `privatestore`) in #1504.
+Read since #1504: `defaultstore` is where public pages live, and `privatestore` (`pages/vaults/{user}/{vaultid}/`) is the vault, whose last segment is the vault id (`ValidationManager.getVaultId`, `privateStoreDoor.storeKindFromConfig`). `journal` and `capture` carry one.
+
+### `defaultPrivate`, `encrypt`, `owner`, `shareMaxDays`
+
+Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` are compared as booleans: the string `"true"` is not `true` (pages start public, the vault is not sealed), and nothing warns yet. `owner` absent means `admin`.
 
 ## Related settings that are not per system-category
 

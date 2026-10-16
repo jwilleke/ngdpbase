@@ -1,7 +1,7 @@
 ---
 name: Developer guides
 description: Index of area developer guides — the door for how to change this codebase
-dateModified: 2026-10-10
+dateModified: 2026-10-16
 category: guides
 ---
 
@@ -20,6 +20,7 @@ Each file is the door for one area: standing rules, a checklist, pointers, and o
 | Testing | [testing-developer-guide.md](testing-developer-guide.md) |
 | Managers and providers | [managers-developer-guide.md](managers-developer-guide.md) |
 | Addons | [addons-developer-guide.md](addons-developer-guide.md) |
+| Storage (system-categories, vaults, where add-on data lives) | [storage-developer-guide.md](storage-developer-guide.md) |
 | NCM | [ncm-developer-guide.md](ncm-developer-guide.md) |
 
 Standing law:
