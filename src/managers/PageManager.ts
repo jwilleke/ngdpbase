@@ -52,6 +52,7 @@ import { PRIVATE_LINK_MIGRATION, recordStoreMigration, storeMigrationDone } from
 import { PAGE_DATA_TOPIC } from '../cache/CacheDependencies.js';
 import { rewriteLegacyVaultUrls, VAULT_URL_MIGRATION } from '../utils/vaultUrlRewrite.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { findUnsealedVaults } from '../utils/privateStoreDoor.js';
 import { normaliseTitle, titleBreaksRule, TITLE_RULE_MESSAGE } from '../utils/pageTitleRule.js';
 import { buildStoreTakeout, type Takeout } from '../utils/privateStoreExport.js';
 import { listStoreIds } from '../utils/privateStoreTakeout.js';
@@ -500,6 +501,8 @@ class PageManager extends BaseManager implements CatalogSource {
       throw error;
     }
 
+    await this.reportUnsealedVaults(configManager);
+
     // Slice 4 of #755 (#772) — register as a CatalogSource so CatalogManager
     // can fan out cross-source queries. Mirrors MediaManager (Slice 3 / #758)
     // and AttachmentManager (Slice 5 / #759). CatalogManager is initialised
@@ -509,6 +512,40 @@ class PageManager extends BaseManager implements CatalogSource {
       catalog.registerSource(this);
     } else {
       logger.warn('📄 CatalogManager not available at initialize — skipping CatalogSource registration');
+    }
+  }
+
+  /**
+   * Startup check (#1834): every vault of a sealed kind whose files are in the
+   * clear — written before its door was opened, or under a `store.json` that
+   * is not sealed. Such a vault is closed (its store I/O refuses it); this
+   * makes it visible: an error in the log, the degraded-subsystem banner and a
+   * system notification, each naming owner and vault. Nothing is moved, sealed
+   * or deleted; an administrator decides what to do with the files.
+   */
+  private async reportUnsealedVaults(configManager: ConfigurationManager): Promise<void> {
+    try {
+      const pagesDirectory = configManager.getResolvedDataPath?.('ngdpbase.page.provider.filesystem.storagedir', './data/pages');
+      if (!pagesDirectory) return;
+      const layout = privateStoreLayoutFromConfig((key, fallback) => configManager.getProperty(key, fallback));
+      const found = await findUnsealedVaults(pagesDirectory, layout);
+      if (found.length === 0) return;
+      const detail = found
+        .map((v) => `${v.owner}/${v.vault} (${v.state === 'unopened' ? 'files but no store.json' : 'store.json not sealed'})`)
+        .join(', ');
+      const reason = `${found.length} vault(s) of an encrypted system-category hold files that are not encrypted, so they stay closed: ${detail}. Their files were left as they are; move or remove them, then have the owner open the vault (#1834)`;
+      logger.error(`📄 ${reason}`);
+      if (this.markDegraded(reason)) {
+        try {
+          await this.engine.getManager<NotificationManager>('NotificationManager')?.addNotification({
+            type: 'system', level: 'error', title: 'Encrypted vaults hold unencrypted files', message: `${reason}.`
+          });
+        } catch (err) {
+          logger.warn('📄 Could not post the unsealed-vault notification:', err);
+        }
+      }
+    } catch (err) {
+      logger.error('📄 The unsealed-vault check could not run (#1834):', err);
     }
   }
 

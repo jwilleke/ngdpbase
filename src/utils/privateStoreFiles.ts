@@ -15,13 +15,14 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { writeFileAtomic } from './atomicWrite.js';
+import logger from './logger.js';
 import { assertEncryptedStoreWritable, openBytes, sealBytes } from './privateStoreCrypto.js';
-import { readStoreMeta } from './privateStoreMeta.js';
+import { readVaultSealState, readVaultSealStateSync, refuseUnsealedVault } from './privateStoreMeta.js';
 import {
   isValidStoreId,
   parsePrivateStoreRel,
   privateUserDir,
-  storeMetaPath,
+  type PrivateStoreLayout,
   type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
 import { dekFor } from './privateStoreUnlock.js';
@@ -69,19 +70,28 @@ function sealedFileIO(dek: Buffer): StoreFileIO {
  * that is not encrypted; sealed with the store DEK when it is. An encrypted
  * store whose DEK this context does not hold is refused — a read as much as a
  * write, so a locked store never falls back to reading or writing in the clear.
+ *
+ * Whether the store is encrypted is asked of both its kind and its copy
+ * (#1834): `layout` is the configured one, whose `sealedVaults` are the kinds
+ * that are sealed. A vault of a sealed kind with no `store.json` (its door not
+ * yet opened) or a `store.json` that is not sealed is refused, read and write
+ * alike, with `SealedVaultRefusedError` — never handed plain I/O.
  */
 export async function storeFileIO(ctx: ActorContext | undefined, args: {
   pagesDirectory: string;
   owner: string;
   store: string;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 }): Promise<StoreFileIO> {
-  const meta = await readStoreMeta(args.pagesDirectory, args.owner, args.store, args.layout);
-  if (!meta.encrypt) return PLAIN_FILE_IO;
+  const { state } = await readVaultSealState(args.pagesDirectory, args.owner, args.store, args.layout);
+  refuseUnsealedVault(args.owner, args.store, state);
+  if (state === 'plain') return PLAIN_FILE_IO;
   const dek = dekFor(ctx, args.owner, args.store);
   assertEncryptedStoreWritable({ encrypt: true, dek });
   return sealedFileIO(dek as Buffer);
 }
+
+const unsealedReadsReported = new Set<string>();
 
 /**
  * Read one text file of `owner`'s `store` synchronously, as this context may:
@@ -90,22 +100,30 @@ export async function storeFileIO(ctx: ActorContext | undefined, args: {
  * context does not hold its DEK — a locked store reads as nothing, never in
  * the clear (#1456: a store's page index is small, and page lookups are
  * synchronous).
+ *
+ * A vault of a sealed kind that is not itself sealed (#1834) reads as nothing
+ * too, with a warning: its files, if any, were written in the clear and are
+ * not served as if they were sealed.
  */
 export function readStoreTextSync(ctx: ActorContext | undefined, args: {
   pagesDirectory: string;
   owner: string;
   store: string;
   file: string;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 }): string | null {
   if (!fs.existsSync(args.file)) return null;
-  let encrypt = false;
-  const metaFile = storeMetaPath(args.pagesDirectory, args.owner, args.store, args.layout);
-  if (fs.existsSync(metaFile)) {
-    const meta = fs.readJsonSync(metaFile, { throws: false }) as { encrypt?: unknown } | null;
-    encrypt = meta?.encrypt === true;
+  const state = readVaultSealStateSync(args.pagesDirectory, args.owner, args.store, args.layout);
+  if (state === 'unopened' || state === 'mismatch') {
+    // Page lookups ask this on every request: said once per vault, not per lookup.
+    const said = `${args.owner}/${args.store}`;
+    if (!unsealedReadsReported.has(said)) {
+      unsealedReadsReported.add(said);
+      logger.warn(`[private-store] not read: ${args.owner}'s vault '${args.store}' is sealed by its kind but holds files that are not (${state}) (#1834)`);
+    }
+    return null;
   }
-  if (!encrypt) return fs.readFileSync(args.file, 'utf8');
+  if (state === 'plain') return fs.readFileSync(args.file, 'utf8');
   const dek = dekFor(ctx, args.owner, args.store);
   if (!dek) return null;
   return openBytes(dek, fs.readFileSync(args.file)).toString('utf8');
@@ -141,7 +159,7 @@ export async function privateStoreIdsOf(
 export async function storeFileIOForPath(ctx: ActorContext | undefined, args: {
   pagesDirectory: string;
   file: string;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 }): Promise<StoreFileIO> {
   const where = parsePrivateStoreRel(
     path.relative(args.pagesDirectory, args.file).split(path.sep),

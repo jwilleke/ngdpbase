@@ -1,7 +1,7 @@
 ---
 name: Private stores
 description: Developer and operator reference for private stores — layout, kinds, keys, access, pages, links, search, trash and files
-dateModified: 2026-10-13
+dateModified: 2026-10-16
 category: architecture
 relatedModules: [PageManager, AttachmentManager, SearchManager, PolicyInformationPoint, FileSystemProvider, VersioningFileProvider]
 ---
@@ -117,7 +117,7 @@ The words exist only while that screen is open. `holdWordsForConfirmation()` kee
 
 `commitStoreCopy()` writes `user-keys.json` first when this commit creates the user's KEK, then `store.json`. Both are written with the `wx` flag, so an existing file is a refusal rather than an overwrite — replacing a `store.json` would lose the wrapped DEK and with it every byte of the store. If the `store.json` write fails after a new key file was written, the key file is removed: a key never outlives the store it was made for.
 
-`store.json` is a `StoreFileRecord` (`src/utils/privateStoreMeta.ts`): `kind`, `encrypt`, `created`, and `dekWrap` when sealed. Per-user state and key material only — never policy. A missing `store.json` reads as `encrypt: false`.
+`store.json` is a `StoreFileRecord` (`src/utils/privateStoreMeta.ts`): `kind`, `encrypt`, `created`, and `dekWrap` when sealed. Per-user state and key material only — never policy. A missing `store.json` reads as `encrypt: false`, but that alone never decides that a vault is plain: see "The kind is asked as well as `store.json`" below.
 
 The `store-create` audit event (`AUDIT_EVENT.STORE_CREATE`) is recorded __before__ anything is created, and its emitter is configured `on-failure: refuse`, so a record that cannot be written stops the creation. Its metadata carries the store id, the `encrypt` flag and whether a key was created — never the words and never a key. Severity is `high` for a sealed store, `medium` otherwise.
 
@@ -140,9 +140,24 @@ A file in an encrypted store is written by `sealBytes()`: the ASCII magic `NGDPS
 
 `src/utils/privateStoreFiles.ts` is the one place that turns "the DEK encrypts every byte in this store" into file I/O. A caller asks for the store's `StoreFileIO` through its context and every read and write it then makes is ciphertext at rest exactly when the store is encrypted:
 
-- `storeFileIO(ctx, { pagesDirectory, owner, store })` returns `PLAIN_FILE_IO` for an unencrypted store, and a sealed I/O when the store is encrypted and this context holds its DEK. An encrypted store whose DEK the context does not hold is __refused for reads as well as writes__, so a locked store never falls back to plaintext.
+- `storeFileIO(ctx, { pagesDirectory, owner, store, layout })` returns `PLAIN_FILE_IO` for an unencrypted store, and a sealed I/O when the store is encrypted and this context holds its DEK. An encrypted store whose DEK the context does not hold is __refused for reads as well as writes__, so a locked store never falls back to plaintext.
 - `storeFileIOForPath()` does the same from a path, for callers that have a file rather than a store.
 - `readStoreTextSync()` is the synchronous read a page lookup needs; a locked store reads as `null`, never in the clear.
+
+### The kind is asked as well as `store.json`
+
+Whether a vault is sealed is asked of both its kind (the system-category's `encrypt`) and its copy (`store.json`) ([#1834](https://github.com/jwilleke/ngdpbase/issues/1834)). The configured layout (`privateStoreLayoutFromConfig`) carries the sealed kinds as `sealedVaults`, and `storeFileIO`, `storeFileIOForPath`, `readStoreTextSync` and `assertContextCanWriteStore` all take that layout as a required argument, so no caller can ask without the kind. `readVaultSealState` in `src/utils/privateStoreMeta.ts` gives the answer:
+
+| Kind | `store.json` | State | Reads and writes |
+| --- | --- | --- | --- |
+| not sealed | none, or `encrypt: false` | `plain` | plain, as before |
+| any | `encrypt: true` | `sealed` | sealed with the DEK; refused without it |
+| sealed | none | `unopened` | refused (`SealedVaultRefusedError`): the owner opens the vault door first, which creates the sealed copy |
+| sealed | `encrypt: false` or unreadable | `mismatch` | refused, logged as an error |
+
+A refused write writes nothing: no page, no `pages-index.json`, no `search-index.json`. A save is refused rather than routed through the door, because the door creates a copy only when the user walks through it, never mid-save; the editor answers 409 with "open it at `/stores/{kind}` first. Nothing was saved." A refused read is answered as a locked store's is — nothing — so plaintext left in a sealed kind's vault is never served as if it were sealed (`readStoreTextSync` logs it once per vault).
+
+At startup `PageManager` looks for vaults of a sealed kind that hold files in the clear (`findUnsealedVaults`: a folder with files but no `store.json`, or a `store.json` that is not sealed) and reports each by owner and vault: an error in the log, the degraded-subsystem banner and a system notification. Nothing is moved, sealed or deleted; an administrator decides what to do with the files, and the owner then opens the vault. The legacy private-attachment migration, the boot listing of plain stores' pages (`indexPlainStorePages`) and `ShareManager.isEncryptedVault` treat a sealed kind's vault as sealed too.
 
 Every file in a store goes through that I/O — the page files, their version blobs, the trash blobs, the attachments, and all five indexes. `store.json` is the one exception and cannot be sealed: it holds the wrapped DEK needed to open everything else.
 
@@ -276,7 +291,7 @@ Then every other private page made before #1505 is placed (#1507): a page in its
 
 The store is never written into frontmatter — the path records it, and a copy could disagree with where the file is. `private: true` is written only on a private page.
 
-Before any private byte is written, `BasePageProvider.assertPrivateStoreWritable()` calls `assertContextCanWriteStore()`, which refuses a write into an encrypted store the context holds no DEK for.
+Before any private byte is written, `BasePageProvider.assertPrivateStoreWritable()` calls `assertContextCanWriteStore()`, which refuses a write into an encrypted store the context holds no DEK for, and a write into a sealed kind's vault that has no sealed `store.json` (#1834).
 
 ---
 

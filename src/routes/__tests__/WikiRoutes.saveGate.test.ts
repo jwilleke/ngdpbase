@@ -10,6 +10,7 @@
  */
 
 import WikiRoutes from '../WikiRoutes';
+import { SealedVaultRefusedError } from '../../utils/privateStoreMeta';
 
 function makeEngine({ existing, granted, pageAllows }: { existing: boolean; granted: string[]; pageAllows: boolean }) {
   const existingPage = existing ? { content: 'old', metadata: { title: 'TestPage', uuid: 'u1', 'system-category': 'general' } } : null;
@@ -97,5 +98,14 @@ describe('savePage asks the editor’s doors (#1542)', () => {
     const { engine, pageManager } = makeEngine({ existing: true, granted: ['page-read', 'page-create', 'page-edit'], pageAllows: true });
     await new WikiRoutes(engine).savePage(req(CONTRIBUTOR), res());
     expect(pageManager.savePage).toHaveBeenCalled();
+  });
+
+  test('a save refused because the encrypted vault is not open answers 409 with what to do, not 500 (#1834)', async () => {
+    const { engine, pageManager } = makeEngine({ existing: false, granted: ['page-read', 'page-create', 'page-edit'], pageAllows: true });
+    pageManager.savePage.mockRejectedValueOnce(new SealedVaultRefusedError('jim', 'phr', 'unopened'));
+    const r = res();
+    await new WikiRoutes(engine).savePage({ ...req(CONTRIBUTOR), headers: { accept: 'application/json' } }, r);
+    expect(r.status).toHaveBeenCalledWith(409);
+    expect(r.json).toHaveBeenCalledWith({ ok: false, error: expect.stringMatching(/open it at \/stores\/phr first\. Nothing was saved\./) });
   });
 });
