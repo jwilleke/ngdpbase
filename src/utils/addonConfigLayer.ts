@@ -174,7 +174,7 @@ function addonCategoryLayer(shipped: unknown, custom: unknown, addons: readonly 
         } else if (vaultId && vaultKey.has(vaultId) && vaultKey.get(vaultId) !== key) {
           reasons.push(`its vault '${vaultId}' is already the vault of system-category '${vaultKey.get(vaultId)}'`);
         }
-        reasons.push(...systemCategoryValueProblems(key, entry));
+        reasons.push(...systemCategoryValueProblems(key, entry).map((p) => p.message));
       }
       if (reasons.length > 0) {
         layer.problems.push(`${who}: system-category '${key}' is refused (${reasons.join('; ')})`);

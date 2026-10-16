@@ -15,6 +15,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ValidationManager from '../../managers/ValidationManager';
+import logger from '../logger';
 import { mergeConfigWithAddons } from '../addonConfigLayer';
 import { storeDoorState, storeKindFromConfig } from '../privateStoreDoor';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -67,11 +68,14 @@ function categories(merged: Record<string, unknown>): Record<string, Record<stri
   return merged[SC] as Record<string, Record<string, unknown>>;
 }
 
-function validationManagerFor(merged: Record<string, unknown>, blocked: string[] = []): Promise<ValidationManager> {
+interface Seen { blocked: string[]; notifications: Array<Record<string, unknown>> }
+
+function validationManagerFor(merged: Record<string, unknown>, seen: Seen = { blocked: [], notifications: [] }): Promise<ValidationManager> {
   const configManager = { getProperty: (key: string, def: unknown) => merged[key] ?? def };
+  const notificationManager = { addNotification: (n: Record<string, unknown>) => { seen.notifications.push(n); return Promise.resolve('id'); } };
   const engine = {
-    getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : undefined),
-    blockConfiguration: (reason: string) => { blocked.push(reason); }
+    getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : name === 'NotificationManager' ? notificationManager : undefined),
+    blockConfiguration: (reason: string) => { seen.blocked.push(reason); }
   } as unknown as WikiEngine;
   const vm = new ValidationManager(engine);
   return vm.initialize().then(() => vm);
@@ -216,20 +220,40 @@ describe('#1559 refused declarations', () => {
   });
 });
 
-describe('#1559 a mistyped site entry blocks serving', () => {
-  test('the site\'s own encrypt "true" is a blocking configuration problem naming entry and field', async () => {
-    const blocked: string[] = [];
-    const merged = mergeConfigWithAddons(shipped, { [SC]: { general: { encrypt: 'true' } } }, root).merged;
-    await validationManagerFor(merged, blocked);
-    expect(blocked).toHaveLength(1);
-    expect(blocked[0]).toMatch(/system-category 'general': encrypt must be true or false, got "true"/);
+describe('#1559 a mistyped site entry warns, never forces', () => {
+  test('the site\'s own encrypt "true" posts a banner and logs an error, and does not block', async () => {
+    const seen: Seen = { blocked: [], notifications: [] };
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    try {
+      const merged = mergeConfigWithAddons(shipped, { [SC]: { general: { encrypt: 'true' } } }, root).merged;
+      const vm = await validationManagerFor(merged, seen);
+      expect(seen.blocked).toEqual([]);
+      const status = vm.getManagerStatus();
+      expect(status).toMatchObject({ state: 'degraded', configKey: SC });
+      expect(status.reason).toMatch(/system-category 'general': encrypt must be true or false, got "true"; it is read as false, so the vault is not sealed/);
+      expect(seen.notifications).toHaveLength(1);
+      expect(seen.notifications[0]).toMatchObject({ type: 'system', level: 'error' });
+      expect(String(seen.notifications[0].message)).toMatch(/encrypt.*"true".*read as false/);
+      expect(error.mock.calls.some((c) => /encrypt must be true or false/.test(String(c[0])))).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
   });
 
-  test('a sound map blocks nothing', async () => {
-    const blocked: string[] = [];
+  test('defaultPrivate "true" says new pages start public', async () => {
+    const seen: Seen = { blocked: [], notifications: [] };
+    const merged = mergeConfigWithAddons(shipped, { [SC]: { general: { defaultPrivate: 'true' } } }, root).merged;
+    const vm = await validationManagerFor(merged, seen);
+    expect(vm.getManagerStatus().reason).toMatch(/defaultPrivate .* got "true"; it is read as false, so new pages start public/);
+  });
+
+  test('a sound map raises nothing', async () => {
+    const seen: Seen = { blocked: [], notifications: [] };
     addon('phr', phrDefaults);
-    await validationManagerFor(mergeConfigWithAddons(shipped, {}, root).merged, blocked);
-    expect(blocked).toEqual([]);
+    const vm = await validationManagerFor(mergeConfigWithAddons(shipped, {}, root).merged, seen);
+    expect(seen.blocked).toEqual([]);
+    expect(seen.notifications).toEqual([]);
+    expect(vm.getManagerStatus().state).not.toBe('degraded');
   });
 });
 
