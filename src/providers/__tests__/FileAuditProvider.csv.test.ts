@@ -9,6 +9,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import FileAuditProvider from '../FileAuditProvider';
+import ExportManager from '../../managers/ExportManager';
 
 let dir: string;
 
@@ -19,10 +20,11 @@ function makeProvider() {
     'ngdpbase.audit.provider.file.archivefilename': 'audit-archive.log',
     'ngdpbase.audit.flushinterval': 100000
   };
+  const exportManager = new ExportManager({});
   const engine = {
     getManager: (name: string) => (name === 'ConfigurationManager'
       ? { getProperty: (k: string, d: unknown) => (k in config ? config[k] : d), getResolvedDataPath: () => dir }
-      : null)
+      : name === 'ExportManager' ? exportManager : null)
   } as never;
   return new FileAuditProvider(engine);
 }
