@@ -5,6 +5,8 @@
  * that use the object-with-execute pattern.
  */
 
+import type { PluginFormatters } from '../managers/PluginManager.js';
+
 /**
  * Wiki engine interface for plugins
  */
@@ -26,6 +28,8 @@ export interface PluginContext {
   linkGraph: Record<string, unknown>;
   /** Query-string parameters from the current HTTP request (e.g. { page: '2' }) */
   query?: Record<string, string>;
+  /** #1820: PluginManager's formatter helpers, e.g. `context.formatters.escapeHtml(s)`. */
+  formatters: PluginFormatters;
   /**
    * #1751: this render reads `topic`'s data (by convention the owning
    * manager's name, e.g. 'LedgerManager'). Call before reading; the cached
