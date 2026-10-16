@@ -2,7 +2,6 @@ import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type { PageComment } from '../types/Comment.js';
-import { parseBoolParam } from '../utils/pluginFormatters.js';
 import { renderUntrustedInline } from '../utils/renderUntrustedInline.js';
 
 /** Engine shape the untrusted-inline profile needs; kept loose for tests. */
@@ -74,6 +73,7 @@ const CommentsPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { parseBoolParam } = context.formatters;
     const engine = context.engine;
     if (!engine) return '';
 

@@ -30,8 +30,7 @@
  *     same `SectionUtils.extractSection()` helper backs both.
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import { extractSection } from '../utils/SectionUtils.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
@@ -176,7 +175,8 @@ function applyCaption(sectionMarkdown: string, caption: string): string {
 
 const NO_RECURSION_PATTERN = /\[\{Insert(?:\s+[^}]*)?\}\]/g;
 
-function renderPlaceholder(pageName: string, reason: string): string {
+function renderPlaceholder(f: PluginFormatters, pageName: string, reason: string): string {
+  const { escapeHtml } = f;
   return [
     '<div class="alert alert-info insert-plugin-placeholder" role="status">',
     `  <i class="fas fa-info-circle"></i> ${escapeHtml(reason)}`,
@@ -185,7 +185,8 @@ function renderPlaceholder(pageName: string, reason: string): string {
   ].join('');
 }
 
-function renderAttribution(pageName: string, sectionLabel?: string): string {
+function renderAttribution(f: PluginFormatters, pageName: string, sectionLabel?: string): string {
+  const { escapeHtml } = f;
   const href = '/view/' + encodeURIComponent(pageName);
   const label = sectionLabel
     ? `from <a href="${href}">${escapeHtml(pageName)}</a> (section: ${escapeHtml(sectionLabel)})`
@@ -200,6 +201,7 @@ const InsertPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml } = context.formatters;
     const ctx = context as ExtendedPluginContext;
 
     const pageParam = typeof params.page === 'string' ? params.page : '';
@@ -215,6 +217,7 @@ const InsertPlugin: SimplePlugin = {
     // quietly inserting the wrong thing (the #748 reporter hit this).
     if (/\bcaption\s*=/i.test(target)) {
       return renderPlaceholder(
+        context.formatters,
         target,
         'Insert: malformed parameters — check the quotes (use [{Insert page=\'X\' caption=\'Y\'}], a single quoted value per parameter)'
       );
@@ -226,7 +229,7 @@ const InsertPlugin: SimplePlugin = {
 
     const pageManager = ctx.engine?.getManager('PageManager') as PageManagerLike | undefined;
     if (!pageManager?.readPage) {
-      return renderPlaceholder(pageName, 'Insert: PageManager unavailable');
+      return renderPlaceholder(context.formatters, pageName, 'Insert: PageManager unavailable');
     }
 
     // The viewer this parse is running for — forwarded, never rebuilt. No
@@ -237,13 +240,13 @@ const InsertPlugin: SimplePlugin = {
       read = await pageManager.readPage(pageName, viewer);
     } catch (err) {
       ctx.engine?.logger?.error?.('[InsertPlugin] readPage failed:', err);
-      return renderPlaceholder(pageName, 'Insert: page lookup failed');
+      return renderPlaceholder(context.formatters, pageName, 'Insert: page lookup failed');
     }
 
     // #1198 / rule 10, #1622: the door decides whether the viewer may read the
     // inserted page — private, audience, access lists and policy alike.
     if (!read.ok) {
-      return renderPlaceholder(pageName, read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
+      return renderPlaceholder(context.formatters, pageName, read.refusal === 'denied' ? 'Insert: page not visible' : 'Insert: page not found');
     }
     const page = read.value;
     const metadata = page.metadata ?? {};
@@ -256,14 +259,14 @@ const InsertPlugin: SimplePlugin = {
     if (typeof sectionIndex === 'number') {
       const extracted = extractSection(content, sectionIndex);
       if (extracted === null) {
-        return renderPlaceholder(pageName, `Insert: section ${sectionIndex} not found in`);
+        return renderPlaceholder(context.formatters, pageName, `Insert: section ${sectionIndex} not found in`);
       }
       content = extracted;
       sectionLabel = `#${sectionIndex}`;
     } else if (sectionHeading) {
       const idx = findSectionIndexByHeading(content, sectionHeading);
       if (idx === null) {
-        return renderPlaceholder(pageName, `Insert: section "${sectionHeading}" not found in`);
+        return renderPlaceholder(context.formatters, pageName, `Insert: section "${sectionHeading}" not found in`);
       }
       const extracted = extractSection(content, idx);
       content = extracted ?? '';
@@ -319,7 +322,7 @@ const InsertPlugin: SimplePlugin = {
         );
       } catch (err) {
         ctx.engine?.logger?.error?.('[InsertPlugin] renderMarkdown failed:', err);
-        return renderPlaceholder(pageName, 'Insert: render failed');
+        return renderPlaceholder(context.formatters, pageName, 'Insert: render failed');
       }
     } else {
       // No RenderingManager — fall back to escaped raw content so the page
@@ -330,7 +333,7 @@ const InsertPlugin: SimplePlugin = {
     return [
       '<div class="insert-plugin">',
       renderedHtml,
-      renderAttribution(pageName, sectionLabel),
+      renderAttribution(context.formatters, pageName, sectionLabel),
       '</div>'
     ].join('\n');
   },

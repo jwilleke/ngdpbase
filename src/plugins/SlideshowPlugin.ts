@@ -22,7 +22,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, parseMaxParam, applyMax, splitParam, parseBoolParam } from '../utils/pluginFormatters.js';
 
 let _idCounter = 0;
 
@@ -32,7 +31,8 @@ const SlideshowPlugin: SimplePlugin = {
   author: 'ngdpbase',
   version: '1.0.0',
 
-  execute(_context: PluginContext, params: PluginParams): string {
+  execute(context: PluginContext, params: PluginParams): string {
+    const { escapeHtml, parseMaxParam, applyMax, splitParam, parseBoolParam } = context.formatters;
     const images = splitParam(params.images);
     if (images.length === 0) {
       return '<span class="text-muted"><em>[SlideshowPlugin: no images provided]</em></span>';

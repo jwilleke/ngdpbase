@@ -17,8 +17,11 @@
  * @jest-environment node
  */
 
-import RecentChangesPlugin from '../RecentChangesPlugin';
+import RecentChangesPluginModule from '../RecentChangesPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import { ANONYMOUS_SUBJECT } from '../../managers/UserManager';
+
+const RecentChangesPlugin = asExecuted(RecentChangesPluginModule);
 
 // #1456: every render carries a requester; an anonymous visitor is the
 // anonymous subject, never a missing one.

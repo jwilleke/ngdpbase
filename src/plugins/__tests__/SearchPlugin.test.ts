@@ -14,8 +14,9 @@
  */
 
 import SearchPluginModule from '../SearchPlugin' ;
+import { asExecuted } from '../../test-support/plugins';
 import type { SimplePlugin } from '../types';
-const SearchPlugin = SearchPluginModule as unknown as SimplePlugin;
+const SearchPlugin = asExecuted(SearchPluginModule) as unknown as SimplePlugin;
 // ---------------------------------------------------------------------------
 // Mock helpers
 // ---------------------------------------------------------------------------

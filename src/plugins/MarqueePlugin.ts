@@ -23,7 +23,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, resolveManagerFetch } from '../utils/pluginFormatters.js';
 
 // ─── unique ID counter so multiple banners on one page don't share keyframes ──
 let _idCounter = 0;
@@ -58,6 +57,7 @@ const MarqueePlugin: SimplePlugin = {
   version:     '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, resolveManagerFetch } = context.formatters;
     let text = String(params.text ?? '').trim();
 
     // If fetch param is set, call the specified manager method to get text.

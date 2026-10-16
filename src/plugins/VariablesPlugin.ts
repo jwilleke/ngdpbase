@@ -11,7 +11,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { escapeHtml, formatAsTable } from '../utils/pluginFormatters.js';
 
 interface VariablesParams extends PluginParams {
   type?: string;
@@ -90,6 +89,7 @@ const VariablesPlugin: SimplePlugin = {
    * @returns HTML output
    */
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, formatAsTable } = context.formatters;
     const opts = (params || {}) as VariablesParams;
     const type = String(opts.type || 'all'); // 'system', 'contextual', 'plugins', or 'all'
 

@@ -1,5 +1,4 @@
 import type { SimplePlugin, PluginContext } from './types.js';
-import { formatDuration } from '../utils/pluginFormatters.js';
 import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 const UptimePlugin: SimplePlugin = {
@@ -9,6 +8,7 @@ const UptimePlugin: SimplePlugin = {
   version: '1.0.0',
 
   execute(context: PluginContext): string {
+    const { formatDuration } = context.formatters;
     // #1751: changes with the time, not on a write: re-rendered at most once a minute.
     context.dependsOn?.(CLOCK_TOPIC);
     const engine = context.engine;

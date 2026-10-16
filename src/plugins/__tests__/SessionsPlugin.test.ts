@@ -7,8 +7,9 @@
  */
 
 import SessionsPluginModule from '../SessionsPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import type { SimplePlugin } from '../types';
-const SessionsPlugin = SessionsPluginModule as unknown as SimplePlugin;
+const SessionsPlugin = asExecuted(SessionsPluginModule) as unknown as SimplePlugin;
 
 type Stats = { hasStore: () => boolean; count: ReturnType<typeof vi.fn>; users: ReturnType<typeof vi.fn> };
 

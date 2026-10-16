@@ -4,7 +4,10 @@
  * @jest-environment node
  */
 
-import TotalPagesPlugin from '../TotalPagesPlugin';
+import TotalPagesPluginModule from '../TotalPagesPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const TotalPagesPlugin = asExecuted(TotalPagesPluginModule);
 
 const makeEngine = (pages: unknown[] | null = []) => ({
   getManager: vi.fn((name: string) => {

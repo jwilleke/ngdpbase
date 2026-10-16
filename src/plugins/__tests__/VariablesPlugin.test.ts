@@ -13,7 +13,10 @@
  * @jest-environment node
  */
 
-import VariablesPlugin from '../VariablesPlugin';
+import VariablesPluginModule from '../VariablesPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const VariablesPlugin = asExecuted(VariablesPluginModule);
 
 const makeVariableManager = (
   systemVars = ['version', 'date'],

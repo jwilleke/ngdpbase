@@ -17,7 +17,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
 import type { SessionCount, SessionUsers } from '../managers/SessionStatsManager.js';
 import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
@@ -34,6 +33,7 @@ const SessionsPlugin: SimplePlugin = {
   version: '3.0.0',
 
   async execute(context: PluginContext, params: PluginParams = {}): Promise<string> {
+    const { formatAsList, formatAsCount } = context.formatters;
     // #1751: changes with the time, not on a write: re-rendered at most once a minute.
     context.dependsOn?.(CLOCK_TOPIC);
     const property = String(params.property || 'count').toLowerCase();

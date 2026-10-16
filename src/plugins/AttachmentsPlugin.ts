@@ -8,7 +8,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { formatAsCount, formatAsList, parseMaxParam, applyMax } from '../utils/pluginFormatters.js';
 import type { PageLink } from '../utils/pluginFormatters.js';
 
 interface AttachmentMetadata {
@@ -33,6 +32,7 @@ const AttachmentsPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { formatAsCount, formatAsList, parseMaxParam, applyMax } = context.formatters;
     const engine = context.engine;
     if (!engine) return '0';
 

@@ -4,7 +4,10 @@
  * @jest-environment node
  */
 
-import ReferringPagesPlugin from '../referringPagesPlugin';
+import ReferringPagesPluginModule from '../referringPagesPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const ReferringPagesPlugin = asExecuted(ReferringPagesPluginModule);
 
 const ctx = (pageName: string, linkGraph: Record<string, string[]> = {}) => ({
   pageName,

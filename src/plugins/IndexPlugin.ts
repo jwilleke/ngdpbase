@@ -7,13 +7,6 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import {
-  escapeHtml,
-  parsePageParam,
-  parsePageSizeParam,
-  applyPagination,
-  formatPaginationLinks
-} from '../utils/pluginFormatters.js';
 
 interface PageManager {
   getAllPages(): Promise<string[]>;
@@ -51,6 +44,7 @@ const IndexPlugin: SimplePlugin = {
    * @returns HTML output
    */
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks } = context.formatters;
     const opts = (params || {}) as IndexParams;
 
     try {

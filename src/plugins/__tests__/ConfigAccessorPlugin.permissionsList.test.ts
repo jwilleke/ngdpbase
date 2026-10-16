@@ -6,7 +6,10 @@
  */
 import fs from 'fs';
 import path from 'path';
-import ConfigAccessorPlugin from '../ConfigAccessorPlugin';
+import ConfigAccessorPluginModule from '../ConfigAccessorPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const ConfigAccessorPlugin = asExecuted(ConfigAccessorPluginModule);
 
 const shipped = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'app-default-config.json'), 'utf8')) as Record<string, unknown>;
 const catalog = shipped['ngdpbase.permissions.definitions'] as Record<string, { grantable?: boolean; label?: string; description?: string }>;

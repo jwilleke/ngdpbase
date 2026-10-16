@@ -32,18 +32,11 @@
  * Default 'after' value: '' (empty) for single values, '\n' (newline) for multiple values (wildcards)
  */
 
-import type { PluginContext, PluginParams, SimplePlugin } from './types.js';
+import type { PluginContext, PluginParams, PluginFormatters, SimplePlugin } from './types.js';
 import type PolicyDecisionPoint from '../security/PolicyDecisionPoint.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import { valueLevels, shownValue, type ValueLevel, type ValueViewer } from '../utils/sensitiveValues.js';
 import { categorySource } from '../managers/ValidationManager.js';
-import {
-  escapeHtml,
-  parsePageSizeParam,
-  parsePageParam,
-  applyPagination,
-  formatPaginationLinks
-} from '../utils/pluginFormatters.js';
 import { grantablePermissions, permissionLabel } from '../utils/permissionCatalog.js';
 
 // ============================================================================
@@ -170,7 +163,8 @@ function processEscapeSequences(str: string): string {
 /**
  * Display all roles
  */
-function displayRoles(configManager: ConfigurationManager): string {
+function displayRoles(f: PluginFormatters, configManager: ConfigurationManager): string {
+  const { escapeHtml } = f;
   const roles = Object.values(configManager.getProperty('ngdpbase.roles.definitions', {}) as Record<string, Role>);
 
   if (!roles || roles.length === 0) {
@@ -235,7 +229,8 @@ function displayRoles(configManager: ConfigurationManager): string {
 /**
  * Display Security Policy Summary - permissions matrix showing which roles have which permissions
  */
-function displayPermissions(configManager: ConfigurationManager, pdp: PolicyDecisionPoint | null): string {
+function displayPermissions(f: PluginFormatters, configManager: ConfigurationManager, pdp: PolicyDecisionPoint | null): string {
+  const { escapeHtml } = f;
   if (!pdp) {
     return '<p class="error">PolicyDecisionPoint not available</p>';
   }
@@ -326,10 +321,12 @@ function displayPermissions(configManager: ConfigurationManager, pdp: PolicyDeci
  * - Anonymous: No user information available
  */
 function displayUserSummary(
+  f: PluginFormatters,
   context: ExtendedPluginContext,
   configManager: ConfigurationManager,
   pdp: PolicyDecisionPoint | null
 ): string {
+  const { escapeHtml } = f;
 
   // Get current user from context (WikiContext uses userContext, not currentUser)
   const currentUser = context?.userContext || context?.currentUser;
@@ -487,11 +484,13 @@ function displayUserSummary(
  * Display all unique actions from access policies
  */
 function displayActions(
+  f: PluginFormatters,
   configManager: ConfigurationManager,
   valueonly = false,
   before = '',
   after: string | undefined = undefined
 ): string {
+  const { escapeHtml } = f;
   try {
     // Get access policies from configuration
     const policies = configManager.getProperty('ngdpbase.access.policies', []) as AccessPolicy[];
@@ -603,12 +602,14 @@ function displayActions(
  * Display user keywords with optional filtering
  */
 function displayUserKeywords(
+  f: PluginFormatters,
   configManager: ConfigurationManager,
   opts: ConfigAccessorParams = {},
   valueonly = false,
   before = '',
   after: string | undefined = undefined
 ): string {
+  const { escapeHtml } = f;
   try {
     // Get userKeywords from configuration
     const userKeywordsRaw = configManager.getProperty('ngdpbase.user-keywords', {}) as Record<string, Omit<UserKeyword, 'label'>>;
@@ -763,12 +764,14 @@ function displayUserKeywords(
  * Display system keywords with optional filtering
  */
 function displaySystemKeywords(
+  f: PluginFormatters,
   configManager: ConfigurationManager,
   opts: ConfigAccessorParams = {},
   valueonly = false,
   before = '',
   after: string | undefined = undefined
 ): string {
+  const { escapeHtml } = f;
   try {
     // Get systemKeywords from configuration
     const systemKeywordsRaw = configManager.getProperty('ngdpbase.system-keywords', {}) as Record<string, Omit<SystemKeyword, 'label'>>;
@@ -916,12 +919,14 @@ function displaySystemKeywords(
  * Display system categories with optional filtering
  */
 function displaySystemCategories(
+  f: PluginFormatters,
   configManager: ConfigurationManager,
   opts: ConfigAccessorParams = {},
   valueonly = false,
   before = '',
   after: string | undefined = undefined
 ): string {
+  const { escapeHtml } = f;
   try {
     // Get systemCategories from configuration
     const systemCategoriesRaw = configManager.getProperty('ngdpbase.system-category', {}) as Record<string, Omit<SystemCategory, 'label'>>;
@@ -1119,7 +1124,8 @@ function maskIfSensitive(key: string, value: unknown, levels: Map<string, ValueL
 
 // ─── displayPolicies ───────────────────────────────────────────────────────
 
-function displayPolicies(configManager: ConfigurationManager): string {
+function displayPolicies(f: PluginFormatters, configManager: ConfigurationManager): string {
+  const { escapeHtml } = f;
   const policies = configManager.getProperty('ngdpbase.access.policies', []) as AccessPolicy[];
 
   if (!Array.isArray(policies) || policies.length === 0) {
@@ -1169,7 +1175,8 @@ function displayPolicies(configManager: ConfigurationManager): string {
 
 // ─── displayAuthMethods ────────────────────────────────────────────────────
 
-function displayAuthMethods(configManager: ConfigurationManager, levels: Map<string, ValueLevel>, viewer: ValueViewer): string {
+function displayAuthMethods(f: PluginFormatters, configManager: ConfigurationManager, levels: Map<string, ValueLevel>, viewer: ValueViewer): string {
+  const { escapeHtml } = f;
   const all = configManager.getAllProperties();
 
   // Group keys by method name (first segment after ngdpbase.auth.)
@@ -1239,7 +1246,8 @@ function displayAuthMethods(configManager: ConfigurationManager, levels: Map<str
 
 // ─── displayFeatures ───────────────────────────────────────────────────────
 
-function displayFeatures(configManager: ConfigurationManager): string {
+function displayFeatures(f: PluginFormatters, configManager: ConfigurationManager): string {
+  const { escapeHtml } = f;
   const all = configManager.getAllProperties();
 
   const groups: Record<string, Record<string, unknown>> = {};
@@ -1291,7 +1299,8 @@ function displayFeatures(configManager: ConfigurationManager): string {
 
 // ─── displayPermissionsList ────────────────────────────────────────────────
 
-function displayPermissionsList(configManager: ConfigurationManager): string {
+function displayPermissionsList(f: PluginFormatters, configManager: ConfigurationManager): string {
+  const { escapeHtml } = f;
   // #1638: records (grantable: false) are not listed as permissions.
   const defs = grantablePermissions(configManager.getProperty('ngdpbase.permissions.definitions', {}) as Record<string, PermissionDefinition>);
 
@@ -1341,6 +1350,7 @@ function displayPermissionsList(configManager: ConfigurationManager): string {
  * Display config value(s) with optional wildcard support
  */
 function displayConfigValue(
+  f: PluginFormatters,
   configManager: ConfigurationManager,
   key: string,
   valueonly = false,
@@ -1356,6 +1366,7 @@ function displayConfigValue(
   levels: Map<string, ValueLevel> = new Map(),
   viewer: ValueViewer = { sensitive: false, secret: false }
 ): string {
+  const { escapeHtml, applyPagination, formatPaginationLinks } = f;
   if (!key) {
     return '<p class="error">Missing required parameter: key</p><p class="text-muted">Usage: [{ConfigAccessor key=\'ngdpbase.some.key\'}]</p>';
   }
@@ -1536,7 +1547,8 @@ function displayConfigValue(
 /**
  * Display manager-specific configuration
  */
-function displayManagerConfig(configManager: ConfigurationManager, managerName: string | undefined): string {
+function displayManagerConfig(f: PluginFormatters, configManager: ConfigurationManager, managerName: string | undefined): string {
+  const { escapeHtml } = f;
   if (!managerName) {
     return '<p class="error">Missing required parameter: manager</p><p class="text-muted">Usage: [{ConfigAccessor type=\'manager\' manager=\'UserManager\'}]</p>';
   }
@@ -1597,7 +1609,8 @@ function displayManagerConfig(configManager: ConfigurationManager, managerName: 
 /**
  * Display feature-specific configuration
  */
-function displayFeatureConfig(configManager: ConfigurationManager, featureName: string | undefined): string {
+function displayFeatureConfig(f: PluginFormatters, configManager: ConfigurationManager, featureName: string | undefined): string {
+  const { escapeHtml } = f;
   if (!featureName) {
     return '<p class="error">Missing required parameter: feature</p><p class="text-muted">Usage: [{ConfigAccessor type=\'feature\' feature=\'search\'}]</p>';
   }
@@ -1672,6 +1685,7 @@ const ConfigAccessorPlugin: SimplePlugin = {
    * Execute the plugin
    */
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parsePageSizeParam, parsePageParam } = context.formatters;
     const opts = (params || {}) as ConfigAccessorParams;
     const key = opts.key;
     const type = opts.type;
@@ -1701,53 +1715,53 @@ const ConfigAccessorPlugin: SimplePlugin = {
 
       // If key is provided, handle config value(s)
       if (key) {
-        return displayConfigValue(configManager, key, valueonly, before, after, caption, forceTable, noheader, pageSize, page, context.pageName,
+        return displayConfigValue(context.formatters, configManager, key, valueonly, before, after, caption, forceTable, noheader, pageSize, page, context.pageName,
           valueLevels((k, d) => configManager.getProperty(k, d)), await viewerOf(context));
       }
 
       // Otherwise handle type-based display (type is guaranteed non-null here due to check above)
       switch ((type ?? '').toLowerCase()) {
       case 'roles':
-        return displayRoles(configManager);
+        return displayRoles(context.formatters, configManager);
 
       case 'permissions':
       case 'policy-summary':
-        return displayPermissions(configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
+        return displayPermissions(context.formatters, configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
 
       case 'user-summary':
-        return displayUserSummary(context, configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
+        return displayUserSummary(context.formatters, context, configManager, context?.engine?.getManager?.('PolicyDecisionPoint') as PolicyDecisionPoint | null);
 
       case 'actions':
-        return displayActions(configManager, valueonly, before, after);
+        return displayActions(context.formatters, configManager, valueonly, before, after);
 
       case 'manager':
-        return displayManagerConfig(configManager, opts.manager);
+        return displayManagerConfig(context.formatters, configManager, opts.manager);
 
       case 'feature':
-        return displayFeatureConfig(configManager, opts.feature);
+        return displayFeatureConfig(context.formatters, configManager, opts.feature);
 
       case 'userkeywords':
-        return displayUserKeywords(configManager, opts, valueonly, before, after);
+        return displayUserKeywords(context.formatters, configManager, opts, valueonly, before, after);
 
       case 'systemkeywords':
-        return displaySystemKeywords(configManager, opts, valueonly, before, after);
+        return displaySystemKeywords(context.formatters, configManager, opts, valueonly, before, after);
 
       case 'systemcategories':
-        return displaySystemCategories(configManager, opts, valueonly, before, after);
+        return displaySystemCategories(context.formatters, configManager, opts, valueonly, before, after);
 
       case 'policies':
-        return displayPolicies(configManager);
+        return displayPolicies(context.formatters, configManager);
 
       case 'authmethods': {
         // #1198: policy, not a role name.
-        return displayAuthMethods(configManager, valueLevels((k, d) => configManager.getProperty(k, d)), await viewerOf(context));
+        return displayAuthMethods(context.formatters, configManager, valueLevels((k, d) => configManager.getProperty(k, d)), await viewerOf(context));
       }
 
       case 'features':
-        return displayFeatures(configManager);
+        return displayFeatures(context.formatters, configManager);
 
       case 'permissionslist':
-        return displayPermissionsList(configManager);
+        return displayPermissionsList(context.formatters, configManager);
 
       default:
         return `<p class="error">Unknown type: ${escapeHtml(type)}. Valid types: 'roles', 'permissions', 'policy-summary', 'user-summary', 'actions', 'manager', 'feature', 'userKeywords', 'systemKeywords', 'systemCategories', 'policies', 'authMethods', 'features', 'permissionsList'.</p>`;

@@ -13,7 +13,10 @@
  */
 
 import { describe, expect, test, vi } from 'vitest';
-import InsertPlugin from '../InsertPlugin';
+import InsertPluginModule from '../InsertPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const InsertPlugin = asExecuted(InsertPluginModule);
 
 function makeContext(opts: {
   pageManager?: Record<string, (...args: unknown[]) => unknown> | null;

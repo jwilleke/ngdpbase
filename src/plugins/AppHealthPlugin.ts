@@ -28,8 +28,7 @@
  *   format    - 'sections' (default) | 'count' (one-line summary)
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import { parseMaxParam, escapeHtml, formatAsList, formatAsCount } from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import { CLOCK_TOPIC } from '../cache/CacheDependencies.js';
 
 interface AppHealthParams extends PluginParams {
@@ -57,9 +56,11 @@ const ALL_CHECKS = ['orphans', 'broken', 'stale'] as const;
 type Check = (typeof ALL_CHECKS)[number];
 
 function makeFilter(
+  f: PluginFormatters,
   include: string | undefined,
   exclude: string | undefined
 ): { ok: (s: string) => boolean; error?: string } {
+  const { escapeHtml } = f;
   let inc: RegExp | null = null;
   let exc: RegExp | null = null;
   try {
@@ -77,7 +78,8 @@ function makeFilter(
   };
 }
 
-function section(title: string, pages: string[], hrefBase: string, max: number): string {
+function section(f: PluginFormatters, title: string, pages: string[], hrefBase: string, max: number): string {
+  const { escapeHtml, formatAsList, formatAsCount } = f;
   const total = pages.length;
   let html = `<div class="app-health-section"><h4>${escapeHtml(title)} (${formatAsCount(total)})</h4>`;
   if (total === 0) {
@@ -106,6 +108,7 @@ const AppHealthPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { parseMaxParam, escapeHtml, formatAsCount } = context.formatters;
     // #1751: changes with the time, not on a write: re-rendered at most once a minute.
     context.dependsOn?.(CLOCK_TOPIC);
     const opts = (params ?? {}) as AppHealthParams;
@@ -125,7 +128,7 @@ const AppHealthPlugin: SimplePlugin = {
         return '<p class="error">No valid checks selected (use: orphans,broken,stale)</p>';
       }
 
-      const filter = makeFilter(opts.include, opts.exclude);
+      const filter = makeFilter(context.formatters, opts.include, opts.exclude);
       if (filter.error) return `<p class="error">${filter.error}</p>`;
 
       const max = parseMaxParam(opts.max, 50);
@@ -209,12 +212,12 @@ const AppHealthPlugin: SimplePlugin = {
 
       let html = '<div class="app-health-plugin">';
       if (selected.includes('orphans')) {
-        html += section('Orphan pages', results.orphans, '/view', max);
+        html += section(context.formatters, 'Orphan pages', results.orphans, '/view', max);
       }
       if (selected.includes('broken')) {
         // Broken targets render as create-links (red-link convention, matches
         // UndefinedPagesPlugin).
-        html += section('Broken / undefined links', results.broken, '/edit', max);
+        html += section(context.formatters, 'Broken / undefined links', results.broken, '/edit', max);
       }
       if (selected.includes('stale')) {
         if (staleSkipped) {
@@ -223,6 +226,7 @@ const AppHealthPlugin: SimplePlugin = {
             `<p class="text-muted">Skipped (staleDays=${escapeHtml(staleDays)} or recent-changes unavailable).</p></div>`;
         } else {
           html += section(
+            context.formatters,
             `Stale pages (no edit in ${staleDays}d)`,
             results.stale,
             '/view',

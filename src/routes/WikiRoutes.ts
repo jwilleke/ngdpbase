@@ -56,6 +56,8 @@ import {
   parsePageParam
 } from '../utils/pluginFormatters.js';
 import { normalizePinnedItems, deriveCanonicalUrl } from '../utils/pinnedItems.js';
+import type PluginManager from '../managers/PluginManager.js';
+import type { PluginFormatters } from '../managers/PluginManager.js';
 import type { StoreDeletedEntry, StoreRestoreResult } from '../types/Provider.js';
 import type { PinnedItem } from '../types/User.js';
 import { SimpleRateLimiter } from '../utils/SimpleRateLimiter.js';
@@ -808,6 +810,16 @@ class WikiRoutes {
 
   constructor(engine: WikiEngine) {
     this.engine = engine;
+  }
+
+  /**
+   * PluginManager's formatter helpers (#1820): pagination, stat filters and
+   * the rest. PluginManager owns them; a missing PluginManager is an error.
+   */
+  private get formatters(): PluginFormatters {
+    const pluginManager = this.engine.getManager<PluginManager>('PluginManager');
+    if (!pluginManager) throw new Error('WikiRoutes: PluginManager is not available for its formatters');
+    return pluginManager.formatters;
   }
 
   /**
@@ -10703,7 +10715,7 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-footnotes"><em>Footnotes are not enabled.</em></p>');
       }
-      const html = await renderFootnoteListHtml(footnoteManager, pageUuid, req.userContext, this.engine);
+      const html = await renderFootnoteListHtml(this.formatters, footnoteManager, pageUuid, req.userContext, this.engine);
       return res.type('text/html').send(html);
     } catch (err: unknown) {
       logger.error('Error rendering footnote list HTML:', err);

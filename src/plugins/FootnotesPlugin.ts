@@ -16,11 +16,10 @@
  *   noheader — suppress the "Footnotes" heading (default: false)
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
 import type { PageFootnote } from '../managers/FootnoteManager.js';
-import { parseBoolParam, escapeHtml } from '../utils/pluginFormatters.js';
 import { ANONYMOUS_SUBJECT } from '../managers/UserManager.js';
 
 interface PageManagerLike {
@@ -48,14 +47,16 @@ const MD_FOOTNOTE_DEF_RE = /^\[\^([\d\w-]+)\]:\s*(.+)$/mg;
 const MD_FOOTNOTE_BULLET_RE = /^\* \[\^(\d+)\] - (.+)$/mg;
 const JSPWIKI_FOOTNOTE_RE = /^\* \[#(\d+)\] - (.+)$/mg;
 
-function autoLink(text: string): string {
+function autoLink(f: PluginFormatters, text: string): string {
+  const { escapeHtml } = f;
   return escapeHtml(text).replace(
     /(https?:\/\/[^\s<&]+)/g,
     '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
   );
 }
 
-function renderWikiLink(raw: string, interWikiSites: Map<string, InterWikiSiteConfig>): string {
+function renderWikiLink(f: PluginFormatters, raw: string, interWikiSites: Map<string, InterWikiSiteConfig>): string {
+  const { escapeHtml } = f;
   const mdLinkRe = /(?<!!)\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   const result = raw.replace(mdLinkRe, (_m: string, display: string, url: string) =>
     `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(display)}</a>`
@@ -78,6 +79,7 @@ function renderWikiLink(raw: string, interWikiSites: Map<string, InterWikiSiteCo
 }
 
 async function readLegacyFootnotes(
+  f: PluginFormatters,
   pageName: string,
   pageManager: PageManagerLike,
   interWikiSites: Map<string, InterWikiSiteConfig>,
@@ -92,16 +94,16 @@ async function readLegacyFootnotes(
   MD_FOOTNOTE_DEF_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = MD_FOOTNOTE_DEF_RE.exec(raw)) !== null) {
-    footnotes.push({ id: m[1], html: autoLink(m[2].trim()) });
+    footnotes.push({ id: m[1], html: autoLink(f, m[2].trim()) });
   }
   MD_FOOTNOTE_BULLET_RE.lastIndex = 0;
   while ((m = MD_FOOTNOTE_BULLET_RE.exec(raw)) !== null) {
-    footnotes.push({ id: m[1], html: renderWikiLink(m[2].trim(), interWikiSites) });
+    footnotes.push({ id: m[1], html: renderWikiLink(f, m[2].trim(), interWikiSites) });
   }
   JSPWIKI_FOOTNOTE_RE.lastIndex = 0;
   while ((m = JSPWIKI_FOOTNOTE_RE.exec(raw)) !== null) {
-    if (!footnotes.find(f => f.id === m![1])) {
-      footnotes.push({ id: m[1], html: renderWikiLink(m[2].trim(), interWikiSites) });
+    if (!footnotes.find(note => note.id === m![1])) {
+      footnotes.push({ id: m[1], html: renderWikiLink(f, m[2].trim(), interWikiSites) });
     }
   }
   footnotes.sort((a, b) => {
@@ -114,7 +116,8 @@ async function readLegacyFootnotes(
 
 // ── Render helpers ───────────────────────────────────────────────────────────
 
-function renderFootnoteRow(fn: PageFootnote, canEdit: boolean, canDelete: boolean, pageUuid: string): string {
+function renderFootnoteRow(f: PluginFormatters, fn: PageFootnote, canEdit: boolean, canDelete: boolean, pageUuid: string): string {
+  const { escapeHtml } = f;
   const urlHtml = fn.url
     ? `<a href="${escapeHtml(fn.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fn.display || fn.url)}</a>`
     : escapeHtml(fn.display);
@@ -151,6 +154,7 @@ function renderFootnoteRow(fn: PageFootnote, canEdit: boolean, canDelete: boolea
  * paragraph — never wraps in the outer `<section>` or container.
  */
 export async function renderFootnoteListHtml(
+  f: PluginFormatters,
   footnoteManager: FootnoteManager,
   pageUuid: string,
   userContext: { isAuthenticated?: boolean; username?: string; roles?: string[] } | undefined,
@@ -171,7 +175,7 @@ export async function renderFootnoteListHtml(
   const rows: string[] = ['<ol class="footnote-list">'];
   for (const fn of footnotes) {
     const canDelete = isAdmin || (isAuthenticated && fn.createdBy === userContext?.username);
-    rows.push(renderFootnoteRow(fn, isEditor, canDelete, pageUuid));
+    rows.push(renderFootnoteRow(f, fn, isEditor, canDelete, pageUuid));
   }
   rows.push('</ol>');
   return rows.join('\n');
@@ -271,6 +275,7 @@ const FootnotesPlugin: SimplePlugin = {
   version: '2.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { parseBoolParam, escapeHtml } = context.formatters;
     const engine = context.engine;
     if (!engine) return '';
 
@@ -287,7 +292,7 @@ const FootnotesPlugin: SimplePlugin = {
     } | undefined;
     // #1198: the add form is offered to whoever policy lets add — the route asks page-edit.
     const isEditor = await subjectMayDo(engine, userContext as never, 'page-edit');
-    // isAdmin is computed inside renderFootnoteListHtml() per row; not needed here.
+    // isAdmin is computed inside renderFootnoteListHtml per row; not needed here.
 
     const parts: string[] = ['<section class="page-footnotes">'];
     if (!noheader) parts.push('<h2>Footnotes</h2>');
@@ -298,7 +303,7 @@ const FootnotesPlugin: SimplePlugin = {
     if (footnoteManager?.isEnabled() && pageUuid) {
       // List wrapped in a stable container so #590 can swap its innerHTML
       // after add/edit/delete instead of doing a full page reload.
-      const listHtml = await renderFootnoteListHtml(footnoteManager, pageUuid, userContext, engine);
+      const listHtml = await renderFootnoteListHtml(context.formatters, footnoteManager, pageUuid, userContext, engine);
       parts.push(`<div id="footnote-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
       parts.push(listHtml);
       parts.push('</div>');
@@ -348,7 +353,7 @@ const FootnotesPlugin: SimplePlugin = {
     ) ?? {};
     const interWikiSites = new Map(Object.entries(sitesConfig));
 
-    const footnotes = await readLegacyFootnotes(pageName, pageManager, interWikiSites, context.userContext);
+    const footnotes = await readLegacyFootnotes(context.formatters, pageName, pageManager, interWikiSites, context.userContext);
 
     if (footnotes.length === 0) {
       parts.push('<p class="no-footnotes"><em>No footnotes on this page.</em></p>');

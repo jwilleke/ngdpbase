@@ -24,13 +24,7 @@
  *   [{UserLookup role='admin' fields='username,displayName,email,roles' max='20'}]
  */
 
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import {
-  escapeHtml,
-  parseMaxParam,
-  resolveUserParam,
-  formatAsTable
-} from '../utils/pluginFormatters.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 
 /** All fields the API may return (permission-gated server-side) */
 const ALL_FIELDS = ['username', 'displayName', 'email', 'roles', 'lastLogin', 'isActive'] as const;
@@ -65,7 +59,8 @@ function parseFields(raw: string | undefined): UserField[] | 'all' {
     .filter((f): f is UserField => f !== undefined);
 }
 
-function renderCell(user: UserRecord, field: UserField): string {
+function renderCell(f: PluginFormatters, user: UserRecord, field: UserField): string {
+  const { escapeHtml } = f;
   const val = user[field];
   if (val === undefined || val === null) return '';
   if (Array.isArray(val)) return escapeHtml(val.join(', '));
@@ -80,6 +75,7 @@ const UserLookupPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml, parseMaxParam, resolveUserParam, formatAsTable } = context.formatters;
     try {
       const rawQ      = typeof params['q']          === 'string' ? params['q']          : '';
       const role      = typeof params['role']        === 'string' ? params['role']        : undefined;
@@ -130,7 +126,7 @@ const UserLookupPlugin: SimplePlugin = {
 
       const headers = columns.map(f => FIELD_LABELS[f] ?? f);
       const rows = results.map(u =>
-        columns.map(f => renderCell(u, f))
+        columns.map(f => renderCell(context.formatters, u, f))
       );
 
       return formatAsTable(headers, rows, { sortable: true, defaultSortColumn: 0 });

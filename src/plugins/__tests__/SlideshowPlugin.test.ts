@@ -4,7 +4,10 @@
  * @jest-environment node
  */
 
-import SlideshowPlugin from '../SlideshowPlugin';
+import SlideshowPluginModule from '../SlideshowPlugin';
+import { asExecuted } from '../../test-support/plugins';
+
+const SlideshowPlugin = asExecuted(SlideshowPluginModule);
 const ctx = { pageName: 'TestPage', linkGraph: {} };
 
 describe('SlideshowPlugin — metadata', () => {

@@ -44,7 +44,6 @@
 import type { ActorContext } from '../context/ActorContext.js';
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
 import { renderImageHtml } from './renderImage.js';
-import { escapeHtml } from '../utils/pluginFormatters.js';
 
 interface AttachmentManager {
   resolveAttachmentSrc(src: string, pageName: string, ctx: ActorContext): Promise<{ url: string; mimeType: string } | null>;
@@ -101,6 +100,7 @@ const AttachPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml } = context.formatters;
     try {
       const opts = params as AttachParams;
 

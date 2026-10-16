@@ -1,7 +1,10 @@
 'use strict';
 
-import UserLookupPlugin from '../UserLookupPlugin';
+import UserLookupPluginModule from '../UserLookupPlugin';
+import { asExecuted } from '../../test-support/plugins';
 import { type MockInstance } from 'vitest';
+
+const UserLookupPlugin = asExecuted(UserLookupPluginModule);
 
 const alice = { username: 'alice', displayName: 'Alice Smith', email: 'alice@example.com', roles: ['admin'],  lastLogin: '2026-04-18', isActive: true  };
 const bob   = { username: 'bob',   displayName: 'Bob Jones',   email: 'bob@example.com',   roles: ['editor'], lastLogin: '2026-04-17', isActive: true  };

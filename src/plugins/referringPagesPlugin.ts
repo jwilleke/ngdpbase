@@ -19,13 +19,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import {
-  parseMaxParam,
-  applyMax,
-  formatAsList,
-  formatAsCount,
-  type PageLink
-} from '../utils/pluginFormatters.js';
+import type { PageLink } from '../utils/pluginFormatters.js';
 
 interface ReferringParams extends PluginParams {
   page?:   string;
@@ -45,6 +39,7 @@ const ReferringPagesPlugin: SimplePlugin = {
   version: '1.0.0',
 
   execute(context: PluginContext, params: PluginParams = {}): string {
+    const { parseMaxParam, applyMax, formatAsList, formatAsCount } = context.formatters;
     const opts = (params ?? {}) as ReferringParams;
     const pageName  = context?.pageName ?? '';
     const linkGraph = (context?.linkGraph ?? {}) as LinkGraph;

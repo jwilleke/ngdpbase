@@ -25,21 +25,7 @@
  */
 
 import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
-import {
-  parseMaxParam,
-  applyMax,
-  formatAsList,
-  formatAsCount,
-  formatAsTable,
-  escapeHtml,
-  parseSortParam,
-  parsePageParam,
-  parsePageSizeParam,
-  applyPagination,
-  formatPaginationLinks,
-  type PageLink,
-  type TableOptions
-} from '../utils/pluginFormatters.js';
+import type { PageLink, TableOptions } from '../utils/pluginFormatters.js';
 
 interface UndefinedPagesParams extends PluginParams {
   max?:           string | number;
@@ -67,6 +53,7 @@ const UndefinedPagesPlugin: SimplePlugin = {
   version: '1.2.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { parseMaxParam, applyMax, formatAsList, formatAsCount, formatAsTable, escapeHtml, parseSortParam, parsePageParam, parsePageSizeParam, applyPagination, formatPaginationLinks } = context.formatters;
     const opts = (params ?? {}) as UndefinedPagesParams;
 
     try {
