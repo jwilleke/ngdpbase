@@ -18,7 +18,7 @@ Read this page and you can load a permission-correct addon on a local instance. 
 ### Choose a starting point
 
 - __A directory__ in this repo or beside it: `npm run create:addon -- --id <slug>`. Flags are in [Quick start](#quick-start-scaffold-a-new-addon-675).
-- __A whole repository__ (the addon at `addons/<slug>/`, plus a wrapper `Dockerfile`, Renovate, CI and a licence): `npm run create:addon -- --id <slug> --repo`. See [A whole repository](#a-whole-repository---repo).
+- __A whole repository__ (the addon at `addons/<slug>/`, plus a wrapper `Dockerfile`, Renovate, CI and a licence): `npm run create:addon -- --id <slug> --repo --scope @your-scope`. See [A whole repository](#a-whole-repository---repo).
 
 Worked examples already in this repo: [`addons/journal`](../../addons/journal) (a person's pages, and the permissions that guard them) and [`addons/calendar`](../../addons/calendar) (depends on `forms`, so `forms` has to be enabled too). Copy one of those.
 
@@ -220,7 +220,7 @@ addon loads and its page seeds.
 # name the plugins and managers up front, and write somewhere else
 npm run create:addon -- --id volcano-watch --type domain \
   --plugins VolcanoMap,VolcanoList --managers VolcanoData \
-  --target ../volcano-watch
+  --target ../volcano-watch --scope @your-scope
 ```
 
 | Flag | Default | Meaning |
@@ -229,6 +229,7 @@ npm run create:addon -- --id volcano-watch --type domain \
 | `--type` | `additive` | `additive` augments an instance; `domain` means the addon __is__ the site |
 | `--plugins` | one, named from the id | Comma-separated plugin names |
 | `--managers` | one, named from the id | Comma-separated manager names |
+| `--scope` | *(required outside this checkout's `addons/`)* | npm scope: the package is `<scope>/<id>-addon`. A bundled addon (in `addons/`) needs none and is `@ngdpbase/<id>` |
 | `--repo` | off | Write a whole repository, with the addon at `addons/<id>/` |
 | `--target` | `addons/<id>`; with `--repo`, `../<id>` | Output directory |
 | `--force` | off | Write into a non-empty directory |
@@ -240,6 +241,7 @@ Two things the scaffolder gets right that are easy to get wrong by hand:
   mismatch [#927](https://github.com/jwilleke/ngdpbase/issues/927) exists to
   catch. A trailing `-addon` in `--id` is rejected by the scaffolder. The
   load-time rules are [Identity](#identity).
+- __Package name, version, licence__ ([#1676](https://github.com/jwilleke/ngdpbase/issues/1676)). An addon outside this checkout is published under its own project's npm scope, so `--scope` is required there and the scaffolder never guesses one: `--scope @yourphr` gives `@yourphr/volcano-watch-addon`, which is what `node_modules:@scope/*-addon` discovery matches. Every scaffold starts at `0.1.0`, in `package.json` and `index.ts` alike, under `Apache-2.0`.
 - __Page UUIDs.__ Seed pages get a real v4 UUID, generated with the same `uuid`
   package `ValidationManager` uses. A hand-copied or placeholder UUID makes
   `AddonsManager` skip the page with a warning and an admin notification. The
@@ -254,7 +256,7 @@ views, themes, static assets).
 An addon you own lives in its own repository. `--repo` writes that repository in one step:
 
 ```bash
-npm run create:addon -- --id volcano-watch --repo --target ../volcano-watch
+npm run create:addon -- --id volcano-watch --repo --target ../volcano-watch --scope @your-scope
 ```
 
 The addon lands at `addons/volcano-watch/`, byte-for-byte what the command writes without `--repo`. Around it:

@@ -95,7 +95,7 @@ describe('argument parsing', () => {
   test('parses lists and an explicit target', () => {
     const { options } = parseArgs([
       '--id', 'volcano-watch', '--type', 'domain',
-      '--plugins', 'A,B', '--managers', 'C', '--target', '/tmp/x'
+      '--plugins', 'A,B', '--managers', 'C', '--target', '/tmp/x', '--scope', '@acme'
     ]);
     expect(options!.type).toBe('domain');
     expect(options!.plugins).toEqual(['A', 'B']);
@@ -111,6 +111,23 @@ describe('argument parsing', () => {
   test('rejects identifiers that would not compile', () => {
     const { error } = parseArgs(['--id', 'x', '--plugins', '9Lives']);
     expect(error).toContain('not a valid identifier');
+  });
+
+  // #1676: the scope is asked for, never guessed, outside this checkout's addons/.
+  test('requires --scope for an addon outside this checkout, and for --repo', () => {
+    expect(parseArgs(['--id', 'volcano-watch', '--target', '/tmp/x']).error).toContain('--scope is required');
+    expect(parseArgs(['--id', 'volcano-watch', '--repo']).error).toContain('--scope is required');
+  });
+
+  test('a bundled addon (this checkout\'s addons/) needs no scope', () => {
+    const { options, error } = parseArgs(['--id', 'volcano-watch']);
+    expect(error).toBeUndefined();
+    expect(options!.scope).toBeUndefined();
+  });
+
+  test('rejects a malformed scope', () => {
+    expect(parseArgs(['--id', 'x', '--target', '/tmp/x', '--scope', 'acme']).error).toContain('--scope must look like');
+    expect(parseArgs(['--id', 'x', '--target', '/tmp/x', '--scope', '@Acme']).error).toContain('--scope must look like');
   });
 });
 
@@ -160,6 +177,19 @@ describe('generated addon', () => {
     expect(pkg.ngdpbase).toEqual({ slug: 'volcano-watch', type: 'additive', minVersion: ngdpbaseVersion() });
     expect(pkg.type).toBe('module');
     expect(pkg.name).toBe('@ngdpbase/volcano-watch');
+  });
+
+  // #1676
+  test('a scoped addon is named <scope>/<id>-addon, at 0.1.0, Apache-2.0, with index.ts on the same version', async () => {
+    await scaffoldAddon({ ...opts(), scope: '@acme' });
+    const dir = path.join(tmp, 'volcano-watch');
+    const pkg = await fs.readJson(path.join(dir, 'package.json'));
+    expect(pkg.name).toBe('@acme/volcano-watch-addon');
+    expect(pkg.version).toBe('0.1.0');
+    expect(pkg.license).toBe('Apache-2.0');
+    const index = await fs.readFile(path.join(dir, 'index.ts'), 'utf8');
+    expect(index).toContain("version: '0.1.0'");
+    expect(index).not.toContain("version: '1.0.0'");
   });
 
   test('declares the types its generated code actually needs', async () => {
@@ -291,7 +321,7 @@ describe('--repo (#1636) — a whole standalone repository', () => {
   }
 
   test('parseArgs sets repo, and defaults the target to a sibling of this checkout', () => {
-    const { options } = parseArgs(['--id', 'volcano-watch', '--repo']);
+    const { options } = parseArgs(['--id', 'volcano-watch', '--repo', '--scope', '@acme']);
     expect(options!.repo).toBe(true);
     expect(options!.target).toBe(path.join('..', 'volcano-watch'));
     expect(parseArgs(['--id', 'volcano-watch']).options!.repo).toBe(false);
