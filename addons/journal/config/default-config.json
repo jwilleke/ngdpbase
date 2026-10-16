@@ -106,6 +106,48 @@
         "journal-write",
         "journal-export"
       ]
+    },
+    {
+      "id": "journal-page-public",
+      "name": "Make journal entries public",
+      "description": "Move one's own journal entries out of the journal vault (#1504, #1507): the roles that can have private pages. Was part of core's page-public-access; the journal declares it now, so it applies only while the add-on is enabled",
+      "priority": 60,
+      "effect": "allow",
+      "subjects": [
+        {
+          "type": "role",
+          "value": "reader"
+        },
+        {
+          "type": "role",
+          "value": "contributor"
+        },
+        {
+          "type": "role",
+          "value": "editor"
+        },
+        {
+          "type": "role",
+          "value": "user-admin"
+        },
+        {
+          "type": "role",
+          "value": "admin"
+        },
+        {
+          "type": "role",
+          "value": "demo-admin"
+        }
+      ],
+      "resources": [
+        {
+          "type": "system-category",
+          "pattern": "journal"
+        }
+      ],
+      "actions": [
+        "page-public"
+      ]
     }
   ]
 }

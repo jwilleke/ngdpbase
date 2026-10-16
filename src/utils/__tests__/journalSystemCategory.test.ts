@@ -7,10 +7,13 @@
  * entry back into core (or dropping it from the add-on) goes red here.
  */
 vi.unmock('../../managers/AddonsManager');
+vi.unmock('../../managers/PolicyEvaluator');
 
 import fs from 'fs';
 import path from 'path';
 import ValidationManager from '../../managers/ValidationManager';
+import PolicyEvaluator from '../../managers/PolicyEvaluator';
+import PolicyDecisionPoint from '../../security/PolicyDecisionPoint';
 import { mergeConfigWithAddons } from '../addonConfigLayer';
 import { storeKindFromConfig } from '../privateStoreDoor';
 import type { WikiEngine } from '../../types/WikiEngine';
@@ -97,5 +100,71 @@ describe('#1507 the journal category resolves from the add-on', () => {
       expect.stringMatching(/journal\.encrypt.*owner 'journal'.*ignored/),
       expect.stringMatching(/journal\.defaultPrivate.*owner 'journal'.*ignored/)
     ]);
+  });
+});
+
+describe('#1507 making a journal entry public is the journal add-on\'s policy', () => {
+  type Policy = { id: string; resources?: Array<{ type: string; pattern: string }> };
+
+  function evaluatorOver(config: Record<string, unknown>): PolicyEvaluator {
+    const configManager = { getProperty: (key: string, def: unknown) => (key in config ? config[key] : def) };
+    const managers: Record<string, unknown> = { ConfigurationManager: configManager };
+    const engine = { getManager: (n: string) => managers[n] ?? null };
+    managers.PolicyDecisionPoint = new PolicyDecisionPoint(engine);
+    const pe = new PolicyEvaluator(engine);
+    (pe as unknown as { configManager: unknown }).configManager = configManager;
+    return pe;
+  }
+
+  const roles = [...Object.keys(shipped['ngdpbase.roles.definitions'] as Record<string, unknown>), 'nobody'];
+  const categoriesAsked = ['general', 'journal', 'capture', 'system'];
+
+  async function decisions(config: Record<string, unknown>): Promise<Record<string, boolean>> {
+    const pe = evaluatorOver(config);
+    const out: Record<string, boolean> = {};
+    for (const role of roles) {
+      for (const category of categoriesAsked) {
+        const r = await pe.evaluateAccess({
+          pageName: 'Diary', action: 'page-public',
+          userContext: { username: 'jim', roles: [role], isAuthenticated: true } as never,
+          attributes: { 'system-category': category }
+        });
+        out[`${role}/${category}`] = r.hasDecision === true && r.allowed === true;
+      }
+    }
+    return out;
+  }
+
+  /** The policies as core shipped them before #1507: journal inside page-public-access, no journal-page-public. */
+  function before1507(policies: Policy[]): Policy[] {
+    return policies
+      .filter((p) => p.id !== 'journal-page-public')
+      .map((p) => (p.id === 'page-public-access'
+        ? { ...p, resources: [...(p.resources ?? []), { type: 'system-category', pattern: 'journal' }] }
+        : p));
+  }
+
+  test('core\'s page-public-access no longer names journal; the add-on declares journal-page-public', () => {
+    const core = (shipped['ngdpbase.access.policies'] as Policy[]).find((p) => p.id === 'page-public-access');
+    expect(core?.resources?.map((r) => r.pattern)).toEqual(['general', 'capture']);
+    const own = (journalDefaults['ngdpbase.access.policies'] as Policy[]).find((p) => p.id === 'journal-page-public');
+    expect(own?.resources).toEqual([{ type: 'system-category', pattern: 'journal' }]);
+  });
+
+  test('with the add-on on, every role\'s page-public decision is what it was before', async () => {
+    const { merged } = mergeConfigWithAddons(shipped, { 'ngdpbase.addons.journal.enabled': true }, ROOT);
+    const now = await decisions(merged);
+    const was = await decisions({ ...merged, 'ngdpbase.access.policies': before1507(merged['ngdpbase.access.policies'] as Policy[]) });
+    expect(now).toEqual(was);
+    expect(now['contributor/journal']).toBe(true);
+    expect(now['nobody/journal']).toBe(false);
+  });
+
+  test('with the add-on off, nobody may make a journal entry public; general and capture are unchanged', async () => {
+    const { merged } = mergeConfigWithAddons(shipped, { 'ngdpbase.addons.journal.enabled': false }, ROOT);
+    const now = await decisions(merged);
+    for (const role of roles) expect({ role, journal: now[`${role}/journal`] }).toEqual({ role, journal: false });
+    expect(now['contributor/general']).toBe(true);
+    expect(now['contributor/capture']).toBe(true);
   });
 });

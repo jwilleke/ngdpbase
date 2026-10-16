@@ -2730,7 +2730,7 @@
     {
       "id": "page-public-access",
       "name": "Make pages public",
-      "description": "Move one's own general, journal and capture pages out of their vault (#1504): the roles that can have private pages today",
+      "description": "Move one's own general and capture pages out of their vault (#1504): the roles that can have private pages today. The journal add-on grants the same for journal pages in its own policy, journal-page-public (#1507)",
       "priority": 60,
       "effect": "allow",
       "subjects": [
@@ -2763,10 +2763,6 @@
         {
           "type": "system-category",
           "pattern": "general"
-        },
-        {
-          "type": "system-category",
-          "pattern": "journal"
         },
         {
           "type": "system-category",
