@@ -161,13 +161,19 @@ There is __no field for it__. `source` (`site` | `shipped` | `repo`) was decided
 
 ### System-categories that add-ons bring
 
-__Today (built):__ an add-on puts its entry under `ngdpbase.system-category` in its own `config/default-config.json`, which is merged into the site's configuration one entry at a time while the add-on is enabled (#1220). The journal's entry in core config is the shape to copy; the practice is [storage-developer-guide.md](guides/storage-developer-guide.md). The gap: turning the add-on off removes the entry, so its pages and vault are unreachable until it is enabled again ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)).
-
 __Decided target (#1559):__ an add-on __declares__ its system-category, and core keeps it readable whether or not the add-on is loaded, marked with its `owner`. So turning an add-on off, or removing it, never loses anything:
 
 - the system-category stays valid, and is just not offered for new pages;
 - its public pages still display;
 - its vault shows a closed door ("turned off" or "not installed", "its data is untouched"), and sealed vaults keep their wrapped keys.
+
+__Built ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)):__ an add-on puts its entry under `ngdpbase.system-category` in its own `config/default-config.json`. Every other key in that file reaches the site's configuration only while the add-on is enabled (#1220); `ngdpbase.system-category` is read from every installed add-on's file, enabled or not, at every start. It is read live, not persisted into the site's configuration (the "persists at first load" wording above predates this; persisting is the whole-map write #1505 removed). The practice is [storage-developer-guide.md](guides/storage-developer-guide.md).
+
+- __Turned off:__ the entry stays, with `enabled: false`, whatever the site's file says. It still resolves (its pages keep their system-category, its public pages display), it is not offered, and its vault door is shut with "turned off … its data is untouched". Vault folders and `store.json` files are never touched, so sealed vaults keep their wrapped keys.
+- __Not installed__ (the add-on's files are gone): the entry is gone too, because it is read from those files. Its pages carry a system-category the site no longer knows, and its vault's door answers "no such store". The "not installed" closed door is shown only when the site's own `app-custom-config.json` still carries the entry. Removing an add-on properly is the retire flow, [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
+- __Owner:__ each entry is stamped `owner: <the add-on's ngdpbase.slug>`. Its `owner`, `encrypt`, `defaultPrivate` and `shareMaxDays` are the add-on's declaration: a value for them in `app-custom-config.json` is ignored, with a warning. A field the add-on leaves out stays absent (its default). The site still decides the other fields, `enabled` included while the add-on is on.
+- __Refused__, with a warning naming the add-on, the entry and the reason: an entry whose `owner` is not the add-on's slug; one whose key is a shipped entry's or another add-on's; one whose vault id is another entry's; `default: true`; a malformed `privatestore`; and a `defaultPrivate` or `encrypt` of the wrong type. A refused entry is left out entirely, so nothing can be created unsealed or public by mistake.
+- __Warnings__ are logged at startup and posted to admins as system notifications (an add-on's file is not the operator's to fix, so it never stops the site).
 
 Retiring an add-on for good (moving its pages to another system-category and vault, or exporting them, then removing the entry) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
@@ -236,7 +242,7 @@ Read since #1504: `defaultstore` is where public pages live, and `privatestore` 
 
 ### `defaultPrivate`, `encrypt`, `owner`, `shareMaxDays`
 
-Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` are compared as booleans: the string `"true"` is not `true` (pages start public, the vault is not sealed), and nothing warns yet. `owner` absent means `admin`.
+Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` are compared as booleans: the string `"true"` is not `true` (pages start public, the vault is not sealed), so a wrong type is refused (#1559). In an add-on's entry the entry is refused with a warning (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)). In the site's own entries it is a blocking configuration problem naming the entry and the field: the site boots into maintenance mode, admins can sign in and fix it ([security-posture.md](security-posture.md) D9). `owner` absent means `admin`, except on an add-on's entry, which is always its add-on's.
 
 ## Related settings that are not per system-category
 
@@ -260,4 +266,4 @@ Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` ar
 - __Captures get their own system-category and vault__ (#1505, moved from #1504 by the operator 2026-09-29, with routing new private pages to their system-category's vault): existing captures (pages marked `capture`, today `general` in a person's `default` vault) are moved once into `capture` and `pages/vaults/{user}/capture/`, the way the journal's entries move in #1507.
 - __The vault settings move onto the system-category entry__ (#1505). `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides that. The owner's declaration stands (operator, 2026-09-29). Who may make a page public is policy (`page-public`). An admin defines a new vault by adding or editing a system-category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Option 1 stays the rule__: a vault is owner-only. An encrypted page is never public in place; going public decrypts it and moves it to `pages/`.
-- __The journal is the first system-category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the entry's `defaultPrivate`). __Built (#1507):__ `dataPath` is gone; new private entries go to the journal vault (#1505, piece 4), and existing ones move there at boot with every other private page whose system-category declares its own vault. The entry itself is still in core configuration: the add-on's manifest declaration and its persistence are not built.
+- __The journal is the first system-category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the entry's `defaultPrivate`). __Built (#1507):__ `dataPath` is gone; new private entries go to the journal vault (#1505, piece 4), and existing ones move there at boot with every other private page whose system-category declares its own vault. The entry itself is still in core configuration. Declaring it in the add-on's own file is now possible (#1559); moving it there is #1507.

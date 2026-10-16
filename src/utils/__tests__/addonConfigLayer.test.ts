@@ -41,9 +41,13 @@ beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'addon-layer-'))
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
 describe('#1220 discovery follows the configured path and the enabled gate', () => {
-  test('a disabled addon contributes nothing', () => {
+  test('a disabled addon is discovered as disabled and contributes nothing', () => {
     addon('cal', calDefaults);
-    expect(discoverAddonDefaults(shipped, root)).toEqual([]);
+    expect(discoverAddonDefaults(shipped, root).map((a) => [a.slug, a.enabled])).toEqual([['cal', false]]);
+    const { merged, addons } = mergeConfigWithAddons(shipped, {}, root);
+    expect(addons).toEqual([]);
+    expect(merged['ngdpbase.addons.cal.colour']).toBe('blue');
+    expect(merged['ngdpbase.permissions.definitions']).toEqual(shipped['ngdpbase.permissions.definitions']);
   });
 
   test('an enabled addon contributes its file with comment keys dropped', () => {
@@ -105,9 +109,9 @@ describe('#1220 the layer sits between shipped and custom', () => {
   });
 
   test('mergeWithAddonLayer applies addons in discovery order', () => {
-    const a = { slug: 'a', dir: '', source: 'directory' as const, defaults: { k: 'a', 'ngdpbase.permissions.definitions': { x: { description: 'a' } } } };
-    const b = { slug: 'b', dir: '', source: 'directory' as const, defaults: { k: 'b', 'ngdpbase.permissions.definitions': { y: { description: 'b' } } } };
-    const merged = mergeWithAddonLayer({ k: 'shipped', 'ngdpbase.permissions.definitions': { s: { description: 's' } } }, [a, b], {});
+    const a = { slug: 'a', dir: '', source: 'directory' as const, enabled: true, defaults: { k: 'a', 'ngdpbase.permissions.definitions': { x: { description: 'a' } } } };
+    const b = { slug: 'b', dir: '', source: 'directory' as const, enabled: true, defaults: { k: 'b', 'ngdpbase.permissions.definitions': { y: { description: 'b' } } } };
+    const { merged } = mergeWithAddonLayer({ k: 'shipped', 'ngdpbase.permissions.definitions': { s: { description: 's' } } }, [a, b], {});
     expect(merged.k).toBe('b');
     expect(Object.keys(merged['ngdpbase.permissions.definitions'] as object)).toEqual(['s', 'x', 'y']);
   });
@@ -135,26 +139,26 @@ describe('#1220 the pre-engine reader carries the layer too', () => {
 describe('#1612 a set map is extended by every layer, never replaced', () => {
   const SET = 'ngdpbase.config.secret-keys';
   const base = { [SET]: { 'ngdpbase.session.secret': true, 'ngdpbase.mail.password': true } };
-  const layer = (slug: string, defaults: Record<string, unknown>) => ({ slug, dir: '', source: 'directory' as const, defaults });
+  const layer = (slug: string, defaults: Record<string, unknown>) => ({ slug, dir: '', source: 'directory' as const, enabled: true, defaults });
 
   test('an addon list adds to the shipped set', () => {
-    const merged = mergeWithAddonLayer(base, [layer('a', { [SET]: ['ngdpbase.addons.a.api-key'] })], {});
+    const { merged } = mergeWithAddonLayer(base, [layer('a', { [SET]: ['ngdpbase.addons.a.api-key'] })], {});
     expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'ngdpbase.addons.a.api-key']);
   });
 
   test('two addon lists both add', () => {
-    const merged = mergeWithAddonLayer(base, [layer('a', { [SET]: ['a.key'] }), layer('b', { [SET]: ['b.key'] })], {});
+    const { merged } = mergeWithAddonLayer(base, [layer('a', { [SET]: ['a.key'] }), layer('b', { [SET]: ['b.key'] })], {});
     expect(enabledEntries(merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'a.key', 'b.key']);
   });
 
   test('an operator list adds; an operator false removes', () => {
-    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: ['my.secret'] })[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'my.secret']);
-    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: { 'ngdpbase.mail.password': false, 'my.secret': true } })[SET])).toEqual(['ngdpbase.session.secret', 'my.secret']);
+    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: ['my.secret'] }).merged[SET])).toEqual(['ngdpbase.session.secret', 'ngdpbase.mail.password', 'my.secret']);
+    expect(enabledEntries(mergeWithAddonLayer(base, [], { [SET]: { 'ngdpbase.mail.password': false, 'my.secret': true } }).merged[SET])).toEqual(['ngdpbase.session.secret', 'my.secret']);
   });
 
   test('an addon extends step-up permissions inside the step-up object', () => {
     const shippedStepUp = { 'ngdpbase.auth.step-up': { 'max-age-minutes': 5, permissions: { 'account-security': true } } };
-    const merged = mergeWithAddonLayer(shippedStepUp, [layer('acct', { 'ngdpbase.auth.step-up': { permissions: ['ledger-close'] } })], {});
+    const { merged } = mergeWithAddonLayer(shippedStepUp, [layer('acct', { 'ngdpbase.auth.step-up': { permissions: ['ledger-close'] } })], {});
     const stepUp = merged['ngdpbase.auth.step-up'] as { 'max-age-minutes': number; permissions: unknown };
     expect(stepUp['max-age-minutes']).toBe(5);
     expect(enabledEntries(stepUp.permissions)).toEqual(['account-security', 'ledger-close']);
@@ -166,7 +170,7 @@ describe('#1612 a set map is extended by every layer, never replaced', () => {
     const core = shippedFile[SENSITIVE] as Record<string, string>;
     expect(core['ngdpbase.session.secret']).toBe('secret');
     expect(core['ngdpbase.access.policies']).toBe('sensitive');
-    const merged = mergeWithAddonLayer(shippedFile, [layer('a', { [SENSITIVE]: { 'a.url': 'sensitive' } })], { [SENSITIVE]: { 'my.secret': 'secret' } });
+    const { merged } = mergeWithAddonLayer(shippedFile, [layer('a', { [SENSITIVE]: { 'a.url': 'sensitive' } })], { [SENSITIVE]: { 'my.secret': 'secret' } });
     expect(merged[SENSITIVE]).toEqual({ ...core, 'a.url': 'sensitive', 'my.secret': 'secret' });
   });
 });

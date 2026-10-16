@@ -12,6 +12,7 @@ import { v4 as uuidv4, validate as validateUuid } from 'uuid';
 import path from 'path';
 import logger from '../utils/logger.js';
 import { parsePrivatestore, PRIVATE_SLUG_PREFIX } from '../utils/privateStorePath.js';
+import { SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from '../utils/systemCategoryRules.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from './ConfigurationManager.js';
 import type PageManager from './PageManager.js';
@@ -253,9 +254,22 @@ class ValidationManager extends BaseManager {
     const configManager = this.engine.getManager<ConfigurationManager>('ConfigurationManager');
 
     // #1504: a system-category map that could misplace private pages never runs.
-    const problems = systemCategoryConfigProblems(configManager?.getProperty('ngdpbase.system-category', null));
+    const categories = configManager?.getProperty(SYSTEM_CATEGORY_KEY, null);
+    const problems = systemCategoryConfigProblems(categories);
     if (problems.length > 0) {
       throw new Error(`ngdpbase.system-category is not valid (#1504):\n- ${problems.join('\n- ')}`);
+    }
+    // #1559: a mistyped defaultPrivate or encrypt reads as false and fails
+    // open (pages start public, a vault is created unsealed), so the site does
+    // not serve until it is fixed (security-posture D9). Add-on entries never
+    // reach here mistyped: the merge refuses them.
+    if (categories && typeof categories === 'object') {
+      for (const [key, entry] of Object.entries(categories as Record<string, unknown>)) {
+        for (const problem of systemCategoryValueProblems(key, entry)) {
+          logger.error(`[ValidationManager] ${problem}`);
+          this.engine.blockConfiguration(`${problem}. Fix ${SYSTEM_CATEGORY_KEY} in the configuration.`);
+        }
+      }
     }
 
     // Load system categories and keywords from configuration

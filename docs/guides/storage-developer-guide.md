@@ -23,7 +23,10 @@ Never put an add-on's own content in `general` or a person's `default` vault. Th
 
 ## Declaring a system-category with a vault
 
-A system-category is an entry in `ngdpbase.system-category`. An add-on declares its own in its `config/default-config.json`. That file is merged into the site's configuration one entry at a time (#1220). The site's own `app-custom-config.json` is applied last and wins.
+A system-category is an entry in `ngdpbase.system-category`. An add-on declares its own in its `config/default-config.json`. That file is merged into the site's configuration one entry at a time (#1220), and the site's own `app-custom-config.json` is applied last. For `ngdpbase.system-category` two things differ ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559), details in [system-category.md](../system-category.md#system-categories-that-add-ons-bring)):
+
+- __It is read whether or not the add-on is enabled.__ Turned off, the category stays (not offered, `enabled: false`): its pages keep resolving and its vault door says "turned off", its data untouched. If the add-on is removed, its category goes with its files.
+- __The owner's fields stand.__ `owner`, `encrypt`, `defaultPrivate` and `shareMaxDays` are the add-on's; the site's file cannot change them (it gets a warning). The site decides the rest.
 
 The PHR example (the yourPHR `phr` add-on):
 
@@ -63,10 +66,10 @@ The journal's entry in `config/app-default-config.json` has the same shape, and 
 
   The editor's Private box can still move a single page, where policy allows.
 - __`encrypt`__: whether the vault's pages and files are sealed with the owner's key. `true` means always private: an encrypted page is never public in place.
-- __`owner`__: set it to your add-on's `ngdpbase.slug`. The owner's `encrypt` and `defaultPrivate` are the declaration that stands (operator, 2026-09-29): a health-record add-on that declares `encrypt: true` keeps it sealed. Without `owner` the entry belongs to `admin`.
+- __`owner`__: your add-on's `ngdpbase.slug`, or leave it out: core stamps it. The owner's `encrypt` and `defaultPrivate` are the declaration that stands (operator, 2026-09-29): a health-record add-on that declares `encrypt: true` keeps it sealed. Any other `owner` (including `admin`) is refused.
 - __`shareMaxDays`__: the longest a new share link into the vault may last. The vault's owner picks any lifetime up to it, and can extend a live link by up to 24 hours at a time. Default 15.
 - __`enabled`__: whether people can choose the category when creating or moving a page. Visibility only: whether a page may be edited is policy. Set `false` when only the add-on assigns the category.
-- __`default`__: never `true` on an add-on's entry. Exactly one entry, `general`, is the default.
+- __`default`__: never `true` on an add-on's entry (such an entry is refused). Exactly one entry, `general`, is the default.
 - __`page-badge`__: optional `{ color, label, title }`, shown beside the page title.
 - __`source`__: legacy (`site`, `shipped`, `repo`), still read but decided to be removed. Leave it out, or use `site`.
 
@@ -77,7 +80,7 @@ The journal's entry in `config/app-default-config.json` has the same shape, and 
 - `"defaultPrivate": "true"` makes pages start __public__;
 - `"encrypt": "true"` leaves the vault __unsealed__.
 
-Nothing warns about either yet. Write `true`, `false` or `"choice"` exactly.
+So a wrong type is refused. An add-on's entry with one is left out entirely, with a startup warning and an admin notification naming the entry and the field: its category and vault don't exist until the file is fixed. Write `true`, `false` or `"choice"` exactly. The same refusal applies to an entry whose `owner` isn't the add-on's slug, whose key is a site entry's or another add-on's, or whose vault id another entry already uses.
 
 ## Writing pages and files
 
@@ -97,11 +100,9 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 
 ## Known gaps
 
-- __Turning the add-on off removes its category__ ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)). The add-on's `config/default-config.json` only contributes while the add-on is enabled. Disable it, and its system-category is gone from configuration, so its pages and vault contents can't be reached until it is enabled again. The decided target is a category that stays readable while its add-on is off, marked with its `owner`.
-- __The owner's declaration isn't enforced yet.__ It was decided that the owner's `encrypt` and `defaultPrivate` stand. Today a site's `app-custom-config.json` is merged last and could override them.
-- __Mistyped values aren't refused.__ A string where a boolean belongs is read as `false`, silently (see [Value types are exact](#value-types-are-exact)).
+- __Removing the add-on removes its category__ ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)). The category is read from the add-on's files, so with them gone its pages carry an unknown system-category and its vault door answers "no such store". The data stays on disk. Retiring an add-on properly is #1490.
 - __Backups don't cover add-on databases yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Vault pages sit under `pages/`, which the page backup walks. That vault files (PDFs, images) are covered too hasn't been checked; do it before relying on it.
-- __The journal still lives in core config__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)), waiting on #1559.
+- __The journal still lives in core config__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)); since #1559 it can move to the add-on's own file.
 
 ## Checklist
 

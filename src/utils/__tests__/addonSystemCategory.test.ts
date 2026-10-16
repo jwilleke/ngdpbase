@@ -1,0 +1,253 @@
+/**
+ * #1559 — an add-on declares its own system-category and vault in its
+ * config/default-config.json, and core keeps it readable whether or not the
+ * add-on is turned on.
+ *
+ * Sabotage: drop the turned-off add-ons from addonCategoryLayer (filter on
+ * `enabled` there) and "a turned-off add-on's category still resolves" goes
+ * red; drop ownerDeclarationsStand and "the owner's encrypt and defaultPrivate
+ * stand" goes red; drop systemCategoryValueProblems from the layer and the
+ * "true" string reaches the merged map.
+ */
+vi.unmock('../../managers/AddonsManager');
+
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import ValidationManager from '../../managers/ValidationManager';
+import { mergeConfigWithAddons } from '../addonConfigLayer';
+import { storeDoorState, storeKindFromConfig } from '../privateStoreDoor';
+import type { WikiEngine } from '../../types/WikiEngine';
+
+const SC = 'ngdpbase.system-category';
+
+let root: string;
+
+function addon(slug: string, defaults: unknown): void {
+  const dir = path.join(root, 'addons', slug);
+  fs.mkdirSync(path.join(dir, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: slug, ngdpbase: { slug } }));
+  fs.writeFileSync(path.join(dir, 'config', 'default-config.json'), JSON.stringify(defaults));
+}
+
+const shipped = {
+  'ngdpbase.managers.addons-manager.addons-path': './addons',
+  'ngdpbase.addons.phr.enabled': false,
+  [SC]: {
+    general: {
+      label: 'general',
+      default: true,
+      enabled: true,
+      storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/default/' },
+      defaultPrivate: false,
+      encrypt: false
+    },
+    system: { label: 'system', default: false, enabled: true, storageLocation: { defaultstore: 'pages/' } }
+  }
+};
+
+const phrEntry = {
+  label: 'phr',
+  description: 'Personal health records',
+  default: false,
+  enabled: true,
+  storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/phr/' },
+  defaultPrivate: true,
+  encrypt: true,
+  shareMaxDays: 7,
+  'page-badge': { color: 'bg-info', label: 'PHR', title: 'PHR entry' }
+};
+
+const phrDefaults = {
+  'ngdpbase.addons.phr.colour': 'red',
+  [SC]: { phr: phrEntry }
+};
+
+function categories(merged: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  return merged[SC] as Record<string, Record<string, unknown>>;
+}
+
+function validationManagerFor(merged: Record<string, unknown>, blocked: string[] = []): Promise<ValidationManager> {
+  const configManager = { getProperty: (key: string, def: unknown) => merged[key] ?? def };
+  const engine = {
+    getManager: (name: string) => (name === 'ConfigurationManager' ? configManager : undefined),
+    blockConfiguration: (reason: string) => { blocked.push(reason); }
+  } as unknown as WikiEngine;
+  const vm = new ValidationManager(engine);
+  return vm.initialize().then(() => vm);
+}
+
+beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'addon-category-')); });
+afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+describe('#1559 a turned-off add-on keeps its system-category readable', () => {
+  test('its entry is in the merged map, owned by the add-on, not offered; its other keys are not', () => {
+    addon('phr', phrDefaults);
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(problems).toEqual([]);
+    expect(categories(merged).phr).toMatchObject({ label: 'phr', owner: 'phr', enabled: false, encrypt: true });
+    expect(merged['ngdpbase.addons.phr.colour']).toBeUndefined();
+  });
+
+  test('getCategoryConfig and getVaultId resolve it; getAllSystemCategories does not offer it', async () => {
+    addon('phr', phrDefaults);
+    const vm = await validationManagerFor(mergeConfigWithAddons(shipped, {}, root).merged);
+    expect(vm.getCategoryConfig('phr')).toMatchObject({ key: 'phr', owner: 'phr' });
+    expect(vm.getVaultId('phr')).toBe('phr');
+    expect(vm.getShareMaxDays('phr')).toBe(7);
+    expect(vm.getDefaultPrivate('phr')).toBe(true);
+    expect(vm.getAllSystemCategories().map((c) => c.label)).not.toContain('phr');
+  });
+
+  test('its vault door is shut as turned off, never "no such store"', () => {
+    addon('phr', phrDefaults);
+    const { merged } = mergeConfigWithAddons(shipped, {}, root);
+    const kind = storeKindFromConfig((key, def) => merged[key] ?? def, 'phr');
+    expect(kind).toEqual({ id: 'phr', owner: 'phr', encrypt: true });
+    expect(storeDoorState(kind, 'disabled')).toMatchObject({ open: false, reason: 'disabled' });
+  });
+
+  test('the operator cannot offer a turned-off add-on\'s category', () => {
+    addon('phr', phrDefaults);
+    const { merged } = mergeConfigWithAddons(shipped, { [SC]: { phr: { enabled: true } } }, root);
+    expect(categories(merged).phr.enabled).toBe(false);
+  });
+
+  test('an add-on that is not installed has no category at all', () => {
+    const { merged } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).phr).toBeUndefined();
+  });
+});
+
+describe('#1559 an enabled add-on is unchanged', () => {
+  test('its entry is offered, owned by it, and its other keys apply', async () => {
+    addon('phr', phrDefaults);
+    const { merged, problems } = mergeConfigWithAddons(shipped, { 'ngdpbase.addons.phr.enabled': true }, root);
+    expect(problems).toEqual([]);
+    expect(categories(merged).phr).toMatchObject({ enabled: true, owner: 'phr' });
+    expect(merged['ngdpbase.addons.phr.colour']).toBe('red');
+    const vm = await validationManagerFor(merged);
+    expect(vm.getAllSystemCategories().map((c) => c.label)).toContain('phr');
+  });
+
+  test('the operator still decides the fields the owner does not', () => {
+    addon('phr', phrDefaults);
+    const custom = { 'ngdpbase.addons.phr.enabled': true, [SC]: { phr: { description: 'Health', enabled: false } } };
+    const { merged, problems } = mergeConfigWithAddons(shipped, custom, root);
+    expect(problems).toEqual([]);
+    expect(categories(merged).phr).toMatchObject({ description: 'Health', enabled: false });
+  });
+});
+
+describe('#1559 the owner\'s encrypt and defaultPrivate stand', () => {
+  test('a site value for an owner-decided field is ignored, and said so', () => {
+    addon('phr', phrDefaults);
+    const custom = {
+      'ngdpbase.addons.phr.enabled': true,
+      [SC]: { phr: { encrypt: false, defaultPrivate: false, shareMaxDays: 90, owner: 'admin', label: 'phr' } }
+    };
+    const { merged, problems } = mergeConfigWithAddons(shipped, custom, root);
+    expect(categories(merged).phr).toMatchObject({ encrypt: true, defaultPrivate: true, shareMaxDays: 7, owner: 'phr' });
+    expect(problems).toHaveLength(4);
+    expect(problems.join('\n')).toMatch(/ngdpbase\.system-category\.phr\.encrypt.*owner 'phr'.*ignored/);
+    expect(problems.join('\n')).toMatch(/phr\.defaultPrivate/);
+  });
+
+  test('a field the owner leaves out cannot be added by the site', () => {
+    const { shareMaxDays: _omit, ...withoutShare } = phrEntry;
+    addon('phr', { [SC]: { phr: withoutShare } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, { [SC]: { phr: { shareMaxDays: 90 } } }, root);
+    expect(categories(merged).phr.shareMaxDays).toBeUndefined();
+    expect(problems).toHaveLength(1);
+  });
+
+  test('the site\'s own entries stay the site\'s to change', () => {
+    const { merged, problems } = mergeConfigWithAddons(shipped, { [SC]: { general: { encrypt: true } } }, root);
+    expect(categories(merged).general.encrypt).toBe(true);
+    expect(problems).toEqual([]);
+  });
+});
+
+describe('#1559 refused declarations', () => {
+  test('encrypt as the string "true" is refused, naming the entry and the field', () => {
+    addon('phr', { [SC]: { phr: { ...phrEntry, encrypt: 'true' } } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).phr).toBeUndefined();
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/add-on 'phr' \(turned off\): system-category 'phr' is refused .*encrypt must be true or false, got "true"/);
+  });
+
+  test('defaultPrivate outside true, false and "choice" is refused', () => {
+    addon('phr', { [SC]: { phr: { ...phrEntry, defaultPrivate: 'yes' } } });
+    const { problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(problems[0]).toMatch(/system-category 'phr'.*defaultPrivate must be true, false or "choice", got "yes"/);
+  });
+
+  test('an owner other than the add-on\'s slug is refused', () => {
+    addon('phr', { [SC]: { phr: { ...phrEntry, owner: 'admin' } } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).phr).toBeUndefined();
+    expect(problems[0]).toMatch(/system-category 'phr' is refused .*owner is "admin"/);
+  });
+
+  test('a vault another entry already names is refused', () => {
+    addon('phr', { [SC]: { phr: { ...phrEntry, storageLocation: { defaultstore: 'pages/', privatestore: 'pages/vaults/{user}/default/' } } } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).phr).toBeUndefined();
+    expect(problems[0]).toMatch(/vault 'default' is already the vault of system-category 'general'/);
+  });
+
+  test('a second add-on cannot reuse the first one\'s vault or key', () => {
+    addon('phr', phrDefaults);
+    addon('rival', { [SC]: { rival: { ...phrEntry, label: 'rival' }, phr: { label: 'phr' } } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).phr.owner).toBe('phr');
+    expect(categories(merged).rival).toBeUndefined();
+    expect(problems.join('\n')).toMatch(/'rival'.*vault 'phr' is already the vault of system-category 'phr'/);
+    expect(problems.join('\n')).toMatch(/add-on 'phr' already declares 'phr'/);
+  });
+
+  test('an add-on cannot claim one of the site\'s own entries', () => {
+    addon('phr', { [SC]: { general: { label: 'general', encrypt: true } } });
+    const { merged, problems } = mergeConfigWithAddons(shipped, {}, root);
+    expect(categories(merged).general.owner).toBeUndefined();
+    expect(categories(merged).general.encrypt).toBe(false);
+    expect(problems[0]).toMatch(/'general' is one of the site's own system-categories/);
+  });
+});
+
+describe('#1559 a mistyped site entry blocks serving', () => {
+  test('the site\'s own encrypt "true" is a blocking configuration problem naming entry and field', async () => {
+    const blocked: string[] = [];
+    const merged = mergeConfigWithAddons(shipped, { [SC]: { general: { encrypt: 'true' } } }, root).merged;
+    await validationManagerFor(merged, blocked);
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]).toMatch(/system-category 'general': encrypt must be true or false, got "true"/);
+  });
+
+  test('a sound map blocks nothing', async () => {
+    const blocked: string[] = [];
+    addon('phr', phrDefaults);
+    await validationManagerFor(mergeConfigWithAddons(shipped, {}, root).merged, blocked);
+    expect(blocked).toEqual([]);
+  });
+});
+
+describe('#1559 admins are told what was refused', () => {
+  test('each problem becomes a system warning notification', async () => {
+    const mod = await import('../../managers/AddonsManager');
+    const AddonsManager = (mod.default ?? mod) as unknown as { prototype: object };
+    const manager = Object.create(AddonsManager.prototype) as {
+      engine: unknown;
+      notifySystemCategoryProblems(cm: unknown): void;
+    };
+    const createNotification = vi.fn().mockResolvedValue(undefined);
+    manager.engine = { getManager: (n: string) => (n === 'NotificationManager' ? { createNotification } : null) };
+    addon('phr', { [SC]: { phr: { ...phrEntry, encrypt: 'true' } } });
+    const { problems } = mergeConfigWithAddons(shipped, {}, root);
+    manager.notifySystemCategoryProblems({ getSystemCategoryProblems: () => problems });
+    expect(createNotification).toHaveBeenCalledTimes(1);
+    expect(createNotification.mock.calls[0][0]).toMatchObject({ type: 'system', level: 'warning' });
+    expect(String(createNotification.mock.calls[0][0].message)).toMatch(/system-category 'phr' is refused/);
+  });
+});

@@ -33,6 +33,7 @@ import {
   type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
 import type { StoreFileRecord } from './privateStoreMeta.js';
+import { SYSTEM_CATEGORY_KEY } from './systemCategoryRules.js';
 import { listPrivateOwners } from './privateStoreTakeout.js';
 import { writeFileAtomic } from './atomicWrite.js';
 import { SECRET_FILE_MODE } from './secretFileMode.js';
@@ -61,8 +62,6 @@ export interface StoreKind {
 
 /** The site itself, as the owner of its own vault kinds; no add-on may claim it. */
 export const ADMIN_STORE_OWNER = 'admin';
-
-const SYSTEM_CATEGORY_KEY = 'ngdpbase.system-category';
 
 /**
  * The kind named `id`, or `null` when no system-category declares that vault.
