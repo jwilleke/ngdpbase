@@ -319,9 +319,9 @@ describe('#1745 ApiContext#requirePermission() answers step-up with the way to r
   });
 });
 
-// ── #1431: refuse(), the one refusal for a manager that asks the PDP itself ──
+// ── #1431: enforceDeny(), the one refusal for a manager that asks the PDP itself ──
 
-describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () => {
+describe('#1431 ApiContext#enforceDeny() turns a deny decision into the refusal', () => {
   const deny = (reason: string) => ({ permit: false, applicable: true, reason });
   function engineWith(audit: unknown[] = []) {
     const authManager = {
@@ -352,7 +352,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
   test('an anonymous caller gets 401', async () => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor({ ...ANONYMOUS_SUBJECT }), engine);
-    const err = await ctx.refuse('ledger-read', deny('policy_deny')).catch((e: unknown) => e) as ApiError;
+    const err = await ctx.enforceDeny('ledger-read', deny('policy_deny')).catch((e: unknown) => e) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(401);
     expect(err.message).toBe('Authentication required');
@@ -362,7 +362,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
   test('a signed-in caller gets 403, no reauth', async () => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor(tess), engine);
-    const err = await ctx.refuse('ledger-read', deny('default_deny')).catch((e: unknown) => e) as ApiError;
+    const err = await ctx.enforceDeny('ledger-read', deny('default_deny')).catch((e: unknown) => e) as ApiError;
     expect(err.status).toBe(403);
     expect(err.message).toBe('Forbidden');
     expect(err.reauth).toBeUndefined();
@@ -374,7 +374,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
     const engine = engineWith();
     const req = reqFor(tess);
     const ctx = ApiContext.from(req, engine);
-    const err = await ctx.refuse('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    const err = await ctx.enforceDeny('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
     expect(engine.authManager.askForFreshSignIn).toHaveBeenCalledWith(req, req.userContext, 'ledger-adjust', 'json');
     expect(err.status).toBe(403);
     expect(err.message).toBe('A fresh sign-in is needed');
@@ -386,7 +386,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
   test.each(['token_scope_deny', 'share_action_deny', 'proxy_scope_deny'])('a delegated-credential ceiling deny (%s) is a plain 403, never a reauth', async (reason) => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor({ ...tess, viaToken: { id: 't1' } }), engine);
-    const err = await ctx.refuse('ledger-adjust', deny(reason)).catch((e: unknown) => e) as ApiError;
+    const err = await ctx.enforceDeny('ledger-adjust', deny(reason)).catch((e: unknown) => e) as ApiError;
     expect(err.status).toBe(403);
     expect(err.message).toBe('Forbidden');
     expect(err.reauth).toBeUndefined();
@@ -396,7 +396,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
   test('a step-up deny for a delegated credential is 403 with no reauth', async () => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor({ ...tess, viaToken: { id: 't1' } }), engine);
-    const err = await ctx.refuse('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
+    const err = await ctx.enforceDeny('ledger-adjust', deny('step-up')).catch((e: unknown) => e) as ApiError;
     expect(err.status).toBe(403);
     expect(err.reauth).toBeUndefined();
   });
@@ -404,7 +404,7 @@ describe('#1431 ApiContext#refuse() turns a deny decision into the refusal', () 
   test('an allow decision is a programming error, never a silent pass', async () => {
     const engine = engineWith();
     const ctx = ApiContext.from(reqFor(tess), engine);
-    const err = await ctx.refuse('ledger-read', { permit: true, applicable: true, reason: 'policy_allow' }).catch((e: unknown) => e);
+    const err = await ctx.enforceDeny('ledger-read', { permit: true, applicable: true, reason: 'policy_allow' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(ApiError);
     expect(String(err)).toMatch(/allow decision/);

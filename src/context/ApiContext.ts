@@ -298,7 +298,7 @@ export class ApiContext extends BaseContext {
    * (#1635) — their sign-in is not fresh enough. It carries `reauth`, built
    * where core routes build it (AuthManager.askForFreshSignIn, #1758), and the prompt is
    * audited there; a delegated credential gets no `reauth`. The refusal itself
-   * is {@link refuse}'s, shared with managers that ask the PDP directly.
+   * is {@link enforceDeny}'s, shared with managers that ask the PDP directly.
    *
    * @example
    * await ctx.requirePermission('search-user'); // → 401 anonymous, 403 signed in
@@ -309,7 +309,7 @@ export class ApiContext extends BaseContext {
     // one is asked as #1745 always has: holds the permission, may not act now —
     // exactly the condition under which the PDP writes STEP_UP_REASON.
     const stepUp = Boolean(this.request) && await this.holdsPermission(permission);
-    await this.refuse(permission, { permit: false, applicable: true, reason: stepUp ? STEP_UP_REASON : 'policy_deny' });
+    await this.enforceDeny(permission, { permit: false, applicable: true, reason: stepUp ? STEP_UP_REASON : 'policy_deny' });
   }
 
   /**
@@ -327,11 +327,11 @@ export class ApiContext extends BaseContext {
    *
    * @example
    * const d = await pdp.decide(ctx.getActor(), { action: 'ledger-adjust', resource: { type: 'ledger-entry', id } });
-   * if (!d.permit) await ctx.refuse('ledger-adjust', d);
+   * if (!d.permit) await ctx.enforceDeny('ledger-adjust', d);
    */
-  async refuse(permission: string, decision: Decision): Promise<never> {
+  async enforceDeny(permission: string, decision: Decision): Promise<never> {
     if (decision.permit) {
-      throw new Error(`ApiContext.refuse('${permission}') was handed an allow decision: refuse only a deny`);
+      throw new Error(`ApiContext.enforceDeny('${permission}') was handed an allow decision: it enforces only a deny`);
     }
     if (decision.reason === STEP_UP_REASON && this.request) {
       // #1758: step-up is AuthManager's — the answer and its reauth-prompt record.
