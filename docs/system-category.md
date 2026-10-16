@@ -88,7 +88,7 @@ Decided, not yet built. It replaces `ngdpbase.system-category` and its comment i
 }
 ```
 
-The `journal` entry is not in core configuration. The journal add-on declares it in its own `config/default-config.json`, and core reads it from there live (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)):
+The `journal` entry is not in core configuration. The journal add-on declares it in its own `config/default-config.json` (built, #1507), and core reads it from there live, whether the add-on is on or off (see [System-categories that add-ons bring](#system-categories-that-add-ons-bring)). The add-on's file also carries the legacy `source: "site"`, left out here as above:
 
 ```json
 "journal": {
@@ -96,6 +96,7 @@ The `journal` entry is not in core configuration. The journal add-on declares it
   "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
   "default": false,
   "enabled": true,
+  "owner": "journal",
   "storageLocation": {
     "defaultstore": "pages/",
     "privatestore": "pages/vaults/{user}/journal/"
@@ -171,7 +172,7 @@ __Built ([#1559](https://github.com/jwilleke/ngdpbase/issues/1559)):__ an add-on
 
 Retiring an add-on for good (moving its pages to another system-category and vault, or exporting them, then removing the entry) is [#1490](https://github.com/jwilleke/ngdpbase/issues/1490).
 
-Shipped entries: `general` (the default), `system`, `documentation`, `developer` (disabled), `addon`, `user-profile`, `journal`, `capture` (disabled; set by the capture feature).
+Shipped entries: `general` (the default), `system`, `documentation`, `developer` (disabled), `addon`, `user-profile`, `capture` (disabled; set by the capture feature). `journal` ships with the journal add-on, in its own file (#1507).
 
 ### What each shipped system-category is for
 
@@ -181,7 +182,7 @@ Shipped entries: `general` (the default), `system`, `documentation`, `developer`
 - __`developer`__: developer notes that live in the repository's `docs/`, never on the site. Disabled.
 - __`addon`__: documentation about an installed add-on, seeded by it.
 - __`user-profile`__: one page per user, their profile.
-- __`journal`__: journal entries. In core config today; decided to be declared by the journal add-on (#1477).
+- __`journal`__: journal entries. Declared by the journal add-on in `addons/journal/config/default-config.json`, `owner: "journal"` (#1507). Its label, vault id (`journal`), `privatestore`, `defaultPrivate: "choice"`, `encrypt: false` and `shareMaxDays: 15` are what core shipped before the move, so existing journal pages and vaults are unchanged. Two consequences of being an add-on's entry (#1559): with the journal add-on turned off, `journal` is not offered for new pages and its vault door is shut as "turned off" (its pages still resolve, its data is untouched); and a site whose `app-custom-config.json` sets the entry's `encrypt`, `defaultPrivate` or `shareMaxDays` now gets the journal's value, with a startup warning naming the field. A vault already created sealed stays sealed (sealing is fixed in its `store.json`), but new journal vaults follow the journal's `encrypt: false`. A site with `ngdpbase.managers.addons-manager.enabled: false`, or an `addons-path` that leaves out `./addons`, has no journal entry at all.
 - __`capture`__: pages made by the capture bookmarklet (operator, 2026-09-28). Core, because capture is a core feature. Its own vault, `pages/vaults/{user}/capture/`, keeps captures apart from a person's own private pages; `defaultPrivate: "choice"` replaces `ngdpbase.capture.private`. `enabled: false`: nobody picks it in the editor; the capture feature sets it.
 
 `system` and `documentation` behave the same (both ship and cannot be made private). They differ in purpose and badge, and are kept separate for that purpose (operator, 2026-09-27).
@@ -260,4 +261,4 @@ Read as declared in [The fields](#the-fields). `defaultPrivate` and `encrypt` ar
 - __Captures get their own system-category and vault__ (#1505, moved from #1504 by the operator 2026-09-29, with routing new private pages to their system-category's vault): existing captures (pages marked `capture`, today `general` in a person's `default` vault) are moved once into `capture` and `pages/vaults/{user}/capture/`, the way the journal's entries move in #1507.
 - __The vault settings move onto the system-category entry__ (#1505). `encrypt` and `owner` sit beside `storageLocation`, so one entry says what kind of page it is, where its private pages go, whether they are sealed and who decides that. The owner's declaration stands (operator, 2026-09-29). Who may make a page public is policy (`page-public`). An admin defines a new vault by adding or editing a system-category; there is no separate "create store kind" screen (#1414 closed on that basis).
 - __Option 1 stays the rule__: a vault is owner-only. An encrypted page is never public in place; going public decrypts it and moves it to `pages/`.
-- __The journal is the first system-category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the entry's `defaultPrivate`). __Built (#1507):__ `dataPath` is gone; new private entries go to the journal vault (#1505, piece 4), and existing ones move there at boot with every other private page whose system-category declares its own vault. The entry itself is still in core configuration. Declaring it in the add-on's own file is now possible (#1559); moving it there is #1507.
+- __The journal is the first system-category with its own vault__ (`pages/vaults/{user}/journal/`, named by the add-on's slug), declared and owned by the journal add-on. `ngdpbase.addons.journal.dataPath` goes (it only locates a retired sidecar), and so does `ngdpbase.addons.journal.defaultPrivate` (now the entry's `defaultPrivate`). __Built (#1507):__ `dataPath` and `defaultPrivate` are gone; new private entries go to the journal vault (#1505, piece 4), and existing ones move there at boot with every other private page whose system-category declares its own vault. The entry is declared in the journal add-on's own `config/default-config.json` with `owner: "journal"` (#1559), and core configuration no longer carries it.

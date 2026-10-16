@@ -69,7 +69,7 @@ describe('shipped categories declare their source (#1503)', () => {
     const sources = Object.fromEntries(Object.entries(categories).map(([k, c]) => [k, c.source]));
     expect(sources).toMatchObject({
       general: 'site', system: 'shipped', documentation: 'shipped', developer: 'repo',
-      addon: 'shipped', 'user-profile': 'site', journal: 'site'
+      addon: 'shipped', 'user-profile': 'site'
     });
   });
 });

@@ -52,7 +52,7 @@ The PHR example (the yourPHR `phr` add-on):
 }
 ```
 
-The journal's entry in `config/app-default-config.json` has the same shape, and is the working reference.
+The journal's entry in `addons/journal/config/default-config.json` (#1507) has the same shape, and is the working reference.
 
 ### The fields an add-on sets
 
@@ -115,7 +115,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 - __A takeout's footnotes and comments are not imported__ (#1839). The takeout carries them, decrypted, and the import lists them as ignored.
 - __Operator scripts that walk `pages/` recursively__ (`migrate-private-field`, `migrate-vocabulary-slice1`, `migrate-user-pages-category`, `repair-jspwiki-frontmatter`, `migrate-page-acl-to-frontmatter`) also go into vaults. They can't read sealed files, so they leave them alone, but they do rewrite plaintext in vaults that aren't sealed. `migrate-page-created` used to rewrite sealed files too, and now skips them (#1836).
 - __`ImportManager` `targetDir`__ writes raw files to any folder it is given, and no caller passes it today. Pointing it into a vault would bypass store I/O (#1836).
-- __The journal still lives in core config__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)); since #1559 it can move to the add-on's own file.
+- __A site override of the journal's owner fields is now ignored__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)). The journal's entry moved from core config to the add-on, so a site whose `app-custom-config.json` sets `encrypt`, `defaultPrivate` or `shareMaxDays` on `journal` gets the journal's value and a startup warning. Vaults already sealed stay sealed; new ones follow the journal.
 
 ## Checklist
 
