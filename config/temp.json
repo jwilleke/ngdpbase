@@ -1,18 +1,28 @@
- "_comment_system_category": "System category definitions with storage location mapping",
+{
   "ngdpbase.system-category": {
     "general": {
       "label": "general",
       "description": "General User pages",
       "default": true,
-      "storageLocation": "regular",
-      "enabled": true
+      "source": "site",
+      "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/default/"
+      },
+      "defaultPrivate": false,
+      "encrypt": false,
+      "shareMaxDays": 15
     },
     "system": {
       "label": "system",
-      "description": "System configuration and infrastructure pages",
+      "description": "The minimal viable pages for a minimal site to start",
       "default": false,
-      "storageLocation": "required",
+      "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-secondary",
         "label": "System",
@@ -23,8 +33,11 @@
       "label": "documentation",
       "description": "End-User documentation",
       "default": false,
-      "storageLocation": "required",
+      "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-info text-dark",
         "label": "Documentation",
@@ -33,17 +46,20 @@
     },
     "developer": {
       "label": "developer",
-      "description": "Developer documentation and technical note Only in GitHub",
+      "description": "Developer documentation and technical notes, only in GitHub",
       "default": false,
-      "storageLocation": "github",
+      "source": "repo",
       "enabled": false
     },
     "addon": {
       "label": "addon",
-      "description": "Pages seeded by an installed add-on",
+      "description": "Documentation about an installed add-on, seeded by it",
       "default": false,
-      "storageLocation": "regular",
+      "source": "shipped",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-primary",
         "label": "Addon",
@@ -54,8 +70,11 @@
       "label": "user-profile",
       "description": "User profile pages",
       "default": false,
-      "storageLocation": "regular",
-      "enabled": true,
+      "source": "site",
+      "enabled": false,
+      "storageLocation": {
+        "defaultstore": "pages/"
+      },
       "page-badge": {
         "color": "bg-success",
         "label": "Profile",
@@ -66,12 +85,34 @@
       "label": "journal",
       "description": "Personal journal entries — schema.org BlogPosting at JSON-LD render time (#791)",
       "default": false,
-      "storageLocation": "regular",
+      "source": "site",
       "enabled": true,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/journal/"
+      },
+      "defaultPrivate": "choice",
+      "encrypt": false,
+      "shareMaxDays": 15,
       "page-badge": {
         "color": "bg-info",
         "label": "Journal",
         "title": "Journal entry"
       }
+    },
+    "capture": {
+      "label": "capture",
+      "description": "Pages made by the capture bookmarklet",
+      "default": false,
+      "source": "site",
+      "enabled": false,
+      "storageLocation": {
+        "defaultstore": "pages/",
+        "privatestore": "pages/vaults/{user}/capture/"
+      },
+      "defaultPrivate": "choice",
+      "encrypt": false,
+      "shareMaxDays": 15
     }
-  },
+  }
+}
