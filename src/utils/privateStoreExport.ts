@@ -39,7 +39,7 @@ import {
   privateStoreRoot,
   resolvePrivateStoreLayout,
   storeFileIndexPath,
-  type PrivateStoreLayoutOverrides
+  type PrivateStoreLayout
 } from './privateStorePath.js';
 import type { ActorContext } from '../context/ActorContext.js';
 import type { StoreFileEntry } from '../types/Provider.js';
@@ -60,7 +60,7 @@ export type TakeoutOptions = {
   store: string;
   /** Leave the attachments out — someone who wants their writing, not gigabytes of photos. */
   pagesOnly?: boolean;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 };
 
 /**

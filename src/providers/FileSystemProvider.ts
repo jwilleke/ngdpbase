@@ -16,7 +16,7 @@ import {
   type PrivatePageName
 } from '../utils/privateStorePath.js';
 import { collectUser, listPrivateOwners } from '../utils/privateStoreTakeout.js';
-import { storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
+import { kindIsSealed, storeDirectoryIsEncrypted } from '../utils/privateStoreMeta.js';
 import type { SavedPage, StoreFileLocation, StorePageEntry, PrivateStorePageRef } from '../types/Provider.js';
 import {
   PLAIN_FILE_IO,
@@ -1148,6 +1148,8 @@ class FileSystemProvider extends BasePageProvider {
       for (const store of await fs.readdir(userDir, { withFileTypes: true })) {
         if (!store.isDirectory() || !isValidStoreId(store.name)) continue;
         if (await storeDirectoryIsEncrypted(path.join(userDir, store.name), this.privateStoreLayout.files.storemeta)) continue;
+        // #1834: a sealed kind's vault is never indexed in the clear, opened or not.
+        if (kindIsSealed(this.privateStoreLayout, store.name)) continue;
         const where: StoreFileLocation = { owner: user.name, store: store.name, io: PLAIN_FILE_IO };
         const pages = await this.readStorePages(this.pagesDirectory, where);
         const files = (await fs.readdir(path.join(userDir, store.name))).filter((f) => f.endsWith('.md'));

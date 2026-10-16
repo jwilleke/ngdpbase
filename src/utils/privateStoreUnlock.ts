@@ -29,14 +29,14 @@ import {
   unwrapKekWithPassword,
   type UserKeyEnvelope
 } from './privateStoreCrypto.js';
-import { readStoreMeta } from './privateStoreMeta.js';
+import { readStoreMeta, readVaultSealState, refuseUnsealedVault } from './privateStoreMeta.js';
 import { dropPendingWords } from './privateStoreDoor.js';
 import {
   PRIVATE_USER_CATALOG_FILES,
   isValidStoreId,
   privateUserDir,
   privateUserKeysPath,
-  type PrivateStoreLayoutOverrides
+  type PrivateStoreLayout
 } from './privateStorePath.js';
 import { emptyUserCatalog, readUserCatalog, type UserCatalog } from './privateStoreCatalogs.js';
 import type { ActorContext } from '../context/ActorContext.js';
@@ -497,9 +497,12 @@ export async function assertContextCanWriteStore(ctx: ActorContext, args: {
   pagesDirectory: string;
   owner: string;
   store: string;
-  layout?: PrivateStoreLayoutOverrides;
+  layout: PrivateStoreLayout;
 }): Promise<void> {
-  const meta = await readStoreMeta(args.pagesDirectory, args.owner, args.store, args.layout);
+  // #1834: a sealed kind's vault that is not sealed itself is refused, never
+  // written in the clear; the kind is the layout's `sealedVaults`.
+  const { state, meta } = await readVaultSealState(args.pagesDirectory, args.owner, args.store, args.layout);
+  refuseUnsealedVault(args.owner, args.store, state);
   assertEncryptedStoreWritable({
     encrypt: meta.encrypt,
     dek: meta.encrypt ? dekFor(ctx, args.owner, args.store) : undefined

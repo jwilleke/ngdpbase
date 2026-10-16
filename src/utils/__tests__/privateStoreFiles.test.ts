@@ -16,9 +16,17 @@ import {
   sealBytes,
   unwrapDek
 } from '../privateStoreCrypto';
-import { PLAIN_FILE_IO, storeFileIO, storeFileIOForPath } from '../privateStoreFiles';
-import { parsePrivateStoreRel, storeMetaPath } from '../privateStorePath';
-import { clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../privateStoreUnlock';
+import { PLAIN_FILE_IO, readStoreTextSync, storeFileIO, storeFileIOForPath } from '../privateStoreFiles';
+import { SealedVaultRefusedError } from '../privateStoreMeta';
+import {
+  parsePrivateStoreRel,
+  privateStoreLayoutFromConfig,
+  privateStoreRoot,
+  resolvePrivateStoreLayout,
+  storeMetaPath,
+  storePageIndexPath
+} from '../privateStorePath';
+import { assertContextCanWriteStore, clearUnlockedPrivateStores, setUnlockedDek, unlockPrivateStores } from '../privateStoreUnlock';
 
 const MOLLY = { ...actor('molly'), privateStoreHandle: 'sid' };
 const BOB = { ...actor('bob'), privateStoreHandle: 'bob-sid' };
@@ -109,6 +117,66 @@ describe('sealed store files (#1415)', () => {
       await expect(storeFileIO(undefined, args)).rejects.toThrow(/locked/);
       unlockPrivateStores('bob-sid', 'bob', randomBytes(32));
       await expect(storeFileIO(BOB, args)).rejects.toThrow(/locked/);
+    });
+  });
+
+  describe('the vault kind is asked as well as store.json (#1834)', () => {
+    let tmp: string;
+    let pagesDir: string;
+    const SEALED = resolvePrivateStoreLayout({ sealedVaults: ['yourphr'] });
+    const args = () => ({ pagesDirectory: pagesDir, owner: 'molly', store: 'yourphr', layout: SEALED });
+
+    beforeEach(async () => {
+      tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sealed-kind-io-'));
+      pagesDir = path.join(tmp, 'pages');
+    });
+
+    afterEach(async () => {
+      clearUnlockedPrivateStores();
+      await fs.remove(tmp);
+    });
+
+    test('the layout reads the sealed kinds from the system-category, booleans only', () => {
+      const layout = privateStoreLayoutFromConfig((key, fallback) => (key === 'ngdpbase.system-category' ? {
+        general: { default: true, storageLocation: { privatestore: 'pages/vaults/{user}/default/' } },
+        phr: { encrypt: true, storageLocation: { privatestore: 'pages/vaults/{user}/phr/' } },
+        notes: { encrypt: false, storageLocation: { privatestore: 'pages/vaults/{user}/notes/' } },
+        typo: { encrypt: 'true', storageLocation: { privatestore: 'pages/vaults/{user}/typo/' } }
+      } : fallback));
+      expect(layout.sealedVaults).toEqual(['phr']);
+    });
+
+    test('a sealed kind with no store.json: storeFileIO and the write check refuse, never plain', async () => {
+      await expect(storeFileIO(MOLLY, args())).rejects.toBeInstanceOf(SealedVaultRefusedError);
+      await expect(assertContextCanWriteStore(MOLLY, args())).rejects.toMatchObject({ reason: 'unopened' });
+      // The same vault under a layout whose kind is not sealed is plain, as before.
+      expect(await storeFileIO(MOLLY, { ...args(), layout: resolvePrivateStoreLayout() })).toBe(PLAIN_FILE_IO);
+    });
+
+    test('a sealed kind whose store.json is not sealed is refused as a mismatch', async () => {
+      await fs.ensureDir(privateStoreRoot(pagesDir, 'molly', 'yourphr'));
+      await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), { encrypt: false });
+      await expect(storeFileIO(MOLLY, args())).rejects.toMatchObject({ reason: 'mismatch' });
+      await expect(assertContextCanWriteStore(MOLLY, args())).rejects.toMatchObject({ reason: 'mismatch' });
+    });
+
+    test('a plaintext page index in a sealed kind\'s vault reads as nothing', async () => {
+      const file = storePageIndexPath(pagesDir, 'molly', 'yourphr');
+      await fs.ensureDir(path.dirname(file));
+      await fs.writeJson(file, { version: 1, pages: {} });
+      expect(readStoreTextSync(MOLLY, { ...args(), file })).toBeNull();
+      expect(readStoreTextSync(MOLLY, { ...args(), file, layout: resolvePrivateStoreLayout() })).not.toBeNull();
+    });
+
+    test('a sealed store of a sealed kind opens with the DEK, as before', async () => {
+      const { kek } = await createUserKeys('pw', { kdf: TEST_PRIVATE_STORE_KDF });
+      const record = createEncryptedStore(kek);
+      await fs.ensureDir(privateStoreRoot(pagesDir, 'molly', 'yourphr'));
+      await fs.writeJson(storeMetaPath(pagesDir, 'molly', 'yourphr'), record);
+      unlockPrivateStores('sid', 'molly', kek);
+      setUnlockedDek('sid', 'yourphr', unwrapDek(kek, record));
+      expect((await storeFileIO(MOLLY, args())).sealed).toBe(true);
+      await expect(assertContextCanWriteStore(MOLLY, args())).resolves.toBeUndefined();
     });
   });
 });

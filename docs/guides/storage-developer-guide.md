@@ -90,6 +90,7 @@ The same mistake in one of the site's own entries (core's, or the site's `app-cu
 - __Files__ (PDFs, images, DICOM) go through `AttachmentManager`. A file uploaded onto a private page goes into that page's vault. A vault's files are just files, under the vault's own access controls.
 - __Never__ write into `pages/` or `pages/vaults/` directly. The doors apply encryption, the owner checks, the audit record and the indexes.
 - An encrypted vault needs its owner's key, unlocked by their sign-in. A write without it is refused, never written in the clear. Whether a vault is sealed is fixed when it is created (its `store.json`), so decide `encrypt` before the first page is written.
+- A vault of an `encrypt: true` category can't be written until its owner has opened it at `/stores/{vaultid}`, which creates the sealed copy. Before that a save is refused, and the editor tells them to open the vault first. A vault whose `store.json` isn't sealed under an `encrypt: true` category is refused too, and reported to admins at startup. Store I/O asks both the category and `store.json` ([#1834](https://github.com/jwilleke/ngdpbase/issues/1834)); details in [private-stores.md](../private-stores.md#the-kind-is-asked-as-well-as-storejson).
 
 ## Access, sharing and proxies
 
@@ -104,6 +105,7 @@ Vault access is the same for every vault, core's or an add-on's. Add nothing vau
 
 - __Removing the add-on removes its category__ ([#1490](https://github.com/jwilleke/ngdpbase/issues/1490)). The category is read from the add-on's files, so with them gone its pages carry an unknown system-category and its vault door answers "no such store". The data stays on disk. Retiring an add-on properly is #1490.
 - __Backups don't cover add-on databases yet__ ([#1723](https://github.com/jwilleke/ngdpbase/issues/1723)). Vault pages sit under `pages/`, which the page backup walks. That vault files (PDFs, images) are covered too hasn't been checked; do it before relying on it.
+- __Plaintext written before [#1834](https://github.com/jwilleke/ngdpbase/issues/1834)__: a page saved into an `encrypt: true` vault before its door was opened was stored in the clear. Such vaults are closed and listed at startup; moving or sealing their files is still an administrator's job, with no tool for it yet.
 - __The journal still lives in core config__ ([#1507](https://github.com/jwilleke/ngdpbase/issues/1507)); since #1559 it can move to the add-on's own file.
 
 ## Checklist

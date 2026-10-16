@@ -66,6 +66,15 @@ export type PrivateStoreLayout = {
   /** Non-page files inside a store: `{store}/{attachmentsDir}/{uuid}.ext` (#1400) */
   attachmentsDir: string;
   files: PrivateStoreLayoutFiles;
+  /**
+   * The vault ids whose kind is sealed: the system-category entries that
+   * declare the vault with `encrypt: true` (#1834). Read from configuration
+   * with the rest of the layout, so every store I/O decision — which already
+   * carries the layout — consults the kind as well as the vault's
+   * `store.json`, and a sealed kind's vault without a sealed `store.json`
+   * fails closed instead of being read and written in the clear.
+   */
+  sealedVaults: readonly string[];
 };
 
 export type PrivateStoreLayoutOverrides = Partial<Omit<PrivateStoreLayout, 'files'>> & {
@@ -87,7 +96,8 @@ export const DEFAULT_PRIVATE_STORE_LAYOUT: PrivateStoreLayout = {
     storesearch: 'search-index.json',
     storemigrations: 'migrations.json',
     storedeleted: 'deleted-index.json'
-  }
+  },
+  sealedVaults: []
 };
 
 export const DEFAULT_PRIVATE_STORE = DEFAULT_PRIVATE_STORE_LAYOUT.defaultStoreId;
@@ -106,7 +116,8 @@ export function resolvePrivateStoreLayout(
     files: {
       ...DEFAULT_PRIVATE_STORE_LAYOUT.files,
       ...overrides.files
-    }
+    },
+    sealedVaults: overrides.sealedVaults ?? DEFAULT_PRIVATE_STORE_LAYOUT.sealedVaults
   };
 }
 
@@ -134,16 +145,42 @@ export function parsePrivatestore(value: unknown): { root: string; vaultId: stri
   return { root, vaultId };
 }
 
+/** One `ngdpbase.system-category` entry that declares a vault. */
+export interface SystemCategoryVault {
+  key: string;
+  root: string;
+  vaultId: string;
+  isDefault: boolean;
+  /** Whether a copy of this vault is sealed: the entry's own `encrypt`. */
+  encrypt: boolean;
+}
+
 /** The entries of `ngdpbase.system-category` that declare a vault, in config order. */
-export function systemCategoryVaults(categories: unknown): Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> {
+export function systemCategoryVaults(categories: unknown): SystemCategoryVault[] {
   if (!categories || typeof categories !== 'object') return [];
-  const vaults: Array<{ key: string; root: string; vaultId: string; isDefault: boolean }> = [];
+  const vaults: SystemCategoryVault[] = [];
   for (const [key, entry] of Object.entries(categories as Record<string, unknown>)) {
-    const e = entry as { default?: unknown; storageLocation?: { privatestore?: unknown } } | null;
+    const e = entry as { default?: unknown; encrypt?: unknown; storageLocation?: { privatestore?: unknown } } | null;
     const parsed = parsePrivatestore(e?.storageLocation?.privatestore);
-    if (parsed) vaults.push({ key, ...parsed, isDefault: e?.default === true });
+    // `encrypt` is read as the boolean it is and nothing else: a string "true" is not a switch.
+    if (parsed) vaults.push({ key, ...parsed, isDefault: e?.default === true, encrypt: e?.encrypt === true });
   }
   return vaults;
+}
+
+/**
+ * The vault ids whose kind is sealed (#1834). Where two entries name the
+ * same vault, the first is the kind, as `storeKindFromConfig` reads it.
+ */
+function sealedVaultIds(vaults: SystemCategoryVault[]): string[] {
+  const seen = new Set<string>();
+  const sealed: string[] = [];
+  for (const v of vaults) {
+    if (seen.has(v.vaultId)) continue;
+    seen.add(v.vaultId);
+    if (v.encrypt) sealed.push(v.vaultId);
+  }
+  return sealed;
 }
 
 export function privateStoreLayoutFromConfig(
@@ -180,7 +217,8 @@ export function privateStoreLayoutFromConfig(
         'ngdpbase.page.provider.filesystem.private.files.storedeleted',
         d.files.storedeleted
       )
-    }
+    },
+    sealedVaults: sealedVaultIds(vaults)
   };
 }
 

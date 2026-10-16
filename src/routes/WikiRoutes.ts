@@ -64,6 +64,7 @@ import { parseLinkPublicKey, type LinkPublicKey } from '../utils/shareLockbox.js
 import { roleGrants, type RoleGrants } from '../utils/roleGrants.js';
 import type { Policy } from '../types/Policy.js';
 import { storeFileIO } from '../utils/privateStoreFiles.js';
+import { SealedVaultRefusedError } from '../utils/privateStoreMeta.js';
 import type { MediaItem } from '../providers/BaseMediaProvider.js';
 import { ContactSubmissionLog, type SubmissionEntry, type MailResult } from '../utils/ContactSubmissionLog.js';
 import { pipeline } from 'stream';
@@ -4105,6 +4106,12 @@ ${panes}
       // #1455: a title the rule refuses is the caller's mistake, not ours.
       if (errorMessage === TITLE_RULE_MESSAGE) {
         return await fail(400, 'Invalid Title', errorMessage);
+      }
+
+      // #1834: an encrypted vault that is not open (or not sealed) refuses the
+      // write rather than storing it in the clear; say so, and what to do.
+      if (err instanceof SealedVaultRefusedError) {
+        return await fail(409, 'Vault Not Open', `${errorMessage} Nothing was saved.`);
       }
 
       return await fail(500, 'Error Saving Page', `Failed to save page: ${errorMessage}`);

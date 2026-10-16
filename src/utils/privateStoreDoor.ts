@@ -27,12 +27,14 @@ import {
 } from './privateStoreCrypto.js';
 import {
   isValidStoreId,
+  privateStoreRoot,
   privateUserKeysPath,
   systemCategoryVaults,
   storeMetaPath,
+  type PrivateStoreLayout,
   type PrivateStoreLayoutOverrides
 } from './privateStorePath.js';
-import type { StoreFileRecord } from './privateStoreMeta.js';
+import { readVaultSealState, type StoreFileRecord } from './privateStoreMeta.js';
 import { SYSTEM_CATEGORY_KEY } from './systemCategoryRules.js';
 import { listPrivateOwners } from './privateStoreTakeout.js';
 import { writeFileAtomic } from './atomicWrite.js';
@@ -73,9 +75,9 @@ export function storeKindFromConfig(getProperty: GetProperty, id: string): Store
   const categories = getProperty(SYSTEM_CATEGORY_KEY, null);
   const vault = systemCategoryVaults(categories).find((v) => v.vaultId === id);
   if (!vault) return null;
-  const entry = (categories as Record<string, { encrypt?: unknown; owner?: unknown } | null>)[vault.key];
+  const entry = (categories as Record<string, { owner?: unknown } | null>)[vault.key];
   const owner = typeof entry?.owner === 'string' && entry.owner ? entry.owner : ADMIN_STORE_OWNER;
-  return { id, owner, encrypt: entry?.encrypt === true };
+  return { id, owner, encrypt: vault.encrypt };
 }
 
 /** Where the addon that owns a kind stands, as the door needs to know it. */
@@ -122,6 +124,38 @@ export async function countStoreCopies(
     if (await fs.pathExists(storeMetaPath(pagesDirectory, owner, kindId, layout))) copies++;
   }
   return copies;
+}
+
+/** A vault of a sealed kind whose copy is not sealed (#1834). */
+export interface UnsealedVault {
+  owner: string;
+  vault: string;
+  /** `unopened`: files but no `store.json`; `mismatch`: a `store.json` that is not sealed. */
+  state: 'unopened' | 'mismatch';
+}
+
+/**
+ * Every vault of a sealed kind that holds files in the clear (#1834): a folder
+ * with something in it but no `store.json` (written before its door was
+ * opened), or a `store.json` that is not sealed. Read only — nothing is moved,
+ * sealed or deleted; what to do with the files is an administrator's call.
+ */
+export async function findUnsealedVaults(
+  pagesDirectory: string,
+  layout: PrivateStoreLayout
+): Promise<UnsealedVault[]> {
+  const found: UnsealedVault[] = [];
+  if (layout.sealedVaults.length === 0) return found;
+  for (const owner of await listPrivateOwners(pagesDirectory, layout)) {
+    for (const vault of layout.sealedVaults) {
+      const root = privateStoreRoot(pagesDirectory, owner, vault, layout);
+      if (!await fs.pathExists(root)) continue;
+      const { state } = await readVaultSealState(pagesDirectory, owner, vault, layout);
+      if (state === 'mismatch') found.push({ owner, vault, state });
+      else if (state === 'unopened' && (await fs.readdir(root)).length > 0) found.push({ owner, vault, state });
+    }
+  }
+  return found;
 }
 
 /** Attempts at confirming the words: one, plus `ngdpbase.stores.recovery.confirmretries`. */
