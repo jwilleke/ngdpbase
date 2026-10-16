@@ -1135,6 +1135,167 @@ class BasicAttachmentProvider extends BaseAttachmentProvider implements AssetPro
     return entry;
   }
 
+  // ── A page's files follow the page (#1842) ────────────────────────────────
+  //
+  // When a page moves into a vault, out of one, or between two, the files it
+  // uses go with it. Each copy KEEPS the file's id, because that id is the
+  // `/attachments/{id}` URL written in the page. The bytes are read as the
+  // source keeps them and written as the destination does, through each side's
+  // I/O: sealed going into a sealed vault, opened coming out. Copies only: the
+  // caller removes the source once the copy is in place, so a failure leaves a
+  // second copy, never none.
+
+  /**
+   * Copy a shared-pool file into a store under the same id, mentioned by
+   * `pageName` there. The shared record is left as it is. A store that already
+   * lists the id just gains the mention.
+   *
+   * @returns the store entry, or null when the pool has no such file
+   */
+  async copyRecordIntoStore(location: StoreFileLocation, id: string, pageName: string): Promise<StoreFileEntry | null> {
+    const record = this.attachmentMetadata.get(id);
+    if (!record) return null;
+    const files = await this.readStoreIndex(location);
+    if (files[id]) {
+      await this.setFileMentionInStore(location, id, pageName, true);
+      return files[id];
+    }
+    const fileName = path.basename(record.storageLocation);
+    const source = await this.resolveAttachmentFilePath(record, fileName);
+    if (!await fs.pathExists(source)) {
+      logger.warn(`[BasicAttachmentProvider] Cannot copy a file into ${location.owner}'s store '${location.store}': its bytes are missing (${id})`);
+      return null;
+    }
+    const bytes = await fs.readFile(source);
+    const target = this.storeFilePath(location, fileName);
+    await fs.ensureDir(path.dirname(target));
+    await location.io.writeBytes(target, bytes);
+    const entry: StoreFileEntry = {
+      id,
+      fileName,
+      name: record.name,
+      encodingFormat: record.encodingFormat,
+      contentSize: bytes.length,
+      fingerprint: crypto.createHash('sha256').update(bytes).digest('hex'),
+      description: record.description ?? '',
+      ...(record.author?.name ? { author: record.author.name } : {}),
+      dateCreated: record.dateCreated,
+      dateModified: new Date().toISOString(),
+      mentions: [pageName]
+    };
+    files[id] = entry;
+    await this.writeStoreIndex(location, files);
+    return entry;
+  }
+
+  /**
+   * Copy a store's file into another store under the same id, mentioned by
+   * `pageName` there. A destination that already lists the id just gains the
+   * mention.
+   *
+   * @returns the destination's entry, or null when the source does not list it
+   */
+  async copyStoreFileToStore(from: StoreFileLocation, to: StoreFileLocation, id: string, pageName: string): Promise<StoreFileEntry | null> {
+    const source = await this.getFileInStore(from, id);
+    if (!source) return null;
+    const files = await this.readStoreIndex(to);
+    if (files[id]) {
+      await this.setFileMentionInStore(to, id, pageName, true);
+      return files[id];
+    }
+    const fileName = path.basename(source.entry.fileName);
+    const target = this.storeFilePath(to, fileName);
+    await fs.ensureDir(path.dirname(target));
+    await to.io.writeBytes(target, source.bytes);
+    const entry: StoreFileEntry = { ...source.entry, fileName, dateModified: new Date().toISOString(), mentions: [pageName] };
+    files[id] = entry;
+    await this.writeStoreIndex(to, files);
+    return entry;
+  }
+
+  /**
+   * Copy a store's file into the shared pool under the same id, opened, and
+   * mentioned by `pageName` (a public page). A pool that already holds the id
+   * just gains the mention.
+   *
+   * @returns true when the pool holds the file afterwards
+   */
+  async copyStoreFileToPool(from: StoreFileLocation, id: string, pageName: string): Promise<boolean> {
+    const mention: SchemaMention = { '@type': 'Thing', name: pageName, url: `/view/${encodeURIComponent(pageName)}` };
+    const existing = this.attachmentMetadata.get(id);
+    if (existing) {
+      if (!existing.mentions.some((m) => m.name === pageName)) {
+        existing.mentions.push(mention);
+        await this.saveMetadata();
+      }
+      return true;
+    }
+    if (!this.storageDirectory) throw new Error('Storage directory not initialized');
+    const source = await this.getFileInStore(from, id);
+    if (!source) return false;
+    const fileName = path.basename(source.entry.fileName);
+    const target = path.join(this.storageDirectory, fileName);
+    await fs.ensureDir(this.storageDirectory);
+    await fs.writeFile(target, source.bytes);
+    const author: SchemaPerson | undefined = source.entry.author ? { '@type': 'Person', name: source.entry.author } : undefined;
+    this.attachmentMetadata.set(id, {
+      '@context': 'https://schema.org',
+      '@type': 'CreativeWork',
+      identifier: id,
+      name: source.entry.name,
+      description: source.entry.description,
+      author,
+      editor: author,
+      dateCreated: source.entry.dateCreated,
+      dateModified: new Date().toISOString(),
+      encodingFormat: source.entry.encodingFormat,
+      contentSize: source.bytes.length,
+      url: `/attachments/${id}`,
+      storageLocation: target,
+      isFamilyFriendly: true,
+      mentions: [mention],
+      isPrivate: false
+    });
+    await this.saveMetadata();
+    return true;
+  }
+
+  /**
+   * Take a file out of the shared pool: its record, its bytes and any cached
+   * thumbnails of it (#1842) — used when the file has moved into a vault and
+   * no public page uses it any more, so no public copy of it is left.
+   */
+  async removeRecordFromPool(id: string): Promise<boolean> {
+    const record = this.attachmentMetadata.get(id);
+    if (!record) return false;
+    await fs.remove(await this.resolveAttachmentFilePath(record, path.basename(record.storageLocation)));
+    if (this.thumbDir && await fs.pathExists(this.thumbDir)) {
+      for (const name of await fs.readdir(this.thumbDir)) {
+        if (name.startsWith(`${id}-`)) await fs.remove(path.join(this.thumbDir, name));
+      }
+    }
+    this.attachmentMetadata.delete(id);
+    await this.saveMetadata();
+    return true;
+  }
+
+  /**
+   * Set a shared-pool record's mentions to exactly `names` (#1842), keeping the
+   * mention objects it already has for those names.
+   */
+  async setPoolMentions(id: string, names: string[]): Promise<boolean> {
+    const record = this.attachmentMetadata.get(id);
+    if (!record) return false;
+    const kept = (record.mentions ?? []).filter((m) => names.includes(m.name ?? ''));
+    const added = names
+      .filter((n) => !kept.some((m) => m.name === n))
+      .map((n): SchemaMention => ({ '@type': 'Thing', name: n, url: `/view/${encodeURIComponent(n)}` }));
+    record.mentions = [...kept, ...added];
+    record.dateModified = new Date().toISOString();
+    await this.saveMetadata();
+    return true;
+  }
+
   /**
    * Get attachment metadata only
    * @param attachmentId - Attachment identifier

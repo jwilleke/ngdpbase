@@ -2794,6 +2794,12 @@ class PageManager extends BaseManager implements CatalogSource {
       await step('comments move', () => this.engine.getManager<CommentManager>('CommentManager')
         ?.movePageComments(uuid, previousName, name, change.ctx));
     }
+    // #1842: and so do the files it uses — before the mention sync below, so a
+    // page made public finds its files in the shared pool.
+    if (name && previousName && name !== previousName && change.content !== undefined) {
+      const content = change.content;
+      await step('attachments move', () => attachments?.movePageAttachments(previousName, name, content, change.ctx));
+    }
 
     const referrers = new Set<string>();
     const previousReferrers = isPublic(previousName) ? (rendering?.getReferringPages(previousName) ?? []) : [];

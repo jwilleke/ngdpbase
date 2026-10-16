@@ -417,6 +417,10 @@ class WikiEngine extends Engine {
     // store's files were never in the shared index (#1400).
     await attachmentManager.migratePrivateFilesAtBoot();
 
+    // #1842: vault pages that still use shared-pool files, from moves made
+    // before a page's files went with it. Reported, never moved.
+    await attachmentManager.reportVaultPagesUsingPoolFilesAtBoot();
+
     // Mark engine as initialized (required for Engine base class contract)
     this.initialized = true;
 
