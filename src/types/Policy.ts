@@ -117,7 +117,7 @@ export interface DecisionRequest {
  * `reason` is for the log and the audit record. A PEP enforces `permit` and
  * chooses 401 vs 403 from whether the caller is authenticated — it must not
  * branch on the reason, or the reason becomes an interface. The one exception
- * is {@link STEP_UP_REASON}, read only by `ApiContext.refuse` (#1431): the one
+ * is {@link STEP_UP_REASON}, read only by `ApiContext.enforceDeny` (#1431): the one
  * refusal that offers a way forward (a fresh sign-in).
  */
 export interface Decision {
@@ -141,7 +141,7 @@ export interface Decision {
 /**
  * The reason a deny carries when the subject holds the permission but its
  * sign-in is not fresh enough to act (#1635). Declared once: the PDP writes it
- * and `ApiContext.refuse` reads it to ask for a fresh sign-in.
+ * and `ApiContext.enforceDeny` reads it to ask for a fresh sign-in.
  */
 export const STEP_UP_REASON = 'step-up';
 
