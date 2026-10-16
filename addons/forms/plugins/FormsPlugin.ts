@@ -8,9 +8,9 @@
 
 import path from 'path';
 import { promises as fsp } from 'fs';
-import type { PluginContext, PluginParams } from '../../../dist/src/managers/PluginManager.js';
+import type { PluginContext, PluginParams, PluginFormatters } from '../../../dist/src/managers/PluginManager.js';
 import type ConfigurationManager from '../../../dist/src/managers/ConfigurationManager.js';
-import { escapeHtml as escHtml, type FormOption } from '../../../dist/src/utils/pluginFormatters.js';
+import type { FormOption } from '../../../dist/src/utils/pluginFormatters.js';
 import type FormsDataManager from '../managers/FormsDataManager.js';
 import type { FormDefinition, FormField } from '../managers/FormsDataManager.js';
 import { resolveFieldOptions } from '../managers/fieldOptions.js';
@@ -34,7 +34,8 @@ function resolvePrefill(
   return typeof val === 'string' ? val : '';
 }
 
-function renderField(field: ResolvedField): string {
+function renderField(f: PluginFormatters, field: ResolvedField): string {
+  const { escapeHtml: escHtml } = f;
   const required = field.required ? ' required' : '';
   const placeholder = field.placeholder ? ` placeholder="${escHtml(field.placeholder)}"` : '';
   const desc = field.description
@@ -86,14 +87,15 @@ function renderField(field: ResolvedField): string {
   </div>`;
 }
 
-function renderFieldset(label: string, fieldsHtml: string): string {
+function renderFieldset(f: PluginFormatters, label: string, fieldsHtml: string): string {
+  const { escapeHtml: escHtml } = f;
   return `<fieldset class="mb-4 border rounded p-3">
       <legend class="float-none w-auto px-2 fs-6 fw-semibold">${escHtml(label)}</legend>
       ${fieldsHtml}
     </fieldset>`;
 }
 
-function renderGroups(resolvedFields: ResolvedField[]): string {
+function renderGroups(f: PluginFormatters, resolvedFields: ResolvedField[]): string {
   type Group = { label: string | null; fields: ResolvedField[] };
   const groups: Group[] = [];
   let current: Group = { label: null, fields: [] };
@@ -109,13 +111,14 @@ function renderGroups(resolvedFields: ResolvedField[]): string {
   if (current.label !== null || current.fields.length > 0) groups.push(current);
 
   return groups.map(g => {
-    const html = g.fields.map(renderField).join('\n');
-    return g.label ? renderFieldset(g.label, html) : html;
+    const html = g.fields.map(field => renderField(f, field)).join('\n');
+    return g.label ? renderFieldset(f, g.label, html) : html;
   }).join('\n');
 }
 
-function renderForm(form: FormDefinition, resolvedFields: ResolvedField[]): string {
-  const proxyBlock = form.proxySubmission ? renderFieldset('For Another Occupant', `
+function renderForm(f: PluginFormatters, form: FormDefinition, resolvedFields: ResolvedField[]): string {
+  const { escapeHtml: escHtml } = f;
+  const proxyBlock = form.proxySubmission ? renderFieldset(f, 'For Another Occupant', `
       <p class="text-muted small mb-3">Complete this section only if submitting on behalf of another resident. Leave blank if submitting for yourself.</p>
       <div class="mb-3">
         <label class="form-label" for="obo-name">Full Name</label>
@@ -140,7 +143,7 @@ function renderForm(form: FormDefinition, resolvedFields: ResolvedField[]): stri
     ${form.description ? `<p class="text-muted mb-3">${escHtml(form.description)}</p>` : ''}
     <div id="form-result-${escHtml(form.id)}"></div>
     <form data-ngdp-form="${escHtml(form.id)}" novalidate>
-      ${renderGroups(resolvedFields)}
+      ${renderGroups(f, resolvedFields)}
       ${proxyBlock}
       <button type="submit" class="btn btn-primary">Submit</button>
     </form>
@@ -153,6 +156,7 @@ const FormsPlugin = {
   name: 'Form',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
+    const { escapeHtml: escHtml } = context.formatters;
     const formId = typeof params['id'] === 'string' ? params['id'] : undefined;
     if (!formId) {
       return '<div class="alert alert-warning">Form: missing required parameter <code>id</code></div>';
@@ -198,7 +202,7 @@ const FormsPlugin = {
       return base;
     }));
 
-    return renderForm(form, resolvedFields);
+    return renderForm(context.formatters, form, resolvedFields);
   }
 };
 
