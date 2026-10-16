@@ -175,6 +175,7 @@ import type MediaManager from '../managers/MediaManager.js';
 import type MetricsManager from '../managers/MetricsManager.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type FootnoteManager from '../managers/FootnoteManager.js';
+import type { PageRef } from '../utils/pageNotes.js';
 import type NotificationManager from '../managers/NotificationManager.js';
 import type PolicyValidator from '../managers/PolicyValidator.js';
 import type RenderingManager from '../managers/RenderingManager.js';
@@ -10252,8 +10253,12 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comments are not enabled' });
       }
 
+      // #1839: only on a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+
       // #1232: the subject goes to the door; the manager reads author and display name from it and records the write.
-      const comment = await commentManager.addComment(pageUuid, currentUser, content.trim());
+      const comment = await commentManager.addComment(page, currentUser, content.trim());
       return res.json({ success: true, comment });
     } catch (err: unknown) {
       logger.error('Error adding comment:', err);
@@ -10665,7 +10670,11 @@ ${panes}
         return res.status(404).json({ success: false, error: 'Comments are not enabled' });
       }
 
-      const comment = await commentManager.getComment(pageUuid, commentId);
+      // #1839: only on a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+
+      const comment = await commentManager.getComment(page, commentId, currentUser);
       if (!comment) {
         return res.status(404).json({ success: false, error: 'Comment not found' });
       }
@@ -10675,7 +10684,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this comment' });
       }
 
-      await commentManager.deleteComment(pageUuid, commentId, currentUser);
+      await commentManager.deleteComment(page, commentId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting comment:', err);
@@ -10690,7 +10699,10 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).json({ success: false, error: 'Footnotes are not enabled' });
       }
-      const footnotes = await footnoteManager.getFootnotes(pageUuid);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'json');
+      if (!page) return;
+      const footnotes = await footnoteManager.getFootnotes(page, req.userContext ?? ANONYMOUS_SUBJECT);
       return res.json({ success: true, footnotes });
     } catch (err: unknown) {
       logger.error('Error fetching footnotes:', err);
@@ -10706,8 +10718,8 @@ ${panes}
    * client-side script swaps this into `#footnote-list-host` after a
    * successful add/edit/delete, replacing the old `location.reload()` flow.
    *
-   * GET /api/footnotes/:pageUuid/html — text/html. No auth required to
-   * read; the underlying buttons enforce per-row permissions.
+   * GET /api/footnotes/:pageUuid/html — text/html. Whoever may read the page
+   * may read its footnotes (#1839); the buttons enforce per-row permissions.
    */
   async getFootnoteListHtml(req: Request, res: Response) {
     try {
@@ -10716,7 +10728,10 @@ ${panes}
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-footnotes"><em>Footnotes are not enabled.</em></p>');
       }
-      const html = await renderFootnoteListHtml(this.formatters, footnoteManager, pageUuid, req.userContext, this.engine);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'html');
+      if (!page) return;
+      const html = await renderFootnoteListHtml(this.formatters, footnoteManager, page, req.userContext, this.engine);
       return res.type('text/html').send(html);
     } catch (err: unknown) {
       logger.error('Error rendering footnote list HTML:', err);
@@ -10739,7 +10754,10 @@ ${panes}
       if (!commentManager || !commentManager.isEnabled?.()) {
         return res.status(404).type('text/html').send('<p class="no-comments"><em>Comments are not enabled.</em></p>');
       }
-      const comments = await commentManager.getComments(pageUuid);
+      // #1839: only a page this reader may read, found by its name.
+      const page = await this.notesPage(req, res, pageUuid, 'html');
+      if (!page) return;
+      const comments = await commentManager.getComments(page, req.userContext ?? ANONYMOUS_SUBJECT);
       // #1198: the affordances mirror the routes' own gates — comment-create
       // to add, admin-system to delete anyone's — asked of policy, not read
       // off a session flag or a role name.
@@ -10761,17 +10779,38 @@ ${panes}
   }
 
   /**
-   * Refuse a footnote change the page's own rules forbid (#1542): the page is
-   * found by uuid and asked through `writeRefusal`, as the editor asks. Sends
-   * the 404 / 403 itself and returns true when it did.
+   * The page a footnote or comment request is about (#1839), when this request
+   * may read it. The page is named by `?page=` — a vault page is found only by
+   * its name, never by its uuid — else by the uuid in the path, and it must be
+   * the page that uuid names: the name decides where the notes are, so a
+   * readable page's name with another page's uuid would read that page's.
+   * Answers 404 itself — one answer for a page that isn't there and one this
+   * reader may not read — and returns null when it did.
    */
-  private async footnotePageRefusal(req: Request, res: Response, pageUuid: string): Promise<boolean> {
+  private async notesPage(req: Request, res: Response, pageUuid: string, mode: 'json' | 'html'): Promise<PageRef | null> {
+    const named = typeof req.query.page === 'string' && req.query.page ? req.query.page : pageUuid;
+    const read = await this.engine.getManager('PageManager')?.readPage(named, req.userContext ?? ANONYMOUS_SUBJECT);
+    if (read?.ok && read.metadata?.uuid === pageUuid) return { name: read.name, uuid: pageUuid };
+    if (mode === 'html') res.status(404).type('text/html').send('<p class="text-muted"><em>Page not found.</em></p>');
+    else res.status(404).json({ success: false, error: 'Page not found' });
+    return null;
+  }
+
+  /**
+   * Refuse a footnote change the page's own rules forbid (#1542): the page is
+   * found by its name (`?page=`, #1839) or uuid and asked through
+   * `writeRefusal`, as the editor asks. Sends the 404 / 403 itself and returns
+   * the page when it may be changed, null when it sent a refusal.
+   */
+  private async footnotePage(req: Request, res: Response, pageUuid: string): Promise<PageRef | null> {
+    const named = typeof req.query.page === 'string' && req.query.page ? req.query.page : pageUuid;
     // page-door-ignore: the footnote's page — the editor's write door decides next.
-    const page = await this.engine.getManager('PageManager')?.getPage(pageUuid, req.userContext);
-    if (!page) { res.status(404).json({ success: false, error: 'Page not found' }); return true; }
-    const refusal = await this.writeRefusal(req, canonicalPageName(pageUuid, page.metadata), page);
-    if (refusal) { res.status(403).json({ success: false, error: refusal }); return true; }
-    return false;
+    const page = await this.engine.getManager('PageManager')?.getPage(named, req.userContext);
+    if (!page || page.metadata?.uuid !== pageUuid) { res.status(404).json({ success: false, error: 'Page not found' }); return null; }
+    const name = canonicalPageName(named, page.metadata);
+    const refusal = await this.writeRefusal(req, name, page);
+    if (refusal) { res.status(403).json({ success: false, error: refusal }); return null; }
+    return { name, uuid: pageUuid };
   }
 
   async addFootnote(req: Request, res: Response) {
@@ -10780,9 +10819,9 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
       if (!display?.trim() || !url?.trim()) {
         return res.status(400).json({ success: false, error: 'display and url are required' });
@@ -10794,7 +10833,7 @@ ${panes}
       }
 
       const footnote = await footnoteManager.addFootnote(
-        pageUuid, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
+        page, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() },
         currentUser
       );
       return res.json({ success: true, footnote });
@@ -10813,9 +10852,10 @@ ${panes}
       const currentUser = wikiContext.userContext;
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid, footnoteId } = req.params;
+      const { footnoteId } = req.params;
       const { display, url, note } = req.body as { display?: string; url?: string; note?: string };
       if (!display?.trim() || !url?.trim()) {
         return res.status(400).json({ success: false, error: 'display and url are required' });
@@ -10827,7 +10867,7 @@ ${panes}
       }
 
       const footnote = await footnoteManager.updateFootnote(
-        pageUuid, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
+        page, footnoteId, { display: display.trim(), url: url.trim(), note: (note ?? '').trim() }, currentUser
       );
       if (!footnote) return res.status(404).json({ success: false, error: 'Footnote not found' });
       return res.json({ success: true, footnote });
@@ -10846,16 +10886,17 @@ ${panes}
       // #1198: page-edit is the door; own-or-admin decides below.
       if (!(await this.permitted(wikiContext, 'page-edit', req, res, 'json'))) return;
       // #1542: a footnote edits its page — the editor's doors, about that page.
-      if (await this.footnotePageRefusal(req, res, req.params.pageUuid)) return;
+      const page = await this.footnotePage(req, res, req.params.pageUuid);
+      if (!page) return;
 
-      const { pageUuid, footnoteId } = req.params;
+      const { footnoteId } = req.params;
       const footnoteManager = this.engine.getManager('FootnoteManager');
       if (!footnoteManager || !footnoteManager.isEnabled?.()) {
         return res.status(404).json({ success: false, error: 'Footnotes are not enabled' });
       }
 
       // Only admin or the footnote's creator may delete
-      const footnotes = await footnoteManager.getFootnotes(pageUuid);
+      const footnotes = await footnoteManager.getFootnotes(page, currentUser);
       const target = footnotes.find((f: { id: string }) => f.id === footnoteId);
       if (!target) return res.status(404).json({ success: false, error: 'Footnote not found' });
 
@@ -10864,7 +10905,7 @@ ${panes}
         return res.status(403).json({ success: false, error: 'Not authorised to delete this footnote' });
       }
 
-      await footnoteManager.deleteFootnote(pageUuid, footnoteId, currentUser);
+      await footnoteManager.deleteFootnote(page, footnoteId, currentUser);
       return res.json({ success: true });
     } catch (err: unknown) {
       logger.error('Error deleting footnote:', err);

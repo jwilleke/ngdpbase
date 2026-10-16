@@ -28,6 +28,7 @@ import {
 } from '../privateStoreUnlock';
 import { storeFileIO } from '../privateStoreFiles';
 import { buildStoreTakeout, TAKEOUT_FILE_INDEX } from '../privateStoreExport';
+import { collectStore } from '../privateStoreTakeout';
 import type { ActorContext } from '../../context/ActorContext';
 
 const STORE = 'vault';
@@ -378,5 +379,44 @@ describe('buildStoreTakeout — the file index (operator, 2026-09-25)', () => {
     const json = takeout.files.map(f => f.path).filter(p => p.endsWith('.json'));
 
     expect(json).toEqual([`${STORE}/${TAKEOUT_FILE_INDEX}`]);
+  });
+});
+
+describe('a vault page\'s footnotes and comments go with the vault (#1839)', () => {
+  /** The sealed store, plus a footnote and a comment on its page, written through its I/O. */
+  async function sealedStoreWithNotes(): Promise<string> {
+    await sealedStore();
+    const io = await storeFileIO(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+    const root = privateStoreRoot(pagesDir, 'molly', STORE);
+    await fs.ensureDir(path.join(root, 'footnotes'));
+    await fs.ensureDir(path.join(root, 'comments', 'uuid-1'));
+    await io.writeText(path.join(root, 'footnotes', 'uuid-1.json'), JSON.stringify({ 1: { id: '1', note: 'LDL source' } }));
+    await io.writeText(path.join(root, 'comments', 'uuid-1', 'c1.json'), JSON.stringify({ id: 'c1', content: 'ask the doctor' }));
+    return root;
+  }
+
+  test('the takeout carries them decrypted, keyed by the page uuid, while the store stays sealed', async () => {
+    const root = await sealedStoreWithNotes();
+    expect(isSealedBytes(await fs.readFile(path.join(root, 'footnotes', 'uuid-1.json')))).toBe(true);
+
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE });
+
+    expect(text(takeout, `${STORE}/footnotes/uuid-1.json`)).toContain('LDL source');
+    expect(text(takeout, `${STORE}/comments/uuid-1/c1.json`)).toContain('ask the doctor');
+    expect(takeout.files.every(f => !isSealedBytes(f.bytes))).toBe(true);
+  });
+
+  test('a pages-only takeout still carries them: they are the pages\' writing, not files', async () => {
+    await sealedStoreWithNotes();
+    const takeout = await buildStoreTakeout(MOLLY, { pagesDirectory: pagesDir, owner: 'molly', store: STORE, pagesOnly: true });
+    expect(takeout.files.map(f => f.path)).toEqual(expect.arrayContaining([`${STORE}/footnotes/uuid-1.json`, `${STORE}/comments/uuid-1/c1.json`]));
+  });
+
+  test('the instance backup carries them as the vault holds them: sealed', async () => {
+    await sealedStoreWithNotes();
+    const backup = await collectStore(pagesDir, 'molly', STORE);
+    const notes = backup.files.filter(f => f.path.startsWith('footnotes/') || f.path.startsWith('comments/'));
+    expect(notes.map(f => f.path).sort()).toEqual(['comments/uuid-1/c1.json', 'footnotes/uuid-1.json']);
+    expect(notes.every(f => isSealedBytes(f.bytes))).toBe(true);
   });
 });

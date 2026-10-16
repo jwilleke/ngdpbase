@@ -124,11 +124,41 @@ describe('FootnotesPlugin', () => {
       // The add/edit (POST/PUT) and delete (DELETE) calls must use the
       // csrfFetch wrapper.
       expect(result).toContain('(window.csrfFetch || fetch)(target,');
-      expect(result).toContain("(window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id, { method: 'DELETE' })");
+      expect(result).toContain("(window.csrfFetch || fetch)('/api/footnotes/' + _uuid + '/' + id + _q, { method: 'DELETE' })");
       // The only bare fetch( permitted in the CRUD script is the GET
       // refreshList call (safe method, no token needed).
       const bareFetchCount = (result.match(/[^.|]fetch\('\/api\/footnotes/g) || []).length;
       expect(bareFetchCount).toBe(1); // exactly the refreshList GET
+    });
+
+    // #1839: a vault page's footnotes are in its vault, found by its name —
+    // the render reads them by name and every request the script makes names it.
+    test('a vault page: footnotes are read by its name, and every request names it', async () => {
+      const fm = makeFootnoteManager([]);
+      const reader = { isAuthenticated: true, username: 'molly', roles: ['editor'] };
+      const context = {
+        engine: makeEngine({ FootnoteManager: fm }),
+        pageName: 'vaults/molly/phr/Lab </script> Results',
+        pageMetadata: { uuid: 'abc-123' },
+        userContext: reader
+      };
+      const result = await FootnotesPlugin.execute(context, {});
+      expect(fm.getFootnotes).toHaveBeenCalledWith({ name: 'vaults/molly/phr/Lab </script> Results', uuid: 'abc-123' }, reader);
+      expect(result).toContain("const _q = '?page=' + encodeURIComponent(\"vaults/molly/phr/Lab \\u003c/script> Results\");");
+      expect(result).toContain("fetch('/api/footnotes/' + _uuid + '/html' + _q)");
+      expect(result).toContain("'/api/footnotes/' + _uuid) + _q;");
+    });
+
+    test('a vault that cannot be opened renders nothing rather than failing the page', async () => {
+      const fm = makeFootnoteManager([]);
+      fm.getFootnotes.mockRejectedValueOnce(new Error('locked'));
+      const context = {
+        engine: makeEngine({ FootnoteManager: fm }),
+        pageName: 'vaults/molly/phr/Lab Results',
+        pageMetadata: { uuid: 'abc-123' },
+        userContext: { isAuthenticated: true, username: 'molly', roles: ['editor'] }
+      };
+      expect(await FootnotesPlugin.execute(context, {})).toBe('');
     });
 
     test('noheader=true suppresses h2 heading', async () => {

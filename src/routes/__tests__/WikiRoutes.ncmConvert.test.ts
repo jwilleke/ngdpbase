@@ -167,8 +167,8 @@ describe('#1125 convert transfers footnote definitions to the sidecar list', () 
     const res = makeRes();
     await routes.adminConvertExecute(makeReq({ page: 'Noted' }), res);
     expect(importFootnote).toHaveBeenCalledTimes(2);
-    expect(importFootnote).toHaveBeenCalledWith('uuid-n', '1', expect.objectContaining({ note: 'Supporting note.' }), expect.objectContaining({ username: 'alice' }));
-    expect(importFootnote).toHaveBeenCalledWith('uuid-n', 'src', expect.objectContaining({ url: 'https://example.org/paper' }), expect.objectContaining({ username: 'alice' }));
+    expect(importFootnote).toHaveBeenCalledWith({ name: 'Noted', uuid: 'uuid-n' }, '1', expect.objectContaining({ note: 'Supporting note.' }), expect.objectContaining({ username: 'alice' }));
+    expect(importFootnote).toHaveBeenCalledWith({ name: 'Noted', uuid: 'uuid-n' }, 'src', expect.objectContaining({ url: 'https://example.org/paper' }), expect.objectContaining({ username: 'alice' }));
     expect(savePage).toHaveBeenCalledOnce();
   });
 

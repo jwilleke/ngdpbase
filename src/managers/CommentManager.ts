@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'fs-extra';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import BaseManager from './BaseManager.js';
@@ -9,6 +9,22 @@ import type { PageComment } from '../types/Comment.js';
 import { actorOf, type ActorContext } from '../context/ActorContext.js';
 import { recordAuditEvent, type AuditEventSink } from '../utils/auditEvents.js';
 import { AUDIT_EVENT } from '../utils/auditEventNames.js';
+import {
+  movePageNotes,
+  pageNotesPlace,
+  pageNotesRoots,
+  reportVaultPageNotesOutside,
+  type PageNotesRoots,
+  type PageRef
+} from '../utils/pageNotes.js';
+import { assertPathSegment } from '../utils/privateStorePath.js';
+import type { StoreFileIO } from '../utils/privateStoreFiles.js';
+
+/** One page's comment folder, and the I/O to read and write it there (#1839). */
+interface CommentPlace {
+  path: string;
+  io: StoreFileIO;
+}
 
 export default class CommentManager extends BaseManager {
   private commentsDir: string = './data/comments';
@@ -38,6 +54,7 @@ export default class CommentManager extends BaseManager {
         return;
       }
       fs.mkdirSync(this.commentsDir, { recursive: true });
+      await reportVaultPageNotesOutside(this.engine, this.roots(), (reason) => this.markDegraded(reason));
       logger.debug('CommentManager initialized');
     }
   }
@@ -46,15 +63,40 @@ export default class CommentManager extends BaseManager {
     return this.enabled;
   }
 
-  async getComments(pageUuid: string): Promise<PageComment[]> {
-    const dir = path.join(this.commentsDir, pageUuid);
-    if (!fs.existsSync(dir)) return [];
+  /** The public folder and the vaults, as configured now (#1839). */
+  private roots(): PageNotesRoots {
+    return pageNotesRoots(this.engine, 'comments', this.commentsDir);
+  }
 
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+  /**
+   * Where `page`'s comments are (#1839): the public folder for a public page,
+   * the page's own vault for a vault page, read and written through that
+   * vault's store I/O. A locked vault, or a sealed kind's vault not yet
+   * opened, throws: a vault page's comments are never read or written in the
+   * clear.
+   */
+  private place(page: PageRef, ctx: ActorContext): Promise<CommentPlace> {
+    return pageNotesPlace(ctx, page, this.roots());
+  }
+
+  private commentFile(place: CommentPlace, commentId: string): string {
+    return path.join(place.path, `${assertPathSegment(commentId, 'comment id')}.json`);
+  }
+
+  /**
+   * A page's comments, read as `ctx` may (#1839). Whether `ctx` may read the
+   * page is the caller's to decide, as for the page itself; this finds and
+   * opens them.
+   */
+  async getComments(page: PageRef, ctx: ActorContext): Promise<PageComment[]> {
+    const place = await this.place(page, ctx);
+    if (!await fs.pathExists(place.path)) return [];
+
+    const files = (await fs.readdir(place.path)).filter(f => f.endsWith('.json'));
     const comments: PageComment[] = [];
     for (const file of files) {
       try {
-        const raw = fs.readFileSync(path.join(dir, file), 'utf-8');
+        const raw = await place.io.readText(path.join(place.path, file));
         const comment = JSON.parse(raw) as PageComment;
         if (!comment.deleted) comments.push(comment);
       } catch {
@@ -71,7 +113,9 @@ export default class CommentManager extends BaseManager {
    * or a JobContext for an import; never a name. The author and display
    * name are read from it, and the write is recorded as `comment-create`.
    */
-  async addComment(pageUuid: string, ctx: ActorContext, content: string): Promise<PageComment> {
+  async addComment(page: PageRef, ctx: ActorContext, content: string): Promise<PageComment> {
+    const pageUuid = page.uuid;
+    const place = await this.place(page, ctx);
     const id = randomUUID();
     const displayName = (ctx as { displayName?: string }).displayName;
     const comment: PageComment = {
@@ -83,9 +127,8 @@ export default class CommentManager extends BaseManager {
       createdAt: new Date().toISOString()
     };
 
-    const dir = path.join(this.commentsDir, pageUuid);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(comment, null, 2), 'utf-8');
+    await fs.ensureDir(place.path);
+    await place.io.writeText(this.commentFile(place, id), JSON.stringify(comment, null, 2));
     this.invalidateHandlerCache(pageUuid);
 
     // At the door, after the write, on-failure: continue — the same footing as
@@ -110,16 +153,18 @@ export default class CommentManager extends BaseManager {
    * with `deleted`, `deletedBy`, `deletedAt`. Recorded as `comment-delete`,
    * naming whose comment it was and whether the deleter was its author.
    */
-  async deleteComment(pageUuid: string, commentId: string, ctx: ActorContext): Promise<boolean> {
-    const filePath = path.join(this.commentsDir, pageUuid, `${commentId}.json`);
-    if (!fs.existsSync(filePath)) return false;
+  async deleteComment(page: PageRef, commentId: string, ctx: ActorContext): Promise<boolean> {
+    const pageUuid = page.uuid;
+    const place = await this.place(page, ctx);
+    const filePath = this.commentFile(place, commentId);
+    if (!await fs.pathExists(filePath)) return false;
 
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = await place.io.readText(filePath);
     const comment = JSON.parse(raw) as PageComment;
     comment.deleted = true;
     comment.deletedBy = ctx.username;
     comment.deletedAt = new Date().toISOString();
-    fs.writeFileSync(filePath, JSON.stringify(comment, null, 2), 'utf-8');
+    await place.io.writeText(filePath, JSON.stringify(comment, null, 2));
     this.invalidateHandlerCache(pageUuid);
 
     const who = actorOf(ctx);
@@ -142,14 +187,26 @@ export default class CommentManager extends BaseManager {
     return (this.engine?.getManager?.('AuditManager')) ?? null;
   }
 
-  async getComment(pageUuid: string, commentId: string): Promise<PageComment | null> {
-    const filePath = path.join(this.commentsDir, pageUuid, `${commentId}.json`);
-    if (!fs.existsSync(filePath)) return null;
+  async getComment(page: PageRef, commentId: string, ctx: ActorContext): Promise<PageComment | null> {
+    const place = await this.place(page, ctx);
+    const filePath = this.commentFile(place, commentId);
+    if (!await fs.pathExists(filePath)) return null;
     try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as PageComment;
+      return JSON.parse(await place.io.readText(filePath)) as PageComment;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Take a page's comments with it when it changes place (#1839): into a
+   * vault, out of one, or between two, through both sides' store I/O as its
+   * history goes, sealed into a sealed vault and opened coming out. The page
+   * door calls this after the page itself has moved; a rename in place moves
+   * nothing.
+   */
+  async movePageComments(uuid: string, fromName: string, toName: string, ctx: ActorContext): Promise<boolean> {
+    return movePageNotes(ctx, uuid, fromName, toName, this.roots());
   }
 
   async shutdown(): Promise<void> {}

@@ -247,3 +247,25 @@ export async function moveStoreFolder(
   }
   await fs.remove(fromDir);
 }
+
+/**
+ * Move one store file — a page's footnotes (#1839) — through each side's I/O,
+ * as {@link moveStoreFolder} moves a folder: read as its source stores it,
+ * written as its destination does, so a file moved into a sealed vault is
+ * sealed there and one moved out is opened. Two plain sides are a plain move.
+ * The destination is written (atomically) before the source is removed.
+ */
+export async function moveStoreFile(
+  fromFile: string,
+  toFile: string,
+  fromIO: StoreFileIO,
+  toIO: StoreFileIO
+): Promise<void> {
+  await fs.ensureDir(path.dirname(toFile));
+  if (!fromIO.sealed && !toIO.sealed) {
+    await fs.move(fromFile, toFile, { overwrite: true });
+    return;
+  }
+  await toIO.writeBytes(toFile, await fromIO.readBytes(fromFile));
+  await fs.remove(fromFile);
+}

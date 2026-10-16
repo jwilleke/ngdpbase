@@ -359,6 +359,17 @@ function buildApp() {
 
 // ── suite ─────────────────────────────────────────────────────────────────────
 
+
+/** #1839: the page the footnote and comment routes resolve — readable, and the page `uuid` names. */
+function notesPageIs(uuid: string) {
+  const page = { content: '# Page', metadata: { title: 'TestPage', uuid }, uuid, title: 'TestPage' };
+  mockPageManager.getPage.mockResolvedValue(page);
+  (mockPageManager as Record<string, unknown>).readPage = vi.fn(async (name: string) => {
+    const found = await mockPageManager.getPage(name);
+    return found ? { ok: true, name: 'TestPage', metadata: found.metadata, value: found } : { ok: false, refusal: 'not-found' };
+  });
+}
+
 describe('WikiRoutes — additional coverage', () => {
   let app: express.Application;
   let wikiRoutes: WikiRoutes;
@@ -549,6 +560,8 @@ describe('WikiRoutes — additional coverage', () => {
   // ── getFootnotes ──────────────────────────────────────────────────────────
 
   describe('GET /api/footnotes/:pageUuid — getFootnotes', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     test('returns 404 when footnotes are disabled', async () => {
       mockFootnoteManager.isEnabled.mockReturnValue(false);
 
@@ -582,6 +595,8 @@ describe('WikiRoutes — additional coverage', () => {
   // ── addFootnote ───────────────────────────────────────────────────────────
 
   describe('POST /api/footnotes/:pageUuid — addFootnote', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     const csrf = 'test-csrf-token';
 
     test('returns 401 when user is not authenticated', async () => {
@@ -639,6 +654,8 @@ describe('WikiRoutes — additional coverage', () => {
   // ── updateFootnote ────────────────────────────────────────────────────────
 
   describe('PUT /api/footnotes/:pageUuid/:footnoteId — updateFootnote', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     const csrf = 'test-csrf-token';
 
     test('returns 401 when user is not authenticated', async () => {
@@ -695,6 +712,8 @@ describe('WikiRoutes — additional coverage', () => {
   // ── deleteFootnote ────────────────────────────────────────────────────────
 
   describe('DELETE /api/footnotes/:pageUuid/:footnoteId — deleteFootnote', () => {
+
+    beforeEach(() => notesPageIs('uuid-123'));
     const csrf = 'test-csrf-token';
 
     test('returns 401 when user is not authenticated', async () => {

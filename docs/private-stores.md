@@ -33,6 +33,8 @@ private/{user}/{store}/{uuid}.md            a page
 private/{user}/{store}/versions/{uuid}/     that page's history
 private/{user}/{store}/deleted/{uuid}.md    a deleted page, until it is purged
 private/{user}/{store}/attachments/         its files, as {uuid}.ext
+private/{user}/{store}/footnotes/{uuid}.json   a page's footnotes
+private/{user}/{store}/comments/{uuid}/        a page's comments, one {id}.json each
 ```
 
 Every one of those names is defined in `DEFAULT_PRIVATE_STORE_LAYOUT` in `src/utils/privateStorePath.ts`, not in `config/app-default-config.json`. They are a disk convention the code owns.
@@ -46,6 +48,8 @@ An instance that must override one sets the matching configuration key, which `p
 | `versionsDir` | `ngdpbase.page.provider.filesystem.versionsdir` | `versions` |
 | `deletedDir` | `ngdpbase.page.provider.filesystem.deleteddir` | `deleted` |
 | `attachmentsDir` | `ngdpbase.page.provider.filesystem.attachmentsdir` | `attachments` |
+| `footnotesDir` | `ngdpbase.page.provider.filesystem.footnotesdir` | `footnotes` |
+| `commentsDir` | `ngdpbase.page.provider.filesystem.commentsdir` | `comments` |
 | `files.userkeys` | `ngdpbase.page.provider.filesystem.private.files.userkeys` | `user-keys.json` |
 | `files.userindex` | `ngdpbase.page.provider.filesystem.private.files.userindex` | `user-index.json` |
 | `files.storemeta` | `ngdpbase.page.provider.filesystem.private.files.storemeta` | `store.json` |
@@ -55,7 +59,7 @@ An instance that must override one sets the matching configuration key, which `p
 | `files.storedeleted` | `ngdpbase.page.provider.filesystem.private.files.storedeleted` | `deleted-index.json` |
 | `files.storemigrations` | `ngdpbase.page.provider.filesystem.private.files.storemigrations` | `migrations.json` |
 
-Every path is joined by a helper in the same module — `privateStoreRoot`, `privatePageFilePath`, `privateVersionDirectory`, `privateDeletedDirectory`, `privateStoreAttachmentsDir`, `storeMetaPath`, `storePageIndexPath`, `storeFileIndexPath`, `storeSearchIndexPath`, `storeDeletedIndexPath`, `storeMigrationsPath` — and every join validates its segments. A store id must be a plain lowercase slug (`[a-z0-9]+(-[a-z0-9]+)*`, `assertStoreId`); a user name must be exactly one path segment (`assertPathSegment`). Neither can be a path, so neither can leave the container.
+Every path is joined by a helper in the same module — `privateStoreRoot`, `privatePageFilePath`, `privateVersionDirectory`, `privateDeletedDirectory`, `privateStoreAttachmentsDir`, `privateStoreNotesDir`, `storeMetaPath`, `storePageIndexPath`, `storeFileIndexPath`, `storeSearchIndexPath`, `storeDeletedIndexPath`, `storeMigrationsPath` — and every join validates its segments. A store id must be a plain lowercase slug (`[a-z0-9]+(-[a-z0-9]+)*`, `assertStoreId`); a user name must be exactly one path segment (`assertPathSegment`). Neither can be a path, so neither can leave the container.
 
 `pathContainsPrivateRoot()` measures from the pages directory rather than searching the absolute path for `/private/`, which on macOS matched every page under `/private/var`.
 
@@ -159,18 +163,29 @@ A refused write writes nothing: no page, no `pages-index.json`, no `search-index
 
 At startup `PageManager` looks for vaults of a sealed kind that hold files in the clear (`findUnsealedVaults`: a folder with files but no `store.json`, or a `store.json` that is not sealed) and reports each by owner and vault: an error in the log, the degraded-subsystem banner and a system notification. Nothing is moved, sealed or deleted; an administrator decides what to do with the files, and the owner then opens the vault. The legacy private-attachment migration, the boot listing of plain stores' pages (`indexPlainStorePages`) and `ShareManager.isEncryptedVault` treat a sealed kind's vault as sealed too.
 
-Every file in a store goes through that I/O — the page files, their version blobs, the trash blobs, the attachments, and all five indexes. `store.json` is the one exception and cannot be sealed: it holds the wrapped DEK needed to open everything else.
+Every file in a store goes through that I/O — the page files, their version blobs, the trash blobs, the attachments, its pages' footnotes and comments, and all five indexes. `store.json` is the one exception and cannot be sealed: it holds the wrapped DEK needed to open everything else.
 
 ### Moving bytes into or out of a vault
 
 Bytes that change place go through both sides' I/O too, never a bare `fs.move` ([#1836](https://github.com/jwilleke/ngdpbase/issues/1836)):
 
 - __History__ (`VersioningFileProvider` when a page changes place, between the public area and a vault, or between vaults): both I/Os are resolved first, so a vault that refuses (locked, or a sealed kind that hasn't been opened) refuses the whole save, before the page or its history moves. `moveStoreFolder()` reads each file as its source stores it and writes it as its destination does: sealed with the new vault's DEK going in, opened coming out, re-sealed between two sealed vaults. Two plain sides are still a rename. The copy is staged beside the destination and renamed into place when it's complete; the source is removed last.
+- __Footnotes and comments__ ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)): when a page changes place, the page door (`PageManager.reconcileSharedIndexes`) moves them after the page, with `movePageNotes()` in `src/utils/pageNotes.ts`: a page's footnotes file through `moveStoreFile()`, its comment folder through `moveStoreFolder()`, read as the source stores them and written as the destination does. A rename in place moves nothing. A move that fails is logged as an error, and the startup check below then names what was left outside.
 - __Adopted attachments__ (`BasicAttachmentProvider.adoptRecordIntoStore`): into a sealed store, the shared pool's bytes are written through the location's I/O and the shared copy removed. Bytes already in a sealed store's folder in the clear are sealed where they are. The boot migration still skips sealed stores, since it holds no key.
 - __Paths with no key__ only write bytes that are already sealed into a vault that `vaultMustBeSealed()` says is sealed (its kind, or its `store.json`, or an unreadable `store.json`), and refuse anything else. These are the backup restore (`FileSystemProvider.restore`), the legacy page and history migrations, and putting back a pre-#1456 public tombstone whose `deletedFrom` is in a vault. A restore decides per vault before it writes anything: the kind, the `store.json` on disk, or the one in the backup. Into a sealed vault it writes only sealed files and a sealed `store.json`. A backup's `store.json` that isn't sealed never replaces a sealed one, because that would lose the wrapped DEK. Skipped files are counted in one error line.
 - __Required-pages sync ids__ (`adminSyncRequiredPages`) must each be one path segment, because each one becomes `{id}.md` or `versions/{id}`. Otherwise the request is refused with 400 before anything is written.
 
 At startup `findPlaintextInSealedVaults` checks every sealed vault (sealed `store.json`) for files whose first bytes aren't the `sealBytes` magic, leaving out `store.json` and empty files. It reports each vault with its owner, the file count and the folders (`versions`, `attachments`, `.` for the root), using the same log error, banner and notification as `findUnsealedVaults`. Nothing is read beyond each file's first 64 bytes, and nothing is moved, sealed or deleted.
+
+### Footnotes and comments
+
+A vault page's footnotes and comments are kept in its vault ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839), operator 2026-10-16): `{store}/footnotes/{uuid}.json` and `{store}/comments/{uuid}/{id}.json`, read and written through the vault's store I/O. They are sealed exactly when its pages are, a locked vault refuses them for reads as well as writes, and a sealed kind's vault that hasn't been opened refuses them with `SealedVaultRefusedError`, as it refuses a save. A public page's stay where they were, in `ngdpbase.footnotes.storagedir` and `ngdpbase.comments.storagedir`.
+
+`src/utils/pageNotes.ts` holds the rule. Where a page's notes are is decided by the page's __name__ (`pageNotesPath`): a vault page is in no shared index, so its uuid alone says nothing about where it is. `FootnoteManager` and `CommentManager` take the page as `{ name, uuid }` and the caller's context on every call.
+
+Who may read them is who may read the page. The routes (`/api/footnotes/:uuid…`, `/api/comments/:uuid…`) take the page's name as `?page=`, read the page as the requester (`PageManager.readPage`), require it to be the page the uuid names, and answer 404 otherwise; adding, editing and deleting a footnote also asks the editor's write door. Until #1839 the read routes and the comment routes asked nothing about the page, so anyone who knew a uuid could read a private page's comments and footnotes. The plugins render only inside a page view, which has already been decided, and render nothing when the vault can't be opened.
+
+At startup, `FootnoteManager` and `CommentManager` each look for vault pages whose notes are still in their public folder (`findVaultPageNotesOutside`): written there in the clear before #1839. A vault page is known by its file name, `{uuid}.md`, live or in `deleted/`, so the check needs no key and reads no page. Each one is reported by owner, vault and page uuid, never title: an error in the log, the manager's degraded state (the subsystem banner) and a system notification. Nothing is moved, sealed or deleted, and those files are no longer shown on the page; an administrator decides what to do with them.
 
 Because encryption is per file rather than a container, anyone with disk or backup access can still see how many items a store holds, their sizes and their dates. Names disclose nothing — pages are `{uuid}.md`, files `{uuid}.ext`.
 
@@ -405,6 +420,7 @@ A takeout holds, under one `{store}/` folder:
 
 - each page as `{title}.md` with its full frontmatter, uuid included
 - each file under `attachments/` by the name it was uploaded with
+- its pages' footnotes and comments, decrypted, as `footnotes/{uuid}.json` and `comments/{uuid}/{id}.json`, keyed by the page uuid in each page's frontmatter ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). A pages-only takeout carries them too
 - `files-index.json` — the store's file index, decrypted, holding only the files in the archive, each record's `fileName` rewritten to its path in the archive. It is kept because it is the only record of a file's id, which is what `/attachments/{id}` on a page names; without it a takeout's links point at nothing (operator, 2026-09-25)
 
 It carries no `versions/`, `deleted/`, `pages-index.json`, `search-index.json`, `deleted-index.json`, `migrations.json`, `store.json` or `user-keys.json`. A takeout is a copy you can read, not a restore.
@@ -421,7 +437,7 @@ It carries no `versions/`, `deleted/`, `pages-index.json`, `search-index.json`, 
 - Each import saves its report as a private page in the target store, `{date time}-import-report` (e.g. `2026-09-25 11:40:12-import-report`): every page's outcome (linked), the files, the unlinked and the ignored. It is sealed exactly when the store is, so it names what the log and audit record may only count (operator, 2026-09-25). A re-import changes none of the imported content, but adds its own report page.
 - Capped by `ngdpbase.stores.import.maxsize` (256 MB), which bounds both the upload and what it unpacks to. Audited as `store-import`, with counts only.
 
-It brings back pages and files, never history or trash.
+It brings back pages and files, never history or trash, and not yet a takeout's footnotes and comments: they are listed as ignored.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: FootnoteManager
 description: Sidecar storage + CRUD for page footnotes (migrated out of page body in #553/#557)
-dateModified: '2026-05-28'
+dateModified: '2026-10-16'
 category: managers
 code: src/managers/FootnoteManager.ts
 ---
@@ -12,7 +12,9 @@ Stores footnote definitions as a sidecar JSON file per page, decoupling them fro
 
 ## Storage
 
-- Sidecar: `${SLOW_STORAGE}/footnotes/{pageUuid}.json`
+- Public page: `${SLOW_STORAGE}/footnotes/{pageUuid}.json` (`ngdpbase.footnotes.storagedir`)
+- Vault page (`vaults/{owner}/{vault}/{title}`): `pages/vaults/{owner}/{vault}/footnotes/{pageUuid}.json`, read and written through the vault's store I/O, so sealed exactly when the page is, and refused when the vault is locked or not yet opened ([#1839](https://github.com/jwilleke/ngdpbase/issues/1839)). Where they live is decided by the page's name, never by its uuid alone: see [private-stores.md](../private-stores.md#footnotes-and-comments)
+- A page that moves into or out of a vault takes its footnotes with it (`movePageFootnotes`, called by the page door)
 - Enabled flag: configurable (default `true`)
 - Moving definitions out of a page body: Convert to NCM, ingest and import, through `FootnoteManager.transferFromContent` (#1125)
 
@@ -31,10 +33,13 @@ interface PageFootnote {
 
 ## API (high-level)
 
-- `getFootnotes(pageUuid)` — list footnotes for a page
-- `addFootnote(pageUuid, footnote)` — append
-- `updateFootnote(pageUuid, id, patch)` — edit
-- `deleteFootnote(pageUuid, id)` — remove
+Every call names the page as `{ name, uuid }` and carries the caller's context. Whether the caller may read or edit the page is decided by the route before the call.
+
+- `getFootnotes(page, ctx)` — list footnotes for a page
+- `addFootnote(page, footnote, ctx)` — append
+- `updateFootnote(page, id, patch, ctx)` — edit
+- `deleteFootnote(page, id, ctx)` — remove
+- `movePageFootnotes(uuid, fromName, toName, ctx)` — follow the page to its new place
 
 ## See Also
 

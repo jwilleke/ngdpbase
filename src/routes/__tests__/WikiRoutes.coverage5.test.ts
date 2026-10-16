@@ -373,6 +373,17 @@ function buildApp() {
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
+
+/** #1839: the page the footnote and comment routes resolve — readable, and the page `uuid` names. */
+function notesPageIs(uuid: string) {
+  const page = { content: '# Page', metadata: { title: 'TestPage', uuid }, uuid, title: 'TestPage' };
+  mockPageManager.getPage.mockResolvedValue(page);
+  (mockPageManager as Record<string, unknown>).readPage = vi.fn(async (name: string) => {
+    const found = await mockPageManager.getPage(name);
+    return found ? { ok: true, name: 'TestPage', metadata: found.metadata, value: found } : { ok: false, refusal: 'not-found' };
+  });
+}
+
 describe('WikiRoutes — coverage batch 5', () => {
   let app: express.Application;
 
@@ -473,6 +484,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── POST /api/comments/:pageUuid ─────────────────────────────────────────────
 
   describe('POST /api/comments/:pageUuid', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 400 when comment content is missing', async () => {
       const res = await request(app)
         .post('/api/comments/test-uuid-1')
@@ -493,6 +506,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── DELETE /api/comments/:pageUuid/:commentId ────────────────────────────────
 
   describe('DELETE /api/comments/:pageUuid/:commentId', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 404 when CommentManager is not available', async () => {
       const res = await request(app)
         .delete('/api/comments/test-uuid-1/comment-1')
@@ -504,6 +519,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── GET /api/footnotes/:pageUuid ─────────────────────────────────────────────
 
   describe('GET /api/footnotes/:pageUuid', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 404 when FootnoteManager is not enabled', async () => {
       const res = await request(app).get('/api/footnotes/test-uuid-1');
       expect(res.status).toBe(404);
@@ -521,6 +538,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── POST /api/footnotes/:pageUuid ────────────────────────────────────────────
 
   describe('POST /api/footnotes/:pageUuid', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 400 when display or url is missing', async () => {
       const res = await request(app)
         .post('/api/footnotes/test-uuid-1')
@@ -551,6 +570,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── PUT /api/footnotes/:pageUuid/:footnoteId ─────────────────────────────────
 
   describe('PUT /api/footnotes/:pageUuid/:footnoteId', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 404 when FootnoteManager is not enabled', async () => {
       const res = await request(app)
         .put('/api/footnotes/test-uuid-1/fn-1')
@@ -563,6 +584,8 @@ describe('WikiRoutes — coverage batch 5', () => {
   // ── DELETE /api/footnotes/:pageUuid/:footnoteId ──────────────────────────────
 
   describe('DELETE /api/footnotes/:pageUuid/:footnoteId', () => {
+
+    beforeEach(() => notesPageIs('test-uuid-1'));
     test('returns 404 when FootnoteManager is not enabled', async () => {
       const res = await request(app)
         .delete('/api/footnotes/test-uuid-1/fn-1')
