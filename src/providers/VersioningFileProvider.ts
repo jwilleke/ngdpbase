@@ -47,7 +47,7 @@ import {
 } from '../utils/privateStorePath.js';
 import { moveVaultRoot, relocateLegacyVaultPath } from '../utils/moveVaultRoot.js';
 import { readStoreMeta } from '../utils/privateStoreMeta.js';
-import { PLAIN_FILE_IO, storeFileIO, type StoreFileIO } from '../utils/privateStoreFiles.js';
+import { PLAIN_FILE_IO, moveStoreFolder, storeFileIO, vaultMustBeSealed, vaultOfFile, type StoreFileIO } from '../utils/privateStoreFiles.js';
 import { migrateLegacyPrivatePages, migrateLegacyPrivateVersionBlobs } from '../utils/migrateLegacyPrivatePages.js';
 import { installCompletePath } from '../utils/configFiles.js';
 
@@ -199,13 +199,6 @@ interface PageCacheInfo {
 interface ExtendedMetadata extends Partial<PageFrontmatter> {
   comment?: string;
   changeType?: 'create' | 'update' | 'minor' | 'major' | 'created' | 'updated' | 'restored';
-}
-
-/** Where a page lives: its location, and for a private page its owner and store. */
-interface PagePlacement {
-  location: 'pages' | 'required-pages' | 'private';
-  creator?: string;
-  store?: string;
 }
 
 /**
@@ -2063,8 +2056,15 @@ class VersioningFileProvider extends FileSystemProvider {
     // moved by FileSystemProvider.savePage (#1456).
     const to = { location, creator: isPrivate ? newCreator : undefined, store };
     if (from && (from.location !== to.location || from.creator !== to.creator || from.store !== to.store)) {
+      // #1836: each side's I/O first, outside the try — a vault that refuses
+      // (locked, or sealed and not open) refuses the whole save, before the
+      // page or its history moves, rather than leaving the history behind.
+      const fromDir = this.getVersionDirectory(uuid, from.location, from.creator, from.store);
+      const toDir = this.getVersionDirectory(uuid, to.location, to.creator, to.store);
+      const fromIO = await this.fileIOFor(ctx, fromDir);
+      const toIO = await this.fileIOFor(ctx, toDir);
       try {
-        await this.moveVersionDirectory(uuid, from, to);
+        await this.moveVersionDirectory(fromDir, toDir, fromIO, toIO);
         logger.info(`[VersioningFileProvider] Moved history of page ${uuid} from '${from.location}' to '${location}'`);
       } catch (moveError) {
         const errorMessage = moveError instanceof Error ? moveError.message : String(moveError);
@@ -2167,15 +2167,18 @@ class VersioningFileProvider extends FileSystemProvider {
   /**
    * Move a version directory from one location to another.
    * Used when the page's privacy status changes.
+   *
+   * #1836: through each side's store I/O, never a bare `fs.move` across a
+   * seal: history moved into a sealed vault is sealed with its DEK, history
+   * moved out of one is opened, and a move between two sealed vaults is
+   * re-sealed. Two plain sides are a rename, as before.
    */
   private async moveVersionDirectory(
-    uuid: string,
-    from: PagePlacement,
-    to: PagePlacement
+    fromDir: string,
+    toDir: string,
+    fromIO: StoreFileIO,
+    toIO: StoreFileIO
   ): Promise<void> {
-    const fromDir = this.getVersionDirectory(uuid, from.location, from.creator, from.store);
-    const toDir = this.getVersionDirectory(uuid, to.location, to.creator, to.store);
-
     if (fromDir === toDir) return;
 
     if (await fs.pathExists(fromDir)) {
@@ -2185,10 +2188,29 @@ class VersioningFileProvider extends FileSystemProvider {
         logger.error(`[VersioningFileProvider] Not moving version directory ${fromDir}: ${toDir} already exists — reconcile by hand (#1375)`);
         return;
       }
-      await fs.ensureDir(path.dirname(toDir));
-      await fs.move(fromDir, toDir);
+      if (toIO.sealed) {
+        await this.carryHistoryIntoSealedVault(fromDir, toDir, fromIO, toIO);
+      } else {
+        await moveStoreFolder(fromDir, toDir, fromIO, toIO);
+      }
       logger.info(`[VersioningFileProvider] Moved version directory: ${fromDir} → ${toDir}`);
     }
+  }
+
+  /**
+   * What happens to a page's history when the page moves INTO a sealed vault
+   * (#1836): the one place that decides it. Today every version is carried
+   * over, re-sealed with the new vault's DEK. A move out of a sealed vault, or
+   * between plain places, never comes here; a vault that refuses (locked, or
+   * not opened) has already refused the save before this is reached.
+   */
+  private async carryHistoryIntoSealedVault(
+    fromDir: string,
+    toDir: string,
+    fromIO: StoreFileIO,
+    toIO: StoreFileIO
+  ): Promise<void> {
+    await moveStoreFolder(fromDir, toDir, fromIO, toIO);
   }
 
   /**
@@ -2493,6 +2515,14 @@ class VersioningFileProvider extends FileSystemProvider {
     const restorePath = this.pagesDirectory
       ? relocateLegacyVaultPath(this.pagesDirectory, entry.deletedFrom, this.privateStoreLayout)
       : entry.deletedFrom;
+    // #1836: a public tombstone's file is plaintext. One left from before
+    // #1456 can point into a vault; if that vault is sealed now, putting the
+    // file back would be plaintext in it, and this path holds no DEK.
+    const vault = this.pagesDirectory ? vaultOfFile(this.pagesDirectory, restorePath, this.privateStoreLayout) : null;
+    if (vault && this.pagesDirectory && await vaultMustBeSealed(this.pagesDirectory, vault.owner, vault.store, this.privateStoreLayout)) {
+      logger.error(`[VersioningFileProvider] Not restoring ${uuid}: it was deleted from ${vault.owner}'s vault '${vault.store}', which is encrypted, and its deleted copy is not (#1836)`);
+      return { ok: false, reason: 'error', detail: `This page was deleted from the encrypted vault '${vault.store}' and its deleted copy is not encrypted, so it cannot be put back there. Nothing was restored.` };
+    }
     try {
       await fs.ensureDir(path.dirname(restorePath));
       await fs.move(trashPath, restorePath, { overwrite: false });

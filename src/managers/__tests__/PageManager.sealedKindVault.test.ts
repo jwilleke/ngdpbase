@@ -203,6 +203,47 @@ describe('a sealed kind\'s vault is never written in the clear (#1834)', () => {
     expect(await fs.pathExists(storeMetaPath(pagesDir, 'molly', 'phr'))).toBe(false);
   });
 
+  test('startup names a sealed vault holding plaintext history or attachments, and changes nothing on disk (#1836)', async () => {
+    const dek = await openSealedVault();
+    await manager.savePage(LABS, 'Cholesterol 240 mg/dL', { uuid: UUID }, MOLLY);
+    const root = privateStoreRoot(pagesDir, 'molly', 'phr');
+    // What #1836's fs.move left behind: history and an attachment in the clear.
+    const history = path.join(root, 'versions', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'v1');
+    await fs.ensureDir(history);
+    await fs.writeFile(path.join(history, 'content.md'), 'Cholesterol 300 mg/dL');
+    await fs.ensureDir(path.join(root, 'attachments'));
+    await fs.writeFile(path.join(root, 'attachments', 'scan.pdf'), '%PDF-1.4 plain');
+    // A sealed vault whose files are all sealed is not reported.
+    await fs.ensureDir(privateStoreRoot(pagesDir, 'molly', 'notes'));
+    await fs.writeFile(path.join(privateStoreRoot(pagesDir, 'molly', 'notes'), 'n.md'), 'plain is fine here');
+    const before = await fs.readFile(path.join(history, 'content.md'), 'utf8');
+    void dek;
+
+    const fresh = new PageManager(engineFor());
+    await fresh.initialize();
+
+    const status = fresh.getManagerStatus();
+    expect(status.state).toBe('degraded');
+    expect(status.reason).toContain('molly/phr (2 file(s) in attachments, versions)');
+    expect(status.reason).not.toContain('notes');
+    expect(notifications).toHaveLength(1);
+    expect(String(notifications[0].message)).toContain('#1836');
+    expect(await fs.readFile(path.join(history, 'content.md'), 'utf8')).toBe(before);
+    expect(await fs.pathExists(path.join(root, 'attachments', 'scan.pdf'))).toBe(true);
+  });
+
+  test('a sealed vault whose every file is sealed is not reported', async () => {
+    await openSealedVault();
+    await manager.savePage(LABS, 'Cholesterol 240 mg/dL', { uuid: UUID }, MOLLY);
+    await manager.savePage(LABS, 'Cholesterol 200 mg/dL', { uuid: UUID }, MOLLY);
+
+    const fresh = new PageManager(engineFor());
+    await fresh.initialize();
+
+    expect(fresh.getManagerStatus().state).not.toBe('degraded');
+    expect(notifications).toHaveLength(0);
+  });
+
   test('a plaintext page left in a sealed kind\'s vault is not served as if it were sealed', async () => {
     const leaked = privateStoreRoot(pagesDir, 'molly', 'phr');
     await fs.ensureDir(leaked);

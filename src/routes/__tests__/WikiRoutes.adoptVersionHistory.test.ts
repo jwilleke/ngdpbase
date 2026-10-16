@@ -182,3 +182,37 @@ describe('#1107 adopt-UUID carries version history', () => {
     expect(renamePageInIndex).toHaveBeenCalledWith(LIVE_UUID, SOURCE_UUID);
   });
 });
+
+describe('#1836 a sync id that is not one path segment is refused before anything is written', () => {
+  let dirs: Awaited<ReturnType<typeof makeDirs>>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    dirs = await makeDirs();
+    await fs.writeFile(
+      path.join(dirs.pagesDir, `${LIVE_UUID}.md`),
+      `---\ntitle: InterWikiLinks\nuuid: ${LIVE_UUID}\n---\npublic body\n`,
+      'utf8'
+    );
+  });
+
+  afterEach(async () => {
+    // Scoped to the mkdtemp directory created above — never a project path.
+    await fs.rm(dirs.root, { recursive: true, force: true });
+  });
+
+  test.each([
+    ['adoptUuid into a vault', { adoptUuid: [{ sourceUuid: 'vaults/molly/phr/x', liveUuid: LIVE_UUID }] }],
+    ['adoptUuid with a traversing live id', { adoptUuid: [{ sourceUuid: SOURCE_UUID, liveUuid: '../x' }] }],
+    ['pushToSource traversing', { pushToSource: ['../pages/vaults/molly/phr/x'] }],
+    ['reconcile traversing', { reconcile: [{ sourceUuid: '..', liveUuid: LIVE_UUID }] }]
+  ])('%s: 400, and no vault file appears', async (_label, body) => {
+    const { routes } = makeRoutes(dirs);
+    const res = createMockRes();
+    await routes.adminSyncRequiredPages(createMockReq(body), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(await exists(path.join(dirs.pagesDir, 'vaults'))).toBe(false);
+    expect(await exists(path.join(dirs.pagesDir, `${LIVE_UUID}.md`))).toBe(true);
+  });
+});
