@@ -1,15 +1,19 @@
 /**
- * The add-on installer (#1830, slice 1) against a fake registry: no socket is
- * opened. Each test works in its own mkdtemp folder, and teardown removes only
- * that folder.
+ * The add-on installer (#1830) against a fake registry and a fake provenance
+ * check: no socket is opened. The real provenance check is tested with real
+ * cryptography in addonProvenance.test.ts. Each test works in its own mkdtemp
+ * folder, and teardown removes only that folder.
  */
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { gunzipSync, gzipSync } from 'zlib';
-import { installConfiguredAddons, readLock, type InstallerOptions } from '../addonInstaller';
-import { readTarGz, safeEntryPath } from '../tarGz';
-import { REGISTRY, addonTgz, fakeRegistry, makeTgz, sri } from '../../test-support/fakeRegistry';
+import { installConfiguredAddons, type InstallerOptions, type InstallRecord } from '../addonInstaller';
+import { readLockSync } from '../addonLock';
+import { readTarball, safeEntryPath } from '../addonTarball';
+import { REGISTRY, REPO, addonTgz, fakeAttestations, fakeProvenance, fakeRegistry, makeTgz, sri } from '../../test-support/fakeRegistry';
+
+const readLock = (dir: string) => Promise.resolve(readLockSync(dir));
 
 const PKG = '@acme/ledger-addon';
 const pkg = (version: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -36,11 +40,12 @@ const options = (fetch: InstallerOptions['fetch'], over: Partial<InstallerOption
   maxTarballBytes: 1024 * 1024,
   maxUnpackedBytes: 1024 * 1024,
   fetch,
+  checkProvenance: fakeProvenance().check,
   now: () => new Date('2026-10-16T12:00:00.000Z'),
   ...over
 });
 
-const spec = { ledger: { package: PKG, version: '^1' } };
+const spec = { ledger: { package: PKG, version: '^1', repository: REPO } };
 
 describe('addonInstaller (#1830)', () => {
   test('an empty map does nothing: no folder, no request', async () => {
@@ -67,7 +72,8 @@ describe('addonInstaller (#1830)', () => {
       package: PKG,
       version: '1.4.2',
       integrity: sri(addonTgz(pkg('1.4.2'), [{ name: 'package/lib/a.js', data: 'export const a = 1;\n' }])),
-      installedAt: '2026-10-16T12:00:00.000Z'
+      installedAt: '2026-10-16T12:00:00.000Z',
+      provenance: { repository: 'github.com/acme/ledger', verifiedAt: '2026-10-16T12:00:00.000Z' }
     });
   });
 
@@ -241,13 +247,15 @@ describe('addonInstaller (#1830)', () => {
   test('bad entries are reported per add-on and do not stop the others', async () => {
     const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')) } } });
     const outcomes = await installConfiguredAddons({
-      'Bad Slug': { package: PKG, version: '1' },
-      nopkg: { package: 'NOT A NAME', version: '1' },
-      tagged: { package: PKG, version: 'latest' },
-      ledger: { package: PKG, version: '1.0.0' }
+      'Bad Slug': { package: PKG, version: '1', repository: REPO },
+      nopkg: { package: 'NOT A NAME', version: '1', repository: REPO },
+      tagged: { package: PKG, version: 'latest', repository: REPO },
+      norepo: { package: PKG, version: '1' },
+      ledger: { package: PKG, version: '1.0.0', repository: REPO }
     }, options(reg.fetch));
 
-    expect(outcomes.map((o) => o.status)).toEqual(['skipped', 'skipped', 'skipped', 'installed']);
+    expect(outcomes.map((o) => o.status)).toEqual(['skipped', 'skipped', 'skipped', 'skipped', 'installed']);
+    expect(outcomes[3].reason).toMatch(/no "repository"/);
   });
 
   test('a tarball on another origin than the registry is refused', async () => {
@@ -262,7 +270,77 @@ describe('addonInstaller (#1830)', () => {
   });
 });
 
-describe('tarGz (#1830)', () => {
+describe('provenance and the audit hook (#1830)', () => {
+  test('the provenance check is asked about this exact tarball and the configured repository', async () => {
+    const tgz = addonTgz(pkg('1.0.0'));
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz } } });
+    const prov = fakeProvenance();
+
+    await installConfiguredAddons(spec, options(reg.fetch, { checkProvenance: prov.check }));
+
+    expect(prov.seen).toEqual([{ name: PKG, version: '1.0.0', sha512Hex: Buffer.from(sri(tgz).slice('sha512-'.length), 'base64').toString('hex'), repository: REPO }]);
+    expect(reg.calls).toContain(`${REGISTRY}/-/npm/v1/attestations/${PKG}@1.0.0`);
+  });
+
+  test('missing provenance refuses the install', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')), attestations: false } } });
+
+    const [outcome] = await installConfiguredAddons(spec, options(reg.fetch));
+
+    expect(outcome).toMatchObject({ status: 'skipped', failedCheck: 'provenance' });
+    expect(outcome.reason).toMatch(/no provenance attestation/);
+    expect(await fs.pathExists(path.join(addonsDir, 'ledger'))).toBe(false);
+  });
+
+  test('provenance from another repository refuses the install', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')), attestations: fakeAttestations('github.com/evil/fork') } } });
+
+    const [outcome] = await installConfiguredAddons(spec, options(reg.fetch));
+
+    expect(outcome).toMatchObject({ status: 'skipped', failedCheck: 'provenance' });
+    expect(await fs.pathExists(path.join(addonsDir, 'ledger'))).toBe(false);
+    expect((await readLock(addonsDir)).addons).toEqual({});
+  });
+
+  test('a provenance check that cannot be made (trust root unreachable) is a retry, not a refusal', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')) } } });
+
+    const [outcome] = await installConfiguredAddons(spec, options(reg.fetch, { checkProvenance: () => Promise.reject(new Error('ENOTFOUND tuf-repo-cdn.sigstore.dev')) }));
+
+    expect(outcome).toMatchObject({ status: 'skipped', registryUnreachable: true });
+    expect(outcome.failedCheck).toBeUndefined();
+  });
+
+  test('changing the configured repository reinstalls rather than trusting the old pin', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')) } } });
+    await installConfiguredAddons(spec, options(reg.fetch));
+
+    const [outcome] = await installConfiguredAddons({ ledger: { ...spec.ledger, repository: 'github.com/acme/other' } }, options(reg.fetch));
+
+    expect(outcome).toMatchObject({ status: 'skipped', failedCheck: 'provenance' });
+  });
+
+  test('beforeInstall gets the verified record, and when it throws nothing is written', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')) } } });
+    const records: InstallRecord[] = [];
+
+    const [refused] = await installConfiguredAddons(spec, options(reg.fetch, { beforeInstall: (r) => { records.push(r); return Promise.reject(new Error('audit sink refused')); } }));
+
+    expect(records).toEqual([{ slug: 'ledger', package: PKG, version: '1.0.0', integrity: sri(addonTgz(pkg('1.0.0'))), repository: 'github.com/acme/ledger' }]);
+    expect(refused).toMatchObject({ status: 'skipped', reason: 'audit sink refused' });
+    expect(await fs.pathExists(path.join(addonsDir, 'ledger'))).toBe(false);
+    expect(await fs.pathExists(path.join(addonsDir, '.packages'))).toBe(false);
+    expect((await readLock(addonsDir)).addons).toEqual({});
+  });
+
+  test('refusals name the check that refused', async () => {
+    const reg = fakeRegistry({ [PKG]: { '1.0.0': { tgz: addonTgz(pkg('1.0.0')), integrity: sri(Buffer.from('x')) } } });
+    const [outcome] = await installConfiguredAddons(spec, options(reg.fetch));
+    expect(outcome.failedCheck).toBe('integrity');
+  });
+});
+
+describe('addonTarball (#1830)', () => {
   test('safeEntryPath strips package/ and refuses anything that could leave the folder', () => {
     expect(safeEntryPath('package/lib/a.js')).toBe('lib/a.js');
     expect(safeEntryPath('package/')).toBe('');
@@ -271,20 +349,20 @@ describe('tarGz (#1830)', () => {
     expect(() => safeEntryPath('package\\..\\x')).toThrow(/unsafe/);
   });
 
-  test('long names via pax headers are read', () => {
+  test('long names via pax headers are read', async () => {
     const long = `package/${'d/'.repeat(60)}file.js`;
-    const entries = readTarGz(makeTgz([{ name: long, data: 'x' }]), 1024 * 1024);
-    expect(entries.map((e) => e.path)).toEqual([long.slice('package/'.length)]);
+    const files = await readTarball(makeTgz([{ name: long, data: 'x' }]), 1024 * 1024);
+    expect([...files.keys()]).toEqual([long.slice('package/'.length)]);
   });
 
-  test('a hard link is refused', () => {
-    expect(() => readTarGz(makeTgz([{ name: 'package/a', type: '1', linkname: 'package/b' }]), 1024 * 1024)).toThrow(/hard link/);
+  test('a hard link is refused', async () => {
+    await expect(readTarball(makeTgz([{ name: 'package/a', type: '1', linkname: 'package/b' }]), 1024 * 1024)).rejects.toThrow(/hard link/);
   });
 
-  test('a corrupted header is refused', () => {
-    const tgz = makeTgz([{ name: 'package/a.js', data: 'x' }]);
+  test('a corrupted header is refused', async () => {
+    const tgz = makeTgz([{ name: 'package/a.js', data: 'x' }, { name: 'package/b.js', data: 'y' }]);
     const tar = gunzipSync(tgz);
-    tar[0] = 'q'.charCodeAt(0);
-    expect(() => readTarGz(gzipSync(tar), 1024 * 1024)).toThrow(/checksum/);
+    tar[512 + 512] = 'q'.charCodeAt(0);
+    await expect(readTarball(gzipSync(tar), 1024 * 1024)).rejects.toThrow(/refused/);
   });
 });

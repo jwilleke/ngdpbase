@@ -1064,14 +1064,14 @@ describe('ConfigurationManager', () => {
       await expect(cm.initialize()).resolves.not.toThrow();
     });
 
-    test('#1830: an add-on installed in <data>/addons is known', async () => {
+    test('#1830: a folder in <data>/addons that the install map does not name is not an add-on', async () => {
       await seedAddonDir(path.join(tempDir, 'data', 'addons'), 'ledger');
       await writeAddonDefault({
         'ngdpbase.managers.addons-manager.addons-path': path.join(tempDir, 'addons'),
         'ngdpbase.addons.ledger.enabled': true
       });
       const cm = new ConfigurationManager(mockEngine);
-      await expect(cm.initialize()).resolves.not.toThrow();
+      await expect(cm.initialize()).rejects.toThrow(/Refusing to start.*ledger.*#672/s);
     });
 
     test('#1830: an enabled add-on named in ngdpbase.addons.install but not yet installed does not refuse the boot', async () => {

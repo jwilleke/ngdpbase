@@ -5,7 +5,8 @@
  */
 import crypto from 'crypto';
 import { gzipSync } from 'zlib';
-import type { RegistryFetch } from '../utils/addonInstaller.js';
+import type { ProvenanceCheck, RegistryFetch } from '../utils/addonInstaller.js';
+import { normaliseRepository } from '../utils/addonProvenance.js';
 
 export interface FakeTarEntry {
   name: string;
@@ -73,7 +74,33 @@ export interface FakeVersion {
   manifest?: Record<string, unknown>;
   /** Override dist.integrity (to simulate a mismatch). */
   integrity?: string;
+  /** false: the release carries no attestations. Otherwise the registry answers this body for them. */
+  attestations?: unknown;
 }
+
+/** What the fake registry answers for a release's attestations by default; the fake provenance check reads it. */
+export const fakeAttestations = (repository: string): unknown => ({ attestations: [{ predicateType: 'https://slsa.dev/provenance/v1', fakeRepository: repository }] });
+
+/**
+ * A provenance check for tests: accepts an attestation whose `fakeRepository`
+ * normalises to the expected repository, and records what it was asked.
+ */
+export function fakeProvenance(): { check: ProvenanceCheck; seen: Array<{ name: string; version: string; sha512Hex: string; repository: string }> } {
+  const seen: Array<{ name: string; version: string; sha512Hex: string; repository: string }> = [];
+  const check: ProvenanceCheck = (input) => {
+    seen.push({ name: input.name, version: input.version, sha512Hex: input.sha512Hex, repository: input.repository });
+    const att = (input.attestations as { attestations?: Array<{ fakeRepository?: string }> } | null)?.attestations?.[0];
+    const repository = normaliseRepository(input.repository);
+    if (!att) return Promise.resolve({ ok: false, reason: `${input.name}@${input.version} has no SLSA provenance attestation` });
+    if (normaliseRepository(att.fakeRepository ?? '') !== repository) {
+      return Promise.resolve({ ok: false, reason: `the provenance attestation does not verify for ${String(repository)}` });
+    }
+    return Promise.resolve({ ok: true, repository: repository! });
+  };
+  return { check, seen };
+}
+
+export const REPO = 'github.com/acme/ledger';
 
 export const REGISTRY = 'https://registry.example.test';
 
@@ -99,13 +126,20 @@ export function fakeRegistry(packages: Record<string, Record<string, FakeVersion
             name,
             version,
             ...(v.manifest ?? {}),
-            dist: { tarball: `${REGISTRY}/${name}/-/${version}.tgz`, integrity: v.integrity ?? sri(v.tgz) }
+            dist: {
+              tarball: `${REGISTRY}/${name}/-/${version}.tgz`,
+              integrity: v.integrity ?? sri(v.tgz),
+              ...(v.attestations === false ? {} : { attestations: { url: `${REGISTRY}/-/npm/v1/attestations/${name}@${version}` } })
+            }
           };
         }
         return reply(Buffer.from(JSON.stringify({ name, versions: out })));
       }
       for (const [version, v] of Object.entries(versions)) {
         if (url === `${REGISTRY}/${name}/-/${version}.tgz`) return reply(v.tgz);
+        if (url === `${REGISTRY}/-/npm/v1/attestations/${name}@${version}`) {
+          return reply(Buffer.from(JSON.stringify(v.attestations ?? fakeAttestations(REPO))));
+        }
       }
     }
     return Promise.resolve({ status: 404, body: Buffer.from('{"error":"Not found"}') });

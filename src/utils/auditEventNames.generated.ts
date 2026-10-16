@@ -11,6 +11,12 @@ export const AUDIT_EVENT_NAME_PATTERN = /^[a-z]+(-[a-z]+)+$/;
 
 /** Every audit event core declares, keyed by the name upper-cased with underscores. */
 export const AUDIT_EVENT = {
+  /** An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830) */
+  ADDON_INSTALL: 'addon-install',
+  /** An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet) */
+  ADDON_UPDATE: 'addon-update',
+  /** An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830) */
+  ADDON_VERIFY_FAILED: 'addon-verify-failed',
   /** Admin dashboard read; not recorded, read volume */
   ADMIN_READ: 'admin-read',
   /** File deleted; destruction */

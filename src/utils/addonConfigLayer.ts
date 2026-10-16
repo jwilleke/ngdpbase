@@ -39,7 +39,8 @@ import fs from 'fs';
 import path from 'path';
 import { isDeepStrictEqual } from 'util';
 import { configFilePaths, deepMergeConfigs, deepMergeObjects, instanceDataFolder, isPlainObject, readConfigFilesSync } from './configFiles.js';
-import { addonDirectoryRoots, findNodeModulesDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
+import { configuredInstallSlugs, findNodeModulesDir, installedAddonsDir, matchNpmPackageDirs, resolveAddonSlug, splitAddonsPath } from './addonsPathResolver.js';
+import { lockedAddonDirsSync } from './addonLock.js';
 import { parsePrivatestore } from './privateStorePath.js';
 import { OWNER_DECIDED_FIELDS, SYSTEM_CATEGORY_KEY, systemCategoryValueProblems } from './systemCategoryRules.js';
 
@@ -68,7 +69,8 @@ export function isAddonEnabled(base: Record<string, unknown>, slug: string): boo
 
 /**
  * Every addon directory the configured path names, plus the installed add-ons
- * in `<data>/addons` (#1830), whether or not it is enabled.
+ * in `<data>/addons` (#1830: only those the lock file names for a slug in the
+ * install map), whether or not it is enabled.
  */
 export function discoverAddonDirs(
   base: Record<string, unknown>,
@@ -79,13 +81,18 @@ export function discoverAddonDirs(
   const { directories, npmPatterns } = splitAddonsPath(base[ADDONS_PATH_KEY] ?? './addons');
   const found: Array<{ dir: string; source: 'directory' | 'npm' }> = [];
 
-  for (const root of addonDirectoryRoots(directories, dataFolder, cwd)) {
+  for (const raw of directories) {
+    const root = path.resolve(cwd, raw);
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'shared') continue;
       found.push({ dir: path.join(root, entry.name), source: 'directory' });
     }
+  }
+  const installed = installedAddonsDir(dataFolder, cwd);
+  if (!found.some((f) => path.dirname(f.dir) === installed)) {
+    for (const dir of lockedAddonDirsSync(installed, configuredInstallSlugs(base))) found.push({ dir, source: 'directory' });
   }
 
   const nmRoot = npmPatterns.length > 0 ? findNodeModulesDir(cwd) : null;

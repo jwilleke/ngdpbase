@@ -53,7 +53,8 @@
     "ngdpbase.auth.cloudflare-access.team-domain": "sensitive",
     "ngdpbase.auth.cloudflare-access.application-aud": "sensitive",
     "ngdpbase.addons.install": "sensitive",
-    "ngdpbase.managers.addons-manager.install.registry": "sensitive"
+    "ngdpbase.managers.addons-manager.install.registry": "sensitive",
+    "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "sensitive"
   },
   "_comment_config_env_keys": "Config keys OWNED BY THE ENVIRONMENT, and the variable that supplies each (#1089). These are ALWAYS read-only on the Admin Configuration screen — not 'read-only while the variable happens to be set'. A conditional would make the UI the source of truth whenever the variable is unset, which is exactly the ambiguity this removes: a key is owned by one layer, never two. The value shipped for such a key in this file is a BOOT FALLBACK so a fresh install comes up; it is not a setting. To change one, set the variable in .env (root or <FAST_STORAGE>/.env) and restart — nothing in ngdpbase writes .env, by design, with these exceptions, each generated once and appended to <FAST_STORAGE>/.env when absent: NGDPBASE_SESSION_SECRET (#1194, src/bootstrap-env.ts), because the alternative was signing every session with the public literal shipped below; NGDPBASE_CREDENTIALS_KEY (#1524, src/bootstrap-env.ts), which signs every credentials-store row and encrypts TOTP seeds and has no config key at all; and, only when oidc-auth-server.enabled is true, OIDC_AUTH_SERVER_JWKS and OIDC_AUTH_SERVER_COOKIE_KEYS (#1574, OidcManager), the embedded OpenID Connect provider's signing and cookie keys, read by that package from the environment only. A config screen that restarts the server is a different feature. Deliberately SHORT: a key earns a place only if the environment must be able to supply it in a deployment where NO config file exists — a fresh headless container boot onto an empty volume is the case that decides it. NOTE application.base-url may equally be set in app-custom-config.json (the install wizard writes it there); it is listed because docker-compose-traefik.yml composes it at deploy time and InstallService names the env var as the alternative for headless installs, so the environment must remain a valid source. Replaces a hardcoded map that used to live in ConfigurationManager.getProperty() where nothing could see it.",
   "ngdpbase.config.env-keys": {
@@ -427,10 +428,11 @@
   "ngdpbase.managers.cache-manager.enabled": true,
   "ngdpbase.managers.addons-manager.enabled": true,
   "ngdpbase.managers.addons-manager.addons-path": "./addons",
-  "_comment_addons_install": "#1830 (PROVISIONAL: the key name and shape may change before the installer is final) — npm add-ons to install into <data>/addons/<slug>/, a map of slug → { \"package\": \"@scope/name-addon\", \"version\": \"<range>\" }, e.g. { \"phr\": { \"package\": \"@yourphr/phr-addon\", \"version\": \"^1\" } }. An add-on not yet installed is installed at start: the highest release in the range whose ngdpbase.minVersion this core meets, from the registry below, its tarball checked against the registry's sha512 integrity, then pinned in <data>/addons/addons-lock.json. Every later start uses the installed copy after re-checking it against the lock, and never asks the registry. Registry unreachable on a first install: the site starts without that add-on, admins are told, and the next start tries again. Installing does not enable: ngdpbase.addons.<slug>.enabled still decides. Ranges: exact, ^, ~, 1.x, *, >=, <, hyphen and || (no dist-tags, no prereleases). Empty (the default) does nothing. Provenance (signature) checking is not done yet.",
+  "_comment_addons_install": "#1830 — npm add-ons to install into <data>/addons/<slug>/, a map of slug → { \"package\": \"@scope/name-addon\", \"version\": \"<semver range>\", \"repository\": \"github.com/owner/repo\" }, e.g. { \"phr\": { \"package\": \"@yourphr/phr-addon\", \"version\": \"^1\", \"repository\": \"github.com/jwilleke/yourphr\" } }. An add-on not yet installed is installed at start: the highest release in the range whose ngdpbase.minVersion this core meets, from the registry below. Its tarball must match the registry sha512 integrity, and its Sigstore provenance attestation must be valid for that tarball and name the repository given (GitHub Actions or GitLab CI); missing, invalid or another repository refuses the install. It is then pinned in <data>/addons/addons-lock.json. Every later start uses the installed copy after re-checking it against the lock, and never asks the registry. Registry unreachable on a first install: the site starts without that add-on, admins are told, and the next start tries again. Only add-ons installed and verified this way load from <data>/addons. Installing does not enable: ngdpbase.addons.<slug>.enabled still decides. Empty (the default) does nothing.",
   "ngdpbase.addons.install": {},
-  "_comment_addons_install_tuning": "#1830 (provisional) — the installer's registry (an https base URL; tarballs must be on the same origin) and limits: per-request timeout, and the largest registry metadata, tarball and unpacked size accepted. Outbound requests go through the egress boundary (ngdpbase.security.egress.*).",
+  "_comment_addons_install_tuning": "#1830 — the installer's registry (an https base URL; tarballs and attestations must be on the same origin), the Sigstore TUF repository the provenance trust root comes from, and limits: per-request timeout, and the largest registry metadata, tarball and unpacked size accepted. Every request goes through the egress boundary (ngdpbase.security.egress.*).",
   "ngdpbase.managers.addons-manager.install.registry": "https://registry.npmjs.org",
+  "ngdpbase.managers.addons-manager.install.sigstore-tuf-url": "https://tuf-repo-cdn.sigstore.dev",
   "ngdpbase.managers.addons-manager.install.timeout-ms": 30000,
   "ngdpbase.managers.addons-manager.install.max-metadata-bytes": 16777216,
   "ngdpbase.managers.addons-manager.install.max-tarball-bytes": 52428800,
@@ -2218,6 +2220,28 @@
     },
     "backup-create": {
       "description": "A full backup written; where it went and who asked",
+      "grantable": false,
+      "audit": {
+        "on-failure": "continue"
+      }
+    },
+    "addon-install": {
+      "description": "An add-on named in ngdpbase.addons.install installed into the data folder: package, version, sha512 and the repository its provenance names; recorded before it is written, which cannot proceed without it (#1830)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse"
+      }
+    },
+    "addon-update": {
+      "description": "An installed add-on moved to another version by an administrator's Update: who, and from which version to which (#1830; the Update action is not built yet)",
+      "grantable": false,
+      "audit": {
+        "on-failure": "refuse",
+        "enabled": false
+      }
+    },
+    "addon-verify-failed": {
+      "description": "An add-on refused or set aside by a check: its sha512, provenance, tarball contents, package.json, the lock file, or a changed installed folder (#1830)",
       "grantable": false,
       "audit": {
         "on-failure": "continue"
