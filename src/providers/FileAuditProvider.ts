@@ -1,7 +1,7 @@
-import { toCsv } from '../utils/csv.js';
 import BaseAuditProvider, { AuditFilters, AuditSearchResults, AuditStats, AuditBackupData } from './BaseAuditProvider.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
 import type ConfigurationManager from '../managers/ConfigurationManager.js';
+import type ExportManager from '../managers/ExportManager.js';
 import path from 'path';
 import fs from 'fs-extra';
 import fsp from 'fs/promises';
@@ -568,7 +568,9 @@ class FileAuditProvider extends BaseAuditProvider {
     const logs = await this.searchAuditLogs(filters, { limit: 10000 });
 
     if (format === 'csv') {
-      // One CSV writer for every export: quoting, and no cell a spreadsheet would run as a formula.
+      // One CSV writer for every export, owned by ExportManager: quoting, and no cell a spreadsheet would run as a formula.
+      const exportManager = this.engine.getManager<ExportManager>('ExportManager');
+      if (!exportManager) throw new Error('FileAuditProvider: CSV export needs ExportManager, which is not registered');
       const rows = logs.results.map((logEntry) => {
         const log = logEntry as unknown as Record<string, unknown>;
         return [
@@ -582,7 +584,7 @@ class FileAuditProvider extends BaseAuditProvider {
           log.reason || log.error || ''
         ];
       });
-      return toCsv(['timestamp', 'eventType', 'user', 'resource', 'action', 'result', 'severity', 'reason'], rows);
+      return exportManager.toCsv(['timestamp', 'eventType', 'user', 'resource', 'action', 'result', 'severity', 'reason'], rows);
     }
 
     return JSON.stringify(logs.results, null, 2);

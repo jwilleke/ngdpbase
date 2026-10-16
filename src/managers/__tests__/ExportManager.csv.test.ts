@@ -1,7 +1,12 @@
 /**
- * One CSV writer for every export (RFC 4180), safe to open in a spreadsheet.
+ * One CSV writer for every export (RFC 4180), safe to open in a spreadsheet,
+ * owned by ExportManager.
  */
-import { csvCell, toCsv } from '../csv';
+import ExportManager from '../ExportManager';
+
+const exportManager = new ExportManager({});
+const csvCell = (value: unknown): string => exportManager.csvCell(value);
+const toCsv = (headers: string[], rows: unknown[][]): string => exportManager.toCsv(headers, rows);
 
 describe('csvCell', () => {
   test.each([
