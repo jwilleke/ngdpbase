@@ -30,14 +30,6 @@ import type ConfigurationManager from '../../../dist/src/managers/ConfigurationM
 const USERNAME_KEY = 'ngdpbase.addons.demo.admin-account.username';
 const PASSWORD_KEY = 'ngdpbase.addons.demo.admin-account.password';
 
-function escHtml(str: string): string {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 /**
  * A value that is still an unresolved `${VAR}` placeholder means the operator
  * supplied no password, so the addon seeded no account. Say so rather than
@@ -54,6 +46,7 @@ const DemoLoginPlugin = {
   version: '1.0.0',
 
   execute(context: PluginContext, _params: PluginParams): string {
+    const { escapeHtml } = context.formatters;
     const configManager = context.engine?.getManager<ConfigurationManager>('ConfigurationManager');
     if (!configManager) return '';
 
@@ -78,8 +71,8 @@ const DemoLoginPlugin = {
 
     return (
       '<div class="alert alert-info" role="alert">' +
-      'Username <code>' + escHtml(String(username)) + '</code> &nbsp;&middot;&nbsp; ' +
-      'Password <code>' + escHtml(String(password)) + '</code>' +
+      'Username <code>' + escapeHtml(String(username)) + '</code> &nbsp;&middot;&nbsp; ' +
+      'Password <code>' + escapeHtml(String(password)) + '</code>' +
       '</div>'
     );
   }

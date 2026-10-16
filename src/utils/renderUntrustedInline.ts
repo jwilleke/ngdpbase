@@ -27,6 +27,7 @@ import { createMarkdownConverter, type MarkdownConverter } from '../rendering/ma
 import SecurityFilter from '../parsers/filters/SecurityFilter.js';
 import logger from './logger.js';
 import type { WikiEngine } from '../types/WikiEngine.js';
+import type { PluginFormatters } from '../managers/PluginManager.js';
 
 /** Tags the page baseline allows that an untrusted author must not use. */
 const PROFILE_FORBIDDEN_TAGS = ['iframe', 'img', 'figure', 'figcaption', 'details', 'summary'];
@@ -63,23 +64,16 @@ async function buildRenderer(engine: WikiEngine): Promise<ProfileRenderer | null
   }
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 /**
  * Render untrusted-author markdown (a comment) to safe HTML.
  *
- * @param markdown The author's raw text
- * @param engine   Engine, for SecurityFilter configuration context
+ * @param formatters PluginManager's formatters (#1820); the fallback escapes with their escapeHtml
+ * @param markdown   The author's raw text
+ * @param engine     Engine, for SecurityFilter configuration context
  * @returns HTML safe to embed; on any failure, escaped text with <br>s
  */
-export async function renderUntrustedInline(markdown: string, engine: WikiEngine): Promise<string> {
-  const fallback = () => escapeHtml(markdown).replace(/\n/g, '<br>');
+export async function renderUntrustedInline(formatters: PluginFormatters, markdown: string, engine: WikiEngine): Promise<string> {
+  const fallback = () => formatters.escapeHtml(markdown).replace(/\n/g, '<br>');
   if (!markdown) return '';
   try {
     let pending = renderers.get(engine);

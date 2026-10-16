@@ -1,4 +1,4 @@
-import type { SimplePlugin, PluginContext, PluginParams } from './types.js';
+import type { SimplePlugin, PluginContext, PluginParams, PluginFormatters } from './types.js';
 import { subjectMayDo } from '../utils/subjectMayDo.js';
 import type CommentManager from '../managers/CommentManager.js';
 import type { PageComment } from '../types/Comment.js';
@@ -6,14 +6,6 @@ import { renderUntrustedInline } from '../utils/renderUntrustedInline.js';
 
 /** Engine shape the untrusted-inline profile needs; kept loose for tests. */
 type WikiEngineLike = { getManager: (name: string) => unknown };
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function formatDate(iso: string): string {
   try {
@@ -31,6 +23,7 @@ function formatDate(iso: string): string {
  * paragraph — never wraps in the outer `<section>` or container.
  */
 export async function renderCommentListHtml(
+  f: PluginFormatters,
   comments: PageComment[],
   isAuthenticated: boolean,
   username: string,
@@ -38,6 +31,7 @@ export async function renderCommentListHtml(
   pageUuid: string,
   engine?: WikiEngineLike
 ): Promise<string> {
+  const { escapeHtml } = f;
   if (comments.length === 0) {
     return '<p class="no-comments"><em>No comments yet.</em></p>';
   }
@@ -49,7 +43,7 @@ export async function renderCommentListHtml(
     // forced on. Without an engine (or on any failure inside the profile)
     // this degrades to the pre-#1123 escaped text, never to raw HTML.
     const body = engine
-      ? await renderUntrustedInline(c.content, engine as never)
+      ? await renderUntrustedInline(f, c.content, engine as never)
       : escapeHtml(c.content).replace(/\n/g, '<br>');
     parts.push(`<div class="comment" id="comment-${escapeHtml(c.id)}">`);
     parts.push('  <div class="comment-meta">');
@@ -73,7 +67,7 @@ const CommentsPlugin: SimplePlugin = {
   version: '1.0.0',
 
   async execute(context: PluginContext, params: PluginParams): Promise<string> {
-    const { parseBoolParam } = context.formatters;
+    const { parseBoolParam, escapeHtml } = context.formatters;
     const engine = context.engine;
     if (!engine) return '';
 
@@ -108,7 +102,7 @@ const CommentsPlugin: SimplePlugin = {
     // Wrap the list in a stable container so #590 can swap its innerHTML
     // after add/delete instead of doing a full page reload.
     parts.push(`<div id="comment-list-host" data-page-uuid="${escapeHtml(pageUuid)}">`);
-    parts.push(await renderCommentListHtml(comments, isAuthenticated, username, isAdmin, pageUuid, engine));
+    parts.push(await renderCommentListHtml(context.formatters, comments, isAuthenticated, username, isAdmin, pageUuid, engine));
     parts.push('</div>');
 
     // #1198: the add-comment form is offered to whoever policy lets comment.

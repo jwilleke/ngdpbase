@@ -5,6 +5,7 @@
 
 import { describe, test, expect } from 'vitest';
 import { renderCommentListHtml } from '../CommentsPlugin';
+import { TEST_FORMATTERS } from '../../test-support/plugins';
 import type { PageComment } from '../../types/Comment';
 
 function makeComment(overrides: Partial<PageComment> = {}): PageComment {
@@ -22,13 +23,14 @@ function makeComment(overrides: Partial<PageComment> = {}): PageComment {
 
 describe('renderCommentListHtml (#590)', () => {
   test('returns no-comments paragraph when list is empty', async () => {
-    const html = await renderCommentListHtml([], false, '', false, 'page-1');
+    const html = await renderCommentListHtml(TEST_FORMATTERS, [], false, '', false, 'page-1');
     expect(html).toContain('no-comments');
     expect(html).toContain('No comments yet');
   });
 
   test('renders authorDisplayName, content, and a comment-list wrapper', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ id: 'c1', authorDisplayName: 'Alice', content: 'Hi' })],
       true, 'bob', false, 'page-1'
     );
@@ -39,6 +41,7 @@ describe('renderCommentListHtml (#590)', () => {
 
   test('shows delete button only for the comment author', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
       true, 'alice', false, 'page-1'
     );
@@ -47,6 +50,7 @@ describe('renderCommentListHtml (#590)', () => {
 
   test('shows delete button for admin even on someone else\'s comment', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
       true, 'bob', true, 'page-1'
     );
@@ -55,6 +59,7 @@ describe('renderCommentListHtml (#590)', () => {
 
   test('hides delete button when caller is neither author nor admin', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ id: 'c1', author: 'alice' })],
       true, 'bob', false, 'page-1'
     );
@@ -63,6 +68,7 @@ describe('renderCommentListHtml (#590)', () => {
 
   test('escapes HTML in content (no engine: escape fallback)', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ content: '<script>alert(1)</script>' })],
       false, '', false, 'page-1'
     );
@@ -83,6 +89,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
 
   test('markdown in a comment renders', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ content: 'Some **bold** and `code`' })],
       false, '', false, 'page-1', engine
     );
@@ -92,6 +99,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
 
   test('a hostile comment is stripped, not executed', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ content: '<script>alert(1)</script> <iframe src="//evil"></iframe> fine' })],
       false, '', false, 'page-1', engine
     );
@@ -102,6 +110,7 @@ describe('renderCommentListHtml with the untrusted-inline profile (#1123)', () =
 
   test('plugin syntax in a comment stays literal', async () => {
     const html = await renderCommentListHtml(
+      TEST_FORMATTERS,
       [makeComment({ content: '[{SearchPlugin query=secret}]' })],
       false, '', false, 'page-1', engine
     );

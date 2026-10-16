@@ -10737,6 +10737,7 @@ ${panes}
       // off a session flag or a role name.
       const wikiContext = this.createWikiContext(req);
       const html = await renderCommentListHtml(
+        this.formatters,
         comments,
         await wikiContext.hasPermission('comment-create'),
         wikiContext.userContext?.username ?? '',
