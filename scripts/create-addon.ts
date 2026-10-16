@@ -23,6 +23,9 @@
  *   --type      additive (default) | domain
  *   --plugins   comma-separated plugin names (default: one named from the id)
  *   --managers  comma-separated manager names (default: one named from the id)
+ *   --scope     npm scope for the package name, e.g. @yourphr → @yourphr/<id>-addon.
+ *               Required unless the target is this checkout's addons/ (a bundled
+ *               addon, named @ngdpbase/<id>) — the scaffold never guesses a scope (#1676)
  *   --repo      write a whole repository: the addon at <target>/addons/<id>/,
  *               plus Dockerfile, renovate.json, .github/workflows/ci.yml,
  *               .gitignore, LICENSE and README.md at <target>
@@ -93,8 +96,29 @@ export interface ScaffoldOptions {
   target: string;
   /** Write a whole standalone repository with the addon at addons/<id>/. */
   repo?: boolean;
+  /** npm scope (`@yourphr`): the package is `<scope>/<id>-addon`. Absent: a bundled addon, `@ngdpbase/<id>` (#1676). */
+  scope?: string;
   /** Injected by tests so generated output is deterministic. */
   uuid?: () => string;
+}
+
+/** A freshly scaffolded addon is not a 1.0.0 release; package.json and index.ts carry the same version (#1676). */
+export const SCAFFOLD_VERSION = '0.1.0';
+
+/** npm scope rule: `@` then a lowercase name (npm's own rule for scope names). */
+export function validateScope(scope: string): string | null {
+  return /^@[a-z0-9][a-z0-9._-]*$/.test(scope)
+    ? null
+    : `--scope must look like @your-scope (lowercase, starting with @), got '${scope}'`;
+}
+
+/**
+ * The package name (#1676). A published addon is `<scope>/<id>-addon`, which is
+ * what the guide documents and what `node_modules:@scope/*-addon` discovery
+ * matches; a bundled addon keeps the bundled convention, `@ngdpbase/<id>`.
+ */
+export function packageName(o: Pick<ScaffoldOptions, 'id' | 'scope'>): string {
+  return o.scope ? `${o.scope}/${o.id}-addon` : `@ngdpbase/${o.id}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +127,9 @@ export interface ScaffoldOptions {
 
 function packageJson(o: ScaffoldOptions): string {
   return JSON.stringify({
-    name: `@ngdpbase/${o.id}`,
-    version: '1.0.0',
+    name: packageName(o),
+    version: SCAFFOLD_VERSION,
+    license: 'Apache-2.0',
     description: `${toTitleCase(o.id)} addon for ngdpbase`,
     private: true,
     type: 'module',
@@ -202,7 +227,7 @@ const ${name}Plugin = {
   name: '${name}',
   description: '${toTitleCase(o.id)} — ${name} plugin',
   author: 'ngdpbase',
-  version: '1.0.0',
+  version: '${SCAFFOLD_VERSION}',
 
   /**
    * Params arrive as a plain object of the attributes written in the markup.
@@ -289,7 +314,7 @@ interface Engine {
 
 const ${toPascalCase(o.id)}Addon = {
   name: '${o.id}',
-  version: '1.0.0',
+  version: '${SCAFFOLD_VERSION}',
   description: '${toTitleCase(o.id)} addon for ngdpbase',
   author: 'ngdpbase',
   dependencies: [] as string[],
@@ -867,6 +892,12 @@ export async function scaffoldAddon(o: ScaffoldOptions): Promise<ScaffoldResult>
 // CLI
 // ---------------------------------------------------------------------------
 
+/** True when the target sits in this checkout's own addons/ directory: a bundled addon. */
+export function isBundledTarget(target: string): boolean {
+  const addonsDir = path.join(NGDPBASE_ROOT, 'addons') + path.sep;
+  return path.resolve(target).startsWith(addonsDir);
+}
+
 export function parseArgs(argv: string[]): { options?: ScaffoldOptions; error?: string } {
   const get = (flag: string): string | undefined => {
     const i = argv.indexOf(flag);
@@ -896,14 +927,27 @@ export function parseArgs(argv: string[]): { options?: ScaffoldOptions; error?: 
 
   // A repository is a sibling of this checkout, never a directory inside its addons/.
   const repo = argv.includes('--repo');
+  const target = get('--target') ?? (repo ? path.join('..', id) : path.join('addons', id));
+
+  // #1676: anything outside this checkout's addons/ is published under its
+  // project's own scope, so the scope is asked for, never guessed.
+  const scope = get('--scope');
+  if (scope) {
+    const scopeError = validateScope(scope);
+    if (scopeError) return { error: scopeError };
+  } else if (repo || !isBundledTarget(target)) {
+    return { error: `--scope is required for an addon outside ${path.join(NGDPBASE_ROOT, 'addons')} (e.g. --scope @your-scope → @your-scope/${id}-addon)` };
+  }
+
   return {
     options: {
       id,
       type: typeRaw,
       plugins,
       managers,
-      target: get('--target') ?? (repo ? path.join('..', id) : path.join('addons', id)),
-      repo
+      target,
+      repo,
+      ...(scope ? { scope } : {})
     }
   };
 }
@@ -915,7 +959,7 @@ async function main(): Promise<void> {
   if (error) {
     console.error(`✗ ${error}`);
     console.error('\nUsage: npx tsx scripts/create-addon.ts --id <slug> [--type additive|domain]');
-    console.error('       [--plugins A,B] [--managers C] [--repo] [--target dir] [--force]');
+    console.error('       [--scope @your-scope] [--plugins A,B] [--managers C] [--repo] [--target dir] [--force]');
     process.exit(1);
   }
 
